@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+/* ───────────────────────────────────────────────────────────────
+   PlatformLucasArrial — Editorial-Brutalist tokens
+   Paleta: preto + branco + laranja accent. Sem outras cores.
+   ─────────────────────────────────────────────────────────────── */
+
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #ffffff;
+  --fg: #0a0a0a;
+  --muted-fg: #737373;
+  --border: #e5e5e5;
+  --surface: #fafafa;
+  --accent: #ff5a1f;
+  --accent-fg: #ffffff;
+  --ring: #ff5a1f;
+}
+
+.dark {
+  --bg: #0a0a0a;
+  --fg: #fafafa;
+  --muted-fg: #a3a3a3;
+  --border: #1f1f1f;
+  --surface: #121212;
+  --accent: #ff6b2c;
+  --accent-fg: #0a0a0a;
+  --ring: #ff6b2c;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-muted-fg: var(--muted-fg);
+  --color-border: var(--border);
+  --color-surface: var(--surface);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-ring: var(--ring);
+
+  --font-display: var(--font-anton), "Impact", "Arial Black", sans-serif;
+  --font-sans: var(--font-inter-tight), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* Editorial-Brutalist motion tokens */
+  --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 150ms;
+  --dur-base: 250ms;
+  --dur-slow: 400ms;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: light dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Editorial brutalism: zero default border-radius */
+button,
+input,
+textarea,
+select {
+  border-radius: 0;
+}
+
+/* Selection — orange punch */
+::selection {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+/* Focus ring — hard, no fade */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Utility: editorial uppercase label */
+@utility label-mono {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* Utility: tight display */
+@utility display-hero {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 0.9;
+  text-transform: uppercase;
+}

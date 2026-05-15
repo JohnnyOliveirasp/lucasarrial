@@ -1,0 +1,157 @@
+{
+  "metadata": {
+    "title": "Lucas Arrial — Plataforma de ferramentas IA",
+    "description": "Clone sua voz com IA em minutos. Plataforma de ferramentas de inteligência artificial para criadores e empreendedores."
+  },
+  "nav": {
+    "brand": "Lucas",
+    "solution": "Solução",
+    "platform": "Plataforma",
+    "features": "Features",
+    "cta": "Começar",
+    "ariaPrimary": "Principal",
+    "ariaBrand": "Lucas Arrial — início"
+  },
+  "themeToggle": {
+    "toLight": "Ativar tema claro",
+    "toDark": "Ativar tema escuro"
+  },
+  "languageToggle": {
+    "label": "Idioma",
+    "pt-BR": "Português",
+    "en": "Inglês",
+    "es": "Espanhol"
+  },
+  "hero": {
+    "eyebrow": "01 · clonagem de voz com ia",
+    "titleLine1": "Clone",
+    "titleLine2": "sua voz",
+    "titleLine3": "Em minutos.",
+    "description": "A plataforma de ferramentas IA para criadores, empreendedores e estúdios. Treine sua voz uma vez. Gere áudio infinito.",
+    "ctaPrimary": "Comece grátis",
+    "ctaSecondary": "Ver demo",
+    "metaStack": "voxcpm · runpod · supabase",
+    "metaScope": "mvp · clonagem de voz",
+    "metaVersion": "v0.1 · 2026"
+  },
+  "problem": {
+    "eyebrow": "02 · o problema",
+    "title": "Clonar voz hoje é",
+    "titleAccent": "ruim",
+    "items": {
+      "1": {
+        "tag": "preço",
+        "title": "Estúdio cobra fortunas",
+        "body": "Locuções profissionais custam R$3k a R$15k por projeto. Pra cada peça nova, nova fatura."
+      },
+      "2": {
+        "tag": "tempo",
+        "title": "Entrega leva dias",
+        "body": "Agendamento, gravação, edição, revisão. Do briefing ao áudio final, 5 a 10 dias úteis."
+      },
+      "3": {
+        "tag": "qualidade",
+        "title": "Alternativas soam robóticas",
+        "body": "TTS genérico não é a sua voz. Vozes de IA prontas soam falsas. Sua marca merece melhor."
+      }
+    }
+  },
+  "solution": {
+    "eyebrow": "03 · a solução",
+    "title": "Sua voz, sob demanda.",
+    "body": "Treine uma vez com 2 a 10 minutos de áudio. A IA aprende sua entonação, ritmo e timbre. Depois, gere quantos áudios quiser, em segundos.",
+    "playerLabel": "amostra · sua voz após treino",
+    "playerDuration": "0:32",
+    "playButton": "Tocar amostra",
+    "bullets": {
+      "1": "Treino em ~5 minutos",
+      "2": "Geração em segundos",
+      "3": "Você dono dos modelos"
+    }
+  },
+  "platform": {
+    "eyebrow": "04 · a plataforma",
+    "title": "Mais do que voz.",
+    "subtitle": "Uma plataforma de ferramentas IA inteira. Clonagem de voz é o começo.",
+    "sidebar": {
+      "header": "ferramentas",
+      "active": "Clonagem de Voz",
+      "soon": "Em breve"
+    },
+    "tools": {
+      "voice": "Clonagem de Voz",
+      "video": "Edição de Vídeo",
+      "writing": "Redação IA",
+      "image": "Imagens IA",
+      "transcribe": "Transcrição",
+      "translate": "Tradução"
+    }
+  },
+  "features": {
+    "eyebrow": "05 · features",
+    "title": "Construído pra durar.",
+    "items": {
+      "1": {
+        "tag": "qualidade",
+        "title": "100% sua voz",
+        "body": "Modelos LoRA por usuário. Sua voz fica sua, treinada no seu áudio."
+      },
+      "2": {
+        "tag": "velocidade",
+        "title": "Inferência em segundos",
+        "body": "Workers GPU autoescalados. Fila Celery, notificação in-app quando pronto."
+      },
+      "3": {
+        "tag": "idiomas",
+        "title": "50+ idiomas",
+        "body": "Modelo multilíngue. Sua voz fala português, inglês, espanhol e mais."
+      },
+      "4": {
+        "tag": "controle",
+        "title": "Sem amarras",
+        "body": "Exporte os áudios. Cancele quando quiser. Sem fidelidade, sem pegadinha."
+      }
+    }
+  },
+  "cta": {
+    "eyebrow": "06 · pronto?",
+    "title": "Comece grátis.",
+    "body": "3 modelos de voz grátis. Sem cartão de crédito. Sem compromisso.",
+    "primary": "Criar conta grátis",
+    "secondary": "Falar com o time"
+  },
+  "footer": {
+    "tagline": "Plataforma de ferramentas IA",
+    "columns": {
+      "product": {
+        "title": "Produto",
+        "items": {
+          "1": "Clonagem de voz",
+          "2": "Preços",
+          "3": "Changelog",
+          "4": "Roadmap"
+        }
+      },
+      "company": {
+        "title": "Empresa",
+        "items": {
+          "1": "Sobre",
+          "2": "Blog",
+          "3": "Contato",
+          "4": "Carreiras"
+        }
+      },
+      "legal": {
+        "title": "Legal",
+        "items": {
+          "1": "Termos",
+          "2": "Privacidade",
+          "3": "LGPD",
+          "4": "Cookies"
+        }
+      }
+    },
+    "copyright": "© 2026 Lucas Arrial. Todos os direitos reservados.",
+    "made": "Feito com IA, no Brasil."
+  }
+}

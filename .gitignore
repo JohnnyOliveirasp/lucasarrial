@@ -1,0 +1,89 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build outputs
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+# Environment files — NEVER COMMIT
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+*.egg-info/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Misc
+.vercel
+.turbo
+coverage/
+*.pem
+*.key
+*.cert
+.cache/
+
+# Claude Code local settings (per-machine perms)
+.claude/settings.local.json
+.claude-flow/
+
+# Audit screenshots (heavy, regenerable). Keep markdown reports.
+frontend/docs/audits/*/screenshots/
+
+# Playwright report cache
+playwright-report/
+test-results/
+.playwright-mcp/
+
+# Reference materials — heavy folder, will live in separate git branch
+_backup_apenasReferencia/
+
+# Old Python project leftovers
+main.py
+requirements.txt
+downloads/
+
+# Temp / playground
+.tmp/
+tmp/

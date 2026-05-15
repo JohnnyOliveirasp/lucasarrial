@@ -1,0 +1,157 @@
+{
+  "metadata": {
+    "title": "Lucas Arrial — AI tools platform",
+    "description": "Clone your voice with AI in minutes. AI tools platform for creators and entrepreneurs."
+  },
+  "nav": {
+    "brand": "Lucas",
+    "solution": "Solution",
+    "platform": "Platform",
+    "features": "Features",
+    "cta": "Get started",
+    "ariaPrimary": "Primary",
+    "ariaBrand": "Lucas Arrial — home"
+  },
+  "themeToggle": {
+    "toLight": "Switch to light mode",
+    "toDark": "Switch to dark mode"
+  },
+  "languageToggle": {
+    "label": "Language",
+    "pt-BR": "Portuguese",
+    "en": "English",
+    "es": "Spanish"
+  },
+  "hero": {
+    "eyebrow": "01 · ai voice cloning",
+    "titleLine1": "Clone",
+    "titleLine2": "your voice",
+    "titleLine3": "In minutes.",
+    "description": "The AI tools platform for creators, entrepreneurs and studios. Train your voice once. Generate infinite audio.",
+    "ctaPrimary": "Start free",
+    "ctaSecondary": "Watch demo",
+    "metaStack": "voxcpm · runpod · supabase",
+    "metaScope": "mvp · voice cloning",
+    "metaVersion": "v0.1 · 2026"
+  },
+  "problem": {
+    "eyebrow": "02 · the problem",
+    "title": "Voice cloning today is",
+    "titleAccent": "broken",
+    "items": {
+      "1": {
+        "tag": "price",
+        "title": "Studios charge a fortune",
+        "body": "Pro voice-overs cost $600 to $3,000 per project. Every new piece, a new invoice."
+      },
+      "2": {
+        "tag": "time",
+        "title": "Delivery takes days",
+        "body": "Booking, recording, editing, review. From brief to final audio, 5 to 10 business days."
+      },
+      "3": {
+        "tag": "quality",
+        "title": "Alternatives sound robotic",
+        "body": "Generic TTS is not your voice. Off-the-shelf AI voices sound fake. Your brand deserves better."
+      }
+    }
+  },
+  "solution": {
+    "eyebrow": "03 · the solution",
+    "title": "Your voice, on demand.",
+    "body": "Train once with 2 to 10 minutes of audio. The AI learns your intonation, rhythm and timbre. Then generate as much audio as you want, in seconds.",
+    "playerLabel": "sample · your voice after training",
+    "playerDuration": "0:32",
+    "playButton": "Play sample",
+    "bullets": {
+      "1": "Training in ~5 minutes",
+      "2": "Generation in seconds",
+      "3": "You own the models"
+    }
+  },
+  "platform": {
+    "eyebrow": "04 · the platform",
+    "title": "More than voice.",
+    "subtitle": "A whole AI tools platform. Voice cloning is just the start.",
+    "sidebar": {
+      "header": "tools",
+      "active": "Voice Cloning",
+      "soon": "Soon"
+    },
+    "tools": {
+      "voice": "Voice Cloning",
+      "video": "Video Editing",
+      "writing": "AI Writing",
+      "image": "AI Images",
+      "transcribe": "Transcription",
+      "translate": "Translation"
+    }
+  },
+  "features": {
+    "eyebrow": "05 · features",
+    "title": "Built to last.",
+    "items": {
+      "1": {
+        "tag": "quality",
+        "title": "100% your voice",
+        "body": "Per-user LoRA models. Your voice stays yours, trained on your audio."
+      },
+      "2": {
+        "tag": "speed",
+        "title": "Inference in seconds",
+        "body": "Auto-scaling GPU workers. Celery queue, in-app notification when ready."
+      },
+      "3": {
+        "tag": "languages",
+        "title": "50+ languages",
+        "body": "Multilingual model. Your voice speaks Portuguese, English, Spanish and more."
+      },
+      "4": {
+        "tag": "control",
+        "title": "No lock-in",
+        "body": "Export your audio. Cancel anytime. No loyalty contracts, no tricks."
+      }
+    }
+  },
+  "cta": {
+    "eyebrow": "06 · ready?",
+    "title": "Start free.",
+    "body": "3 free voice models. No credit card. No commitment.",
+    "primary": "Create free account",
+    "secondary": "Talk to the team"
+  },
+  "footer": {
+    "tagline": "AI tools platform",
+    "columns": {
+      "product": {
+        "title": "Product",
+        "items": {
+          "1": "Voice cloning",
+          "2": "Pricing",
+          "3": "Changelog",
+          "4": "Roadmap"
+        }
+      },
+      "company": {
+        "title": "Company",
+        "items": {
+          "1": "About",
+          "2": "Blog",
+          "3": "Contact",
+          "4": "Careers"
+        }
+      },
+      "legal": {
+        "title": "Legal",
+        "items": {
+          "1": "Terms",
+          "2": "Privacy",
+          "3": "GDPR",
+          "4": "Cookies"
+        }
+      }
+    },
+    "copyright": "© 2026 Lucas Arrial. All rights reserved.",
+    "made": "Built with AI, from Brazil."
+  }
+}
