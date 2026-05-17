@@ -27,7 +27,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-logs/
+logs/*
+!logs/.gitkeep
 
 # Python
 __pycache__/
@@ -87,3 +88,6 @@ downloads/
 # Temp / playground
 .tmp/
 tmp/
+
+# Screenshots temp (configurações RunPod)
+_ConfiguracoesMaqina/

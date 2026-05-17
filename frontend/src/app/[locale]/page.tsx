@@ -1,27 +1,33 @@
+import { setRequestLocale } from "next-intl/server";
 import { SiteHeader } from "@/components/site-header";
 import { Hero } from "@/components/sections/hero";
+import { Problem } from "@/components/sections/problem";
+import { Solution } from "@/components/sections/solution";
+import { PlatformPreview } from "@/components/sections/platform-preview";
+import { Features } from "@/components/sections/features";
+import { CTA } from "@/components/sections/cta";
+import { Footer } from "@/components/sections/footer";
 
-export default function Home() {
+export default async function Home({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  setRequestLocale(locale);
+
   return (
     <>
       <SiteHeader />
       <main>
         <Hero />
-        {/* TODO: Problema, Solução, Preview-da-plataforma, Features, CTA */}
-        <section
-          id="placeholder"
-          className="border-t border-[var(--border)] py-32"
-        >
-          <div className="mx-auto max-w-[1400px] px-6 md:px-10">
-            <span className="label-mono text-[var(--muted-fg)]">
-              02 · próximas seções
-            </span>
-            <h2 className="display-hero mt-4 text-[clamp(2rem,6vw,5rem)] text-[var(--fg)]">
-              Em construção<span className="text-[var(--accent)]">.</span>
-            </h2>
-          </div>
-        </section>
+        <Problem />
+        <Solution />
+        <PlatformPreview />
+        <Features />
+        <CTA />
       </main>
+      <Footer />
     </>
   );
 }

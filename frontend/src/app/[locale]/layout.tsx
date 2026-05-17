@@ -4,6 +4,8 @@ import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Anton, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { LogBootstrap } from "@/components/log-bootstrap";
+import { logger } from "@/lib/logger/server";
 import { routing } from "@/i18n/routing";
 import "../globals.css";
 
@@ -66,10 +68,12 @@ export default async function LocaleLayout({
   const { locale } = await params;
 
   if (!hasLocale(routing.locales, locale)) {
+    logger.warn("render", "layout.locale_invalid", { locale });
     notFound();
   }
 
   setRequestLocale(locale);
+  logger.info("render", "layout.render", { locale });
 
   return (
     <html
@@ -85,6 +89,7 @@ export default async function LocaleLayout({
             enableSystem
             disableTransitionOnChange
           >
+            <LogBootstrap />
             {children}
           </ThemeProvider>
         </NextIntlClientProvider>

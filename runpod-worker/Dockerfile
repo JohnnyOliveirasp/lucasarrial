@@ -1,0 +1,21 @@
+FROM runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404
+
+WORKDIR /app
+
+# System deps (ffmpeg + git)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg git git-lfs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone VoxCPM repo (necessário para scripts/train_voxcpm_finetune.py)
+RUN git clone --depth 1 https://github.com/OpenBMB/VoxCPM.git /app/VoxCPM
+
+# Python deps
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Handler
+COPY handler.py .
+
+# RunPod Serverless ENTRYPOINT
+CMD ["python", "-u", "handler.py"]

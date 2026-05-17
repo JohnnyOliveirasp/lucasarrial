@@ -140,9 +140,13 @@ try {
         consoleErrors,
         consoleWarns,
         pageErrors,
-        requestFails: requestFails.filter(
-          (r) => !r.includes("favicon") && !r.includes("data:"),
-        ),
+        requestFails: requestFails.filter((r) => {
+          if (r.includes("favicon")) return false;
+          if (r.includes("data:")) return false;
+          // /api/log calls are fire-and-forget — aborted on page unload is expected.
+          if (r.includes("/api/log") && r.includes("ERR_ABORTED")) return false;
+          return true;
+        }),
         audit,
       });
 
