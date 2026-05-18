@@ -11,11 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git clone --depth 1 https://github.com/OpenBMB/VoxCPM.git /app/VoxCPM
 
 # Python deps
-COPY runpod-worker/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Handler
-COPY runpod-worker/handler.py .
+COPY handler.py .
 
 # RunPod Serverless ENTRYPOINT
 CMD ["python", "-u", "handler.py"]
