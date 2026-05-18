@@ -80,9 +80,9 @@ test-results/
 # Reference materials — heavy folder, will live in separate git branch
 _backup_apenasReferencia/
 
-# Old Python project leftovers
-main.py
-requirements.txt
+# Old Python project leftovers (root only — não ignora runpod-worker/requirements.txt)
+/main.py
+/requirements.txt
 downloads/
 
 # Temp / playground

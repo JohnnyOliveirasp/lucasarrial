@@ -1,0 +1,8 @@
+runpod==1.9.0
+voxcpm==2.0.3
+faster-whisper==1.2.0
+demucs==4.0.1
+silero-vad==5.1.2
+soundfile==0.13.1
+huggingface-hub==0.35.3
+julius==0.2.7
