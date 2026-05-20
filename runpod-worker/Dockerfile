@@ -14,8 +14,9 @@ RUN git clone --depth 1 https://github.com/OpenBMB/VoxCPM.git /app/VoxCPM
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Handler
+# Handler + pipeline
 COPY handler.py .
+COPY voice_pipeline ./voice_pipeline
 
 # RunPod Serverless ENTRYPOINT
 CMD ["python", "-u", "handler.py"]

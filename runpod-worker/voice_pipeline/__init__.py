@@ -1,0 +1,35 @@
+"""Pipeline de treinamento de voz para o worker RunPod.
+
+Portado de _backup_apenasReferencia/VoiceLoraStudio/voice_lora_studio/core.py
+adaptado para ambiente cloud (sem Tkinter, sem subprocess wrapper pesado,
+recebe URLs HTTP em vez de paths locais).
+"""
+
+from .r2 import download_to_dir, upload_file_to_presigned_url
+from .preprocess import (
+    extract_to_wav,
+    separate_vocals_demucs,
+    vad_segments_silero,
+    chunk_vad_segments,
+    cut_audio_by_segments,
+)
+from .training import (
+    transcribe_audio_folder,
+    build_train_manifest,
+    create_training_config,
+    run_training,
+)
+
+__all__ = [
+    "download_to_dir",
+    "upload_file_to_presigned_url",
+    "extract_to_wav",
+    "separate_vocals_demucs",
+    "vad_segments_silero",
+    "chunk_vad_segments",
+    "cut_audio_by_segments",
+    "transcribe_audio_folder",
+    "build_train_manifest",
+    "create_training_config",
+    "run_training",
+]

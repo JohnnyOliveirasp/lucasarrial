@@ -3,6 +3,138 @@
     "title": "Lucas Arrial — Plataforma de ferramentas IA",
     "description": "Clone sua voz com IA em minutos. Plataforma de ferramentas de inteligência artificial para criadores e empreendedores."
   },
+  "app": {
+    "brand": "AI Clone Verse",
+    "nav": {
+      "dashboard": "Dashboard",
+      "voiceCloning": "Clonagem de Voz",
+      "history": "Histórico",
+      "settings": "Configurações"
+    },
+    "comingSoon": "Em breve",
+    "logout": "Sair",
+    "dashboard": {
+      "title": "Suas ferramentas",
+      "subtitle": "Comece treinando uma voz. Mais ferramentas em breve.",
+      "tools": {
+        "voiceCloning": {
+          "name": "Clonagem de Voz",
+          "description": "Treine sua voz uma vez. Gere áudio infinito com qualquer texto.",
+          "cta": "Começar"
+        },
+        "videoGen": {
+          "name": "Geração de Vídeo",
+          "description": "Crie vídeos curtos a partir de texto e voz clonada."
+        },
+        "avatar": {
+          "name": "Avatar Falante",
+          "description": "Sua imagem ganha vida com sua voz clonada."
+        },
+        "transcription": {
+          "name": "Transcrição Premium",
+          "description": "Transcrição multilíngue com diarização de falantes."
+        }
+      }
+    },
+    "voiceCloning": {
+      "title": "Clonagem de Voz",
+      "subtitle": "Treine sua voz e gere áudio com qualquer texto.",
+      "empty": "Você ainda não treinou nenhuma voz.",
+      "createButton": "+ Treinar nova voz"
+    },
+    "voiceCloningNew": {
+      "eyebrow": "01 · Treinar voz",
+      "title": "Nova voz",
+      "subtitle": "Envie pelo menos 20 minutos de áudio seu falando. Mais é melhor.",
+      "nameLabel": "Nome da voz",
+      "namePlaceholder": "Ex: Minha voz principal",
+      "next": "Continuar",
+      "back": "Voltar",
+      "consent": "Declaro que esta voz é minha ou tenho autorização explícita para usá-la.",
+      "rules": {
+        "title": "Requisitos",
+        "min": "Mínimo: 20 minutos de fala",
+        "recommended": "Recomendado: 30 a 60 minutos",
+        "clean": "Áudio limpo (sem música/ruído de fundo)",
+        "variety": "Variedade de tons, palavras e ritmos"
+      },
+      "dropzone": {
+        "title": "Solte arquivos aqui ou clique pra escolher",
+        "hint": "MP3, WAV, M4A, FLAC, OGG · até 20 arquivos"
+      },
+      "measuring": "medindo…",
+      "uploading": "Subindo arquivos…",
+      "submitting": "Preparando…",
+      "train": "Treinar voz ({duration})",
+      "meter": {
+        "total": "Total de áudio",
+        "min": "Mínimo",
+        "recommended": "Recomendado",
+        "missing": "Faltam",
+        "ok": "Mínimo atingido"
+      },
+      "errors": {
+        "tooMany": "Máximo {max} arquivos por voz",
+        "invalidType": "Tipo de arquivo não suportado",
+        "network": "Falha de rede. Verifique sua conexão.",
+        "uploadFailed": "{count} arquivo(s) falharam ao subir. Tente de novo.",
+        "generic": "Algo deu errado. Tente novamente."
+      }
+    }
+  },
+  "auth": {
+    "brand": "AI Clone Verse",
+    "tagline": "Clone sua voz. Crie infinito.",
+    "login": {
+      "title": "Entrar",
+      "subtitle": "Acesse sua conta pra clonar voz e gerar áudio.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "voce@exemplo.com",
+      "passwordLabel": "Senha",
+      "passwordPlaceholder": "Sua senha",
+      "submit": "Entrar",
+      "submitting": "Entrando…",
+      "googleButton": "Continuar com Google",
+      "or": "ou",
+      "noAccount": "Não tem conta?",
+      "signupLink": "Criar conta",
+      "forgotPassword": "Esqueci a senha"
+    },
+    "signup": {
+      "title": "Criar conta",
+      "subtitle": "Comece grátis. Clone 1 voz, gere até 50 áudios.",
+      "nameLabel": "Nome",
+      "namePlaceholder": "Seu nome",
+      "emailLabel": "Email",
+      "emailPlaceholder": "voce@exemplo.com",
+      "passwordLabel": "Senha",
+      "passwordPlaceholder": "Mínimo 8 caracteres",
+      "passwordConfirmLabel": "Confirmar senha",
+      "passwordConfirmPlaceholder": "Repita a senha",
+      "passwordMismatch": "As senhas não conferem.",
+      "submit": "Criar conta",
+      "submitting": "Criando…",
+      "googleButton": "Continuar com Google",
+      "or": "ou",
+      "hasAccount": "Já tem conta?",
+      "loginLink": "Entrar",
+      "checkEmail": "Enviamos um código pro seu email. Confira a caixa de entrada.",
+      "otpLabel": "Código do email (6 a 8 dígitos)",
+      "otpPlaceholder": "000000",
+      "verify": "Verificar e entrar",
+      "verifying": "Verificando…",
+      "resend": "Reenviar código",
+      "resending": "Reenviando…",
+      "resent": "Código reenviado. Verifique seu email.",
+      "resendIn": "Aguarde {seconds}s pra reenviar"
+    },
+    "errors": {
+      "invalidCredentials": "Email ou senha incorretos.",
+      "emailNotConfirmed": "Confirme seu email antes de entrar.",
+      "rateLimited": "Muitas tentativas. Aguarde 1 minuto.",
+      "generic": "Algo deu errado. Tente novamente."
+    }
+  },
   "nav": {
     "brand": "Lucas",
     "solution": "Solução",

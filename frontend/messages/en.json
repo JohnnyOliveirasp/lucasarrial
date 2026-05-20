@@ -1,4 +1,136 @@
 {
+  "app": {
+    "brand": "AI Clone Verse",
+    "nav": {
+      "dashboard": "Dashboard",
+      "voiceCloning": "Voice Cloning",
+      "history": "History",
+      "settings": "Settings"
+    },
+    "comingSoon": "Coming soon",
+    "logout": "Sign out",
+    "dashboard": {
+      "title": "Your tools",
+      "subtitle": "Start by training a voice. More tools coming soon.",
+      "tools": {
+        "voiceCloning": {
+          "name": "Voice Cloning",
+          "description": "Train your voice once. Generate infinite audio with any text.",
+          "cta": "Start"
+        },
+        "videoGen": {
+          "name": "Video Generation",
+          "description": "Create short videos from text and cloned voice."
+        },
+        "avatar": {
+          "name": "Talking Avatar",
+          "description": "Your image comes alive with your cloned voice."
+        },
+        "transcription": {
+          "name": "Premium Transcription",
+          "description": "Multilingual transcription with speaker diarization."
+        }
+      }
+    },
+    "voiceCloning": {
+      "title": "Voice Cloning",
+      "subtitle": "Train your voice and generate audio with any text.",
+      "empty": "You haven't trained any voice yet.",
+      "createButton": "+ Train new voice"
+    },
+    "voiceCloningNew": {
+      "eyebrow": "01 · Train voice",
+      "title": "New voice",
+      "subtitle": "Upload at least 20 minutes of you talking. More is better.",
+      "nameLabel": "Voice name",
+      "namePlaceholder": "e.g. My main voice",
+      "next": "Continue",
+      "back": "Back",
+      "consent": "I declare this voice is mine or I have explicit authorization to use it.",
+      "rules": {
+        "title": "Requirements",
+        "min": "Minimum: 20 minutes of speech",
+        "recommended": "Recommended: 30 to 60 minutes",
+        "clean": "Clean audio (no background music/noise)",
+        "variety": "Variety in tone, words and rhythm"
+      },
+      "dropzone": {
+        "title": "Drop files here or click to pick",
+        "hint": "MP3, WAV, M4A, FLAC, OGG · up to 20 files"
+      },
+      "measuring": "measuring…",
+      "uploading": "Uploading…",
+      "submitting": "Preparing…",
+      "train": "Train voice ({duration})",
+      "meter": {
+        "total": "Total audio",
+        "min": "Minimum",
+        "recommended": "Recommended",
+        "missing": "Missing",
+        "ok": "Minimum reached"
+      },
+      "errors": {
+        "tooMany": "Max {max} files per voice",
+        "invalidType": "Unsupported file type",
+        "network": "Network failure. Check your connection.",
+        "uploadFailed": "{count} file(s) failed to upload. Try again.",
+        "generic": "Something went wrong. Try again."
+      }
+    }
+  },
+  "auth": {
+    "brand": "AI Clone Verse",
+    "tagline": "Clone your voice. Create infinite.",
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Access your account to clone voice and generate audio.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you@example.com",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Your password",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "googleButton": "Continue with Google",
+      "or": "or",
+      "noAccount": "Don't have an account?",
+      "signupLink": "Sign up",
+      "forgotPassword": "Forgot password"
+    },
+    "signup": {
+      "title": "Create account",
+      "subtitle": "Start free. Clone 1 voice, generate up to 50 audios.",
+      "nameLabel": "Name",
+      "namePlaceholder": "Your name",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you@example.com",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "At least 8 characters",
+      "passwordConfirmLabel": "Confirm password",
+      "passwordConfirmPlaceholder": "Repeat the password",
+      "passwordMismatch": "Passwords don't match.",
+      "submit": "Create account",
+      "submitting": "Creating…",
+      "googleButton": "Continue with Google",
+      "or": "or",
+      "hasAccount": "Already have an account?",
+      "loginLink": "Sign in",
+      "checkEmail": "We sent a code to your email. Check your inbox.",
+      "otpLabel": "Email code (6 to 8 digits)",
+      "otpPlaceholder": "000000",
+      "verify": "Verify and sign in",
+      "verifying": "Verifying…",
+      "resend": "Resend code",
+      "resending": "Resending…",
+      "resent": "Code resent. Check your email.",
+      "resendIn": "Wait {seconds}s to resend"
+    },
+    "errors": {
+      "invalidCredentials": "Invalid email or password.",
+      "emailNotConfirmed": "Please confirm your email before signing in.",
+      "rateLimited": "Too many attempts. Wait 1 minute.",
+      "generic": "Something went wrong. Try again."
+    }
+  },
   "metadata": {
     "title": "Lucas Arrial — AI tools platform",
     "description": "Clone your voice with AI in minutes. AI tools platform for creators and entrepreneurs."
