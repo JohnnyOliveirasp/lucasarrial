@@ -3,8 +3,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Upload, X, AudioLines, Check } from "lucide-react";
+import { Upload, X, AudioLines, Check, FolderUp } from "lucide-react";
 import { measureAudioDuration, formatDuration } from "@/lib/audio/duration";
+import { filterAudioFiles, gatherAudioFromDataTransfer } from "@/lib/audio/collect";
 
 const MIN_DURATION_SECONDS = 20 * 60; // 20 minutos
 const REC_DURATION_SECONDS = 30 * 60; // 30 minutos
@@ -34,6 +35,18 @@ export function VoiceCreator() {
   const [error, setError] = useState<string | null>(null);
   const [overallProgress, setOverallProgress] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dirInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Callback ref: aplica webkitdirectory ASSIM QUE o input monta no DOM.
+  // (useEffect não serve aqui — o input só renderiza no step "upload".)
+  const setDirInput = useCallback((el: HTMLInputElement | null) => {
+    dirInputRef.current = el;
+    if (el) {
+      el.setAttribute("webkitdirectory", "");
+      el.setAttribute("directory", "");
+      el.setAttribute("mozdirectory", "");
+    }
+  }, []);
 
   const totalDuration = useMemo(
     () => files.reduce((acc, f) => acc + (f.duration ?? 0), 0),
@@ -43,13 +56,48 @@ export function VoiceCreator() {
   const missing = Math.max(0, MIN_DURATION_SECONDS - totalDuration);
 
   const addFiles = useCallback(async (incoming: File[]) => {
-    if (files.length + incoming.length > MAX_FILES) {
-      setError(t("errors.tooMany", { max: MAX_FILES }));
+    // Dedup contra arquivos já na lista (signature: name + size + lastModified)
+    const existing = new Set(
+      files.map((f) => `${f.file.name}|${f.file.size}|${f.file.lastModified}`),
+    );
+    const seen = new Set<string>();
+    const unique: File[] = [];
+    let duplicates = 0;
+    for (const f of incoming) {
+      const sig = `${f.name}|${f.size}|${f.lastModified}`;
+      if (existing.has(sig) || seen.has(sig)) {
+        duplicates++;
+        continue;
+      }
+      seen.add(sig);
+      unique.push(f);
+    }
+
+    const available = Math.max(0, MAX_FILES - files.length);
+    const accepted = unique.slice(0, available);
+    const overLimit = unique.length - accepted.length;
+
+    if (accepted.length === 0) {
+      if (duplicates > 0 && overLimit === 0) {
+        setError(t("errors.allDuplicates"));
+      } else {
+        setError(t("errors.tooMany", { max: MAX_FILES }));
+      }
       return;
     }
-    setError(null);
 
-    const additions: LocalFile[] = incoming.map((file) => ({
+    // Mensagens informativas (mas não bloqueia)
+    if (overLimit > 0 && duplicates > 0) {
+      setError(t("errors.partialAddBoth", { duplicates, ignored: overLimit }));
+    } else if (overLimit > 0) {
+      setError(t("errors.partialOver", { ignored: overLimit, max: MAX_FILES }));
+    } else if (duplicates > 0) {
+      setError(t("errors.partialDup", { duplicates }));
+    } else {
+      setError(null);
+    }
+
+    const additions: LocalFile[] = accepted.map((file: File) => ({
       id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()
         .toString(36)
         .slice(2, 8)}`,
@@ -77,9 +125,22 @@ export function VoiceCreator() {
 
   function onDropzoneFiles(list: FileList | null) {
     if (!list) return;
-    const arr = Array.from(list).filter((f) =>
-      /^(audio\/|.*\.(mp3|wav|m4a|flac|ogg|webm)$)/i.test(f.type || f.name),
-    );
+    const arr = filterAudioFiles(Array.from(list));
+    if (arr.length === 0) {
+      setError(t("errors.invalidType"));
+      return;
+    }
+    // Ordena por nome (estável quando vem de pasta com vários arquivos)
+    arr.sort((a, b) => {
+      const pa = (a as File & { webkitRelativePath?: string }).webkitRelativePath || a.name;
+      const pb = (b as File & { webkitRelativePath?: string }).webkitRelativePath || b.name;
+      return pa.localeCompare(pb);
+    });
+    addFiles(arr);
+  }
+
+  async function onDropItems(items: DataTransferItemList) {
+    const arr = await gatherAudioFromDataTransfer(items);
     if (arr.length === 0) {
       setError(t("errors.invalidType"));
       return;
@@ -189,7 +250,9 @@ export function VoiceCreator() {
     <div className="flex flex-col gap-8">
       <Dropzone
         onPickFiles={() => inputRef.current?.click()}
+        onPickFolder={() => dirInputRef.current?.click()}
         onDrop={onDropzoneFiles}
+        onDropItems={onDropItems}
         disabled={step === "submitting"}
         t={t}
       />
@@ -198,6 +261,16 @@ export function VoiceCreator() {
         type="file"
         multiple
         accept={ACCEPT}
+        hidden
+        onChange={(e) => {
+          onDropzoneFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={setDirInput}
+        type="file"
+        multiple
         hidden
         onChange={(e) => {
           onDropzoneFiles(e.target.files);
@@ -338,19 +411,22 @@ function FormStep({
 
 function Dropzone({
   onPickFiles,
+  onPickFolder,
   onDrop,
+  onDropItems,
   disabled,
   t,
 }: {
   onPickFiles: () => void;
+  onPickFolder: () => void;
   onDrop: (list: FileList | null) => void;
+  onDropItems: (items: DataTransferItemList) => Promise<void>;
   disabled: boolean;
   t: TFn;
 }) {
   const [over, setOver] = useState(false);
   return (
     <div
-      onClick={onPickFiles}
       onDragOver={(e) => {
         e.preventDefault();
         setOver(true);
@@ -359,10 +435,15 @@ function Dropzone({
       onDrop={(e) => {
         e.preventDefault();
         setOver(false);
-        onDrop(e.dataTransfer.files);
+        if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+          // Suporta pastas arrastadas — usa items + webkitGetAsEntry
+          onDropItems(e.dataTransfer.items);
+        } else {
+          onDrop(e.dataTransfer.files);
+        }
       }}
       className={[
-        "flex cursor-pointer flex-col items-center justify-center gap-3 border-2 border-dashed p-12 text-center transition-colors",
+        "flex flex-col items-center justify-center gap-4 border-2 border-dashed p-12 text-center transition-colors",
         over ? "border-accent bg-accent/5" : "border-border bg-surface",
         disabled ? "cursor-not-allowed opacity-50" : "",
       ].join(" ")}
@@ -371,6 +452,26 @@ function Dropzone({
       <div className="flex flex-col gap-1">
         <p className="text-sm font-medium text-fg">{t("dropzone.title")}</p>
         <p className="text-xs text-muted-fg">{t("dropzone.hint")}</p>
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+        <button
+          type="button"
+          onClick={onPickFiles}
+          disabled={disabled}
+          className="flex items-center gap-2 border border-border bg-bg px-4 py-2 text-xs font-bold uppercase tracking-wide text-fg transition-colors hover:border-fg hover:bg-fg hover:text-bg disabled:opacity-50"
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {t("dropzone.pickFiles")}
+        </button>
+        <button
+          type="button"
+          onClick={onPickFolder}
+          disabled={disabled}
+          className="flex items-center gap-2 border border-border bg-bg px-4 py-2 text-xs font-bold uppercase tracking-wide text-fg transition-colors hover:border-fg hover:bg-fg hover:text-bg disabled:opacity-50"
+        >
+          <FolderUp className="h-3.5 w-3.5" />
+          {t("dropzone.pickFolder")}
+        </button>
       </div>
     </div>
   );

@@ -55,8 +55,10 @@
         "variety": "Variety in tone, words and rhythm"
       },
       "dropzone": {
-        "title": "Drop files here or click to pick",
-        "hint": "MP3, WAV, M4A, FLAC, OGG · up to 20 files"
+        "title": "Drag files or an entire folder",
+        "hint": "MP3, WAV, M4A, FLAC, OGG · up to 20 files · non-audio is ignored",
+        "pickFiles": "Pick files",
+        "pickFolder": "Pick folder"
       },
       "measuring": "measuring…",
       "uploading": "Uploading…",
@@ -72,6 +74,10 @@
       "errors": {
         "tooMany": "Max {max} files per voice",
         "invalidType": "Unsupported file type",
+        "allDuplicates": "All selected files are already in the list",
+        "partialOver": "Limit of {max} files — {ignored} were ignored",
+        "partialDup": "{duplicates} file(s) were already in the list and ignored",
+        "partialAddBoth": "{duplicates} duplicate(s) + {ignored} over the limit were ignored",
         "network": "Network failure. Check your connection.",
         "uploadFailed": "{count} file(s) failed to upload. Try again.",
         "generic": "Something went wrong. Try again."

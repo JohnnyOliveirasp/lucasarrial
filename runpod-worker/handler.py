@@ -148,7 +148,7 @@ def _handle_train(inp: dict) -> dict:
         stereo_wav.parent.mkdir(parents=True, exist_ok=True)
         _run_ffmpeg_stereo_44k(src, stereo_wav)
 
-        vocals_wav = separate_vocals_demucs(stereo_wav, vocals_dir, log=lambda m: _log("info", "demucs", msg=m))
+        vocals_wav = separate_vocals_demucs(stereo_wav, vocals_dir, log=lambda m: _log("info", "demucs", detail=m))
         normalized = norm_dir / f"{src.stem}_mono16k.wav"
         extract_to_wav(vocals_wav, normalized, sample_rate=16000)
 
@@ -166,7 +166,7 @@ def _handle_train(inp: dict) -> dict:
         dataset_dir,
         model_name=whisper_model,
         language=language,
-        log=lambda m: _log("info", "whisper", msg=m),
+        log=lambda m: _log("info", "whisper", detail=m),
     )
     _log("info", "train.whisper.done")
 
@@ -182,7 +182,7 @@ def _handle_train(inp: dict) -> dict:
     )
 
     _log("info", "train.trainer.start", config=str(config), max_steps=max_steps)
-    result = run_training(VOXCPM_REPO, config, log=lambda m: _log("info", "trainer", msg=m))
+    result = run_training(VOXCPM_REPO, config, log=lambda m: _log("info", "trainer", detail=m))
     _log("info", "train.trainer.done", returncode=result["returncode"])
 
     if result["returncode"] != 0:

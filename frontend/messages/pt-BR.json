@@ -59,8 +59,10 @@
         "variety": "Variedade de tons, palavras e ritmos"
       },
       "dropzone": {
-        "title": "Solte arquivos aqui ou clique pra escolher",
-        "hint": "MP3, WAV, M4A, FLAC, OGG · até 20 arquivos"
+        "title": "Arraste arquivos ou uma pasta inteira",
+        "hint": "MP3, WAV, M4A, FLAC, OGG · até 20 arquivos · não-áudio é ignorado",
+        "pickFiles": "Escolher arquivos",
+        "pickFolder": "Escolher pasta"
       },
       "measuring": "medindo…",
       "uploading": "Subindo arquivos…",
@@ -76,6 +78,10 @@
       "errors": {
         "tooMany": "Máximo {max} arquivos por voz",
         "invalidType": "Tipo de arquivo não suportado",
+        "allDuplicates": "Todos os arquivos selecionados já estão na lista",
+        "partialOver": "Limite de {max} arquivos — {ignored} foram ignorados",
+        "partialDup": "{duplicates} arquivo(s) já estavam na lista e foram ignorados",
+        "partialAddBoth": "{duplicates} duplicado(s) + {ignored} acima do limite foram ignorados",
         "network": "Falha de rede. Verifique sua conexão.",
         "uploadFailed": "{count} arquivo(s) falharam ao subir. Tente de novo.",
         "generic": "Algo deu errado. Tente novamente."
