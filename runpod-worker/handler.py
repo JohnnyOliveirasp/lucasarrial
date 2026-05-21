@@ -43,6 +43,15 @@ import runpod
 import soundfile as sf
 from huggingface_hub import snapshot_download
 
+# NNPACK não é suportado no hardware dos workers e polui o log com milhares de
+# warnings "Could not initialize NNPACK". Desligar elimina o spam (cosmético).
+try:
+    import torch
+
+    torch.backends.nnpack.enabled = False
+except Exception:
+    pass
+
 MODEL_ID = "openbmb/VoxCPM2"
 MODEL_DIR = Path(os.environ.get("VOXCPM_MODEL_DIR", "/workspace/models/VoxCPM2"))
 VOXCPM_REPO = Path(os.environ.get("VOXCPM_REPO", "/app/VoxCPM"))
@@ -275,10 +284,10 @@ def _handle_inference(inp: dict) -> dict:
     inference_timesteps = int(inp.get("inference_timesteps", 10))
     normalize = bool(inp.get("normalize", False))
 
-    if (prompt_wav_url and not prompt_text) or (prompt_text and not prompt_wav_url):
-        return {"error": "prompt_wav_url and prompt_text must be provided together"}
+    if prompt_text and not prompt_wav_url:
+        return {"error": "prompt_text provided without prompt_wav_url"}
 
-    from voice_pipeline import upload_file_to_presigned_url
+    from voice_pipeline import transcribe_file, upload_file_to_presigned_url
 
     # 1. Baixa LoRA (cache local) + carrega modelo
     lora_path: Path | None = None
@@ -291,6 +300,19 @@ def _handle_inference(inp: dict) -> dict:
         ref_dir = WORKSPACE / "refs"
         ref_path = _ensure_local_from_url(prompt_wav_url, ref_dir, "ref")
         prompt_wav_local = str(ref_path)
+
+    # 2b. Se houver referência mas NÃO veio transcrição, transcreve via Whisper.
+    if prompt_wav_local and not prompt_text:
+        whisper_model = inp.get("whisper_model", "large-v3")
+        language = inp.get("language", "pt")
+        _log("info", "inference.transcribe.start", model=whisper_model)
+        prompt_text = transcribe_file(
+            prompt_wav_local,
+            model_name=whisper_model,
+            language=language,
+            log=lambda m: _log("info", "whisper", detail=m),
+        )
+        _log("info", "inference.transcribe.done", text_len=len(prompt_text or ""))
 
     # 3. Carrega modelo (com ou sem LoRA)
     # Por simplicidade, NÃO usamos cache do modelo VoxCPM com LoRA (cada call carrega).

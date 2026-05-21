@@ -26,16 +26,18 @@ export function VoiceGenerator({ voiceId }: Props) {
   const [text, setText] = useState("");
   const [refFile, setRefFile] = useState<File | null>(null);
   const [refDuration, setRefDuration] = useState<number | null>(null);
-  const [refTranscript, setRefTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState<GenerationDto | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const validRefDuration = (refDuration ?? 0) >= REF_MIN_SECONDS;
+  // Referência é OPCIONAL: sem ela, gera só com a LoRA. Se enviada, melhora a
+  // fidelidade (prosódia/sotaque) e precisa ter >= 60s. A transcrição é feita
+  // automaticamente pelo worker (Whisper) — usuário não digita nada.
   const validText = text.trim().length > 0;
-  const validTranscript = refTranscript.trim().length > 0;
-  const canSubmit = validRefDuration && validText && validTranscript;
+  const validRefDuration = (refDuration ?? 0) >= REF_MIN_SECONDS;
+  const refOk = !refFile || validRefDuration;
+  const canSubmit = validText && refOk;
 
   useEffect(() => {
     return () => {
@@ -75,42 +77,44 @@ export function VoiceGenerator({ voiceId }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit || !refFile) return;
+    if (!canSubmit) return;
     setStep("submitting");
     setError(null);
 
     try {
-      // 1. Pede presigned URL pro ref
-      const prepRes = await fetch(`/api/v1/voices/${voiceId}/generate/prepare`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: refFile.name,
-          content_type: refFile.type || "audio/mpeg",
-        }),
-      });
-      if (!prepRes.ok) {
-        const j = await prepRes.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Falha ao preparar upload");
+      // 1+2. Se houver referência, sobe pro R2 (presigned). Sem ela, gera só com a LoRA.
+      let referenceAudioKey: string | undefined;
+      if (refFile) {
+        const prepRes = await fetch(`/api/v1/voices/${voiceId}/generate/prepare`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: refFile.name,
+            content_type: refFile.type || "audio/mpeg",
+          }),
+        });
+        if (!prepRes.ok) {
+          const j = await prepRes.json().catch(() => ({}));
+          throw new Error(j?.error?.message || "Falha ao preparar upload");
+        }
+        const { reference_audio_key, upload_url } = await prepRes.json();
+
+        const putRes = await fetch(upload_url, {
+          method: "PUT",
+          headers: { "Content-Type": refFile.type || "audio/mpeg" },
+          body: refFile,
+        });
+        if (!putRes.ok) throw new Error(`Upload R2 falhou (${putRes.status})`);
+        referenceAudioKey = reference_audio_key;
       }
-      const { reference_audio_key, upload_url } = await prepRes.json();
 
-      // 2. Sobe ref direto pro R2
-      const putRes = await fetch(upload_url, {
-        method: "PUT",
-        headers: { "Content-Type": refFile.type || "audio/mpeg" },
-        body: refFile,
-      });
-      if (!putRes.ok) throw new Error(`Upload R2 falhou (${putRes.status})`);
-
-      // 3. Dispara geração
+      // 3. Dispara geração (transcrição da ref é automática no worker via Whisper)
       const genRes = await fetch(`/api/v1/voices/${voiceId}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: text.trim(),
-          reference_audio_key,
-          reference_transcript: refTranscript.trim(),
+          ...(referenceAudioKey ? { reference_audio_key: referenceAudioKey } : {}),
         }),
       });
       if (!genRes.ok) {
@@ -202,7 +206,7 @@ export function VoiceGenerator({ voiceId }: Props) {
       {/* Referência */}
       <div className="flex flex-col gap-1.5">
         <label className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
-          Áudio de referência (mín 1:00)
+          Áudio de referência (opcional)
         </label>
         <button
           type="button"
@@ -236,22 +240,10 @@ export function VoiceGenerator({ voiceId }: Props) {
             e.target.value = "";
           }}
         />
-      </div>
-
-      {/* Transcrição */}
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor="gen-transcript" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
-          Transcrição da referência
-        </label>
-        <textarea
-          id="gen-transcript"
-          required
-          value={refTranscript}
-          onChange={(e) => setRefTranscript(e.target.value)}
-          rows={3}
-          placeholder="O que está sendo dito no áudio de referência…"
-          className="border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/60 focus:border-accent focus:outline-none resize-none"
-        />
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg">
+          Sem referência, gera só com a LoRA. Com referência (≥60s), melhora a
+          fidelidade — a transcrição é feita automaticamente.
+        </p>
       </div>
 
       {error && (

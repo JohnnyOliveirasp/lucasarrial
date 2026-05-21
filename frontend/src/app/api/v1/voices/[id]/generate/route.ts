@@ -7,7 +7,7 @@
  *   {
  *     text: string,                       // texto a sintetizar
  *     reference_audio_key: string,        // chave R2 já subida (browser→R2 via /prepare)
- *     reference_transcript: string,       // transcrição da referência
+ *     reference_transcript?: string,      // opcional — vazio => worker transcreve via Whisper
  *     cfg_value?: number,                 // default 2.0
  *     inference_timesteps?: number        // default 10
  *   }
@@ -43,12 +43,11 @@ type Ctx = { params: Promise<{ id: string }> };
 
 const PRESIGN_EXPIRES = 60 * 60; // 1h
 const TEXT_MAX = 1000;
-const MIN_TRANSCRIPT = 1;
 
 type Body = {
   text: string;
   reference_audio_key: string;
-  reference_transcript: string;
+  reference_transcript?: string;
   cfg_value?: number;
   inference_timesteps?: number;
 };
@@ -71,9 +70,8 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   if (!text) return badRequest("'text' is required");
   if (text.length > TEXT_MAX) return badRequest(`'text' max length is ${TEXT_MAX}`);
-  if (!refKey) return badRequest("'reference_audio_key' is required");
-  if (refTranscript.length < MIN_TRANSCRIPT)
-    return badRequest("'reference_transcript' is required");
+  // reference_audio_key é OPCIONAL: sem ele, gera só com a LoRA. Com ele (modo
+  // "ultimate cloning"), a transcrição é opcional — vazia => worker usa Whisper.
 
   const admin = getAdmin();
 
@@ -94,37 +92,42 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const outputKey = buildGenerationKey(auth.user_id, generationId);
 
   let loraUrl: string;
-  let refUrl: string;
   let outputUploadUrl: string;
+  let refUrl: string | undefined;
   try {
-    [loraUrl, refUrl, outputUploadUrl] = await Promise.all([
+    [loraUrl, outputUploadUrl] = await Promise.all([
       createPresignedGet(R2_BUCKETS.voices, voice.lora_path, PRESIGN_EXPIRES),
-      createPresignedGet(R2_BUCKETS.voices, refKey, PRESIGN_EXPIRES),
       createPresignedPut(R2_BUCKETS.generations, outputKey, "audio/wav", PRESIGN_EXPIRES),
     ]);
+    if (refKey) {
+      refUrl = await createPresignedGet(R2_BUCKETS.voices, refKey, PRESIGN_EXPIRES);
+    }
   } catch (e) {
     return serverError(
       e instanceof Error ? `R2 presigned: ${e.message}` : "R2 presigned failed",
     );
   }
 
+  const inferenceInput: Record<string, unknown> = {
+    type: "inference",
+    text,
+    lora_url: loraUrl,
+    output_upload_url: outputUploadUrl,
+    cfg_value: typeof body.cfg_value === "number" ? body.cfg_value : 2.0,
+    inference_timesteps:
+      typeof body.inference_timesteps === "number" ? body.inference_timesteps : 10,
+  };
+  if (refUrl) {
+    inferenceInput.prompt_wav_url = refUrl;
+    // transcrição vazia => worker transcreve a referência via Whisper
+    if (refTranscript) inferenceInput.prompt_text = refTranscript;
+  }
+
   let runpodJob;
   try {
-    runpodJob = await runpodSubmitInference(
-      {
-        type: "inference",
-        text,
-        prompt_wav_url: refUrl,
-        prompt_text: refTranscript,
-        lora_url: loraUrl,
-        output_upload_url: outputUploadUrl,
-        cfg_value: typeof body.cfg_value === "number" ? body.cfg_value : 2.0,
-        inference_timesteps: typeof body.inference_timesteps === "number"
-          ? body.inference_timesteps
-          : 10,
-      },
-      { webhook: webhookUrlFor("generation") },
-    );
+    runpodJob = await runpodSubmitInference(inferenceInput, {
+      webhook: webhookUrlFor("generation"),
+    });
   } catch (e) {
     return serverError(
       e instanceof Error ? `RunPod submit: ${e.message}` : "RunPod submit failed",
@@ -136,8 +139,8 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     user_id: auth.user_id,
     voice_id: voice.id,
     text_raw: text,
-    reference_audio_path: refKey,
-    reference_transcript: refTranscript,
+    reference_audio_path: refKey || null,
+    reference_transcript: refTranscript || null,
     audio_path: outputKey,
     runpod_job_id: runpodJob.id,
   } as never);

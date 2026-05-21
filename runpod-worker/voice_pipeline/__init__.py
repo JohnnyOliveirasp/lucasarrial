@@ -15,6 +15,7 @@ from .preprocess import (
 )
 from .training import (
     transcribe_audio_folder,
+    transcribe_file,
     build_train_manifest,
     create_training_config,
     run_training,
@@ -29,6 +30,7 @@ __all__ = [
     "chunk_vad_segments",
     "cut_audio_by_segments",
     "transcribe_audio_folder",
+    "transcribe_file",
     "build_train_manifest",
     "create_training_config",
     "run_training",

@@ -11,6 +11,41 @@ from typing import Callable, Optional
 
 LogFn = Callable[[str], None]
 
+# Cache do modelo Whisper por (model, device, compute_type) — reusado entre o
+# treino e as inferências enquanto o worker está quente (evita recarregar 3GB).
+_WHISPER_CACHE: dict = {}
+
+
+def _get_whisper(model_name: str, device: str, compute_type: str):
+    from faster_whisper import WhisperModel
+
+    key = (model_name, device, compute_type)
+    if key not in _WHISPER_CACHE:
+        _WHISPER_CACHE[key] = WhisperModel(model_name, device=device, compute_type=compute_type)
+    return _WHISPER_CACHE[key]
+
+
+def transcribe_file(
+    audio_path: Path | str,
+    model_name: str = "large-v3",
+    language: str = "pt",
+    device: str = "cuda",
+    compute_type: str = "float16",
+    log: Optional[LogFn] = None,
+) -> str:
+    """Transcreve UM arquivo de áudio e retorna o texto (usado na inferência
+    pra gerar a transcrição da referência automaticamente)."""
+    if log:
+        log(f"whisper transcribe {Path(audio_path).name} ({model_name}/{device})")
+    model = _get_whisper(model_name, device, compute_type)
+    segments, _info = model.transcribe(
+        str(audio_path),
+        language=language or "pt",
+        vad_filter=True,
+        beam_size=5,
+    )
+    return " ".join(seg.text.strip() for seg in segments).strip()
+
 
 def transcribe_audio_folder(
     dataset_dir: Path,
@@ -21,8 +56,6 @@ def transcribe_audio_folder(
     log: Optional[LogFn] = None,
 ) -> None:
     """Transcreve voice_*.wav e escreve voice_*.txt ao lado."""
-    from faster_whisper import WhisperModel
-
     dataset_dir = Path(dataset_dir)
     wav_files = sorted(dataset_dir.glob("voice_*.wav"))
     if not wav_files:
@@ -30,7 +63,7 @@ def transcribe_audio_folder(
 
     if log:
         log(f"loading Whisper {model_name} ({device}/{compute_type})")
-    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+    model = _get_whisper(model_name, device, compute_type)
 
     for i, wav_path in enumerate(wav_files, start=1):
         segments, _info = model.transcribe(
