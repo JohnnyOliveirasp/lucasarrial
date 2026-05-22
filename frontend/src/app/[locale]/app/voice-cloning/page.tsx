@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Mic2, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { VoiceRowMenu } from "@/components/voice/voice-row-menu";
 
 type VoiceRow = {
   id: string;
@@ -73,10 +74,10 @@ export default async function VoiceCloningPage({
       ) : (
         <ul className="flex flex-col gap-px bg-border">
           {list.map((v) => (
-            <li key={v.id}>
+            <li key={v.id} className="flex items-stretch bg-bg">
               <Link
                 href={`/app/voice-cloning/${v.id}`}
-                className="grid grid-cols-[1fr_auto_auto] items-center gap-4 bg-bg px-5 py-4 transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:bg-fg hover:text-bg"
+                className="flex-1 grid grid-cols-[1fr_auto_auto] items-center gap-4 px-5 py-4 transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:bg-fg hover:text-bg"
               >
                 <div className="flex flex-col gap-1">
                   <span className="font-display text-xl uppercase leading-none">
@@ -91,6 +92,11 @@ export default async function VoiceCloningPage({
                 </span>
                 <span className="text-current/60">→</span>
               </Link>
+              <VoiceRowMenu
+                voiceId={v.id}
+                voiceName={v.name}
+                hasLora={v.status === "ready"}
+              />
             </li>
           ))}
         </ul>

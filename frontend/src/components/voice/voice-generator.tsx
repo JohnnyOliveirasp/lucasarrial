@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, AudioLines, Play } from "lucide-react";
+import { Upload, AudioLines, Play, Download } from "lucide-react";
 import { measureAudioDuration, formatDuration } from "@/lib/audio/duration";
+import { SupportError } from "@/components/ui/support-error";
 
 const REF_MIN_SECONDS = 60;
 const TEXT_MAX = 1000;
@@ -129,6 +130,23 @@ export function VoiceGenerator({ voiceId }: Props) {
     }
   }
 
+  async function downloadAudio(url: string) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `aiverse-voz-${Date.now()}.wav`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      window.open(url, "_blank"); // fallback: abre em nova aba
+    }
+  }
+
   if (step === "done" && generation?.audio_url) {
     return (
       <div className="flex flex-col gap-6">
@@ -153,6 +171,14 @@ export function VoiceGenerator({ voiceId }: Props) {
               <span>Gerou em: {generation.elapsed_seconds.toFixed(1)}s</span>
             )}
           </div>
+          <button
+            type="button"
+            onClick={() => generation.audio_url && downloadAudio(generation.audio_url)}
+            className="flex items-center justify-center gap-2 bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99] w-fit"
+          >
+            <Download className="h-4 w-4" />
+            Baixar áudio
+          </button>
         </section>
         <button
           type="button"
@@ -246,11 +272,7 @@ export function VoiceGenerator({ voiceId }: Props) {
         </p>
       </div>
 
-      {error && (
-        <p role="alert" className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent">
-          {error}
-        </p>
-      )}
+      {error && <SupportError action="gerar o áudio" />}
 
       <button
         type="submit"

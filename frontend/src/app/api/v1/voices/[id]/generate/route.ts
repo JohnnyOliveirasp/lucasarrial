@@ -23,6 +23,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
+import { normalizeTextForTTS } from "@/lib/llm/normalize";
 import {
   badRequest,
   jsonOk,
@@ -88,6 +89,10 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     return badRequest(`Voice not ready (status=${voice.status})`);
   }
 
+  // Normaliza o texto pra fala (números/moeda/abreviações → palavras) via Claude
+  // Haiku. Sem ANTHROPIC_API_KEY ou em caso de erro, retorna o texto cru.
+  const normalizedText = await normalizeTextForTTS(text);
+
   const generationId = randomUUID();
   const outputKey = buildGenerationKey(auth.user_id, generationId);
 
@@ -110,7 +115,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   const inferenceInput: Record<string, unknown> = {
     type: "inference",
-    text,
+    text: normalizedText,
     lora_url: loraUrl,
     output_upload_url: outputUploadUrl,
     cfg_value: typeof body.cfg_value === "number" ? body.cfg_value : 2.0,
@@ -139,6 +144,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     user_id: auth.user_id,
     voice_id: voice.id,
     text_raw: text,
+    text_normalized: normalizedText,
     reference_audio_path: refKey || null,
     reference_transcript: refTranscript || null,
     audio_path: outputKey,

@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDuration } from "@/lib/audio/duration";
 import type { VoiceStatus } from "@/lib/db/types";
 import { VoiceStatusPanel } from "@/components/voice/voice-status-panel";
+import { VoiceRowMenu } from "@/components/voice/voice-row-menu";
+import { SupportError } from "@/components/ui/support-error";
 
 const STATUS_BADGE: Record<VoiceStatus, { label: string; tone: "neutral" | "accent" | "danger" | "success" }> = {
   uploading:           { label: "Subindo áudios",        tone: "neutral" },
@@ -76,21 +78,27 @@ export default async function VoiceDetailPage({
           label="Duração total"
           value={voice.duration_seconds ? formatDuration(voice.duration_seconds) : "—"}
         />
-        <Stat
-          icon={voice.status === "ready" ? <Check className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
-          label="LoRA"
-          value={voice.lora_path ? "Treinada" : "—"}
-        />
+        <div className="relative bg-bg p-5 flex flex-col gap-2">
+          <span className="text-muted-fg">
+            {voice.status === "ready" ? <Check className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+          </span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+            Modelo
+          </span>
+          <span className="font-display text-2xl uppercase leading-none text-fg">
+            {voice.status === "ready" && voice.lora_path ? "Voz treinada" : "—"}
+          </span>
+          <div className="absolute right-1 top-1">
+            <VoiceRowMenu
+              voiceId={voice.id}
+              voiceName={voice.name}
+              hasLora={voice.status === "ready" && !!voice.lora_path}
+            />
+          </div>
+        </div>
       </section>
 
-      {voice.error_message && (
-        <section className="border border-accent bg-accent/5 p-4">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent mb-2">
-            Erro
-          </p>
-          <p className="text-sm text-fg">{voice.error_message}</p>
-        </section>
-      )}
+      {voice.status === "failed" && <SupportError action="treinar esta voz" />}
 
       <VoiceStatusPanel voiceId={voice.id} initialStatus={voice.status as VoiceStatus} />
     </div>

@@ -318,11 +318,28 @@ def _handle_inference(inp: dict) -> dict:
     # Por simplicidade, NÃO usamos cache do modelo VoxCPM com LoRA (cada call carrega).
     # Em produção: cachear por lora_url.
     from voxcpm import VoxCPM
+
+    # IMPORTANTE: o LoRAConfig da inferência TEM que bater com o do treino, senão
+    # os adaptadores nascem com rank default (8) e dão "size mismatch" ao copiar os
+    # pesos rank-32. Valores idênticos aos de create_training_config (training.py).
+    lora_cfg = None
+    if lora_path:
+        from voxcpm.model.voxcpm import LoRAConfig
+
+        lora_cfg = LoRAConfig(
+            enable_lm=True,
+            enable_dit=True,
+            enable_proj=False,
+            r=32,      # == lora_rank
+            alpha=16,  # == lora_alpha
+        )
+
     _ensure_model_downloaded()
     _log("info", "model.load.start", lora=bool(lora_path))
     model = VoxCPM.from_pretrained(
         str(MODEL_DIR),
         load_denoiser=False,
+        lora_config=lora_cfg,
         lora_weights_path=str(lora_path) if lora_path else None,
     )
     sample_rate = model.tts_model.sample_rate
