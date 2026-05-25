@@ -20,7 +20,8 @@
 import type { NextRequest } from "next/server";
 import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import type { GenerationStatus, VoiceStatus } from "@/lib/db/types";
+import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
+import type { VoiceStatus } from "@/lib/db/types";
 
 type RunpodWebhookPayload = {
   id: string;
@@ -71,12 +72,12 @@ export async function POST(request: NextRequest) {
   // 2. Tenta achar em generations (inferência)
   const { data: generation } = await admin
     .from("generations")
-    .select("id, user_id")
+    .select("id, user_id, audio_path")
     .eq("runpod_job_id", payload.id as never)
     .maybeSingle();
 
   if (generation) {
-    await handleGenerationWebhook(payload, generation.id);
+    await handleGenerationWebhook(payload, generation.id, generation.audio_path);
     return jsonOk({ handled: "generation" });
   }
 
@@ -129,28 +130,21 @@ async function handleTrainingWebhook(
 async function handleGenerationWebhook(
   payload: RunpodWebhookPayload,
   generationId: string,
+  audioPath: string | null,
 ) {
-  const admin = getAdmin();
   const out = payload.output ?? {};
 
-  let nextStatus: GenerationStatus;
-  let errorMessage: string | null = null;
-
   if (payload.status === "COMPLETED" && !out.error && out.uploaded) {
-    nextStatus = "ready";
-  } else {
-    nextStatus = "failed";
-    errorMessage = (out.error || payload.error || "unknown").slice(0, 500);
+    // Converte WAV->MP3 e marca ready (audio_path passa a apontar pro .mp3).
+    await finalizeGenerationSuccess(generationId, audioPath, out);
+    return;
   }
 
-  await admin
+  await getAdmin()
     .from("generations")
     .update({
-      status: nextStatus,
-      error_message: errorMessage,
-      sample_rate: out.sample_rate ?? null,
-      duration_seconds: out.duration_s ?? null,
-      elapsed_seconds: out.elapsed_s ?? null,
+      status: "failed",
+      error_message: (out.error || payload.error || "unknown").slice(0, 500),
     })
     .eq("id", generationId);
 }

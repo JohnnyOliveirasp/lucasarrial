@@ -17,6 +17,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { runpodGetStatus } from "@/lib/runpod/client";
+import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
 import type { GenerationStatus } from "@/lib/db/types";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -49,16 +50,18 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       if (resp.status === "COMPLETED") {
         const out = (resp.output ?? {}) as { uploaded?: boolean; error?: string; sample_rate?: number; duration_s?: number; elapsed_s?: number };
         const ok = out.uploaded && !out.error;
-        await admin
-          .from("generations")
-          .update({
-            status: ok ? "ready" : "failed",
-            sample_rate: out.sample_rate ?? null,
-            duration_seconds: out.duration_s ?? null,
-            elapsed_seconds: out.elapsed_s ?? null,
-            error_message: ok ? null : (out.error ?? "unknown").slice(0, 500),
-          })
-          .eq("id", id);
+        if (ok) {
+          // Converte WAV->MP3 e marca ready (audio_path passa a apontar pro .mp3).
+          await finalizeGenerationSuccess(id, gen.audio_path, out);
+        } else {
+          await admin
+            .from("generations")
+            .update({
+              status: "failed",
+              error_message: (out.error ?? "unknown").slice(0, 500),
+            })
+            .eq("id", id);
+        }
 
         const { data: refreshed } = await admin
           .from("generations")
