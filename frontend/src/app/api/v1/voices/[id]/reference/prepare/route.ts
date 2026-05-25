@@ -1,7 +1,10 @@
 /**
- * POST /api/v1/voices/[id]/generate/prepare
+ * POST /api/v1/voices/[id]/reference/prepare
  *
- * Gera presigned URL PUT pro browser subir o áudio de referência (≥60s).
+ * Gera presigned URL PUT pro browser subir o áudio de referência da VOZ (≥60s).
+ * A referência é persistente (fica salva na voz) e reusada em toda geração —
+ * depois do upload, o cliente chama PUT /reference pra gravar a chave na voz.
+ *
  * Body: { filename, content_type }
  * Retorna: { reference_audio_key, upload_url }
  */
@@ -47,13 +50,12 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const admin = getAdmin();
   const { data: voice } = await admin
     .from("voices")
-    .select("id, status")
+    .select("id")
     .eq("id", voiceId)
     .eq("user_id", auth.user_id)
     .maybeSingle();
 
   if (!voice) return notFound("Voice");
-  if (voice.status !== "ready") return badRequest(`Voice not ready (${voice.status})`);
 
   const refId = randomUUID();
   const key = buildReferenceKey(auth.user_id, voiceId, refId);

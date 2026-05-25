@@ -3,11 +3,14 @@
  *
  * Dispara geração de áudio com a voz clonada (status="ready").
  *
+ * A referência (≥60s) é PERSISTENTE por voz (voices.reference_audio_path):
+ * o usuário sobe/troca/apaga em /reference. Aqui ela é só lida e reusada.
+ * Sem referência salva, gera só com a LoRA. A transcrição fica a cargo do
+ * worker (Whisper) a cada geração — Caminho A.
+ *
  * Body:
  *   {
  *     text: string,                       // texto a sintetizar
- *     reference_audio_key: string,        // chave R2 já subida (browser→R2 via /prepare)
- *     reference_transcript?: string,      // opcional — vazio => worker transcreve via Whisper
  *     cfg_value?: number,                 // default 2.0
  *     inference_timesteps?: number        // default 10
  *   }
@@ -47,8 +50,6 @@ const TEXT_MAX = 1000;
 
 type Body = {
   text: string;
-  reference_audio_key: string;
-  reference_transcript?: string;
   cfg_value?: number;
   inference_timesteps?: number;
 };
@@ -66,19 +67,15 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   }
 
   const text = (body.text ?? "").trim();
-  const refKey = (body.reference_audio_key ?? "").trim();
-  const refTranscript = (body.reference_transcript ?? "").trim();
 
   if (!text) return badRequest("'text' is required");
   if (text.length > TEXT_MAX) return badRequest(`'text' max length is ${TEXT_MAX}`);
-  // reference_audio_key é OPCIONAL: sem ele, gera só com a LoRA. Com ele (modo
-  // "ultimate cloning"), a transcrição é opcional — vazia => worker usa Whisper.
 
   const admin = getAdmin();
 
   const { data: voice, error: vErr } = await admin
     .from("voices")
-    .select("id, user_id, status, lora_path")
+    .select("id, user_id, status, lora_path, reference_audio_path")
     .eq("id", voiceId)
     .eq("user_id", auth.user_id)
     .maybeSingle();
@@ -88,6 +85,10 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   if (voice.status !== "ready" || !voice.lora_path) {
     return badRequest(`Voice not ready (status=${voice.status})`);
   }
+
+  // Referência salva na voz (OPCIONAL). Sem ela, gera só com a LoRA. A
+  // transcrição é feita pelo worker (Whisper) a cada geração — não guardamos.
+  const refKey = (voice.reference_audio_path ?? "").trim();
 
   // Normaliza o texto pra fala (números/moeda/abreviações → palavras) via Claude
   // Haiku. Sem ANTHROPIC_API_KEY ou em caso de erro, retorna o texto cru.
@@ -123,9 +124,8 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       typeof body.inference_timesteps === "number" ? body.inference_timesteps : 10,
   };
   if (refUrl) {
+    // Sem prompt_text => o worker transcreve a referência via Whisper (Caminho A).
     inferenceInput.prompt_wav_url = refUrl;
-    // transcrição vazia => worker transcreve a referência via Whisper
-    if (refTranscript) inferenceInput.prompt_text = refTranscript;
   }
 
   let runpodJob;
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     text_raw: text,
     text_normalized: normalizedText,
     reference_audio_path: refKey || null,
-    reference_transcript: refTranscript || null,
+    reference_transcript: null,
     audio_path: outputKey,
     runpod_job_id: runpodJob.id,
   } as never);

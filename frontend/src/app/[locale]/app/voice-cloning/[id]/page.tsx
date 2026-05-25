@@ -4,8 +4,11 @@ import { Mic2, Clock, Check, AlertCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { formatDuration } from "@/lib/audio/duration";
 import type { VoiceStatus } from "@/lib/db/types";
+import { R2_BUCKETS } from "@/lib/r2/client";
+import { createPresignedGet } from "@/lib/r2/presigned";
 import { VoiceStatusPanel } from "@/components/voice/voice-status-panel";
 import { VoiceRowMenu } from "@/components/voice/voice-row-menu";
+import { VoiceReferenceManager } from "@/components/voice/voice-reference-manager";
 import { SupportError } from "@/components/ui/support-error";
 
 const STATUS_BADGE: Record<VoiceStatus, { label: string; tone: "neutral" | "accent" | "danger" | "success" }> = {
@@ -33,7 +36,7 @@ export default async function VoiceDetailPage({
   const { data: voice } = await supabase
     .from("voices")
     .select(
-      "id, name, status, duration_seconds, raw_audio_paths, lora_path, error_message, created_at, trained_at",
+      "id, name, status, duration_seconds, raw_audio_paths, lora_path, reference_audio_path, error_message, created_at, trained_at",
     )
     .eq("id", id)
     .eq("user_id", user.id)
@@ -43,6 +46,16 @@ export default async function VoiceDetailPage({
 
   const badge = STATUS_BADGE[voice.status as VoiceStatus] ?? { label: voice.status, tone: "neutral" as const };
   const fileCount = Array.isArray(voice.raw_audio_paths) ? voice.raw_audio_paths.length : 0;
+
+  // Presigned GET pra tocar a referência salva (quando houver). Best-effort.
+  let referenceUrl: string | null = null;
+  if (voice.reference_audio_path) {
+    referenceUrl = await createPresignedGet(
+      R2_BUCKETS.voices,
+      voice.reference_audio_path,
+      3600,
+    ).catch(() => null);
+  }
 
   return (
     <div className="flex flex-col gap-10 max-w-3xl">
@@ -99,6 +112,10 @@ export default async function VoiceDetailPage({
       </section>
 
       {voice.status === "failed" && <SupportError action="treinar esta voz" />}
+
+      {voice.status === "ready" && voice.lora_path && (
+        <VoiceReferenceManager voiceId={voice.id} referenceUrl={referenceUrl} />
+      )}
 
       <VoiceStatusPanel voiceId={voice.id} initialStatus={voice.status as VoiceStatus} />
     </div>
