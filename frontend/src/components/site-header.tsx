@@ -47,12 +47,12 @@ export function SiteHeader() {
         <div className="flex items-center gap-2">
           <LanguageToggle />
           <ThemeToggle />
-          <a
-            href="#cta"
+          <Link
+            href="/login"
             className="inline-flex h-11 items-center justify-center bg-[var(--accent)] px-4 font-sans text-xs font-semibold uppercase tracking-wider text-[var(--accent-fg)] transition-transform duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:-translate-y-[2px] md:h-9"
           >
             {t("cta")}
-          </a>
+          </Link>
         </div>
       </div>
     </header>

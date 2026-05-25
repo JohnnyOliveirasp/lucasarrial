@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { ArrowRight, MessageCircle } from "lucide-react";
+import { Link } from "@/i18n/navigation";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -42,13 +43,13 @@ export function CTA() {
           </p>
 
           <div className="mt-12 flex flex-wrap items-center gap-3">
-            <a
-              href="#signup"
+            <Link
+              href="/login"
               className="group inline-flex h-14 items-center gap-3 bg-[var(--accent-fg)] px-8 font-sans text-sm font-semibold uppercase tracking-wider text-[var(--accent)] transition-transform duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:-translate-y-[2px]"
             >
               {t("primary")}
               <ArrowRight className="size-4 transition-transform duration-[var(--dur-base)] ease-[var(--ease-snap)] group-hover:translate-x-1" />
-            </a>
+            </Link>
             <a
               href="#contact"
               className="inline-flex h-14 items-center gap-3 border-[1.5px] border-[var(--accent-fg)] bg-transparent px-8 font-sans text-sm font-semibold uppercase tracking-wider text-[var(--accent-fg)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:bg-[var(--accent-fg)] hover:text-[var(--accent)]"

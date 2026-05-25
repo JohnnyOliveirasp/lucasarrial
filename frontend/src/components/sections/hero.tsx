@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { ArrowRight, Play } from "lucide-react";
+import { Link } from "@/i18n/navigation";
 
 export function Hero() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -81,13 +82,13 @@ export function Hero() {
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: 0.35 }}
           className="mt-10 flex flex-wrap items-center gap-3"
         >
-          <a
-            href="#cta"
+          <Link
+            href="/login"
             className="group inline-flex h-14 items-center gap-3 bg-[var(--accent)] px-8 font-sans text-sm font-semibold uppercase tracking-wider text-[var(--accent-fg)] transition-transform duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:-translate-y-[2px]"
           >
             {t("ctaPrimary")}
             <ArrowRight className="size-4 transition-transform duration-[var(--dur-base)] ease-[var(--ease-snap)] group-hover:translate-x-1" />
-          </a>
+          </Link>
           <a
             href="#solucao"
             className="inline-flex h-14 items-center gap-3 border-[1.5px] border-[var(--fg)] bg-transparent px-8 font-sans text-sm font-semibold uppercase tracking-wider text-[var(--fg)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:bg-[var(--fg)] hover:text-[var(--bg)]"
