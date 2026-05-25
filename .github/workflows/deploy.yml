@@ -1,0 +1,85 @@
+name: Deploy Frontend (production)
+
+# Promoção dev -> main = produção. Ao dar push/merge em `main` (mexendo no
+# frontend), builda no Actions e faz deploy no Hetzner via rsync + PM2.
+# A máquina NÃO builda (RAM curta) — só recebe o .next pronto e roda `npm ci`
+# das deps de runtime (nativas ARM corretas) + pm2 reload.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  SERVER_HOST: 91.99.15.213
+  SERVER_USER: root
+  DEPLOY_PATH: /mnt/volume/aiverse/frontend
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install deps (full, p/ build)
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Next.js
+        working-directory: frontend
+        env:
+          # NEXT_PUBLIC_* são inlinados no build → precisam existir AQUI.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          NEXT_PUBLIC_APP_NAME: AI-Verse
+          NEXT_PUBLIC_ADMIN_EMAILS: ${{ secrets.NEXT_PUBLIC_ADMIN_EMAILS }}
+          # Sentry (source maps) — opcional; sem os secrets o build ignora.
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: npm run build
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Rsync para o servidor
+        run: |
+          rsync -az --delete \
+            --exclude 'node_modules' \
+            --exclude '.env' --exclude '.env.*' \
+            --exclude '.git' \
+            --exclude '.next/cache' \
+            --exclude 'docs/audits/*/screenshots' \
+            --exclude 'playwright-report' --exclude 'test-results' \
+            --exclude '_scrape_build.mjs' --exclude 'runpod-build.*' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            frontend/ "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/"
+
+      - name: Install runtime deps + reload PM2
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_HOST" \
+            "cd $DEPLOY_PATH && npm ci --omit=dev && (pm2 reload aiverse --update-env || (pm2 start ecosystem.config.cjs && pm2 save))"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
