@@ -39,12 +39,14 @@ jobs:
       - name: Install deps (full, p/ build)
         working-directory: frontend
         run: |
-          for i in 1 2 3; do
-            npm ci && exit 0
-            echo "npm ci tentativa $i falhou; retry em 15s..."
-            sleep 15
-          done
-          echo "npm ci falhou apos 3 tentativas"; exit 1
+          npm ci || npm ci || npm ci
+          # Workaround npm/cli#4828: o npm ci nao instala os binarios nativos
+          # OPCIONAIS da plataforma (Tailwind v4 @tailwindcss/oxide + lightningcss),
+          # quebrando o `next build` em CI. Forca os da plataforma do runner
+          # (ubuntu-latest = linux x64, glibc => -gnu), nas versoes do lock.
+          npm install --no-save \
+            @tailwindcss/oxide-linux-x64-gnu@4.2.4 \
+            lightningcss-linux-x64-gnu@1.32.0
 
       - name: Checar secrets de build (NEXT_PUBLIC_*)
         env:
