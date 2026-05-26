@@ -1,8 +1,8 @@
 // Server-only logger — appends JSON lines to /logs/FrontendServer.log.
 // Never throws: on disk failure, falls back to console.error.
 
-import { existsSync, mkdirSync, appendFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, appendFileSync } from "fs";
+import { resolve } from "path";
 import type { LogEntry, LogLevel, LogScope } from "./types";
 
 const LOG_DIR =
