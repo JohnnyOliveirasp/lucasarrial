@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { LoginForm } from "@/components/auth/login-form";
@@ -23,7 +24,9 @@ export default async function LoginPage({
         <p className="text-sm text-muted-fg">{t("login.subtitle")}</p>
       </header>
 
-      <LoginForm />
+      <Suspense fallback={<div className="min-h-64" />}>
+        <LoginForm />
+      </Suspense>
 
       <footer className="text-sm text-muted-fg">
         {t("login.noAccount")}{" "}
