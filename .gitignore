@@ -77,6 +77,10 @@ playwright-report/
 test-results/
 .playwright-mcp/
 
+# Artefatos de scratch/debug (não vão pro deploy; deploy.yml já os exclui)
+**/_scrape_build.mjs
+frontend/runpod-build.*
+
 # Reference materials — heavy folder, will live in separate git branch
 _backup_apenasReferencia/
 

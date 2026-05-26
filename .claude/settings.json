@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/frontend-quality.py\"",
+            "async": true,
+            "asyncRewake": true,
+            "timeout": 200,
+            "statusMessage": "Frontend quality check (tsc + eslint)"
+          }
+        ]
+      }
+    ]
+  }
+}
