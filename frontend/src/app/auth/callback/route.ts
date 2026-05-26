@@ -15,7 +15,14 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") || "/app/dashboard";
+
+  // `next` deve ser sempre um caminho interno (evita open-redirect).
+  const requestedNext = searchParams.get("next") || "/app/dashboard";
+  const next = requestedNext.startsWith("/") ? requestedNext : "/app/dashboard";
+
+  // Atrás do nginx, `origin` (de request.url) vira o host interno
+  // (localhost:3002), o que vazava no redirect. Usamos a URL pública.
+  const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? origin).replace(/\/+$/, "");
 
   const supabase = await createClient();
 
@@ -24,10 +31,10 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
       return NextResponse.redirect(
-        `${origin}/login?error=${encodeURIComponent(error.message)}`,
+        `${baseUrl}/login?error=${encodeURIComponent(error.message)}`,
       );
     }
-    return NextResponse.redirect(`${origin}${next}`);
+    return NextResponse.redirect(`${baseUrl}${next}`);
   }
 
   // Email confirmation (signup, magiclink, recovery, invite, email_change)
@@ -35,11 +42,11 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.verifyOtp({ token_hash, type });
     if (error) {
       return NextResponse.redirect(
-        `${origin}/login?error=${encodeURIComponent(error.message)}`,
+        `${baseUrl}/login?error=${encodeURIComponent(error.message)}`,
       );
     }
-    return NextResponse.redirect(`${origin}${next}`);
+    return NextResponse.redirect(`${baseUrl}${next}`);
   }
 
-  return NextResponse.redirect(`${origin}/login?error=missing_code_or_token`);
+  return NextResponse.redirect(`${baseUrl}/login?error=missing_code_or_token`);
 }
