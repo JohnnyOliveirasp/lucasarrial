@@ -46,6 +46,15 @@ jobs:
           done
           echo "npm ci falhou apos 3 tentativas"; exit 1
 
+      - name: Checar secrets de build (NEXT_PUBLIC_*)
+        env:
+          U: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          K: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$U" || { echo "::error::Secret NEXT_PUBLIC_SUPABASE_URL esta vazio/ausente"; exit 1; }
+          test -n "$K" || { echo "::error::Secret NEXT_PUBLIC_SUPABASE_ANON_KEY esta vazio/ausente"; exit 1; }
+          echo "Secrets de build presentes."
+
       - name: Build Next.js
         working-directory: frontend
         env:
