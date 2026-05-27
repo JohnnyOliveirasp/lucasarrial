@@ -41,7 +41,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
   // Se status="training" e tem runpod_job_id, consulta RunPod e atualiza local.
   if (data.status === "training" && data.runpod_job_id) {
     try {
-      const synced = await syncTrainingJob(data.id, data.runpod_job_id);
+      const synced = await syncTrainingJob(data.id, data.runpod_job_id, auth.user_id);
       if (synced.changed) {
         const { data: refreshed } = await admin
           .from("voices")

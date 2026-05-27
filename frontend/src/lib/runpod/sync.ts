@@ -5,8 +5,9 @@
  * Slice 4 vai substituir isso por webhook do RunPod (mais eficiente).
  */
 import { getAdmin } from "@/lib/db/admin";
+import { buildAutoReferenceKey } from "@/lib/r2/presigned";
 import { runpodGetStatus } from "./client";
-import type { VoiceStatus } from "@/lib/db/types";
+import type { VoiceStatus, VoiceUpdate } from "@/lib/db/types";
 
 type SyncResult = {
   changed: boolean;
@@ -18,6 +19,9 @@ type SyncResult = {
 type TrainOutput = {
   voice_id?: string;
   lora_uploaded?: boolean;
+  reference_uploaded?: boolean;
+  reference_transcript?: string | null;
+  lora_alpha?: number;
   elapsed_seconds?: number;
   steps?: number;
   trainer_returncode?: number;
@@ -30,6 +34,7 @@ type TrainOutput = {
 export async function syncTrainingJob(
   voiceId: string,
   runpodJobId: string,
+  userId: string,
 ): Promise<SyncResult> {
   let resp;
   try {
@@ -56,16 +61,20 @@ export async function syncTrainingJob(
         .eq("id", voiceId);
       return { changed: true, status: "failed" };
     }
-    // Sucesso. lora_path é a chave R2 (Slice 1 escolheu o key no presigned PUT);
-    // por enquanto guardamos só uma flag — Slice 4 vai persistir a key real
-    // junto com o webhook payload. Aqui marcamos como ready.
-    await admin
-      .from("voices")
-      .update({
-        status: "ready",
-        trained_at: new Date().toISOString(),
-      })
-      .eq("id", voiceId);
+    // Sucesso. Grava os MESMOS campos que o webhook (este polling é o caminho
+    // quando o webhook não chega — ex.: rodando local com SITE_URL=localhost).
+    const update: VoiceUpdate = {
+      status: "ready",
+      trained_at: new Date().toISOString(),
+    };
+    if (out.reference_uploaded) {
+      update.reference_audio_path = buildAutoReferenceKey(userId, voiceId);
+      update.reference_transcript = out.reference_transcript ?? null;
+    }
+    if (typeof out.lora_alpha === "number") {
+      update.lora_alpha = out.lora_alpha;
+    }
+    await admin.from("voices").update(update).eq("id", voiceId);
 
     return {
       changed: true,
