@@ -75,7 +75,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   const { data: voice, error: vErr } = await admin
     .from("voices")
-    .select("id, user_id, status, lora_path, reference_audio_path")
+    .select("id, user_id, status, lora_path, reference_audio_path, reference_transcript")
     .eq("id", voiceId)
     .eq("user_id", auth.user_id)
     .maybeSingle();
@@ -124,8 +124,12 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       typeof body.inference_timesteps === "number" ? body.inference_timesteps : 10,
   };
   if (refUrl) {
-    // Sem prompt_text => o worker transcreve a referência via Whisper (Caminho A).
     inferenceInput.prompt_wav_url = refUrl;
+    // A referência é auto-extraída e transcrita no treino. Mandamos o
+    // prompt_text salvo → o worker NÃO re-transcreve a cada geração. Se por
+    // algum motivo não houver transcrição, o worker cai no Whisper (Caminho A).
+    const refTranscript = (voice.reference_transcript ?? "").trim();
+    if (refTranscript) inferenceInput.prompt_text = refTranscript;
   }
 
   let runpodJob;

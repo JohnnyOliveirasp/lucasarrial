@@ -33,6 +33,7 @@ import base64
 import io
 import json
 import os
+import random
 import shutil
 import time
 import traceback
@@ -56,6 +57,11 @@ MODEL_ID = "openbmb/VoxCPM2"
 MODEL_DIR = Path(os.environ.get("VOXCPM_MODEL_DIR", "/workspace/models/VoxCPM2"))
 VOXCPM_REPO = Path(os.environ.get("VOXCPM_REPO", "/app/VoxCPM"))
 WORKSPACE = Path(os.environ.get("WORKSPACE_DIR", "/workspace/jobs"))
+
+# Duração da referência AUTO-extraída no treino (1 áudio aleatório → N segundos
+# da voz limpa). VoxCPM tem limite de contexto ~8192 tokens; 2 min (~1.5k) cabe
+# com folga. NÃO subir isso sem refazer a conta do contexto.
+REFERENCE_SECONDS = int(os.environ.get("REFERENCE_SECONDS", "120"))
 
 _MODEL = None  # voxcpm.core.VoxCPM, carregado lazy para inferência
 
@@ -108,6 +114,7 @@ def _handle_train(inp: dict) -> dict:
         chunk_vad_segments,
         cut_audio_by_segments,
         transcribe_audio_folder,
+        transcribe_file,
         build_train_manifest,
         create_training_config,
         run_training,
@@ -170,6 +177,39 @@ def _handle_train(inp: dict) -> dict:
     if next_idx == 0:
         return {"error": "no usable speech segments after VAD/chunk"}
 
+    # ── Referência automática ──────────────────────────────────────────────
+    # Pega 1 áudio (aleatório) já LIMPO pelo Demucs, corta REFERENCE_SECONDS e
+    # sobe como a referência da voz. Substitui o upload manual de referência —
+    # garante que a ref é curta (sem estourar o contexto do VoxCPM). Transcreve
+    # 1x aqui pra a geração não precisar re-transcrever toda vez.
+    reference_upload_url = inp.get("reference_upload_url")
+    reference_uploaded = False
+    reference_transcript: str | None = None
+    if reference_upload_url:
+        norm_files = sorted(norm_dir.glob("*_mono16k.wav"))
+        if norm_files:
+            chosen = random.choice(norm_files)
+            ref_clip = job_dir / "reference.wav"
+            _slice_seconds(chosen, ref_clip, REFERENCE_SECONDS)
+            try:
+                reference_transcript = transcribe_file(
+                    str(ref_clip),
+                    model_name=whisper_model,
+                    language=language,
+                    log=lambda m: _log("info", "ref.whisper", detail=m),
+                )
+            except Exception as exc:  # transcrição é best-effort
+                _log("error", "train.reference.transcribe_failed", error=str(exc))
+            upload_file_to_presigned_url(ref_clip, reference_upload_url, content_type="audio/wav")
+            reference_uploaded = True
+            _log(
+                "info", "train.reference.done",
+                source=chosen.name, seconds=REFERENCE_SECONDS,
+                transcript_len=len(reference_transcript or ""),
+            )
+        else:
+            _log("error", "train.reference.no_norm_files")
+
     _log("info", "train.whisper.start", model=whisper_model)
     transcribe_audio_folder(
         dataset_dir,
@@ -228,6 +268,8 @@ def _handle_train(inp: dict) -> dict:
         "steps": max_steps,
         "trainer_returncode": 0,
         "dataset_chunks": next_idx,
+        "reference_uploaded": reference_uploaded,
+        "reference_transcript": reference_transcript,
     }
 
 
@@ -243,6 +285,23 @@ def _run_ffmpeg_stereo_44k(src: Path, dst: Path) -> None:
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"ffmpeg stereo 44k failed: {r.stderr.strip()}")
+
+
+def _slice_seconds(src: Path, dst: Path, seconds: int) -> None:
+    """Corta os primeiros `seconds` de `src` → `dst` (mono 16k). Se o áudio for
+    menor, pega o que tiver."""
+    import subprocess
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(src),
+        "-t", str(seconds),
+        "-ac", "1", "-ar", "16000",
+        str(dst),
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"ffmpeg slice failed: {r.stderr.strip()}")
 
 
 # ───────────────────────────────────────────────────────────────
@@ -331,7 +390,7 @@ def _handle_inference(inp: dict) -> dict:
             enable_dit=True,
             enable_proj=False,
             r=32,      # == lora_rank
-            alpha=16,  # == lora_alpha
+            alpha=32,  # == lora_alpha (training.py create_training_config)
         )
 
     _ensure_model_downloaded()

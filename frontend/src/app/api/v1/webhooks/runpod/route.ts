@@ -20,8 +20,9 @@
 import type { NextRequest } from "next/server";
 import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { buildAutoReferenceKey } from "@/lib/r2/presigned";
 import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
-import type { VoiceStatus } from "@/lib/db/types";
+import type { VoiceStatus, VoiceUpdate } from "@/lib/db/types";
 
 type RunpodWebhookPayload = {
   id: string;
@@ -31,6 +32,8 @@ type RunpodWebhookPayload = {
     voice_id?: string;
     lora_uploaded?: boolean;
     uploaded?: boolean;
+    reference_uploaded?: boolean;
+    reference_transcript?: string | null;
     elapsed_seconds?: number;
     elapsed_s?: number;
     trainer_returncode?: number;
@@ -88,7 +91,7 @@ export async function POST(request: NextRequest) {
 async function handleTrainingWebhook(
   payload: RunpodWebhookPayload,
   voiceId: string,
-  _userId: string,
+  userId: string,
 ) {
   const admin = getAdmin();
   const out = payload.output ?? {};
@@ -107,14 +110,20 @@ async function handleTrainingWebhook(
     ).slice(0, 500);
   }
 
-  await admin
-    .from("voices")
-    .update({
-      status: nextStatus,
-      error_message: errorMessage,
-      trained_at: nextStatus === "ready" ? new Date().toISOString() : null,
-    })
-    .eq("id", voiceId);
+  const update: VoiceUpdate = {
+    status: nextStatus,
+    error_message: errorMessage,
+    trained_at: nextStatus === "ready" ? new Date().toISOString() : null,
+  };
+
+  // Referência auto-extraída pelo worker (2 min de 1 áudio). A chave é
+  // determinística (mesma do start-training), então recalculamos aqui.
+  if (nextStatus === "ready" && out.reference_uploaded) {
+    update.reference_audio_path = buildAutoReferenceKey(userId, voiceId);
+    update.reference_transcript = out.reference_transcript ?? null;
+  }
+
+  await admin.from("voices").update(update).eq("id", voiceId);
 
   await admin
     .from("training_jobs")

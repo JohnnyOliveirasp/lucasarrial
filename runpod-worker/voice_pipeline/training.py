@@ -131,7 +131,7 @@ def create_training_config(
     learning_rate: float = 1e-4,
     log_interval: int = 10,
     lora_rank: int = 32,
-    lora_alpha: int = 16,
+    lora_alpha: int = 32,
 ) -> Path:
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)

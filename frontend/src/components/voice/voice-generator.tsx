@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AudioLines, Play, Download, Mic2 } from "lucide-react";
+import { AudioLines, Play, Download } from "lucide-react";
 import { formatDuration } from "@/lib/audio/duration";
 import { SupportError } from "@/components/ui/support-error";
 
 const TEXT_MAX = 1000;
 
-type Props = { voiceId: string; hasReference: boolean };
+type Props = { voiceId: string };
 type Step = "form" | "submitting" | "polling" | "done" | "error";
 
 type GenerationDto = {
@@ -20,7 +20,7 @@ type GenerationDto = {
   elapsed_seconds: number | null;
 };
 
-export function VoiceGenerator({ voiceId, hasReference }: Props) {
+export function VoiceGenerator({ voiceId }: Props) {
   const router = useRouter();
   const [step, setStep] = useState<Step>("form");
   const [text, setText] = useState("");
@@ -184,28 +184,6 @@ export function VoiceGenerator({ voiceId, hasReference }: Props) {
         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg self-end">
           {text.length} / {TEXT_MAX}
         </span>
-      </div>
-
-      {/* Status da referência (gerenciada na página da voz) */}
-      <div
-        className={`flex items-start gap-3 border p-3 ${
-          hasReference ? "border-accent/40 bg-accent/5" : "border-border bg-surface"
-        }`}
-      >
-        <Mic2 className={`mt-0.5 h-4 w-4 ${hasReference ? "text-accent" : "text-muted-fg"}`} />
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg leading-relaxed">
-          {hasReference ? (
-            <>
-              Usando seu <span className="text-accent">áudio de referência salvo</span>. Pra
-              trocar ou remover, use a página da voz.
-            </>
-          ) : (
-            <>
-              Sem referência — gera só com a LoRA. Adicione um áudio de referência na
-              página da voz pra melhorar a fidelidade.
-            </>
-          )}
-        </p>
       </div>
 
       {error && <SupportError action="gerar o áudio" />}

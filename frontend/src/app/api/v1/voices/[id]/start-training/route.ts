@@ -20,6 +20,7 @@ import {
 } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import {
+  buildAutoReferenceKey,
   buildLoraKey,
   createPresignedGet,
   createPresignedPut,
@@ -58,7 +59,9 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   // 1. Presigned GETs pros áudios
   let audioUrls: string[];
   let loraUploadUrl: string;
+  let referenceUploadUrl: string;
   const loraKey = buildLoraKey(auth.user_id, voice.id);
+  const referenceKey = buildAutoReferenceKey(auth.user_id, voice.id);
 
   try {
     audioUrls = await Promise.all(
@@ -70,6 +73,13 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       R2_BUCKETS.voices,
       loraKey,
       "application/octet-stream",
+      TRAIN_EXPIRES_SECONDS,
+    );
+    // O worker corta 2 min de 1 áudio e sobe aqui como a referência da voz.
+    referenceUploadUrl = await createPresignedPut(
+      R2_BUCKETS.voices,
+      referenceKey,
+      "audio/wav",
       TRAIN_EXPIRES_SECONDS,
     );
   } catch (e) {
@@ -87,6 +97,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         voice_id: voice.id,
         audio_urls: audioUrls,
         lora_upload_url: loraUploadUrl,
+        reference_upload_url: referenceUploadUrl,
         max_steps: DEFAULT_MAX_STEPS,
         language: "pt",
       },

@@ -51,12 +51,14 @@ export function buildGenerationKey(userId: string, genId: string): string {
   return `${userId}/${genId}.wav`;
 }
 
-export function buildReferenceKey(
-  userId: string,
-  voiceId: string,
-  refId: string,
-): string {
-  return `${userId}/${voiceId}/ref/${refId}.mp3`;
+/**
+ * Chave DETERMINÍSTICA da referência auto-extraída no treino. Determinística
+ * de propósito: o `start-training` cria o presigned PUT com ela e o `webhook`
+ * recalcula a mesma chave pra gravar em `voices.reference_audio_path` no fim do
+ * treino (sem precisar carregar estado intermediário).
+ */
+export function buildAutoReferenceKey(userId: string, voiceId: string): string {
+  return `${userId}/${voiceId}/ref/auto.wav`;
 }
 
 export async function createPresignedPut(

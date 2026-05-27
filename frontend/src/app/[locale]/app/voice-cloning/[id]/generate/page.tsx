@@ -17,7 +17,7 @@ export default async function GeneratePage({
 
   const { data: voice } = await supabase
     .from("voices")
-    .select("id, name, status, lora_path, reference_audio_path")
+    .select("id, name, status, lora_path")
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -37,12 +37,12 @@ export default async function GeneratePage({
           Síntese
         </h1>
         <p className="text-sm text-muted-fg">
-          Digite o texto e gere. Sua voz usa o áudio de referência salvo (se
-          houver) automaticamente — gerencie a referência na página da voz.
+          Digite o texto e gere. A referência de voz é definida automaticamente
+          a partir do seu treino.
         </p>
       </header>
 
-      <VoiceGenerator voiceId={voice.id} hasReference={!!voice.reference_audio_path} />
+      <VoiceGenerator voiceId={voice.id} />
     </div>
   );
 }
