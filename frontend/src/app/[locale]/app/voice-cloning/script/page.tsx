@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { ScriptReader } from "@/components/voice/script-reader";
+import { VoiceRecorder } from "@/components/voice/voice-recorder";
 
 export default async function ScriptPage({
   params,
@@ -32,6 +33,7 @@ export default async function ScriptPage({
       </header>
 
       <ScriptReader />
+      <VoiceRecorder />
     </div>
   );
 }
