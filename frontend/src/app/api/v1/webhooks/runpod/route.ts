@@ -34,6 +34,8 @@ type RunpodWebhookPayload = {
     uploaded?: boolean;
     reference_uploaded?: boolean;
     reference_transcript?: string | null;
+    lora_alpha?: number;
+    lora_rank?: number;
     elapsed_seconds?: number;
     elapsed_s?: number;
     trainer_returncode?: number;
@@ -121,6 +123,10 @@ async function handleTrainingWebhook(
   if (nextStatus === "ready" && out.reference_uploaded) {
     update.reference_audio_path = buildAutoReferenceKey(userId, voiceId);
     update.reference_transcript = out.reference_transcript ?? null;
+  }
+  // Alpha do LoRA usado no treino → grava por voz pra inferir com o valor certo.
+  if (nextStatus === "ready" && typeof out.lora_alpha === "number") {
+    update.lora_alpha = out.lora_alpha;
   }
 
   await admin.from("voices").update(update).eq("id", voiceId);

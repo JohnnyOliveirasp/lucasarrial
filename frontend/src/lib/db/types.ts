@@ -49,6 +49,7 @@ export type VoiceRow = {
   lora_path: string | null;
   reference_audio_path: string | null;
   reference_transcript: string | null;
+  lora_alpha: number | null;
   runpod_job_id: string | null;
   error_message: string | null;
   trained_at: Timestamp | null;

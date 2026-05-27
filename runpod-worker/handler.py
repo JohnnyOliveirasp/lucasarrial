@@ -63,6 +63,14 @@ WORKSPACE = Path(os.environ.get("WORKSPACE_DIR", "/workspace/jobs"))
 # com folga. NÃO subir isso sem refazer a conta do contexto.
 REFERENCE_SECONDS = int(os.environ.get("REFERENCE_SECONDS", "120"))
 
+# Alpha/rank do LoRA. O alpha é GRAVADO por voz no treino e devolvido na
+# inferência (cada LoRA infere com o alpha que treinou). Vozes NOVAS usam 32;
+# as antigas continuam 16 (default da inferência) — a imagem nova não quebra
+# LoRAs antigas. Rank é 32 em todas (fix anterior).
+TRAIN_LORA_ALPHA = int(os.environ.get("LORA_ALPHA", "32"))
+LORA_RANK = int(os.environ.get("LORA_RANK", "32"))
+LEGACY_LORA_ALPHA = 16  # default da inferência p/ LoRAs sem alpha gravado
+
 _MODEL = None  # voxcpm.core.VoxCPM, carregado lazy para inferência
 
 
@@ -228,6 +236,8 @@ def _handle_train(inp: dict) -> dict:
         run_name=run_name,
         max_steps=max_steps,
         save_interval=save_interval,
+        lora_rank=LORA_RANK,
+        lora_alpha=TRAIN_LORA_ALPHA,
     )
 
     _log("info", "train.trainer.start", config=str(config), max_steps=max_steps)
@@ -270,6 +280,8 @@ def _handle_train(inp: dict) -> dict:
         "dataset_chunks": next_idx,
         "reference_uploaded": reference_uploaded,
         "reference_transcript": reference_transcript,
+        "lora_alpha": TRAIN_LORA_ALPHA,
+        "lora_rank": LORA_RANK,
     }
 
 
@@ -385,13 +397,19 @@ def _handle_inference(inp: dict) -> dict:
     if lora_path:
         from voxcpm.model.voxcpm import LoRAConfig
 
+        # r/alpha TÊM que casar com os do treino daquela LoRA. O backend manda
+        # o alpha gravado na voz (32 p/ novas, 16 p/ antigas). Sem valor, cai no
+        # legado 16 — NUNCA assumir 32 aqui (quebraria LoRA antiga).
+        lora_alpha = int(inp.get("lora_alpha") or LEGACY_LORA_ALPHA)
+        lora_rank = int(inp.get("lora_rank") or LORA_RANK)
         lora_cfg = LoRAConfig(
             enable_lm=True,
             enable_dit=True,
             enable_proj=False,
-            r=32,      # == lora_rank
-            alpha=32,  # == lora_alpha (training.py create_training_config)
+            r=lora_rank,
+            alpha=lora_alpha,
         )
+        _log("info", "inference.lora_cfg", r=lora_rank, alpha=lora_alpha)
 
     _ensure_model_downloaded()
     _log("info", "model.load.start", lora=bool(lora_path))

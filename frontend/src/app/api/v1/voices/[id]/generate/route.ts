@@ -75,7 +75,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   const { data: voice, error: vErr } = await admin
     .from("voices")
-    .select("id, user_id, status, lora_path, reference_audio_path, reference_transcript")
+    .select("id, user_id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha")
     .eq("id", voiceId)
     .eq("user_id", auth.user_id)
     .maybeSingle();
@@ -119,6 +119,9 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     text: normalizedText,
     lora_url: loraUrl,
     output_upload_url: outputUploadUrl,
+    // Alpha gravado no treino daquela voz (16 p/ antigas, 32 p/ novas). O worker
+    // infere com esse alpha — casa com a LoRA. Sem valor, o worker usa 16.
+    lora_alpha: typeof voice.lora_alpha === "number" ? voice.lora_alpha : 16,
     cfg_value: typeof body.cfg_value === "number" ? body.cfg_value : 2.0,
     inference_timesteps:
       typeof body.inference_timesteps === "number" ? body.inference_timesteps : 10,
