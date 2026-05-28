@@ -124,14 +124,14 @@ def create_training_config(
     pretrained_path: Path,
     save_path: Path,
     run_name: str,
-    max_steps: int = 500,
+    max_steps: int = 1000,
     save_interval: int = 250,
     batch_size: int = 1,
     grad_accum_steps: int = 1,
     learning_rate: float = 1e-4,
     log_interval: int = 10,
     lora_rank: int = 32,
-    lora_alpha: int = 32,
+    lora_alpha: int = 16,
 ) -> Path:
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)

@@ -69,7 +69,7 @@ REFERENCE_SECONDS = int(os.environ.get("REFERENCE_SECONDS", "120"))
 # inferência (cada LoRA infere com o alpha que treinou). Vozes NOVAS usam 32;
 # as antigas continuam 16 (default da inferência) — a imagem nova não quebra
 # LoRAs antigas. Rank é 32 em todas (fix anterior).
-TRAIN_LORA_ALPHA = int(os.environ.get("LORA_ALPHA", "32"))
+TRAIN_LORA_ALPHA = int(os.environ.get("LORA_ALPHA", "16"))
 LORA_RANK = int(os.environ.get("LORA_RANK", "32"))
 LEGACY_LORA_ALPHA = 16  # default da inferência p/ LoRAs sem alpha gravado
 
@@ -99,7 +99,7 @@ def _load_model():
     from voxcpm import VoxCPM
     _ensure_model_downloaded()
     _log("info", "model.load.start", dir=str(MODEL_DIR))
-    _MODEL = VoxCPM.from_pretrained(str(MODEL_DIR), load_denoiser=False)
+    _MODEL = VoxCPM.from_pretrained(str(MODEL_DIR), load_denoiser=False, optimize=True)
     _log("info", "model.load.done", sample_rate=_MODEL.tts_model.sample_rate)
     return _MODEL
 
@@ -133,7 +133,7 @@ def _handle_train(inp: dict) -> dict:
     voice_id = inp.get("voice_id") or "anonymous"
     audio_urls = inp.get("audio_urls") or []
     lora_upload_url = inp.get("lora_upload_url")
-    max_steps = int(inp.get("max_steps", 500))
+    max_steps = int(inp.get("max_steps", 1000))
     save_interval = int(inp.get("save_interval", max(50, max_steps // 4)))
     language = inp.get("language", "pt")
     whisper_model = inp.get("whisper_model", "large-v3")
@@ -541,6 +541,7 @@ def _handle_inference(inp: dict) -> dict:
     model = VoxCPM.from_pretrained(
         str(MODEL_DIR),
         load_denoiser=False,
+        optimize=True,
         lora_config=lora_cfg,
         lora_weights_path=str(lora_path) if lora_path else None,
     )
