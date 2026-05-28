@@ -190,32 +190,41 @@ def _handle_train(inp: dict) -> dict:
     # sobe como a referência da voz. Substitui o upload manual de referência —
     # garante que a ref é curta (sem estourar o contexto do VoxCPM). Transcreve
     # 1x aqui pra a geração não precisar re-transcrever toda vez.
+    # A referência é ATÔMICA: clonagem usa áudio + transcrição JUNTOS (modo
+    # continuation do VoxCPM). Transcrevemos a ref AQUI e só subimos o áudio se
+    # a transcrição der certo — nunca um meio-estado (áudio sem texto), que faz
+    # a geração cortar cedo. Sem try/except que engole: a transcrição é
+    # obrigatória pra referência existir. Falhou tudo → sem referência (a voz
+    # ainda gera com a LoRA pura), e isso fica REGISTRADO no resultado.
     reference_upload_url = inp.get("reference_upload_url")
     reference_uploaded = False
     reference_transcript: str | None = None
+    reference_error: str | None = None
     if reference_upload_url:
         norm_files = sorted(norm_dir.glob("*_mono16k.wav"))
         if norm_files:
             chosen = random.choice(norm_files)
             ref_clip = job_dir / "reference.wav"
             _slice_seconds(chosen, ref_clip, REFERENCE_SECONDS)
-            try:
-                reference_transcript = transcribe_file(
-                    str(ref_clip),
-                    model_name=whisper_model,
-                    language=language,
-                    log=lambda m: _log("info", "ref.whisper", detail=m),
-                )
-            except Exception as exc:  # transcrição é best-effort
-                _log("error", "train.reference.transcribe_failed", error=str(exc))
-            upload_file_to_presigned_url(ref_clip, reference_upload_url, content_type="audio/wav")
-            reference_uploaded = True
-            _log(
-                "info", "train.reference.done",
-                source=chosen.name, seconds=REFERENCE_SECONDS,
-                transcript_len=len(reference_transcript or ""),
+            transcript = _transcribe_with_retry(
+                ref_clip, whisper_model, language, attempts=3,
             )
+            if transcript:
+                upload_file_to_presigned_url(
+                    ref_clip, reference_upload_url, content_type="audio/wav"
+                )
+                reference_uploaded = True
+                reference_transcript = transcript
+                _log(
+                    "info", "train.reference.done",
+                    source=chosen.name, seconds=REFERENCE_SECONDS,
+                    transcript_len=len(transcript),
+                )
+            else:
+                reference_error = "reference transcription returned empty after retries"
+                _log("error", "train.reference.transcribe_failed", detail=reference_error)
         else:
+            reference_error = "no normalized audio to slice the reference from"
             _log("error", "train.reference.no_norm_files")
 
     _log("info", "train.whisper.start", model=whisper_model)
@@ -280,6 +289,7 @@ def _handle_train(inp: dict) -> dict:
         "dataset_chunks": next_idx,
         "reference_uploaded": reference_uploaded,
         "reference_transcript": reference_transcript,
+        "reference_error": reference_error,
         "lora_alpha": TRAIN_LORA_ALPHA,
         "lora_rank": LORA_RANK,
     }
@@ -314,6 +324,32 @@ def _slice_seconds(src: Path, dst: Path, seconds: int) -> None:
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"ffmpeg slice failed: {r.stderr.strip()}")
+
+
+def _transcribe_with_retry(
+    wav_path: Path, whisper_model: str, language: str, attempts: int = 3
+) -> str | None:
+    """Transcreve `wav_path` e devolve texto NÃO-vazio, ou None se falhar em
+    todas as tentativas. Diferente de best-effort silencioso: cada falha é
+    logada, e o chamador decide o que fazer com o None (aqui: não registrar a
+    referência, em vez de gravar um meio-estado áudio-sem-texto)."""
+    from voice_pipeline import transcribe_file
+
+    for i in range(1, attempts + 1):
+        try:
+            text = transcribe_file(
+                str(wav_path),
+                model_name=whisper_model,
+                language=language,
+                log=lambda m: _log("info", "ref.whisper", detail=m),
+            )
+            text = (text or "").strip()
+            if text:
+                return text
+            _log("error", "ref.transcribe.empty", attempt=i, attempts=attempts)
+        except Exception as exc:
+            _log("error", "ref.transcribe.error", attempt=i, attempts=attempts, error=str(exc))
+    return None
 
 
 # ───────────────────────────────────────────────────────────────
@@ -365,14 +401,16 @@ def _handle_inference(inp: dict) -> dict:
     if lora_url:
         lora_path = _ensure_local_from_url(lora_url, _LORA_CACHE_DIR, "lora")
 
-    # 2. Baixa referência (sempre novo)
+    # 2. Baixa referência (sempre novo). Clonagem = modo continuation do VoxCPM:
+    # `prompt_wav_path` + `prompt_text`, com o texto CASANDO com o áudio. O
+    # transcript é gravado no treino e mandado junto pela rota. Se por algum
+    # motivo não vier (voz antiga sem transcript), re-transcreve aqui (fallback).
     prompt_wav_local: str | None = None
     if prompt_wav_url:
         ref_dir = WORKSPACE / "refs"
         ref_path = _ensure_local_from_url(prompt_wav_url, ref_dir, "ref")
         prompt_wav_local = str(ref_path)
 
-    # 2b. Se houver referência mas NÃO veio transcrição, transcreve via Whisper.
     if prompt_wav_local and not prompt_text:
         whisper_model = inp.get("whisper_model", "large-v3")
         language = inp.get("language", "pt")
@@ -456,6 +494,27 @@ def _handle_inference(inp: dict) -> dict:
 
 
 # ───────────────────────────────────────────────────────────────
+# TRANSCRIBE (backfill — transcreve uma referência já existente)
+# ───────────────────────────────────────────────────────────────
+
+def _handle_transcribe(inp: dict) -> dict:
+    """Baixa um áudio (audio_url) e devolve a transcrição. Usado pra preencher
+    a `reference_transcript` de vozes antigas que subiram só o áudio."""
+    audio_url = inp.get("audio_url")
+    if not audio_url:
+        return {"error": "missing 'audio_url'"}
+    whisper_model = inp.get("whisper_model", "large-v3")
+    language = inp.get("language", "pt")
+
+    tmp_dir = WORKSPACE / "transcribe"
+    audio_path = _ensure_local_from_url(audio_url, tmp_dir, "transcribe")
+    transcript = _transcribe_with_retry(audio_path, whisper_model, language, attempts=3)
+    if not transcript:
+        return {"error": "transcription returned empty after retries"}
+    return {"transcript": transcript, "transcript_len": len(transcript)}
+
+
+# ───────────────────────────────────────────────────────────────
 # DISPATCH
 # ───────────────────────────────────────────────────────────────
 
@@ -468,9 +527,11 @@ def handler(event: dict) -> dict:
             return _handle_train(inp)
         if job_type == "inference":
             return _handle_inference(inp)
+        if job_type == "transcribe":
+            return _handle_transcribe(inp)
         if job_type == "health":
             return {"ok": True, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
-        return {"error": f"unknown type '{job_type}' (use train/inference/health)"}
+        return {"error": f"unknown type '{job_type}' (use train/inference/transcribe/health)"}
     except Exception as exc:
         _log("error", "job.failed", error=str(exc), type=job_type, tb=traceback.format_exc()[:2000])
         return {"error": str(exc), "type": job_type, "traceback": traceback.format_exc()[:2000]}
