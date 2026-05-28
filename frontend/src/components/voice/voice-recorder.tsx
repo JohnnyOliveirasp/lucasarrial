@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, Square, Trash2, AlertCircle, AlertTriangle, Check } from "lucide-react";
+import Link from "next/link";
+import { useLocale } from "next-intl";
+import { Mic, Square, Trash2, AlertCircle, AlertTriangle, Check, ArrowRight } from "lucide-react";
 import { workletUrl, rms, concatFloat32, encodeWav } from "@/lib/audio/recorder";
 import { formatDuration } from "@/lib/audio/duration";
 import { saveClip, listClips, deleteClip, type StoredClip } from "@/lib/audio/clip-store";
@@ -21,6 +23,7 @@ type ClipView = { id: string; seconds: number; createdAt: number; url: string };
  * 2 vai subir os clipes do IndexedDB pro R2.
  */
 export function VoiceRecorder() {
+  const locale = useLocale();
   const [status, setStatus] = useState<Status>("idle");
   const [level, setLevel] = useState(0);
   const [seconds, setSeconds] = useState(0);
@@ -203,9 +206,58 @@ export function VoiceRecorder() {
   const totalSeconds = clips.reduce((s, c) => s + c.seconds, 0);
   const pct = Math.min(100, Math.round((totalSeconds / TARGET_SECONDS) * 100));
   const meterPct = Math.round(level * 100);
+  const showPill = status === "ready" || status === "recording";
+  const targetMet = totalSeconds >= TARGET_SECONDS;
 
   return (
-    <section className="border border-border bg-surface p-6 flex flex-col gap-5">
+    <>
+      {/* Pill flutuante (fixed bottom-right): Mic + Stop + Timer + mini meter.
+          Aparece quando o mic está pronto/gravando pra acompanhar a leitura
+          do roteiro sem precisar scrollar pro fim da página. */}
+      {showPill && (
+        <div className="fixed bottom-4 right-4 z-40 flex items-center gap-3 border border-border bg-bg/95 px-3 py-2 shadow-[0_4px_16px_rgba(0,0,0,0.18)] backdrop-blur-sm">
+          {/* Mini medidor (5 barras verticais) */}
+          <div className="flex items-end gap-0.5 h-6" aria-hidden>
+            {[0, 1, 2, 3, 4].map((i) => {
+              const active = meterPct / 100 >= (i + 1) / 5 * 0.4;
+              return (
+                <span
+                  key={i}
+                  className={`w-1 transition-all duration-75 ${
+                    active ? "bg-accent h-full" : "bg-border h-1.5"
+                  }`}
+                />
+              );
+            })}
+          </div>
+          {/* Timer do clipe atual */}
+          <span className="font-mono text-[11px] tabular-nums text-fg w-10 text-center">
+            {formatDuration(seconds)}
+          </span>
+          {/* Botão único Mic/Stop */}
+          {status === "ready" ? (
+            <button
+              type="button"
+              onClick={startRecording}
+              aria-label="Gravar"
+              className="flex h-9 w-9 items-center justify-center bg-accent text-accent-fg transition-transform hover:scale-110 active:scale-95"
+            >
+              <Mic className="h-4 w-4" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={stopRecording}
+              aria-label="Parar gravação"
+              className="flex h-9 w-9 items-center justify-center border-2 border-accent text-accent animate-pulse"
+            >
+              <Square className="h-4 w-4 fill-current" />
+            </button>
+          )}
+        </div>
+      )}
+
+      <section className="border border-border bg-surface p-6 flex flex-col gap-5">
       <div className="flex items-center gap-2">
         <Mic className="h-4 w-4 text-accent" />
         <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">Gravar voz</h2>
@@ -302,14 +354,29 @@ export function VoiceRecorder() {
               </button>
             </div>
           ))}
-          {totalSeconds >= TARGET_SECONDS && (
-            <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-accent">
-              <Check className="h-4 w-4" /> Meta atingida — pronto pra treinar
-            </p>
-          )}
+        </div>
+      )}
+
+      {/* CTA enviar pra treinamento — aparece ao bater 20min. Usuário
+          pode continuar gravando (CTA fica disponível, não bloqueia). */}
+      {targetMet && (
+        <div className="border border-accent bg-accent/5 p-4 flex flex-col gap-3">
+          <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-accent">
+            <Check className="h-4 w-4" /> Meta de 20 min atingida
+          </p>
+          <Link
+            href={`/${locale}/app/voice-cloning/new`}
+            className="flex items-center justify-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99]"
+          >
+            Enviar para treinamento <ArrowRight className="h-4 w-4" />
+          </Link>
+          <p className="text-xs text-muted-fg">
+            Pode continuar gravando se quiser melhorar — quanto mais limpo, melhor a voz clonada.
+          </p>
         </div>
       )}
     </section>
+    </>
   );
 }
 
