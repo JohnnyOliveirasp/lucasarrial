@@ -387,6 +387,53 @@ def _split_text_for_tts(text: str, max_chars: int = 200) -> list[str]:
     return chunks
 
 
+def _trim_silence(
+    wav: np.ndarray, threshold: float = 0.005, pad_samples: int = 0
+) -> np.ndarray:
+    """Remove amostras de borda abaixo de `threshold` em amplitude absoluta.
+
+    Default = -46 dB. Mantem `pad_samples` de cada lado quando ha audio ativo
+    pra nao cortar consoante final/inicial. Se o sinal e' todo silencio, devolve
+    como esta. Usado antes de concatenar chunks no chunking por frase: o VoxCPM
+    costuma deixar uma "respiracao" no final de cada chunk + boot-up no comeco,
+    e a soma disso vira pausa audivel entre chunks.
+    """
+    if wav.size == 0:
+        return wav
+    active = np.where(np.abs(wav) > threshold)[0]
+    if active.size == 0:
+        return wav
+    start = max(0, int(active[0]) - pad_samples)
+    end = min(wav.size, int(active[-1]) + 1 + pad_samples)
+    return wav[start:end]
+
+
+def _crossfade_concat(wavs: list[np.ndarray], fade_samples: int) -> np.ndarray:
+    """Concatena com fade linear no overlap de `fade_samples` entre wavs.
+
+    Cada wav fica com a cauda decaindo de 1 -> 0 e a proxima entrando 0 -> 1 na
+    mesma janela. A soma e' suave e nao tem clique. Se `fade_samples <= 0`,
+    so concatena. Se a janela for maior que algum lado, ajusta pro min.
+    """
+    if not wavs:
+        return np.zeros(0, dtype=np.float32)
+    if fade_samples <= 0 or len(wavs) == 1:
+        return np.concatenate([w.astype(np.float32, copy=False) for w in wavs])
+
+    result = wavs[0].astype(np.float32, copy=True)
+    for nxt in wavs[1:]:
+        nxt = nxt.astype(np.float32, copy=False)
+        f = max(0, min(fade_samples, len(result), len(nxt)))
+        if f == 0:
+            result = np.concatenate([result, nxt])
+            continue
+        fade_out = np.linspace(1.0, 0.0, f, dtype=np.float32)
+        fade_in = np.linspace(0.0, 1.0, f, dtype=np.float32)
+        overlap = result[-f:] * fade_out + nxt[:f] * fade_in
+        result = np.concatenate([result[:-f], overlap, nxt[f:]])
+    return result
+
+
 # ───────────────────────────────────────────────────────────────
 # INFERENCE
 # ───────────────────────────────────────────────────────────────
@@ -499,28 +546,35 @@ def _handle_inference(inp: dict) -> dict:
     )
     sample_rate = model.tts_model.sample_rate
 
-    # Chunking por frase: cada chunk e' UMA chamada de generate independente,
-    # com a MESMA referencia. Re-ancora a ref + reseta estado interno -> mata
-    # drift de timbre (EsposaLucas engrossando no fim) e gradual speed-up
-    # (Aluno2 acelerando). Doc oficial recomenda explicitamente:
-    # https://voxcpm.readthedocs.io/en/latest/usage_guide.html
-    chunk_max = int(os.environ.get("TTS_CHUNK_MAX_CHARS", "200"))
-    silence_ms = int(os.environ.get("TTS_CHUNK_SILENCE_MS", "200"))
+    # Chunking por frase + trim + crossfade: cada chunk e' UMA chamada de
+    # generate independente, com a MESMA referencia (re-ancora -> mata drift +
+    # gradual speed-up). Tira silencio das pontas de cada chunk e junta com
+    # crossfade pra eliminar costuras audiveis. Recomendado em discussao
+    # oficial: https://github.com/OpenBMB/VoxCPM/issues/302
+    # Doc base: https://voxcpm.readthedocs.io/en/latest/usage_guide.html
+    chunk_max = int(os.environ.get("TTS_CHUNK_MAX_CHARS", "220"))
+    silence_ms = int(os.environ.get("TTS_CHUNK_SILENCE_MS", "0"))
+    crossfade_ms = int(os.environ.get("TTS_CHUNK_CROSSFADE_MS", "60"))
+    trim_enabled = os.environ.get("TTS_CHUNK_TRIM", "1") not in ("0", "false", "False", "")
+    trim_threshold = float(os.environ.get("TTS_CHUNK_TRIM_THRESHOLD", "0.005"))
+    # `pad_ms` mantem alguns ms de cada lado pra nao cortar consoante final.
+    trim_pad_ms = int(os.environ.get("TTS_CHUNK_TRIM_PAD_MS", "20"))
+
     chunks = _split_text_for_tts(text, max_chars=chunk_max) or [text]
     silence_samples = max(0, int(sample_rate * silence_ms / 1000))
-    silence = (
-        np.zeros(silence_samples, dtype=np.float32) if silence_samples > 0 else None
-    )
+    crossfade_samples = max(0, int(sample_rate * crossfade_ms / 1000))
+    trim_pad_samples = max(0, int(sample_rate * trim_pad_ms / 1000))
 
     _log(
         "info", "inference.start", text_len=len(text), chunks=len(chunks),
-        chunk_max=chunk_max, silence_ms=silence_ms,
+        chunk_max=chunk_max, silence_ms=silence_ms, crossfade_ms=crossfade_ms,
+        trim=trim_enabled, trim_thresh=trim_threshold,
         has_clone=bool(prompt_wav_local), has_lora=bool(lora_path),
         timesteps=inference_timesteps,
     )
     t0 = time.monotonic()
 
-    all_wavs: list = []
+    pieces: list[np.ndarray] = []
     for idx, chunk in enumerate(chunks):
         ct0 = time.monotonic()
         # Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853).
@@ -537,16 +591,26 @@ def _handle_inference(inp: dict) -> dict:
             retry_badcase_max_times=3,
             retry_badcase_ratio_threshold=6.0,
         )
+        seg = np.asarray(seg, dtype=np.float32)
+        raw_samples = int(seg.size)
+        if trim_enabled:
+            seg = _trim_silence(seg, threshold=trim_threshold, pad_samples=trim_pad_samples)
         _log(
             "info", "inference.chunk", idx=idx, total=len(chunks),
-            chars=len(chunk), samples=int(len(seg)),
+            chars=len(chunk), samples_raw=raw_samples, samples_trim=int(seg.size),
             elapsed_s=round(time.monotonic() - ct0, 2),
         )
-        all_wavs.append(np.asarray(seg, dtype=np.float32))
-        if silence is not None and idx < len(chunks) - 1:
-            all_wavs.append(silence)
+        pieces.append(seg)
+        # Silencio entre chunks (default 0). Aplicado SOMENTE quando crossfade
+        # esta desligado — senao o silencio dentro do overlap se autodestrui.
+        if silence_samples > 0 and crossfade_samples == 0 and idx < len(chunks) - 1:
+            pieces.append(np.zeros(silence_samples, dtype=np.float32))
 
-    wav = np.concatenate(all_wavs) if all_wavs else np.zeros(0, dtype=np.float32)
+    # Concat: com crossfade quando ativo (default), senao concatena plano.
+    if crossfade_samples > 0 and len(pieces) > 1:
+        wav = _crossfade_concat(pieces, crossfade_samples)
+    else:
+        wav = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.float32)
     elapsed = time.monotonic() - t0
     _log("info", "inference.done", elapsed_s=round(elapsed, 2), samples=len(wav), chunks=len(chunks))
 
