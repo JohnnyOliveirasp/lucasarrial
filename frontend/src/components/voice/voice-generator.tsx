@@ -6,7 +6,9 @@ import { AudioLines, Play, Download } from "lucide-react";
 import { formatDuration } from "@/lib/audio/duration";
 import { SupportError } from "@/components/ui/support-error";
 
-const TEXT_MAX = 1000;
+// Limite generoso pra cobrir ~2 min de fala em pt-BR (~150 wpm, ~5 chars/word).
+// Bate com o TEXT_MAX da rota /api/v1/voices/[id]/generate.
+const TEXT_MAX = 2000;
 
 type Props = { voiceId: string };
 type Step = "form" | "submitting" | "polling" | "done" | "error";

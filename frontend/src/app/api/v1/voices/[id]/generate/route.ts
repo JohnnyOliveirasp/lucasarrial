@@ -46,7 +46,10 @@ import { runpodSubmitInference, webhookUrlFor } from "@/lib/runpod/client";
 type Ctx = { params: Promise<{ id: string }> };
 
 const PRESIGN_EXPIRES = 60 * 60; // 1h
-const TEXT_MAX = 1000;
+// Cobre ~2 min de fala em pt-BR (~150 wpm). Bate com o TEXT_MAX da UI
+// (voice-generator.tsx). Acima disso, o stop-predictor do VoxCPM começa a
+// ficar instável em single-shot — se precisar mais, dividir por frase no worker.
+const TEXT_MAX = 2000;
 
 type Body = {
   text: string;
