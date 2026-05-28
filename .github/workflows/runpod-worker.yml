@@ -1,5 +1,12 @@
 name: Build RunPod Worker
 
+# Cancela runs anteriores na mesma branch se um novo push chegar. Evita
+# acumular builds presos / superados (push novo enquanto o anterior trava
+# em pull de base image / push do GHCR).
+concurrency:
+  group: runpod-worker-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [dev, main, master]

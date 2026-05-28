@@ -251,7 +251,11 @@ def _handle_train(inp: dict) -> dict:
         lora_alpha=TRAIN_LORA_ALPHA,
     )
 
-    _log("info", "train.trainer.start", config=str(config), max_steps=max_steps)
+    _log(
+        "info", "train.trainer.start", config=str(config), max_steps=max_steps,
+        lora_rank=LORA_RANK, lora_alpha=TRAIN_LORA_ALPHA,
+        reference_seconds=REFERENCE_SECONDS,
+    )
     result = run_training(VOXCPM_REPO, config, log=lambda m: _log("info", "trainer", detail=m))
     _log("info", "train.trainer.done", returncode=result["returncode"])
 
