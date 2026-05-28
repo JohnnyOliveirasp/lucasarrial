@@ -126,10 +126,11 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     // infere com esse alpha — casa com a LoRA. Sem valor, o worker usa 16.
     lora_alpha: typeof voice.lora_alpha === "number" ? voice.lora_alpha : 16,
     cfg_value: typeof body.cfg_value === "number" ? body.cfg_value : 2.0,
-    // 20 = default do desktop (VoiceLoraStudio/core.py:822). Voz mais estavel
-    // em texto longo. Demo oficial usa 10 mas drifta no fim em ~1 min+.
+    // 15 = meio termo entre 10 (pace correto mas qualidade media) e 20 (qualidade
+    // alta mas acelerou pace em testes). Drift NAO se resolve por timesteps —
+    // e estrutural (VoxCPM Issue #302). Match com worker default.
     inference_timesteps:
-      typeof body.inference_timesteps === "number" ? body.inference_timesteps : 20,
+      typeof body.inference_timesteps === "number" ? body.inference_timesteps : 15,
   };
   if (refUrl) {
     inferenceInput.prompt_wav_url = refUrl;

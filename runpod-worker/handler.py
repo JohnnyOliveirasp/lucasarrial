@@ -388,9 +388,12 @@ def _handle_inference(inp: dict) -> dict:
     lora_url = inp.get("lora_url")
     output_upload_url = inp.get("output_upload_url")
     cfg_value = float(inp.get("cfg_value", 2.0))
-    # 20 = default do desktop (VoiceLoraStudio); voz mais estavel em texto longo.
-    # O demo oficial usa 10 mas drifta no fim em geracoes > ~1 min.
-    inference_timesteps = int(inp.get("inference_timesteps", 20))
+    # 15 = meio termo. Doc oficial diz 5-10 draft, 15-25 quality. Em testes:
+    # - 10 = pace correto mas qualidade media, drift evidente em texto longo
+    # - 20 = qualidade alta MAS acelerou pace (Aluno2 de 55s -> 45s, mesmo texto)
+    # 15 fica no meio. Drift NAO se resolve por timesteps (e estrutural):
+    # https://github.com/OpenBMB/VoxCPM/issues/302
+    inference_timesteps = int(inp.get("inference_timesteps", 15))
     normalize = bool(inp.get("normalize", False))
 
     if prompt_text and not prompt_wav_url:
