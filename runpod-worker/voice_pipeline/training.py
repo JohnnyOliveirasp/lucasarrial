@@ -124,7 +124,7 @@ def create_training_config(
     pretrained_path: Path,
     save_path: Path,
     run_name: str,
-    max_steps: int = 1000,
+    max_steps: int = 500,
     save_interval: int = 250,
     batch_size: int = 1,
     grad_accum_steps: int = 1,

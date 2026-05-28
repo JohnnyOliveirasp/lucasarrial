@@ -31,9 +31,11 @@ import { runpodSubmitTrain, webhookUrlFor } from "@/lib/runpod/client";
 type Ctx = { params: Promise<{ id: string }> };
 
 const TRAIN_EXPIRES_SECONDS = 2 * 60 * 60; // 2h
-// 1000 = default do desktop (VoiceLoraStudio/core.py:683). Treino menor que
-// isso (500) gera LoRA sub-treinada -> voz instavel em texto longo.
-const DEFAULT_MAX_STEPS = 1000;
+// 500 = config que funciona com este dataset/codebase + alpha=16 (Aluno2 prova).
+// 1000 (default do desktop VoiceLoraStudio/core.py:683) causou overfit no
+// LoRA -> EsposaLucas saiu embolada com 26s de mumble no meio. Dataset/setup
+// daqui responde melhor a 500 + alpha=16.
+const DEFAULT_MAX_STEPS = 500;
 
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);

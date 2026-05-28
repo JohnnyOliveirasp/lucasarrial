@@ -20,7 +20,7 @@ Resposta:
     "voice_id": "...",
     "lora_uploaded": true,
     "elapsed_seconds": 847.3,
-    "steps": 500,
+    "steps": 1000,
     "trainer_returncode": 0,
     "stdout_tail": "...",
     "stderr_tail": "..."
@@ -66,9 +66,9 @@ WORKSPACE = Path(os.environ.get("WORKSPACE_DIR", "/workspace/jobs"))
 REFERENCE_SECONDS = int(os.environ.get("REFERENCE_SECONDS", "120"))
 
 # Alpha/rank do LoRA. O alpha é GRAVADO por voz no treino e devolvido na
-# inferência (cada LoRA infere com o alpha que treinou). Vozes NOVAS usam 32;
-# as antigas continuam 16 (default da inferência) — a imagem nova não quebra
-# LoRAs antigas. Rank é 32 em todas (fix anterior).
+# inferência (cada LoRA infere com o alpha que treinou). Vozes novas usam 16,
+# igual ao desktop; vozes já treinadas continuam usando o alpha salvo no banco.
+# Rank é 32 em todas (matching do desktop).
 TRAIN_LORA_ALPHA = int(os.environ.get("LORA_ALPHA", "16"))
 LORA_RANK = int(os.environ.get("LORA_RANK", "32"))
 LEGACY_LORA_ALPHA = 16  # default da inferência p/ LoRAs sem alpha gravado
@@ -133,7 +133,7 @@ def _handle_train(inp: dict) -> dict:
     voice_id = inp.get("voice_id") or "anonymous"
     audio_urls = inp.get("audio_urls") or []
     lora_upload_url = inp.get("lora_upload_url")
-    max_steps = int(inp.get("max_steps", 1000))
+    max_steps = int(inp.get("max_steps", 500))
     save_interval = int(inp.get("save_interval", max(50, max_steps // 4)))
     language = inp.get("language", "pt")
     whisper_model = inp.get("whisper_model", "large-v3")
@@ -523,8 +523,7 @@ def _handle_inference(inp: dict) -> dict:
         from voxcpm.model.voxcpm import LoRAConfig
 
         # r/alpha TÊM que casar com os do treino daquela LoRA. O backend manda
-        # o alpha gravado na voz (32 p/ novas, 16 p/ antigas). Sem valor, cai no
-        # legado 16 — NUNCA assumir 32 aqui (quebraria LoRA antiga).
+        # o alpha gravado na voz. Sem valor, cai no legado/default 16.
         lora_alpha = int(inp.get("lora_alpha") or LEGACY_LORA_ALPHA)
         lora_rank = int(inp.get("lora_rank") or LORA_RANK)
         lora_cfg = LoRAConfig(
