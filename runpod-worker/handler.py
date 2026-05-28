@@ -388,33 +388,42 @@ def _handle_inference(inp: dict) -> dict:
     lora_url = inp.get("lora_url")
     output_upload_url = inp.get("output_upload_url")
     cfg_value = float(inp.get("cfg_value", 2.0))
-    inference_timesteps = int(inp.get("inference_timesteps", 10))
+    # 20 = default do desktop (VoiceLoraStudio); voz mais estavel em texto longo.
+    # O demo oficial usa 10 mas drifta no fim em geracoes > ~1 min.
+    inference_timesteps = int(inp.get("inference_timesteps", 20))
     normalize = bool(inp.get("normalize", False))
 
     if prompt_text and not prompt_wav_url:
         return {"error": "prompt_text provided without prompt_wav_url"}
 
-    from voice_pipeline import upload_file_to_presigned_url
+    from voice_pipeline import transcribe_file, upload_file_to_presigned_url
 
     # 1. Baixa LoRA (cache local) + carrega modelo
     lora_path: Path | None = None
     if lora_url:
         lora_path = _ensure_local_from_url(lora_url, _LORA_CACHE_DIR, "lora")
 
-    # 2. Baixa referência. Clonagem usa `reference_wav_path` — modo voice-clone
-    # do VoxCPM2, isolado por ref_audio tokens. NÃO usa transcript: o áudio só
-    # contribui timbre/prosódia, sem influenciar O QUÊ é falado. É o que o demo
-    # oficial faz (OpenBMB-VoxCPM/app.py:265 — "[Voice Control] reference_wav
-    # only"). O modo continuation (prompt_wav + prompt_text) é instável com
-    # prompts longos (2 min): o modelo "continua" o prompt_text e mistura/
-    # substitui o texto-alvo (hallucination da referência).
-    reference_wav_local: str | None = None
+    # 2. Baixa referência. CONTINUATION mode (prompt_wav_path + prompt_text) —
+    # mesma chamada do desktop (`VoiceLoraStudio/core.py:841`) que funcionava
+    # bem. Transcript vem do banco (gravado no treino atômico). Fallback de
+    # Whisper só pra vozes antigas que possam estar sem transcript.
+    prompt_wav_local: str | None = None
     if prompt_wav_url:
         ref_dir = WORKSPACE / "refs"
         ref_path = _ensure_local_from_url(prompt_wav_url, ref_dir, "ref")
-        reference_wav_local = str(ref_path)
-    # `prompt_text` chega da rota (transcript salvo no treino) mas NÃO é usado
-    # aqui — é mantido só pra debug/futuro. Ignorar de propósito.
+        prompt_wav_local = str(ref_path)
+
+    if prompt_wav_local and not prompt_text:
+        whisper_model = inp.get("whisper_model", "large-v3")
+        language = inp.get("language", "pt")
+        _log("info", "inference.transcribe.start", model=whisper_model)
+        prompt_text = transcribe_file(
+            prompt_wav_local,
+            model_name=whisper_model,
+            language=language,
+            log=lambda m: _log("info", "whisper", detail=m),
+        )
+        _log("info", "inference.transcribe.done", text_len=len(prompt_text or ""))
 
     # 3. Carrega modelo (com ou sem LoRA)
     # Por simplicidade, NÃO usamos cache do modelo VoxCPM com LoRA (cada call carrega).
@@ -452,14 +461,22 @@ def _handle_inference(inp: dict) -> dict:
     )
     sample_rate = model.tts_model.sample_rate
 
-    _log("info", "inference.start", text_len=len(text), has_clone=bool(reference_wav_local), has_lora=bool(lora_path))
+    _log("info", "inference.start", text_len=len(text), has_clone=bool(prompt_wav_local), has_lora=bool(lora_path), timesteps=inference_timesteps)
     t0 = time.monotonic()
+    # Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853) — único setup
+    # já comprovado a entregar texto fiel + voz estável em ~1 min de fala.
     wav = model.generate(
         text=text,
-        reference_wav_path=reference_wav_local,
+        prompt_wav_path=prompt_wav_local,
+        prompt_text=prompt_text,
         cfg_value=cfg_value,
         inference_timesteps=inference_timesteps,
+        max_len=4096,
         normalize=normalize,
+        denoise=False,
+        retry_badcase=True,
+        retry_badcase_max_times=3,
+        retry_badcase_ratio_threshold=6.0,
     )
     elapsed = time.monotonic() - t0
     _log("info", "inference.done", elapsed_s=round(elapsed, 2), samples=len(wav))
