@@ -1,3 +1,4 @@
+# Re-trigger deploy: 2026-05-28 (ff-merge 23 commits nao disparou)
 name: Deploy Frontend (production)
 
 # Promoção dev -> main = produção. Ao dar push/merge em `main` (mexendo no
