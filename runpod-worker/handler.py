@@ -34,12 +34,14 @@ import io
 import json
 import os
 import random
+import re
 import shutil
 import time
 import traceback
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import runpod
 import soundfile as sf
 from huggingface_hub import snapshot_download
@@ -352,6 +354,39 @@ def _transcribe_with_retry(
     return None
 
 
+def _split_text_for_tts(text: str, max_chars: int = 200) -> list[str]:
+    """Quebra texto em chunks <= max_chars respeitando fim de frase.
+
+    VoxCPM gera 1 utterance por chamada e drifta/acelera em texto longo (issue
+    #302). Quebrar em frases e gerar cada uma re-ancora a referencia + reinicia
+    o estado interno do modelo a cada chunk — a doc oficial confirma que isso
+    previne 'gradual speed-up' e drift de timbre.
+    https://voxcpm.readthedocs.io/en/latest/usage_guide.html
+    """
+    text = (text or "").strip()
+    if not text:
+        return []
+    # Separa em frases por fim de pontuacao (. ? ! e reticencia). O lookbehind
+    # mantem o sinal preso na frase anterior. \n+ tambem corta (paragrafos).
+    sentences = re.split(r"(?<=[.!?…])\s+|\n+", text)
+    chunks: list[str] = []
+    cur = ""
+    for s in sentences:
+        s = s.strip()
+        if not s:
+            continue
+        # Se grudar a proxima frase passa do limite, fecha o chunk atual.
+        # Se a frase sozinha ja estoura, deixa estourar (nao corta meio-palavra).
+        if cur and len(cur) + 1 + len(s) > max_chars:
+            chunks.append(cur)
+            cur = s
+        else:
+            cur = (cur + " " + s) if cur else s
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
 # ───────────────────────────────────────────────────────────────
 # INFERENCE
 # ───────────────────────────────────────────────────────────────
@@ -464,25 +499,56 @@ def _handle_inference(inp: dict) -> dict:
     )
     sample_rate = model.tts_model.sample_rate
 
-    _log("info", "inference.start", text_len=len(text), has_clone=bool(prompt_wav_local), has_lora=bool(lora_path), timesteps=inference_timesteps)
-    t0 = time.monotonic()
-    # Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853) — único setup
-    # já comprovado a entregar texto fiel + voz estável em ~1 min de fala.
-    wav = model.generate(
-        text=text,
-        prompt_wav_path=prompt_wav_local,
-        prompt_text=prompt_text,
-        cfg_value=cfg_value,
-        inference_timesteps=inference_timesteps,
-        max_len=4096,
-        normalize=normalize,
-        denoise=False,
-        retry_badcase=True,
-        retry_badcase_max_times=3,
-        retry_badcase_ratio_threshold=6.0,
+    # Chunking por frase: cada chunk e' UMA chamada de generate independente,
+    # com a MESMA referencia. Re-ancora a ref + reseta estado interno -> mata
+    # drift de timbre (EsposaLucas engrossando no fim) e gradual speed-up
+    # (Aluno2 acelerando). Doc oficial recomenda explicitamente:
+    # https://voxcpm.readthedocs.io/en/latest/usage_guide.html
+    chunk_max = int(os.environ.get("TTS_CHUNK_MAX_CHARS", "200"))
+    silence_ms = int(os.environ.get("TTS_CHUNK_SILENCE_MS", "200"))
+    chunks = _split_text_for_tts(text, max_chars=chunk_max) or [text]
+    silence_samples = max(0, int(sample_rate * silence_ms / 1000))
+    silence = (
+        np.zeros(silence_samples, dtype=np.float32) if silence_samples > 0 else None
     )
+
+    _log(
+        "info", "inference.start", text_len=len(text), chunks=len(chunks),
+        chunk_max=chunk_max, silence_ms=silence_ms,
+        has_clone=bool(prompt_wav_local), has_lora=bool(lora_path),
+        timesteps=inference_timesteps,
+    )
+    t0 = time.monotonic()
+
+    all_wavs: list = []
+    for idx, chunk in enumerate(chunks):
+        ct0 = time.monotonic()
+        # Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853).
+        seg = model.generate(
+            text=chunk,
+            prompt_wav_path=prompt_wav_local,
+            prompt_text=prompt_text,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
+            max_len=4096,
+            normalize=normalize,
+            denoise=False,
+            retry_badcase=True,
+            retry_badcase_max_times=3,
+            retry_badcase_ratio_threshold=6.0,
+        )
+        _log(
+            "info", "inference.chunk", idx=idx, total=len(chunks),
+            chars=len(chunk), samples=int(len(seg)),
+            elapsed_s=round(time.monotonic() - ct0, 2),
+        )
+        all_wavs.append(np.asarray(seg, dtype=np.float32))
+        if silence is not None and idx < len(chunks) - 1:
+            all_wavs.append(silence)
+
+    wav = np.concatenate(all_wavs) if all_wavs else np.zeros(0, dtype=np.float32)
     elapsed = time.monotonic() - t0
-    _log("info", "inference.done", elapsed_s=round(elapsed, 2), samples=len(wav))
+    _log("info", "inference.done", elapsed_s=round(elapsed, 2), samples=len(wav), chunks=len(chunks))
 
     # 4. Upload ou base64
     if output_upload_url:
