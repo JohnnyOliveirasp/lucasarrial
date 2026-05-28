@@ -4,6 +4,7 @@
     "nav": {
       "dashboard": "Dashboard",
       "voiceCloning": "Clonación de Voz",
+      "record": "Grabar Voz",
       "history": "Historial",
       "settings": "Configuración"
     },

@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { LayoutDashboard, Mic2, History, Settings } from "lucide-react";
+import { LayoutDashboard, Mic2, Mic, History, Settings } from "lucide-react";
 
 const NAV = [
   { href: "/app/dashboard", icon: LayoutDashboard, key: "dashboard" as const },
   { href: "/app/voice-cloning", icon: Mic2, key: "voiceCloning" as const },
+  { href: "/app/voice-cloning/script", icon: Mic, key: "record" as const },
   { href: "/app/history", icon: History, key: "history" as const },
   { href: "/app/settings", icon: Settings, key: "settings" as const, soon: true },
 ];
