@@ -23,11 +23,17 @@ export async function GET(request: NextRequest) {
   if (!auth) return unauthorized();
 
   const admin = getAdmin();
-  const { data: gens, error } = await admin
+
+  // Admin (env ADMIN_EMAILS): pula filtro de user_id e ve TODAS as geracoes.
+  // Usuario comum: filtro normal por user_id (vinha assim antes deste commit).
+  let q = admin
     .from("generations")
-    .select("id, voice_id, text_raw, status, audio_path, duration_seconds, created_at")
-    .eq("user_id", auth.user_id)
+    .select("id, user_id, voice_id, text_raw, status, audio_path, duration_seconds, created_at")
     .order("created_at", { ascending: false });
+  if (!auth.is_admin) {
+    q = q.eq("user_id", auth.user_id);
+  }
+  const { data: gens, error } = await q;
 
   if (error) return serverError("Failed to list generations");
   const rows = gens ?? [];
@@ -41,6 +47,20 @@ export async function GET(request: NextRequest) {
       .select("id, name")
       .in("id", voiceIds);
     for (const v of voices ?? []) nameById.set(v.id, v.name);
+  }
+
+  // Admin view: mapeia user_id -> email pra mostrar quem fez cada geracao.
+  // listUsers() pagina (max 1000 por pagina); pra MVP basta 1 pagina.
+  const emailById = new Map<string, string>();
+  if (auth.is_admin) {
+    try {
+      const { data: usersData } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      for (const u of usersData?.users ?? []) {
+        if (u.email) emailById.set(u.id, u.email);
+      }
+    } catch {
+      // best-effort; sem email no card mas a lista nao quebra
+    }
   }
 
   const items = await Promise.all(
@@ -62,11 +82,13 @@ export async function GET(request: NextRequest) {
         duration_seconds: g.duration_seconds,
         created_at: g.created_at,
         audio_url,
+        // Vem nulo pra usuario comum; vem o email do dono na view de admin.
+        user_email: auth.is_admin ? emailById.get(g.user_id) ?? null : null,
       };
     }),
   );
 
-  return jsonOk({ generations: items });
+  return jsonOk({ generations: items, is_admin: auth.is_admin });
 }
 
 export async function DELETE(request: NextRequest) {

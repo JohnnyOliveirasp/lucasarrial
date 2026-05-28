@@ -11,7 +11,27 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
 export type AuthSource = "cookie" | "api_key";
-export type AuthResult = { user_id: string; source: AuthSource } | null;
+export type AuthResult = {
+  user_id: string;
+  source: AuthSource;
+  email: string | null;
+  is_admin: boolean;
+} | null;
+
+/**
+ * Verifica se o e-mail é admin via env `ADMIN_EMAILS` (CSV).
+ * Ex.: ADMIN_EMAILS=foo@bar.com,baz@qux.com
+ * Comparação case-insensitive. Usado pra bypassar filtro de user_id em rotas
+ * que mostram dados de outros usuários (ex.: /api/v1/generations p/ admin view).
+ */
+export function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const list = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return list.includes(email.toLowerCase());
+}
 
 import type { Database } from "@/lib/db/types";
 
@@ -31,7 +51,13 @@ async function tryCookie(): Promise<AuthResult> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
-  return { user_id: user.id, source: "cookie" };
+  const email = user.email ?? null;
+  return {
+    user_id: user.id,
+    source: "cookie",
+    email,
+    is_admin: isAdminEmail(email),
+  };
 }
 
 async function tryApiKey(request: NextRequest): Promise<AuthResult> {
@@ -54,7 +80,21 @@ async function tryApiKey(request: NextRequest): Promise<AuthResult> {
     .update({ last_used_at: new Date().toISOString() })
     .eq("key_hash", hash);
 
-  return { user_id: data.user_id, source: "api_key" };
+  // API keys nao tem contexto direto de email do user. Pra checar admin via
+  // API key, busca o email do user dono da chave em auth.users.
+  let email: string | null = null;
+  try {
+    const { data: u } = await admin.auth.admin.getUserById(data.user_id);
+    email = u.user?.email ?? null;
+  } catch {
+    email = null;
+  }
+  return {
+    user_id: data.user_id,
+    source: "api_key",
+    email,
+    is_admin: isAdminEmail(email),
+  };
 }
 
 export async function authenticate(request: NextRequest): Promise<AuthResult> {

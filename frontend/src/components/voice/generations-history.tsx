@@ -12,6 +12,8 @@ type Gen = {
   duration_seconds: number | null;
   created_at: string;
   audio_url: string | null;
+  // Vem preenchido SOMENTE em admin view (rota detecta via ADMIN_EMAILS).
+  user_email?: string | null;
 };
 
 const STATUS_LABEL: Record<Gen["status"], string> = {
@@ -178,13 +180,21 @@ export function GenerationsHistory() {
                 className="accent-[var(--color-accent,#ff5500)] self-start sm:self-center"
               />
               <div className="flex flex-1 flex-col gap-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-display text-lg uppercase leading-none text-fg">
                     {g.voice_name}
                   </span>
                   <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg">
                     {new Date(g.created_at).toLocaleString("pt-BR")}
                   </span>
+                  {g.user_email && (
+                    <span
+                      className="border border-accent/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-accent"
+                      title="Dono da geração"
+                    >
+                      {g.user_email}
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-muted-fg line-clamp-2">{g.text_raw}</p>
               </div>
