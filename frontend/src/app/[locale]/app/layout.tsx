@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { Sidebar } from "@/components/app/sidebar";
 import { Topbar } from "@/components/app/topbar";
+import { ConsentGate } from "@/components/app/consent-gate";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function AppLayout({
@@ -35,6 +36,7 @@ export default async function AppLayout({
         />
         <main className="flex-1 px-6 py-10 lg:px-12">{children}</main>
       </div>
+      <ConsentGate />
     </div>
   );
 }

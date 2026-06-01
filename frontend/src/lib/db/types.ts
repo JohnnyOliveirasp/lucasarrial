@@ -150,6 +150,26 @@ export type ApiKeyInsert = {
 };
 export type ApiKeyUpdate = Partial<ApiKeyRow>;
 
+// ───────── user_consents ─────────
+export type UserConsentRow = {
+  id: string;
+  user_id: string;
+  consent_type: string;
+  consent_version: string;
+  accepted_at: Timestamp;
+  ip_address: string | null;
+  user_agent: string | null;
+  revoked_at: Timestamp | null;
+};
+export type UserConsentInsert = {
+  user_id: string;
+  consent_type: string;
+  consent_version: string;
+  ip_address?: string | null;
+  user_agent?: string | null;
+};
+export type UserConsentUpdate = Partial<UserConsentRow>;
+
 // ───────── Database (composição) ─────────
 // Cada tabela precisa de `Relationships: []` pra satisfazer GenericTable do supabase-js v2.105+.
 type Relationship = {
@@ -170,6 +190,7 @@ export type Database = {
       generations:   { Row: GenerationRow;   Insert: GenerationInsert;   Update: GenerationUpdate;   Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };
+      user_consents: { Row: UserConsentRow;  Insert: UserConsentInsert;  Update: UserConsentUpdate;  Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

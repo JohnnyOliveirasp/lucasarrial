@@ -1,6 +1,9 @@
 import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
+import { LEGAL_DOCS } from "@/lib/legal";
 
-const COLUMNS = ["product", "company", "legal"] as const;
+// product/company seguem como placeholders; legal aponta pras páginas reais.
+const COLUMNS = ["product", "company"] as const;
 
 export function Footer() {
   const t = useTranslations("footer");
@@ -37,6 +40,25 @@ export function Footer() {
               </ul>
             </div>
           ))}
+
+          {/* Legal — links pras páginas públicas */}
+          <div>
+            <h3 className="label-mono mb-4 text-[var(--fg)]">
+              {t("columns.legal.title")}
+            </h3>
+            <ul className="space-y-2.5">
+              {LEGAL_DOCS.map((d) => (
+                <li key={d.slug}>
+                  <Link
+                    href={`/${d.slug}`}
+                    className="text-sm text-[var(--muted-fg)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-snap)] hover:text-[var(--accent)]"
+                  >
+                    {d.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
         <div className="mt-16 flex flex-col items-start justify-between gap-3 border-t border-[var(--border)] pt-8 md:flex-row md:items-center">
