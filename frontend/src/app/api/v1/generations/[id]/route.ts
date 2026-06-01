@@ -8,6 +8,7 @@
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import {
+  badRequest,
   jsonOk,
   notFound,
   serverError,
@@ -100,4 +101,41 @@ export async function GET(request: NextRequest, ctx: Ctx) {
   }
 
   return jsonOk({ generation: { ...current, audio_url } });
+}
+
+/**
+ * PATCH /api/v1/generations/[id]
+ *
+ * Renomeia o áudio gerado. Body: { name: string }. String vazia → volta pro
+ * fallback (name = null). Usuário comum só renomeia o próprio; admin
+ * (ADMIN_EMAILS) renomeia qualquer um — espelha o bypass do GET do histórico.
+ */
+export async function PATCH(request: NextRequest, ctx: Ctx) {
+  const auth = await authenticate(request);
+  if (!auth) return unauthorized();
+  const { id } = await ctx.params;
+
+  let body: { name?: unknown } = {};
+  try {
+    body = await request.json();
+  } catch {
+    return badRequest("Corpo inválido");
+  }
+  if (typeof body.name !== "string") return badRequest("Nome inválido");
+  const trimmed = body.name.trim().slice(0, 120);
+
+  const admin = getAdmin();
+  let q = admin
+    .from("generations")
+    .update({ name: trimmed === "" ? null : trimmed })
+    .eq("id", id);
+  if (!auth.is_admin) {
+    q = q.eq("user_id", auth.user_id);
+  }
+  const { data, error } = await q.select("id, name").maybeSingle();
+
+  if (error) return serverError("Failed to rename generation");
+  if (!data) return notFound("Generation");
+
+  return jsonOk({ generation: data });
 }

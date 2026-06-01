@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   // Usuario comum: filtro normal por user_id (vinha assim antes deste commit).
   let q = admin
     .from("generations")
-    .select("id, user_id, voice_id, text_raw, status, audio_path, duration_seconds, created_at")
+    .select("id, user_id, voice_id, name, text_raw, status, audio_path, duration_seconds, created_at")
     .order("created_at", { ascending: false });
   if (!auth.is_admin) {
     q = q.eq("user_id", auth.user_id);
@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
         id: g.id,
         voice_id: g.voice_id,
         voice_name: nameById.get(g.voice_id) ?? "—",
+        name: g.name,
         text_raw: g.text_raw,
         status: g.status,
         duration_seconds: g.duration_seconds,

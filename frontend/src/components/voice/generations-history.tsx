@@ -1,12 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Download, Trash2, AlertTriangle, History as HistoryIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Download,
+  Trash2,
+  AlertTriangle,
+  History as HistoryIcon,
+  Pencil,
+  Check,
+  X,
+  ChevronDown,
+} from "lucide-react";
 
 type Gen = {
   id: string;
   voice_id: string;
   voice_name: string;
+  name: string | null;
   text_raw: string;
   status: "pending" | "generating" | "ready" | "failed";
   duration_seconds: number | null;
@@ -30,6 +40,20 @@ export function GenerationsHistory() {
   const [pending, setPending] = useState<string[]>([]); // ids aguardando confirmação
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  function toggleExpand(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const load = useCallback(async () => {
     try {
@@ -101,6 +125,45 @@ export function GenerationsHistory() {
       setError(e instanceof Error ? e.message : "Erro");
     } finally {
       setDeleting(false);
+    }
+  }
+
+  function startEdit(g: Gen) {
+    setEditingId(g.id);
+    setDraft(g.name ?? "");
+    setError(null);
+    // foca no input no próximo tick (após render)
+    requestAnimationFrame(() => editInputRef.current?.focus());
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setDraft("");
+  }
+
+  async function saveEdit(id: string) {
+    const name = draft.trim().slice(0, 120);
+    setSavingId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/v1/generations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error?.message || "Falha ao renomear");
+      }
+      setItems((prev) =>
+        prev.map((g) => (g.id === id ? { ...g, name: name === "" ? null : name } : g)),
+      );
+      setEditingId(null);
+      setDraft("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro");
+    } finally {
+      setSavingId(null);
     }
   }
 
@@ -181,12 +244,67 @@ export function GenerationsHistory() {
               />
               <div className="flex flex-1 flex-col gap-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-display text-lg uppercase leading-none text-fg">
-                    {g.voice_name}
-                  </span>
+                  {editingId === g.id ? (
+                    <span className="flex items-center gap-1.5">
+                      <input
+                        ref={editInputRef}
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit(g.id);
+                          if (e.key === "Escape") cancelEdit();
+                        }}
+                        maxLength={120}
+                        placeholder={g.voice_name}
+                        disabled={savingId === g.id}
+                        className="w-48 border border-accent bg-bg px-2 py-1 font-display text-lg uppercase leading-none text-fg outline-none disabled:opacity-50"
+                        aria-label="Nome do áudio"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => saveEdit(g.id)}
+                        disabled={savingId === g.id}
+                        aria-label="Salvar nome"
+                        className="text-accent hover:opacity-70 disabled:opacity-40"
+                      >
+                        <Check className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        disabled={savingId === g.id}
+                        aria-label="Cancelar"
+                        className="text-muted-fg hover:text-fg disabled:opacity-40"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="group/name flex items-center gap-1.5">
+                      <span className="font-display text-lg uppercase leading-none text-fg">
+                        {g.name?.trim() ? g.name : g.voice_name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => startEdit(g)}
+                        aria-label="Editar nome do áudio"
+                        className="text-muted-fg transition-colors hover:text-accent"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  )}
                   <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg">
                     {new Date(g.created_at).toLocaleString("pt-BR")}
                   </span>
+                  {g.name?.trim() && editingId !== g.id && (
+                    <span
+                      className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg"
+                      title="Voz usada"
+                    >
+                      · {g.voice_name}
+                    </span>
+                  )}
                   {g.user_email && (
                     <span
                       className="border border-accent/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-accent"
@@ -196,7 +314,28 @@ export function GenerationsHistory() {
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-muted-fg line-clamp-2">{g.text_raw}</p>
+                <p
+                  className={`text-sm text-muted-fg whitespace-pre-wrap ${
+                    expanded.has(g.id) ? "" : "line-clamp-2"
+                  }`}
+                >
+                  {g.text_raw}
+                </p>
+                {g.text_raw.length > 120 && (
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(g.id)}
+                    aria-expanded={expanded.has(g.id)}
+                    className="flex w-fit items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em] text-accent transition-colors hover:opacity-70"
+                  >
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 transition-transform ${
+                        expanded.has(g.id) ? "rotate-180" : ""
+                      }`}
+                    />
+                    {expanded.has(g.id) ? "ver menos" : "ver texto completo"}
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-3 sm:w-[420px] sm:justify-end">
@@ -205,7 +344,7 @@ export function GenerationsHistory() {
                     <audio
                       src={g.audio_url}
                       controls
-                      preload="none"
+                      preload="metadata"
                       className="h-9 max-w-[220px]"
                     />
                     <button

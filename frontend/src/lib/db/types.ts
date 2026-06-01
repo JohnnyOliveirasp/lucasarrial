@@ -97,6 +97,7 @@ export type GenerationRow = {
   id: string;
   user_id: string;
   voice_id: string;
+  name: string | null;
   text_raw: string;
   text_normalized: string | null;
   reference_audio_path: string;
