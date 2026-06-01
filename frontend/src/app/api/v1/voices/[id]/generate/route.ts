@@ -76,12 +76,17 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   const admin = getAdmin();
 
-  const { data: voice, error: vErr } = await admin
+  // Usuário comum só gera com a própria voz; admin (ADMIN_EMAILS) pode gerar
+  // com qualquer voz — espelha o bypass do histórico. Poder sensível: admin
+  // consegue sintetizar a voz de qualquer aluno (uso interno/suporte).
+  let voiceQuery = admin
     .from("voices")
     .select("id, user_id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha")
-    .eq("id", voiceId)
-    .eq("user_id", auth.user_id)
-    .maybeSingle();
+    .eq("id", voiceId);
+  if (!auth.is_admin) {
+    voiceQuery = voiceQuery.eq("user_id", auth.user_id);
+  }
+  const { data: voice, error: vErr } = await voiceQuery.maybeSingle();
 
   if (vErr) return serverError("Failed to load voice");
   if (!voice) return notFound("Voice");

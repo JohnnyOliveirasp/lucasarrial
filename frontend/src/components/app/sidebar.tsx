@@ -3,14 +3,28 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { LayoutDashboard, Mic2, Mic, History, Settings } from "lucide-react";
+import {
+  LayoutDashboard,
+  Mic2,
+  Mic,
+  History,
+  Settings,
+  type LucideIcon,
+} from "lucide-react";
 
-const NAV = [
-  { href: "/app/dashboard", icon: LayoutDashboard, key: "dashboard" as const },
-  { href: "/app/voice-cloning", icon: Mic2, key: "voiceCloning" as const },
-  { href: "/app/voice-cloning/script", icon: Mic, key: "record" as const },
-  { href: "/app/history", icon: History, key: "history" as const },
-  { href: "/app/settings", icon: Settings, key: "settings" as const, soon: true },
+type NavItem = {
+  href: string;
+  icon: LucideIcon;
+  key: "dashboard" | "voiceCloning" | "record" | "history" | "settings";
+  soon?: boolean;
+};
+
+const NAV: NavItem[] = [
+  { href: "/app/dashboard", icon: LayoutDashboard, key: "dashboard" },
+  { href: "/app/voice-cloning", icon: Mic2, key: "voiceCloning" },
+  { href: "/app/voice-cloning/script", icon: Mic, key: "record" },
+  { href: "/app/history", icon: History, key: "history" },
+  { href: "/app/settings", icon: Settings, key: "settings" },
 ];
 
 export function Sidebar() {
