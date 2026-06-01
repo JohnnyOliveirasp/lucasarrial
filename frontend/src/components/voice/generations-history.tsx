@@ -359,6 +359,7 @@ export function GenerationsHistory() {
                     <audio
                       src={g.audio_url}
                       controls
+                      controlsList="nodownload"
                       preload="metadata"
                       className="h-9 max-w-[220px]"
                     />
