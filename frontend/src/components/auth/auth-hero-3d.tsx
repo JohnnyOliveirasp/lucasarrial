@@ -1,9 +1,48 @@
 "use client";
 
-import { Suspense, useRef } from "react";
+import {
+  Suspense,
+  useRef,
+  useState,
+  useEffect,
+  Component,
+  type ReactNode,
+} from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useTranslations } from "next-intl";
 import { Group as ThreeGroup, MathUtils } from "three";
+
+/** Detecta se o browser consegue criar um contexto WebGL (GPU desabilitada,
+ *  drivers antigos, sandbox sem GPU → retorna false e caímos no fundo estático). */
+function hasWebGL(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(
+      window.WebGLRenderingContext &&
+      (canvas.getContext("webgl") || canvas.getContext("experimental-webgl"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Rede de segurança: se o Canvas/three estourar em runtime (ex.: contexto
+ *  perdido), captura e esconde o 3D em vez de derrubar a tela de login. */
+class WebGLErrorBoundary extends Component<
+  { children: ReactNode; onFail: () => void },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onFail();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 function VoiceOrb() {
   const groupRef = useRef<ThreeGroup>(null);
@@ -98,20 +137,39 @@ function Particles({ count = 200 }: { count?: number }) {
 
 export function AuthHero3D() {
   const t = useTranslations("auth");
+  // null = ainda checando (SSR/primeiro paint); evita montar o Canvas no servidor.
+  const [show3D, setShow3D] = useState(false);
+
+  useEffect(() => {
+    setShow3D(hasWebGL());
+  }, []);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0a0a0a]">
-      <Canvas
-        camera={{ position: [0, 0, 7], fov: 50 }}
-        dpr={[1, 2]}
-        gl={{ antialias: true, alpha: false }}
-      >
-        <color attach="background" args={["#0a0a0a"]} />
-        <Suspense fallback={null}>
-          <VoiceOrb />
-          <Particles />
-        </Suspense>
-      </Canvas>
+      {/* Fundo estático (fallback sem WebGL): glow laranja radial */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(circle at 50% 42%, rgba(255,107,44,0.18), transparent 60%)",
+        }}
+      />
+
+      {show3D && (
+        <WebGLErrorBoundary onFail={() => setShow3D(false)}>
+          <Canvas
+            camera={{ position: [0, 0, 7], fov: 50 }}
+            dpr={[1, 2]}
+            gl={{ antialias: true, alpha: false }}
+          >
+            <color attach="background" args={["#0a0a0a"]} />
+            <Suspense fallback={null}>
+              <VoiceOrb />
+              <Particles />
+            </Suspense>
+          </Canvas>
+        </WebGLErrorBoundary>
+      )}
 
       {/* Editorial overlay: brand + tagline */}
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-12">
