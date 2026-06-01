@@ -87,14 +87,29 @@ export function GenerationsHistory() {
     );
   }
 
-  async function download(url: string, voice: string) {
+  async function download(url: string, label: string) {
+    // Extensão real do arquivo (no R2 é .mp3); deriva do path da URL, fallback mp3.
+    let ext = "mp3";
+    try {
+      const m = new URL(url).pathname.match(/\.([a-z0-9]+)$/i);
+      if (m) ext = m[1].toLowerCase();
+    } catch {
+      /* mantém mp3 */
+    }
+    // Nome do arquivo = nome do áudio (ou voz). Remove chars inválidos p/ filename.
+    const safe =
+      (label || "audio")
+        .trim()
+        .replace(/[\\/:*?"<>|]+/g, "")
+        .replace(/\s+/g, " ")
+        .slice(0, 120) || "audio";
     try {
       const res = await fetch(url, { cache: "no-store" });
       const blob = await res.blob();
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
-      a.download = `aiverse-${voice}-${Date.now()}.wav`.replace(/\s+/g, "_");
+      a.download = `${safe}.${ext}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -349,7 +364,9 @@ export function GenerationsHistory() {
                     />
                     <button
                       type="button"
-                      onClick={() => download(g.audio_url!, g.voice_name)}
+                      onClick={() =>
+                        download(g.audio_url!, g.name?.trim() ? g.name : g.voice_name)
+                      }
                       aria-label="Baixar"
                       className="text-muted-fg hover:text-accent"
                     >
