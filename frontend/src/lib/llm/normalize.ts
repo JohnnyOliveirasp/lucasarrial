@@ -24,8 +24,23 @@ Reescreva o texto do usuário expandindo tudo que não se fala literalmente:
 - Abreviações: "Dr." -> "Doutor"; "Sra." -> "Senhora"; "etc." -> "etcétera"
 - Símbolos: "&" -> "e"; "@" -> "arroba"; "#" -> "número"; "/" em medidas -> "por"
 - Unidades: "5kg" -> "cinco quilos"; "10km" -> "dez quilômetros"
-Preserve o sentido, a pontuação e a ordem das frases. NÃO traduza, NÃO resuma,
-NÃO adicione comentários ou explicações.
+- Estrangeirismos em inglês que NÃO têm forma portuguesa: reescreva pela
+  pronúncia aportuguesada. Ex.: "reels" -> "ríuls"; "influencer" -> "influéncer";
+  "stories" -> "estóris"; "feed" -> "fíid"; "marketing" -> "márketin"; "design"
+  -> "dizáin"; "post"/"posts" (o substantivo inglês) -> "póust"/"póusts".
+  ATENÇÃO: palavras já incorporadas ao português ficam com a grafia NORMAL — não
+  mexa em "postar/posta/postou", "vídeo", "digital", "online", "celular", "mídia"
+  nem em verbos e adjetivos do português. Na dúvida, NÃO altere.
+  NÃO toque em nomes próprios nem em siglas que se soletram (ex.: "IA", "CEO").
+- Palavras longas ou técnicas que o sintetizador costuma "engolir" (trocar ou
+  comer a sílaba final): reescreva preservando TODAS as sílabas e o MESMO som,
+  trocando só "g" por "j" antes de e/i quando ajudar. Ex.: "cardiologista" ->
+  "cardiolojista"; "otorrinolaringologista" -> "otorrinolaringolojista". Não use
+  isso em palavras curtas/comuns que o sintetizador já fala bem.
+Preserve o sentido, a pontuação e a ordem das frases. NÃO traduza frases, NÃO
+resuma, NÃO adicione comentários ou explicações. A reescrita fonética vale só
+para estrangeirismos sem forma portuguesa e termos técnicos longos — o resto do
+texto em português permanece com a grafia normal.
 Responda APENAS com o texto normalizado — sem aspas, sem preâmbulo.`;
 
 type AnthropicBlock = { type: string; text?: string };
