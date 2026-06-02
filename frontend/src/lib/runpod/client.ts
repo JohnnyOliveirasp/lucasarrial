@@ -22,7 +22,7 @@ function trainEndpoint() {
   return id;
 }
 
-function inferenceEndpoint() {
+export function inferenceEndpoint() {
   return process.env.RUNPOD_ENDPOINT_INFERENCE_ID || trainEndpoint();
 }
 

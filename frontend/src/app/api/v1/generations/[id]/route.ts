@@ -17,7 +17,7 @@ import {
 import { getAdmin } from "@/lib/db/admin";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
-import { runpodGetStatus } from "@/lib/runpod/client";
+import { runpodGetStatus, inferenceEndpoint } from "@/lib/runpod/client";
 import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
 import type { GenerationStatus } from "@/lib/db/types";
 
@@ -47,7 +47,9 @@ export async function GET(request: NextRequest, ctx: Ctx) {
 
   if (POLLING_STATUSES.includes(gen.status) && gen.runpod_job_id) {
     try {
-      const resp = await runpodGetStatus(gen.runpod_job_id);
+      // Geração roda no endpoint de INFERÊNCIA (pode diferir do de treino).
+      // Sem isso, o polling consultaria o endpoint errado e nunca acharia o job.
+      const resp = await runpodGetStatus(gen.runpod_job_id, inferenceEndpoint());
       if (resp.status === "COMPLETED") {
         const out = (resp.output ?? {}) as { uploaded?: boolean; error?: string; sample_rate?: number; duration_s?: number; elapsed_s?: number };
         const ok = out.uploaded && !out.error;
