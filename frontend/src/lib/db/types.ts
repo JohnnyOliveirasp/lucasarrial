@@ -50,6 +50,8 @@ export type VoiceRow = {
   reference_audio_path: string | null;
   reference_transcript: string | null;
   lora_alpha: number | null;
+  tts_silence_ms: number | null;
+  tts_crossfade_ms: number | null;
   runpod_job_id: string | null;
   error_message: string | null;
   trained_at: Timestamp | null;

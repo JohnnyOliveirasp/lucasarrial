@@ -55,6 +55,10 @@ type Body = {
   text: string;
   cfg_value?: number;
   inference_timesteps?: number;
+  // Pausa entre frases (override por request, p/ A/B). Sem isso, usa a config
+  // da voz (tts_*); sem ela, o worker usa o default global (env).
+  chunk_silence_ms?: number;
+  chunk_crossfade_ms?: number;
 };
 
 export async function POST(request: NextRequest, ctx: Ctx) {
@@ -81,7 +85,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   // consegue sintetizar a voz de qualquer aluno (uso interno/suporte).
   let voiceQuery = admin
     .from("voices")
-    .select("id, user_id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha")
+    .select("id, user_id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms")
     .eq("id", voiceId);
   if (!auth.is_admin) {
     voiceQuery = voiceQuery.eq("user_id", auth.user_id);
@@ -137,6 +141,20 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     inference_timesteps:
       typeof body.inference_timesteps === "number" ? body.inference_timesteps : 15,
   };
+
+  // Pacing entre frases: precedência body > config da voz. Sem nenhum, o worker
+  // usa o default global (env) — comportamento inalterado pras vozes sem config.
+  const silenceMs =
+    typeof body.chunk_silence_ms === "number"
+      ? body.chunk_silence_ms
+      : voice.tts_silence_ms;
+  const crossfadeMs =
+    typeof body.chunk_crossfade_ms === "number"
+      ? body.chunk_crossfade_ms
+      : voice.tts_crossfade_ms;
+  if (typeof silenceMs === "number") inferenceInput.chunk_silence_ms = silenceMs;
+  if (typeof crossfadeMs === "number") inferenceInput.chunk_crossfade_ms = crossfadeMs;
+
   if (refUrl) {
     inferenceInput.prompt_wav_url = refUrl;
     // A referência é auto-extraída e transcrita no treino. Mandamos o

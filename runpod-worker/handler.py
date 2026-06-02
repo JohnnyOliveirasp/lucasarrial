@@ -557,8 +557,13 @@ def _handle_inference(inp: dict) -> dict:
     # oficial: https://github.com/OpenBMB/VoxCPM/issues/302
     # Doc base: https://voxcpm.readthedocs.io/en/latest/usage_guide.html
     chunk_max = int(os.environ.get("TTS_CHUNK_MAX_CHARS", "220"))
-    silence_ms = int(os.environ.get("TTS_CHUNK_SILENCE_MS", "0"))
-    crossfade_ms = int(os.environ.get("TTS_CHUNK_CROSSFADE_MS", "60"))
+    # silence/crossfade aceitam override por requisição (`inp`) pra ajuste POR
+    # VOZ sem afetar as demais. Sem override → cai no env (default global, mesmo
+    # comportamento de antes). 0 é valor válido (ex.: desligar o crossfade).
+    _sil = inp.get("chunk_silence_ms")
+    silence_ms = int(_sil) if _sil is not None else int(os.environ.get("TTS_CHUNK_SILENCE_MS", "0"))
+    _cf = inp.get("chunk_crossfade_ms")
+    crossfade_ms = int(_cf) if _cf is not None else int(os.environ.get("TTS_CHUNK_CROSSFADE_MS", "60"))
     trim_enabled = os.environ.get("TTS_CHUNK_TRIM", "1") not in ("0", "false", "False", "")
     trim_threshold = float(os.environ.get("TTS_CHUNK_TRIM_THRESHOLD", "0.005"))
     # `pad_ms` mantem alguns ms de cada lado pra nao cortar consoante final.
