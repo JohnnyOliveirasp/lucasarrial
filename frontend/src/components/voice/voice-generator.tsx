@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AudioLines, Play, Download } from "lucide-react";
 import { formatDuration } from "@/lib/audio/duration";
+import Link from "next/link";
 import { SupportError } from "@/components/ui/support-error";
 
 // Limite generoso pra cobrir ~2 min de fala em pt-BR (~150 wpm, ~5 chars/word).
@@ -27,6 +28,7 @@ export function VoiceGenerator({ voiceId }: Props) {
   const [step, setStep] = useState<Step>("form");
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [noCredits, setNoCredits] = useState(false);
   const [generation, setGeneration] = useState<GenerationDto | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -69,6 +71,7 @@ export function VoiceGenerator({ voiceId }: Props) {
     if (!canSubmit) return;
     setStep("submitting");
     setError(null);
+    setNoCredits(false);
 
     try {
       // A referência (se houver) é lida da voz no backend — nada de upload aqui.
@@ -77,6 +80,13 @@ export function VoiceGenerator({ voiceId }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: text.trim() }),
       });
+      if (genRes.status === 402) {
+        const j = await genRes.json().catch(() => ({}));
+        setNoCredits(true);
+        setError(j?.error?.message || "Seus créditos acabaram.");
+        setStep("error");
+        return;
+      }
       if (!genRes.ok) {
         const j = await genRes.json().catch(() => ({}));
         throw new Error(j?.error?.message || "Falha ao iniciar geração");
@@ -188,7 +198,21 @@ export function VoiceGenerator({ voiceId }: Props) {
         </span>
       </div>
 
-      {error && <SupportError action="gerar o áudio" />}
+      {noCredits ? (
+        <div className="flex flex-col gap-3 border border-accent/40 bg-accent/5 p-4">
+          <p className="text-sm text-fg">
+            {error} Compre um pacote de créditos pra continuar gerando.
+          </p>
+          <Link
+            href="/app/credits"
+            className="self-start bg-fg px-4 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-bg transition-colors hover:bg-accent"
+          >
+            Comprar créditos →
+          </Link>
+        </div>
+      ) : (
+        error && <SupportError action="gerar o áudio" />
+      )}
 
       <button
         type="submit"

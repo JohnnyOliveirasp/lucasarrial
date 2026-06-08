@@ -3,6 +3,8 @@ import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { ApiKeysManager } from "@/components/app/api-keys-manager";
 import { ApiDocs } from "@/components/app/api-docs";
+import { CancelSubscription } from "@/components/app/cancel-subscription";
+import { bypassesBilling } from "@/lib/credits/access";
 
 export default async function SettingsPage({
   params,
@@ -35,6 +37,15 @@ export default async function SettingsPage({
 
       <ApiKeysManager />
       <ApiDocs />
+
+      {!bypassesBilling(user.email) && (
+        <section className="flex flex-col gap-3 border-t border-border pt-8">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-fg">
+            Assinatura
+          </h2>
+          <CancelSubscription />
+        </section>
+      )}
     </div>
   );
 }

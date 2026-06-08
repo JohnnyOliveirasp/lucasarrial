@@ -29,12 +29,16 @@ import { authenticate } from "@/lib/api/auth";
 import { normalizeTextForTTS } from "@/lib/llm/normalize";
 import {
   badRequest,
+  jsonError,
   jsonOk,
   notFound,
   serverError,
   unauthorized,
 } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { bypassesBilling } from "@/lib/credits/access";
+import { getBalance, debitCredits } from "@/lib/credits/service";
+import { generationCreditCost } from "@/lib/credits/config";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import {
   buildGenerationKey,
@@ -96,6 +100,21 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   if (!voice) return notFound("Voice");
   if (voice.status !== "ready" || !voice.lora_path) {
     return badRequest(`Voice not ready (status=${voice.status})`);
+  }
+
+  // Custo em créditos = nº de caracteres (espaços contam), mínimo 400.
+  // Equipe/admin (allowlist) não é cobrada. Pré-checa saldo antes de submeter.
+  const creditCost = generationCreditCost(text);
+  const billed = !bypassesBilling(auth.email);
+  if (billed) {
+    const bal = await getBalance(auth.user_id);
+    if (bal.total < creditCost) {
+      return jsonError(
+        "insufficient_credits",
+        `Créditos insuficientes: esta geração custa ${creditCost} e você tem ${bal.total}.`,
+        402,
+      );
+    }
   }
 
   // Referência salva na voz (OPCIONAL). Sem ela, gera só com a LoRA. A
@@ -189,6 +208,19 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   if (insertErr) {
     return serverError("Failed to create generation row");
+  }
+
+  // Debita após a geração ser criada com sucesso. Débito atômico no banco.
+  // (TODO: estornar no webhook se a geração falhar no RunPod — raro.)
+  if (billed) {
+    await debitCredits({
+      userId: auth.user_id,
+      amount: creditCost,
+      kind: "generation",
+      refType: "generation",
+      refId: generationId,
+      note: `geração de áudio (${creditCost} caracteres)`,
+    });
   }
 
   return jsonOk({

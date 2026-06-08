@@ -13,12 +13,16 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import {
   badRequest,
+  jsonError,
   jsonOk,
   notFound,
   serverError,
   unauthorized,
 } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { bypassesBilling } from "@/lib/credits/access";
+import { getBalance, debitCredits } from "@/lib/credits/service";
+import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
 import {
   buildAutoReferenceKey,
   buildLoraKey,
@@ -59,6 +63,19 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   const paths = Array.isArray(voice.raw_audio_paths) ? voice.raw_audio_paths : [];
   if (paths.length === 0) return badRequest("Voice has no audio paths");
+
+  // Clonar/treinar custa TRAINING_CREDIT_COST. Equipe/admin não é cobrada.
+  const billed = !bypassesBilling(auth.email);
+  if (billed) {
+    const bal = await getBalance(auth.user_id);
+    if (bal.total < TRAINING_CREDIT_COST) {
+      return jsonError(
+        "insufficient_credits",
+        `Créditos insuficientes: treinar uma voz custa ${TRAINING_CREDIT_COST} e você tem ${bal.total}.`,
+        402,
+      );
+    }
+  }
 
   // 1. Presigned GETs pros áudios
   let audioUrls: string[];
@@ -132,6 +149,18 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     runpod_job_id: runpodJob.id,
     status: "queued",
   });
+
+  // Debita após o treino ser disparado com sucesso (débito atômico no banco).
+  if (billed) {
+    await debitCredits({
+      userId: auth.user_id,
+      amount: TRAINING_CREDIT_COST,
+      kind: "training",
+      refType: "voice",
+      refId: voice.id,
+      note: "clonagem/treino de voz",
+    });
+  }
 
   return jsonOk({
     voice_id: voice.id,

@@ -17,7 +17,27 @@ export type TrainingJobStatus = "queued" | "running" | "completed" | "failed";
 export type GenerationStatus = "pending" | "generating" | "ready" | "failed";
 export type Plan = "free" | "pro";
 
+// ───────── pagamentos ─────────
+export type PaymentProvider = "hotmart" | "mercadopago" | "stripe";
+export type EntitlementStatus =
+  | "active"
+  | "canceled"
+  | "refunded"
+  | "chargeback"
+  | "expired"
+  | "past_due";
+
 type Timestamp = string; // ISO-8601
+
+// JSON serializável (igual aos types gerados pelo Supabase). Colunas jsonb usam
+// este tipo — `unknown` quebra a tipagem de insert/update do supabase-js.
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
 
 // ───────── profiles ─────────
 export type ProfileRow = {
@@ -26,6 +46,10 @@ export type ProfileRow = {
   display_name: string | null;
   avatar_url: string | null;
   plan: Plan;
+  access_until: Timestamp | null; // cache de entitlements; NULL = sem acesso OU vitalício (ver access_source)
+  access_source: PaymentProvider | null; // provedor que liberou o acesso atual
+  credits_subscription: number; // créditos do plano (zeram/recarregam no ciclo)
+  credits_extra: number;        // créditos avulsos comprados (não expiram)
   created_at: Timestamp;
   updated_at: Timestamp;
 };
@@ -172,6 +196,88 @@ export type UserConsentInsert = {
 };
 export type UserConsentUpdate = Partial<UserConsentRow>;
 
+// ───────── entitlements ─────────
+export type EntitlementRow = {
+  id: string;
+  user_id: string | null;
+  buyer_email: string;
+  provider: PaymentProvider;
+  product_code: string | null;
+  offer_code: string | null;
+  external_id: string;
+  status: EntitlementStatus;
+  access_until: Timestamp | null; // NULL = vitalício (pagamento único)
+  raw_event: Json | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+};
+export type EntitlementInsert = {
+  user_id?: string | null;
+  buyer_email: string;
+  provider: PaymentProvider;
+  product_code?: string | null;
+  offer_code?: string | null;
+  external_id: string;
+  status: EntitlementStatus;
+  access_until?: Timestamp | null;
+  raw_event?: Json | null;
+  updated_at?: Timestamp;
+};
+export type EntitlementUpdate = Partial<EntitlementRow>;
+
+// ───────── payment_events ─────────
+export type PaymentEventRow = {
+  id: string;
+  provider: PaymentProvider;
+  event_id: string;
+  event_type: string | null;
+  buyer_email: string | null;
+  payload: Json | null;
+  received_at: Timestamp;
+  processed_at: Timestamp | null;
+  error: string | null;
+};
+export type PaymentEventInsert = {
+  provider: PaymentProvider;
+  event_id: string;
+  event_type?: string | null;
+  buyer_email?: string | null;
+  payload?: Json | null;
+  processed_at?: Timestamp | null;
+  error?: string | null;
+};
+export type PaymentEventUpdate = Partial<PaymentEventRow>;
+
+// ───────── credit_transactions ─────────
+export type CreditTransactionRow = {
+  id: string;
+  user_id: string;
+  kind: string;
+  amount: number;
+  balance_after: number;
+  ref_type: string | null;
+  ref_id: string | null;
+  note: string | null;
+  created_at: Timestamp;
+};
+export type CreditTransactionInsert = Omit<CreditTransactionRow, "id" | "created_at">;
+export type CreditTransactionUpdate = Partial<CreditTransactionRow>;
+
+// ───────── subscription_cancellations ─────────
+export type SubscriptionCancellationRow = {
+  id: string;
+  user_id: string | null;
+  reason: string | null;
+  detail: string | null;
+  created_at: Timestamp;
+};
+export type SubscriptionCancellationInsert = {
+  user_id?: string | null;
+  reason?: string | null;
+  detail?: string | null;
+};
+export type SubscriptionCancellationUpdate = Partial<SubscriptionCancellationRow>;
+
 // ───────── Database (composição) ─────────
 // Cada tabela precisa de `Relationships: []` pra satisfazer GenericTable do supabase-js v2.105+.
 type Relationship = {
@@ -193,9 +299,43 @@ export type Database = {
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };
       user_consents: { Row: UserConsentRow;  Insert: UserConsentInsert;  Update: UserConsentUpdate;  Relationships: Rel };
+      entitlements:  { Row: EntitlementRow;  Insert: EntitlementInsert;  Update: EntitlementUpdate;  Relationships: Rel };
+      payment_events:{ Row: PaymentEventRow; Insert: PaymentEventInsert; Update: PaymentEventUpdate; Relationships: Rel };
+      credit_transactions: { Row: CreditTransactionRow; Insert: CreditTransactionInsert; Update: CreditTransactionUpdate; Relationships: Rel };
+      subscription_cancellations: { Row: SubscriptionCancellationRow; Insert: SubscriptionCancellationInsert; Update: SubscriptionCancellationUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      debit_credits: {
+        Args: {
+          p_user_id: string;
+          p_amount: number;
+          p_kind: string;
+          p_ref_type?: string | null;
+          p_ref_id?: string | null;
+          p_note?: string | null;
+        };
+        Returns: Json;
+      };
+      grant_subscription_credits: {
+        Args: {
+          p_user_id: string;
+          p_amount: number;
+          p_ref_type?: string | null;
+          p_ref_id?: string | null;
+        };
+        Returns: Json;
+      };
+      add_extra_credits: {
+        Args: {
+          p_user_id: string;
+          p_amount: number;
+          p_ref_type?: string | null;
+          p_ref_id?: string | null;
+        };
+        Returns: Json;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

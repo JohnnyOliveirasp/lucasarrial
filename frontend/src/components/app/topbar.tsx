@@ -1,18 +1,21 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { LogOut, ChevronDown } from "lucide-react";
+import { LogOut, ChevronDown, Coins } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 type Props = {
   email: string;
   displayName: string | null;
   avatarUrl: string | null;
+  creditsTotal: number;
+  unlimited: boolean;
 };
 
-export function Topbar({ email, displayName, avatarUrl }: Props) {
+export function Topbar({ email, displayName, avatarUrl, creditsTotal, unlimited }: Props) {
   const t = useTranslations("app");
   const router = useRouter();
   const supabase = createClient();
@@ -36,7 +39,21 @@ export function Topbar({ email, displayName, avatarUrl }: Props) {
   const initial = (displayName ?? email).slice(0, 1).toUpperCase();
 
   return (
-    <header className="flex h-16 items-center justify-end border-b border-border bg-bg px-6 lg:px-12">
+    <header className="flex h-16 items-center justify-between border-b border-border bg-bg px-6 lg:px-12">
+      <Link
+        href="/app/credits"
+        className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted-fg transition-colors hover:text-accent"
+        title="Ver e comprar créditos"
+      >
+        <Coins className="h-4 w-4 text-accent" />
+        {unlimited ? (
+          <span>Créditos: ∞</span>
+        ) : (
+          <span>
+            <span className="text-fg">{creditsTotal.toLocaleString("pt-BR")}</span> créditos
+          </span>
+        )}
+      </Link>
       <div ref={ref} className="relative">
         <button
           type="button"
