@@ -7,7 +7,7 @@
     "brand": "AI Clone Verse",
     "nav": {
       "dashboard": "Dashboard",
-      "voiceCloning": "Clonagem de Voz",
+      "voiceCloning": "Treinar Voz",
       "record": "Gravar Voz",
       "history": "Histórico",
       "settings": "Configurações"
@@ -19,7 +19,7 @@
       "subtitle": "Comece treinando uma voz. Mais ferramentas em breve.",
       "tools": {
         "voiceCloning": {
-          "name": "Clonagem de Voz",
+          "name": "Treinar Voz",
           "description": "Treine sua voz uma vez. Gere áudio infinito com qualquer texto.",
           "cta": "Começar"
         },
@@ -38,7 +38,7 @@
       }
     },
     "voiceCloning": {
-      "title": "Clonagem de Voz",
+      "title": "Treinar a Voz",
       "subtitle": "Treine sua voz e gere áudio com qualquer texto.",
       "empty": "Você ainda não treinou nenhuma voz.",
       "createButton": "+ Treinar nova voz"

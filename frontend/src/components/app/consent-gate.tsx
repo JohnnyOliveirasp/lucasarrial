@@ -6,14 +6,16 @@
  * - Não é dismissível: só "Aceitar e continuar" (POST) ou "Sair" (signOut).
  * - Fast path por localStorage (por versão) pra não piscar a cada navegação.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { LEGAL_DOCS, CONSENT_VERSION } from "@/lib/legal";
 import { LegalDocView } from "@/components/legal/legal-doc-view";
 
-const CACHE_KEY = `aiverse-consent-${CONSENT_VERSION}`;
+// Prefixo do cache; a chave final inclui o USER ID — senão, num navegador
+// compartilhado, o aceite de um usuário escondia o popup de outro.
+const CACHE_PREFIX = `aiverse-consent-${CONSENT_VERSION}`;
 
 export function ConsentGate() {
   const router = useRouter();
@@ -23,18 +25,27 @@ export function ConsentGate() {
   const [agree, setAgree] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Chave de cache do usuário logado (preenchida no effect). O accept() usa ela.
+  const cacheKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        if (localStorage.getItem(CACHE_KEY) === "1") return;
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!active || !user) return; // sem login o layout já redireciona
+        const key = `${CACHE_PREFIX}-${user.id}`;
+        cacheKeyRef.current = key;
+        if (localStorage.getItem(key) === "1") return;
         const res = await fetch("/api/v1/consent", { cache: "no-store" });
         if (!active || !res.ok) return;
         const json = await res.json();
         if (json.accepted) {
           try {
-            localStorage.setItem(CACHE_KEY, "1");
+            localStorage.setItem(key, "1");
           } catch {
             /* ignora */
           }
@@ -62,7 +73,7 @@ export function ConsentGate() {
         throw new Error(j?.error?.message || "Falha ao registrar o aceite");
       }
       try {
-        localStorage.setItem(CACHE_KEY, "1");
+        if (cacheKeyRef.current) localStorage.setItem(cacheKeyRef.current, "1");
       } catch {
         /* ignora */
       }

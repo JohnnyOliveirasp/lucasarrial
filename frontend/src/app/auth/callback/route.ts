@@ -8,7 +8,45 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAdmin } from "@/lib/db/admin";
 import type { EmailOtpType } from "@supabase/supabase-js";
+
+/**
+ * Garante a linha em `profiles` para o usuário logado. O trigger handle_new_user
+ * cria no cadastro, mas NÃO recria se a linha for apagada (deixa o Auth órfão →
+ * sem créditos/acesso). Aqui, em todo login, fazemos upsert (sem sobrescrever
+ * um perfil já existente). Best-effort: não bloqueia o login.
+ */
+async function ensureProfile(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<void> {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user || !user.email) return;
+    const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+    await getAdmin()
+      .from("profiles")
+      .upsert(
+        {
+          id: user.id,
+          email: user.email,
+          display_name:
+            (meta.full_name as string | undefined) ??
+            (meta.name as string | undefined) ??
+            null,
+          avatar_url:
+            (meta.avatar_url as string | undefined) ??
+            (meta.picture as string | undefined) ??
+            null,
+        },
+        { onConflict: "id", ignoreDuplicates: true },
+      );
+  } catch {
+    /* não bloqueia o login */
+  }
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
@@ -34,6 +72,7 @@ export async function GET(request: NextRequest) {
         `${baseUrl}/login?error=${encodeURIComponent(error.message)}`,
       );
     }
+    await ensureProfile(supabase);
     return NextResponse.redirect(`${baseUrl}${next}`);
   }
 
@@ -45,6 +84,7 @@ export async function GET(request: NextRequest) {
         `${baseUrl}/login?error=${encodeURIComponent(error.message)}`,
       );
     }
+    await ensureProfile(supabase);
     return NextResponse.redirect(`${baseUrl}${next}`);
   }
 

@@ -64,9 +64,9 @@ export default async function AccountPage({
               {displayName.slice(0, 1).toUpperCase()}
             </div>
           )}
-          <div className="flex flex-col">
+          <div className="flex min-w-0 flex-col">
             <span className="text-sm font-medium text-fg">{displayName}</span>
-            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-fg">
+            <span className="break-all font-mono text-xs lowercase text-muted-fg">
               {email}
             </span>
           </div>

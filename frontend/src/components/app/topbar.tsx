@@ -68,11 +68,11 @@ export function Topbar({ email, displayName, avatarUrl, creditsTotal, unlimited 
               {initial}
             </div>
           )}
-          <div className="hidden flex-col items-start sm:flex">
-            <span className="text-sm font-medium leading-tight">
+          <div className="hidden min-w-0 flex-col items-start sm:flex">
+            <span className="max-w-[180px] truncate text-sm font-medium leading-tight">
               {displayName ?? email.split("@")[0]}
             </span>
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-fg">
+            <span className="max-w-[180px] truncate font-mono text-[10px] lowercase text-muted-fg">
               {email}
             </span>
           </div>

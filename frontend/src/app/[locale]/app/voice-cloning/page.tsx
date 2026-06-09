@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { Mic2, Plus } from "lucide-react";
+import { Mic2, Plus, Lock } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { VoiceRowMenu } from "@/components/voice/voice-row-menu";
+import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
+import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
 
 type VoiceRow = {
   id: string;
@@ -44,6 +46,20 @@ export default async function VoiceCloningPage({
 
   const list = (voices ?? []) as VoiceRow[];
 
+  // Treinar (clonar) uma voz exige plano vigente E saldo >= 20.000 créditos.
+  // Geração de áudio com vozes prontas continua liberada (a lista abaixo).
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("email, credits_subscription, credits_extra, access_until")
+    .eq("id", user.id)
+    .single();
+  const email = profile?.email ?? user.email ?? null;
+  const team = bypassesBilling(email);
+  const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
+  const creditsTotal =
+    (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
+  const canTrain = team || (subscribed && creditsTotal >= TRAINING_CREDIT_COST);
+
   return (
     <div className="flex flex-col gap-10">
       <header className="flex flex-col gap-3">
@@ -56,15 +72,37 @@ export default async function VoiceCloningPage({
         <p className="max-w-xl text-sm text-muted-fg">{t("voiceCloning.subtitle")}</p>
       </header>
 
-      <div className="flex items-center justify-end">
-        <Link
-          href="/app/voice-cloning/new"
-          className="flex items-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99]"
-        >
-          <Plus className="h-4 w-4" />
-          {t("voiceCloning.createButton")}
-        </Link>
-      </div>
+      {canTrain ? (
+        <div className="flex items-center justify-end">
+          <Link
+            href="/app/voice-cloning/new"
+            className="flex items-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99]"
+          >
+            <Plus className="h-4 w-4" />
+            {t("voiceCloning.createButton")}
+          </Link>
+        </div>
+      ) : (
+        <section className="flex flex-col gap-4 border border-accent bg-accent/5 p-6">
+          <h2 className="flex items-center gap-2 font-display text-2xl uppercase tracking-tight text-fg">
+            <Lock className="h-5 w-5 text-accent" />
+            {subscribed
+              ? "Créditos insuficientes para treinar"
+              : "Assine para treinar uma voz"}
+          </h2>
+          <p className="max-w-xl text-sm text-muted-fg">
+            {subscribed
+              ? `Treinar uma voz custa ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos e você tem ${creditsTotal.toLocaleString("pt-BR")}. Compre um pacote para continuar — a geração de áudio com vozes já prontas segue liberada.`
+              : "Você não tem um plano vigente. Treinar uma voz faz parte do plano: assine para liberar 180.000 créditos por mês e treinar a sua voz."}
+          </p>
+          <Link
+            href={subscribed ? `/${locale}/app/credits` : `/${locale}/planos`}
+            className="flex w-fit items-center gap-2 bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all hover:scale-[1.01] active:scale-[0.99]"
+          >
+            {subscribed ? "Comprar créditos →" : "Assinar agora →"}
+          </Link>
+        </section>
+      )}
 
       {list.length === 0 ? (
         <section className="border border-dashed border-border bg-surface p-12 flex flex-col items-center gap-4 text-center">
