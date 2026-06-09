@@ -39,10 +39,11 @@ export async function createCheckoutSession(params: {
   form.set("line_items[0][quantity]", "1");
   form.set("success_url", params.successUrl);
   form.set("cancel_url", params.cancelUrl);
-  form.set("payment_method_types[0]", "card");
-  // Pix no Stripe BR é liberado por elegibilidade; se a conta ainda não tiver,
-  // o Stripe ignora silenciosamente e mostra só cartão.
-  form.set("payment_method_types[1]", "pix");
+  // NÃO setamos payment_method_types: omitir faz o Stripe mostrar dinamicamente
+  // os métodos ATIVADOS no dashboard (Settings → Payment methods). Hoje aparece
+  // só cartão; quando o Pix for ativado na conta, aparece sozinho — sem mexer no
+  // código. Hardcodar ["card","pix"] dá 400 se o Pix não estiver ativado, e
+  // automatic_payment_methods NÃO existe em Checkout Sessions (só em PaymentIntents).
   if (params.customerEmail) form.set("customer_email", params.customerEmail);
   for (const [k, v] of Object.entries(params.metadata)) {
     form.set(`metadata[${k}]`, v);
