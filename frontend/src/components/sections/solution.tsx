@@ -124,7 +124,7 @@ function Waveform({ playing }: { playing: boolean }) {
           <motion.span
             key={i}
             className="w-[3px] bg-[var(--fg)]"
-            style={{ height: `${baseH}%` }}
+            style={{ height: `${baseH.toFixed(2)}%` }}
             animate={
               playing
                 ? {
