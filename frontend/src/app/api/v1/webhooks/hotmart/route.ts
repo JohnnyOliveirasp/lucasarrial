@@ -55,6 +55,17 @@ export async function POST(request: NextRequest) {
 
   const eventType = (payload.event ?? "UNKNOWN").toUpperCase();
   const data = (payload.data ?? {}) as Record<string, unknown>;
+
+  // A conta Hotmart é COMPARTILHADA com outros produtos (ex.: outros cursos do
+  // mesmo produtor). Só processamos o NOSSO produto (HOTMART_PRODUCT_ID). Evento
+  // de outro produto → 200 (pra Hotmart parar de reenviar) SEM gravar nada:
+  // não liberamos acesso indevido nem guardamos PII de cliente de terceiro.
+  const ourProduct = process.env.HOTMART_PRODUCT_ID;
+  const eventProduct = extractProductCode(data);
+  if (ourProduct && eventProduct && eventProduct !== ourProduct) {
+    return jsonOk({ handled: "ignored_other_product" });
+  }
+
   const buyerEmail = extractBuyerEmail(data);
   const eventId = payload.id ?? `${eventType}:${extractExternalId(data, eventType)}`;
 
