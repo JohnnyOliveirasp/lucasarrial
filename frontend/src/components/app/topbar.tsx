@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { LogOut, ChevronDown, Coins } from "lucide-react";
+import { LogOut, ChevronDown, Coins, UserCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 type Props = {
@@ -81,10 +81,18 @@ export function Topbar({ email, displayName, avatarUrl, creditsTotal, unlimited 
 
         {open && (
           <div className="absolute right-0 top-full z-50 mt-2 w-56 border border-border bg-bg shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+            <Link
+              href="/app/account"
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center gap-3 px-4 py-3 text-sm text-fg transition-colors hover:bg-surface hover:text-accent"
+            >
+              <UserCircle className="h-4 w-4" />
+              <span>Minha conta</span>
+            </Link>
             <button
               type="button"
               onClick={handleLogout}
-              className="flex w-full items-center gap-3 px-4 py-3 text-sm text-fg transition-colors hover:bg-surface hover:text-accent"
+              className="flex w-full items-center gap-3 border-t border-border px-4 py-3 text-sm text-fg transition-colors hover:bg-surface hover:text-accent"
             >
               <LogOut className="h-4 w-4" />
               <span>{t("logout")}</span>

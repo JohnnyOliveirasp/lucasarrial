@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { VoiceStatus } from "@/lib/db/types";
+import { PaywallModal } from "@/components/app/paywall-modal";
 
 type Props = {
   voiceId: string;
@@ -19,6 +20,9 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
   const [status, setStatus] = useState<VoiceStatus>(initialStatus);
   const [training, setTraining] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noCredits, setNoCredits] = useState(false);
+  const [subscribed, setSubscribed] = useState(false);
+  const [paywallDetail, setPaywallDetail] = useState<string | null>(null);
 
   useEffect(() => {
     if (!POLLING_STATUSES.includes(status)) return;
@@ -49,6 +53,13 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
         method: "POST",
       });
       const json = await res.json();
+      if (res.status === 402) {
+        setSubscribed(Boolean(json?.error?.details?.subscribed));
+        setPaywallDetail(json?.error?.message ?? null);
+        setNoCredits(true);
+        setTraining(false);
+        return;
+      }
       if (!res.ok) {
         setError(json?.error?.message || "Falha ao iniciar treinamento");
         setTraining(false);
@@ -64,6 +75,7 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
 
   if (status === "awaiting_training") {
     return (
+      <>
       <section className="border border-accent bg-accent/5 p-6 flex flex-col gap-4">
         <h2 className="font-display text-2xl uppercase tracking-tight text-fg">
           Pronta para treinar
@@ -86,6 +98,14 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
           {training ? "Disparando…" : "Iniciar treinamento"}
         </button>
       </section>
+      <PaywallModal
+        open={noCredits}
+        onClose={() => setNoCredits(false)}
+        subscribed={subscribed}
+        action="clonar a sua voz"
+        detail={paywallDetail}
+      />
+      </>
     );
   }
 

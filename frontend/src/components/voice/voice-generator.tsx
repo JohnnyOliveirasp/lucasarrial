@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AudioLines, Play, Download } from "lucide-react";
 import { formatDuration } from "@/lib/audio/duration";
-import Link from "next/link";
 import { SupportError } from "@/components/ui/support-error";
+import { PaywallModal } from "@/components/app/paywall-modal";
 
 // Limite generoso pra cobrir ~2 min de fala em pt-BR (~150 wpm, ~5 chars/word).
 // Bate com o TEXT_MAX da rota /api/v1/voices/[id]/generate.
@@ -29,6 +29,8 @@ export function VoiceGenerator({ voiceId }: Props) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [noCredits, setNoCredits] = useState(false);
+  const [subscribed, setSubscribed] = useState(false);
+  const [paywallDetail, setPaywallDetail] = useState<string | null>(null);
   const [generation, setGeneration] = useState<GenerationDto | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -82,9 +84,10 @@ export function VoiceGenerator({ voiceId }: Props) {
       });
       if (genRes.status === 402) {
         const j = await genRes.json().catch(() => ({}));
+        setSubscribed(Boolean(j?.error?.details?.subscribed));
+        setPaywallDetail(j?.error?.message ?? null);
         setNoCredits(true);
-        setError(j?.error?.message || "Seus créditos acabaram.");
-        setStep("error");
+        setStep("form");
         return;
       }
       if (!genRes.ok) {
@@ -198,21 +201,15 @@ export function VoiceGenerator({ voiceId }: Props) {
         </span>
       </div>
 
-      {noCredits ? (
-        <div className="flex flex-col gap-3 border border-accent/40 bg-accent/5 p-4">
-          <p className="text-sm text-fg">
-            {error} Compre um pacote de créditos pra continuar gerando.
-          </p>
-          <Link
-            href="/app/credits"
-            className="self-start bg-fg px-4 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-bg transition-colors hover:bg-accent"
-          >
-            Comprar créditos →
-          </Link>
-        </div>
-      ) : (
-        error && <SupportError action="gerar o áudio" />
-      )}
+      {error && <SupportError action="gerar o áudio" />}
+
+      <PaywallModal
+        open={noCredits}
+        onClose={() => setNoCredits(false)}
+        subscribed={subscribed}
+        action="gerar áudio"
+        detail={paywallDetail}
+      />
 
       <button
         type="submit"

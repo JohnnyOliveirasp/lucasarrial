@@ -20,7 +20,7 @@ import {
   unauthorized,
 } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { bypassesBilling } from "@/lib/credits/access";
+import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { getBalance, debitCredits } from "@/lib/credits/service";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
 import {
@@ -69,10 +69,19 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   if (billed) {
     const bal = await getBalance(auth.user_id);
     if (bal.total < TRAINING_CREDIT_COST) {
+      // subscribed = assinatura ativa → CTA do popup "comprar avulso";
+      // sem assinatura → "assinar" (o avulso exige assinatura ativa).
+      const { data: prof } = await admin
+        .from("profiles")
+        .select("access_until")
+        .eq("id", auth.user_id)
+        .maybeSingle();
+      const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null);
       return jsonError(
         "insufficient_credits",
         `Créditos insuficientes: treinar uma voz custa ${TRAINING_CREDIT_COST} e você tem ${bal.total}.`,
         402,
+        { subscribed, balance: bal.total, cost: TRAINING_CREDIT_COST },
       );
     }
   }

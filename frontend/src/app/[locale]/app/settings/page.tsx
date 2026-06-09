@@ -1,11 +1,16 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { ApiKeysManager } from "@/components/app/api-keys-manager";
 import { ApiDocs } from "@/components/app/api-docs";
-import { CancelSubscription } from "@/components/app/cancel-subscription";
-import { bypassesBilling } from "@/lib/credits/access";
+import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 
+/**
+ * Configurações = API do usuário (chaves + docs). Faz parte do pacote pago,
+ * então fica LIBERADA só pra assinante ativo (ou equipe). A gestão da
+ * assinatura (cancelar) NÃO mora aqui — está em /app/account (Minha conta).
+ */
 export default async function SettingsPage({
   params,
 }: {
@@ -19,6 +24,16 @@ export default async function SettingsPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect(`/${locale}/login`);
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("email, access_until")
+    .eq("id", user.id)
+    .single();
+
+  const email = profile?.email ?? user.email ?? null;
+  const unlocked =
+    bypassesBilling(email) || hasActiveAccess(email, profile?.access_until ?? null);
 
   return (
     <div className="flex flex-col gap-12">
@@ -35,15 +50,26 @@ export default async function SettingsPage({
         </p>
       </header>
 
-      <ApiKeysManager />
-      <ApiDocs />
-
-      {!bypassesBilling(user.email) && (
-        <section className="flex flex-col gap-3 border-t border-border pt-8">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-fg">
-            Assinatura
+      {unlocked ? (
+        <>
+          <ApiKeysManager />
+          <ApiDocs />
+        </>
+      ) : (
+        <section className="flex flex-col gap-4 border border-accent bg-accent/5 p-6">
+          <h2 className="font-display text-2xl uppercase tracking-tight text-fg">
+            Assine para liberar a API
           </h2>
-          <CancelSubscription />
+          <p className="max-w-xl text-sm text-muted-fg">
+            O acesso por API faz parte do plano. Assine para gerar chaves e usar a
+            sua voz em qualquer ferramenta externa.
+          </p>
+          <Link
+            href={`/${locale}/planos`}
+            className="flex w-fit items-center gap-2 bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all hover:scale-[1.01] active:scale-[0.99]"
+          >
+            Assinar agora →
+          </Link>
         </section>
       )}
     </div>
