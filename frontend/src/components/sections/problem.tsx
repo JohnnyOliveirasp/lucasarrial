@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { DollarSign, Clock, Bot } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
 
 const ITEMS = [
   { key: "1", Icon: DollarSign },
@@ -18,18 +19,18 @@ export function Problem() {
   return (
     <section
       id="problema"
-      className="relative border-t border-[var(--border)] py-24 md:py-36"
+      className="relative border-t border-[var(--hairline)] py-24 md:py-32"
     >
-      <div className="mx-auto w-full max-w-[1400px] px-6 md:px-10">
+      <div className="mx-auto w-full max-w-[1200px] px-6 md:px-8">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
           transition={{ duration: 0.5, ease: EASE }}
-          className="mb-16 flex items-center gap-3"
+          className="mb-12 flex items-center gap-3"
         >
-          <span className="inline-block h-px w-10 bg-[var(--accent)]" />
-          <span className="label-mono text-[var(--accent)]">{t("eyebrow")}</span>
+          <span className="inline-block h-px w-10 bg-[var(--hairline-bright)]" />
+          <Eyebrow>{t("eyebrow")}</Eyebrow>
         </motion.div>
 
         <motion.h2
@@ -37,13 +38,12 @@ export function Problem() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
           transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
-          className="display-hero mb-20 text-[clamp(2.5rem,8vw,7rem)] text-[var(--fg)]"
+          className="display-hero mb-16 text-[clamp(2.25rem,6vw,4.5rem)] text-[var(--ink)]"
         >
-          {t("title")}{" "}
-          <span className="text-[var(--accent)]">{t("titleAccent")}.</span>
+          {t("title")} <span className="italic">{t("titleAccent")}.</span>
         </motion.h2>
 
-        <div className="grid grid-cols-1 gap-px bg-[var(--border)] md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-px overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--hairline-strong)] md:grid-cols-3">
           {ITEMS.map(({ key, Icon }, idx) => (
             <motion.article
               key={key}
@@ -55,18 +55,18 @@ export function Problem() {
                 ease: EASE,
                 delay: 0.1 + idx * 0.08,
               }}
-              className="group flex flex-col gap-6 bg-[var(--bg)] p-8 md:p-10"
+              className="group flex flex-col gap-6 bg-[var(--surface-card)] p-8 md:p-10"
             >
               <div className="flex items-center justify-between">
-                <span className="label-mono text-[var(--muted-fg)]">
+                <Eyebrow className="text-[var(--ash)]">
                   0{idx + 1} · {t(`items.${key}.tag`)}
-                </span>
-                <Icon className="size-5 text-[var(--muted-fg)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-snap)] group-hover:text-[var(--accent)]" />
+                </Eyebrow>
+                <Icon className="size-5 text-[var(--ash)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] group-hover:text-[var(--silver)]" />
               </div>
-              <h3 className="font-sans text-2xl font-semibold leading-tight text-[var(--fg)] md:text-3xl">
+              <h3 className="font-sans text-2xl font-semibold leading-tight tracking-[-0.02em] text-[var(--ink)] md:text-[28px]">
                 {t(`items.${key}.title`)}
               </h3>
-              <p className="text-base leading-relaxed text-[var(--muted-fg)]">
+              <p className="text-[16px] leading-[1.6] text-[var(--mute)]">
                 {t(`items.${key}.body`)}
               </p>
             </motion.article>

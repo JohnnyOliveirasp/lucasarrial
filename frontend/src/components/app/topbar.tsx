@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { LogOut, ChevronDown, Coins, UserCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { Avatar } from "@/components/ui";
 
 type Props = {
   email: string;
@@ -36,21 +37,21 @@ export function Topbar({ email, displayName, avatarUrl, creditsTotal, unlimited 
     router.refresh();
   }
 
-  const initial = (displayName ?? email).slice(0, 1).toUpperCase();
+  const accountName = displayName ?? email.split("@")[0];
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border bg-bg px-6 lg:px-12">
+    <header className="flex h-16 items-center justify-between border-b border-[var(--hairline)] bg-[var(--canvas)] px-6 lg:px-12">
       <Link
         href="/app/credits"
-        className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted-fg transition-colors hover:text-accent"
+        className="group flex items-center gap-2 font-mono text-[12px] tracking-[-0.01em] text-[var(--mute)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:text-[var(--ink)]"
         title="Ver e comprar créditos"
       >
-        <Coins className="h-4 w-4 text-accent" />
+        <Coins className="h-4 w-4 text-[var(--silver)] transition-colors group-hover:text-[var(--ink)]" />
         {unlimited ? (
           <span>Créditos: ∞</span>
         ) : (
           <span>
-            <span className="text-fg">{creditsTotal.toLocaleString("pt-BR")}</span> créditos
+            <span className="text-[var(--ink)]">{creditsTotal.toLocaleString("pt-BR")}</span> créditos
           </span>
         )}
       </Link>
@@ -58,43 +59,48 @@ export function Topbar({ email, displayName, avatarUrl, creditsTotal, unlimited 
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-3 px-3 py-2 text-sm text-fg transition-colors hover:bg-surface"
+          className="flex items-center gap-3 rounded-[var(--radius)] px-2 py-1.5 text-sm text-[var(--ink)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--surface-elevated)]"
         >
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- avatar de OAuth provider externo (Google), domains não pré-configurado
-            <img src={avatarUrl} alt="" className="h-8 w-8 object-cover" />
-          ) : (
-            <div className="flex h-8 w-8 items-center justify-center bg-accent font-mono text-xs font-bold text-accent-fg">
-              {initial}
-            </div>
-          )}
+          <Avatar
+            size={32}
+            name={accountName}
+            src={avatarUrl ?? undefined}
+          />
           <div className="hidden min-w-0 flex-col items-start sm:flex">
-            <span className="max-w-[180px] truncate text-sm font-medium leading-tight">
-              {displayName ?? email.split("@")[0]}
+            <span className="max-w-[180px] truncate text-sm font-medium leading-tight text-[var(--ink)]">
+              {accountName}
             </span>
-            <span className="max-w-[180px] truncate font-mono text-[10px] lowercase text-muted-fg">
+            <span className="max-w-[180px] truncate font-mono text-[10px] lowercase text-[var(--ash)]">
               {email}
             </span>
           </div>
-          <ChevronDown className="h-4 w-4 text-muted-fg" />
+          <ChevronDown
+            className={[
+              "h-4 w-4 text-[var(--ash)] transition-transform duration-[var(--dur-fast)] ease-[var(--ease-out)]",
+              open ? "rotate-180" : "",
+            ].join(" ")}
+          />
         </button>
 
         {open && (
-          <div className="absolute right-0 top-full z-50 mt-2 w-56 border border-border bg-bg shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+          <div
+            className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)] p-1"
+            style={{ boxShadow: "var(--elevation-popover)" }}
+          >
             <Link
               href="/app/account"
               onClick={() => setOpen(false)}
-              className="flex w-full items-center gap-3 px-4 py-3 text-sm text-fg transition-colors hover:bg-surface hover:text-accent"
+              className="flex w-full items-center gap-3 rounded-[var(--radius-sm)] px-3 py-2.5 text-sm text-[var(--body)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--surface-elevated)] hover:text-[var(--ink)]"
             >
-              <UserCircle className="h-4 w-4" />
+              <UserCircle className="h-4 w-4 text-[var(--ash)]" />
               <span>Minha conta</span>
             </Link>
             <button
               type="button"
               onClick={handleLogout}
-              className="flex w-full items-center gap-3 border-t border-border px-4 py-3 text-sm text-fg transition-colors hover:bg-surface hover:text-accent"
+              className="mt-1 flex w-full items-center gap-3 rounded-[var(--radius-sm)] border-t border-[var(--hairline)] px-3 py-2.5 text-sm text-[var(--body)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--surface-elevated)] hover:text-[var(--ink)]"
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-4 w-4 text-[var(--ash)]" />
               <span>{t("logout")}</span>
             </button>
           </div>

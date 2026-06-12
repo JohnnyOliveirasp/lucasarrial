@@ -22,7 +22,7 @@ export function VoiceRowMenu({ voiceId, voiceName, hasLora }: Props) {
         type="button"
         aria-label="Ações da voz"
         onClick={() => setMenuOpen((v) => !v)}
-        className="px-3 self-stretch text-muted-fg transition-colors hover:bg-surface hover:text-fg"
+        className="self-stretch rounded-[var(--radius)] px-3 text-[var(--mute)] transition-colors hover:bg-[var(--surface-elevated)] hover:text-[var(--ink)]"
       >
         <MoreVertical className="h-5 w-5" />
       </button>
@@ -31,14 +31,14 @@ export function VoiceRowMenu({ voiceId, voiceName, hasLora }: Props) {
         <>
           {/* backdrop invisível pra fechar ao clicar fora */}
           <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-          <div className="absolute right-2 top-full z-50 mt-1 min-w-[150px] border border-border bg-bg shadow-lg">
+          <div className="absolute right-2 top-full z-50 mt-1 min-w-[150px] overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]">
             <button
               type="button"
               onClick={() => {
                 setMenuOpen(false);
                 setDialogOpen(true);
               }}
-              className="flex w-full items-center gap-2 px-4 py-3 text-sm font-bold uppercase tracking-wide text-accent transition-colors hover:bg-accent hover:text-accent-fg"
+              className="flex w-full items-center gap-2 px-4 py-3 font-sans text-[14px] font-medium text-[var(--status-error)] transition-colors hover:bg-[var(--surface-elevated)]"
             >
               <Trash2 className="h-4 w-4" />
               Apagar

@@ -1,10 +1,10 @@
 {
   "metadata": {
-    "title": "Lucas Arrial — Plataforma de ferramentas IA",
+    "title": "FastPost — Plataforma de ferramentas IA",
     "description": "Clone sua voz com IA em minutos. Plataforma de ferramentas de inteligência artificial para criadores e empreendedores."
   },
   "app": {
-    "brand": "AI Clone Verse",
+    "brand": "FastPost",
     "nav": {
       "dashboard": "Dashboard",
       "voiceCloning": "Treinar Voz",
@@ -90,7 +90,7 @@
     }
   },
   "auth": {
-    "brand": "AI Clone Verse",
+    "brand": "FastPost",
     "tagline": "Clone sua voz. Crie infinito.",
     "login": {
       "title": "Entrar",
@@ -143,13 +143,13 @@
     }
   },
   "nav": {
-    "brand": "Lucas",
+    "brand": "FastPost",
     "solution": "Solução",
     "platform": "Plataforma",
     "features": "Features",
     "cta": "Começar",
     "ariaPrimary": "Principal",
-    "ariaBrand": "Lucas Arrial — início"
+    "ariaBrand": "FastPost — início"
   },
   "themeToggle": {
     "toLight": "Ativar tema claro",
@@ -162,15 +162,15 @@
     "es": "Espanhol"
   },
   "hero": {
-    "eyebrow": "01 · clonagem de voz com ia",
-    "titleLine1": "Clone",
-    "titleLine2": "sua voz",
-    "titleLine3": "Em minutos.",
-    "description": "A plataforma de ferramentas IA para criadores, empreendedores e estúdios. Treine sua voz uma vez. Gere áudio infinito.",
-    "ctaPrimary": "Comece grátis",
-    "ctaSecondary": "Ver demo",
-    "metaStack": "voxcpm · runpod · supabase",
-    "metaScope": "mvp · clonagem de voz",
+    "eyebrow": "Clonagem de voz com IA",
+    "titleLine1": "Sua voz.",
+    "titleLine2": "Em qualquer texto.",
+    "titleLine3": "Na hora.",
+    "description": "Treine sua voz uma vez e gere áudio com qualquer texto, em segundos. É o primeiro estúdio da FastPost — a plataforma que vai do áudio ao vídeo pronto.",
+    "ctaPrimary": "Começar agora",
+    "ctaSecondary": "Ver demonstração",
+    "metaStack": "Sua voz · Multilíngue · Na hora",
+    "metaScope": "Clonagem de voz, ao vivo · Vídeo em breve",
     "metaVersion": "v0.1 · 2026"
   },
   "problem": {
@@ -219,7 +219,7 @@
     },
     "tools": {
       "voice": "Clonagem de Voz",
-      "video": "Edição de Vídeo",
+      "video": "Geração de Vídeo",
       "writing": "Redação IA",
       "image": "Imagens IA",
       "transcribe": "Transcrição",
@@ -290,7 +290,7 @@
         }
       }
     },
-    "copyright": "© 2026 Lucas Arrial. Todos os direitos reservados.",
+    "copyright": "© 2026 FastPost. Todos os direitos reservados.",
     "made": "Feito com IA, no Brasil."
   }
 }

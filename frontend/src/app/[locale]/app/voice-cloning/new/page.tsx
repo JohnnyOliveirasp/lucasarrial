@@ -1,5 +1,6 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { VoiceCreator } from "@/components/voice/voice-creator";
+import { Eyebrow } from "@/components/ui";
 
 export default async function NewVoicePage({
   params,
@@ -11,15 +12,13 @@ export default async function NewVoicePage({
   const t = await getTranslations({ locale, namespace: "app.voiceCloningNew" });
 
   return (
-    <div className="flex flex-col gap-10 max-w-2xl">
-      <header className="flex flex-col gap-3">
-        <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">
-          {t("eyebrow")}
-        </span>
-        <h1 className="font-display text-5xl leading-[0.9] tracking-tight text-fg uppercase">
+    <div className="flex max-w-2xl flex-col gap-10">
+      <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
+        <Eyebrow>{t("eyebrow")}</Eyebrow>
+        <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
           {t("title")}
         </h1>
-        <p className="text-sm text-muted-fg">{t("subtitle")}</p>
+        <p className="text-sm text-[var(--mute)]">{t("subtitle")}</p>
       </header>
 
       <VoiceCreator />

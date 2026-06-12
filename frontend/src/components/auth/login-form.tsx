@@ -15,6 +15,9 @@ const GOOGLE_ICON = (
   </svg>
 );
 
+const INPUT_CLASS =
+  "h-11 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3.5 text-[14px] text-[var(--ink)] placeholder:text-[var(--ash)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none";
+
 export function LoginForm() {
   const t = useTranslations("auth");
   const router = useRouter();
@@ -76,25 +79,25 @@ export function LoginForm() {
         type="button"
         onClick={handleGoogleLogin}
         disabled={googleLoading || submitting}
-        className="group flex items-center justify-center gap-3 border border-border bg-bg px-4 py-3 text-sm font-medium text-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:border-fg hover:bg-fg hover:text-bg disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-11 w-full items-center justify-center gap-2.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-4 text-[14px] font-medium text-[var(--ink)] transition-[background-color,border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] disabled:cursor-not-allowed disabled:opacity-[0.42]"
       >
         {GOOGLE_ICON}
         <span>{googleLoading ? t("login.submitting") : t("login.googleButton")}</span>
       </button>
 
       <div className="flex items-center gap-4">
-        <div className="h-px flex-1 bg-border" />
-        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-fg">
+        <div className="h-px flex-1 bg-[var(--hairline)]" />
+        <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--ash)]">
           {t("login.or")}
         </span>
-        <div className="h-px flex-1 bg-border" />
+        <div className="h-px flex-1 bg-[var(--hairline)]" />
       </div>
 
       <form onSubmit={handleEmailLogin} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <label
             htmlFor="email"
-            className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg"
+            className="text-[13px] font-medium text-[var(--silver)]"
           >
             {t("login.emailLabel")}
           </label>
@@ -106,7 +109,7 @@ export function LoginForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder={t("login.emailPlaceholder")}
-            className="border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/60 focus:border-accent focus:outline-none"
+            className={INPUT_CLASS}
           />
         </div>
 
@@ -114,13 +117,13 @@ export function LoginForm() {
           <div className="flex items-center justify-between">
             <label
               htmlFor="password"
-              className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg"
+              className="text-[13px] font-medium text-[var(--silver)]"
             >
               {t("login.passwordLabel")}
             </label>
             <Link
               href="/forgot-password"
-              className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg hover:text-accent transition-colors"
+              className="text-[13px] text-[var(--silver)] transition-colors hover:text-[var(--ink)]"
             >
               {t("login.forgotPassword")}
             </Link>
@@ -133,14 +136,14 @@ export function LoginForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={t("login.passwordPlaceholder")}
-            className="border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/60 focus:border-accent focus:outline-none"
+            className={INPUT_CLASS}
           />
         </div>
 
         {error && (
           <p
             role="alert"
-            className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent"
+            className="rounded-[var(--radius)] border border-[var(--status-error)] bg-[var(--surface-card)] px-3.5 py-2.5 text-[13px] text-[var(--status-error)]"
           >
             {error}
           </p>
@@ -149,7 +152,7 @@ export function LoginForm() {
         <button
           type="submit"
           disabled={submitting || googleLoading}
-          className="bg-accent px-4 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-[0.42]"
         >
           {submitting ? t("login.submitting") : t("login.submit")}
         </button>

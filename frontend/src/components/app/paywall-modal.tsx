@@ -12,6 +12,7 @@
  */
 import Link from "next/link";
 import { Coins, X } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui";
 
 type Props = {
   open: boolean;
@@ -36,53 +37,46 @@ export function PaywallModal({ open, onClose, subscribed, action, detail }: Prop
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="paywall-title"
     >
-      <div className="relative flex w-full max-w-md flex-col gap-5 border border-accent bg-bg p-6">
+      <div className="relative flex w-full max-w-md flex-col gap-5 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
         <button
           type="button"
           onClick={onClose}
           aria-label="Fechar"
-          className="absolute right-4 top-4 text-muted-fg transition-colors hover:text-fg"
+          className="absolute right-4 top-4 rounded-[var(--radius-sm)] p-1 text-[var(--ash)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--surface-elevated)] hover:text-[var(--ink)]"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center bg-accent/10">
-            <Coins className="h-5 w-5 text-accent" />
+        <div className="flex items-center gap-3 pr-8">
+          <span className="flex size-10 items-center justify-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)]">
+            <Coins className="h-5 w-5 text-[var(--silver)]" />
           </span>
           <h2
             id="paywall-title"
-            className="font-display text-2xl uppercase tracking-tight text-fg"
+            className="font-sans text-xl font-semibold tracking-[-0.02em] text-[var(--ink)]"
           >
             {title}
           </h2>
         </div>
 
-        <p className="text-sm text-muted-fg">{body}</p>
+        <p className="text-sm leading-relaxed text-[var(--body)]">{body}</p>
 
         {detail && (
-          <p className="border border-border bg-surface px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-muted-fg">
+          <p className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 font-mono text-[12px] tracking-[-0.01em] text-[var(--mute)]">
             {detail}
           </p>
         )}
 
         <div className="flex justify-end gap-3 pt-1">
-          <button
-            type="button"
-            onClick={onClose}
-            className="border border-border px-5 py-3 text-sm font-bold uppercase tracking-wide text-fg transition-colors hover:bg-surface"
-          >
+          <Button variant="ghost" onClick={onClose}>
             Agora não
-          </button>
-          <Link
-            href={href}
-            className="flex items-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all hover:scale-[1.01] active:scale-[0.99]"
-          >
+          </Button>
+          <Link href={href} className={buttonVariants({ variant: "primary" })}>
             {ctaLabel}
           </Link>
         </div>

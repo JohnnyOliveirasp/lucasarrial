@@ -1,6 +1,6 @@
 {
   "app": {
-    "brand": "AI Clone Verse",
+    "brand": "FastPost",
     "nav": {
       "dashboard": "Dashboard",
       "voiceCloning": "Clonación de Voz",
@@ -86,7 +86,7 @@
     }
   },
   "auth": {
-    "brand": "AI Clone Verse",
+    "brand": "FastPost",
     "tagline": "Clona tu voz. Crea infinito.",
     "login": {
       "title": "Iniciar sesión",
@@ -139,17 +139,17 @@
     }
   },
   "metadata": {
-    "title": "Lucas Arrial — Plataforma de herramientas IA",
+    "title": "FastPost — Plataforma de herramientas IA",
     "description": "Clona tu voz con IA en minutos. Plataforma de herramientas de inteligencia artificial para creadores y emprendedores."
   },
   "nav": {
-    "brand": "Lucas",
+    "brand": "FastPost",
     "solution": "Solución",
     "platform": "Plataforma",
     "features": "Características",
     "cta": "Empezar",
     "ariaPrimary": "Principal",
-    "ariaBrand": "Lucas Arrial — inicio"
+    "ariaBrand": "FastPost — inicio"
   },
   "themeToggle": {
     "toLight": "Activar modo claro",
@@ -162,15 +162,15 @@
     "es": "Español"
   },
   "hero": {
-    "eyebrow": "01 · clonación de voz con ia",
-    "titleLine1": "Clona",
-    "titleLine2": "tu voz",
-    "titleLine3": "En minutos.",
-    "description": "La plataforma de herramientas IA para creadores, emprendedores y estudios. Entrena tu voz una vez. Genera audio infinito.",
-    "ctaPrimary": "Empieza gratis",
-    "ctaSecondary": "Ver demo",
-    "metaStack": "voxcpm · runpod · supabase",
-    "metaScope": "mvp · clonación de voz",
+    "eyebrow": "Clonación de voz con IA",
+    "titleLine1": "Tu voz.",
+    "titleLine2": "En cualquier texto.",
+    "titleLine3": "Al instante.",
+    "description": "Entrena tu voz una vez y genera audio con cualquier texto, en segundos. Es el primer estudio de FastPost — la plataforma que va del audio al video listo.",
+    "ctaPrimary": "Empezar ahora",
+    "ctaSecondary": "Ver demostración",
+    "metaStack": "Tu voz · Multilingüe · Al instante",
+    "metaScope": "Clonación de voz, en vivo · Video pronto",
     "metaVersion": "v0.1 · 2026"
   },
   "problem": {
@@ -219,7 +219,7 @@
     },
     "tools": {
       "voice": "Clonación de Voz",
-      "video": "Edición de Video",
+      "video": "Generación de video",
       "writing": "Redacción IA",
       "image": "Imágenes IA",
       "transcribe": "Transcripción",
@@ -290,7 +290,7 @@
         }
       }
     },
-    "copyright": "© 2026 Lucas Arrial. Todos los derechos reservados.",
+    "copyright": "© 2026 FastPost. Todos los derechos reservados.",
     "made": "Hecho con IA, desde Brasil."
   }
 }

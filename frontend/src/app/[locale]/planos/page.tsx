@@ -4,6 +4,7 @@ import { setRequestLocale } from "next-intl/server";
 import { Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { buildHotmartCheckoutUrl } from "@/lib/payments/hotmart-checkout";
+import { Card, Badge, Eyebrow } from "@/components/ui";
 
 /**
  * Página de planos / checkout.
@@ -60,48 +61,56 @@ export default async function PlanosPage({
   const loginHref = `/${locale}/login?redirectTo=/${locale}/planos`;
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-12 px-6 py-20">
-      <header className="flex flex-col gap-3">
-        <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">
-          Planos
-        </span>
-        <h1 className="font-display text-6xl leading-[0.9] tracking-tight text-fg uppercase">
+    <main className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-12 px-6 py-20">
+      <div
+        aria-hidden
+        className="glow-voice pointer-events-none absolute inset-x-0 top-0 h-[420px]"
+      />
+
+      <header className="relative flex flex-col gap-3">
+        <Eyebrow>Planos</Eyebrow>
+        <h1 className="font-display text-6xl leading-[0.95] tracking-[-0.03em] text-[var(--ink)]">
           Assine e libere
           <br />
           a sua voz
         </h1>
-        <p className="max-w-xl text-sm text-muted-fg">{PLAN.tagline}</p>
+        <p className="max-w-xl text-sm text-[var(--mute)]">{PLAN.tagline}</p>
       </header>
 
-      <section className="border border-border bg-bg">
-        <div className="flex flex-col gap-2 border-b border-border p-8">
-          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-fg">
+      <Card elevated className="relative border-[var(--hairline-bright)] p-0">
+        <div className="flex flex-col gap-3 border-b border-[var(--hairline)] p-8">
+          <Badge variant="soft" className="w-fit">
             {PLAN.name}
-          </span>
-          <div className="flex items-baseline gap-1">
-            <span className="font-display text-5xl tracking-tight text-fg">
+          </Badge>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-semibold text-5xl tracking-[-0.03em] text-[var(--ink)]">
               {PLAN.price}
             </span>
-            <span className="font-mono text-sm text-muted-fg">{PLAN.period}</span>
+            <span className="font-mono text-sm text-[var(--ash)]">
+              {PLAN.period}
+            </span>
           </div>
         </div>
 
         <ul className="flex flex-col gap-4 p-8">
           {PLAN.features.map((feature) => (
-            <li key={feature} className="flex items-start gap-3 text-sm text-fg">
-              <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+            <li
+              key={feature}
+              className="flex items-start gap-3 text-sm text-[var(--ink)]"
+            >
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-[var(--silver)]" />
               <span>{feature}</span>
             </li>
           ))}
         </ul>
 
-        <div className="border-t border-border p-8">
+        <div className="border-t border-[var(--hairline)] p-8">
           {!user ? (
             <Link
               href={loginHref}
-              className="flex w-full items-center justify-center bg-fg px-6 py-4 font-mono text-[12px] uppercase tracking-[0.18em] text-bg transition-colors duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:bg-accent"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[15px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
             >
-              Entrar para assinar →
+              Entrar para assinar
             </Link>
           ) : checkoutUrl ? (
             <>
@@ -118,23 +127,23 @@ export default async function PlanosPage({
               />
               <a
                 href={checkoutUrl}
-                className="hotmart-fb hotmart__button-checkout flex w-full items-center justify-center bg-fg px-6 py-4 font-mono text-[12px] uppercase tracking-[0.18em] text-bg transition-colors duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:bg-accent"
+                className="hotmart-fb hotmart__button-checkout inline-flex h-11 w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[15px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
               >
-                Assinar agora →
+                Assinar agora
               </a>
             </>
           ) : (
-            <div className="flex w-full cursor-not-allowed items-center justify-center bg-border px-6 py-4 font-mono text-[12px] uppercase tracking-[0.18em] text-muted-fg">
+            <div className="inline-flex h-11 w-full cursor-not-allowed items-center justify-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[15px] font-medium text-[var(--ash)]">
               Checkout em breve
             </div>
           )}
           {user && (
-            <p className="mt-4 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg">
+            <p className="mt-4 text-center font-mono text-[11px] text-[var(--ash)]">
               Compra vinculada a {user.email}
             </p>
           )}
         </div>
-      </section>
+      </Card>
     </main>
   );
 }

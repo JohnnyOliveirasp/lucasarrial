@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { Button, Input } from "@/components/ui";
 
 const REASONS = [
   "Não preciso mais",
@@ -19,6 +20,11 @@ type Props = {
   email: string;
 };
 
+const dangerWash = {
+  background:
+    "radial-gradient(ellipse 120% 90% at 50% 0%, rgba(248,113,113,0.06), transparent 70%)",
+} as const;
+
 export function DeleteAccount({ email }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -28,7 +34,8 @@ export function DeleteAccount({ email }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const emailMatches = confirmEmail.trim().toLowerCase() === email.trim().toLowerCase();
+  const emailMatches =
+    confirmEmail.trim().toLowerCase() === email.trim().toLowerCase();
 
   async function confirm() {
     if (!emailMatches) return;
@@ -56,35 +63,49 @@ export function DeleteAccount({ email }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-3 border border-red-500/40 bg-red-500/5 p-6">
-      <h2 className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] text-red-500">
+    <div
+      className="relative flex flex-col gap-3 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6"
+      style={dangerWash}
+    >
+      <h2 className="flex items-center gap-2 text-[13px] font-medium text-[var(--status-error)]">
         <AlertTriangle className="h-4 w-4" />
         Zona perigosa
       </h2>
-      <p className="max-w-xl text-sm text-muted-fg">
-        Excluir a conta apaga <strong className="text-fg">todos os seus áudios</strong>,
-        cancela a assinatura e é <strong className="text-fg">irreversível</strong>. Pra
+      <p className="max-w-xl text-[14px] leading-relaxed text-[var(--mute)]">
+        Excluir a conta apaga{" "}
+        <strong className="font-medium text-[var(--ink)]">
+          todos os seus áudios
+        </strong>
+        , cancela a assinatura e é{" "}
+        <strong className="font-medium text-[var(--ink)]">irreversível</strong>. Pra
         voltar, você terá que criar uma conta nova.
       </p>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="self-start font-mono text-[11px] uppercase tracking-[0.16em] text-red-500 underline-offset-4 transition-colors hover:underline"
+        className="self-start text-[13px] text-[var(--status-error)] underline-offset-4 transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:underline"
       >
         Excluir minha conta
       </button>
 
       {open && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
-          <div className="flex max-h-[90vh] w-full max-w-md flex-col gap-5 overflow-y-auto border border-red-500/60 bg-bg p-7">
+          <div
+            className="flex max-h-[90vh] w-full max-w-md flex-col gap-5 overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-7"
+            style={dangerWash}
+          >
             <div className="flex flex-col gap-2">
-              <h3 className="flex items-center gap-2 font-display text-2xl uppercase tracking-tight text-fg">
-                <AlertTriangle className="h-5 w-5 text-red-500" />
+              <h3 className="flex items-center gap-2.5 text-[22px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
+                <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
                 Excluir conta
               </h3>
-              <div className="border border-red-500/40 bg-red-500/5 p-3 text-sm text-fg">
-                Esta ação <strong>não tem volta</strong>. Ao excluir:
-                <ul className="mt-2 list-disc pl-5 text-muted-fg">
+              <div className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-3.5 text-[14px] text-[var(--body)]">
+                Esta ação{" "}
+                <strong className="font-medium text-[var(--ink)]">
+                  não tem volta
+                </strong>
+                . Ao excluir:
+                <ul className="mt-2 list-disc pl-5 text-[var(--mute)]">
                   <li>todos os áudios gerados serão apagados;</li>
                   <li>sua assinatura é cancelada automaticamente;</li>
                   <li>você precisará criar uma nova conta pra voltar.</li>
@@ -92,19 +113,22 @@ export function DeleteAccount({ email }: Props) {
               </div>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg">
+            <div className="flex flex-col gap-2.5">
+              <span className="text-[13px] text-[var(--silver)]">
                 Por que está saindo? (opcional)
               </span>
               {REASONS.map((r) => (
-                <label key={r} className="flex cursor-pointer items-center gap-3 text-sm text-fg">
+                <label
+                  key={r}
+                  className="flex cursor-pointer items-center gap-3 text-[14px] text-[var(--body)]"
+                >
                   <input
                     type="radio"
                     name="delete-reason"
                     value={r}
                     checked={reason === r}
                     onChange={() => setReason(r)}
-                    className="accent-red-500"
+                    className="accent-[var(--status-error)]"
                   />
                   {r}
                 </label>
@@ -116,54 +140,56 @@ export function DeleteAccount({ email }: Props) {
               onChange={(e) => setDetail(e.target.value)}
               rows={2}
               placeholder="Quer detalhar? (opcional)"
-              className="border border-border bg-bg px-3 py-2 text-sm text-fg placeholder:text-muted-fg/60 focus:border-red-500 focus:outline-none resize-none"
+              className="resize-none rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3.5 py-2.5 text-[14px] text-[var(--ink)] placeholder:text-[var(--ash)] focus:border-[var(--status-error)] focus:outline-none"
             />
 
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="confirm-email"
-                className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg"
+                className="text-[13px] text-[var(--silver)]"
               >
-                Digite <span className="text-fg">{email}</span> para confirmar
+                Digite{" "}
+                <span className="font-medium text-[var(--ink)]">{email}</span> para
+                confirmar
               </label>
-              <input
+              <Input
                 id="confirm-email"
                 type="email"
                 autoComplete="off"
                 value={confirmEmail}
                 onChange={(e) => setConfirmEmail(e.target.value)}
                 placeholder={email}
-                className="border border-border bg-bg px-3 py-2 text-sm text-fg placeholder:text-muted-fg/40 focus:border-red-500 focus:outline-none"
+                invalid={confirmEmail.length > 0 && !emailMatches}
               />
             </div>
 
             {error && (
-              <p className="border border-red-500/40 bg-red-500/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-red-500">
+              <p className="rounded-[var(--radius)] border border-[var(--hairline-strong)] px-3 py-2.5 text-[13px] text-[var(--status-error)]">
                 {error}
               </p>
             )}
 
             <div className="flex items-center justify-between gap-3 pt-1">
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 onClick={() => setOpen(false)}
                 disabled={loading}
-                className="font-mono text-[11px] uppercase tracking-[0.16em] text-fg hover:text-accent disabled:opacity-50"
               >
                 Voltar
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
                 disabled={!emailMatches || loading}
                 onClick={confirm}
-                className="flex items-center gap-2 bg-red-500 px-5 py-3 font-mono text-[11px] uppercase tracking-[0.16em] text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                iconLeft={
+                  loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : undefined
+                }
+                className="text-[var(--status-error)] hover:border-[var(--status-error)] disabled:hover:border-[var(--hairline-strong)]"
               >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "Excluir permanentemente"
-                )}
-              </button>
+                {loading ? "Excluindo…" : "Excluir permanentemente"}
+              </Button>
             </div>
           </div>
         </div>

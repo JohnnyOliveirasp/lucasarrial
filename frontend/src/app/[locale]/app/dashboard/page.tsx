@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Mic2, Video, UserCircle2, FileAudio } from "lucide-react";
+import { Eyebrow } from "@/components/ui";
 
 type Tool = {
   key: "voiceCloning" | "videoGen" | "avatar" | "transcription";
@@ -28,46 +29,47 @@ export default async function DashboardPage({
   return (
     <div className="flex flex-col gap-10">
       <header className="flex flex-col gap-3">
-        <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">
-          {t("nav.dashboard")}
-        </span>
-        <h1 className="font-display text-5xl leading-[0.9] tracking-tight text-fg uppercase">
+        <Eyebrow>{t("nav.dashboard")}</Eyebrow>
+        <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
           {t("dashboard.title")}
         </h1>
-        <p className="max-w-xl text-sm text-muted-fg">{t("dashboard.subtitle")}</p>
+        <p className="max-w-xl text-sm text-[var(--mute)]">
+          {t("dashboard.subtitle")}
+        </p>
       </header>
 
-      <section className="grid grid-cols-1 gap-px bg-border md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {TOOLS.map(({ key, href, icon: Icon, active }) => {
           const content = (
             <div
               className={[
-                "flex h-full flex-col gap-4 bg-bg p-6 transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)]",
+                "flex h-full flex-col gap-4 rounded-[var(--radius-lg)] border bg-[var(--surface-card)] p-6 transition-[border-color,background-color] duration-[var(--dur-base)] ease-[var(--ease-out)]",
                 active
-                  ? "cursor-pointer hover:bg-fg hover:text-bg"
-                  : "cursor-not-allowed opacity-60",
+                  ? "cursor-pointer border-[var(--hairline-strong)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-elevated)]"
+                  : "cursor-not-allowed border-[var(--hairline)] opacity-60",
               ].join(" ")}
             >
               <div className="flex items-start justify-between">
-                <Icon className="h-8 w-8" />
+                <Icon className="h-7 w-7 text-[var(--silver)]" />
                 {!active && (
-                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+                  <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--ash)]">
                     {t("comingSoon")}
                   </span>
                 )}
               </div>
               <div className="flex flex-col gap-2">
-                <h2 className="font-display text-2xl uppercase leading-tight tracking-tight">
+                <h2 className="font-sans text-xl font-semibold leading-tight tracking-[-0.01em] text-[var(--ink)]">
                   {t(`dashboard.tools.${key}.name`)}
                 </h2>
-                <p className="text-sm text-current/70">
+                <p className="text-sm text-[var(--mute)]">
                   {t(`dashboard.tools.${key}.description`)}
                 </p>
               </div>
               {active && (
                 <div className="mt-auto pt-2">
-                  <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">
-                    {t("dashboard.tools.voiceCloning.cta")} →
+                  <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--silver)]">
+                    {t("dashboard.tools.voiceCloning.cta")}
+                    <span aria-hidden>→</span>
                   </span>
                 </div>
               )}

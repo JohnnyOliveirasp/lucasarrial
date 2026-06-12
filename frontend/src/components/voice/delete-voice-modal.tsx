@@ -70,23 +70,24 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur"
       role="dialog"
       aria-modal="true"
       onClick={close}
     >
       <div
-        className="w-full max-w-lg border border-accent bg-bg p-6 flex flex-col gap-5"
+        className="flex w-full max-w-lg flex-col gap-5 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
-          <h3 className="font-display text-2xl uppercase tracking-tight text-fg">
+          <h3 className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
+            <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
             Apagar — ação irreversível
           </h3>
           <button
             type="button"
             onClick={close}
-            className="text-muted-fg hover:text-fg"
+            className="text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
             aria-label="Fechar"
           >
             <X className="h-5 w-5" />
@@ -95,26 +96,28 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
 
         {/* Escolha do alvo */}
         <div className="flex flex-col gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+          <span className="font-mono text-[10px] tracking-wide text-[var(--mute)]">
             O que apagar
           </span>
 
           {hasLora && (
             <label
-              className={`flex cursor-pointer gap-3 border p-3 ${
-                target === "lora" ? "border-accent bg-accent/5" : "border-border bg-surface"
+              className={`flex cursor-pointer gap-3 rounded-[var(--radius)] border p-3 transition-colors ${
+                target === "lora"
+                  ? "border-[var(--hairline-bright)] bg-[var(--surface-elevated)]"
+                  : "border-[var(--hairline-strong)] bg-[var(--surface-deep)]"
               }`}
             >
               <input
                 type="radio"
                 name="delete-target"
-                className="mt-1 accent-[var(--color-accent,#ff5500)]"
+                className="mt-1 accent-[var(--ink)]"
                 checked={target === "lora"}
                 onChange={() => setTarget("lora")}
               />
               <span className="flex flex-col gap-0.5">
-                <span className="text-sm font-bold text-fg">Apagar só a LoRA</span>
-                <span className="text-xs text-muted-fg">
+                <span className="text-sm font-medium text-[var(--ink)]">Apagar só a LoRA</span>
+                <span className="text-xs text-[var(--mute)]">
                   Mantém os áudios enviados. A voz volta pra &quot;pronta pra treinar&quot; e você
                   pode retreinar sem subir áudio de novo.
                 </span>
@@ -123,20 +126,22 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
           )}
 
           <label
-            className={`flex cursor-pointer gap-3 border p-3 ${
-              target === "voice" ? "border-accent bg-accent/5" : "border-border bg-surface"
+            className={`flex cursor-pointer gap-3 rounded-[var(--radius)] border p-3 transition-colors ${
+              target === "voice"
+                ? "border-[var(--hairline-bright)] bg-[var(--surface-elevated)]"
+                : "border-[var(--hairline-strong)] bg-[var(--surface-deep)]"
             }`}
           >
             <input
               type="radio"
               name="delete-target"
-              className="mt-1 accent-[var(--color-accent,#ff5500)]"
+              className="mt-1 accent-[var(--ink)]"
               checked={target === "voice"}
               onChange={() => setTarget("voice")}
             />
             <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-bold text-fg">Apagar a voz inteira</span>
-              <span className="text-xs text-muted-fg">
+              <span className="text-sm font-medium text-[var(--ink)]">Apagar a voz inteira</span>
+              <span className="text-xs text-[var(--mute)]">
                 Remove TUDO: áudios enviados, a LoRA, áudios gerados, referências e todos os
                 registros no banco. Não dá pra recuperar.
               </span>
@@ -148,9 +153,9 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
         <div className="flex flex-col gap-1.5">
           <label
             htmlFor="confirm-name"
-            className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg"
+            className="font-mono text-[10px] tracking-wide text-[var(--mute)]"
           >
-            Pra confirmar, digite o nome da voz: <span className="text-accent">{voiceName}</span>
+            Pra confirmar, digite o nome da voz: <span className="text-[var(--silver)]">{voiceName}</span>
           </label>
           <input
             id="confirm-name"
@@ -159,24 +164,24 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
             placeholder={voiceName}
-            className="border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/50 focus:border-accent focus:outline-none"
+            className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-3 text-sm text-[var(--ink)] placeholder:text-[var(--ash)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none"
           />
         </div>
 
         {error && (
           <p
             role="alert"
-            className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent"
+            className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]"
           >
             {error}
           </p>
         )}
 
-        <div className="flex gap-3 justify-end">
+        <div className="flex justify-end gap-3">
           <button
             type="button"
             onClick={close}
-            className="border border-border px-5 py-3 text-sm font-bold uppercase tracking-wide text-fg transition-colors hover:bg-surface"
+            className="inline-flex h-10 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)]"
           >
             Cancelar
           </button>
@@ -184,7 +189,7 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
             type="button"
             onClick={handleDelete}
             disabled={!canDelete}
-            className="flex items-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium text-[var(--status-error)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Trash2 className="h-4 w-4" />
             {deleting ? "Apagando…" : target === "lora" ? "Apagar LoRA" : "Apagar voz"}
@@ -203,21 +208,21 @@ type ModalProps = { voiceId: string; voiceName: string; hasLora: boolean };
 export function DeleteVoiceModal({ voiceId, voiceName, hasLora }: ModalProps) {
   const [open, setOpen] = useState(false);
   return (
-    <section className="border border-accent/40 bg-accent/[0.03] p-6 flex flex-col gap-3">
+    <section className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--status-error)]/30 bg-[var(--surface-card)] p-6">
       <div className="flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 text-accent" />
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">
+        <AlertTriangle className="h-4 w-4 text-[var(--status-error)]" />
+        <h2 className="font-mono text-[12px] tracking-wide text-[var(--status-error)]">
           Zona de perigo
         </h2>
       </div>
-      <p className="text-sm text-muted-fg">
-        Apagar é <strong className="text-fg">irreversível</strong>. Remove os arquivos do
+      <p className="text-sm text-[var(--body)]">
+        Apagar é <strong className="text-[var(--ink)]">irreversível</strong>. Remove os arquivos do
         armazenamento (R2) e os registros do banco — não dá pra desfazer.
       </p>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 border border-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:bg-accent hover:text-accent-fg active:scale-[0.99] w-fit"
+        className="inline-flex h-10 w-fit items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium text-[var(--status-error)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] active:scale-[0.98]"
       >
         <Trash2 className="h-4 w-4" />
         Apagar voz / LoRA

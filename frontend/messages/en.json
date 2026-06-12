@@ -1,6 +1,6 @@
 {
   "app": {
-    "brand": "AI Clone Verse",
+    "brand": "FastPost",
     "nav": {
       "dashboard": "Dashboard",
       "voiceCloning": "Voice Cloning",
@@ -86,7 +86,7 @@
     }
   },
   "auth": {
-    "brand": "AI Clone Verse",
+    "brand": "FastPost",
     "tagline": "Clone your voice. Create infinite.",
     "login": {
       "title": "Sign in",
@@ -139,17 +139,17 @@
     }
   },
   "metadata": {
-    "title": "Lucas Arrial — AI tools platform",
+    "title": "FastPost — AI tools platform",
     "description": "Clone your voice with AI in minutes. AI tools platform for creators and entrepreneurs."
   },
   "nav": {
-    "brand": "Lucas",
+    "brand": "FastPost",
     "solution": "Solution",
     "platform": "Platform",
     "features": "Features",
     "cta": "Get started",
     "ariaPrimary": "Primary",
-    "ariaBrand": "Lucas Arrial — home"
+    "ariaBrand": "FastPost — home"
   },
   "themeToggle": {
     "toLight": "Switch to light mode",
@@ -162,15 +162,15 @@
     "es": "Spanish"
   },
   "hero": {
-    "eyebrow": "01 · ai voice cloning",
-    "titleLine1": "Clone",
-    "titleLine2": "your voice",
-    "titleLine3": "In minutes.",
-    "description": "The AI tools platform for creators, entrepreneurs and studios. Train your voice once. Generate infinite audio.",
-    "ctaPrimary": "Start free",
+    "eyebrow": "AI voice cloning",
+    "titleLine1": "Your voice.",
+    "titleLine2": "In any text.",
+    "titleLine3": "Instantly.",
+    "description": "Train your voice once and generate audio from any text, in seconds. It is FastPost’s first studio — the platform going from audio to finished video.",
+    "ctaPrimary": "Get started",
     "ctaSecondary": "Watch demo",
-    "metaStack": "voxcpm · runpod · supabase",
-    "metaScope": "mvp · voice cloning",
+    "metaStack": "Your voice · Multilingual · Instant",
+    "metaScope": "Voice cloning, live · Video soon",
     "metaVersion": "v0.1 · 2026"
   },
   "problem": {
@@ -219,7 +219,7 @@
     },
     "tools": {
       "voice": "Voice Cloning",
-      "video": "Video Editing",
+      "video": "Video generation",
       "writing": "AI Writing",
       "image": "AI Images",
       "transcribe": "Transcription",
@@ -290,7 +290,7 @@
         }
       }
     },
-    "copyright": "© 2026 Lucas Arrial. All rights reserved.",
+    "copyright": "© 2026 FastPost. All rights reserved.",
     "made": "Built with AI, from Brazil."
   }
 }

@@ -62,7 +62,6 @@ export function VoiceRecorder() {
       teardownAudio();
       clipsRef.current.forEach((c) => URL.revokeObjectURL(c.url));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function teardownAudio() {
@@ -215,23 +214,23 @@ export function VoiceRecorder() {
           Aparece quando o mic está pronto/gravando pra acompanhar a leitura
           do roteiro sem precisar scrollar pro fim da página. */}
       {showPill && (
-        <div className="fixed bottom-4 right-4 z-40 flex items-center gap-3 border border-border bg-bg/95 px-3 py-2 shadow-[0_4px_16px_rgba(0,0,0,0.18)] backdrop-blur-sm">
-          {/* Mini medidor (5 barras verticais) */}
-          <div className="flex items-end gap-0.5 h-6" aria-hidden>
+        <div className="fixed bottom-4 right-4 z-40 flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)]/95 px-3 py-2 backdrop-blur-sm">
+          {/* Mini medidor (5 barras verticais) — saída de áudio: canal ativo violeta */}
+          <div className="flex h-6 items-end gap-0.5" aria-hidden>
             {[0, 1, 2, 3, 4].map((i) => {
               const active = meterPct / 100 >= (i + 1) / 5 * 0.4;
               return (
                 <span
                   key={i}
-                  className={`w-1 transition-all duration-75 ${
-                    active ? "bg-accent h-full" : "bg-border h-1.5"
+                  className={`w-1 rounded-[var(--radius-full)] transition-all duration-75 ${
+                    active ? "h-full bg-[var(--hue-violet)]" : "h-1.5 bg-[var(--hairline-strong)]"
                   }`}
                 />
               );
             })}
           </div>
           {/* Timer do clipe atual */}
-          <span className="font-mono text-[11px] tabular-nums text-fg w-10 text-center">
+          <span className="w-10 text-center font-mono text-[11px] tabular-nums text-[var(--ink)]">
             {formatDuration(seconds)}
           </span>
           {/* Botão único Mic/Stop */}
@@ -240,7 +239,7 @@ export function VoiceRecorder() {
               type="button"
               onClick={startRecording}
               aria-label="Gravar"
-              className="flex h-9 w-9 items-center justify-center bg-accent text-accent-fg transition-transform hover:scale-110 active:scale-95"
+              className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-full)] bg-[var(--pill-bg)] text-[var(--pill-ink)] transition-transform hover:scale-110 active:scale-95"
             >
               <Mic className="h-4 w-4" />
             </button>
@@ -249,7 +248,7 @@ export function VoiceRecorder() {
               type="button"
               onClick={stopRecording}
               aria-label="Parar gravação"
-              className="flex h-9 w-9 items-center justify-center border-2 border-accent text-accent animate-pulse"
+              className="flex h-9 w-9 animate-pulse items-center justify-center rounded-[var(--radius-full)] border-2 border-[var(--status-error)] text-[var(--status-error)]"
             >
               <Square className="h-4 w-4 fill-current" />
             </button>
@@ -257,54 +256,55 @@ export function VoiceRecorder() {
         </div>
       )}
 
-      <section className="border border-border bg-surface p-6 flex flex-col gap-5">
+      <section className="flex flex-col gap-5 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
       <div className="flex items-center gap-2">
-        <Mic className="h-4 w-4 text-accent" />
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">Gravar voz</h2>
+        <Mic className="h-4 w-4 text-[var(--silver)]" />
+        <h2 className="font-mono text-[12px] tracking-wide text-[var(--silver)]">Gravar voz</h2>
       </div>
 
       {/* Progresso acumulado (anti-perda: vem do IndexedDB) */}
       <div className="flex flex-col gap-1.5">
-        <div className="flex justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg">
+        <div className="flex justify-between font-mono text-[10px] tracking-wide text-[var(--mute)]">
           <span>Fala acumulada</span>
-          <span className="tabular-nums">
+          <span className="tabular-nums text-[var(--silver)]">
             {formatDuration(totalSeconds)} / {formatDuration(TARGET_SECONDS)}
           </span>
         </div>
-        <div className="h-2 bg-bg border border-border overflow-hidden">
-          <div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${pct}%` }} />
+        <div className="h-2 overflow-hidden rounded-[var(--radius-full)] bg-[var(--surface-deep)] border border-[var(--hairline-strong)]">
+          <div className="h-full rounded-[var(--radius-full)] bg-[var(--silver)] transition-[width] duration-300" style={{ width: `${pct}%` }} />
         </div>
       </div>
 
-      {/* Medidor de nível */}
+      {/* Medidor de nível — saída de áudio ao vivo: violeta */}
       {(status === "ready" || status === "recording") && (
         <div className="flex items-center gap-3">
-          <div className="h-3 flex-1 bg-bg border border-border overflow-hidden">
+          <div className="h-3 flex-1 overflow-hidden rounded-[var(--radius-full)] bg-[var(--surface-deep)] border border-[var(--hairline-strong)]">
             <div
-              className="h-full bg-accent transition-[width] duration-75"
+              className="h-full rounded-[var(--radius-full)] bg-[var(--hue-violet)] transition-[width] duration-75"
               style={{ width: `${meterPct}%` }}
             />
           </div>
-          <span className="font-mono text-[10px] tabular-nums text-muted-fg w-10 text-right">
+          <span className="w-10 text-right font-mono text-[10px] tabular-nums text-[var(--mute)]">
             {formatDuration(seconds)}
           </span>
         </div>
       )}
 
       {clipping && (
-        <p className="flex items-center gap-2 border border-accent bg-accent/10 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-accent">
+        <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[10px] tracking-wide text-[var(--status-warn)]">
           <AlertTriangle className="h-4 w-4" /> Áudio estourando — afaste o microfone ou fale mais baixo
         </p>
       )}
 
       {status === "recording" && (
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg">
+        <p className="flex items-center gap-2 font-mono text-[10px] tracking-wide text-[var(--mute)]">
+          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-[var(--radius-full)] bg-[var(--status-error)]" />
           Gravando… para sozinho após {SILENCE_MS / 1000}s de silêncio
         </p>
       )}
 
       {error && (
-        <p className="flex items-center gap-2 border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent">
+        <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]">
           <AlertCircle className="h-4 w-4" /> {error}
         </p>
       )}
@@ -317,10 +317,10 @@ export function VoiceRecorder() {
           </button>
         )}
         {status === "requesting" && (
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Pedindo permissão…</span>
+          <span className="font-mono text-[12px] tracking-wide text-[var(--silver)]">Pedindo permissão…</span>
         )}
         {status === "ready" && (
-          <button type="button" onClick={startRecording} className={btnAccent}>
+          <button type="button" onClick={startRecording} className={btnPrimary}>
             <Mic className="h-4 w-4" /> Gravar
           </button>
         )}
@@ -333,22 +333,22 @@ export function VoiceRecorder() {
 
       {/* Lista de clipes gravados */}
       {clips.length > 0 && (
-        <div className="flex flex-col gap-3 border-t border-border pt-4">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+        <div className="flex flex-col gap-3 border-t border-[var(--hairline)] pt-4">
+          <span className="font-mono text-[10px] tracking-wide text-[var(--mute)]">
             Áudios gravados ({clips.length})
           </span>
           {clips.map((c, i) => (
             <div key={c.id} className="flex items-center gap-3">
-              <span className="font-mono text-[10px] tabular-nums text-muted-fg w-6">{i + 1}</span>
+              <span className="w-6 font-mono text-[10px] tabular-nums text-[var(--ash)]">{i + 1}</span>
               <audio src={c.url} controls className="h-9 flex-1" preload="metadata" />
-              <span className="font-mono text-[10px] tabular-nums text-muted-fg w-10 text-right">
+              <span className="w-10 text-right font-mono text-[10px] tabular-nums text-[var(--mute)]">
                 {formatDuration(c.seconds)}
               </span>
               <button
                 type="button"
                 onClick={() => removeClip(c.id)}
                 aria-label="Apagar clipe"
-                className="text-muted-fg hover:text-accent transition-colors"
+                className="text-[var(--mute)] transition-colors hover:text-[var(--status-error)]"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -360,17 +360,17 @@ export function VoiceRecorder() {
       {/* CTA enviar pra treinamento — aparece ao bater 20min. Usuário
           pode continuar gravando (CTA fica disponível, não bloqueia). */}
       {targetMet && (
-        <div className="border border-accent bg-accent/5 p-4 flex flex-col gap-3">
-          <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-accent">
+        <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] p-4">
+          <p className="flex items-center gap-2 font-mono text-[10px] tracking-wide text-[var(--status-online)]">
             <Check className="h-4 w-4" /> Meta de 20 min atingida
           </p>
           <Link
             href={`/${locale}/app/voice-cloning/new`}
-            className="flex items-center justify-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99]"
+            className={`${btnOutline} justify-center`}
           >
             Enviar para treinamento <ArrowRight className="h-4 w-4" />
           </Link>
-          <p className="text-xs text-muted-fg">
+          <p className="text-xs text-[var(--mute)]">
             Pode continuar gravando se quiser melhorar — quanto mais limpo, melhor a voz clonada.
           </p>
         </div>
@@ -385,8 +385,6 @@ function toView(c: StoredClip): ClipView {
 }
 
 const btnPrimary =
-  "flex items-center gap-2 bg-fg px-5 py-3 text-sm font-bold uppercase tracking-wide text-bg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-accent hover:text-accent-fg active:scale-[0.99]";
-const btnAccent =
-  "flex items-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99]";
+  "inline-flex h-10 items-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]";
 const btnOutline =
-  "flex items-center gap-2 border border-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:bg-accent hover:text-accent-fg active:scale-[0.99]";
+  "inline-flex h-10 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] active:scale-[0.98]";

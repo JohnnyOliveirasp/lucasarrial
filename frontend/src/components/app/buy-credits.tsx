@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Coins, Loader2 } from "lucide-react";
 import { CREDIT_PACKAGES } from "@/lib/credits/config";
+import { Button, Card, Stat } from "@/components/ui";
 
 const brl = (cents: number) =>
   (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -32,44 +33,61 @@ export function BuyCredits() {
     setLoading(null);
   }
 
+  // O pacote do meio recebe o pill branco (máx. 1 por tela); os demais, botão secundário.
+  const featuredIndex = Math.floor(CREDIT_PACKAGES.length / 2);
+
   return (
-    <section className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-px bg-border sm:grid-cols-3">
-        {CREDIT_PACKAGES.map((pkg) => (
-          <div key={pkg.id} className="flex flex-col gap-4 bg-bg p-6">
-            <div className="flex items-center gap-2">
-              <Coins className="h-5 w-5 text-accent" />
-              <span className="font-display text-2xl tracking-tight text-fg">
-                {pkg.credits.toLocaleString("pt-BR")}
+    <section className="flex flex-col gap-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {CREDIT_PACKAGES.map((pkg, i) => {
+          const featured = i === featuredIndex;
+          return (
+            <Card
+              key={pkg.id}
+              glow={featured ? "stats" : undefined}
+              elevated={featured}
+              className="flex flex-col gap-5"
+            >
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-full)] border border-[var(--hairline-strong)] text-[var(--silver)]">
+                <Coins className="h-4 w-4" />
               </span>
-            </div>
-            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-fg">
-              créditos
-            </span>
-            <div className="mt-auto flex flex-col gap-3">
-              <span className="font-display text-xl text-fg">{brl(pkg.priceCents)}</span>
-              <button
-                type="button"
-                disabled={loading !== null}
-                onClick={() => buy(pkg.id)}
-                className="flex items-center justify-center gap-2 bg-fg px-4 py-3 font-mono text-[11px] uppercase tracking-[0.16em] text-bg transition-colors duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:bg-accent disabled:opacity-50"
-              >
-                {loading === pkg.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "Comprar"
-                )}
-              </button>
-            </div>
-          </div>
-        ))}
+
+              <Stat
+                size="sm"
+                value={pkg.credits.toLocaleString("pt-BR")}
+                label="créditos"
+              />
+
+              <div className="mt-auto flex flex-col gap-4">
+                <span className="text-[20px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
+                  {brl(pkg.priceCents)}
+                </span>
+                <Button
+                  variant={featured ? "primary" : "secondary"}
+                  fullWidth
+                  disabled={loading !== null}
+                  onClick={() => buy(pkg.id)}
+                  iconLeft={
+                    loading === pkg.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : undefined
+                  }
+                >
+                  {loading === pkg.id ? "Aguarde" : "Comprar"}
+                </Button>
+              </div>
+            </Card>
+          );
+        })}
       </div>
+
       {error && (
-        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-red-500">
+        <p role="alert" className="text-[13px] text-[var(--status-error)]">
           {error}
         </p>
       )}
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-fg">
+
+      <p className="text-[13px] text-[var(--ash)]">
         Pagamento via Stripe. Créditos avulsos não expiram.
       </p>
     </section>

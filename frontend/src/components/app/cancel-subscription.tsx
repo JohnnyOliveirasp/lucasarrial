@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui";
 
 const REASONS = [
   "Está caro",
@@ -42,48 +43,48 @@ export function CancelSubscription() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-fg underline-offset-4 transition-colors hover:text-red-500 hover:underline"
+        className="text-[13px] text-[var(--mute)] underline-offset-4 transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:text-[var(--status-error)] hover:underline"
       >
         Cancelar assinatura
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md border border-border bg-bg p-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-md rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-8">
             {done ? (
               <div className="flex flex-col gap-4">
-                <h3 className="font-display text-2xl uppercase tracking-tight text-fg">
+                <h3 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
                   Assinatura cancelada
                 </h3>
-                <p className="text-sm text-muted-fg">
+                <p className="text-[14px] leading-relaxed text-[var(--mute)]">
                   Seu acesso continua até o fim do período já pago. Obrigado pelo
                   retorno — ele ajuda a melhorar a plataforma.
                 </p>
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   onClick={() => setOpen(false)}
-                  className="self-start bg-fg px-5 py-3 font-mono text-[11px] uppercase tracking-[0.16em] text-bg transition-colors hover:bg-accent"
+                  className="self-start"
                 >
                   Fechar
-                </button>
+                </Button>
               </div>
             ) : (
               <div className="flex flex-col gap-5">
                 <div className="flex flex-col gap-2">
-                  <h3 className="font-display text-2xl uppercase tracking-tight text-fg">
+                  <h3 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
                     Antes de ir…
                   </h3>
-                  <p className="text-sm text-muted-fg">
+                  <p className="text-[14px] leading-relaxed text-[var(--mute)]">
                     Pode cancelar tranquilo. Só nos conta o motivo (opcional) —
                     ajuda a melhorar.
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2.5">
                   {REASONS.map((r) => (
                     <label
                       key={r}
-                      className="flex items-center gap-3 text-sm text-fg cursor-pointer"
+                      className="flex cursor-pointer items-center gap-3 text-[14px] text-[var(--body)]"
                     >
                       <input
                         type="radio"
@@ -91,7 +92,7 @@ export function CancelSubscription() {
                         value={r}
                         checked={reason === r}
                         onChange={() => setReason(r)}
-                        className="accent-accent"
+                        className="accent-[var(--ink)]"
                       />
                       {r}
                     </label>
@@ -103,29 +104,26 @@ export function CancelSubscription() {
                   onChange={(e) => setDetail(e.target.value)}
                   rows={2}
                   placeholder="Quer detalhar? (opcional)"
-                  className="border border-border bg-bg px-3 py-2 text-sm text-fg placeholder:text-muted-fg/60 focus:border-accent focus:outline-none resize-none"
+                  className="resize-none rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3.5 py-2.5 text-[14px] text-[var(--ink)] placeholder:text-[var(--ash)] focus:border-[var(--hairline-bright)] focus:outline-none"
                 />
 
                 <div className="flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setOpen(false)}
-                    className="font-mono text-[11px] uppercase tracking-[0.16em] text-fg hover:text-accent"
-                  >
+                  <Button variant="ghost" onClick={() => setOpen(false)}>
                     Voltar
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="secondary"
                     disabled={loading}
                     onClick={confirm}
-                    className="flex items-center gap-2 bg-red-500 px-5 py-3 font-mono text-[11px] uppercase tracking-[0.16em] text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    iconLeft={
+                      loading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : undefined
+                    }
+                    className="text-[var(--status-error)] hover:border-[var(--status-error)]"
                   >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      "Confirmar cancelamento"
-                    )}
-                  </button>
+                    {loading ? "Cancelando…" : "Confirmar cancelamento"}
+                  </Button>
                 </div>
               </div>
             )}

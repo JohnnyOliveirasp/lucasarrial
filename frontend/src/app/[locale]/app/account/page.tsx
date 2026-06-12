@@ -4,6 +4,7 @@ import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { CancelSubscription } from "@/components/app/cancel-subscription";
 import { DeleteAccount } from "@/components/app/delete-account";
+import { Eyebrow } from "@/components/ui";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 
 /**
@@ -42,31 +43,36 @@ export default async function AccountPage({
   return (
     <div className="flex flex-col gap-12">
       <header className="flex flex-col gap-3">
-        <h1 className="font-display text-5xl leading-[0.9] tracking-tight text-fg uppercase">
+        <Eyebrow>Conta</Eyebrow>
+        <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
           Minha conta
         </h1>
-        <p className="max-w-xl text-sm text-muted-fg">
+        <p className="max-w-xl text-sm text-[var(--mute)]">
           Seus dados e a gestão da sua assinatura.
         </p>
       </header>
 
       {/* Conta */}
       <section className="flex flex-col gap-4">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-fg">
-          Conta
-        </h2>
-        <div className="flex items-center gap-4 border border-border bg-surface p-5">
+        <Eyebrow className="text-[var(--ash)]">Conta</Eyebrow>
+        <div className="flex items-center gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5">
           {profile?.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element -- avatar do provider OAuth (Google)
-            <img src={profile.avatar_url} alt="" className="h-12 w-12 object-cover" />
+            <img
+              src={profile.avatar_url}
+              alt=""
+              className="h-12 w-12 rounded-[var(--radius-full)] object-cover"
+            />
           ) : (
-            <div className="flex h-12 w-12 items-center justify-center bg-accent font-mono text-sm font-bold text-accent-fg">
+            <div className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-full)] bg-[var(--surface-raised)] text-sm font-semibold text-[var(--silver)]">
               {displayName.slice(0, 1).toUpperCase()}
             </div>
           )}
           <div className="flex min-w-0 flex-col">
-            <span className="text-sm font-medium text-fg">{displayName}</span>
-            <span className="break-all font-mono text-xs lowercase text-muted-fg">
+            <span className="text-sm font-medium text-[var(--ink)]">
+              {displayName}
+            </span>
+            <span className="break-all font-mono text-xs lowercase text-[var(--mute)]">
               {email}
             </span>
           </div>
@@ -75,22 +81,20 @@ export default async function AccountPage({
 
       {/* Assinatura */}
       <section className="flex flex-col gap-4">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-fg">
-          Assinatura
-        </h2>
+        <Eyebrow className="text-[var(--ash)]">Assinatura</Eyebrow>
 
         {team ? (
-          <p className="border border-border bg-surface p-5 text-sm text-muted-fg">
+          <p className="rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5 text-sm text-[var(--mute)]">
             Acesso de cortesia (equipe) — sem assinatura paga.
           </p>
         ) : subscribed ? (
-          <div className="flex flex-col gap-4 border border-border bg-surface p-5">
+          <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5">
             <div className="flex flex-col gap-1">
-              <span className="font-display text-2xl uppercase tracking-tight text-fg">
+              <span className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
                 Plano ativo
               </span>
               {accessUntil && (
-                <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-fg">
+                <span className="text-[13px] text-[var(--mute)]">
                   Acesso garantido até {accessUntil}
                 </span>
               )}
@@ -98,16 +102,17 @@ export default async function AccountPage({
             <CancelSubscription />
           </div>
         ) : (
-          <div className="flex flex-col gap-4 border border-accent bg-accent/5 p-5">
-            <p className="text-sm text-muted-fg">
+          <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5">
+            <p className="text-sm text-[var(--mute)]">
               Você não tem uma assinatura ativa. Assine para liberar a plataforma
               e receber 180.000 créditos por mês.
             </p>
             <Link
               href={`/${locale}/planos`}
-              className="flex w-fit items-center gap-2 bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all hover:scale-[1.01] active:scale-[0.99]"
+              className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
             >
-              Assinar agora →
+              Assinar agora
+              <span aria-hidden>→</span>
             </Link>
           </div>
         )}

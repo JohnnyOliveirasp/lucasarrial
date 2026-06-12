@@ -12,6 +12,7 @@ import { CheckCircle2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { LEGAL_DOCS, CONSENT_VERSION } from "@/lib/legal";
 import { LegalDocView } from "@/components/legal/legal-doc-view";
+import { Button } from "@/components/ui";
 
 // Prefixo do cache; a chave final inclui o USER ID — senão, num navegador
 // compartilhado, o aceite de um usuário escondia o popup de outro.
@@ -98,21 +99,21 @@ export function ConsentGate() {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="consent-title"
     >
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col border border-accent bg-bg">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)]">
         {/* Header + abas */}
-        <div className="flex flex-col gap-3 border-b border-border p-5">
+        <div className="flex flex-col gap-3 border-b border-[var(--hairline)] p-6">
           <h2
             id="consent-title"
-            className="font-display text-2xl uppercase tracking-tight text-fg"
+            className="font-sans text-2xl font-semibold tracking-[-0.02em] text-[var(--ink)]"
           >
             Antes de continuar
           </h2>
-          <p className="text-sm text-muted-fg">
+          <p className="text-sm text-[var(--mute)]">
             Leia e aceite nossos termos para usar a plataforma.
           </p>
           <div className="flex flex-wrap gap-2">
@@ -121,10 +122,10 @@ export function ConsentGate() {
                 key={d.slug}
                 type="button"
                 onClick={() => setTab(i)}
-                className={`px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors ${
+                className={`rounded-[var(--radius)] px-3 py-1.5 text-[12px] font-medium tracking-[-0.01em] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] ${
                   tab === i
-                    ? "bg-accent text-accent-fg"
-                    : "border border-border text-muted-fg hover:text-fg"
+                    ? "border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] text-[var(--ink)]"
+                    : "border border-[var(--hairline-strong)] text-[var(--mute)] hover:text-[var(--ink)]"
                 }`}
               >
                 {d.title}
@@ -134,55 +135,53 @@ export function ConsentGate() {
         </div>
 
         {/* Corpo com scroll */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto p-6">
           <LegalDocView doc={doc} compact />
         </div>
 
         {/* Rodapé: aceite */}
-        <div className="flex flex-col gap-3 border-t border-border p-5">
+        <div className="flex flex-col gap-4 border-t border-[var(--hairline)] p-6">
           <label className="flex cursor-pointer gap-3">
             <input
               type="checkbox"
               checked={agree}
               onChange={(e) => setAgree(e.target.checked)}
-              className="mt-1 accent-[var(--color-accent,#ff5500)]"
+              className="mt-0.5 size-4 accent-[var(--ink)]"
             />
-            <span className="text-sm text-fg">
+            <span className="text-sm text-[var(--body)]">
               Declaro que li e concordo com os{" "}
-              <strong className="font-semibold">Termos de Uso</strong>, a{" "}
-              <strong className="font-semibold">Política de Privacidade</strong> e a{" "}
-              <strong className="font-semibold">Política de Uso</strong>.
+              <strong className="font-semibold text-[var(--ink)]">Termos de Uso</strong>, a{" "}
+              <strong className="font-semibold text-[var(--ink)]">Política de Privacidade</strong> e a{" "}
+              <strong className="font-semibold text-[var(--ink)]">Política de Uso</strong>.
             </span>
           </label>
 
           {error && (
             <p
               role="alert"
-              className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent"
+              className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 font-mono text-[12px] tracking-[-0.01em] text-[var(--status-error)]"
             >
               {error}
             </p>
           )}
 
           <div className="flex justify-end gap-3">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={decline}
               disabled={submitting}
-              className="flex items-center gap-2 border border-border px-5 py-3 text-sm font-bold uppercase tracking-wide text-fg transition-colors hover:bg-surface disabled:opacity-40"
+              iconLeft={<LogOut className="h-4 w-4" />}
             >
-              <LogOut className="h-4 w-4" />
               Sair
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="primary"
               onClick={accept}
               disabled={!agree || submitting}
-              className="flex items-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+              iconLeft={<CheckCircle2 className="h-4 w-4" />}
             >
-              <CheckCircle2 className="h-4 w-4" />
               {submitting ? "Registrando…" : "Aceitar e continuar"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

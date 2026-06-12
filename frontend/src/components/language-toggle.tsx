@@ -26,25 +26,28 @@ export function LanguageToggle() {
       <details className="group">
         <summary
           aria-label={t("label")}
-          className="flex h-11 cursor-pointer list-none items-center gap-2 border border-[var(--border)] px-3 text-[var(--fg)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-snap)] hover:bg-[var(--accent)] hover:text-[var(--accent-fg)] hover:border-[var(--accent)] md:h-9 [&::-webkit-details-marker]:hidden"
+          className="flex h-11 cursor-pointer list-none items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-3 text-[var(--ink)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] md:h-9 [&::-webkit-details-marker]:hidden"
         >
-          <Languages className="size-4" />
+          <Languages className="size-4 text-[var(--silver)]" />
           <span className="label-mono">{LOCALE_LABELS[locale]}</span>
         </summary>
-        <div className="absolute right-0 z-50 mt-1 flex w-[140px] flex-col border border-[var(--border)] bg-[var(--bg)] shadow-lg">
+        <div
+          className="absolute right-0 z-50 mt-1.5 flex w-[140px] flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)] p-1"
+          style={{ boxShadow: "var(--elevation-popover)" }}
+        >
           {routing.locales.map((option) => (
             <button
               key={option}
               type="button"
               onClick={() => handleChange(option)}
-              className={`flex min-h-11 items-center justify-between px-3 py-2 text-left text-xs transition-colors ${
+              className={`flex min-h-10 items-center justify-between rounded-[var(--radius-sm)] px-3 py-2 text-left text-xs transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] ${
                 option === locale
-                  ? "bg-[var(--accent)] text-[var(--accent-fg)]"
-                  : "text-[var(--fg)] hover:bg-[var(--surface)]"
+                  ? "bg-[var(--surface-elevated)] text-[var(--ink)]"
+                  : "text-[var(--body)] hover:bg-[var(--surface-elevated)] hover:text-[var(--ink)]"
               }`}
             >
               <span className="label-mono">{LOCALE_LABELS[option]}</span>
-              <span className="text-[10px] text-[var(--muted-fg)]">
+              <span className="text-[10px] text-[var(--ash)]">
                 {t(option)}
               </span>
             </button>

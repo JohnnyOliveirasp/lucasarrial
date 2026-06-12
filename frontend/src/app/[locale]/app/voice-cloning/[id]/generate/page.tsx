@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { VoiceGenerator } from "@/components/voice/voice-generator";
+import { Eyebrow } from "@/components/ui";
 
 export default async function GeneratePage({
   params,
@@ -28,15 +29,13 @@ export default async function GeneratePage({
   }
 
   return (
-    <div className="flex flex-col gap-10 max-w-2xl">
-      <header className="flex flex-col gap-3">
-        <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">
-          Gerar áudio · {voice.name}
-        </span>
-        <h1 className="font-display text-5xl leading-[0.9] tracking-tight text-fg uppercase">
+    <div className="flex max-w-2xl flex-col gap-10">
+      <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
+        <Eyebrow>Gerar áudio · {voice.name}</Eyebrow>
+        <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
           Síntese
         </h1>
-        <p className="text-sm text-muted-fg">
+        <p className="text-sm text-[var(--mute)]">
           Digite o texto e gere. A referência de voz é definida automaticamente
           a partir do seu treino.
         </p>

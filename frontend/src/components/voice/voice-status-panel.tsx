@@ -15,6 +15,9 @@ type Props = {
 const POLLING_STATUSES: VoiceStatus[] = ["uploading", "validating", "training"];
 const POLL_MS = 5000;
 
+const PILL =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98] disabled:opacity-[0.42] disabled:pointer-events-none";
+
 export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
   const router = useRouter();
   const [status, setStatus] = useState<VoiceStatus>(initialStatus);
@@ -76,16 +79,16 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
   if (status === "awaiting_training") {
     return (
       <>
-      <section className="border border-accent bg-accent/5 p-6 flex flex-col gap-4">
-        <h2 className="font-display text-2xl uppercase tracking-tight text-fg">
+      <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
+        <h2 className="text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
           Pronta para treinar
         </h2>
-        <p className="text-sm text-muted-fg">
+        <p className="text-sm text-[var(--body)]">
           Áudios validados e armazenados no R2. Clique abaixo pra disparar o treinamento
           no RunPod (~15-30min). Você pode fechar a aba — a UI atualiza sozinha.
         </p>
         {error && (
-          <p className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent">
+          <p className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]">
             {error}
           </p>
         )}
@@ -93,7 +96,7 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
           type="button"
           onClick={startTraining}
           disabled={training}
-          className="bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 w-fit"
+          className={`${PILL} w-fit`}
         >
           {training ? "Disparando…" : "Iniciar treinamento"}
         </button>
@@ -111,13 +114,13 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
 
   if (status === "rejected_too_short") {
     return (
-      <section className="border border-border bg-surface p-6 flex flex-col gap-3">
-        <p className="text-sm text-fg">
+      <section className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
+        <p className="text-sm text-[var(--ink)]">
           Esses áudios não atingem o mínimo de 20 minutos. Suba mais áudio numa nova voz.
         </p>
         <Link
           href="/app/voice-cloning/new"
-          className="bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99] w-fit"
+          className={`${PILL} w-fit`}
         >
           + Treinar nova voz
         </Link>
@@ -127,16 +130,16 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
 
   if (status === "ready") {
     return (
-      <section className="border border-fg bg-fg p-6 flex flex-col gap-4 text-bg">
-        <h2 className="font-display text-2xl uppercase tracking-tight">
-          ✓ Voz pronta
+      <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] p-6">
+        <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
+          <span className="text-[var(--status-online)]">✓</span> Voz pronta
         </h2>
-        <p className="text-sm opacity-80">
+        <p className="text-sm text-[var(--body)]">
           LoRA treinada e armazenada. Agora você pode gerar áudio com qualquer texto.
         </p>
         <Link
           href={`/app/voice-cloning/${voiceId}/generate`}
-          className="bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-bg hover:text-fg active:scale-[0.99] w-fit"
+          className={`${PILL} w-fit`}
         >
           Gerar áudio →
         </Link>
@@ -146,11 +149,12 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
 
   if (POLLING_STATUSES.includes(status)) {
     return (
-      <section className="border border-dashed border-border bg-surface p-6 flex flex-col gap-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">
+      <section className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
+        <p className="flex items-center gap-2 font-mono text-[12px] tracking-wide text-[var(--silver)]">
+          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-[var(--radius-full)] bg-[var(--status-warn)]" />
           {status === "training" ? "Treinando…" : "Aguardando…"}
         </p>
-        <p className="text-sm text-muted-fg">
+        <p className="text-sm text-[var(--mute)]">
           {status === "training"
             ? `Pipeline rodando no RunPod (~15-30min). Atualizando a cada ${POLL_MS / 1000}s.`
             : `Atualizando a cada ${POLL_MS / 1000}s.`}

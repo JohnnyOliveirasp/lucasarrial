@@ -184,9 +184,9 @@ export function GenerationsHistory() {
 
   if (loading) {
     return (
-      <section className="border border-dashed border-border bg-surface p-12 flex flex-col items-center gap-4 text-center">
-        <div className="h-10 w-10 border-4 border-accent border-t-transparent animate-spin" />
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+      <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
+        <div className="h-10 w-10 animate-spin rounded-[var(--radius-full)] border-2 border-[var(--hairline-strong)] border-t-[var(--silver)]" />
+        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">
           Carregando histórico…
         </p>
       </section>
@@ -195,9 +195,9 @@ export function GenerationsHistory() {
 
   if (items.length === 0) {
     return (
-      <section className="border border-dashed border-border bg-surface p-12 flex flex-col items-center gap-4 text-center">
-        <HistoryIcon className="h-10 w-10 text-muted-fg" />
-        <p className="text-sm text-muted-fg">
+      <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
+        <HistoryIcon className="h-10 w-10 text-[var(--ash)]" />
+        <p className="text-sm text-[var(--mute)]">
           Nenhum áudio gerado ainda. Gere um áudio numa voz pronta e ele aparece aqui.
         </p>
       </section>
@@ -207,15 +207,15 @@ export function GenerationsHistory() {
   return (
     <div className="flex flex-col gap-4">
       {/* Toolbar de seleção */}
-      <div className="flex items-center justify-between gap-4 border border-border bg-surface px-4 py-3">
-        <label className="flex items-center gap-2 cursor-pointer">
+      <div className="flex items-center justify-between gap-4 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-4 py-3">
+        <label className="flex cursor-pointer items-center gap-2">
           <input
             type="checkbox"
             checked={selected.size === items.length && items.length > 0}
             onChange={toggleAll}
-            className="accent-[var(--color-accent,#ff5500)]"
+            className="accent-[var(--ink)]"
           />
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+          <span className="font-mono text-[10px] tracking-wide text-[var(--mute)]">
             {selected.size > 0 ? `${selected.size} selecionado(s)` : "Selecionar tudo"}
           </span>
         </label>
@@ -223,7 +223,7 @@ export function GenerationsHistory() {
           <button
             type="button"
             onClick={() => setPending([...selected])}
-            className="flex items-center gap-2 border border-accent px-4 py-2 text-xs font-bold uppercase tracking-wide text-accent transition-colors hover:bg-accent hover:text-accent-fg"
+            className="inline-flex h-9 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-4 font-sans text-[13px] font-medium text-[var(--status-error)] transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)]"
           >
             <Trash2 className="h-4 w-4" />
             Apagar selecionados
@@ -234,28 +234,28 @@ export function GenerationsHistory() {
       {error && (
         <p
           role="alert"
-          className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent"
+          className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]"
         >
           {error}
         </p>
       )}
 
       {/* Lista */}
-      <ul className="flex flex-col gap-px bg-border">
-        {items.map((g) => {
+      <ul className="flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
+        {items.map((g, idx) => {
           const checked = selected.has(g.id);
           return (
             <li
               key={g.id}
-              className={`flex flex-col gap-3 bg-bg px-4 py-4 sm:flex-row sm:items-center ${
-                checked ? "ring-1 ring-accent ring-inset" : ""
-              }`}
+              className={`flex flex-col gap-3 bg-[var(--surface-card)] px-4 py-4 sm:flex-row sm:items-center ${
+                idx > 0 ? "border-t border-[var(--hairline)]" : ""
+              } ${checked ? "bg-[var(--surface-elevated)] ring-1 ring-inset ring-[var(--hairline-bright)]" : ""}`}
             >
               <input
                 type="checkbox"
                 checked={checked}
                 onChange={() => toggle(g.id)}
-                className="accent-[var(--color-accent,#ff5500)] self-start sm:self-center"
+                className="self-start accent-[var(--ink)] sm:self-center"
               />
               <div className="flex flex-1 flex-col gap-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -272,7 +272,7 @@ export function GenerationsHistory() {
                         maxLength={120}
                         placeholder={g.voice_name}
                         disabled={savingId === g.id}
-                        className="w-48 border border-accent bg-bg px-2 py-1 font-display text-lg uppercase leading-none text-fg outline-none disabled:opacity-50"
+                        className="w-48 rounded-[var(--radius-sm)] border border-[var(--hairline-bright)] bg-[var(--surface-deep)] px-2 py-1 text-lg font-semibold leading-none text-[var(--ink)] outline-none disabled:opacity-50"
                         aria-label="Nome do áudio"
                       />
                       <button
@@ -280,7 +280,7 @@ export function GenerationsHistory() {
                         onClick={() => saveEdit(g.id)}
                         disabled={savingId === g.id}
                         aria-label="Salvar nome"
-                        className="text-accent hover:opacity-70 disabled:opacity-40"
+                        className="text-[var(--silver)] transition-colors hover:text-[var(--ink)] disabled:opacity-40"
                       >
                         <Check className="h-4 w-4" />
                       </button>
@@ -289,32 +289,32 @@ export function GenerationsHistory() {
                         onClick={cancelEdit}
                         disabled={savingId === g.id}
                         aria-label="Cancelar"
-                        className="text-muted-fg hover:text-fg disabled:opacity-40"
+                        className="text-[var(--mute)] transition-colors hover:text-[var(--ink)] disabled:opacity-40"
                       >
                         <X className="h-4 w-4" />
                       </button>
                     </span>
                   ) : (
                     <span className="group/name flex items-center gap-1.5">
-                      <span className="font-display text-lg uppercase leading-none text-fg">
+                      <span className="text-lg font-semibold leading-none text-[var(--ink)]">
                         {g.name?.trim() ? g.name : g.voice_name}
                       </span>
                       <button
                         type="button"
                         onClick={() => startEdit(g)}
                         aria-label="Editar nome do áudio"
-                        className="text-muted-fg transition-colors hover:text-accent"
+                        className="text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                     </span>
                   )}
-                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg">
+                  <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
                     {new Date(g.created_at).toLocaleString("pt-BR")}
                   </span>
                   {g.name?.trim() && editingId !== g.id && (
                     <span
-                      className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg"
+                      className="font-mono text-[10px] tracking-wide text-[var(--ash)]"
                       title="Voz usada"
                     >
                       · {g.voice_name}
@@ -322,7 +322,7 @@ export function GenerationsHistory() {
                   )}
                   {g.user_email && (
                     <span
-                      className="border border-accent/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-accent"
+                      className="rounded-[var(--radius-full)] border border-[var(--hairline-strong)] px-2 py-0.5 font-mono text-[9px] tracking-wide text-[var(--silver)]"
                       title="Dono da geração"
                     >
                       {g.user_email}
@@ -330,7 +330,7 @@ export function GenerationsHistory() {
                   )}
                 </div>
                 <p
-                  className={`text-sm text-muted-fg whitespace-pre-wrap ${
+                  className={`whitespace-pre-wrap text-sm text-[var(--body)] ${
                     expanded.has(g.id) ? "" : "line-clamp-2"
                   }`}
                 >
@@ -341,7 +341,7 @@ export function GenerationsHistory() {
                     type="button"
                     onClick={() => toggleExpand(g.id)}
                     aria-expanded={expanded.has(g.id)}
-                    className="flex w-fit items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em] text-accent transition-colors hover:opacity-70"
+                    className="flex w-fit items-center gap-1 font-mono text-[10px] tracking-wide text-[var(--silver)] transition-colors hover:text-[var(--ink)]"
                   >
                     <ChevronDown
                       className={`h-3.5 w-3.5 transition-transform ${
@@ -369,15 +369,15 @@ export function GenerationsHistory() {
                         download(g.audio_url!, g.name?.trim() ? g.name : g.voice_name)
                       }
                       aria-label="Baixar"
-                      className="text-muted-fg hover:text-accent"
+                      className="text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
                     >
                       <Download className="h-5 w-5" />
                     </button>
                   </>
                 ) : (
                   <span
-                    className={`font-mono text-[10px] uppercase tracking-[0.18em] ${
-                      g.status === "failed" ? "text-accent" : "text-muted-fg"
+                    className={`font-mono text-[10px] tracking-wide ${
+                      g.status === "failed" ? "text-[var(--status-error)]" : "text-[var(--mute)]"
                     }`}
                   >
                     {STATUS_LABEL[g.status]}
@@ -387,7 +387,7 @@ export function GenerationsHistory() {
                   type="button"
                   onClick={() => setPending([g.id])}
                   aria-label="Apagar este áudio"
-                  className="text-muted-fg hover:text-accent"
+                  className="text-[var(--mute)] transition-colors hover:text-[var(--status-error)]"
                 >
                   <Trash2 className="h-5 w-5" />
                 </button>
@@ -400,27 +400,27 @@ export function GenerationsHistory() {
       {/* Confirmação de delete */}
       {pending.length > 0 && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur"
           role="dialog"
           aria-modal="true"
           onClick={() => !deleting && setPending([])}
         >
           <div
-            className="w-full max-w-md border border-accent bg-bg p-6 flex flex-col gap-4"
+            className="flex w-full max-w-md flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-accent" />
-              <h3 className="font-display text-xl uppercase tracking-tight text-fg">
+              <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
+              <h3 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
                 Apagar {pending.length} áudio{pending.length > 1 ? "s" : ""}?
               </h3>
             </div>
-            <p className="text-sm text-muted-fg">
-              Ação <strong className="text-fg">irreversível</strong>. Remove o(s) áudio(s) do
+            <p className="text-sm text-[var(--body)]">
+              Ação <strong className="text-[var(--ink)]">irreversível</strong>. Remove o(s) áudio(s) do
               armazenamento e do histórico.
             </p>
             {error && (
-              <p className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent">
+              <p className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]">
                 {error}
               </p>
             )}
@@ -428,7 +428,7 @@ export function GenerationsHistory() {
               <button
                 type="button"
                 onClick={() => !deleting && setPending([])}
-                className="border border-border px-5 py-3 text-sm font-bold uppercase tracking-wide text-fg transition-colors hover:bg-surface"
+                className="inline-flex h-10 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)]"
               >
                 Cancelar
               </button>
@@ -436,7 +436,7 @@ export function GenerationsHistory() {
                 type="button"
                 onClick={confirmDelete}
                 disabled={deleting}
-                className="flex items-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-40"
+                className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium text-[var(--status-error)] transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] active:scale-[0.98] disabled:opacity-40"
               >
                 <Trash2 className="h-4 w-4" />
                 {deleting ? "Apagando…" : "Apagar"}

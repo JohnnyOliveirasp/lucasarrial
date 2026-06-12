@@ -1,94 +1,151 @@
 @import "tailwindcss";
 
 /* ───────────────────────────────────────────────────────────────
-   PlatformLucasArrial — Editorial-Brutalist tokens
-   Paleta: preto + branco + laranja accent. Sem outras cores.
+   FastPost — Design System tokens (dark-only, preto puro)
+   Brand neutro, conteúdo colorido. Canvas #000, tipografia branca/prata,
+   UI monocromática. As 5 cores de acento existem APENAS como glow
+   atmosférico (radial sutil 8-22%), NUNCA como cor sólida em botão,
+   ícone, badge ou texto. Profundidade vem de hairlines, não de sombra.
    ─────────────────────────────────────────────────────────────── */
 
-@variant dark (&:where(.dark, .dark *));
-
 :root {
-  --bg: #ffffff;
-  --fg: #0a0a0a;
-  --muted-fg: #737373;
-  --border: #e5e5e5;
-  --surface: #fafafa;
-  --accent: #ff5a1f;
-  --accent-fg: #ffffff;
-  --ring: #ff5a1f;
-  --font-anton: "Impact", "Arial Black", sans-serif;
-  --font-inter-tight: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-jetbrains-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
-}
+  /* ---- CANVAS & SURFACES (sobem por luminância, não por sombra) ---- */
+  --canvas: #000000;            /* preto puro — nunca near-black */
+  --surface-deep: #06060a;      /* player / wells */
+  --surface-card: #0a0a0c;      /* feature cards, inputs */
+  --surface-elevated: #101012;  /* pricing featured, ghost button */
+  --surface-raised: #1a1a1d;    /* tooltip, popover */
 
-.dark {
-  --bg: #0a0a0a;
-  --fg: #fafafa;
-  --muted-fg: #a3a3a3;
-  --border: #1f1f1f;
-  --surface: #121212;
-  --accent: #ff6b2c;
-  --accent-fg: #0a0a0a;
-  --ring: #ff6b2c;
+  /* ---- TEXTO (5 níveis) ---- */
+  --ink: #fafafa;                       /* hero — branco quente */
+  --body: rgba(250, 250, 250, 0.86);    /* leitura */
+  --silver: #c0c4c8;                    /* DIFERENCIAL — labels chave, stats, PRO/BETA */
+  --mute: #a1a4a5;                      /* secundário */
+  --ash: #888e90;                       /* captions, terciário */
+
+  /* ---- HAIRLINES (bordas translúcidas — substituem drop shadow) ---- */
+  --hairline: rgba(255, 255, 255, 0.06);          /* divisores de row */
+  --hairline-strong: rgba(255, 255, 255, 0.14);   /* borda padrão card/input */
+  --hairline-bright: rgba(255, 255, 255, 0.22);   /* foco / ativo */
+
+  /* ---- CONTRASTE INVERTIDO (pill branco — assinatura, máx 1/viewport) ---- */
+  --pill-bg: #fafafa;
+  --pill-ink: #0a0a0c;
+
+  /* ---- GLOWS ATMOSFÉRICOS (uso EXCLUSIVO em radial-gradient, nunca fill) ---- */
+  --glow-violet: rgba(167, 139, 250, 0.22);  /* Clone de voz */
+  --glow-amber: rgba(251, 191, 36, 0.20);    /* Clone de rosto */
+  --glow-blue: rgba(59, 130, 246, 0.22);     /* Edição automática */
+  --glow-green: rgba(16, 185, 129, 0.18);    /* Vídeos prontos */
+  --glow-magenta: rgba(244, 114, 182, 0.20); /* Stats / sucesso */
+  --hue-violet: #a78bfa;
+  --hue-amber: #fbbf24;
+  --hue-blue: #3b82f6;
+  --hue-green: #10b981;
+  --hue-magenta: #f272b6;
+
+  /* Gradientes prontos — aplicar como background layer no topo da seção */
+  --glow-voice: radial-gradient(ellipse 900px 520px at 50% -10%, var(--glow-violet), transparent 70%);
+  --glow-face: radial-gradient(ellipse 900px 520px at 50% -10%, var(--glow-amber), transparent 70%);
+  --glow-edit: radial-gradient(ellipse 900px 520px at 50% -10%, var(--glow-blue), transparent 70%);
+  --glow-output: radial-gradient(ellipse 900px 520px at 50% -10%, var(--glow-green), transparent 70%);
+  --glow-stats: radial-gradient(ellipse 900px 520px at 50% -10%, var(--glow-magenta), transparent 70%);
+
+  /* ---- STATUS (monocromático, uso pontual — só dot, nunca fills grandes) ---- */
+  --status-online: #10b981;
+  --status-warn: #fbbf24;
+  --status-error: #f87171;
+
+  /* ---- ELEVATION (permitido: ambient ultra-suave só em popover/dialog) ---- */
+  --elevation-popover: 0 0 0 1px var(--hairline-strong), 0 24px 60px -20px rgba(0, 0, 0, 0.9);
+
+  /* ---- FONTS ---- (--font-dm-sans e --font-dm-mono são injetadas por next/font no <html>) */
 }
 
 @theme inline {
-  --color-bg: var(--bg);
-  --color-fg: var(--fg);
-  --color-muted-fg: var(--muted-fg);
-  --color-border: var(--border);
-  --color-surface: var(--surface);
-  --color-accent: var(--accent);
-  --color-accent-fg: var(--accent-fg);
-  --color-ring: var(--ring);
+  /* ---- COLORS ---- */
+  --color-canvas: var(--canvas);
+  --color-surface-deep: var(--surface-deep);
+  --color-surface-card: var(--surface-card);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-raised: var(--surface-raised);
 
-  --font-display: var(--font-anton), "Impact", "Arial Black", sans-serif;
-  --font-sans: var(--font-inter-tight), system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --color-ink: var(--ink);
+  --color-body: var(--body);
+  --color-silver: var(--silver);
+  --color-mute: var(--mute);
+  --color-ash: var(--ash);
 
-  /* Editorial-Brutalist motion tokens */
-  --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
-  --dur-fast: 150ms;
-  --dur-base: 250ms;
-  --dur-slow: 400ms;
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-hairline-bright: var(--hairline-bright);
+
+  --color-pill-bg: var(--pill-bg);
+  --color-pill-ink: var(--pill-ink);
+
+  --color-status-online: var(--status-online);
+  --color-status-warn: var(--status-warn);
+  --color-status-error: var(--status-error);
+
+  /* Aliases de compat (telas antigas usam bg-bg/text-fg/border-border/etc.) */
+  --color-bg: var(--canvas);
+  --color-fg: var(--ink);
+  --color-muted-fg: var(--mute);
+  --color-border: var(--hairline-strong);
+  --color-surface: var(--surface-card);
+  --color-accent: var(--ink);
+  --color-accent-fg: var(--canvas);
+  --color-ring: var(--hairline-bright);
+
+  /* ---- FONTS ---- */
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-dm-sans);
+  --font-mono: var(--font-dm-mono);
+
+  /* ---- RADIUS ---- */
+  --radius-sm: 6px;
+  --radius: 8px;        /* padrão — botões, inputs, feature cards */
+  --radius-lg: 12px;    /* containers grandes — video preview, pricing */
+  --radius-full: 9999px;
+
+  /* ---- MOTION ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 320ms;
 }
 
 * {
-  border-color: var(--border);
+  border-color: var(--hairline-strong);
 }
 
 html {
-  color-scheme: light dark;
+  color-scheme: dark;
   scroll-behavior: smooth;
+  background: var(--canvas);
 }
 
 body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-sans);
-  font-feature-settings: "ss01", "cv11";
+  background: var(--canvas);
+  color: var(--body);
+  font-family: var(--font-dm-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-/* Editorial brutalism: zero default border-radius */
-button,
-input,
-textarea,
-select {
-  border-radius: 0;
-}
+/* Ênfase troca COR (silver→ink), nunca peso. Pesos válidos: 400/500/600/700. */
 
-/* Selection — orange punch */
+/* Selection — invertido (assinatura do brand) */
 ::selection {
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: var(--ink);
+  color: var(--canvas);
 }
 
-/* Focus ring — hard, no fade */
+/* Focus ring — hairline bright, sem ring colorido */
 :focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 1px solid var(--hairline-bright);
   outline-offset: 2px;
 }
 
@@ -104,20 +161,47 @@ select {
   }
 }
 
-/* Utility: editorial uppercase label */
-@utility label-mono {
-  font-family: var(--font-mono);
+/* Utility: eyebrow CAPS 11px prata, tracking 0.16em */
+@utility eyebrow {
+  font-family: var(--font-dm-sans);
   font-size: 0.6875rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   font-weight: 500;
+  color: var(--silver);
 }
 
-/* Utility: tight display */
-@utility display-hero {
-  font-family: var(--font-display);
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  line-height: 0.9;
+/* Alias legado (seções de marketing ainda usam .label-mono; re-skin pendente) */
+@utility label-mono {
+  font-family: var(--font-dm-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
+  font-weight: 500;
+  color: var(--silver);
+}
+
+/* Utility: display editorial — peso 700, tracking apertado, line-height 1 */
+@utility display-hero {
+  font-family: var(--font-dm-sans);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+/* Utility: glow atmosférico de seção (acoplado a feature) */
+@utility glow-voice {
+  background-image: var(--glow-voice);
+}
+@utility glow-face {
+  background-image: var(--glow-face);
+}
+@utility glow-edit {
+  background-image: var(--glow-edit);
+}
+@utility glow-output {
+  background-image: var(--glow-output);
+}
+@utility glow-stats {
+  background-image: var(--glow-stats);
 }

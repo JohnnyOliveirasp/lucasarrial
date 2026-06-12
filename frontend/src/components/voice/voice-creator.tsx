@@ -24,6 +24,12 @@ type LocalFile = {
 
 type Step = "form" | "upload" | "submitting" | "done";
 
+// ───── shared button styles ─────
+const PILL =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98] disabled:opacity-[0.42] disabled:pointer-events-none";
+const SECONDARY =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] disabled:opacity-[0.42] disabled:pointer-events-none";
+
 export function VoiceCreator() {
   const t = useTranslations("app.voiceCloningNew");
   const router = useRouter();
@@ -294,7 +300,7 @@ export function VoiceCreator() {
       {error && (
         <p
           role="alert"
-          className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent"
+          className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]"
         >
           {error}
         </p>
@@ -308,7 +314,7 @@ export function VoiceCreator() {
         <button
           type="button"
           onClick={() => setStep("form")}
-          className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-fg hover:text-accent transition-colors"
+          className="font-mono text-[12px] text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
         >
           ← {t("back")}
         </button>
@@ -316,7 +322,7 @@ export function VoiceCreator() {
           type="button"
           onClick={startUpload}
           disabled={!meetsMinimum || step === "submitting" || files.length === 0}
-          className="bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+          className={PILL}
         >
           {step === "submitting"
             ? t("submitting")
@@ -359,7 +365,7 @@ function FormStep({
       <div className="flex flex-col gap-1.5">
         <label
           htmlFor="voice-name"
-          className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg"
+          className="font-mono text-[11px] tracking-wide text-[var(--mute)]"
         >
           {t("nameLabel")}
         </label>
@@ -371,37 +377,37 @@ function FormStep({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("namePlaceholder")}
-          className="border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/60 focus:border-accent focus:outline-none"
+          className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-3 text-sm text-[var(--ink)] placeholder:text-[var(--ash)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none"
         />
       </div>
 
-      <div className="border border-border p-4">
-        <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent mb-3">
+      <div className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-4">
+        <div className="mb-3 font-mono text-[11px] tracking-wide text-[var(--silver)]">
           {t("rules.title")}
         </div>
-        <ul className="flex flex-col gap-2 text-sm text-muted-fg">
-          <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-accent flex-shrink-0" /><span>{t("rules.min")}</span></li>
-          <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-accent flex-shrink-0" /><span>{t("rules.recommended")}</span></li>
-          <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-accent flex-shrink-0" /><span>{t("rules.clean")}</span></li>
-          <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-accent flex-shrink-0" /><span>{t("rules.variety")}</span></li>
+        <ul className="flex flex-col gap-2 text-sm text-[var(--body)]">
+          <li className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--silver)]" /><span>{t("rules.min")}</span></li>
+          <li className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--silver)]" /><span>{t("rules.recommended")}</span></li>
+          <li className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--silver)]" /><span>{t("rules.clean")}</span></li>
+          <li className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--silver)]" /><span>{t("rules.variety")}</span></li>
         </ul>
       </div>
 
-      <label className="flex items-start gap-3 cursor-pointer select-none">
+      <label className="flex cursor-pointer select-none items-start gap-3">
         <input
           type="checkbox"
           required
           checked={consent}
           onChange={(e) => setConsent(e.target.checked)}
-          className="mt-1 h-4 w-4 accent-accent"
+          className="mt-1 h-4 w-4 accent-[var(--ink)]"
         />
-        <span className="text-sm text-fg">{t("consent")}</span>
+        <span className="text-sm text-[var(--ink)]">{t("consent")}</span>
       </label>
 
       <button
         type="submit"
         disabled={!name.trim() || !consent}
-        className="bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        className={PILL}
       >
         {t("next")} →
       </button>
@@ -443,22 +449,24 @@ function Dropzone({
         }
       }}
       className={[
-        "flex flex-col items-center justify-center gap-4 border-2 border-dashed p-12 text-center transition-colors",
-        over ? "border-accent bg-accent/5" : "border-border bg-surface",
+        "flex flex-col items-center justify-center gap-4 rounded-[var(--radius-lg)] border border-dashed p-12 text-center transition-colors",
+        over
+          ? "border-[var(--hairline-bright)] bg-[var(--surface-card)]"
+          : "border-[var(--hairline-strong)] bg-[var(--surface-card)]",
         disabled ? "cursor-not-allowed opacity-50" : "",
       ].join(" ")}
     >
-      <Upload className={`h-8 w-8 ${over ? "text-accent" : "text-muted-fg"}`} />
+      <Upload className={`h-8 w-8 ${over ? "text-[var(--ink)]" : "text-[var(--mute)]"}`} />
       <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium text-fg">{t("dropzone.title")}</p>
-        <p className="text-xs text-muted-fg">{t("dropzone.hint")}</p>
+        <p className="text-sm font-medium text-[var(--ink)]">{t("dropzone.title")}</p>
+        <p className="text-xs text-[var(--mute)]">{t("dropzone.hint")}</p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
         <button
           type="button"
           onClick={onPickFiles}
           disabled={disabled}
-          className="flex items-center gap-2 border border-border bg-bg px-4 py-2 text-xs font-bold uppercase tracking-wide text-fg transition-colors hover:border-fg hover:bg-fg hover:text-bg disabled:opacity-50"
+          className={SECONDARY}
         >
           <Upload className="h-3.5 w-3.5" />
           {t("dropzone.pickFiles")}
@@ -467,7 +475,7 @@ function Dropzone({
           type="button"
           onClick={onPickFolder}
           disabled={disabled}
-          className="flex items-center gap-2 border border-border bg-bg px-4 py-2 text-xs font-bold uppercase tracking-wide text-fg transition-colors hover:border-fg hover:bg-fg hover:text-bg disabled:opacity-50"
+          className={SECONDARY}
         >
           <FolderUp className="h-3.5 w-3.5" />
           {t("dropzone.pickFolder")}
@@ -487,28 +495,30 @@ function FileList({
   t: TFn;
 }) {
   return (
-    <ul className="flex flex-col gap-px bg-border">
-      {files.map((f) => (
+    <ul className="flex flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)]">
+      {files.map((f, i) => (
         <li
           key={f.id}
-          className="flex items-center gap-3 bg-bg px-4 py-3"
+          className={`flex items-center gap-3 bg-[var(--surface-card)] px-4 py-3 ${
+            i > 0 ? "border-t border-[var(--hairline)]" : ""
+          }`}
         >
-          <AudioLines className="h-4 w-4 text-accent flex-shrink-0" />
-          <span className="flex-1 truncate text-sm text-fg">{f.file.name}</span>
-          <span className="font-mono text-[10px] uppercase tracking-wide text-muted-fg">
+          <AudioLines className="h-4 w-4 flex-shrink-0 text-[var(--silver)]" />
+          <span className="flex-1 truncate text-sm text-[var(--ink)]">{f.file.name}</span>
+          <span className="font-mono text-[10px] tabular-nums text-[var(--ash)]">
             {f.duration == null ? t("measuring") : formatDuration(f.duration)}
           </span>
           {f.state === "uploading" && (
-            <span className="font-mono text-[10px] uppercase tracking-wide text-accent">
+            <span className="font-mono text-[10px] tabular-nums text-[var(--silver)]">
               {f.progress}%
             </span>
           )}
-          {f.state === "done" && <Check className="h-4 w-4 text-accent" />}
+          {f.state === "done" && <Check className="h-4 w-4 text-[var(--status-online)]" />}
           <button
             type="button"
             onClick={() => onRemove(f.id)}
             disabled={f.state === "uploading"}
-            className="text-muted-fg hover:text-accent disabled:opacity-30"
+            className="text-[var(--mute)] transition-colors hover:text-[var(--ink)] disabled:opacity-30"
             aria-label="Remove"
           >
             <X className="h-4 w-4" />
@@ -538,31 +548,31 @@ function DurationMeter({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+        <span className="font-mono text-[11px] tracking-wide text-[var(--mute)]">
           {t("meter.total")}
         </span>
-        <span className="font-display text-3xl uppercase text-fg leading-none">
+        <span className="font-mono text-3xl tabular-nums leading-none text-[var(--ink)]">
           {formatDuration(total)}
         </span>
       </div>
-      <div className="relative h-1.5 bg-border">
+      <div className="relative h-1.5 overflow-hidden rounded-[var(--radius-full)] bg-[var(--hairline-strong)]">
         <div
-          className={`absolute inset-y-0 left-0 transition-all duration-300 ${
-            meets ? "bg-accent" : "bg-fg"
+          className={`absolute inset-y-0 left-0 rounded-[var(--radius-full)] transition-all duration-300 ${
+            meets ? "bg-[var(--status-online)]" : "bg-[var(--silver)]"
           }`}
           style={{ width: `${pct}%` }}
         />
         <div
-          className="absolute inset-y-0 w-px bg-fg"
+          className="absolute inset-y-0 w-px bg-[var(--ink)]"
           style={{ left: `${(min / recommended) * 100}%` }}
           aria-label="minimum threshold"
         />
       </div>
-      <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+      <div className="flex items-center justify-between font-mono text-[10px] tracking-wide text-[var(--ash)]">
         <span>
           {t("meter.min")}: {formatDuration(min)}
         </span>
-        <span>
+        <span className={meets ? "text-[var(--status-online)]" : "text-[var(--silver)]"}>
           {meets
             ? `✓ ${t("meter.ok")}`
             : `${t("meter.missing")}: ${formatDuration(missing)}`}
@@ -586,18 +596,18 @@ function UploadProgress({
 }) {
   const done = files.filter((f) => f.state === "done").length;
   return (
-    <div className="border border-border bg-surface p-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">
+    <div className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-mono text-[11px] tracking-wide text-[var(--silver)]">
           {t("uploading")}
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-wide text-muted-fg">
+        <span className="font-mono text-[10px] tabular-nums text-[var(--mute)]">
           {done} / {files.length}
         </span>
       </div>
-      <div className="h-1 bg-border">
+      <div className="h-1 overflow-hidden rounded-[var(--radius-full)] bg-[var(--hairline-strong)]">
         <div
-          className="h-full bg-accent transition-all duration-200"
+          className="h-full rounded-[var(--radius-full)] bg-[var(--silver)] transition-all duration-200"
           style={{ width: `${overall}%` }}
         />
       </div>

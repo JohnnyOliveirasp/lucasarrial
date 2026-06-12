@@ -10,6 +10,14 @@ type ResendStatus = "idle" | "sending" | "sent";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
+const LABEL_CLASS = "text-[13px] font-medium text-[var(--silver)]";
+const INPUT_CLASS =
+  "h-11 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3.5 text-[14px] text-[var(--ink)] placeholder:text-[var(--ash)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none";
+const PILL_CLASS =
+  "inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-[0.42]";
+const ERROR_CLASS =
+  "rounded-[var(--radius)] border border-[var(--status-error)] bg-[var(--surface-card)] px-3.5 py-2.5 text-[13px] text-[var(--status-error)]";
+
 export function SignupForm() {
   const t = useTranslations("auth");
   const router = useRouter();
@@ -152,19 +160,16 @@ export function SignupForm() {
   if (step === "otp") {
     return (
       <div className="flex flex-col gap-6">
-        <div className="border border-accent bg-accent/5 px-4 py-4">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent mb-1">
-            ✓ {t("signup.checkEmail")}
+        <div className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-4 py-4">
+          <p className="mb-1 text-[13px] font-medium text-[var(--silver)]">
+            {t("signup.checkEmail")}
           </p>
-          <p className="text-sm text-fg/80">{email}</p>
+          <p className="text-[14px] text-[var(--ink)]">{email}</p>
         </div>
 
         <form onSubmit={handleVerifyOtp} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="otp"
-              className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg"
-            >
+            <label htmlFor="otp" className={LABEL_CLASS}>
               {t("signup.otpLabel")}
             </label>
             <input
@@ -179,15 +184,12 @@ export function SignupForm() {
               value={otp}
               onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
               placeholder={t("signup.otpPlaceholder")}
-              className="border border-border bg-bg px-3 py-4 font-mono text-2xl tracking-[0.4em] text-center text-fg placeholder:text-muted-fg/40 focus:border-accent focus:outline-none"
+              className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-4 text-center font-mono text-2xl tracking-[0.4em] text-[var(--ink)] placeholder:text-[var(--ash)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none"
             />
           </div>
 
           {error && (
-            <p
-              role="alert"
-              className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent"
-            >
+            <p role="alert" className={ERROR_CLASS}>
               {error}
             </p>
           )}
@@ -195,16 +197,16 @@ export function SignupForm() {
           {resendStatus === "sent" && !error && (
             <p
               role="status"
-              className="border border-fg/20 bg-fg/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-fg"
+              className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3.5 py-2.5 text-[13px] text-[var(--silver)]"
             >
-              ✓ {t("signup.resent")}
+              {t("signup.resent")}
             </p>
           )}
 
           <button
             type="submit"
             disabled={submitting || otp.length < 6 || otp.length > 8}
-            className="bg-accent px-4 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+            className={PILL_CLASS}
           >
             {submitting ? t("signup.verifying") : t("signup.verify")}
           </button>
@@ -214,7 +216,7 @@ export function SignupForm() {
               type="button"
               onClick={handleResendOtp}
               disabled={cooldown > 0 || resendStatus === "sending"}
-              className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-fg transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-fg"
+              className="text-[13px] text-[var(--silver)] transition-colors hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-[0.42] disabled:hover:text-[var(--silver)]"
             >
               {resendStatus === "sending"
                 ? t("signup.resending")
@@ -234,7 +236,7 @@ export function SignupForm() {
         type="button"
         onClick={handleGoogleSignup}
         disabled={googleLoading || submitting}
-        className="group flex items-center justify-center gap-3 border border-border bg-bg px-4 py-3 text-sm font-medium text-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:border-fg hover:bg-fg hover:text-bg disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-11 w-full items-center justify-center gap-2.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-4 text-[14px] font-medium text-[var(--ink)] transition-[background-color,border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] disabled:cursor-not-allowed disabled:opacity-[0.42]"
       >
         <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden>
           <path
@@ -246,16 +248,16 @@ export function SignupForm() {
       </button>
 
       <div className="flex items-center gap-4">
-        <div className="h-px flex-1 bg-border" />
-        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-fg">
+        <div className="h-px flex-1 bg-[var(--hairline)]" />
+        <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--ash)]">
           {t("signup.or")}
         </span>
-        <div className="h-px flex-1 bg-border" />
+        <div className="h-px flex-1 bg-[var(--hairline)]" />
       </div>
 
       <form onSubmit={handleEmailSignup} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="name" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+          <label htmlFor="name" className={LABEL_CLASS}>
             {t("signup.nameLabel")}
           </label>
           <input
@@ -266,12 +268,12 @@ export function SignupForm() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t("signup.namePlaceholder")}
-            className="border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/60 focus:border-accent focus:outline-none"
+            className={INPUT_CLASS}
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="email" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+          <label htmlFor="email" className={LABEL_CLASS}>
             {t("signup.emailLabel")}
           </label>
           <input
@@ -282,12 +284,12 @@ export function SignupForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder={t("signup.emailPlaceholder")}
-            className="border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/60 focus:border-accent focus:outline-none"
+            className={INPUT_CLASS}
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="password" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+          <label htmlFor="password" className={LABEL_CLASS}>
             {t("signup.passwordLabel")}
           </label>
           <input
@@ -299,12 +301,12 @@ export function SignupForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={t("signup.passwordPlaceholder")}
-            className="border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/60 focus:border-accent focus:outline-none"
+            className={INPUT_CLASS}
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="password-confirm" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+          <label htmlFor="password-confirm" className={LABEL_CLASS}>
             {t("signup.passwordConfirmLabel")}
           </label>
           <input
@@ -317,17 +319,17 @@ export function SignupForm() {
             onChange={(e) => setPasswordConfirm(e.target.value)}
             placeholder={t("signup.passwordConfirmPlaceholder")}
             aria-invalid={passwordConfirm.length > 0 && passwordConfirm !== password}
-            className="border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/60 focus:border-accent focus:outline-none aria-[invalid=true]:border-accent"
+            className={`${INPUT_CLASS} aria-[invalid=true]:border-[var(--status-error)]`}
           />
           {passwordConfirm.length > 0 && passwordConfirm !== password && (
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">
+            <p className="text-[13px] text-[var(--status-error)]">
               {t("signup.passwordMismatch")}
             </p>
           )}
         </div>
 
         {error && (
-          <p role="alert" className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent">
+          <p role="alert" className={ERROR_CLASS}>
             {error}
           </p>
         )}
@@ -335,7 +337,7 @@ export function SignupForm() {
         <button
           type="submit"
           disabled={submitting || googleLoading}
-          className="bg-accent px-4 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+          className={PILL_CLASS}
         >
           {submitting ? t("signup.submitting") : t("signup.submit")}
         </button>

@@ -1,5 +1,6 @@
 import type { LegalDoc } from "@/lib/legal";
 import { DRAFT_NOTICE } from "@/lib/legal";
+import { Eyebrow } from "@/components/ui/eyebrow";
 
 /**
  * Render de um documento legal. Usado tanto no popup de aceite quanto nas
@@ -14,21 +15,19 @@ export function LegalDocView({
   compact?: boolean;
 }) {
   return (
-    <article className="flex flex-col gap-5 text-sm leading-relaxed text-muted-fg">
-      <header className="flex flex-col gap-1">
+    <article className="mx-auto flex w-full max-w-[720px] flex-col gap-7 text-[15px] leading-[1.6] text-[var(--body)]">
+      <header className="flex flex-col gap-3 border-b border-[var(--hairline)] pb-7">
         <h1
-          className={`font-display uppercase tracking-tight text-fg ${
+          className={`font-sans font-semibold tracking-[-0.02em] text-[var(--ink)] ${
             compact ? "text-2xl" : "text-4xl lg:text-5xl"
           }`}
         >
           {doc.title}
         </h1>
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
-          Atualizado: {doc.updatedAt}
-        </p>
+        <Eyebrow>Atualizado: {doc.updatedAt}</Eyebrow>
       </header>
 
-      <p className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] leading-relaxed text-accent">
+      <p className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-4 py-3 text-[13px] leading-[1.6] text-[var(--silver)]">
         {DRAFT_NOTICE}
       </p>
 
@@ -37,8 +36,11 @@ export function LegalDocView({
       ))}
 
       {doc.sections.map((s) => (
-        <section key={s.heading} className="flex flex-col gap-2">
-          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-fg">
+        <section
+          key={s.heading}
+          className="flex flex-col gap-3 border-t border-[var(--hairline)] pt-7"
+        >
+          <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
             {s.heading}
           </h2>
           {s.body.map((p, i) => (

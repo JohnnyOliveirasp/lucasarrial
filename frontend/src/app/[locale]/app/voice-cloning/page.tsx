@@ -4,6 +4,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Mic2, Plus, Lock } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { VoiceRowMenu } from "@/components/voice/voice-row-menu";
+import { Eyebrow, Badge } from "@/components/ui";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
 
@@ -62,73 +63,77 @@ export default async function VoiceCloningPage({
 
   return (
     <div className="flex flex-col gap-10">
-      <header className="flex flex-col gap-3">
-        <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">
-          {t("nav.voiceCloning")}
-        </span>
-        <h1 className="font-display text-5xl leading-[0.9] tracking-tight text-fg uppercase">
+      <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
+        <Eyebrow>{t("nav.voiceCloning")}</Eyebrow>
+        <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
           {t("voiceCloning.title")}
         </h1>
-        <p className="max-w-xl text-sm text-muted-fg">{t("voiceCloning.subtitle")}</p>
+        <p className="max-w-xl text-sm text-[var(--mute)]">
+          {t("voiceCloning.subtitle")}
+        </p>
       </header>
 
       {canTrain ? (
         <div className="flex items-center justify-end">
           <Link
             href="/app/voice-cloning/new"
-            className="flex items-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99]"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
           >
             <Plus className="h-4 w-4" />
             {t("voiceCloning.createButton")}
           </Link>
         </div>
       ) : (
-        <section className="flex flex-col gap-4 border border-accent bg-accent/5 p-6">
-          <h2 className="flex items-center gap-2 font-display text-2xl uppercase tracking-tight text-fg">
-            <Lock className="h-5 w-5 text-accent" />
+        <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
+          <h2 className="flex items-center gap-2 font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
+            <Lock className="h-5 w-5 text-[var(--silver)]" />
             {subscribed
               ? "Créditos insuficientes para treinar"
               : "Assine para treinar uma voz"}
           </h2>
-          <p className="max-w-xl text-sm text-muted-fg">
+          <p className="max-w-xl text-sm text-[var(--mute)]">
             {subscribed
               ? `Treinar uma voz custa ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos e você tem ${creditsTotal.toLocaleString("pt-BR")}. Compre um pacote para continuar — a geração de áudio com vozes já prontas segue liberada.`
               : "Você não tem um plano vigente. Treinar uma voz faz parte do plano: assine para liberar 180.000 créditos por mês e treinar a sua voz."}
           </p>
           <Link
             href={subscribed ? `/${locale}/app/credits` : `/${locale}/planos`}
-            className="flex w-fit items-center gap-2 bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all hover:scale-[1.01] active:scale-[0.99]"
+            className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-[background-color,border-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] active:scale-[0.98]"
           >
-            {subscribed ? "Comprar créditos →" : "Assinar agora →"}
+            {subscribed ? "Comprar créditos" : "Assinar agora"}
+            <span aria-hidden>→</span>
           </Link>
         </section>
       )}
 
       {list.length === 0 ? (
-        <section className="border border-dashed border-border bg-surface p-12 flex flex-col items-center gap-4 text-center">
-          <Mic2 className="h-10 w-10 text-muted-fg" />
-          <p className="text-sm text-muted-fg">{t("voiceCloning.empty")}</p>
+        <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
+          <Mic2 className="h-10 w-10 text-[var(--ash)]" />
+          <p className="text-sm text-[var(--mute)]">{t("voiceCloning.empty")}</p>
         </section>
       ) : (
-        <ul className="flex flex-col gap-px bg-border">
+        <ul className="flex flex-col gap-2">
           {list.map((v) => (
-            <li key={v.id} className="flex items-stretch bg-bg">
+            <li
+              key={v.id}
+              className="flex items-stretch overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] transition-[border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)]"
+            >
               <Link
                 href={`/app/voice-cloning/${v.id}`}
-                className="flex-1 grid grid-cols-[1fr_auto_auto] items-center gap-4 px-5 py-4 transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:bg-fg hover:text-bg"
+                className="grid flex-1 grid-cols-[1fr_auto_auto] items-center gap-4 px-5 py-4"
               >
                 <div className="flex flex-col gap-1">
-                  <span className="font-display text-xl uppercase leading-none">
+                  <span className="font-sans text-base font-medium leading-tight text-[var(--ink)]">
                     {v.name}
                   </span>
-                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-current/60">
+                  <span className="text-xs text-[var(--ash)]">
                     {new Date(v.created_at).toLocaleDateString(locale)}
                   </span>
                 </div>
-                <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">
-                  {STATUS_LABEL[v.status] ?? v.status}
+                <Badge variant="soft">{STATUS_LABEL[v.status] ?? v.status}</Badge>
+                <span className="text-[var(--mute)]" aria-hidden>
+                  →
                 </span>
-                <span className="text-current/60">→</span>
               </Link>
               <VoiceRowMenu
                 voiceId={v.id}

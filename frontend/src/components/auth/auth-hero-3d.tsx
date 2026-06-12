@@ -64,17 +64,17 @@ function VoiceOrb() {
 
   return (
     <group ref={groupRef}>
-      {/* Outer wireframe sphere — laranja accent */}
+      {/* Outer wireframe sphere — silver hairline */}
       <mesh>
         <icosahedronGeometry args={[2.2, 2]} />
-        <meshBasicMaterial color="#ff6b2c" wireframe transparent opacity={0.45} />
+        <meshBasicMaterial color="#c0c4c8" wireframe transparent opacity={0.32} />
       </mesh>
 
-      {/* Inner pulsing solid sphere */}
+      {/* Inner pulsing solid sphere — focal accent, subtle violet */}
       <group ref={innerRef}>
         <mesh>
           <icosahedronGeometry args={[1.4, 1]} />
-          <meshBasicMaterial color="#ff6b2c" wireframe transparent opacity={0.85} />
+          <meshBasicMaterial color="#a78bfa" wireframe transparent opacity={0.6} />
         </mesh>
       </group>
 
@@ -145,13 +145,13 @@ export function AuthHero3D() {
   }, []);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#0a0a0a]">
-      {/* Fundo estático (fallback sem WebGL): glow laranja radial */}
+    <div className="relative h-full w-full overflow-hidden bg-[var(--canvas)]">
+      {/* Fundo estático (fallback sem WebGL): glow violeta atmosférico */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(circle at 50% 42%, rgba(255,107,44,0.18), transparent 60%)",
+            "radial-gradient(circle at 50% 42%, rgba(167,139,250,0.14), transparent 62%)",
         }}
       />
 
@@ -162,7 +162,7 @@ export function AuthHero3D() {
             dpr={[1, 2]}
             gl={{ antialias: true, alpha: false }}
           >
-            <color attach="background" args={["#0a0a0a"]} />
+            <color attach="background" args={["#000000"]} />
             <Suspense fallback={null}>
               <VoiceOrb />
               <Particles />
@@ -174,19 +174,19 @@ export function AuthHero3D() {
       {/* Editorial overlay: brand + tagline */}
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-12">
         <div className="flex items-center gap-3">
-          <span className="h-2 w-2 bg-accent" />
-          <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-white/70">
+          <span className="h-1.5 w-1.5 rounded-[var(--radius-full)] bg-[var(--hue-violet)]" />
+          <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--silver)]">
             {t("brand")}
           </span>
         </div>
 
-        <div className="flex flex-col gap-4 max-w-md">
-          <h2 className="font-display text-5xl lg:text-6xl leading-[0.9] tracking-tight text-white uppercase">
+        <div className="flex max-w-md flex-col gap-4">
+          <h2 className="font-sans text-5xl font-semibold leading-[1.02] tracking-[-0.03em] text-[var(--ink)] lg:text-6xl">
             {t("tagline")}
           </h2>
-          <div className="flex items-center gap-2">
-            <div className="h-px w-12 bg-accent" />
-            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
+          <div className="flex items-center gap-2.5">
+            <div className="h-px w-12 bg-[var(--hairline-strong)]" />
+            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--ash)]">
               v0.1 · 2026
             </span>
           </div>
@@ -194,7 +194,7 @@ export function AuthHero3D() {
       </div>
 
       {/* Vignette gradient pra dar profundidade */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-transparent" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--canvas)] via-transparent to-transparent" />
     </div>
   );
 }

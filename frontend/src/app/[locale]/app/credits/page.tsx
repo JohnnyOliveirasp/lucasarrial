@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { BuyCredits } from "@/components/app/buy-credits";
+import { Eyebrow, Stat } from "@/components/ui";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 
 /**
@@ -42,10 +43,11 @@ export default async function CreditsPage({
   return (
     <div className="flex flex-col gap-12">
       <header className="flex flex-col gap-3">
-        <h1 className="font-display text-5xl leading-[0.9] tracking-tight text-fg uppercase">
+        <Eyebrow>Créditos</Eyebrow>
+        <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
           Seus créditos
         </h1>
-        <p className="max-w-xl text-sm text-muted-fg">
+        <p className="max-w-xl text-sm text-[var(--mute)]">
           Créditos são a sua moeda dentro da plataforma: você usa para clonar
           vozes, gerar áudio e, em breve, criar vídeos e posts automáticos.
         </p>
@@ -54,42 +56,39 @@ export default async function CreditsPage({
       {/* Saldo: só faz sentido pra assinante/equipe. Não-assinante (0/0) só vê
           o convite pra assinar abaixo. */}
       {(unlimited || subscribed) && (
-      <section className="grid grid-cols-1 gap-px bg-border sm:grid-cols-2">
-        <div className="flex flex-col gap-1 bg-bg p-6">
-          <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-fg">
-            Do plano (recarrega no ciclo)
-          </span>
-          <span className="font-display text-4xl tracking-tight text-fg">
-            {unlimited ? "∞" : subscription.toLocaleString("pt-BR")}
-          </span>
-        </div>
-        <div className="flex flex-col gap-1 bg-bg p-6">
-          <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-fg">
-            Avulsos (não expiram)
-          </span>
-          <span className="font-display text-4xl tracking-tight text-fg">
-            {unlimited ? "∞" : extra.toLocaleString("pt-BR")}
-          </span>
-        </div>
-      </section>
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
+            <Stat
+              label="Do plano (recarrega no ciclo)"
+              value={unlimited ? "∞" : subscription.toLocaleString("pt-BR")}
+            />
+          </div>
+          <div className="rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
+            <Stat
+              label="Avulsos (não expiram)"
+              value={unlimited ? "∞" : extra.toLocaleString("pt-BR")}
+            />
+          </div>
+        </section>
       )}
 
       {/* Sem assinatura: avulso é complemento do plano → convida a assinar. */}
       {!unlimited && !subscribed && (
-        <section className="flex flex-col gap-4 border border-accent bg-accent/5 p-6">
-          <h2 className="font-display text-2xl uppercase tracking-tight text-fg">
+        <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
+          <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
             Assine para liberar seus créditos
           </h2>
-          <p className="max-w-xl text-sm text-muted-fg">
+          <p className="max-w-xl text-sm text-[var(--mute)]">
             Neste caso de geração de áudio, cada caractere usa 1 crédito. Com o
             plano você recebe 180.000 créditos todo mês para treinar vozes e
             gerar áudio.
           </p>
           <Link
             href={`/${locale}/planos`}
-            className="flex w-fit items-center gap-2 bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all hover:scale-[1.01] active:scale-[0.99]"
+            className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
           >
-            Assinar agora →
+            Assinar agora
+            <span aria-hidden>→</span>
           </Link>
         </section>
       )}
@@ -97,7 +96,7 @@ export default async function CreditsPage({
       {/* Assinante: compra de pacotes avulsos (Stripe). */}
       {!unlimited && subscribed && (
         <section className="flex flex-col gap-4">
-          <h2 className="font-display text-2xl uppercase tracking-tight text-fg">
+          <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
             Comprar créditos
           </h2>
           <BuyCredits />

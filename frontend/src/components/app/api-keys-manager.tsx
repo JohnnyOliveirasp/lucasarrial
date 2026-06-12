@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { KeyRound, Plus, Copy, Check, Trash2, AlertTriangle } from "lucide-react";
+import { Button, Input, Badge } from "@/components/ui";
 
 type ApiKey = {
   id: string;
@@ -105,65 +106,67 @@ export function ApiKeysManager() {
     s ? new Date(s).toLocaleString("pt-BR") : "—";
 
   return (
-    <section className="flex flex-col gap-5">
-      <div className="flex items-center gap-2">
-        <KeyRound className="h-5 w-5 text-accent" />
-        <h2 className="font-display text-2xl uppercase tracking-tight text-fg">
+    <section className="flex flex-col gap-6">
+      <div className="flex items-center gap-2.5">
+        <KeyRound className="h-5 w-5 text-[var(--silver)]" />
+        <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
           Chaves de API
         </h2>
       </div>
-      <p className="text-sm text-muted-fg">
+      <p className="text-[14px] leading-relaxed text-[var(--mute)]">
         Use uma chave pra gerar áudio por fora do site (cURL, n8n, scripts). A
         chave fica amarrada à sua conta e só acessa as suas vozes.
       </p>
 
       {/* Segredo recém-criado (aparece uma única vez) */}
       {newKey && (
-        <div className="flex flex-col gap-2 border border-accent bg-accent/5 p-4">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">
+        <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] p-4">
+          <span className="text-[13px] text-[var(--silver)]">
             Copie agora — a chave não será mostrada de novo
           </span>
           <div className="flex items-center gap-2">
-            <code className="flex-1 overflow-x-auto whitespace-nowrap border border-border bg-bg px-3 py-2 font-mono text-xs text-fg">
+            <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2.5 font-mono text-[13px] text-[var(--silver)]">
               {newKey}
             </code>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={copyKey}
-              className="flex items-center gap-2 border border-accent px-3 py-2 text-xs font-bold uppercase tracking-wide text-accent transition-colors hover:bg-accent hover:text-accent-fg"
+              iconLeft={
+                copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />
+              }
             >
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               {copied ? "Copiado" : "Copiar"}
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {/* Gerar nova */}
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <input
+      <div className="flex flex-col gap-2.5 sm:flex-row">
+        <Input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Nome da chave (ex: máquina n8n)"
           maxLength={60}
-          className="flex-1 border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/50 focus:border-accent focus:outline-none"
+          iconLeft={<KeyRound className="h-4 w-4" />}
+          className="sm:flex-1"
         />
-        <button
-          type="button"
+        <Button
+          variant="primary"
           onClick={create}
           disabled={creating}
-          className="flex items-center justify-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-40"
+          iconLeft={<Plus className="h-4 w-4" />}
+          className="shrink-0"
         >
-          <Plus className="h-4 w-4" />
           {creating ? "Gerando…" : "Gerar chave"}
-        </button>
+        </Button>
       </div>
 
       {error && (
         <p
           role="alert"
-          className="border border-accent/40 bg-accent/5 px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-accent"
+          className="rounded-[var(--radius)] border border-[var(--hairline-strong)] px-3 py-2.5 text-[13px] text-[var(--status-error)]"
         >
           {error}
         </p>
@@ -171,48 +174,51 @@ export function ApiKeysManager() {
 
       {/* Lista */}
       {loading ? (
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
-          Carregando…
-        </p>
+        <p className="text-[13px] text-[var(--ash)]">Carregando…</p>
       ) : keys.length === 0 ? (
-        <p className="border border-dashed border-border bg-surface px-4 py-6 text-center text-sm text-muted-fg">
+        <p className="rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] px-4 py-7 text-center text-[14px] text-[var(--mute)]">
           Nenhuma chave ainda. Gere a primeira acima.
         </p>
       ) : (
-        <ul className="flex flex-col gap-px bg-border">
-          {keys.map((k) => {
+        <ul className="flex flex-col rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
+          {keys.map((k, i) => {
             const revoked = !!k.revoked_at;
             return (
               <li
                 key={k.id}
-                className="flex flex-col gap-1 bg-bg px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                className={`flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between ${
+                  i > 0 ? "border-t border-[var(--hairline)]" : ""
+                }`}
               >
-                <div className="flex flex-col gap-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-fg">{k.name}</span>
-                    <code className="font-mono text-[11px] text-muted-fg">
+                <div className="flex flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[14px] font-medium text-[var(--ink)]">
+                      {k.name}
+                    </span>
+                    <code className="font-mono text-[13px] text-[var(--ash)]">
                       {k.key_prefix}…
                     </code>
                     {revoked && (
-                      <span className="border border-border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-muted-fg">
+                      <Badge variant="soft" className="text-[var(--ash)]">
                         revogada
-                      </span>
+                      </Badge>
                     )}
                   </div>
-                  <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-fg">
+                  <span className="text-[12px] text-[var(--ash)]">
                     criada {fmt(k.created_at)} · último uso {fmt(k.last_used_at)}
                   </span>
                 </div>
                 {!revoked && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setPendingRevoke(k)}
                     aria-label="Revogar chave"
-                    className="flex items-center gap-2 self-start border border-border px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-muted-fg transition-colors hover:border-accent hover:text-accent sm:self-center"
+                    iconLeft={<Trash2 className="h-3.5 w-3.5" />}
+                    className="self-start text-[var(--mute)] hover:text-[var(--status-error)] sm:self-center"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
                     Revogar
-                  </button>
+                  </Button>
                 )}
               </li>
             );
@@ -229,36 +235,35 @@ export function ApiKeysManager() {
           onClick={() => !revoking && setPendingRevoke(null)}
         >
           <div
-            className="w-full max-w-md border border-accent bg-bg p-6 flex flex-col gap-4"
+            className="flex w-full max-w-md flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-accent" />
-              <h3 className="font-display text-xl uppercase tracking-tight text-fg">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
+              <h3 className="text-[20px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
                 Revogar “{pendingRevoke.name}”?
               </h3>
             </div>
-            <p className="text-sm text-muted-fg">
+            <p className="text-[14px] leading-relaxed text-[var(--mute)]">
               Quem estiver usando essa chave para de funcionar na hora. Ação{" "}
-              <strong className="text-fg">irreversível</strong>.
+              <strong className="font-medium text-[var(--ink)]">irreversível</strong>.
             </p>
             <div className="flex justify-end gap-3">
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 onClick={() => !revoking && setPendingRevoke(null)}
-                className="border border-border px-5 py-3 text-sm font-bold uppercase tracking-wide text-fg transition-colors hover:bg-surface"
               >
                 Cancelar
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={confirmRevoke}
                 disabled={revoking}
-                className="flex items-center gap-2 bg-accent px-5 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-40"
+                iconLeft={<Trash2 className="h-4 w-4" />}
+                className="text-[var(--status-error)] hover:border-[var(--status-error)]"
               >
-                <Trash2 className="h-4 w-4" />
                 {revoking ? "Revogando…" : "Revogar"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

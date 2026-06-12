@@ -4,6 +4,8 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { Play, Pause, Check } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
+import { Card } from "@/components/ui/card";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const BARS = 48;
@@ -15,9 +17,9 @@ export function Solution() {
   return (
     <section
       id="solucao"
-      className="relative border-t border-[var(--border)] bg-[var(--surface)] py-24 md:py-36"
+      className="relative border-t border-[var(--hairline)] py-24 md:py-32"
     >
-      <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 gap-16 px-6 md:grid-cols-2 md:px-10 md:gap-20">
+      <div className="mx-auto grid w-full max-w-[1200px] grid-cols-1 gap-16 px-6 md:grid-cols-2 md:gap-20 md:px-8">
         <div>
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -26,10 +28,8 @@ export function Solution() {
             transition={{ duration: 0.5, ease: EASE }}
             className="mb-10 flex items-center gap-3"
           >
-            <span className="inline-block h-px w-10 bg-[var(--accent)]" />
-            <span className="label-mono text-[var(--accent)]">
-              {t("eyebrow")}
-            </span>
+            <span className="inline-block h-px w-10 bg-[var(--hairline-bright)]" />
+            <Eyebrow>{t("eyebrow")}</Eyebrow>
           </motion.div>
 
           <motion.h2
@@ -37,7 +37,7 @@ export function Solution() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-100px" }}
             transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
-            className="display-hero text-[clamp(2.5rem,7vw,6rem)] text-[var(--fg)]"
+            className="display-hero text-[clamp(2.25rem,5vw,3.5rem)] text-[var(--ink)]"
           >
             {t("title")}
           </motion.h2>
@@ -47,7 +47,7 @@ export function Solution() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-100px" }}
             transition={{ duration: 0.5, ease: EASE, delay: 0.2 }}
-            className="mt-8 max-w-lg text-base leading-relaxed text-[var(--muted-fg)] md:text-lg"
+            className="mt-8 max-w-lg text-[16px] leading-[1.6] text-[var(--mute)] md:text-[18px]"
           >
             {t("body")}
           </motion.p>
@@ -67,9 +67,9 @@ export function Solution() {
                   visible: { opacity: 1, x: 0 },
                 }}
                 transition={{ duration: 0.4, ease: EASE }}
-                className="flex items-center gap-3 font-sans text-base text-[var(--fg)]"
+                className="flex items-center gap-3 font-sans text-[16px] text-[var(--body)]"
               >
-                <Check className="size-4 text-[var(--accent)]" />
+                <Check className="size-4 text-[var(--silver)]" />
                 {t(`bullets.${k}`)}
               </motion.li>
             ))}
@@ -83,12 +83,12 @@ export function Solution() {
           transition={{ duration: 0.6, ease: EASE, delay: 0.2 }}
           className="self-center"
         >
-          <div className="border border-[var(--border)] bg-[var(--bg)] p-6 md:p-8">
+          <Card glow="voice">
             <div className="mb-6 flex items-center justify-between">
-              <span className="label-mono text-[var(--muted-fg)]">
+              <Eyebrow className="text-[var(--ash)]">
                 {t("playerLabel")}
-              </span>
-              <span className="label-mono text-[var(--muted-fg)]">
+              </Eyebrow>
+              <span className="font-mono text-[13px] text-[var(--ash)]">
                 {t("playerDuration")}
               </span>
             </div>
@@ -99,12 +99,12 @@ export function Solution() {
               type="button"
               onClick={() => setPlaying((p) => !p)}
               aria-label={t("playButton")}
-              className="mt-6 flex h-12 w-full items-center justify-center gap-3 bg-[var(--accent)] font-sans text-sm font-semibold uppercase tracking-wider text-[var(--accent-fg)] transition-transform duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:-translate-y-[2px]"
+              className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] font-sans text-[15px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
             >
               {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
               {t("playButton")}
             </button>
-          </div>
+          </Card>
         </motion.div>
       </div>
     </section>
@@ -113,23 +113,24 @@ export function Solution() {
 
 function Waveform({ playing }: { playing: boolean }) {
   return (
-    <div
-      className="flex h-24 items-center gap-[3px]"
-      aria-hidden
-    >
+    <div className="flex h-24 items-center gap-[3px]" aria-hidden>
       {Array.from({ length: BARS }).map((_, i) => {
         const seed = (Math.sin(i * 1.7) + 1) / 2;
         const baseH = 20 + seed * 60;
         return (
           <motion.span
             key={i}
-            className="w-[3px] bg-[var(--fg)]"
+            className="w-[3px] rounded-full bg-[var(--silver)]"
             style={{ height: `${baseH.toFixed(2)}%` }}
             animate={
               playing
                 ? {
                     scaleY: [1, 0.4 + seed * 0.8, 1],
-                    backgroundColor: ["var(--fg)", "var(--accent)", "var(--fg)"],
+                    backgroundColor: [
+                      "var(--silver)",
+                      "var(--hue-violet)",
+                      "var(--silver)",
+                    ],
                   }
                 : { scaleY: 1 }
             }

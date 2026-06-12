@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
+import Image from "next/image";
 import {
   AudioLines,
   Video,
@@ -10,6 +11,7 @@ import {
   FileText,
   Languages,
 } from "lucide-react";
+import { Eyebrow } from "@/components/ui/eyebrow";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -28,9 +30,9 @@ export function PlatformPreview() {
   return (
     <section
       id="plataforma"
-      className="relative border-t border-[var(--border)] py-24 md:py-36"
+      className="relative border-t border-[var(--hairline)] py-24 md:py-32"
     >
-      <div className="mx-auto w-full max-w-[1400px] px-6 md:px-10">
+      <div className="mx-auto w-full max-w-[1200px] px-6 md:px-8">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -38,8 +40,8 @@ export function PlatformPreview() {
           transition={{ duration: 0.5, ease: EASE }}
           className="mb-10 flex items-center gap-3"
         >
-          <span className="inline-block h-px w-10 bg-[var(--accent)]" />
-          <span className="label-mono text-[var(--accent)]">{t("eyebrow")}</span>
+          <span className="inline-block h-px w-10 bg-[var(--hairline-bright)]" />
+          <Eyebrow>{t("eyebrow")}</Eyebrow>
         </motion.div>
 
         <motion.h2
@@ -47,7 +49,7 @@ export function PlatformPreview() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
           transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
-          className="display-hero text-[clamp(2.5rem,8vw,7rem)] text-[var(--fg)]"
+          className="display-hero text-[clamp(2.25rem,6vw,4.5rem)] text-[var(--ink)]"
         >
           {t("title")}
         </motion.h2>
@@ -57,7 +59,7 @@ export function PlatformPreview() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
           transition={{ duration: 0.5, ease: EASE, delay: 0.2 }}
-          className="mt-6 max-w-2xl text-base leading-relaxed text-[var(--muted-fg)] md:text-lg"
+          className="mt-6 max-w-2xl text-[16px] leading-[1.6] text-[var(--mute)] md:text-[18px]"
         >
           {t("subtitle")}
         </motion.p>
@@ -77,41 +79,52 @@ function DashboardMock() {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-100px" }}
       transition={{ duration: 0.7, ease: EASE, delay: 0.25 }}
-      className="mt-16 overflow-hidden border border-[var(--border)] bg-[var(--bg)] shadow-2xl"
+      className="mt-16 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)]"
     >
       {/* Window chrome */}
-      <div className="flex h-9 items-center gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-4">
-        <span className="size-2.5 rounded-full bg-[var(--muted-fg)]/30" />
-        <span className="size-2.5 rounded-full bg-[var(--muted-fg)]/30" />
-        <span className="size-2.5 rounded-full bg-[var(--muted-fg)]/30" />
-        <span className="label-mono ml-3 text-[var(--muted-fg)]">
-          lucasarrial.com.br/app
+      <div className="flex h-9 items-center gap-2 border-b border-[var(--hairline)] bg-[var(--surface-deep)] px-4">
+        <span className="size-2.5 rounded-full bg-[var(--hairline-bright)]" />
+        <span className="size-2.5 rounded-full bg-[var(--hairline-strong)]" />
+        <span className="size-2.5 rounded-full bg-[var(--hairline-strong)]" />
+        <span className="ml-3 font-mono text-[11px] text-[var(--ash)]">
+          fastpost.app
         </span>
       </div>
 
       <div className="grid grid-cols-[180px_1fr] md:grid-cols-[220px_1fr]">
         {/* Sidebar */}
-        <aside className="border-r border-[var(--border)] bg-[var(--surface)] p-4 md:p-6">
-          <div className="mb-6 font-display text-lg uppercase leading-none">
-            Lucas<span className="text-[var(--accent)]">.</span>
+        <aside className="border-r border-[var(--hairline)] bg-[var(--surface-deep)] p-4 md:p-6">
+          <div className="mb-6 flex items-center gap-2">
+            <span className="inline-flex size-6 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)]">
+              <Image
+                src="/brand/fastpost-glyph.png"
+                alt=""
+                width={14}
+                height={14}
+                className="size-3.5"
+              />
+            </span>
+            <span className="font-sans text-[15px] font-semibold tracking-[-0.03em] text-[var(--ink)]">
+              FastPost
+            </span>
           </div>
-          <div className="label-mono mb-3 text-[var(--muted-fg)]">
+          <Eyebrow className="mb-3 block text-[var(--ash)]">
             {t("sidebar.header")}
-          </div>
+          </Eyebrow>
           <ul className="space-y-1">
             {TOOLS.map(({ key, Icon, active }) => (
               <li key={key}>
                 <div
-                  className={`flex items-center gap-2.5 px-2 py-2 text-xs ${
+                  className={`flex items-center gap-2.5 rounded-[var(--radius-sm)] px-2 py-2 text-xs ${
                     active
-                      ? "bg-[var(--accent)] text-[var(--accent-fg)] font-semibold"
-                      : "text-[var(--muted-fg)]"
+                      ? "bg-[var(--surface-elevated)] font-medium text-[var(--ink)]"
+                      : "text-[var(--mute)]"
                   }`}
                 >
                   <Icon className="size-3.5 shrink-0" />
                   <span className="truncate">{t(`tools.${key}`)}</span>
                   {!active && (
-                    <span className="ml-auto hidden text-[9px] uppercase opacity-60 md:inline">
+                    <span className="ml-auto hidden text-[9px] uppercase tracking-[0.12em] text-[var(--ash)] md:inline">
                       {t("sidebar.soon")}
                     </span>
                   )}
@@ -134,27 +147,37 @@ function DashboardMock() {
                 ease: EASE,
                 delay: 0.35 + idx * 0.05,
               }}
-              className={`relative flex aspect-[4/3] flex-col justify-between border p-3 md:p-4 ${
+              className={`relative flex aspect-[4/3] flex-col justify-between overflow-hidden rounded-[var(--radius)] border p-3 md:p-4 ${
                 active
-                  ? "border-[var(--accent)] bg-[var(--accent)]/5"
-                  : "border-[var(--border)] bg-[var(--bg)]"
+                  ? "border-[var(--hairline-bright)] bg-[var(--surface-elevated)]"
+                  : "border-[var(--hairline-strong)] bg-[var(--surface-card)]"
               }`}
             >
+              {active && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0"
+                  style={{
+                    background:
+                      "radial-gradient(ellipse 120% 70% at 50% 0%, var(--glow-violet), transparent 70%)",
+                  }}
+                />
+              )}
               <Icon
-                className={`size-5 ${
-                  active ? "text-[var(--accent)]" : "text-[var(--muted-fg)]"
+                className={`relative size-5 ${
+                  active ? "text-[var(--silver)]" : "text-[var(--ash)]"
                 }`}
               />
-              <div className="space-y-1">
-                <div className="font-sans text-xs font-semibold leading-tight text-[var(--fg)] md:text-sm">
+              <div className="relative space-y-1">
+                <div className="font-sans text-xs font-semibold leading-tight text-[var(--ink)] md:text-sm">
                   {t(`tools.${key}`)}
                 </div>
-                <div className="label-mono text-[10px] text-[var(--muted-fg)]">
+                <div className="font-mono text-[10px] text-[var(--ash)]">
                   {active ? t("sidebar.active") : t("sidebar.soon")}
                 </div>
               </div>
               {active && (
-                <span className="absolute right-2 top-2 size-1.5 animate-pulse rounded-full bg-[var(--accent)]" />
+                <span className="absolute right-2 top-2 size-1.5 animate-pulse rounded-full bg-[var(--status-online)]" />
               )}
             </motion.div>
           ))}

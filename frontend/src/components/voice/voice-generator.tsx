@@ -14,6 +14,11 @@ const TEXT_MAX = 2000;
 type Props = { voiceId: string };
 type Step = "form" | "submitting" | "polling" | "done" | "error";
 
+const PILL =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98] disabled:opacity-[0.42] disabled:pointer-events-none";
+const SECONDARY =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] disabled:opacity-[0.42] disabled:pointer-events-none";
+
 type GenerationDto = {
   id: string;
   status: "pending" | "generating" | "ready" | "failed";
@@ -109,7 +114,7 @@ export function VoiceGenerator({ voiceId }: Props) {
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
-      a.download = `aiverse-voz-${Date.now()}.mp3`;
+      a.download = `fastpost-voz-${Date.now()}.mp3`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -122,10 +127,10 @@ export function VoiceGenerator({ voiceId }: Props) {
   if (step === "done" && generation?.audio_url) {
     return (
       <div className="flex flex-col gap-6">
-        <section className="border border-accent bg-accent/5 p-6 flex flex-col gap-4">
+        <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-6">
           <div className="flex items-center gap-3">
-            <Play className="h-5 w-5 text-accent" />
-            <h2 className="font-display text-2xl uppercase tracking-tight text-fg">
+            <Play className="h-5 w-5 text-[var(--silver)]" />
+            <h2 className="text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
               Áudio gerado
             </h2>
           </div>
@@ -135,7 +140,7 @@ export function VoiceGenerator({ voiceId }: Props) {
             className="w-full"
             preload="metadata"
           />
-          <div className="flex gap-4 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+          <div className="flex gap-4 font-mono text-[10px] tracking-wide text-[var(--ash)]">
             {generation.duration_seconds && (
               <span>Duração: {formatDuration(generation.duration_seconds)}</span>
             )}
@@ -146,7 +151,7 @@ export function VoiceGenerator({ voiceId }: Props) {
           <button
             type="button"
             onClick={() => generation.audio_url && downloadAudio(generation.audio_url)}
-            className="flex items-center justify-center gap-2 bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99] w-fit"
+            className={`${PILL} w-fit`}
           >
             <Download className="h-4 w-4" />
             Baixar áudio
@@ -159,7 +164,7 @@ export function VoiceGenerator({ voiceId }: Props) {
             setText("");
             setGeneration(null);
           }}
-          className="bg-fg px-6 py-3 text-sm font-bold uppercase tracking-wide text-bg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-accent hover:text-accent-fg active:scale-[0.99] w-fit"
+          className={`${SECONDARY} w-fit`}
         >
           Gerar outro
         </button>
@@ -169,12 +174,12 @@ export function VoiceGenerator({ voiceId }: Props) {
 
   if (step === "polling" || step === "submitting") {
     return (
-      <section className="border border-dashed border-border bg-surface p-12 text-center flex flex-col items-center gap-4">
-        <div className="h-12 w-12 border-4 border-accent border-t-transparent animate-spin" />
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">
+      <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
+        <div className="h-12 w-12 animate-spin rounded-[var(--radius-full)] border-2 border-[var(--hairline-strong)] border-t-[var(--silver)]" />
+        <p className="font-mono text-[12px] tracking-wide text-[var(--silver)]">
           Gerando áudio…
         </p>
-        <p className="text-xs text-muted-fg">Polling 3s · primeira inferência leva ~10s no cold start</p>
+        <p className="text-xs text-[var(--mute)]">Polling 3s · primeira inferência leva ~10s no cold start</p>
       </section>
     );
   }
@@ -183,7 +188,7 @@ export function VoiceGenerator({ voiceId }: Props) {
     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
       {/* Texto */}
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="gen-text" className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+        <label htmlFor="gen-text" className="font-mono text-[11px] tracking-wide text-[var(--mute)]">
           Texto a sintetizar
         </label>
         <textarea
@@ -194,9 +199,9 @@ export function VoiceGenerator({ voiceId }: Props) {
           onChange={(e) => setText(e.target.value)}
           rows={5}
           placeholder="Olá, este é um teste da minha voz clonada…"
-          className="border border-border bg-bg px-3 py-3 text-sm text-fg placeholder:text-muted-fg/60 focus:border-accent focus:outline-none resize-none"
+          className="resize-none rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-3 text-sm text-[var(--ink)] placeholder:text-[var(--ash)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none"
         />
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-fg self-end">
+        <span className="self-end font-mono text-[10px] tabular-nums text-[var(--ash)]">
           {text.length} / {TEXT_MAX}
         </span>
       </div>
@@ -214,12 +219,10 @@ export function VoiceGenerator({ voiceId }: Props) {
       <button
         type="submit"
         disabled={!canSubmit}
-        className="bg-accent px-6 py-3 text-sm font-bold uppercase tracking-wide text-accent-fg transition-all duration-[var(--dur-base)] ease-[var(--ease-snap)] hover:scale-[1.01] hover:bg-fg hover:text-bg active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        className={`${PILL} w-fit`}
       >
-        <div className="flex items-center justify-center gap-2">
-          <AudioLines className="h-4 w-4" />
-          Gerar áudio
-        </div>
+        <AudioLines className="h-4 w-4" />
+        Gerar áudio
       </button>
     </form>
   );

@@ -6,7 +6,7 @@
  * Swagger completo.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Check, Terminal, BookOpen } from "lucide-react";
+import { Copy, Check, Terminal, BookOpen, ArrowUpRight } from "lucide-react";
 
 type Voice = {
   id: string;
@@ -28,9 +28,9 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
           /* ignora */
         }
       }}
-      className="flex items-center gap-1.5 border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-fg transition-colors hover:border-accent hover:text-accent"
+      className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] px-2.5 py-1.5 font-sans text-[12px] text-[var(--mute)] transition-[color,border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:text-[var(--ink)]"
     >
-      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       {copied ? "Copiado" : label ?? "Copiar"}
     </button>
   );
@@ -73,33 +73,37 @@ export function ApiDocs() {
 # Aí a resposta traz "audio_url" (link do .mp3, válido por 1h).`;
 
   return (
-    <section className="flex flex-col gap-5">
-      <div className="flex items-center gap-2">
-        <Terminal className="h-5 w-5 text-accent" />
-        <h2 className="font-display text-2xl uppercase tracking-tight text-fg">
+    <section className="flex flex-col gap-6">
+      <div className="flex items-center gap-2.5">
+        <Terminal className="h-5 w-5 text-[var(--silver)]" />
+        <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
           Como usar (cURL)
         </h2>
       </div>
 
       {/* Vozes prontas */}
-      <div className="flex flex-col gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+      <div className="flex flex-col gap-2.5">
+        <span className="text-[13px] text-[var(--silver)]">
           Suas vozes prontas (use o ID na chamada)
         </span>
         {ready.length === 0 ? (
-          <p className="text-sm text-muted-fg">
+          <p className="text-[14px] text-[var(--mute)]">
             Nenhuma voz pronta ainda. Treine uma voz primeiro.
           </p>
         ) : (
-          <ul className="flex flex-col gap-px bg-border">
-            {ready.map((v) => (
+          <ul className="flex flex-col rounded-[var(--radius)] border border-[var(--hairline-strong)]">
+            {ready.map((v, i) => (
               <li
                 key={v.id}
-                className="flex items-center justify-between gap-3 bg-bg px-3 py-2"
+                className={`flex items-center justify-between gap-3 px-3.5 py-2.5 ${
+                  i > 0 ? "border-t border-[var(--hairline)]" : ""
+                }`}
               >
-                <span className="flex items-center gap-2 overflow-hidden">
-                  <span className="text-sm font-bold text-fg">{v.name}</span>
-                  <code className="truncate font-mono text-[11px] text-muted-fg">
+                <span className="flex min-w-0 items-center gap-2.5 overflow-hidden">
+                  <span className="text-[14px] font-medium text-[var(--ink)]">
+                    {v.name}
+                  </span>
+                  <code className="truncate font-mono text-[13px] text-[var(--ash)]">
                     {v.id}
                   </code>
                 </span>
@@ -111,27 +115,27 @@ export function ApiDocs() {
       </div>
 
       {/* Passo 1 */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[13px] text-[var(--silver)]">
             1. Gerar áudio → devolve generation_id
           </span>
           <CopyButton value={curlGenerate} />
         </div>
-        <pre className="overflow-x-auto border border-border bg-surface p-3 font-mono text-[11px] leading-relaxed text-fg">
+        <pre className="overflow-x-auto rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-3.5 font-mono text-[13px] leading-relaxed text-[var(--silver)]">
           {curlGenerate}
         </pre>
       </div>
 
       {/* Passo 2 */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-fg">
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[13px] text-[var(--silver)]">
             2. Consultar status (polling ~30s) → audio_url quando pronto
           </span>
           <CopyButton value={curlPoll} />
         </div>
-        <pre className="overflow-x-auto border border-border bg-surface p-3 font-mono text-[11px] leading-relaxed text-fg">
+        <pre className="overflow-x-auto rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-3.5 font-mono text-[13px] leading-relaxed text-[var(--silver)]">
           {curlPoll}
         </pre>
       </div>
@@ -140,10 +144,11 @@ export function ApiDocs() {
         href="/api/docs"
         target="_blank"
         rel="noreferrer"
-        className="flex w-fit items-center gap-2 border border-border px-4 py-2 text-xs font-bold uppercase tracking-wide text-fg transition-colors hover:border-accent hover:text-accent"
+        className="inline-flex w-fit items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] py-2.5 text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-[background-color,border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)]"
       >
         <BookOpen className="h-4 w-4" />
         Documentação completa (Swagger)
+        <ArrowUpRight className="h-4 w-4 text-[var(--ash)]" />
       </a>
     </section>
   );
