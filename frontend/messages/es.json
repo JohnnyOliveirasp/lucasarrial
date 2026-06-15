@@ -3,8 +3,10 @@
     "brand": "FastCloner",
     "nav": {
       "dashboard": "Dashboard",
-      "voiceCloning": "Clonación de Voz",
-      "record": "Grabar Voz",
+      "voices": "Voces",
+      "generateVoice": "Generar Voz",
+      "generateAudio": "Generar Audio",
+      "recorder": "Grabador",
       "history": "Historial",
       "settings": "Configuración"
     },
@@ -15,8 +17,8 @@
       "subtitle": "Empieza entrenando una voz. Más herramientas próximamente.",
       "tools": {
         "voiceCloning": {
-          "name": "Clonación de Voz",
-          "description": "Entrena tu voz una vez. Genera audio infinito con cualquier texto.",
+          "name": "Voces",
+          "description": "Entrena tu voz y genera audio con cualquier texto.",
           "cta": "Empezar"
         },
         "videoGen": {
@@ -34,10 +36,14 @@
       }
     },
     "voiceCloning": {
-      "title": "Clonación de Voz",
-      "subtitle": "Entrena tu voz y genera audio con cualquier texto.",
+      "title": "Generar Voz",
+      "subtitle": "Entrena tu voz como necesites — locutor, contenido periodístico, más rápida o más pausada. Sube unos minutos de audio y la IA aprende tu timbre para generar audio con cualquier texto.",
       "empty": "Aún no has entrenado ninguna voz.",
-      "createButton": "+ Entrenar nueva voz"
+      "createButton": "+ Generar Nueva Voz",
+      "generateAudioTitle": "Generar Audio",
+      "generateAudioSubtitle": "Elige una voz lista y genera audio con cualquier texto.",
+      "generateAudioEmpty": "Aún no tienes una voz lista. Entrena una voz primero.",
+      "pickVoiceCta": "Generar audio"
     },
     "voiceCloningNew": {
       "eyebrow": "01 · Entrenar voz",

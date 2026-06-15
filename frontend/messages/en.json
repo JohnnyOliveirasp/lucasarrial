@@ -3,8 +3,10 @@
     "brand": "FastCloner",
     "nav": {
       "dashboard": "Dashboard",
-      "voiceCloning": "Voice Cloning",
-      "record": "Record Voice",
+      "voices": "Voices",
+      "generateVoice": "Generate Voice",
+      "generateAudio": "Generate Audio",
+      "recorder": "Recorder",
       "history": "History",
       "settings": "Settings"
     },
@@ -15,8 +17,8 @@
       "subtitle": "Start by training a voice. More tools coming soon.",
       "tools": {
         "voiceCloning": {
-          "name": "Voice Cloning",
-          "description": "Train your voice once. Generate infinite audio with any text.",
+          "name": "Voices",
+          "description": "Train your voice and generate audio with any text.",
           "cta": "Start"
         },
         "videoGen": {
@@ -34,10 +36,14 @@
       }
     },
     "voiceCloning": {
-      "title": "Voice Cloning",
-      "subtitle": "Train your voice and generate audio with any text.",
+      "title": "Generate Voice",
+      "subtitle": "Train your voice however you need — announcer, news content, faster or slower. Upload a few minutes of audio and the AI learns your timbre to generate audio with any text.",
       "empty": "You haven't trained any voice yet.",
-      "createButton": "+ Train new voice"
+      "createButton": "+ Generate New Voice",
+      "generateAudioTitle": "Generate Audio",
+      "generateAudioSubtitle": "Pick a ready voice and generate audio with any text.",
+      "generateAudioEmpty": "You don't have a ready voice yet. Train a voice first.",
+      "pickVoiceCta": "Generate audio"
     },
     "voiceCloningNew": {
       "eyebrow": "01 · Train voice",

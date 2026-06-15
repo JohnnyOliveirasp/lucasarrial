@@ -64,7 +64,7 @@ export default async function VoiceCloningPage({
   return (
     <div className="flex flex-col gap-10">
       <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
-        <Eyebrow>{t("nav.voiceCloning")}</Eyebrow>
+        <Eyebrow>{t("nav.generateVoice")}</Eyebrow>
         <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
           {t("voiceCloning.title")}
         </h1>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -8,32 +9,15 @@ import {
   LayoutDashboard,
   Mic2,
   Mic,
+  AudioLines,
   History,
   Settings,
   Lock,
   ShieldCheck,
+  ChevronDown,
   type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
-
-type NavItem = {
-  href: string;
-  icon: LucideIcon;
-  key: "dashboard" | "voiceCloning" | "record" | "history" | "settings";
-  soon?: boolean;
-  /** Requer saldo p/ treinar uma voz (TRAINING_CREDIT_COST). Trava se faltar. */
-  needsTraining?: boolean;
-  /** Requer assinatura ativa (faz parte do pacote pago). Trava se não assinou. */
-  needsSubscription?: boolean;
-};
-
-const NAV: NavItem[] = [
-  { href: "/app/dashboard", icon: LayoutDashboard, key: "dashboard" },
-  { href: "/app/voice-cloning", icon: Mic2, key: "voiceCloning" },
-  { href: "/app/voice-cloning/script", icon: Mic, key: "record", needsTraining: true },
-  { href: "/app/history", icon: History, key: "history" },
-  { href: "/app/settings", icon: Settings, key: "settings", needsSubscription: true },
-];
 
 type Props = {
   /** Saldo total de créditos do usuário (plano + avulsos). */
@@ -44,24 +28,65 @@ type Props = {
   subscribed: boolean;
   /** É admin (allowlist)? Mostra o atalho pro painel /admin. */
   isAdmin: boolean;
+  /** Tem ≥1 voz pronta? Libera "Gerar Áudio". */
+  hasReadyVoice: boolean;
 };
 
-export function Sidebar({ creditsTotal, unlimited, subscribed, isAdmin }: Props) {
+export function Sidebar({
+  creditsTotal,
+  unlimited,
+  subscribed,
+  isAdmin,
+  hasReadyVoice,
+}: Props) {
   const t = useTranslations("app");
   const pathname = usePathname();
+  const inVoices =
+    pathname.includes("/app/voice-cloning") || pathname.endsWith("/app/history");
+  const [voicesOpen, setVoicesOpen] = useState(false);
+  const showVoices = voicesOpen || inVoices;
+
+  const lockTrainingTitle = `Você precisa de ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos para treinar uma voz.`;
+
+  // Sub-itens de "Vozes". Travas iguais às de antes: Gerar Voz livre, Gravador
+  // pede crédito p/ treinar; Gerar Áudio (novo) pede voz pronta.
+  const voiceChildren = [
+    {
+      href: "/app/voice-cloning",
+      icon: Mic2,
+      label: t("nav.generateVoice"),
+      locked: false,
+      lockTitle: "",
+    },
+    {
+      href: "/app/voice-cloning/generate",
+      icon: AudioLines,
+      label: t("nav.generateAudio"),
+      locked: !unlimited && !hasReadyVoice,
+      lockTitle: "Treine uma voz primeiro para gerar áudio.",
+    },
+    {
+      href: "/app/voice-cloning/script",
+      icon: Mic,
+      label: t("nav.recorder"),
+      locked: !unlimited && creditsTotal < TRAINING_CREDIT_COST,
+      lockTitle: lockTrainingTitle,
+    },
+    {
+      href: "/app/history",
+      icon: History,
+      label: t("nav.history"),
+      locked: false,
+      lockTitle: "",
+    },
+  ];
 
   return (
     <aside className="hidden border-r border-[var(--hairline)] bg-[var(--surface-deep)] lg:flex lg:flex-col">
       <div className="border-b border-[var(--hairline)] px-5 py-5">
         <Link href="/app/dashboard" className="flex items-center gap-2.5">
           <span className="inline-flex size-7 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)]">
-            <Image
-              src="/brand/fastpost-glyph.png"
-              alt=""
-              width={16}
-              height={16}
-              className="size-4"
-            />
+            <Image src="/brand/fastcloner-glyph.png" alt="" width={16} height={16} className="size-4" />
           </span>
           <span className="font-sans text-[15px] font-semibold tracking-[-0.03em] text-[var(--ink)]">
             FastCloner
@@ -71,89 +96,133 @@ export function Sidebar({ creditsTotal, unlimited, subscribed, isAdmin }: Props)
 
       <nav className="flex-1 px-3 py-4">
         <ul className="flex flex-col gap-1">
-          {NAV.map(({ href, icon: Icon, key, soon, needsTraining, needsSubscription }) => {
-            const active = pathname.endsWith(href);
-            // Equipe nunca trava. "Gravar voz" trava sem saldo p/ treinar;
-            // "Configurações" (API) trava sem assinatura ativa.
-            const lockedTraining =
-              !!needsTraining && !unlimited && creditsTotal < TRAINING_CREDIT_COST;
-            const lockedSub = !!needsSubscription && !unlimited && !subscribed;
-            const locked = lockedTraining || lockedSub;
-            const lockTitle = lockedSub
-              ? "Assine o plano para liberar a API."
-              : `Você precisa de ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos para treinar uma voz.`;
-            const disabled = soon || locked;
-            return (
-              <li key={href}>
-                <Link
-                  href={disabled ? "#" : href}
-                  aria-disabled={disabled}
-                  tabIndex={disabled ? -1 : undefined}
-                  onClick={disabled ? (e) => e.preventDefault() : undefined}
-                  title={locked ? lockTitle : undefined}
+          <NavLeaf
+            href="/app/dashboard"
+            icon={LayoutDashboard}
+            label={t("nav.dashboard")}
+            active={pathname.endsWith("/app/dashboard")}
+          />
+
+          {/* Grupo Vozes (expansível) */}
+          <li>
+            <button
+              type="button"
+              onClick={() => setVoicesOpen((o) => !o)}
+              aria-expanded={showVoices}
+              className={[
+                "group flex w-full items-center justify-between gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm transition-[background-color,color] duration-[var(--dur-base)] ease-[var(--ease-out)]",
+                inVoices
+                  ? "text-[var(--ink)]"
+                  : "text-[var(--mute)] hover:bg-[var(--surface-card)] hover:text-[var(--ink)]",
+              ].join(" ")}
+            >
+              <span className="flex items-center gap-3">
+                <Mic2
                   className={[
-                    "group flex items-center justify-between gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm transition-[background-color,color] duration-[var(--dur-base)] ease-[var(--ease-out)]",
-                    active
-                      ? "bg-[var(--surface-elevated)] text-[var(--ink)]"
-                      : "text-[var(--mute)] hover:bg-[var(--surface-card)] hover:text-[var(--ink)]",
-                    disabled
-                      ? "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-[var(--mute)]"
-                      : "",
+                    "h-4 w-4",
+                    inVoices ? "text-[var(--silver)]" : "text-[var(--ash)] group-hover:text-[var(--silver)]",
                   ].join(" ")}
-                >
-                  <span className="flex items-center gap-3">
-                    <Icon
-                      className={[
-                        "h-4 w-4",
-                        active ? "text-[var(--silver)]" : "text-[var(--ash)] group-hover:text-[var(--silver)]",
-                      ].join(" ")}
-                    />
-                    <span className="font-medium">{t(`nav.${key}`)}</span>
-                  </span>
-                  {soon && (
-                    <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-[var(--ash)]">
-                      {t("comingSoon")}
-                    </span>
-                  )}
-                  {locked && !soon && (
-                    <Lock className="h-3.5 w-3.5 text-[var(--ash)]" />
-                  )}
-                </Link>
-              </li>
-            );
-          })}
+                />
+                <span className="font-medium">{t("nav.voices")}</span>
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 text-[var(--ash)] transition-transform duration-[var(--dur-base)] ${
+                  showVoices ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {showVoices && (
+              <ul className="ml-[19px] mt-1 flex flex-col gap-1 border-l border-[var(--hairline)] pl-2">
+                {voiceChildren.map((c) => (
+                  <NavLeaf
+                    key={c.href}
+                    href={c.href}
+                    icon={c.icon}
+                    label={c.label}
+                    active={pathname.endsWith(c.href)}
+                    locked={c.locked}
+                    lockTitle={c.lockTitle}
+                  />
+                ))}
+              </ul>
+            )}
+          </li>
+
+          <NavLeaf
+            href="/app/settings"
+            icon={Settings}
+            label={t("nav.settings")}
+            active={pathname.endsWith("/app/settings")}
+            locked={!unlimited && !subscribed}
+            lockTitle="Assine o plano para liberar a API."
+          />
 
           {isAdmin && (
             <li className="mt-2 border-t border-[var(--hairline)] pt-2">
-              <Link
+              <NavLeaf
                 href="/admin"
-                className={[
-                  "group flex items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm transition-[background-color,color] duration-[var(--dur-base)] ease-[var(--ease-out)]",
-                  pathname.includes("/admin")
-                    ? "bg-[var(--surface-elevated)] text-[var(--ink)]"
-                    : "text-[var(--mute)] hover:bg-[var(--surface-card)] hover:text-[var(--ink)]",
-                ].join(" ")}
-              >
-                <ShieldCheck
-                  className={[
-                    "h-4 w-4",
-                    pathname.includes("/admin")
-                      ? "text-[var(--silver)]"
-                      : "text-[var(--ash)] group-hover:text-[var(--silver)]",
-                  ].join(" ")}
-                />
-                <span className="font-medium">Admin</span>
-              </Link>
+                icon={ShieldCheck}
+                label="Admin"
+                active={pathname.includes("/admin")}
+                bare
+              />
             </li>
           )}
         </ul>
       </nav>
 
       <div className="border-t border-[var(--hairline)] px-5 py-4">
-        <p className="font-mono text-[10px] tracking-[0.04em] text-[var(--ash)]">
-          v0.1 · dev
-        </p>
+        <p className="font-mono text-[10px] tracking-[0.04em] text-[var(--ash)]">v0.1 · dev</p>
       </div>
     </aside>
   );
+}
+
+function NavLeaf({
+  href,
+  icon: Icon,
+  label,
+  active,
+  locked = false,
+  lockTitle = "",
+  bare = false,
+}: {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  active: boolean;
+  locked?: boolean;
+  lockTitle?: string;
+  /** `bare` = não envolve em <li> (já está num <li> próprio, ex.: Admin). */
+  bare?: boolean;
+}) {
+  const link = (
+    <Link
+      href={locked ? "#" : href}
+      aria-disabled={locked}
+      tabIndex={locked ? -1 : undefined}
+      onClick={locked ? (e) => e.preventDefault() : undefined}
+      title={locked ? lockTitle : undefined}
+      className={[
+        "group flex items-center justify-between gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm transition-[background-color,color] duration-[var(--dur-base)] ease-[var(--ease-out)]",
+        active
+          ? "bg-[var(--surface-elevated)] text-[var(--ink)]"
+          : "text-[var(--mute)] hover:bg-[var(--surface-card)] hover:text-[var(--ink)]",
+        locked ? "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-[var(--mute)]" : "",
+      ].join(" ")}
+    >
+      <span className="flex items-center gap-3">
+        <Icon
+          className={[
+            "h-4 w-4",
+            active ? "text-[var(--silver)]" : "text-[var(--ash)] group-hover:text-[var(--silver)]",
+          ].join(" ")}
+        />
+        <span className="font-medium">{label}</span>
+      </span>
+      {locked && <Lock className="h-3.5 w-3.5 text-[var(--ash)]" />}
+    </Link>
+  );
+  return bare ? link : <li>{link}</li>;
 }

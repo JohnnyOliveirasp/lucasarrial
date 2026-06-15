@@ -39,9 +39,17 @@ export default async function AppLayout({
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
   const admin = await isAdmin(email);
 
+  // Tem voz pronta? Libera o item "Gerar Áudio" do submenu Vozes.
+  const { count: readyVoices } = await supabase
+    .from("voices")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("status", "ready");
+  const hasReadyVoice = (readyVoices ?? 0) > 0;
+
   return (
     <div className="grid min-h-svh grid-cols-1 lg:grid-cols-[260px_1fr] bg-[var(--canvas)]">
-      <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} />
+      <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} hasReadyVoice={hasReadyVoice} />
       <div className="flex flex-col">
         <Topbar
           email={profile?.email ?? user.email ?? ""}
