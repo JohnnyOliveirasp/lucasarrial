@@ -26,7 +26,7 @@ export function SiteHeader() {
           >
             <span className="inline-flex size-7 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)]">
               <Image
-                src="/brand/fastpost-glyph.png"
+                src="/brand/fastcloner-glyph.png"
                 alt=""
                 width={16}
                 height={16}

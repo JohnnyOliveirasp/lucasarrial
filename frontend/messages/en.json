@@ -143,7 +143,7 @@
     "description": "AI voice and face cloning, automatic editing and finished videos. 30 videos in 15 minutes — no set, no camera, no editor."
   },
   "nav": {
-    "brand": "FastPost",
+    "brand": "FastCloner",
     "links": {
       "recursos": "Features",
       "casos": "Cases",
@@ -152,7 +152,7 @@
     "login": "Sign in",
     "cta": "Get started",
     "ariaPrimary": "Primary",
-    "ariaBrand": "FastPost — home"
+    "ariaBrand": "FastCloner — home"
   },
   "themeToggle": {
     "toLight": "Switch to light mode",

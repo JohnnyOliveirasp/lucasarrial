@@ -143,7 +143,7 @@
     "description": "Clonación de voz y rostro, edición automática y videos listos con IA. 30 videos en 15 minutos — sin set, sin cámara, sin editor."
   },
   "nav": {
-    "brand": "FastPost",
+    "brand": "FastCloner",
     "links": {
       "recursos": "Recursos",
       "casos": "Casos",
@@ -152,7 +152,7 @@
     "login": "Iniciar sesión",
     "cta": "Empezar",
     "ariaPrimary": "Principal",
-    "ariaBrand": "FastPost — inicio"
+    "ariaBrand": "FastCloner — inicio"
   },
   "themeToggle": {
     "toLight": "Activar modo claro",

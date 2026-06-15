@@ -143,7 +143,7 @@
     }
   },
   "nav": {
-    "brand": "FastPost",
+    "brand": "FastCloner",
     "links": {
       "recursos": "Recursos",
       "casos": "Casos",
@@ -152,7 +152,7 @@
     "login": "Entrar",
     "cta": "Começar agora",
     "ariaPrimary": "Principal",
-    "ariaBrand": "FastPost — início"
+    "ariaBrand": "FastCloner — início"
   },
   "themeToggle": {
     "toLight": "Ativar tema claro",
