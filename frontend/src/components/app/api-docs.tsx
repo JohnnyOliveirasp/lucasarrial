@@ -38,7 +38,7 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
 
 export function ApiDocs() {
   const [voices, setVoices] = useState<Voice[]>([]);
-  const [origin, setOrigin] = useState("https://aiverse.jcsolutionsus.com");
+  const [origin, setOrigin] = useState("https://fastcloner.com");
 
   useEffect(() => {
     if (typeof window !== "undefined") setOrigin(window.location.origin);

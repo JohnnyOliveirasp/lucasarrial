@@ -47,7 +47,9 @@ export async function generateMetadata({
   return {
     title: t("title"),
     description: t("description"),
-    metadataBase: new URL("https://aiverse.jcsolutionsus.com"),
+    metadataBase: new URL(
+      process.env.NEXT_PUBLIC_SITE_URL ?? "https://fastcloner.com",
+    ),
   };
 }
 
