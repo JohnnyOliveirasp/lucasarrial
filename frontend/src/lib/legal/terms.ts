@@ -142,7 +142,7 @@ export const TERMS: LegalDoc = {
     },
     {
       heading: "16. Contato",
-      body: ["Dúvidas sobre estes Termos: contact@jcsolutionsus.com."],
+      body: ["Dúvidas sobre estes Termos: suporte@fastcloner.com."],
     },
   ],
 };

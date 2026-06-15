@@ -229,7 +229,7 @@ export function ApiKeysManager() {
       {/* Confirmação de revogação */}
       {pendingRevoke && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           onClick={() => !revoking && setPendingRevoke(null)}

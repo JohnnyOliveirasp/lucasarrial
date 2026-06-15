@@ -13,10 +13,10 @@ export default async function AuthLayout({
 
   return (
     <div className="grid min-h-svh grid-cols-1 lg:grid-cols-2">
-      <section className="flex items-center justify-center bg-bg px-6 py-16 lg:px-16">
+      <section className="flex items-center justify-center bg-[var(--canvas)] px-6 py-16 lg:px-16">
         <div className="w-full max-w-md">{children}</div>
       </section>
-      <aside className="hidden bg-fg lg:block">
+      <aside className="hidden bg-[var(--ink)] lg:block">
         <AuthHero3D />
       </aside>
     </div>

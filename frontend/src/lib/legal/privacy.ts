@@ -15,7 +15,7 @@ export const PRIVACY: LegalDoc = {
       heading: "1. Quem somos (Controlador)",
       body: [
         "A AI Clone Verse atua como controladora dos dados tratados na Plataforma. " +
-          "Contato do encarregado: contact@jcsolutionsus.com.",
+          "Contato do encarregado: suporte@fastcloner.com.",
       ],
     },
     {
@@ -79,7 +79,7 @@ export const PRIVACY: LegalDoc = {
         "Conforme a LGPD, você pode solicitar confirmação de tratamento, acesso, " +
           "correção, anonimização, portabilidade, eliminação e informações sobre " +
           "compartilhamento, além de revogar o consentimento.",
-        "Para exercer seus direitos: contact@jcsolutionsus.com.",
+        "Para exercer seus direitos: suporte@fastcloner.com.",
       ],
     },
     {
@@ -120,7 +120,7 @@ export const PRIVACY: LegalDoc = {
     },
     {
       heading: "14. Contato",
-      body: ["Dúvidas sobre privacidade: contact@jcsolutionsus.com."],
+      body: ["Dúvidas sobre privacidade: suporte@fastcloner.com."],
     },
   ],
 };

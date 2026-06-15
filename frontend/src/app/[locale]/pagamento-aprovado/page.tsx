@@ -89,10 +89,10 @@ export default async function PagamentoAprovadoPage({
         Acabou de pagar e ainda não liberou? Aguarde alguns instantes e atualize.
         Persistindo, fale com{" "}
         <a
-          href="mailto:contact@jcsolutionsus.com"
+          href="mailto:suporte@fastcloner.com"
           className="text-[var(--silver)] underline-offset-2 hover:underline"
         >
-          contact@jcsolutionsus.com
+          suporte@fastcloner.com
         </a>
         .
       </p>

@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "title": "FastPost — Plataforma de ferramentas IA",
-    "description": "Clone sua voz com IA em minutos. Plataforma de ferramentas de inteligência artificial para criadores e empreendedores."
+    "title": "FastPost — Seu rosto. Sua voz. Em escala.",
+    "description": "Clonagem de voz e rosto, edição automática e vídeos prontos com IA. 30 vídeos em 15 minutos — sem set, sem câmera, sem editor."
   },
   "app": {
     "brand": "FastPost",
@@ -144,10 +144,13 @@
   },
   "nav": {
     "brand": "FastPost",
-    "solution": "Solução",
-    "platform": "Plataforma",
-    "features": "Features",
-    "cta": "Começar",
+    "links": {
+      "recursos": "Recursos",
+      "casos": "Casos",
+      "precos": "Preços"
+    },
+    "login": "Entrar",
+    "cta": "Começar agora",
     "ariaPrimary": "Principal",
     "ariaBrand": "FastPost — início"
   },
@@ -162,135 +165,122 @@
     "es": "Espanhol"
   },
   "hero": {
-    "eyebrow": "Clonagem de voz com IA",
-    "titleLine1": "Sua voz.",
-    "titleLine2": "Em qualquer texto.",
-    "titleLine3": "Na hora.",
-    "description": "Treine sua voz uma vez e gere áudio com qualquer texto, em segundos. É o primeiro estúdio da FastPost — a plataforma que vai do áudio ao vídeo pronto.",
+    "badge": "Acesso por convite · Beta",
+    "titleLine1": "Seu rosto. Sua voz.",
+    "titleAccent": "30 vídeos. 15 minutos.",
+    "description": "A máquina que faz o que você merece. Clonagem de voz e rosto, edição automática e vídeos prontos em escala — sem set, sem câmera, sem editor.",
     "ctaPrimary": "Começar agora",
     "ctaSecondary": "Ver demonstração",
-    "metaStack": "Sua voz · Multilíngue · Na hora",
-    "metaScope": "Clonagem de voz, ao vivo · Vídeo em breve",
-    "metaVersion": "v0.1 · 2026"
+    "microcopy": "Pra médico, advogado e criador independente. Pra quem o tempo importa."
   },
-  "problem": {
-    "eyebrow": "02 · o problema",
-    "title": "Clonar voz hoje é",
-    "titleAccent": "ruim",
-    "items": {
-      "1": {
-        "tag": "preço",
-        "title": "Estúdio cobra fortunas",
-        "body": "Locuções profissionais custam R$3k a R$15k por projeto. Pra cada peça nova, nova fatura."
-      },
-      "2": {
-        "tag": "tempo",
-        "title": "Entrega leva dias",
-        "body": "Agendamento, gravação, edição, revisão. Do briefing ao áudio final, 5 a 10 dias úteis."
-      },
-      "3": {
-        "tag": "qualidade",
-        "title": "Alternativas soam robóticas",
-        "body": "TTS genérico não é a sua voz. Vozes de IA prontas soam falsas. Sua marca merece melhor."
-      }
-    }
-  },
-  "solution": {
-    "eyebrow": "03 · a solução",
-    "title": "Sua voz, sob demanda.",
-    "body": "Treine uma vez com 2 a 10 minutos de áudio. A IA aprende sua entonação, ritmo e timbre. Depois, gere quantos áudios quiser, em segundos.",
-    "playerLabel": "amostra · sua voz após treino",
-    "playerDuration": "0:32",
-    "playButton": "Tocar amostra",
-    "bullets": {
-      "1": "Treino em ~5 minutos",
-      "2": "Geração em segundos",
-      "3": "Você dono dos modelos"
-    }
-  },
-  "platform": {
-    "eyebrow": "04 · a plataforma",
-    "title": "Mais do que voz.",
-    "subtitle": "Uma plataforma de ferramentas IA inteira. Clonagem de voz é o começo.",
-    "sidebar": {
-      "header": "ferramentas",
-      "active": "Clonagem de Voz",
-      "soon": "Em breve"
-    },
-    "tools": {
-      "voice": "Clonagem de Voz",
-      "video": "Geração de Vídeo",
-      "writing": "Redação IA",
-      "image": "Imagens IA",
-      "transcribe": "Transcrição",
-      "translate": "Tradução"
-    }
+  "showcase": {
+    "caption": "Gerado em 12 minutos · Avatar Premium · Voz clonada · Legendas automáticas"
   },
   "features": {
-    "eyebrow": "05 · features",
-    "title": "Construído pra durar.",
+    "more": "Saiba mais",
+    "voice": {
+      "eyebrow": "Clone de voz",
+      "title": "Sua voz.",
+      "em": "Em qualquer idioma.",
+      "body": "Uma amostra de 30 segundos. A partir dela, cada vídeo do lote fala com o seu timbre — mantendo prosódia, pausas e sotaque. PT, EN, ES."
+    },
+    "face": {
+      "eyebrow": "Clone de rosto",
+      "title": "Seu rosto.",
+      "em": "Sem você na frente da câmera.",
+      "body": "Identidade visual consistente em todo vídeo, sem set, sem luz, sem gravar. Vertical pra Reels e Shorts, horizontal pra YouTube."
+    },
+    "edit": {
+      "eyebrow": "Edição automática",
+      "title": "Edita, corta, legenda.",
+      "em": "Automático.",
+      "body": "Do roteiro ao corte final. Cortes no ritmo da fala, legendas sincronizadas e b-roll sugerido — você só aprova."
+    },
+    "output": {
+      "eyebrow": "Vídeos prontos",
+      "title": "30 vídeos prontos.",
+      "em": "Antes do café.",
+      "body": "Um lote completo, legendado e exportado em 4K. Você abre o painel, escolhe os aprovados e publica. Profissional liberal não vira editor de vídeo."
+    },
+    "script": {
+      "filename": "roteiro-01.fp",
+      "lang": "PT-BR",
+      "l1": "[ Avatar · enquadramento médio ]",
+      "l2": "Três erros que custam caro no seu contrato.",
+      "l3": "O primeiro parece inofensivo.",
+      "l4": "[ corte · b-roll documento ]",
+      "l5": "Mas é onde 8 em cada 10 processos começam."
+    }
+  },
+  "stats": {
+    "eyebrow": "Em produção",
+    "title": "Pra quem o tempo importa.",
     "items": {
-      "1": {
-        "tag": "qualidade",
-        "title": "100% sua voz",
-        "body": "Modelos LoRA por usuário. Sua voz fica sua, treinada no seu áudio."
+      "1": { "value": "1.247", "label": "Vídeos gerados / mês" },
+      "2": { "value": "89", "label": "Avatares clonados" },
+      "3": { "value": "3,6h", "label": "Tempo médio economizado" },
+      "4": { "value": "240%", "label": "Produtividade vs. gravação" }
+    }
+  },
+  "pricing": {
+    "eyebrow": "Planos",
+    "title": "Escolha o seu ritmo.",
+    "recommended": "Recomendado",
+    "tiers": {
+      "solo": {
+        "name": "Solo",
+        "price": "R$ 290",
+        "cad": "/mês",
+        "desc": "Pro profissional que publica todo dia.",
+        "cta": "Começar agora",
+        "feats": ["10 vídeos / mês", "1 avatar + 1 voz clonada", "Legendas automáticas", "Exportação 1080p"]
       },
-      "2": {
-        "tag": "velocidade",
-        "title": "Inferência em segundos",
-        "body": "Workers GPU autoescalados. Fila Celery, notificação in-app quando pronto."
+      "autoridade": {
+        "name": "Autoridade",
+        "price": "R$ 690",
+        "cad": "/mês",
+        "desc": "O lote completo, antes do café.",
+        "cta": "Começar agora",
+        "feats": ["60 vídeos / mês", "3 avatares + 3 vozes", "Edição automática + b-roll", "Exportação 4K", "Idiomas PT · EN · ES"]
       },
-      "3": {
-        "tag": "idiomas",
-        "title": "50+ idiomas",
-        "body": "Modelo multilíngue. Sua voz fala português, inglês, espanhol e mais."
-      },
-      "4": {
-        "tag": "controle",
-        "title": "Sem amarras",
-        "body": "Exporte os áudios. Cancele quando quiser. Sem fidelidade, sem pegadinha."
+      "estudio": {
+        "name": "Estúdio",
+        "price": "Sob consulta",
+        "cad": "",
+        "desc": "Pra equipes e operação em escala.",
+        "cta": "Falar com vendas",
+        "feats": ["Volume ilimitado", "Avatares e vozes ilimitados", "API + integração", "Gerente dedicado"]
       }
     }
   },
-  "cta": {
-    "eyebrow": "06 · pronto?",
-    "title": "Comece grátis.",
-    "body": "3 modelos de voz grátis. Sem cartão de crédito. Sem compromisso.",
-    "primary": "Criar conta grátis",
-    "secondary": "Falar com o time"
+  "closing": {
+    "titleLine1": "A máquina que faz o que",
+    "titleLine2": "você",
+    "titleAccent": "merece",
+    "titleTail": ".",
+    "ctaPrimary": "Começar agora",
+    "ctaSecondary": "Ver demonstração"
   },
   "footer": {
-    "tagline": "Plataforma de ferramentas IA",
+    "tagline": "Seu rosto, sua voz, em escala. Vídeo com IA pra quem o tempo importa.",
     "columns": {
       "product": {
         "title": "Produto",
-        "items": {
-          "1": "Clonagem de voz",
-          "2": "Preços",
-          "3": "Changelog",
-          "4": "Roadmap"
-        }
+        "items": { "1": "Recursos", "2": "Clone de voz", "3": "Clone de rosto", "4": "Preços" }
+      },
+      "resources": {
+        "title": "Recursos",
+        "items": { "1": "Como funciona", "2": "Casos", "3": "Demonstração", "4": "Changelog" }
       },
       "company": {
         "title": "Empresa",
-        "items": {
-          "1": "Sobre",
-          "2": "Blog",
-          "3": "Contato",
-          "4": "Carreiras"
-        }
+        "items": { "1": "Sobre", "2": "Contato", "3": "Carreiras", "4": "Blog" }
       },
       "legal": {
-        "title": "Legal",
-        "items": {
-          "1": "Termos",
-          "2": "Privacidade",
-          "3": "LGPD",
-          "4": "Cookies"
-        }
+        "title": "Legal"
       }
     },
     "copyright": "© 2026 FastPost. Todos os direitos reservados.",
-    "made": "Feito com IA, no Brasil."
+    "status": "Todos os sistemas operacionais"
   }
 }

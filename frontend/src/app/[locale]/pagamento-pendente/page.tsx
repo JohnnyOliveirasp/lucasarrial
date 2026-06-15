@@ -72,10 +72,10 @@ export default async function PagamentoPendentePage({
         </Link>
         {" · "}Dúvidas:{" "}
         <a
-          href="mailto:contact@jcsolutionsus.com"
+          href="mailto:suporte@fastcloner.com"
           className="text-[var(--silver)] underline-offset-2 hover:underline"
         >
-          contact@jcsolutionsus.com
+          suporte@fastcloner.com
         </a>
       </p>
     </main>

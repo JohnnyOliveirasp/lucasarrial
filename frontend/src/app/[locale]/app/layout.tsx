@@ -37,7 +37,7 @@ export default async function AppLayout({
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
 
   return (
-    <div className="grid min-h-svh grid-cols-1 lg:grid-cols-[260px_1fr] bg-bg">
+    <div className="grid min-h-svh grid-cols-1 lg:grid-cols-[260px_1fr] bg-[var(--canvas)]">
       <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} />
       <div className="flex flex-col">
         <Topbar

@@ -89,7 +89,7 @@ export function DeleteAccount({ email }: Props) {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur-sm">
           <div
             className="flex max-h-[90vh] w-full max-w-md flex-col gap-5 overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-7"
             style={dangerWash}

@@ -70,7 +70,7 @@ export const ACCEPTABLE_USE: LegalDoc = {
       heading: "7. Denúncia de abuso",
       body: [
         "Se você identificar uso indevido ou tiver sua voz clonada sem autorização, " +
-          "entre em contato: contact@jcsolutionsus.com. Investigamos e agimos sobre " +
+          "entre em contato: suporte@fastcloner.com. Investigamos e agimos sobre " +
           "denúncias.",
       ],
     },

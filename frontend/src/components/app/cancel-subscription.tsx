@@ -49,7 +49,7 @@ export function CancelSubscription() {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-8">
             {done ? (
               <div className="flex flex-col gap-4">
