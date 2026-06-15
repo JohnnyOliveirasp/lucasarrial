@@ -1,6 +1,6 @@
 {
   "app": {
-    "brand": "FastPost",
+    "brand": "FastCloner",
     "nav": {
       "dashboard": "Dashboard",
       "voiceCloning": "Voice Cloning",
@@ -86,7 +86,7 @@
     }
   },
   "auth": {
-    "brand": "FastPost",
+    "brand": "FastCloner",
     "tagline": "Clone your voice. Create infinite.",
     "login": {
       "title": "Sign in",
@@ -139,7 +139,7 @@
     }
   },
   "metadata": {
-    "title": "FastPost — Your face. Your voice. At scale.",
+    "title": "FastCloner — Your face. Your voice. At scale.",
     "description": "AI voice and face cloning, automatic editing and finished videos. 30 videos in 15 minutes — no set, no camera, no editor."
   },
   "nav": {
@@ -264,7 +264,7 @@
         "title": "Legal"
       }
     },
-    "copyright": "© 2026 FastPost. All rights reserved.",
+    "copyright": "© 2026 FastCloner. All rights reserved.",
     "status": "All systems operational"
   }
 }

@@ -23,7 +23,7 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 /**
- * FastPost Card — a superfície de trabalho. Borda hairline, SEM drop shadow.
+ * FastCloner Card — a superfície de trabalho. Borda hairline, SEM drop shadow.
  * Profundidade vem da luminância da superfície + hairline.
  */
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(

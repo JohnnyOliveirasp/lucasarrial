@@ -1,10 +1,10 @@
 {
   "metadata": {
-    "title": "FastPost — Seu rosto. Sua voz. Em escala.",
+    "title": "FastCloner — Seu rosto. Sua voz. Em escala.",
     "description": "Clonagem de voz e rosto, edição automática e vídeos prontos com IA. 30 vídeos em 15 minutos — sem set, sem câmera, sem editor."
   },
   "app": {
-    "brand": "FastPost",
+    "brand": "FastCloner",
     "nav": {
       "dashboard": "Dashboard",
       "voiceCloning": "Treinar Voz",
@@ -90,7 +90,7 @@
     }
   },
   "auth": {
-    "brand": "FastPost",
+    "brand": "FastCloner",
     "tagline": "Clone sua voz. Crie infinito.",
     "login": {
       "title": "Entrar",
@@ -264,7 +264,7 @@
         "title": "Legal"
       }
     },
-    "copyright": "© 2026 FastPost. Todos os direitos reservados.",
+    "copyright": "© 2026 FastCloner. Todos os direitos reservados.",
     "status": "Todos os sistemas operacionais"
   }
 }

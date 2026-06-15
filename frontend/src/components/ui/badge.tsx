@@ -26,7 +26,7 @@ export interface BadgeProps
 }
 
 /**
- * FastPost Badge — label monocromático. Outline (hairline) por padrão, `soft`
+ * FastCloner Badge — label monocromático. Outline (hairline) por padrão, `soft`
  * ou `solid` (pill invertido raro). Dot de status opcional.
  */
 export function Badge({

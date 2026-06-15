@@ -9,7 +9,7 @@ import { LogBootstrap } from "@/components/log-bootstrap";
 import { routing } from "@/i18n/routing";
 import "../globals.css";
 
-// DM Sans — fonte exclusiva do brand FastPost. Pesos 400/500/600/700 + itálicos 400/500.
+// DM Sans — fonte exclusiva do brand FastCloner. Pesos 400/500/600/700 + itálicos 400/500.
 const dmSans = localFont({
   src: [
     { path: "../fonts/DMSans-Regular.ttf", weight: "400", style: "normal" },

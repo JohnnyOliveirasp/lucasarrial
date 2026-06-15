@@ -15,7 +15,7 @@ export interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 /**
- * FastPost Avatar — monocromático. Imagem, ou iniciais num well escuro com
+ * FastCloner Avatar — monocromático. Imagem, ou iniciais num well escuro com
  * hairline. Dot de status opcional no canto. Nunca placeholder de stock photo.
  */
 export function Avatar({

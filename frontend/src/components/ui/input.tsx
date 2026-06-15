@@ -11,7 +11,7 @@ export interface InputProps
 }
 
 /**
- * FastPost Input — campo escuro, borda hairline que clareia no foco.
+ * FastCloner Input — campo escuro, borda hairline que clareia no foco.
  * Sem drop shadow; o brilho da borda carrega o sinal de foco.
  */
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(

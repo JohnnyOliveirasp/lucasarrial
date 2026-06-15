@@ -17,7 +17,7 @@ export interface TabsProps {
 }
 
 /**
- * FastPost Tabs — estilo underline. Tab ativa ganha texto ink + hairline bright
+ * FastCloner Tabs — estilo underline. Tab ativa ganha texto ink + hairline bright
  * embaixo; inativas são mute. Uma hairline corre a largura toda.
  */
 export function Tabs({

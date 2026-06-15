@@ -3,7 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * FastPost Button — monocromático, nunca tingido com cor de acento/glow.
+ * FastCloner Button — monocromático, nunca tingido com cor de acento/glow.
  * - primary: o pill branco invertido (texto preto) — elemento mais brilhante
  *   da viewport. Use NO MÁXIMO um por tela.
  * - secondary: superfície elevada + hairline.

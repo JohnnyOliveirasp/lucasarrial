@@ -28,7 +28,7 @@ export function Footer() {
                 />
               </span>
               <span className="font-sans text-[16px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
-                FastPost
+                FastCloner
               </span>
             </div>
             <p className="mt-[18px] max-w-[240px] text-[14px] leading-[1.6] text-[var(--ash)]">

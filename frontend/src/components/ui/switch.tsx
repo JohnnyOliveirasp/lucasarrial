@@ -14,7 +14,7 @@ export interface SwitchProps
 }
 
 /**
- * FastPost Switch — toggle monocromático. Track clareia de hairline para
+ * FastCloner Switch — toggle monocromático. Track clareia de hairline para
  * quase-branco quando ligado; knob é prata→preto. Sem cor de acento.
  * Suporta uso controlado (`checked` + `onCheckedChange`) e não-controlado.
  */

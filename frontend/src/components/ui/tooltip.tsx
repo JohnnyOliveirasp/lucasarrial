@@ -16,7 +16,7 @@ export interface TooltipProps {
 }
 
 /**
- * FastPost Tooltip — superfície raised com hairline + um ambient ultra-suave.
+ * FastCloner Tooltip — superfície raised com hairline + um ambient ultra-suave.
  * Aparece no hover/focus do gatilho. Monocromático, sem acento. CSS puro
  * (group-hover/group-focus-within) — sem JS.
  */

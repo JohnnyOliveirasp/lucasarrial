@@ -8,7 +8,7 @@ export interface StatProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 /**
- * FastPost Stat — número grande prata + caption. Usado em bandas de
+ * FastCloner Stat — número grande prata + caption. Usado em bandas de
  * sucesso/stats. O valor usa peso display; o label é caption ash.
  */
 export function Stat({

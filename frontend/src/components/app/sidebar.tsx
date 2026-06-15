@@ -61,7 +61,7 @@ export function Sidebar({ creditsTotal, unlimited, subscribed }: Props) {
             />
           </span>
           <span className="font-sans text-[15px] font-semibold tracking-[-0.03em] text-[var(--ink)]">
-            FastPost
+            FastCloner
           </span>
         </Link>
       </div>

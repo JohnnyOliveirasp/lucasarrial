@@ -19,7 +19,7 @@ export default async function LoginPage({
         <div className="flex items-center gap-2.5">
           <Image
             src="/brand/fastpost-glyph.png"
-            alt="FastPost"
+            alt="FastCloner"
             width={20}
             height={20}
             className="h-5 w-5"
