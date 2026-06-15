@@ -4,10 +4,10 @@
  */
 
 /** Créditos recarregados a cada ciclo da assinatura (R$97/mês). */
-export const PLAN_MONTHLY_CREDITS = 180_000;
+export const PLAN_MONTHLY_CREDITS = 100_000;
 
 /** Custo de clonar/treinar uma voz. */
-export const TRAINING_CREDIT_COST = 20_000;
+export const TRAINING_CREDIT_COST = 10_000;
 
 /** Mínimo cobrado por geração (cobre o cold-start da GPU serverless). */
 export const GENERATION_MIN_CREDITS = 400;

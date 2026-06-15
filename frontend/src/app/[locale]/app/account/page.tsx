@@ -105,7 +105,7 @@ export default async function AccountPage({
           <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5">
             <p className="text-sm text-[var(--mute)]">
               Você não tem uma assinatura ativa. Assine para liberar a plataforma
-              e receber 180.000 créditos por mês.
+              e receber 100.000 créditos por mês.
             </p>
             <Link
               href={`/${locale}/planos`}

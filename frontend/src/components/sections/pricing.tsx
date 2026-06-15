@@ -9,15 +9,14 @@ import { Badge, Eyebrow } from "@/components/ui";
 const EASE = [0.16, 1, 0.3, 1] as const;
 
 const TIERS = [
-  { key: "solo", featured: false },
-  { key: "autoridade", featured: true },
-  { key: "estudio", featured: false },
+  { key: "pro", featured: true },
 ] as const;
 
 /**
- * Pricing — 3 tiers, central em destaque (surface-elevated + hairline-bright),
- * CTA do destaque = pill branco. Os CTAs levam pra /login (entrada livre); o
- * billing real é resolvido no fluxo de assinatura.
+ * Pricing — plano único (R$97/mês), card central em destaque (surface-elevated +
+ * hairline-bright), CTA pill branco. CTA leva pra /login (entrada livre); o
+ * billing real é resolvido no fluxo de assinatura. Créditos avulsos (Stripe)
+ * ficam dentro do app, em /app/credits.
  */
 export function Pricing() {
   const t = useTranslations("pricing");
@@ -32,7 +31,7 @@ export function Pricing() {
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-3">
+        <div className="mx-auto grid max-w-[420px] grid-cols-1 items-start gap-5">
           {TIERS.map((tier, idx) => {
             const feats = t.raw(`tiers.${tier.key}.feats`) as string[];
             return (

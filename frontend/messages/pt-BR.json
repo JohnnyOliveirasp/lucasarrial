@@ -223,33 +223,17 @@
     }
   },
   "pricing": {
-    "eyebrow": "Planos",
-    "title": "Escolha o seu ritmo.",
-    "recommended": "Recomendado",
+    "eyebrow": "Plano",
+    "title": "Um plano. Tudo liberado.",
+    "recommended": "Mais popular",
     "tiers": {
-      "solo": {
-        "name": "Solo",
-        "price": "R$ 290",
+      "pro": {
+        "name": "Pro",
+        "price": "R$ 97",
         "cad": "/mês",
-        "desc": "Pro profissional que publica todo dia.",
+        "desc": "Sua voz clonada e horas de áudio, por um preço só.",
         "cta": "Começar agora",
-        "feats": ["10 vídeos / mês", "1 avatar + 1 voz clonada", "Legendas automáticas", "Exportação 1080p"]
-      },
-      "autoridade": {
-        "name": "Autoridade",
-        "price": "R$ 690",
-        "cad": "/mês",
-        "desc": "O lote completo, antes do café.",
-        "cta": "Começar agora",
-        "feats": ["60 vídeos / mês", "3 avatares + 3 vozes", "Edição automática + b-roll", "Exportação 4K", "Idiomas PT · EN · ES"]
-      },
-      "estudio": {
-        "name": "Estúdio",
-        "price": "Sob consulta",
-        "cad": "",
-        "desc": "Pra equipes e operação em escala.",
-        "cta": "Falar com vendas",
-        "feats": ["Volume ilimitado", "Avatares e vozes ilimitados", "API + integração", "Gerente dedicado"]
+        "feats": ["100.000 créditos todo mês", "Clonagem de voz realista em minutos", "Áudio pronto em segundos", "Crie quantas vozes precisar", "API pública pra automatizar tudo", "Recarregue créditos quando quiser"]
       }
     }
   },

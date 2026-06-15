@@ -47,7 +47,7 @@ export default async function VoiceCloningPage({
 
   const list = (voices ?? []) as VoiceRow[];
 
-  // Treinar (clonar) uma voz exige plano vigente E saldo >= 20.000 créditos.
+  // Treinar (clonar) uma voz exige plano vigente E saldo >= 10.000 créditos.
   // Geração de áudio com vozes prontas continua liberada (a lista abaixo).
   const { data: profile } = await supabase
     .from("profiles")
@@ -94,7 +94,7 @@ export default async function VoiceCloningPage({
           <p className="max-w-xl text-sm text-[var(--mute)]">
             {subscribed
               ? `Treinar uma voz custa ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos e você tem ${creditsTotal.toLocaleString("pt-BR")}. Compre um pacote para continuar — a geração de áudio com vozes já prontas segue liberada.`
-              : "Você não tem um plano vigente. Treinar uma voz faz parte do plano: assine para liberar 180.000 créditos por mês e treinar a sua voz."}
+              : "Você não tem um plano vigente. Treinar uma voz faz parte do plano: assine para liberar 100.000 créditos por mês e treinar a sua voz."}
           </p>
           <Link
             href={subscribed ? `/${locale}/app/credits` : `/${locale}/planos`}

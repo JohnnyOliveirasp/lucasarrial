@@ -80,7 +80,7 @@ export default async function CreditsPage({
           </h2>
           <p className="max-w-xl text-sm text-[var(--mute)]">
             Neste caso de geração de áudio, cada caractere usa 1 crédito. Com o
-            plano você recebe 180.000 créditos todo mês para treinar vozes e
+            plano você recebe 100.000 créditos todo mês para treinar vozes e
             gerar áudio.
           </p>
           <Link

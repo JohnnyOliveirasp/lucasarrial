@@ -7,7 +7,7 @@
  * generate / start-training (code "insufficient_credits").
  *
  * CTA depende de `subscribed` (vem do 402 em details.subscribed):
- *  - sem assinatura  → "Assinar agora" (/planos)   — assinar dá 180k créditos/mês
+ *  - sem assinatura  → "Assinar agora" (/planos)   — assinar dá 100k créditos/mês
  *  - assinante ativo → "Comprar créditos" (/app/credits) — pacote avulso (Stripe)
  */
 import Link from "next/link";
@@ -33,7 +33,7 @@ export function PaywallModal({ open, onClose, subscribed, action, detail }: Prop
   const title = subscribed ? "Seus créditos acabaram" : "Você ainda não tem créditos";
   const body = subscribed
     ? `Compre um pacote para continuar a ${action}, ou espere a recarga do próximo ciclo.`
-    : `Cada caractere usa 1 crédito. Assine para receber 180.000 créditos por mês e começar a ${action}.`;
+    : `Cada caractere usa 1 crédito. Assine para receber 100.000 créditos por mês e começar a ${action}.`;
 
   return (
     <div

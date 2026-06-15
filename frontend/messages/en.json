@@ -223,33 +223,17 @@
     }
   },
   "pricing": {
-    "eyebrow": "Plans",
-    "title": "Choose your pace.",
-    "recommended": "Recommended",
+    "eyebrow": "Plan",
+    "title": "One plan. Everything unlocked.",
+    "recommended": "Most popular",
     "tiers": {
-      "solo": {
-        "name": "Solo",
-        "price": "$ 59",
+      "pro": {
+        "name": "Pro",
+        "price": "R$ 97",
         "cad": "/mo",
-        "desc": "For the pro who publishes every day.",
+        "desc": "Your cloned voice and hours of audio, for one price.",
         "cta": "Get started",
-        "feats": ["10 videos / month", "1 avatar + 1 cloned voice", "Automatic captions", "1080p export"]
-      },
-      "autoridade": {
-        "name": "Authority",
-        "price": "$ 139",
-        "cad": "/mo",
-        "desc": "The full batch, before coffee.",
-        "cta": "Get started",
-        "feats": ["60 videos / month", "3 avatars + 3 voices", "Automatic editing + b-roll", "4K export", "Languages PT · EN · ES"]
-      },
-      "estudio": {
-        "name": "Studio",
-        "price": "Custom",
-        "cad": "",
-        "desc": "For teams and operations at scale.",
-        "cta": "Talk to sales",
-        "feats": ["Unlimited volume", "Unlimited avatars and voices", "API + integration", "Dedicated manager"]
+        "feats": ["100,000 credits every month", "Realistic voice cloning in minutes", "Audio ready in seconds", "Create as many voices as you need", "Public API to automate everything", "Top up credits anytime"]
       }
     }
   },
