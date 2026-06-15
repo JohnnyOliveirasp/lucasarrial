@@ -199,10 +199,10 @@ export function VoiceCreator() {
       prev.map((f, i) => ({ ...f, key: slots[i]?.key, state: "uploading" })),
     );
 
-    // 3. Upload paralelo browser → R2
+    // 3. Upload browser → R2 (até UPLOAD_CONCURRENCY simultâneos, com retry)
     setStep("upload");
-    const results = await Promise.allSettled(
-      files.map((f, i) => uploadOne(f, slots[i], setFiles, setOverallProgress, files.length)),
+    const results = await runPool(files, UPLOAD_CONCURRENCY, (f, i) =>
+      uploadOne(f, slots[i], setFiles, setOverallProgress, files.length),
     );
 
     const failed = results.filter((r) => r.status === "rejected").length;
@@ -616,9 +616,64 @@ function UploadProgress({
 }
 
 // ───────────────────────────────────────────────────────────────
-// Upload helper — XHR pra ter progress
+// Upload helpers — XHR pra ter progress, com retry e concorrência limitada
 // ───────────────────────────────────────────────────────────────
 
+const MAX_UPLOAD_ATTEMPTS = 3;
+const UPLOAD_CONCURRENCY = 3; // arquivos grandes não disputam toda a banda de uma vez
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Roda `worker` sobre os itens com no máximo `limit` em paralelo. */
+async function runPool<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<void>,
+): Promise<PromiseSettledResult<void>[]> {
+  const results: PromiseSettledResult<void>[] = new Array(items.length);
+  let cursor = 0;
+  async function lane() {
+    while (cursor < items.length) {
+      const i = cursor++;
+      try {
+        await worker(items[i], i);
+        results[i] = { status: "fulfilled", value: undefined };
+      } catch (e) {
+        results[i] = { status: "rejected", reason: e };
+      }
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => lane()),
+  );
+  return results;
+}
+
+/** Um PUT único pro R2 com progresso. Rejeita em erro de rede/HTTP. */
+function putToR2(
+  file: LocalFile,
+  uploadUrl: string,
+  onProgress: (pct: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader("Content-Type", file.file.type || "audio/mpeg");
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`HTTP ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error("network"));
+    xhr.ontimeout = () => reject(new Error("timeout"));
+    xhr.send(file.file);
+  });
+}
+
+/** Sobe um arquivo com até MAX_UPLOAD_ATTEMPTS tentativas. */
 async function uploadOne(
   file: LocalFile,
   slot: { index: number; key: string; upload_url: string } | undefined,
@@ -633,49 +688,42 @@ async function uploadOne(
     throw new Error("no slot");
   }
 
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", slot.upload_url);
-    xhr.setRequestHeader("Content-Type", file.file.type || "audio/mpeg");
-    xhr.upload.onprogress = (e) => {
-      if (!e.lengthComputable) return;
-      const pct = Math.round((e.loaded / e.total) * 100);
-      setFiles((prev) => {
-        const next = prev.map((f) =>
-          f.id === file.id ? { ...f, progress: pct } : f,
-        );
-        const sum = next.reduce((acc, f) => acc + f.progress, 0);
-        setOverall(Math.round(sum / Math.max(1, totalFiles)));
-        return next;
-      });
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === file.id ? { ...f, state: "done", progress: 100 } : f,
-          ),
-        );
-        resolve();
-      } else {
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === file.id
-              ? { ...f, state: "error", error: `HTTP ${xhr.status}` }
-              : f,
-          ),
-        );
-        reject(new Error(`HTTP ${xhr.status}`));
-      }
-    };
-    xhr.onerror = () => {
+  const setProgress = (pct: number) =>
+    setFiles((prev) => {
+      const next = prev.map((f) =>
+        f.id === file.id ? { ...f, progress: pct } : f,
+      );
+      const sum = next.reduce((acc, f) => acc + f.progress, 0);
+      setOverall(Math.round(sum / Math.max(1, totalFiles)));
+      return next;
+    });
+
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt++) {
+    try {
+      setProgress(0);
+      await putToR2(file, slot.upload_url, setProgress);
       setFiles((prev) =>
         prev.map((f) =>
-          f.id === file.id ? { ...f, state: "error", error: "network" } : f,
+          f.id === file.id ? { ...f, state: "done", progress: 100 } : f,
         ),
       );
-      reject(new Error("network"));
-    };
-    xhr.send(file.file);
-  });
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < MAX_UPLOAD_ATTEMPTS) {
+        // backoff crescente; o presigned vale 6h, então retry cabe na janela
+        await sleep(1000 * attempt);
+      }
+    }
+  }
+
+  setFiles((prev) =>
+    prev.map((f) =>
+      f.id === file.id
+        ? { ...f, state: "error", error: lastErr instanceof Error ? lastErr.message : "error" }
+        : f,
+    ),
+  );
+  throw lastErr instanceof Error ? lastErr : new Error("upload failed");
 }

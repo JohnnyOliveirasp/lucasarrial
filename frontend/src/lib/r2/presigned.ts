@@ -89,7 +89,11 @@ export async function createUploadSlots(
   voiceId: string,
   files: Array<{ filename: string; content_type: string }>,
 ): Promise<UploadSlot[]> {
-  const expiresIn = 3600;
+  // 6h: uploads de treino podem ter centenas de MB (1h de áudio WAV/FLAC) e
+  // levar muito tempo em conexões lentas. 1h (3600s) estourava a assinatura no
+  // meio do upload e o R2 rejeitava com 403 ("falhou ao subir"). R2 aceita
+  // presigned até 7 dias; 6h cobre uploads grandes com folga.
+  const expiresIn = 6 * 3600;
   const slots: UploadSlot[] = [];
   for (let i = 0; i < files.length; i++) {
     const f = files[i];
