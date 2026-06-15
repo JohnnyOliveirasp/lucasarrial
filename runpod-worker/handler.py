@@ -358,7 +358,32 @@ def _transcribe_with_retry(
     return None
 
 
-def _split_text_for_tts(text: str, max_chars: int = 200) -> list[str]:
+# Aspas (retas + tipograficas + guillemets) que aparecem no FIM de um trecho e
+# confundem o "stop predictor" do VoxCPM — ele tenta "fechar" a fala inventando
+# filler ("entao", "nao", "ne"). Removidas na borda (nao tem som proprio).
+_QUOTES = "\"'`" + "“”‘’«»"
+
+
+def _ensure_terminal(s: str) -> str:
+    """Garante que o TRECHO termine com pontuacao FORTE (. ! ? …).
+
+    O VoxCPM alucina filler quando o chunk termina sem sinal claro de parada —
+    tipico de linhas que terminam em ':' (ex.: 'Ela falou:'), ',' ou fechando
+    aspas de dialogo. Aqui limpamos a borda: tira aspas/pontuacao fraca do fim e
+    forca um ponto final. So afeta o FIM do chunk (a pontuacao interna fica).
+    """
+    s = s.strip().rstrip(_QUOTES).strip()
+    if not s:
+        return s
+    if s[-1] in ".!?…":
+        return s
+    s = s.rstrip(",:;–—- ").strip()
+    if not s:
+        return s
+    return s + "."
+
+
+def _split_text_for_tts(text: str, max_chars: int = 160) -> list[str]:
     """Quebra texto em chunks <= max_chars respeitando fim de frase.
 
     VoxCPM gera 1 utterance por chamada e drifta/acelera em texto longo (issue
@@ -366,13 +391,18 @@ def _split_text_for_tts(text: str, max_chars: int = 200) -> list[str]:
     o estado interno do modelo a cada chunk — a doc oficial confirma que isso
     previne 'gradual speed-up' e drift de timbre.
     https://voxcpm.readthedocs.io/en/latest/usage_guide.html
+
+    Cada chunk passa por _ensure_terminal: termina sempre com . ! ? — sem isso o
+    modelo inventa filler ("entao nao") pra "completar" a fala.
     """
     text = (text or "").strip()
     if not text:
         return []
-    # Separa em frases por fim de pontuacao (. ? ! e reticencia). O lookbehind
-    # mantem o sinal preso na frase anterior. \n+ tambem corta (paragrafos).
-    sentences = re.split(r"(?<=[.!?…])\s+|\n+", text)
+    # Separa em frases por fim de pontuacao. Inclui ':' e ';' como fronteira
+    # (linhas tipo 'Ela falou:' viram seu proprio trecho, depois normalizadas
+    # pra terminar em '.'). O lookbehind mantem o sinal preso na frase anterior.
+    # \n+ tambem corta (paragrafos).
+    sentences = re.split(r"(?<=[.!?…:;])\s+|\n+", text)
     chunks: list[str] = []
     cur = ""
     for s in sentences:
@@ -388,7 +418,8 @@ def _split_text_for_tts(text: str, max_chars: int = 200) -> list[str]:
             cur = (cur + " " + s) if cur else s
     if cur:
         chunks.append(cur)
-    return chunks
+    # Borda limpa em todo trecho (anti-filler). Remove vazios resultantes.
+    return [c for c in (_ensure_terminal(c) for c in chunks) if c]
 
 
 def _trim_silence(
@@ -473,7 +504,9 @@ def _handle_inference(inp: dict) -> dict:
     prompt_text = inp.get("prompt_text")
     lora_url = inp.get("lora_url")
     output_upload_url = inp.get("output_upload_url")
-    cfg_value = float(inp.get("cfg_value", 2.0))
+    # 1.6 (era 2.0): doc do VoxCPM recomenda 1.5-1.6 p/ MAIS estabilidade e
+    # menos drift/alucinacao. O backend ja manda 1.6; isto e' so o fallback.
+    cfg_value = float(inp.get("cfg_value", 1.6))
     # 15 = meio termo. Doc oficial diz 5-10 draft, 15-25 quality. Em testes:
     # - 10 = pace correto mas qualidade media, drift evidente em texto longo
     # - 20 = qualidade alta MAS acelerou pace (Aluno2 de 55s -> 45s, mesmo texto)
@@ -556,7 +589,12 @@ def _handle_inference(inp: dict) -> dict:
     # crossfade pra eliminar costuras audiveis. Recomendado em discussao
     # oficial: https://github.com/OpenBMB/VoxCPM/issues/302
     # Doc base: https://voxcpm.readthedocs.io/en/latest/usage_guide.html
-    chunk_max = int(os.environ.get("TTS_CHUNK_MAX_CHARS", "220"))
+    chunk_max = int(os.environ.get("TTS_CHUNK_MAX_CHARS", "160"))
+    # Retry anti-badcase do VoxCPM (env-tunavel p/ ajustar sem rebuild). O retry
+    # so pega FALHA GROSSA (audio ~Nx maior que o esperado = loop/repeticao);
+    # nao pega "entao nao" curto — pra isso vale o _ensure_terminal + cfg 1.6.
+    retry_max = int(os.environ.get("TTS_RETRY_MAX_TIMES", "4"))
+    retry_ratio = float(os.environ.get("TTS_RETRY_RATIO", "4.0"))
     # silence/crossfade aceitam override por requisição (`inp`) pra ajuste POR
     # VOZ sem afetar as demais. Sem override → cai no env (default global, mesmo
     # comportamento de antes). 0 é valor válido (ex.: desligar o crossfade).
@@ -597,8 +635,8 @@ def _handle_inference(inp: dict) -> dict:
             normalize=normalize,
             denoise=False,
             retry_badcase=True,
-            retry_badcase_max_times=3,
-            retry_badcase_ratio_threshold=6.0,
+            retry_badcase_max_times=retry_max,
+            retry_badcase_ratio_threshold=retry_ratio,
         )
         seg = np.asarray(seg, dtype=np.float32)
         raw_samples = int(seg.size)

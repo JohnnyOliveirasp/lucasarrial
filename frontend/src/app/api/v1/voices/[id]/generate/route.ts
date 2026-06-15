@@ -162,7 +162,10 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     // Alpha gravado no treino daquela voz (16 p/ antigas, 32 p/ novas). O worker
     // infere com esse alpha — casa com a LoRA. Sem valor, o worker usa 16.
     lora_alpha: typeof voice.lora_alpha === "number" ? voice.lora_alpha : 16,
-    cfg_value: typeof body.cfg_value === "number" ? body.cfg_value : 2.0,
+    // 1.6 (era 2.0): a doc do VoxCPM recomenda 1.5–1.6 p/ MAIS estabilidade e
+    // menos drift/alucinação ("filler" tipo "então não" no meio da fala). 2.0
+    // adere mais à referência mas instabiliza em texto longo. Ver Issue #302.
+    cfg_value: typeof body.cfg_value === "number" ? body.cfg_value : 1.6,
     // 15 = meio termo entre 10 (pace correto mas qualidade media) e 20 (qualidade
     // alta mas acelerou pace em testes). Drift NAO se resolve por timesteps —
     // e estrutural (VoxCPM Issue #302). Match com worker default.
