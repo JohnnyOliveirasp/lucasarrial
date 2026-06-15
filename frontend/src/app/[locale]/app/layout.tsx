@@ -3,8 +3,10 @@ import { setRequestLocale } from "next-intl/server";
 import { Sidebar } from "@/components/app/sidebar";
 import { Topbar } from "@/components/app/topbar";
 import { ConsentGate } from "@/components/app/consent-gate";
+import { PresencePinger } from "@/components/admin/presence-pinger";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
+import { isAdmin } from "@/lib/admin/guard";
 
 export default async function AppLayout({
   children,
@@ -35,10 +37,11 @@ export default async function AppLayout({
   const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
   const creditsTotal =
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
+  const admin = await isAdmin(email);
 
   return (
     <div className="grid min-h-svh grid-cols-1 lg:grid-cols-[260px_1fr] bg-[var(--canvas)]">
-      <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} />
+      <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} />
       <div className="flex flex-col">
         <Topbar
           email={profile?.email ?? user.email ?? ""}
@@ -50,6 +53,7 @@ export default async function AppLayout({
         <main className="flex-1 px-6 py-10 lg:px-12">{children}</main>
       </div>
       <ConsentGate />
+      <PresencePinger />
     </div>
   );
 }

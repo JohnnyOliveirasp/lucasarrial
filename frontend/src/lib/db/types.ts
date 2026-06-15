@@ -50,6 +50,7 @@ export type ProfileRow = {
   access_source: PaymentProvider | null; // provedor que liberou o acesso atual
   credits_subscription: number; // créditos do plano (zeram/recarregam no ciclo)
   credits_extra: number;        // créditos avulsos comprados (não expiram)
+  last_seen_at: Timestamp | null; // heartbeat p/ "online agora" no /admin
   created_at: Timestamp;
   updated_at: Timestamp;
 };
@@ -176,6 +177,19 @@ export type ApiKeyInsert = {
 };
 export type ApiKeyUpdate = Partial<ApiKeyRow>;
 
+// ───────── admin_emails ─────────
+export type AdminEmailRow = {
+  id: string;
+  email: string;
+  added_by: string | null;
+  created_at: Timestamp;
+};
+export type AdminEmailInsert = {
+  email: string;
+  added_by?: string | null;
+};
+export type AdminEmailUpdate = Partial<AdminEmailRow>;
+
 // ───────── user_consents ─────────
 export type UserConsentRow = {
   id: string;
@@ -298,6 +312,7 @@ export type Database = {
       generations:   { Row: GenerationRow;   Insert: GenerationInsert;   Update: GenerationUpdate;   Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };
+      admin_emails:  { Row: AdminEmailRow;   Insert: AdminEmailInsert;   Update: AdminEmailUpdate;   Relationships: Rel };
       user_consents: { Row: UserConsentRow;  Insert: UserConsentInsert;  Update: UserConsentUpdate;  Relationships: Rel };
       entitlements:  { Row: EntitlementRow;  Insert: EntitlementInsert;  Update: EntitlementUpdate;  Relationships: Rel };
       payment_events:{ Row: PaymentEventRow; Insert: PaymentEventInsert; Update: PaymentEventUpdate; Relationships: Rel };
@@ -306,6 +321,12 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      admin_metrics:      { Args: { p_since: string }; Returns: Json };
+      admin_timeseries:   { Args: { p_since: string }; Returns: Json };
+      admin_live_cloning: { Args: Record<string, never>; Returns: Json };
+      admin_users:        { Args: Record<string, never>; Returns: Json };
+      admin_failures:     { Args: { p_limit?: number }; Returns: Json };
+      admin_history:      { Args: { p_limit?: number }; Returns: Json };
       debit_credits: {
         Args: {
           p_user_id: string;

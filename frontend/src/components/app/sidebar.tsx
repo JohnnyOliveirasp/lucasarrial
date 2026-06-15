@@ -11,6 +11,7 @@ import {
   History,
   Settings,
   Lock,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
@@ -41,9 +42,11 @@ type Props = {
   unlimited: boolean;
   /** Assinatura ativa? Libera itens que fazem parte do pacote pago (API). */
   subscribed: boolean;
+  /** É admin (allowlist)? Mostra o atalho pro painel /admin. */
+  isAdmin: boolean;
 };
 
-export function Sidebar({ creditsTotal, unlimited, subscribed }: Props) {
+export function Sidebar({ creditsTotal, unlimited, subscribed, isAdmin }: Props) {
   const t = useTranslations("app");
   const pathname = usePathname();
 
@@ -119,6 +122,30 @@ export function Sidebar({ creditsTotal, unlimited, subscribed }: Props) {
               </li>
             );
           })}
+
+          {isAdmin && (
+            <li className="mt-2 border-t border-[var(--hairline)] pt-2">
+              <Link
+                href="/admin"
+                className={[
+                  "group flex items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm transition-[background-color,color] duration-[var(--dur-base)] ease-[var(--ease-out)]",
+                  pathname.includes("/admin")
+                    ? "bg-[var(--surface-elevated)] text-[var(--ink)]"
+                    : "text-[var(--mute)] hover:bg-[var(--surface-card)] hover:text-[var(--ink)]",
+                ].join(" ")}
+              >
+                <ShieldCheck
+                  className={[
+                    "h-4 w-4",
+                    pathname.includes("/admin")
+                      ? "text-[var(--silver)]"
+                      : "text-[var(--ash)] group-hover:text-[var(--silver)]",
+                  ].join(" ")}
+                />
+                <span className="font-medium">Admin</span>
+              </Link>
+            </li>
+          )}
         </ul>
       </nav>
 
