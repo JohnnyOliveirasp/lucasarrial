@@ -186,13 +186,20 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   if (typeof silenceMs === "number") inferenceInput.chunk_silence_ms = silenceMs;
   if (typeof crossfadeMs === "number") inferenceInput.chunk_crossfade_ms = crossfadeMs;
 
+  // Transcrição da referência efetivamente enviada como prompt_text. Guardada
+  // p/ auditoria (debug de "filler"/eco da referência depende de saber QUAL
+  // prompt_text foi usado naquela geração).
+  let refTranscriptUsed: string | null = null;
   if (refUrl) {
     inferenceInput.prompt_wav_url = refUrl;
     // A referência é auto-extraída e transcrita no treino. Mandamos o
     // prompt_text salvo → o worker NÃO re-transcreve a cada geração. Se por
     // algum motivo não houver transcrição, o worker cai no Whisper (Caminho A).
     const refTranscript = (voice.reference_transcript ?? "").trim();
-    if (refTranscript) inferenceInput.prompt_text = refTranscript;
+    if (refTranscript) {
+      inferenceInput.prompt_text = refTranscript;
+      refTranscriptUsed = refTranscript;
+    }
   }
 
   let runpodJob;
@@ -213,7 +220,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     text_raw: text,
     text_normalized: normalizedText,
     reference_audio_path: refKey || null,
-    reference_transcript: null,
+    reference_transcript: refTranscriptUsed,
     audio_path: outputKey,
     runpod_job_id: runpodJob.id,
   } as never);

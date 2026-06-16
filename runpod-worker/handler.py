@@ -33,7 +33,6 @@ import base64
 import io
 import json
 import os
-import random
 import re
 import shutil
 import time
@@ -60,10 +59,12 @@ MODEL_DIR = Path(os.environ.get("VOXCPM_MODEL_DIR", "/workspace/models/VoxCPM2")
 VOXCPM_REPO = Path(os.environ.get("VOXCPM_REPO", "/app/VoxCPM"))
 WORKSPACE = Path(os.environ.get("WORKSPACE_DIR", "/workspace/jobs"))
 
-# Duração da referência AUTO-extraída no treino (1 áudio aleatório → N segundos
-# da voz limpa). VoxCPM tem limite de contexto ~8192 tokens; 2 min (~1.5k) cabe
-# com folga. NÃO subir isso sem refazer a conta do contexto.
-REFERENCE_SECONDS = int(os.environ.get("REFERENCE_SECONDS", "120"))
+# Duração da referência AUTO-extraída no treino. 30s (era 120): referência curta
+# captura MENOS tique/bordão da fala e reduz o risco de o VoxCPM ecoar "filler"
+# no início (bug "então não" da voz Pri). 30s sobra p/ timbre e fica longe do
+# limite de contexto (~8192 tokens). A janela é ESCOLHIDA por score (anti-bordão),
+# não cortada do início — ver voice_pipeline.reference.select_reference_clip.
+REFERENCE_SECONDS = int(os.environ.get("REFERENCE_SECONDS", "30"))
 
 # Alpha/rank do LoRA. O alpha é GRAVADO por voz no treino e devolvido na
 # inferência (cada LoRA infere com o alpha que treinou). Vozes novas usam 16,
@@ -128,6 +129,7 @@ def _handle_train(inp: dict) -> dict:
         build_train_manifest,
         create_training_config,
         run_training,
+        select_reference_clip,
     )
 
     voice_id = inp.get("voice_id") or "anonymous"
@@ -205,13 +207,25 @@ def _handle_train(inp: dict) -> dict:
     if reference_upload_url:
         norm_files = sorted(norm_dir.glob("*_mono16k.wav"))
         if norm_files:
-            chosen = random.choice(norm_files)
-            ref_clip = job_dir / "reference.wav"
-            _slice_seconds(chosen, ref_clip, REFERENCE_SECONDS)
-            transcript = _transcribe_with_retry(
-                ref_clip, whisper_model, language, attempts=3,
+            # Seleção ANTI-BORDÃO: em vez de cortar um trecho aleatório de 120s,
+            # testa várias janelas de REFERENCE_SECONDS em offsets diferentes,
+            # transcreve cada uma e escolhe a de menor risco de "filler"
+            # ("então/não/tá/né" na borda). Conserta a raiz do bug "então não"
+            # (a ref aleatória da Pri terminava em "...apertando o botão não").
+            selected = select_reference_clip(
+                norm_files,
+                work_dir=job_dir / "ref_candidates",
+                ref_seconds=REFERENCE_SECONDS,
+                transcribe_fn=lambda p: _transcribe_with_retry(
+                    p, whisper_model, language, attempts=2
+                ),
+                language=language,
+                log=lambda **k: _log(
+                    k.pop("level", "info"), k.pop("event", "train.reference"), **k
+                ),
             )
-            if transcript:
+            if selected:
+                ref_clip, transcript = selected
                 upload_file_to_presigned_url(
                     ref_clip, reference_upload_url, content_type="audio/wav"
                 )
@@ -219,11 +233,10 @@ def _handle_train(inp: dict) -> dict:
                 reference_transcript = transcript
                 _log(
                     "info", "train.reference.done",
-                    source=chosen.name, seconds=REFERENCE_SECONDS,
-                    transcript_len=len(transcript),
+                    seconds=REFERENCE_SECONDS, transcript_len=len(transcript),
                 )
             else:
-                reference_error = "reference transcription returned empty after retries"
+                reference_error = "reference selection/transcription returned empty"
                 _log("error", "train.reference.transcribe_failed", detail=reference_error)
         else:
             reference_error = "no normalized audio to slice the reference from"
@@ -313,23 +326,6 @@ def _run_ffmpeg_stereo_44k(src: Path, dst: Path) -> None:
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"ffmpeg stereo 44k failed: {r.stderr.strip()}")
-
-
-def _slice_seconds(src: Path, dst: Path, seconds: int) -> None:
-    """Corta os primeiros `seconds` de `src` → `dst` (mono 16k). Se o áudio for
-    menor, pega o que tiver."""
-    import subprocess
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", str(src),
-        "-t", str(seconds),
-        "-ac", "1", "-ar", "16000",
-        str(dst),
-    ]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"ffmpeg slice failed: {r.stderr.strip()}")
 
 
 def _transcribe_with_retry(

@@ -20,6 +20,7 @@ from .training import (
     create_training_config,
     run_training,
 )
+from .reference import select_reference_clip, score_reference_transcript
 
 __all__ = [
     "download_to_dir",
@@ -34,4 +35,6 @@ __all__ = [
     "build_train_manifest",
     "create_training_config",
     "run_training",
+    "select_reference_clip",
+    "score_reference_transcript",
 ]
