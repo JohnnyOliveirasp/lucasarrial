@@ -25,6 +25,7 @@ import {
   grantSubscriptionCredits,
   resolveUserIdByEmail,
 } from "@/lib/credits/service";
+import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
 import type { EntitlementStatus, Json } from "@/lib/db/types";
 
@@ -144,6 +145,10 @@ async function processEvent(
         refType: "payment_event",
         refId: externalId,
       });
+      // Bônus de campanha de lançamento (feature À PARTE): se a compra cair na
+      // janela de uma campanha ativa, credita o bônus no saldo extra. No-op se
+      // não houver campanha; idempotente (não dá bônus 2x na renovação).
+      await applyPurchaseCampaignBonus(userId, externalId);
     }
     return "granted";
   }

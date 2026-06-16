@@ -292,6 +292,45 @@ export type SubscriptionCancellationInsert = {
 };
 export type SubscriptionCancellationUpdate = Partial<SubscriptionCancellationRow>;
 
+// ───────── credit_campaigns (feature de bônus à parte) ─────────
+export type CreditCampaignRow = {
+  id: string;
+  name: string;
+  bonus_credits: number;
+  trigger: string;
+  starts_at: Timestamp;
+  ends_at: Timestamp;
+  active: boolean;
+  created_by: string | null;
+  created_at: Timestamp;
+};
+export type CreditCampaignInsert = {
+  name: string;
+  bonus_credits: number;
+  trigger?: string;
+  starts_at?: Timestamp;
+  ends_at: Timestamp;
+  active?: boolean;
+  created_by?: string | null;
+};
+export type CreditCampaignUpdate = Partial<CreditCampaignRow>;
+
+// ───────── credit_campaign_grants ─────────
+export type CreditCampaignGrantRow = {
+  campaign_id: string;
+  user_id: string;
+  credits: number;
+  ref_id: string | null;
+  granted_at: Timestamp;
+};
+export type CreditCampaignGrantInsert = {
+  campaign_id: string;
+  user_id: string;
+  credits: number;
+  ref_id?: string | null;
+};
+export type CreditCampaignGrantUpdate = Partial<CreditCampaignGrantRow>;
+
 // ───────── Database (composição) ─────────
 // Cada tabela precisa de `Relationships: []` pra satisfazer GenericTable do supabase-js v2.105+.
 type Relationship = {
@@ -318,6 +357,8 @@ export type Database = {
       payment_events:{ Row: PaymentEventRow; Insert: PaymentEventInsert; Update: PaymentEventUpdate; Relationships: Rel };
       credit_transactions: { Row: CreditTransactionRow; Insert: CreditTransactionInsert; Update: CreditTransactionUpdate; Relationships: Rel };
       subscription_cancellations: { Row: SubscriptionCancellationRow; Insert: SubscriptionCancellationInsert; Update: SubscriptionCancellationUpdate; Relationships: Rel };
+      credit_campaigns: { Row: CreditCampaignRow; Insert: CreditCampaignInsert; Update: CreditCampaignUpdate; Relationships: Rel };
+      credit_campaign_grants: { Row: CreditCampaignGrantRow; Insert: CreditCampaignGrantInsert; Update: CreditCampaignGrantUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: {
@@ -356,6 +397,11 @@ export type Database = {
         };
         Returns: Json;
       };
+      apply_purchase_campaign_bonus: {
+        Args: { p_user_id: string; p_ref_id?: string | null };
+        Returns: Json;
+      };
+      admin_list_campaigns: { Args: Record<string, never>; Returns: Json };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
