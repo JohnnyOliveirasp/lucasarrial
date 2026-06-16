@@ -161,6 +161,21 @@ body {
   }
 }
 
+/* Equalizer do indicador "gerando áudio". Barras de waveform pulsando com
+   defasagem — inequivocamente vivo (o spinner de borda no tema dark tinha
+   contraste quase nulo e parecia congelado). transform-origin é setado inline. */
+@keyframes eq-bar {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
 /* Utility: eyebrow CAPS 11px prata, tracking 0.16em */
 @utility eyebrow {
   font-family: var(--font-dm-sans);

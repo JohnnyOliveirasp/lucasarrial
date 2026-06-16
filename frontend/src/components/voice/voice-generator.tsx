@@ -6,6 +6,7 @@ import { AudioLines, Play, Download } from "lucide-react";
 import { formatDuration } from "@/lib/audio/duration";
 import { SupportError } from "@/components/ui/support-error";
 import { PaywallModal } from "@/components/app/paywall-modal";
+import { AudioGeneratingIndicator } from "@/components/voice/audio-generating-indicator";
 
 // Limite generoso pra cobrir ~2 min de fala em pt-BR (~150 wpm, ~5 chars/word).
 // Bate com o TEXT_MAX da rota /api/v1/voices/[id]/generate.
@@ -174,13 +175,7 @@ export function VoiceGenerator({ voiceId }: Props) {
 
   if (step === "polling" || step === "submitting") {
     return (
-      <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
-        <div className="h-12 w-12 animate-spin rounded-[var(--radius-full)] border-2 border-[var(--hairline-strong)] border-t-[var(--silver)]" />
-        <p className="font-mono text-[12px] tracking-wide text-[var(--silver)]">
-          Gerando áudio…
-        </p>
-        <p className="text-xs text-[var(--mute)]">Polling 3s · primeira inferência leva ~10s no cold start</p>
-      </section>
+      <AudioGeneratingIndicator hint="Primeira inferência leva ~10s no cold start" />
     );
   }
 
