@@ -1,14 +1,15 @@
 /**
  * Geração dinâmica de ROTEIROS DE LEITURA para clonagem de voz, via Claude Haiku.
  *
- * Inspirado no formato dos scripts da ElevenLabs (o PDF de exemplo): uma história
- * casual e contínua do cotidiano, quebrada em blocos com DIREÇÃO EMOCIONAL
- * (Animado, Divertido, Surpresa, Conspiratório, Sem emoção, Tranquilo...). A
- * pessoa lê em voz alta variando o tom → captura o range da voz pro treino.
+ * O usuário escolhe um TEMA/estilo (conversa casual, história infantil,
+ * jornalístico, piadas, drama…). O Haiku gera uma narrativa NAQUELE estilo,
+ * quebrada em blocos com DIREÇÃO EMOCIONAL variada — a pessoa lê em voz alta
+ * mudando o tom, o que captura o range da voz pro treino.
  *
  * Server-only. Usa fetch direto (sem @anthropic-ai/sdk). Sem ANTHROPIC_API_KEY
  * ou em erro/timeout, retorna null (o caller decide o fallback).
  */
+import { SCRIPT_THEMES, findScriptTheme } from "./script-themes";
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-haiku-4-5";
@@ -21,7 +22,7 @@ export type VoiceScript = {
   blocks: ScriptBlock[];
 };
 
-/** Paleta de direções emocionais (mesma ideia do roteiro da ElevenLabs). */
+/** Paleta de direções emocionais (referência; o modelo adapta ao estilo do tema). */
 const EMOTIONS = [
   "Animado / Narrativa",
   "Divertido / Brincalhão",
@@ -33,45 +34,25 @@ const EMOTIONS = [
   "Indignado / Exagerado",
 ];
 
-/** Temas cotidianos pra variar o roteiro a cada geração. */
-const THEMES = [
-  "um perrengue no supermercado",
-  "um encontro estranho no transporte público",
-  "uma confusão com um aplicativo de entrega",
-  "um vizinho excêntrico",
-  "um dia caótico no trabalho",
-  "uma viagem que deu tudo errado",
-  "um bicho de estimação aprontando",
-  "um reencontro inesperado com alguém",
-  "uma reforma na casa que virou novela",
-  "uma fofoca que se espalhou rápido demais",
-  "um mal-entendido num restaurante",
-  "uma tentativa frustrada de cozinhar algo novo",
-];
-
-const STYLE = "Português (Brasil) / Conversacional / Casual / Amigável";
-
 const SYSTEM = `Você cria ROTEIROS DE LEITURA em português do Brasil para clonagem de voz.
 
 O usuário vai LER o roteiro em voz alta, variando o tom em cada bloco, para
-treinar um modelo da própria voz. Por isso o texto precisa soar como uma pessoa
-real CONVERSANDO com um amigo — natural, espontâneo, com gírias leves e ritmo de
-fala (não texto formal de livro).
+treinar um modelo da própria voz. O texto precisa soar NATURAL para ser falado.
 
 Regras OBRIGATÓRIAS:
-- Uma ÚNICA história contínua e cotidiana (começo, meio e fim), dividida em blocos.
-- Cada bloco tem UMA direção emocional da paleta a seguir, e o tom deve MUDAR
-  visivelmente de um bloco pro outro (pra capturar o range da voz):
-  ${EMOTIONS.join("; ")}.
-- 7 blocos. Cada bloco com 3 a 6 frases.
-- 100% em português do Brasil, linguagem falada e informal.
+- Siga o ESTILO/TEMA pedido pelo usuário (o gênero e o tom são definidos por ele).
+- Uma narrativa com começo, meio e fim, dividida em 7 blocos.
+- Cada bloco tem UMA direção emocional, e o tom deve MUDAR de um bloco pro outro
+  (pra capturar o range da voz). Use estas direções como referência, adaptando ao
+  estilo: ${EMOTIONS.join("; ")}.
+- Cada bloco com 3 a 6 frases.
+- 100% em português do Brasil, linguagem pensada para ser FALADA.
 - NÃO use números, símbolos, emojis, siglas ou abreviações — escreva tudo por
-  extenso em palavras (ex.: "dois mil reais", "vinte por cento"), porque o texto
-  será LIDO em voz alta. Isso vale TAMBÉM no título (sem dígitos no título).
-- NÃO inclua instruções, títulos de seção extras, nem comentários fora do JSON.
+  extenso (ex.: "dois mil reais", "vinte por cento"), inclusive no título.
+- NÃO inclua instruções, títulos de seção extras nem comentários fora do JSON.
 
 Responda APENAS com JSON válido neste formato exato:
-{"title": "<título curto e divertido da história>", "blocks": [{"emotion": "<uma direção da paleta>", "text": "<parágrafo do bloco>"}]}`;
+{"title": "<título curto>", "blocks": [{"emotion": "<direção emocional>", "text": "<parágrafo do bloco>"}]}`;
 
 type AnthropicBlock = { type: string; text?: string };
 
@@ -80,14 +61,14 @@ function pick<T>(arr: T[]): T {
 }
 
 /**
- * Gera um roteiro novo. `theme` opcional força o tema; senão sorteia um.
- * Retorna null se não houver key ou se a resposta não for parseável.
+ * Gera um roteiro novo no estilo do tema (`themeId`). Tema inválido/ausente →
+ * sorteia um. Retorna null se não houver key ou se a resposta não for parseável.
  */
-export async function generateVoiceScript(theme?: string): Promise<VoiceScript | null> {
+export async function generateVoiceScript(themeId?: string): Promise<VoiceScript | null> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
 
-  const chosenTheme = theme || pick(THEMES);
+  const theme = findScriptTheme(themeId) ?? pick(SCRIPT_THEMES);
 
   try {
     const res = await fetch(ANTHROPIC_API, {
@@ -103,7 +84,10 @@ export async function generateVoiceScript(theme?: string): Promise<VoiceScript |
         temperature: 1,
         system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [
-          { role: "user", content: `Crie um roteiro novo sobre: ${chosenTheme}.` },
+          {
+            role: "user",
+            content: `Crie um roteiro novo no seguinte estilo: ${theme.instruction}.`,
+          },
           // Prefill força a saída a começar como JSON.
           { role: "assistant", content: "{" },
         ],
@@ -135,7 +119,7 @@ export async function generateVoiceScript(theme?: string): Promise<VoiceScript |
 
     return {
       title: (parsed.title ?? "").trim() || "Roteiro de gravação",
-      style: STYLE,
+      style: theme.label,
       blocks,
     };
   } catch {
