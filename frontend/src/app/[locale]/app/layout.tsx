@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/app/sidebar";
 import { Topbar } from "@/components/app/topbar";
 import { ConsentGate } from "@/components/app/consent-gate";
 import { PresencePinger } from "@/components/admin/presence-pinger";
+import { PurchaseAutoRefresh } from "@/components/app/purchase-auto-refresh";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { isAdmin } from "@/lib/admin/guard";
@@ -62,6 +63,7 @@ export default async function AppLayout({
       </div>
       <ConsentGate />
       <PresencePinger />
+      <PurchaseAutoRefresh />
     </div>
   );
 }
