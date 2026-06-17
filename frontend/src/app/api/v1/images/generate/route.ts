@@ -39,6 +39,10 @@ import {
 } from "@/lib/kie/config";
 import { kieCreateImageTask, kieCallbackUrl } from "@/lib/kie/client";
 import { generateImagePrompt } from "@/lib/llm/generate-image-prompt";
+import {
+  moderateImagePrompt,
+  CONTENT_BLOCKED_MESSAGE,
+} from "@/lib/llm/moderate-image-prompt";
 
 const PRESIGN_EXPIRES = 60 * 60; // 1h — o Kie busca a referência logo no início
 const PROMPT_MAX = 20_000; // limite do gpt-image-2
@@ -83,7 +87,18 @@ export async function POST(request: NextRequest) {
     prompt = (await generateImagePrompt(idea)).trim();
   }
   if (!prompt) return badRequest("Escreva um prompt ou uma ideia");
+  if (prompt === "__BLOCKED__") return jsonError("content_blocked", CONTENT_BLOCKED_MESSAGE, 400);
   if (prompt.length > PROMPT_MAX) return badRequest(`Prompt máx ${PROMPT_MAX} caracteres`);
+
+  // SEGURANÇA: modera o prompt FINAL antes de mandar pro Kie (a pessoa pode ter
+  // digitado direto, pulando o prompt automático). Bloqueado → não gera, não
+  // cobra. Protege o rosto real da pessoa e as contas da empresa (Kie/OpenAI).
+  const moderation = await moderateImagePrompt(prompt);
+  if (!moderation.allowed) {
+    return jsonError("content_blocked", CONTENT_BLOCKED_MESSAGE, 400, {
+      reason: moderation.reason,
+    });
+  }
 
   // Custo fixo por resolução. Equipe/admin não é cobrada. Pré-checa saldo.
   const creditCost = imageCreditCost(resolution);

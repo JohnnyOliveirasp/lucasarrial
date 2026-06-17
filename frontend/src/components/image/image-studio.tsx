@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ImagePlus, Sparkles, Wand2, Download, X, Loader2 } from "lucide-react";
+import { ImagePlus, Sparkles, Wand2, Download, X, Loader2, ShieldAlert } from "lucide-react";
 import { SupportError } from "@/components/ui/support-error";
 import { PaywallModal } from "@/components/app/paywall-modal";
 import { AudioGeneratingIndicator } from "@/components/voice/audio-generating-indicator";
@@ -44,6 +44,7 @@ export function ImageStudio({
 }) {
   const [step, setStep] = useState<Step>("form");
   const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState<string | null>(null);
 
   // referência
   const [preview, setPreview] = useState<string | null>(null);
@@ -148,6 +149,7 @@ export function ImageStudio({
     if (!idea.trim() || genPrompting) return;
     setGenPrompting(true);
     setError(null);
+    setBlocked(null);
     try {
       const r = await fetch("/api/v1/images/generate-prompt", {
         method: "POST",
@@ -156,6 +158,10 @@ export function ImageStudio({
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
+        if (j?.error?.code === "content_blocked") {
+          setBlocked(j.error.message || "Conteúdo não permitido");
+          return;
+        }
         throw new Error(j?.error?.message || "Falha ao gerar prompt");
       }
       const { prompt: out } = await r.json();
@@ -193,6 +199,7 @@ export function ImageStudio({
     if (!canSubmit) return;
     setStep("submitting");
     setError(null);
+    setBlocked(null);
     setNoCredits(false);
     try {
       const r = await fetch("/api/v1/images/generate", {
@@ -216,6 +223,11 @@ export function ImageStudio({
       }
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
+        if (j?.error?.code === "content_blocked") {
+          setBlocked(j.error.message || "Conteúdo não permitido");
+          setStep("form");
+          return;
+        }
         throw new Error(j?.error?.message || "Falha ao gerar imagem");
       }
       const { id } = await r.json();
@@ -248,6 +260,7 @@ export function ImageStudio({
     setStep("form");
     setResult(null);
     setError(null);
+    setBlocked(null);
     setPrompt("");
     setIdea("");
     clearImage();
@@ -463,6 +476,16 @@ export function ImageStudio({
             })}
           </div>
         </div>
+
+        {blocked && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3.5 py-3"
+          >
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-error)]" />
+            <p className="text-[13px] leading-snug text-[var(--body)]">{blocked}</p>
+          </div>
+        )}
 
         {error && <SupportError action="gerar a imagem" />}
 

@@ -9,8 +9,12 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonOk, unauthorized } from "@/lib/api/responses";
+import { badRequest, jsonError, jsonOk, unauthorized } from "@/lib/api/responses";
 import { generateImagePrompt } from "@/lib/llm/generate-image-prompt";
+import {
+  moderateImagePrompt,
+  CONTENT_BLOCKED_MESSAGE,
+} from "@/lib/llm/moderate-image-prompt";
 
 const IDEA_MAX = 1000;
 
@@ -29,6 +33,14 @@ export async function POST(request: NextRequest) {
   if (!idea) return badRequest("Descreva sua ideia primeiro");
   if (idea.length > IDEA_MAX) return badRequest(`Ideia muito longa (máx ${IDEA_MAX}).`);
 
+  // Segurança: barra a ideia antes de gastar a LLM com conteúdo proibido.
+  const mod = await moderateImagePrompt(idea);
+  if (!mod.allowed) return jsonError("content_blocked", CONTENT_BLOCKED_MESSAGE, 400);
+
   const prompt = await generateImagePrompt(idea);
+  // Sentinela do system prompt (recusou conteúdo proibido).
+  if (prompt.trim() === "__BLOCKED__") {
+    return jsonError("content_blocked", CONTENT_BLOCKED_MESSAGE, 400);
+  }
   return jsonOk({ prompt });
 }
