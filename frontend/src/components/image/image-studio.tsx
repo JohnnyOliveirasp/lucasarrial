@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { ImagePlus, Sparkles, Wand2, Download, X, Loader2 } from "lucide-react";
 import { SupportError } from "@/components/ui/support-error";
 import { PaywallModal } from "@/components/app/paywall-modal";
@@ -9,6 +10,7 @@ import { FieldHint } from "@/components/image/field-hint";
 import {
   ASPECT_RATIOS,
   RESOLUTIONS,
+  IMAGE_MIN_CREDITS,
   allowedResolutions,
   resolveResolutionForAspect,
   imageCreditCost,
@@ -67,7 +69,14 @@ export function ImageStudio({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const cost = imageCreditCost(resolution);
-  const canSubmit = !!uploadedKey && prompt.trim().length > 0 && !uploading;
+  // Trava por crédito: precisa do mínimo (12 = 1K) pra gerar qualquer coisa, e
+  // do custo da resolução escolhida (ex.: 4K=30) pra aquela resolução.
+  const hasMinCredits = unlimited || creditsTotal >= IMAGE_MIN_CREDITS;
+  const canAfford = unlimited || creditsTotal >= cost;
+  const affordableResolution = (v: string) =>
+    unlimited || creditsTotal >= imageCreditCost(v);
+  const canSubmit =
+    !!uploadedKey && prompt.trim().length > 0 && !uploading && canAfford;
 
   useEffect(() => {
     return () => {
@@ -77,10 +86,17 @@ export function ImageStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Clampa a resolução às restrições da proporção escolhida.
+  // Clampa a resolução às restrições da proporção E ao saldo: se a escolhida
+  // não couber no crédito, cai na mais barata que couber (e seja permitida).
   useEffect(() => {
-    setResolution((r) => resolveResolutionForAspect(aspect, r));
-  }, [aspect]);
+    setResolution((r) => {
+      const next = resolveResolutionForAspect(aspect, r);
+      if (affordableResolution(next)) return next;
+      const cheapest = allowedResolutions(aspect).find(affordableResolution);
+      return cheapest ?? next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aspect, creditsTotal, unlimited]);
 
   async function handleFile(file: File) {
     setError(null);
@@ -415,14 +431,21 @@ export function ImageStudio({
           </span>
           <div className="flex flex-wrap gap-2">
             {RESOLUTIONS.map((r) => {
-              const allowed = allowedResolutions(aspect).includes(r.value);
+              const allowedByAspect = allowedResolutions(aspect).includes(r.value);
+              const affordable = affordableResolution(r.value);
+              const allowed = allowedByAspect && affordable;
               const selected = resolution === r.value;
+              const title = !allowedByAspect
+                ? "Indisponível para esta proporção"
+                : !affordable
+                  ? `Você precisa de ${r.credits} créditos para ${r.value}`
+                  : r.hint;
               return (
                 <button
                   key={r.value}
                   type="button"
                   disabled={!allowed}
-                  title={allowed ? r.hint : "Indisponível para esta proporção"}
+                  title={title}
                   onClick={() => setResolution(r.value)}
                   className={[
                     "flex items-center gap-2 rounded-[var(--radius)] border px-3 py-2 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
@@ -455,13 +478,25 @@ export function ImageStudio({
         <div className="flex flex-col gap-2">
           <button type="button" onClick={handleGenerate} disabled={!canSubmit} className={PILL}>
             <Wand2 className="h-4 w-4" />
-            Gerar imagem · {cost} créditos
+            {hasMinCredits ? `Gerar imagem · ${cost} créditos` : "Créditos insuficientes"}
           </button>
-          {!unlimited && (
-            <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-              Você tem {creditsTotal.toLocaleString("pt-BR")} créditos.
-            </span>
-          )}
+          {!unlimited &&
+            (hasMinCredits ? (
+              <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
+                Você tem {creditsTotal.toLocaleString("pt-BR")} créditos · esta custa {cost}.
+              </span>
+            ) : (
+              <span className="text-[12px] leading-snug text-[var(--mute)]">
+                Você tem {creditsTotal.toLocaleString("pt-BR")} créditos. São necessários no
+                mínimo {IMAGE_MIN_CREDITS} para gerar uma imagem (1K).{" "}
+                <Link
+                  href="/app/credits"
+                  className="font-medium text-[var(--ink)] underline underline-offset-2 hover:text-white"
+                >
+                  Comprar créditos
+                </Link>
+              </span>
+            ))}
         </div>
       </div>
     </div>
