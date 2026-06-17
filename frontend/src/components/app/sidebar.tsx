@@ -15,6 +15,7 @@ import {
   Lock,
   ShieldCheck,
   ChevronDown,
+  Images,
   type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
@@ -148,6 +149,13 @@ export function Sidebar({
               </ul>
             )}
           </li>
+
+          <NavLeaf
+            href="/app/images"
+            icon={Images}
+            label={t("nav.images")}
+            active={pathname.endsWith("/app/images")}
+          />
 
           <NavLeaf
             href="/app/settings"

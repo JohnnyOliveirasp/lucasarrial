@@ -15,6 +15,7 @@ export type VoiceStatus =
 
 export type TrainingJobStatus = "queued" | "running" | "completed" | "failed";
 export type GenerationStatus = "pending" | "generating" | "ready" | "failed";
+export type ImageGenerationStatus = "pending" | "generating" | "ready" | "failed";
 export type Plan = "free" | "pro";
 
 // ───────── pagamentos ─────────
@@ -147,6 +148,38 @@ export type GenerationInsert = {
   runpod_job_id?: string | null;
 };
 export type GenerationUpdate = Partial<GenerationRow>;
+
+// ───────── image_generations ─────────
+export type ImageGenerationRow = {
+  id: string;
+  user_id: string;
+  name: string | null;
+  prompt: string;
+  idea: string | null;
+  input_image_path: string;
+  aspect_ratio: string;
+  resolution: string;
+  credits_cost: number;
+  image_path: string | null;
+  status: ImageGenerationStatus;
+  kie_task_id: string | null;
+  error_message: string | null;
+  created_at: Timestamp;
+};
+export type ImageGenerationInsert = {
+  id?: string;
+  user_id: string;
+  name?: string | null;
+  prompt: string;
+  idea?: string | null;
+  input_image_path: string;
+  aspect_ratio: string;
+  resolution: string;
+  credits_cost: number;
+  status?: ImageGenerationStatus;
+  kie_task_id?: string | null;
+};
+export type ImageGenerationUpdate = Partial<ImageGenerationRow>;
 
 // ───────── usage_monthly ─────────
 export type UsageMonthlyRow = {
@@ -349,6 +382,7 @@ export type Database = {
       voices:        { Row: VoiceRow;        Insert: VoiceInsert;        Update: VoiceUpdate;        Relationships: Rel };
       training_jobs: { Row: TrainingJobRow;  Insert: TrainingJobInsert;  Update: TrainingJobUpdate;  Relationships: Rel };
       generations:   { Row: GenerationRow;   Insert: GenerationInsert;   Update: GenerationUpdate;   Relationships: Rel };
+      image_generations: { Row: ImageGenerationRow; Insert: ImageGenerationInsert; Update: ImageGenerationUpdate; Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };
       admin_emails:  { Row: AdminEmailRow;   Insert: AdminEmailInsert;   Update: AdminEmailUpdate;   Relationships: Rel };

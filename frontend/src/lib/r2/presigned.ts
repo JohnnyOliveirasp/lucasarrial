@@ -32,6 +32,37 @@ export function isAllowedAudioMime(mime: string): boolean {
   return ALLOWED_AUDIO_MIME.has(mime.toLowerCase());
 }
 
+const ALLOWED_IMAGE_MIME = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+]);
+
+export function isAllowedImageMime(mime: string): boolean {
+  return ALLOWED_IMAGE_MIME.has(mime.toLowerCase());
+}
+
+/** Chave da imagem de REFERÊNCIA (foto enviada pelo usuário). */
+export function buildInputImageKey(
+  userId: string,
+  imageId: string,
+  filename: string,
+): string {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+  return `${userId}/images/${imageId}/input_${safe}`;
+}
+
+/** Chave da imagem RESULTANTE (saída do Kie, guardada permanentemente). */
+export function buildImageResultKey(
+  userId: string,
+  imageId: string,
+  ext: string,
+): string {
+  const safeExt = ext.replace(/[^a-z0-9]/gi, "").toLowerCase() || "png";
+  return `${userId}/images/${imageId}/result.${safeExt}`;
+}
+
 export function buildRawAudioKey(
   userId: string,
   voiceId: string,
