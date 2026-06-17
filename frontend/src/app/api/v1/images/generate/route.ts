@@ -46,9 +46,13 @@ import {
 
 const PRESIGN_EXPIRES = 60 * 60; // 1h — o Kie busca a referência logo no início
 const PROMPT_MAX = 20_000; // limite do gpt-image-2
+const MAX_REFERENCE_IMAGES = 6; // gpt-image-2 aceita até 16; 6 cobre bem o caso de uso
 
 type Body = {
+  // Aceita uma (input_image_key) ou várias (input_image_keys) — várias fotos da
+  // mesma pessoa melhoram a semelhança. Todas vão pro Kie em input_urls.
   input_image_key?: string;
+  input_image_keys?: string[];
   prompt?: string;
   idea?: string;
   aspect_ratio?: string;
@@ -67,10 +71,21 @@ export async function POST(request: NextRequest) {
     return badRequest("Invalid JSON body");
   }
 
-  // Referência: a chave tem que pertencer ao próprio usuário (defesa em profundidade).
-  const inputKey = (body.input_image_key ?? "").trim();
-  if (!inputKey) return badRequest("Envie a imagem de referência primeiro");
-  if (!inputKey.startsWith(`${auth.user_id}/images/`)) {
+  // Referências: 1 ou mais. Cada chave tem que pertencer ao próprio usuário
+  // (defesa em profundidade). Aceita o campo singular legado ou o array novo.
+  const rawKeys = Array.isArray(body.input_image_keys)
+    ? body.input_image_keys
+    : body.input_image_key
+      ? [body.input_image_key]
+      : [];
+  const inputKeys = [...new Set(rawKeys.map((k) => (k ?? "").trim()).filter(Boolean))];
+  if (inputKeys.length === 0) {
+    return badRequest("Envie ao menos uma imagem de referência");
+  }
+  if (inputKeys.length > MAX_REFERENCE_IMAGES) {
+    return badRequest(`Máximo de ${MAX_REFERENCE_IMAGES} fotos de referência`);
+  }
+  if (inputKeys.some((k) => !k.startsWith(`${auth.user_id}/images/`))) {
     return badRequest("Imagem de referência inválida");
   }
 
@@ -122,23 +137,25 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Presigned GET da referência pro Kie baixar.
-  let inputUrl: string;
+  // Presigned GET de TODAS as referências pro Kie baixar.
+  let inputUrls: string[];
   try {
-    inputUrl = await createPresignedGet(imagesBucket(), inputKey, PRESIGN_EXPIRES);
+    inputUrls = await Promise.all(
+      inputKeys.map((k) => createPresignedGet(imagesBucket(), k, PRESIGN_EXPIRES)),
+    );
   } catch (e) {
     return serverError(
       e instanceof Error ? `R2 presigned: ${e.message}` : "R2 presigned failed",
     );
   }
 
-  // Cria a task no Kie (assíncrona — callback + poll).
+  // Cria a task no Kie (assíncrona — callback + poll). Manda TODAS as fotos.
   let taskId: string;
   try {
     const created = await kieCreateImageTask(
       {
         prompt,
-        input_urls: [inputUrl],
+        input_urls: inputUrls,
         aspect_ratio: aspect,
         resolution,
       },
@@ -158,7 +175,8 @@ export async function POST(request: NextRequest) {
     name,
     prompt,
     idea,
-    input_image_path: inputKey,
+    input_image_path: inputKeys[0],
+    input_image_paths: inputKeys,
     aspect_ratio: aspect,
     resolution,
     credits_cost: billed ? creditCost : 0,

@@ -157,6 +157,7 @@ export type ImageGenerationRow = {
   prompt: string;
   idea: string | null;
   input_image_path: string;
+  input_image_paths: string[] | null;
   aspect_ratio: string;
   resolution: string;
   credits_cost: number;
@@ -173,6 +174,7 @@ export type ImageGenerationInsert = {
   prompt: string;
   idea?: string | null;
   input_image_path: string;
+  input_image_paths?: string[] | null;
   aspect_ratio: string;
   resolution: string;
   credits_cost: number;

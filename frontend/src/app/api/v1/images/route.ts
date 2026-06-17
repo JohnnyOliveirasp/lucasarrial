@@ -74,7 +74,7 @@ export async function DELETE(request: NextRequest) {
   const admin = getAdmin();
   const { data: rows, error } = await admin
     .from("image_generations")
-    .select("id, input_image_path, image_path")
+    .select("id, input_image_path, input_image_paths, image_path")
     .eq("user_id", auth.user_id)
     .in("id", ids);
   if (error) return serverError("Failed to load images");
@@ -82,11 +82,15 @@ export async function DELETE(request: NextRequest) {
   if (found.length === 0) return jsonOk({ deleted: 0 });
 
   try {
-    const keys = [
-      ...found.map((r) => r.input_image_path),
-      ...found.map((r) => r.image_path),
-    ].filter((k): k is string => !!k);
-    if (keys.length) await deleteKeys(imagesBucket(), keys);
+    const keys = found
+      .flatMap((r) => [
+        // todas as refs (array novo) + a legada singular + o resultado
+        ...(r.input_image_paths ?? []),
+        r.input_image_path,
+        r.image_path,
+      ])
+      .filter((k): k is string => !!k);
+    if (keys.length) await deleteKeys(imagesBucket(), [...new Set(keys)]);
   } catch (e) {
     return serverError(e instanceof Error ? `R2: ${e.message}` : "R2 cleanup failed");
   }

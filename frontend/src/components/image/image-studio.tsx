@@ -24,7 +24,9 @@ const LABEL = "flex items-center gap-1.5 font-mono text-[11px] tracking-wide tex
 
 const PROMPT_MAX = 2000;
 const IDEA_MAX = 600;
+const MAX_IMAGES = 6; // gpt-image-2 aceita até 16; 6 cobra bem o caso de uso
 
+type RefImage = { id: string; preview: string; key: string | null; uploading: boolean };
 type Step = "form" | "submitting" | "polling" | "done" | "error";
 type ImageDto = {
   id: string;
@@ -46,10 +48,8 @@ export function ImageStudio({
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
 
-  // referência
-  const [preview, setPreview] = useState<string | null>(null);
-  const [uploadedKey, setUploadedKey] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  // referências (1 ou mais fotos da mesma pessoa)
+  const [refs, setRefs] = useState<RefImage[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // prompt
@@ -76,15 +76,15 @@ export function ImageStudio({
   const canAfford = unlimited || creditsTotal >= cost;
   const affordableResolution = (v: string) =>
     unlimited || creditsTotal >= imageCreditCost(v);
+  const readyKeys = refs.filter((r) => r.key).map((r) => r.key as string);
+  const anyUploading = refs.some((r) => r.uploading);
   const canSubmit =
-    !!uploadedKey && prompt.trim().length > 0 && !uploading && canAfford;
+    readyKeys.length > 0 && !anyUploading && prompt.trim().length > 0 && canAfford;
 
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
-      if (preview) URL.revokeObjectURL(preview);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Clampa a resolução às restrições da proporção E ao saldo: se a escolhida
@@ -99,16 +99,7 @@ export function ImageStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aspect, creditsTotal, unlimited]);
 
-  async function handleFile(file: File) {
-    setError(null);
-    if (!file.type.startsWith("image/")) {
-      setError("Envie um arquivo de imagem (JPG, PNG ou WEBP).");
-      return;
-    }
-    if (preview) URL.revokeObjectURL(preview);
-    setPreview(URL.createObjectURL(file));
-    setUploadedKey(null);
-    setUploading(true);
+  async function uploadOne(file: File, id: string) {
     try {
       const r = await fetch("/api/v1/images/upload-url", {
         method: "POST",
@@ -126,22 +117,61 @@ export function ImageStudio({
         body: file,
       });
       if (!put.ok) throw new Error("Falha ao enviar a imagem");
-      setUploadedKey(key);
+      setRefs((prev) =>
+        prev.map((x) => (x.id === id ? { ...x, key, uploading: false } : x)),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro no upload");
-      setPreview((p) => {
-        if (p) URL.revokeObjectURL(p);
-        return null;
+      setRefs((prev) => {
+        const found = prev.find((x) => x.id === id);
+        if (found) URL.revokeObjectURL(found.preview);
+        return prev.filter((x) => x.id !== id);
       });
-    } finally {
-      setUploading(false);
     }
   }
 
-  function clearImage() {
-    if (preview) URL.revokeObjectURL(preview);
-    setPreview(null);
-    setUploadedKey(null);
+  function handleFiles(files: FileList | File[]) {
+    setError(null);
+    const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (imgs.length === 0) {
+      setError("Envie arquivos de imagem (JPG, PNG ou WEBP).");
+      return;
+    }
+    const room = MAX_IMAGES - refs.length;
+    if (room <= 0) {
+      setError(`Máximo de ${MAX_IMAGES} fotos.`);
+      return;
+    }
+    const take = imgs.slice(0, room);
+    if (take.length < imgs.length) {
+      setError(`Máximo de ${MAX_IMAGES} fotos — algumas foram ignoradas.`);
+    }
+    const created = take.map((file) => ({
+      file,
+      id: crypto.randomUUID(),
+      preview: URL.createObjectURL(file),
+    }));
+    setRefs((prev) => [
+      ...prev,
+      ...created.map(({ id, preview }) => ({ id, preview, key: null, uploading: true })),
+    ]);
+    created.forEach((c) => void uploadOne(c.file, c.id));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function removeRef(id: string) {
+    setRefs((prev) => {
+      const found = prev.find((x) => x.id === id);
+      if (found) URL.revokeObjectURL(found.preview);
+      return prev.filter((x) => x.id !== id);
+    });
+  }
+
+  function clearImages() {
+    setRefs((prev) => {
+      prev.forEach((x) => URL.revokeObjectURL(x.preview));
+      return [];
+    });
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -206,7 +236,7 @@ export function ImageStudio({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          input_image_key: uploadedKey,
+          input_image_keys: readyKeys,
           prompt: prompt.trim(),
           idea: idea.trim() || undefined,
           aspect_ratio: aspect,
@@ -263,7 +293,7 @@ export function ImageStudio({
     setBlocked(null);
     setPrompt("");
     setIdea("");
-    clearImage();
+    clearImages();
   }
 
   // ───── resultado ─────
@@ -303,60 +333,86 @@ export function ImageStudio({
   // ───── formulário ─────
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      {/* Coluna 1 — referência */}
+      {/* Coluna 1 — referências (1 ou mais fotos) */}
       <div className="flex flex-col gap-2">
         <span className={LABEL}>
-          1. Sua foto (referência)
-          <FieldHint text="A imagem da pessoa que será clonada. O resultado mantém o rosto/identidade desta foto. Use uma foto nítida, de frente e bem iluminada." />
+          1. Suas fotos (referência)
+          <FieldHint text="Envie 1 ou mais fotos da MESMA pessoa — quanto mais ângulos e expressões, melhor a semelhança. O resultado mantém o rosto destas fotos. Use fotos nítidas e bem iluminadas." />
         </span>
         <input
           ref={fileInputRef}
           type="file"
           accept="image/png,image/jpeg,image/webp"
+          multiple
           className="hidden"
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handleFile(f);
+            if (e.target.files?.length) handleFiles(e.target.files);
           }}
         />
-        {preview ? (
-          <div className="relative overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview} alt="Referência" className="mx-auto max-h-[360px] w-auto" />
-            {uploading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[var(--canvas)]/60 backdrop-blur-sm">
-                <Loader2 className="h-6 w-6 animate-spin text-[var(--silver)]" />
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={clearImage}
-              aria-label="Remover imagem"
-              className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)] text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ) : (
+        {refs.length === 0 ? (
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
-              const f = e.dataTransfer.files?.[0];
-              if (f) handleFile(f);
+              if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
             }}
             className="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-8 text-center transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-elevated)]"
           >
             <ImagePlus className="h-10 w-10 text-[var(--ash)]" />
             <span className="text-sm text-[var(--mute)]">
-              Clique ou arraste sua foto aqui
+              Clique ou arraste suas fotos aqui
             </span>
             <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-              JPG, PNG ou WEBP
+              JPG, PNG ou WEBP · até {MAX_IMAGES} fotos
             </span>
           </button>
+        ) : (
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
+            }}
+            className="grid grid-cols-3 gap-2 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-3 sm:grid-cols-4"
+          >
+            {refs.map((r) => (
+              <div
+                key={r.id}
+                className="relative aspect-square overflow-hidden rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)]"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={r.preview} alt="" className="h-full w-full object-cover" />
+                {r.uploading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-[var(--canvas)]/60 backdrop-blur-sm">
+                    <Loader2 className="h-5 w-5 animate-spin text-[var(--silver)]" />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeRef(r.id)}
+                  aria-label="Remover foto"
+                  className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]/90 text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            {refs.length < MAX_IMAGES && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Adicionar mais fotos"
+                className="flex aspect-square flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] text-[var(--ash)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--silver)]"
+              >
+                <ImagePlus className="h-5 w-5" />
+                <span className="font-mono text-[9px]">
+                  {refs.length}/{MAX_IMAGES}
+                </span>
+              </button>
+            )}
+          </div>
         )}
       </div>
 
