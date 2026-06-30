@@ -5,6 +5,7 @@ import { Topbar } from "@/components/app/topbar";
 import { ConsentGate } from "@/components/app/consent-gate";
 import { PresencePinger } from "@/components/admin/presence-pinger";
 import { PurchaseAutoRefresh } from "@/components/app/purchase-auto-refresh";
+import { PendingPaymentBanner } from "@/components/app/pending-payment-banner";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { isAdmin } from "@/lib/admin/guard";
@@ -25,7 +26,7 @@ export default async function AppLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, email, display_name, avatar_url, plan, access_until, credits_subscription, credits_extra")
+    .select("id, email, display_name, avatar_url, plan, access_until, credits_subscription, credits_extra, pending_payment_at")
     .eq("id", user.id)
     .single();
 
@@ -39,6 +40,14 @@ export default async function AppLayout({
   const creditsTotal =
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
   const admin = await isAdmin(email);
+
+  // Pix/boleto aguardando pagamento: mostra o banner só se ainda SEM acesso e o
+  // aviso for recente (< 3 dias — janela típica do Pix). Some quando liberar/expirar.
+  const pendingAt = profile?.pending_payment_at ?? null;
+  const pendingRecent = pendingAt
+    ? Date.now() - new Date(pendingAt).getTime() < 3 * 24 * 60 * 60 * 1000
+    : false;
+  const showPendingBanner = !!pendingAt && pendingRecent && !subscribed && !unlimited;
 
   // Tem voz pronta? Libera o item "Gerar Áudio" do submenu Vozes.
   const { count: readyVoices } = await supabase
@@ -59,6 +68,7 @@ export default async function AppLayout({
           creditsTotal={creditsTotal}
           unlimited={unlimited}
         />
+        {showPendingBanner && <PendingPaymentBanner />}
         <main className="flex-1 px-6 py-10 lg:px-12">{children}</main>
       </div>
       <ConsentGate />

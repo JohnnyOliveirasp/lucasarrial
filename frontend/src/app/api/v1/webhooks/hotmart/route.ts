@@ -112,6 +112,30 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// Status de transação (Hotmart) que contam como PAGO de verdade.
+const PAID_STATUSES = new Set(["APPROVED", "COMPLETE", "COMPLETED"]);
+// Pagamento assíncrono GERADO mas ainda não pago (Pix/boleto) → "aguardando".
+const AWAITING_STATUSES = new Set([
+  "BILLET_PRINTED",
+  "PRINTED_BILLET",
+  "WAITING_PAYMENT",
+  "PROCESSING_TRANSACTION",
+  "UNDER_ANALISYS",
+  "UNDER_ANALYSIS",
+]);
+
+/** Status da transação (data.purchase.status), em maiúsculas; "" se ausente. */
+function extractPurchaseStatus(data: Record<string, unknown>): string {
+  const s = asRecord(data.purchase).status;
+  return typeof s === "string" ? s.toUpperCase() : "";
+}
+
+/** Marca (at=ISO) ou limpa (at=null) "pagamento pendente" no perfil, casando por e-mail. */
+async function setPendingPayment(buyerEmail: string | null, at: string | null): Promise<void> {
+  if (!buyerEmail) return;
+  await getAdmin().from("profiles").update({ pending_payment_at: at }).eq("email", buyerEmail);
+}
+
 /** Mapeia o evento da Hotmart para liberar/revogar acesso. */
 async function processEvent(
   eventType: string,
@@ -120,12 +144,21 @@ async function processEvent(
 ): Promise<string> {
   const externalId = extractExternalId(data, eventType);
   const productCode = extractProductCode(data);
+  const purchaseStatus = extractPurchaseStatus(data);
 
   // libera/renova
   // Na Hotmart fica SÓ a assinatura recorrente. Os créditos avulsos são vendidos
   // pelo Stripe (ver /api/v1/webhooks/stripe). Aqui, toda aprovação = assinatura.
   if (eventType === "PURCHASE_APPROVED" || eventType === "PURCHASE_COMPLETE") {
     if (!buyerEmail) throw new Error("missing buyer email on approval");
+
+    // GUARD: só libera se o pagamento estiver REALMENTE confirmado. O Webhook 2.0
+    // pode mandar PURCHASE_APPROVED já com o QR do Pix em status de espera
+    // (WAITING_PAYMENT etc.). Nesse caso NÃO liberamos — marcamos como pendente.
+    if (purchaseStatus && !PAID_STATUSES.has(purchaseStatus)) {
+      await setPendingPayment(buyerEmail, new Date().toISOString());
+      return `pending:${purchaseStatus}`;
+    }
 
     // Assinatura: libera o acesso + recarrega o bolsão mensal (reset).
     await grantAccess({
@@ -150,7 +183,14 @@ async function processEvent(
       // não houver campanha; idempotente (não dá bônus 2x na renovação).
       await applyPurchaseCampaignBonus(userId, externalId);
     }
+    await setPendingPayment(buyerEmail, null); // pagou → limpa o pendente
     return "granted";
+  }
+
+  // aguardando pagamento: Pix/boleto GERADO mas ainda não pago → banner no app.
+  if (eventType === "PURCHASE_BILLET_PRINTED" || AWAITING_STATUSES.has(purchaseStatus)) {
+    if (buyerEmail) await setPendingPayment(buyerEmail, new Date().toISOString());
+    return "pending";
   }
 
   // revoga

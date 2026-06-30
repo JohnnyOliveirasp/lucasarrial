@@ -51,6 +51,7 @@ export type ProfileRow = {
   access_source: PaymentProvider | null; // provedor que liberou o acesso atual
   credits_subscription: number; // créditos do plano (zeram/recarregam no ciclo)
   credits_extra: number;        // créditos avulsos comprados (não expiram)
+  pending_payment_at: Timestamp | null; // Pix/boleto gerado aguardando pagamento (banner); NULL = nada pendente
   last_seen_at: Timestamp | null; // heartbeat p/ "online agora" no /admin
   created_at: Timestamp;
   updated_at: Timestamp;
