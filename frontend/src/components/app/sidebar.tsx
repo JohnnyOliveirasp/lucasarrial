@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   ChevronDown,
   Images,
+  Video,
+  Clapperboard,
   type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
@@ -46,6 +48,9 @@ export function Sidebar({
     pathname.includes("/app/voice-cloning") || pathname.endsWith("/app/history");
   const [voicesOpen, setVoicesOpen] = useState(false);
   const showVoices = voicesOpen || inVoices;
+  const inVideos = pathname.includes("/app/videos");
+  const [videosOpen, setVideosOpen] = useState(false);
+  const showVideos = videosOpen || inVideos;
 
   const lockTrainingTitle = `Você precisa de ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos para treinar uma voz.`;
 
@@ -77,6 +82,18 @@ export function Sidebar({
       href: "/app/history",
       icon: History,
       label: t("nav.history"),
+      locked: false,
+      lockTitle: "",
+    },
+  ];
+
+  // Sub-itens de "Vídeos". Por ora só o board (Histórico de Vídeos), entrada
+  // livre — o gate de créditos acontece dentro do wizard, nos estágios pagos.
+  const videoChildren = [
+    {
+      href: "/app/videos/history",
+      icon: Clapperboard,
+      label: t("nav.videoHistory"),
       locked: false,
       lockTitle: "",
     },
@@ -156,6 +173,52 @@ export function Sidebar({
             label={t("nav.images")}
             active={pathname.endsWith("/app/images")}
           />
+
+          {/* Grupo Vídeos (expansível) */}
+          <li>
+            <button
+              type="button"
+              onClick={() => setVideosOpen((o) => !o)}
+              aria-expanded={showVideos}
+              className={[
+                "group flex w-full items-center justify-between gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm transition-[background-color,color] duration-[var(--dur-base)] ease-[var(--ease-out)]",
+                inVideos
+                  ? "text-[var(--ink)]"
+                  : "text-[var(--mute)] hover:bg-[var(--surface-card)] hover:text-[var(--ink)]",
+              ].join(" ")}
+            >
+              <span className="flex items-center gap-3">
+                <Video
+                  className={[
+                    "h-4 w-4",
+                    inVideos ? "text-[var(--silver)]" : "text-[var(--ash)] group-hover:text-[var(--silver)]",
+                  ].join(" ")}
+                />
+                <span className="font-medium">{t("nav.videos")}</span>
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 text-[var(--ash)] transition-transform duration-[var(--dur-base)] ${
+                  showVideos ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {showVideos && (
+              <ul className="ml-[19px] mt-1 flex flex-col gap-1 border-l border-[var(--hairline)] pl-2">
+                {videoChildren.map((c) => (
+                  <NavLeaf
+                    key={c.href}
+                    href={c.href}
+                    icon={c.icon}
+                    label={c.label}
+                    active={pathname.endsWith(c.href)}
+                    locked={c.locked}
+                    lockTitle={c.lockTitle}
+                  />
+                ))}
+              </ul>
+            )}
+          </li>
 
           <NavLeaf
             href="/app/settings"

@@ -52,7 +52,7 @@ export async function getBalance(userId: string): Promise<Balance> {
 export async function debitCredits(args: {
   userId: string;
   amount: number;
-  kind: "generation" | "training" | "image" | "adjustment";
+  kind: "generation" | "training" | "image" | "video" | "adjustment";
   refType?: string;
   refId?: string;
   note?: string;

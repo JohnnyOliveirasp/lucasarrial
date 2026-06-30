@@ -16,6 +16,14 @@ export type VoiceStatus =
 export type TrainingJobStatus = "queued" | "running" | "completed" | "failed";
 export type GenerationStatus = "pending" | "generating" | "ready" | "failed";
 export type ImageGenerationStatus = "pending" | "generating" | "ready" | "failed";
+export type VideoProjectStatus =
+  | "draft"
+  | "scenes"
+  | "images"
+  | "videos"
+  | "rendering"
+  | "done"
+  | "failed";
 export type Plan = "free" | "pro";
 
 // ───────── pagamentos ─────────
@@ -182,6 +190,61 @@ export type ImageGenerationInsert = {
   kie_task_id?: string | null;
 };
 export type ImageGenerationUpdate = Partial<ImageGenerationRow>;
+
+// ───────── video_projects ─────────
+export type VideoProjectRow = {
+  id: string;
+  user_id: string;
+  name: string | null;
+  status: VideoProjectStatus;
+  source_generation_id: string | null;
+  audio_path: string | null;
+  audio_duration_seconds: number | null;
+  script_text: string | null;
+  aspect_ratio: string;
+  scene_count: number | null;
+  video_tier: string | null;
+  final_video_path: string | null;
+  error_message: string | null;
+  created_at: Timestamp;
+};
+export type VideoProjectInsert = {
+  id?: string;
+  user_id: string;
+  name?: string | null;
+  status?: VideoProjectStatus;
+  source_generation_id?: string | null;
+  audio_path?: string | null;
+  audio_duration_seconds?: number | null;
+  script_text?: string | null;
+  aspect_ratio?: string;
+  scene_count?: number | null;
+  video_tier?: string | null;
+  final_video_path?: string | null;
+};
+export type VideoProjectUpdate = Partial<VideoProjectRow>;
+
+// ───────── video_scenes ─────────
+export type VideoSceneRow = {
+  id: string;
+  video_project_id: string;
+  user_id: string;
+  idx: number;
+  prompt_pt: string;
+  prompt_en: string | null;
+  script_excerpt: string | null;
+  created_at: Timestamp;
+};
+export type VideoSceneInsert = {
+  id?: string;
+  video_project_id: string;
+  user_id: string;
+  idx: number;
+  prompt_pt: string;
+  prompt_en?: string | null;
+  script_excerpt?: string | null;
+};
+export type VideoSceneUpdate = Partial<VideoSceneRow>;
 
 // ───────── usage_monthly ─────────
 export type UsageMonthlyRow = {
@@ -385,6 +448,8 @@ export type Database = {
       training_jobs: { Row: TrainingJobRow;  Insert: TrainingJobInsert;  Update: TrainingJobUpdate;  Relationships: Rel };
       generations:   { Row: GenerationRow;   Insert: GenerationInsert;   Update: GenerationUpdate;   Relationships: Rel };
       image_generations: { Row: ImageGenerationRow; Insert: ImageGenerationInsert; Update: ImageGenerationUpdate; Relationships: Rel };
+      video_projects: { Row: VideoProjectRow; Insert: VideoProjectInsert; Update: VideoProjectUpdate; Relationships: Rel };
+      video_scenes: { Row: VideoSceneRow; Insert: VideoSceneInsert; Update: VideoSceneUpdate; Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };
       admin_emails:  { Row: AdminEmailRow;   Insert: AdminEmailInsert;   Update: AdminEmailUpdate;   Relationships: Rel };

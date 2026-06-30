@@ -12,7 +12,7 @@ type Tool = {
 
 const TOOLS: Tool[] = [
   { key: "voiceCloning", href: "/app/voice-cloning", icon: Mic2, active: true },
-  { key: "videoGen", href: "#", icon: Video, active: false },
+  { key: "videoGen", href: "/app/videos/history", icon: Video, active: true },
   { key: "avatar", href: "#", icon: UserCircle2, active: false },
   { key: "transcription", href: "#", icon: FileAudio, active: false },
 ];
