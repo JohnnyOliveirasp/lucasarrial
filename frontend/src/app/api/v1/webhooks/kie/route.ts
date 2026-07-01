@@ -12,6 +12,7 @@ import type { NextRequest } from "next/server";
 import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { syncImageTask } from "@/lib/images/sync";
+import { syncSceneImage } from "@/lib/video/image-sync";
 
 function extractTaskId(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
@@ -34,23 +35,44 @@ export async function POST(request: NextRequest) {
   if (!taskId) return jsonOk({ handled: "ignored", reason: "no taskId" });
 
   const admin = getAdmin();
+
+  // 1) Gerador de imagem convencional.
   const { data: row } = await admin
     .from("image_generations")
     .select("id, user_id, status")
     .eq("kie_task_id", taskId)
     .maybeSingle();
 
-  if (!row) return jsonOk({ handled: "ignored", reason: "task not found" });
-
-  // Idempotente: se já finalizou, não refaz.
-  if (row.status === "ready" || row.status === "failed") {
-    return jsonOk({ handled: "noop", status: row.status });
+  if (row) {
+    if (row.status === "ready" || row.status === "failed") {
+      return jsonOk({ handled: "noop", status: row.status });
+    }
+    try {
+      await syncImageTask(row.id, row.user_id, taskId);
+    } catch {
+      // best-effort; o poll do cliente ainda cobre
+    }
+    return jsonOk({ handled: "image" });
   }
 
-  try {
-    await syncImageTask(row.id, row.user_id, taskId);
-  } catch {
-    // best-effort; o poll do cliente ainda cobre
+  // 2) Imagem de cena do wizard de vídeo.
+  const { data: scene } = await admin
+    .from("video_scenes")
+    .select("id, user_id, video_project_id, image_status")
+    .eq("image_kie_task_id", taskId)
+    .maybeSingle();
+
+  if (scene) {
+    if (scene.image_status === "ready" || scene.image_status === "failed") {
+      return jsonOk({ handled: "noop", status: scene.image_status });
+    }
+    try {
+      await syncSceneImage(scene.id, scene.user_id, scene.video_project_id, taskId);
+    } catch {
+      // best-effort; o poll do cliente ainda cobre
+    }
+    return jsonOk({ handled: "video_scene" });
   }
-  return jsonOk({ handled: "image" });
+
+  return jsonOk({ handled: "ignored", reason: "task not found" });
 }

@@ -206,6 +206,8 @@ export type VideoProjectRow = {
   scene_count: number | null;
   video_tier: string | null;
   final_video_path: string | null;
+  reference_image_paths: string[] | null;
+  image_consent_at: Timestamp | null;
   error_message: string | null;
   created_at: Timestamp;
 };
@@ -222,6 +224,8 @@ export type VideoProjectInsert = {
   scene_count?: number | null;
   video_tier?: string | null;
   final_video_path?: string | null;
+  reference_image_paths?: string[] | null;
+  image_consent_at?: Timestamp | null;
 };
 export type VideoProjectUpdate = Partial<VideoProjectRow>;
 
@@ -234,6 +238,12 @@ export type VideoSceneRow = {
   prompt_pt: string;
   prompt_en: string | null;
   script_excerpt: string | null;
+  image_path: string | null;
+  image_status: ImageGenerationStatus | null;
+  image_kie_task_id: string | null;
+  resolution: string;
+  image_credits_cost: number;
+  image_error: string | null;
   created_at: Timestamp;
 };
 export type VideoSceneInsert = {

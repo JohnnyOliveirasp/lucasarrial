@@ -220,21 +220,9 @@ export function SceneStage({ projectId, locale, status, estimatedScenes, onProje
         ))}
       </ul>
 
-      {/* Aprovar → gerar imagens (Fase 3) */}
-      <div className="flex flex-col gap-2 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-4">
-        <button
-          type="button"
-          disabled
-          title="Em breve: gerar as imagens das cenas (Fase 3)"
-          className="inline-flex h-10 w-fit cursor-not-allowed items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline)] px-[18px] font-sans text-[14px] font-medium text-[var(--ash)] opacity-60"
-        >
-          <ImageIcon className="h-4 w-4" />
-          Aprovar cenas e gerar imagens
-        </button>
-        <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-          Em breve — geração de imagens (Fase 3).
-        </span>
-      </div>
+      <p className="flex items-center gap-2 font-mono text-[11px] tracking-wide text-[var(--ash)]">
+        <ImageIcon className="h-3.5 w-3.5" /> Quando as cenas estiverem boas, gere as imagens abaixo.
+      </p>
 
       {/* Paywall do Improve (1 crédito) */}
       {paywall && (
