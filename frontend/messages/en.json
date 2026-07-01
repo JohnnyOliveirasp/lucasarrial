@@ -112,7 +112,7 @@
     },
     "signup": {
       "title": "Create account",
-      "subtitle": "Start free. Clone 1 voice, generate up to 50 audios.",
+      "subtitle": "Create your free account and start cloning your voice.",
       "nameLabel": "Name",
       "namePlaceholder": "Your name",
       "emailLabel": "Email",
