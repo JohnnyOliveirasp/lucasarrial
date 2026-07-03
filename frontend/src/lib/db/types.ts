@@ -208,6 +208,9 @@ export type VideoProjectRow = {
   final_video_path: string | null;
   reference_image_paths: string[] | null;
   image_consent_at: Timestamp | null;
+  subtitle_style: string;
+  subtitle_position: string | null;
+  subtitle_size: string | null;
   error_message: string | null;
   created_at: Timestamp;
 };
@@ -244,6 +247,14 @@ export type VideoSceneRow = {
   resolution: string;
   image_credits_cost: number;
   image_error: string | null;
+  video_path: string | null;
+  video_status: ImageGenerationStatus | null;
+  video_kie_task_id: string | null;
+  video_prompt_pt: string | null;
+  video_prompt_en: string | null;
+  video_tier: string | null;
+  video_credits_cost: number;
+  video_error: string | null;
   created_at: Timestamp;
 };
 export type VideoSceneInsert = {
@@ -256,6 +267,26 @@ export type VideoSceneInsert = {
   script_excerpt?: string | null;
 };
 export type VideoSceneUpdate = Partial<VideoSceneRow>;
+
+// ───────── render_jobs ─────────
+export type RenderJobStatus = "pending" | "processing" | "done" | "failed";
+export type RenderJobRow = {
+  id: string;
+  video_project_id: string;
+  user_id: string;
+  status: RenderJobStatus;
+  attempts: number;
+  error: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+};
+export type RenderJobInsert = {
+  id?: string;
+  video_project_id: string;
+  user_id: string;
+  status?: RenderJobStatus;
+};
+export type RenderJobUpdate = Partial<RenderJobRow>;
 
 // ───────── usage_monthly ─────────
 export type UsageMonthlyRow = {
@@ -461,6 +492,7 @@ export type Database = {
       image_generations: { Row: ImageGenerationRow; Insert: ImageGenerationInsert; Update: ImageGenerationUpdate; Relationships: Rel };
       video_projects: { Row: VideoProjectRow; Insert: VideoProjectInsert; Update: VideoProjectUpdate; Relationships: Rel };
       video_scenes: { Row: VideoSceneRow; Insert: VideoSceneInsert; Update: VideoSceneUpdate; Relationships: Rel };
+      render_jobs: { Row: RenderJobRow; Insert: RenderJobInsert; Update: RenderJobUpdate; Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };
       admin_emails:  { Row: AdminEmailRow;   Insert: AdminEmailInsert;   Update: AdminEmailUpdate;   Relationships: Rel };
@@ -514,6 +546,8 @@ export type Database = {
         Returns: Json;
       };
       admin_list_campaigns: { Args: Record<string, never>; Returns: Json };
+      claim_alert: { Args: { p_key: string; p_cooldown_seconds: number }; Returns: boolean };
+      claim_render_job: { Args: Record<string, never>; Returns: RenderJobRow | null };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

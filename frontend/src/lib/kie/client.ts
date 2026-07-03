@@ -14,6 +14,28 @@ import { KIE_IMAGE_MODEL } from "./config";
 
 const BASE = "https://api.kie.ai/api/v1/jobs";
 
+/**
+ * Converte um erro cru do Kie numa mensagem amigável em pt-BR pro usuário final
+ * (sem vazar detalhe técnico). Distingue "provedor sem saldo/limite" (problema
+ * operacional nosso, NÃO do usuário) de erro temporário.
+ */
+export function friendlyKieError(raw: string): string {
+  const low = raw.toLowerCase();
+  if (
+    low.includes("402") ||
+    low.includes("insufficient") ||
+    low.includes("credit") ||
+    low.includes("balance") ||
+    low.includes("quota")
+  ) {
+    return "Serviço de vídeo indisponível no momento (limite do provedor). Tente novamente mais tarde.";
+  }
+  if (low.includes("internal error") || low.includes("500") || low.includes("timeout") || low.includes("temporar")) {
+    return "O provedor de vídeo teve um erro temporário. Tente novamente em instantes.";
+  }
+  return "Não foi possível gerar o vídeo agora. Tente novamente.";
+}
+
 function key(): string {
   const k = process.env.KIE_API_KEY;
   if (!k) throw new Error("Missing KIE_API_KEY");
@@ -61,6 +83,81 @@ export async function kieCreateImageTask(
   const taskId = json.data?.taskId;
   if (!taskId) {
     throw new Error(`Kie createTask sem taskId (code=${json.code}, msg=${json.msg ?? ""})`);
+  }
+  return { taskId };
+}
+
+export type KieVideoInput = {
+  /** Modelo cru (ex.: grok-imagine-video-1-5-preview). */
+  model: string;
+  promptEn: string;
+  /** Imagem da cena (first frame) — presigned URL. */
+  imageUrl: string;
+  aspectRatio: string;
+  resolution: string;
+  durationSeconds: number;
+};
+
+/**
+ * Monta o `input` do Kie conforme o modelo. Grok/Kling usam `image_urls[]`;
+ * Seedance usa `first_frame_url` + `generate_audio:false`.
+ */
+function buildVideoInput(v: KieVideoInput): Record<string, unknown> {
+  if (v.model.startsWith("bytedance/seedance")) {
+    return {
+      prompt: v.promptEn,
+      first_frame_url: v.imageUrl,
+      resolution: v.resolution,
+      aspect_ratio: v.aspectRatio,
+      duration: v.durationSeconds,
+      generate_audio: false,
+    };
+  }
+  if (v.model.startsWith("kling/")) {
+    return {
+      image_urls: [v.imageUrl],
+      prompt: v.promptEn,
+      duration: String(v.durationSeconds),
+      resolution: v.resolution,
+    };
+  }
+  // Grok (default).
+  return {
+    prompt: v.promptEn,
+    image_urls: [v.imageUrl],
+    aspect_ratio: v.aspectRatio,
+    resolution: v.resolution,
+    duration: v.durationSeconds,
+  };
+}
+
+/** Cria uma task de image-to-video e retorna o taskId. */
+export async function kieCreateVideoTask(
+  input: KieVideoInput,
+  opts: { callBackUrl?: string } = {},
+): Promise<{ taskId: string }> {
+  const body: Record<string, unknown> = {
+    model: input.model,
+    input: buildVideoInput(input),
+  };
+  if (opts.callBackUrl) body.callBackUrl = opts.callBackUrl;
+
+  const res = await fetch(`${BASE}/createTask`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Kie ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const json = (await res.json()) as { code?: number; msg?: string; data?: { taskId?: string } };
+  const taskId = json.data?.taskId;
+  if (!taskId) {
+    throw new Error(`Kie createTask (vídeo) sem taskId (code=${json.code}, msg=${json.msg ?? ""})`);
   }
   return { taskId };
 }

@@ -1,7 +1,8 @@
 /**
  * Divisão do roteiro em cenas via Claude Haiku (server-side).
  *
- * Recebe o roteiro (pt-BR) + o nº de cenas N (determinístico: duração ÷ 5s) e
+ * Recebe o roteiro (pt-BR) + o nº de cenas N (determinístico: duração ÷
+ * SECONDS_PER_SCENE) e
  * devolve EXATAMENTE N cenas, em ordem, cobrindo o roteiro do início ao fim.
  * Cada cena tem um prompt VISUAL em pt-BR (o que a imagem deve mostrar) — a
  * tradução pro inglês acontece na Fase 3, na hora de gerar a imagem.
@@ -10,6 +11,8 @@
  * o núcleo do fluxo; melhor falhar explícito do que devolver cenas ruins.
  */
 
+import { SECONDS_PER_SCENE } from "@/lib/video/config";
+
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-haiku-4-5";
 const TIMEOUT_MS = 25_000;
@@ -17,7 +20,7 @@ const TIMEOUT_MS = 25_000;
 export type GeneratedScene = { prompt_pt: string; script_excerpt: string };
 
 function buildSystem(n: number): string {
-  return `Você divide o roteiro de um vídeo curto vertical (9:16, Reels/TikTok) em EXATAMENTE ${n} cenas visuais, em ordem, cobrindo o roteiro do começo ao fim. Cada cena corresponde a ~5 segundos de narração.
+  return `Você divide o roteiro de um vídeo curto vertical (9:16, Reels/TikTok) em EXATAMENTE ${n} cenas visuais, em ordem, cobrindo o roteiro do começo ao fim. Cada cena corresponde a ~${SECONDS_PER_SCENE} segundos de narração.
 
 Para cada cena, escreva um prompt VISUAL em PORTUGUÊS do Brasil descrevendo o que a IMAGEM daquela cena deve mostrar: cenário, ação, elementos, clima e enquadramento. Descreva imagem (não fale "cena 1", não escreva a narração — descreva o visual). Seja vívido e concreto, 1 frase a 1 parágrafo curto.
 

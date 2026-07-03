@@ -9,7 +9,6 @@ import {
   Film,
   Layers,
   Check,
-  Lock,
   Loader2,
   ArrowLeft,
 } from "lucide-react";
@@ -17,6 +16,7 @@ import { sceneCountForDuration, SECONDS_PER_SCENE } from "@/lib/video/config";
 import { Eyebrow } from "@/components/ui";
 import { SceneStage } from "@/components/video/scene-stage";
 import { ImageStage } from "@/components/video/image-stage";
+import { VideoStage } from "@/components/video/video-stage";
 
 type Project = {
   id: string;
@@ -40,13 +40,14 @@ const STAGES = [
 ] as const;
 
 // Índice do estágio "atual" a partir do status do projeto.
+// done = 5 (além do último índice) → todos os 5 pills aparecem concluídos.
 const STEP_BY_STATUS: Record<Project["status"], number> = {
   draft: 1,
   scenes: 1,
   images: 2,
   videos: 3,
   rendering: 4,
-  done: 4,
+  done: 5,
   failed: 1,
 };
 
@@ -197,17 +198,11 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
         <ImageStage projectId={project.id} locale={locale} onProjectChanged={load} />
       )}
 
-      {/* Estágios 4–5 — em breve */}
-      <section className="flex flex-col gap-2 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline)] bg-transparent p-4">
-        <div className="flex items-center gap-2">
-          <Lock className="h-3.5 w-3.5 text-[var(--ash)]" />
-          <span className="font-mono text-[11px] tracking-wide text-[var(--ash)]">Próximas fases</span>
-        </div>
-        <ul className="flex flex-col gap-1 font-mono text-[11px] tracking-wide text-[var(--ash)]">
-          <li>4 · Vídeos — clipes de {SECONDS_PER_SCENE}s (Bronze/Prata/Gold)</li>
-          <li>5 · Final — montagem com áudio + legendas</li>
-        </ul>
-      </section>
+      {/* Estágio 4 — Vídeos (aparece quando as cenas já existem; gate interno exige imagens prontas) */}
+      {(project.scene_count ?? 0) > 0 && (
+        <VideoStage projectId={project.id} locale={locale} onProjectChanged={load} />
+      )}
+
     </div>
   );
 }

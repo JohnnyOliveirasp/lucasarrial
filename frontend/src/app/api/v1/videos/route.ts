@@ -1,6 +1,6 @@
 /**
  * /api/v1/videos
- *   GET    → lista os projetos de vídeo do usuário (o "Video History Board")
+ *   GET    → lista os projetos de vídeo do usuário (o board "Vídeo História")
  *   POST   → cria um projeto a partir de um áudio gerado { generation_id }
  *   DELETE → apaga em lote { ids: string[] }
  *

@@ -19,7 +19,10 @@ type DialogProps = {
 
 export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }: DialogProps) {
   const router = useRouter();
-  const [target, setTarget] = useState<Target>(hasLora ? "lora" : "voice");
+  // Padrão = voz INTEIRA. Antes o padrão era "lora" quando a voz estava pronta,
+  // e quem queria excluir a voz apagava só a LoRA sem perceber — a voz seguia
+  // na lista ("pronta pra treinar") e parecia que o delete não funcionava.
+  const [target, setTarget] = useState<Target>("voice");
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +34,7 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
     if (deleting) return;
     setConfirmText("");
     setError(null);
-    setTarget(hasLora ? "lora" : "voice");
+    setTarget("voice");
     onClose();
   }
 
@@ -100,6 +103,29 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
             O que apagar
           </span>
 
+          <label
+            className={`flex cursor-pointer gap-3 rounded-[var(--radius)] border p-3 transition-colors ${
+              target === "voice"
+                ? "border-[var(--hairline-bright)] bg-[var(--surface-elevated)]"
+                : "border-[var(--hairline-strong)] bg-[var(--surface-deep)]"
+            }`}
+          >
+            <input
+              type="radio"
+              name="delete-target"
+              className="mt-1 accent-[var(--ink)]"
+              checked={target === "voice"}
+              onChange={() => setTarget("voice")}
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-[var(--ink)]">Apagar a voz inteira</span>
+              <span className="text-xs text-[var(--mute)]">
+                Remove TUDO: áudios enviados, a LoRA, áudios gerados, referências e todos os
+                registros no banco. Não dá pra recuperar.
+              </span>
+            </span>
+          </label>
+
           {hasLora && (
             <label
               className={`flex cursor-pointer gap-3 rounded-[var(--radius)] border p-3 transition-colors ${
@@ -124,29 +150,6 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
               </span>
             </label>
           )}
-
-          <label
-            className={`flex cursor-pointer gap-3 rounded-[var(--radius)] border p-3 transition-colors ${
-              target === "voice"
-                ? "border-[var(--hairline-bright)] bg-[var(--surface-elevated)]"
-                : "border-[var(--hairline-strong)] bg-[var(--surface-deep)]"
-            }`}
-          >
-            <input
-              type="radio"
-              name="delete-target"
-              className="mt-1 accent-[var(--ink)]"
-              checked={target === "voice"}
-              onChange={() => setTarget("voice")}
-            />
-            <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-[var(--ink)]">Apagar a voz inteira</span>
-              <span className="text-xs text-[var(--mute)]">
-                Remove TUDO: áudios enviados, a LoRA, áudios gerados, referências e todos os
-                registros no banco. Não dá pra recuperar.
-              </span>
-            </span>
-          </label>
         </div>
 
         {/* Trava por nome (senha) — exigida nos DOIS modos */}

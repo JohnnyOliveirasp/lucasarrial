@@ -10,7 +10,6 @@ import {
   Wand2,
   ShieldAlert,
   AlertTriangle,
-  Film,
 } from "lucide-react";
 
 type Scene = {
@@ -342,13 +341,7 @@ export function ImageStage({
         ))}
       </ul>
 
-      {/* Aprovar → gerar vídeos (Fase 4) */}
-      <div className="flex flex-col gap-2 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-4">
-        <button type="button" disabled title="Em breve: gerar os vídeos (Fase 4)" className="inline-flex h-10 w-fit cursor-not-allowed items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline)] px-[18px] font-sans text-[14px] font-medium text-[var(--ash)] opacity-60">
-          <Film className="h-4 w-4" /> Aprovar imagens e gerar vídeos
-        </button>
-        <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">Em breve — geração dos vídeos (Fase 4).</span>
-      </div>
+      {/* A geração de vídeos (Fase 4) vive no próprio estágio, logo abaixo. */}
 
       {paywall && <PaywallInline locale={locale} subscribed={paywall.subscribed} onClose={() => setPaywall(null)} />}
     </section>

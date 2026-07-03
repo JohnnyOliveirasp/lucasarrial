@@ -95,8 +95,10 @@ jobs:
 
       - name: Install runtime deps + reload PM2
         run: |
+          # startOrReload: recarrega os apps do ecosystem que já existem e
+          # INICIA os novos (ex.: aiverse-render, o worker de montagem de vídeo).
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_HOST" \
-            "cd $DEPLOY_PATH && npm ci --omit=dev && (pm2 reload aiverse --update-env || (pm2 start ecosystem.config.cjs && pm2 save))"
+            "cd $DEPLOY_PATH && npm ci --omit=dev && pm2 startOrReload ecosystem.config.cjs --update-env && pm2 save"
 
       - name: Cleanup SSH key
         if: always()
