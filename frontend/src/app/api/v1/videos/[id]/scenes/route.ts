@@ -7,7 +7,6 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { subscriptionGate } from "@/lib/credits/subscription-gate";
 import { jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { sceneCountForDuration } from "@/lib/video/config";
@@ -43,9 +42,6 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
   const { id } = await ctx.params;
-
-  const gate = await subscriptionGate(auth);
-  if (gate) return gate;
 
   const admin = getAdmin();
   const { data: project } = await admin

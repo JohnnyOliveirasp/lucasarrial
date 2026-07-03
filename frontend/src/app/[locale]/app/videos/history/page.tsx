@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
-import { hasActiveAccess } from "@/lib/credits/access";
 import { VideoBoard } from "@/components/video/video-board";
 import { Eyebrow } from "@/components/ui";
 
@@ -27,19 +26,6 @@ export default async function VideoHistoryPage({
   } = await supabase.auth.getUser();
   if (!user) redirect(`/${locale}/login`);
 
-  // Criar vídeo = recurso de assinante (equipe/admin passa). O board fica
-  // visível pra todos; sem assinatura o CTA vira "Assinar" e o servidor
-  // bloqueia as ações do wizard (402 subscription_required).
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("email, access_until")
-    .eq("id", user.id)
-    .single();
-  const subscribed = hasActiveAccess(
-    profile?.email ?? user.email ?? null,
-    profile?.access_until ?? null,
-  );
-
   return (
     <div className="flex flex-col gap-10">
       <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
@@ -54,7 +40,7 @@ export default async function VideoHistoryPage({
         </p>
       </header>
 
-      <VideoBoard locale={locale} canCreate={subscribed} />
+      <VideoBoard locale={locale} />
     </div>
   );
 }
