@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
+import { hasActiveAccess } from "@/lib/credits/access";
 import { AudioPicker } from "@/components/video/audio-picker";
 import { Eyebrow } from "@/components/ui";
 
@@ -22,6 +23,17 @@ export default async function NewVideoPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect(`/${locale}/login`);
+
+  // Criar vídeo é recurso de assinante (equipe/admin passa). Sem assinatura,
+  // volta pro board — lá o CTA é "Assinar" (e o servidor também bloqueia).
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("email, access_until")
+    .eq("id", user.id)
+    .single();
+  if (!hasActiveAccess(profile?.email ?? user.email ?? null, profile?.access_until ?? null)) {
+    redirect(`/${locale}/app/videos/history`);
+  }
 
   return (
     <div className="flex flex-col gap-10">

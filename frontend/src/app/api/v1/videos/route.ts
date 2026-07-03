@@ -9,6 +9,7 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
+import { subscriptionGate } from "@/lib/credits/subscription-gate";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { MAX_AUDIO_SECONDS } from "@/lib/video/config";
@@ -34,6 +35,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
+
+  // Criar vídeo é recurso de ASSINANTE (crédito sobrando não basta).
+  const gate = await subscriptionGate(auth);
+  if (gate) return gate;
 
   let body: { generation_id?: unknown } = {};
   try {

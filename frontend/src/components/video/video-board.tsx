@@ -51,7 +51,7 @@ function fmtDuration(secs: number | null): string {
   return m > 0 ? `${m}min${r.toString().padStart(2, "0")}s` : `${r}s`;
 }
 
-export function VideoBoard({ locale }: { locale: string }) {
+export function VideoBoard({ locale, canCreate = true }: { locale: string; canCreate?: boolean }) {
   const [items, setItems] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,13 +136,22 @@ export function VideoBoard({ locale }: { locale: string }) {
     }
   }
 
-  const NewButton = (
+  // Criar vídeo é recurso de assinante: sem assinatura, o CTA vira "Assinar"
+  // (o servidor também bloqueia — 402 subscription_required).
+  const NewButton = canCreate ? (
     <Link
       href={`/${locale}/app/videos/new`}
       className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98]"
     >
       <Plus className="h-4 w-4" />
       Novo vídeo
+    </Link>
+  ) : (
+    <Link
+      href={`/${locale}/planos`}
+      className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-[border-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] active:scale-[0.98]"
+    >
+      Assine para criar vídeos <span aria-hidden>→</span>
     </Link>
   );
 

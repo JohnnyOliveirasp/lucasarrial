@@ -5,6 +5,7 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
+import { subscriptionGate } from "@/lib/credits/subscription-gate";
 import { jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
@@ -19,6 +20,9 @@ export async function POST(
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
   const { id, sceneId } = await ctx.params;
+
+  const gate = await subscriptionGate(auth);
+  if (gate) return gate;
 
   const admin = getAdmin();
   const { data: scene } = await admin
