@@ -1,17 +1,23 @@
 /**
  * /api/v1/videos
  *   GET    → lista os projetos de vídeo do usuário (o board "Vídeo História")
- *   POST   → cria um projeto a partir de um áudio gerado { generation_id }
+ *   POST   → cria um projeto a partir de:
+ *              { generation_id }  áudio gerado (TTS), OU
+ *              { uploaded_key }   áudio PRÓPRIO enviado (via /videos/upload-audio);
+ *                                 transcrito com Whisper (o roteiro das cenas
+ *                                 nasce do texto) e com a duração REAL validada
+ *                                 no servidor (teto de 90s, à prova de burla)
  *   DELETE → apaga em lote { ids: string[] }
  *
- * Fase 1 do wizard de vídeo. Um projeto nasce do áudio (TTS) escolhido pelo
- * usuário; os estágios seguintes (cenas/imagens/vídeos/render) preenchem o resto.
+ * Fase 1 do wizard de vídeo. Um projeto nasce do áudio escolhido pelo usuário;
+ * os estágios seguintes (cenas/imagens/vídeos/render) preenchem o resto.
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { MAX_AUDIO_SECONDS } from "@/lib/video/config";
+import { transcribeUploadedAudio } from "@/lib/video/transcribe";
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
@@ -35,16 +41,64 @@ export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
 
-  let body: { generation_id?: unknown } = {};
+  let body: { generation_id?: unknown; uploaded_key?: unknown } = {};
   try {
     body = await request.json();
   } catch {
     /* sem body */
   }
   const generationId = typeof body.generation_id === "string" ? body.generation_id.trim() : "";
-  if (!generationId) return badRequest("Selecione um áudio para começar.");
+  const uploadedKey = typeof body.uploaded_key === "string" ? body.uploaded_key.trim() : "";
+  if (!generationId && !uploadedKey) return badRequest("Selecione um áudio para começar.");
 
   const admin = getAdmin();
+
+  // ── Caminho 2: áudio PRÓPRIO enviado pelo usuário ──────────────────────────
+  if (uploadedKey) {
+    // A chave é do próprio usuário? (prefixo garante dono + pasta certa)
+    if (!uploadedKey.startsWith(`${auth.user_id}/video-uploads/`)) {
+      return badRequest("Áudio enviado inválido.");
+    }
+
+    let text = "";
+    let duration = 0;
+    try {
+      const t = await transcribeUploadedAudio(uploadedKey);
+      text = t.text;
+      duration = t.durationSeconds;
+    } catch {
+      return serverError("Não conseguimos processar esse áudio. Tente novamente.");
+    }
+
+    // Validação DEFINITIVA do teto (o browser valida antes, mas aqui é a real).
+    if (duration <= 0) return badRequest("Não conseguimos ler a duração desse áudio.");
+    if (duration > MAX_AUDIO_SECONDS + 0.5) {
+      return badRequest(
+        `O áudio tem ${Math.round(duration)}s — o máximo é ${MAX_AUDIO_SECONDS}s (1min30s).`,
+      );
+    }
+    if (!text) {
+      return badRequest("Não encontramos fala nesse áudio — as cenas nascem do que é falado.");
+    }
+
+    const { data: created, error: insErr } = await admin
+      .from("video_projects")
+      .insert({
+        user_id: auth.user_id,
+        status: "draft",
+        source_generation_id: null,
+        audio_path: uploadedKey,
+        audio_duration_seconds: duration,
+        script_text: text,
+      })
+      .select("id, status")
+      .single();
+
+    if (insErr || !created) return serverError("Failed to create video project");
+    return jsonOk({ id: created.id, status: created.status }, 201);
+  }
+
+  // ── Caminho 1: áudio gerado (TTS) ──────────────────────────────────────────
 
   // O áudio precisa ser do próprio usuário, estar pronto e ter <= 90s.
   const { data: gen, error: genErr } = await admin

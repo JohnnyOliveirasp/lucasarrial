@@ -83,6 +83,20 @@ export function buildGenerationKey(userId: string, genId: string): string {
 }
 
 /**
+ * Chave do áudio ENVIADO pelo usuário pro wizard de vídeo (voz própria).
+ * Vive no bucket de generations (mesmo TTL/fluxo dos áudios TTS — o worker de
+ * render e o player do projeto já leem desse bucket).
+ */
+export function buildVideoUploadAudioKey(
+  userId: string,
+  uploadId: string,
+  filename: string,
+): string {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-60);
+  return `${userId}/video-uploads/${uploadId}_${safe}`;
+}
+
+/**
  * Chave DETERMINÍSTICA da referência auto-extraída no treino. Determinística
  * de propósito: o `start-training` cria o presigned PUT com ela e o `webhook`
  * recalcula a mesma chave pra gravar em `voices.reference_audio_path` no fim do

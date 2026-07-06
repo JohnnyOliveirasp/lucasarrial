@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AudioLines, Loader2, ArrowRight, Check } from "lucide-react";
 import { MAX_AUDIO_SECONDS, sceneCountForDuration } from "@/lib/video/config";
+import { AudioUpload } from "@/components/video/audio-upload";
 
 type Audio = {
   id: string;
@@ -82,25 +83,29 @@ export function AudioPicker({ locale }: { locale: string }) {
 
   if (items.length === 0) {
     return (
-      <section className="flex flex-col items-center gap-5 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
-        <AudioLines className="h-10 w-10 text-[var(--ash)]" />
-        <p className="max-w-sm text-sm text-[var(--mute)]">
-          Você ainda não tem áudios de até {MAX_AUDIO_SECONDS}s. Gere um áudio com
-          o seu roteiro primeiro e ele aparece aqui.
-        </p>
-        <Link
-          href={`/${locale}/app/voice-cloning/generate`}
-          className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98]"
-        >
-          Gerar Áudio
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      </section>
+      <div className="flex flex-col gap-4">
+        <section className="flex flex-col items-center gap-5 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
+          <AudioLines className="h-10 w-10 text-[var(--ash)]" />
+          <p className="max-w-sm text-sm text-[var(--mute)]">
+            Você ainda não tem áudios de até {MAX_AUDIO_SECONDS}s. Gere um áudio com
+            o seu roteiro primeiro e ele aparece aqui.
+          </p>
+          <Link
+            href={`/${locale}/app/voice-cloning/generate`}
+            className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98]"
+          >
+            Gerar Áudio
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </section>
+        <AudioUpload locale={locale} />
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
+      <AudioUpload locale={locale} />
       {error && (
         <p
           role="alert"
