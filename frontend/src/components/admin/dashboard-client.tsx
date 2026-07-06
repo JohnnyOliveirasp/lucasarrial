@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   Users,
   BadgeDollarSign,
-  Wallet,
   TrendingUp,
   AudioLines,
   Mic2,
@@ -13,11 +12,10 @@ import {
   AlertTriangle,
   Wifi,
 } from "lucide-react";
-import type { Period } from "@/lib/admin/cost";
 import type { AdminData, LiveCloning, Failure } from "@/lib/admin/queries";
 import type { RunpodHealth } from "@/lib/admin/runpod";
-import { PeriodFilter } from "@/components/admin/period-filter";
-import { AreaChart } from "@/components/admin/area-chart";
+import { PeriodFilter, currentKey, labelFor, type Gran } from "@/components/admin/period-filter";
+import { FinanceSection } from "@/components/admin/finance-section";
 import { RunpodStatus } from "@/components/admin/runpod-status";
 import { LiveCloningPanel } from "@/components/admin/live-cloning";
 import { KpiCard } from "@/components/admin/kpi-card";
@@ -30,23 +28,17 @@ const brl2 = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 });
 const num = (n: number) => n.toLocaleString("pt-BR");
 
-const PERIOD_LABEL: Record<Period, string> = {
-  day: "hoje",
-  week: "na semana",
-  fortnight: "na quinzena",
-  month: "no mês",
-};
-
 export function DashboardClient() {
-  const [period, setPeriod] = useState<Period>("week");
+  const [gran, setGran] = useState<Gran>("month");
+  const [periodKey, setPeriodKey] = useState<string>(() => currentKey("month"));
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [failuresOpen, setFailuresOpen] = useState(false);
   const [failures, setFailures] = useState<Failure[] | null>(null);
 
-  const fetchData = useCallback(async (p: Period) => {
+  const fetchData = useCallback(async (g: Gran, k: string) => {
     try {
-      const res = await fetch(`/api/v1/admin/dashboard?period=${p}`, { cache: "no-store" });
+      const res = await fetch(`/api/v1/admin/dashboard?gran=${g}&key=${k}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message || "Falha ao carregar");
       setData(json as Payload);
@@ -57,10 +49,16 @@ export function DashboardClient() {
   }, []);
 
   useEffect(() => {
-    fetchData(period);
-    const id = setInterval(() => fetchData(period), 5000);
+    fetchData(gran, periodKey);
+    const id = setInterval(() => fetchData(gran, periodKey), 5000);
     return () => clearInterval(id);
-  }, [period, fetchData]);
+  }, [gran, periodKey, fetchData]);
+
+  const onPeriod = (g: Gran, k: string) => {
+    setGran(g);
+    setPeriodKey(k);
+  };
+  const periodLabel = `em ${labelFor(gran, periodKey)}`;
 
   const toggleFailures = async () => {
     const next = !failuresOpen;
@@ -75,7 +73,7 @@ export function DashboardClient() {
   if (!data) {
     return (
       <div className="flex flex-col gap-6">
-        <Header period={period} onPeriod={setPeriod} online={0} />
+        <Header gran={gran} periodKey={periodKey} onPeriod={onPeriod} />
         {error ? (
           <p className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-4 py-3 font-mono text-[12px] text-[var(--status-error)]">
             {error}
@@ -93,11 +91,12 @@ export function DashboardClient() {
 
   const m = data.metrics;
   const money = data.money;
+  const fin = data.finance;
   const failuresTotal = m.voices_failed + m.gens_failed + m.trainings_failed;
 
   return (
     <div className="flex flex-col gap-8">
-      <Header period={period} onPeriod={setPeriod} online={m.online_now} />
+      <Header gran={gran} periodKey={periodKey} onPeriod={onPeriod} />
 
       {/* Saúde ao vivo */}
       <div className="grid gap-4 lg:grid-cols-3">
@@ -123,36 +122,30 @@ export function DashboardClient() {
         </div>
       </div>
 
-      {/* Dinheiro + gráfico */}
-      <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-mono text-[11px] uppercase tracking-wider text-[var(--ash)]">
-            Faturou × gastou × lucro · {PERIOD_LABEL[period]}
-          </h2>
-        </div>
-        <div className="grid gap-4 lg:grid-cols-3">
-          <KpiCard label="Faturou" value={brl0(money.revenuePeriod)} tone="revenue" icon={Wallet} hint={`MRR ${brl0(money.mrr)} · ${num(m.subs_active)} assinantes`} />
-          <KpiCard label="Gastou" value={brl2(money.costPeriod)} tone="cost" icon={BadgeDollarSign} hint={`RunPod: ${num(m.gens_period)} gerações + ${num(m.trainings_period)} treinos`} />
-          <KpiCard label="Lucro" value={brl0(money.profitPeriod)} tone="profit" icon={TrendingUp} hint={`margem ${money.marginPct.toFixed(0)}% · taxa ${brl0(money.feePeriod)}`} />
-        </div>
-        <div className="rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5">
-          <AreaChart data={data.chart} />
-        </div>
-      </section>
+      {/* Financeiro (KPIs + compra×promoção + destino do bruto + gasto por ferramenta) */}
+      <FinanceSection money={money} fin={fin} periodLabel={periodLabel} />
+
+      {/* Contexto de assinaturas (projeção + testes fora da conta) */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <KpiCard label="Pagaram (total)" value={num(fin.paidCount)} tone="good" icon={BadgeDollarSign} hint={`${brl2(fin.paidTotal)} desde o início`} />
+        <KpiCard label="Oferta (total)" value={num(fin.offerCount)} tone={fin.offerCount > fin.paidCount ? "bad" : "default"} icon={Users} hint="assinatura ativa sem pagar (trial/cupom)" />
+        <KpiCard label="MRR projetado" value={brl0(money.mrr)} icon={TrendingUp} hint={`${num(m.subs_active)} acessos ativos × R$97`} />
+        <KpiCard label="Testes (fora)" value={num(fin.testCount)} icon={AlertTriangle} hint="compras de teste excluídas das contas" />
+      </div>
 
       {/* Operação */}
       <section className="flex flex-col gap-4">
         <h2 className="font-mono text-[11px] uppercase tracking-wider text-[var(--ash)]">Operação</h2>
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiCard label="Usuários" value={num(m.users_total)} icon={Users} hint={`+${num(m.users_new)} ${PERIOD_LABEL[period]}`} />
+          <KpiCard label="Usuários" value={num(m.users_total)} icon={Users} hint={`+${num(m.users_new)} ${periodLabel}`} />
           <KpiCard label="Assinantes" value={num(m.subs_active)} icon={BadgeDollarSign} hint="acesso ativo" />
           <KpiCard label="Gerações" value={num(m.gens_period)} icon={AudioLines} hint={`${num(m.gens_total)} no total`} />
           <KpiCard label="Vozes prontas" value={num(m.voices_ready)} icon={Mic2} tone="good" hint={`${num(m.voices_training)} clonando agora`} />
         </div>
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <KpiCard label="Clonando agora" value={num(m.voices_training)} icon={Activity} hint="ao vivo" />
-          <KpiCard label="Treinos OK" value={num(m.trainings_done)} icon={Mic2} hint={`+${num(m.trainings_period)} ${PERIOD_LABEL[period]}`} />
-          <KpiCard label="Créditos gastos" value={num(m.credits_consumed)} icon={TrendingUp} hint={PERIOD_LABEL[period]} />
+          <KpiCard label="Treinos OK" value={num(m.trainings_done)} icon={Mic2} hint={`+${num(m.trainings_period)} ${periodLabel}`} />
+          <KpiCard label="Créditos gastos" value={num(m.credits_consumed)} icon={TrendingUp} hint={periodLabel} />
           <KpiCard
             label="Falhas"
             value={num(failuresTotal)}
@@ -181,7 +174,7 @@ export function DashboardClient() {
   );
 }
 
-function Header({ period, onPeriod, online }: { period: Period; onPeriod: (p: Period) => void; online: number }) {
+function Header({ gran, periodKey, onPeriod }: { gran: Gran; periodKey: string; onPeriod: (g: Gran, k: string) => void }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
@@ -191,7 +184,7 @@ function Header({ period, onPeriod, online }: { period: Period; onPeriod: (p: Pe
           tempo real · atualiza sozinho a cada 5s
         </p>
       </div>
-      <PeriodFilter value={period} onChange={onPeriod} />
+      <PeriodFilter gran={gran} keyValue={periodKey} onChange={onPeriod} />
     </div>
   );
 }

@@ -35,3 +35,49 @@ export function trainCostBrl(count: number): number {
 export function hotmartFeeBrl(grossBrl: number, sales: number): number {
   return grossBrl * COST.HOTMART_PCT + sales * COST.HOTMART_FIXED_BRL;
 }
+
+// ---------------------------------------------------------------------------
+// Custos Kie (imagens + clipes de vídeo). Regra travada: créditos cobrados do
+// usuário = 2× o custo do Kie em créditos Kie → custo Kie = créditos/2.
+// Kie vende crédito a US$0,005 (kie.ai/pricing).
+// ---------------------------------------------------------------------------
+
+/** Câmbio usado pra converter custo Kie (US$) em R$. Ajustar quando variar. */
+export const USD_BRL = 5.5;
+
+/** Preço do crédito Kie em US$ (kie.ai/pricing). */
+export const KIE_USD_PER_CREDIT = 0.005;
+
+/** Créditos cobrados do usuário por imagem, por resolução (kie/config.ts). */
+export const IMAGE_CREDITS_BY_RES: Record<string, number> = { "1K": 12, "2K": 22, "4K": 30 };
+
+/** Custo Kie em R$ a partir dos créditos cobrados do usuário (regra 2×). */
+export function kieCostBrlFromUserCredits(userCredits: number): number {
+  return (userCredits / 2) * KIE_USD_PER_CREDIT * USD_BRL;
+}
+
+/** Custo Kie em R$ de um lote de imagens agrupado por resolução. */
+export function imagesCostBrl(byRes: Array<{ resolution: string; n: number }>): number {
+  return byRes.reduce(
+    (sum, r) => sum + kieCostBrlFromUserCredits((IMAGE_CREDITS_BY_RES[r.resolution] ?? 12) * r.n),
+    0,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Custos fixos de infraestrutura (US$/mês) — pró-rateados pelo período visto.
+// Ajustar aqui quando o plano mudar. Futuro: puxar o RunPod via API (GraphQL).
+// ---------------------------------------------------------------------------
+export const INFRA_USD_MONTH = {
+  /** Servidor Hetzner (app + workers). */
+  hetzner: 25,
+  /** RunPod Network Volume (HD dos modelos). */
+  runpodStorage: 15,
+} as const;
+
+export const INFRA_TOTAL_USD_MONTH = INFRA_USD_MONTH.hetzner + INFRA_USD_MONTH.runpodStorage;
+
+/** Infra em R$ pró-rateada: dia ≈ mensal/30,44; mês ≈ cheio; ano = 12×. */
+export function infraCostBrl(rangeDays: number): number {
+  return INFRA_TOTAL_USD_MONTH * USD_BRL * (rangeDays / 30.4375);
+}

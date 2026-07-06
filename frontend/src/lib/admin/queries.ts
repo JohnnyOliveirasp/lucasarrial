@@ -6,12 +6,17 @@
 import { getAdmin } from "@/lib/db/admin";
 import {
   PLAN_PRICE_BRL,
-  PERIOD_DAYS,
-  type Period,
   genCostBrl,
   trainCostBrl,
   hotmartFeeBrl,
+  imagesCostBrl,
+  infraCostBrl,
+  kieCostBrlFromUserCredits,
 } from "./cost";
+import { VIDEO_TIERS } from "@/lib/video/tiers";
+
+/** Janela calendário [since, until) em ISO — construída na rota a partir de dia/mês/ano. */
+export type DateRange = { since: string; until: string };
 
 export type AdminMetrics = {
   users_total: number;
@@ -32,77 +37,133 @@ export type AdminMetrics = {
   credits_consumed: number;
 };
 
-export type ChartPoint = {
-  day: string;
-  revenue: number;
-  cost: number;
-  profit: number;
-  gens: number;
-};
-
 export type Money = {
   mrr: number;
   revenuePeriod: number;
+  /** Custo variável (ferramentas Kie/RunPod) no período. */
   costPeriod: number;
+  /** Custo fixo de infra (Hetzner + RunPod HD) pró-rateado no período. */
+  infraPeriod: number;
   feePeriod: number;
   profitPeriod: number;
   marginPct: number;
 };
 
-export type AdminData = {
-  period: Period;
-  metrics: AdminMetrics;
-  money: Money;
-  chart: ChartPoint[];
+/** Fatia da pizza de custos (R$ reais gastos por ferramenta). */
+export type CostSlice = { key: string; label: string; brl: number; detail: string };
+
+/** Dinheiro REAL vindo da Hotmart (RPC admin_finance) + fatias de custo. */
+export type Finance = {
+  paidCount: number;
+  paidTotal: number;
+  paidCountPeriod: number;
+  paidTotalPeriod: number;
+  offerCount: number;
+  offerCountPeriod: number;
+  /** R$ dados em promoção no período (ofertas R$0 × preço do plano). */
+  offerValuePeriod: number;
+  testCount: number;
+  refundTotal: number;
+  refundCount: number;
+  slices: CostSlice[];
 };
 
-type SeriesPoint = { day: string; gens: number; chars: number; trainings: number };
+export type AdminData = {
+  metrics: AdminMetrics;
+  money: Money;
+  finance: Finance;
+};
 
-function sinceFor(period: Period): string {
-  const days = PERIOD_DAYS[period];
-  return new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
-}
+type ByRes = Array<{ resolution: string; n: number }>;
+type FinanceRaw = {
+  paid_count: number;
+  paid_total: number;
+  paid_count_period: number;
+  paid_total_period: number;
+  offer_count: number;
+  offer_count_period: number;
+  test_count: number;
+  refund_total: number;
+  refund_count: number;
+  paid_by_day: Array<{ day: string; revenue: number; sales: number }>;
+  images_by_res: ByRes;
+  scene_images_by_res: ByRes;
+  scene_videos_by_tier: Array<{ tier: string; n: number }>;
+};
 
-export async function getAdminData(period: Period): Promise<AdminData> {
+export async function getAdminData(range: DateRange): Promise<AdminData> {
   const admin = getAdmin();
-  const since = sinceFor(period);
-  const days = PERIOD_DAYS[period];
+  const { since, until } = range;
 
-  const [mRes, tRes] = await Promise.all([
-    admin.rpc("admin_metrics", { p_since: since }),
-    admin.rpc("admin_timeseries", { p_since: since }),
+  const [mRes, fRes] = await Promise.all([
+    admin.rpc("admin_metrics", { p_since: since, p_until: until }),
+    admin.rpc("admin_finance", { p_since: since, p_until: until }),
   ]);
 
   const metrics = (mRes.data ?? {}) as unknown as AdminMetrics;
-  const series = (tRes.data ?? []) as unknown as SeriesPoint[];
+  const fin = (fRes.data ?? {}) as unknown as FinanceRaw;
 
   const subs = metrics.subs_active ?? 0;
-  const mrr = subs * PLAN_PRICE_BRL;
-  const revenuePeriod = mrr * (days / 30);
-  const costPeriod =
-    genCostBrl(metrics.gens_chars_period ?? 0) + trainCostBrl(metrics.trainings_period ?? 0);
-  const feePeriod = hotmartFeeBrl(revenuePeriod, subs * (days / 30));
-  const profitPeriod = revenuePeriod - feePeriod - costPeriod;
+  const mrr = subs * PLAN_PRICE_BRL; // projeção (assinantes ativos × plano)
+
+  // ---- custos reais por ferramenta (fatias da pizza) ----
+  const voiceCost = genCostBrl(metrics.gens_chars_period ?? 0);
+  const trainCost = trainCostBrl(metrics.trainings_period ?? 0);
+  const imagesStandalone = fin.images_by_res ?? [];
+  const imagesScenes = fin.scene_images_by_res ?? [];
+  const imageCost = imagesCostBrl(imagesStandalone) + imagesCostBrl(imagesScenes);
+  const imageCount =
+    imagesStandalone.reduce((s, r) => s + r.n, 0) + imagesScenes.reduce((s, r) => s + r.n, 0);
+  const videosByTier = fin.scene_videos_by_tier ?? [];
+  const videoCost = videosByTier.reduce((sum, v) => {
+    const tier = VIDEO_TIERS.find((t) => t.id === v.tier);
+    return sum + kieCostBrlFromUserCredits((tier?.creditsPerClip ?? 30) * v.n);
+  }, 0);
+  const videoCount = videosByTier.reduce((s, v) => s + v.n, 0);
+
+  const slices: CostSlice[] = [
+    { key: "voice", label: "Voz (TTS)", brl: voiceCost, detail: `${(metrics.gens_chars_period ?? 0).toLocaleString("pt-BR")} caracteres` },
+    { key: "training", label: "Treinos de voz", brl: trainCost, detail: `${metrics.trainings_period ?? 0} treinos` },
+    { key: "image", label: "Imagens (Kie)", brl: imageCost, detail: `${imageCount} imagens` },
+    { key: "video", label: "Vídeos (Kie)", brl: videoCost, detail: `${videoCount} clipes` },
+  ];
+
+  // ---- dinheiro REAL (Hotmart, produto da plataforma, sem testes) ----
+  const revenuePeriod = fin.paid_total_period ?? 0;
+  const costPeriod = voiceCost + trainCost + imageCost + videoCost;
+  const feePeriod = hotmartFeeBrl(revenuePeriod, fin.paid_count_period ?? 0);
+  const refunds = fin.refund_total ?? 0;
+  // Decisão Johnny 2026-07-06 (opção B): lucro/prejuízo = CAIXA REAL; a promoção
+  // (assinaturas R$0 valorizadas a preço de tabela) aparece SEPARADA ao lado,
+  // com o "total c/ promoção" escrito — os dois números sempre visíveis.
+  const offerValuePeriod = (fin.offer_count_period ?? 0) * PLAN_PRICE_BRL;
+  // Infra fixa (Hetzner + RunPod HD) pró-rateada pela janela vista, LIMITADA ao
+  // tempo realmente operado: do lançamento (jun/2026) até agora — senão o "ano"
+  // cobraria 12 meses e o mês corrente cobraria dias que ainda não existiram.
+  const INFRA_START = new Date("2026-06-01T00:00:00-03:00").getTime();
+  const effSince = Math.max(new Date(since).getTime(), INFRA_START);
+  const effUntil = Math.min(new Date(until).getTime(), Date.now());
+  const rangeDays = Math.max((effUntil - effSince) / 86_400_000, 0);
+  const infraPeriod = infraCostBrl(rangeDays);
+  const profitPeriod = revenuePeriod - feePeriod - costPeriod - infraPeriod - refunds;
   const marginPct = revenuePeriod > 0 ? (profitPeriod / revenuePeriod) * 100 : 0;
 
-  const dailyRevenue = mrr / 30;
-  const dailyFee = hotmartFeeBrl(dailyRevenue, subs / 30);
-  const chart: ChartPoint[] = series.map((p) => {
-    const cost = genCostBrl(p.chars) + trainCostBrl(p.trainings);
-    return {
-      day: p.day,
-      revenue: dailyRevenue,
-      cost,
-      profit: dailyRevenue - dailyFee - cost,
-      gens: p.gens,
-    };
-  });
-
   return {
-    period,
     metrics,
-    money: { mrr, revenuePeriod, costPeriod, feePeriod, profitPeriod, marginPct },
-    chart,
+    money: { mrr, revenuePeriod, costPeriod, infraPeriod, feePeriod, profitPeriod, marginPct },
+    finance: {
+      paidCount: fin.paid_count ?? 0,
+      paidTotal: fin.paid_total ?? 0,
+      paidCountPeriod: fin.paid_count_period ?? 0,
+      paidTotalPeriod: fin.paid_total_period ?? 0,
+      offerCount: fin.offer_count ?? 0,
+      offerCountPeriod: fin.offer_count_period ?? 0,
+      offerValuePeriod,
+      testCount: fin.test_count ?? 0,
+      refundTotal: refunds,
+      refundCount: fin.refund_count ?? 0,
+      slices,
+    },
   };
 }
 

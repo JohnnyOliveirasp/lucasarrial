@@ -508,6 +508,7 @@ export type Database = {
     Functions: {
       admin_metrics:      { Args: { p_since: string }; Returns: Json };
       admin_timeseries:   { Args: { p_since: string }; Returns: Json };
+      admin_finance:      { Args: { p_since: string; p_product_id?: string }; Returns: Json };
       admin_live_cloning: { Args: Record<string, never>; Returns: Json };
       admin_users:        { Args: Record<string, never>; Returns: Json };
       admin_failures:     { Args: { p_limit?: number }; Returns: Json };

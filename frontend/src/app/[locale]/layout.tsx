@@ -81,7 +81,8 @@ export default async function LocaleLayout({
       className={`${dmSans.variable} ${dmMono.variable} dark`}
       suppressHydrationWarning
     >
-      <body className="bg-canvas text-body antialiased">
+      {/* suppressHydrationWarning: extensões (Grammarly etc.) injetam atributos no body antes do React hidratar */}
+      <body className="bg-canvas text-body antialiased" suppressHydrationWarning>
         <NextIntlClientProvider>
           <ThemeProvider
             attribute="class"
