@@ -21,6 +21,7 @@ import { VideoStage } from "@/components/video/video-stage";
 type Project = {
   id: string;
   name: string | null;
+  kind?: "story" | "sales";
   status: "draft" | "scenes" | "images" | "videos" | "rendering" | "done" | "failed";
   audio_duration_seconds: number | null;
   script_text: string | null;
@@ -28,6 +29,11 @@ type Project = {
   scene_count: number | null;
   created_at: string;
   audio_url: string | null;
+  // Vídeo Vendas: resumo do setup (produto/pessoa/análise) exibido no topo.
+  product_images?: Array<{ key: string; url: string }>;
+  reference_images?: Array<{ key: string; url: string }>;
+  product_analysis?: string | null;
+  product_price?: string | null;
 };
 
 // Os 5 estágios do pipeline. `key` casa com os status que já "passaram" dele.
@@ -81,6 +87,11 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
     load();
   }, [load]);
 
+  const boardHref =
+    project?.kind === "sales"
+      ? `/${locale}/app/videos/vendas`
+      : `/${locale}/app/videos/history`;
+
   if (loading) {
     return (
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
@@ -95,7 +106,7 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
       <div className="flex flex-col gap-5">
         <p className="text-sm text-[var(--status-error)]">{error ?? "Projeto não encontrado"}</p>
         <Link
-          href={`/${locale}/app/videos/history`}
+          href={boardHref}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -113,7 +124,7 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
     <div className="flex flex-col gap-10">
       <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
         <Link
-          href={`/${locale}/app/videos/history`}
+          href={boardHref}
           className="inline-flex w-fit items-center gap-1.5 font-mono text-[11px] tracking-wide text-[var(--ash)] transition-colors hover:text-[var(--ink)]"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -154,6 +165,40 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
           );
         })}
       </ol>
+
+      {/* Vídeo Vendas: produto + apresentador + análise (contexto sempre visível) */}
+      {project.kind === "sales" && (
+        <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
+              Produto & apresentador
+            </h2>
+            {project.product_price && (
+              <span className="font-mono text-[12px] text-[var(--silver)]">{project.product_price}</span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {(project.product_images ?? []).map((img, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={img.key} src={img.url} alt={`produto ${i + 1}`} className="h-20 w-20 rounded-[var(--radius)] border border-[var(--hairline-strong)] object-cover" />
+            ))}
+            {(project.reference_images ?? []).map((img, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={img.key} src={img.url} alt={`apresentador(a) ${i + 1}`} className="h-20 w-20 rounded-full border border-[var(--hairline-strong)] object-cover" />
+            ))}
+          </div>
+          {project.product_analysis && (
+            <details className="group">
+              <summary className="cursor-pointer font-mono text-[11px] tracking-wide text-[var(--ash)] transition-colors hover:text-[var(--ink)]">
+                ver análise do produto
+              </summary>
+              <div className="mt-2 whitespace-pre-wrap rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)] p-4 text-[13px] leading-relaxed text-[var(--body)]">
+                {project.product_analysis}
+              </div>
+            </details>
+          )}
+        </section>
+      )}
 
       {/* Estágio 1 — Áudio (concluído) */}
       <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">

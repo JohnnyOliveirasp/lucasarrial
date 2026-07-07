@@ -34,15 +34,22 @@ export async function POST(
   const admin = getAdmin();
   const { data: project } = await admin
     .from("video_projects")
-    .select("reference_image_paths, image_consent_at")
+    .select("kind, reference_image_paths, product_image_paths, image_consent_at")
     .eq("id", id)
     .eq("user_id", auth.user_id)
     .maybeSingle();
   if (!project) return notFound("Video project");
-  const refs = (project.reference_image_paths ?? []) as string[];
-  if (refs.length === 0 || !project.image_consent_at) {
+  const personRefs = (project.reference_image_paths ?? []) as string[];
+  if (personRefs.length === 0 || !project.image_consent_at) {
     return badRequest("Envie a foto de referência e confirme a ciência antes de gerar.");
   }
+  // Vídeo Vendas: PRODUTO entra como referência junto (pessoa primeiro).
+  const productRefs =
+    project.kind === "sales" ? ((project.product_image_paths ?? []) as string[]) : [];
+  const refs =
+    productRefs.length > 0
+      ? [...personRefs.slice(0, 3), ...productRefs.slice(0, 2)]
+      : personRefs;
 
   const { data: scene } = await admin
     .from("video_scenes")

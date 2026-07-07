@@ -16,6 +16,13 @@ export const VIDEO_ASPECT_RATIO = "9:16";
 /** Custo de "Improve Prompt" (LLM reescreve o prompt de UMA cena). */
 export const IMPROVE_PROMPT_COST = 1;
 
+/** Vídeo Vendas TikTok: cada ação de IA (análise / roteiro / refazer / varinha)
+ *  custa 15 créditos — travado com o Johnny 2026-07-06. Edição manual é grátis. */
+export const SALES_AI_COST = 15;
+
+/** Teto de fala do Vídeo Vendas (foco TikTok): 60s (pipeline aguenta 90). */
+export const SALES_MAX_AUDIO_SECONDS = 60;
+
 /**
  * Nº de cenas a partir da duração do áudio.
  * Arredonda pro mais próximo pelo resto da divisão por SECONDS_PER_SCENE (4):

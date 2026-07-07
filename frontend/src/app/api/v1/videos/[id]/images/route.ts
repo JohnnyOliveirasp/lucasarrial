@@ -104,16 +104,24 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const admin = getAdmin();
   const { data: project } = await admin
     .from("video_projects")
-    .select("id, reference_image_paths, image_consent_at")
+    .select("id, kind, reference_image_paths, product_image_paths, image_consent_at")
     .eq("id", id)
     .eq("user_id", auth.user_id)
     .maybeSingle();
   if (!project) return notFound("Video project");
 
-  const refs = (project.reference_image_paths ?? []) as string[];
-  if (refs.length === 0 || !project.image_consent_at) {
+  const personRefs = (project.reference_image_paths ?? []) as string[];
+  if (personRefs.length === 0 || !project.image_consent_at) {
     return badRequest("Envie a foto de referência e confirme a ciência antes de gerar.");
   }
+  // Vídeo Vendas: o PRODUTO entra junto como referência (pessoa primeiro —
+  // identidade manda). Cap conservador de inputs pro Kie: 3 pessoa + 2 produto.
+  const productRefs =
+    project.kind === "sales" ? ((project.product_image_paths ?? []) as string[]) : [];
+  const refs =
+    productRefs.length > 0
+      ? [...personRefs.slice(0, 3), ...productRefs.slice(0, 2)]
+      : personRefs;
 
   const scenes = await listScenes(id);
   if (scenes.length === 0) return badRequest("Gere as cenas primeiro.");

@@ -51,7 +51,7 @@ function fmtDuration(secs: number | null): string {
   return m > 0 ? `${m}min${r.toString().padStart(2, "0")}s` : `${r}s`;
 }
 
-export function VideoBoard({ locale }: { locale: string }) {
+export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: "story" | "sales" }) {
   const [items, setItems] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +64,7 @@ export function VideoBoard({ locale }: { locale: string }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/videos", { cache: "no-store" });
+      const res = await fetch(`/api/v1/videos?kind=${kind}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Falha ao carregar seus vídeos");
       const json = await res.json();
       setItems((json.projects ?? []) as Project[]);
@@ -73,7 +73,7 @@ export function VideoBoard({ locale }: { locale: string }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [kind]);
 
   useEffect(() => {
     load();
@@ -138,7 +138,7 @@ export function VideoBoard({ locale }: { locale: string }) {
 
   const NewButton = (
     <Link
-      href={`/${locale}/app/videos/new`}
+      href={kind === "sales" ? `/${locale}/app/videos/vendas/new` : `/${locale}/app/videos/new`}
       className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98]"
     >
       <Plus className="h-4 w-4" />

@@ -11,6 +11,7 @@
       "images": "Imágenes",
       "videos": "Vídeos",
       "videoHistory": "Video Historia",
+      "videoSales": "Video Ventas TikTok",
       "settings": "Configuración"
     },
     "comingSoon": "Próximamente",
@@ -225,10 +226,22 @@
     "eyebrow": "En producción",
     "title": "Para quien el tiempo importa.",
     "items": {
-      "1": { "value": "1.247", "label": "Videos generados / mes" },
-      "2": { "value": "89", "label": "Avatares clonados" },
-      "3": { "value": "3,6h", "label": "Tiempo medio ahorrado" },
-      "4": { "value": "240%", "label": "Productividad vs. grabación" }
+      "1": {
+        "value": "1.247",
+        "label": "Videos generados / mes"
+      },
+      "2": {
+        "value": "89",
+        "label": "Avatares clonados"
+      },
+      "3": {
+        "value": "3,6h",
+        "label": "Tiempo medio ahorrado"
+      },
+      "4": {
+        "value": "240%",
+        "label": "Productividad vs. grabación"
+      }
     }
   },
   "pricing": {
@@ -242,7 +255,14 @@
         "cad": "/mes",
         "desc": "Tu voz clonada y horas de audio, por un solo precio.",
         "cta": "Empezar",
-        "feats": ["100.000 créditos todos los meses", "Clonación de voz realista en minutos", "Audio listo en segundos", "Crea todas las voces que necesites", "API pública para automatizar todo", "Recarga créditos cuando quieras"]
+        "feats": [
+          "100.000 créditos todos los meses",
+          "Clonación de voz realista en minutos",
+          "Audio listo en segundos",
+          "Crea todas las voces que necesites",
+          "API pública para automatizar todo",
+          "Recarga créditos cuando quieras"
+        ]
       }
     }
   },
@@ -259,15 +279,30 @@
     "columns": {
       "product": {
         "title": "Producto",
-        "items": { "1": "Recursos", "2": "Clon de voz", "3": "Clon de rostro", "4": "Precios" }
+        "items": {
+          "1": "Recursos",
+          "2": "Clon de voz",
+          "3": "Clon de rostro",
+          "4": "Precios"
+        }
       },
       "resources": {
         "title": "Recursos",
-        "items": { "1": "Cómo funciona", "2": "Casos", "3": "Demostración", "4": "Changelog" }
+        "items": {
+          "1": "Cómo funciona",
+          "2": "Casos",
+          "3": "Demostración",
+          "4": "Changelog"
+        }
       },
       "company": {
         "title": "Empresa",
-        "items": { "1": "Acerca de", "2": "Contacto", "3": "Carreras", "4": "Blog" }
+        "items": {
+          "1": "Acerca de",
+          "2": "Contacto",
+          "3": "Carreras",
+          "4": "Blog"
+        }
       },
       "legal": {
         "title": "Legal"

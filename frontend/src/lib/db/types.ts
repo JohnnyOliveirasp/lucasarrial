@@ -213,6 +213,13 @@ export type VideoProjectRow = {
   subtitle_size: string | null;
   error_message: string | null;
   created_at: Timestamp;
+  // Vídeo Vendas TikTok (migration 27)
+  kind: "story" | "sales";
+  product_image_paths: string[] | null;
+  product_price: string | null;
+  product_link: string | null;
+  product_description: string | null;
+  product_analysis: string | null;
 };
 export type VideoProjectInsert = {
   id?: string;
@@ -229,6 +236,12 @@ export type VideoProjectInsert = {
   final_video_path?: string | null;
   reference_image_paths?: string[] | null;
   image_consent_at?: Timestamp | null;
+  kind?: "story" | "sales";
+  product_image_paths?: string[] | null;
+  product_price?: string | null;
+  product_link?: string | null;
+  product_description?: string | null;
+  product_analysis?: string | null;
 };
 export type VideoProjectUpdate = Partial<VideoProjectRow>;
 

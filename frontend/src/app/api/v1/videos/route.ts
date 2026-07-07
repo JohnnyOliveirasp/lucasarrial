@@ -23,13 +23,19 @@ export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
 
+  // ?kind=story|sales — cada board lista só o seu tipo (default: story,
+  // preserva o board antigo que não manda o parâmetro).
+  const kindParam = new URL(request.url).searchParams.get("kind");
+  const kind = kindParam === "sales" ? "sales" : "story";
+
   const admin = getAdmin();
   const { data: rows, error } = await admin
     .from("video_projects")
     .select(
-      "id, name, status, audio_duration_seconds, scene_count, video_tier, final_video_path, error_message, created_at",
+      "id, name, kind, status, audio_duration_seconds, scene_count, video_tier, final_video_path, error_message, created_at",
     )
     .eq("user_id", auth.user_id)
+    .eq("kind", kind)
     .order("created_at", { ascending: false });
 
   if (error) return serverError("Failed to list video projects");
@@ -41,7 +47,7 @@ export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
 
-  let body: { generation_id?: unknown; uploaded_key?: unknown } = {};
+  let body: { generation_id?: unknown; uploaded_key?: unknown; kind?: unknown } = {};
   try {
     body = await request.json();
   } catch {
@@ -49,9 +55,23 @@ export async function POST(request: NextRequest) {
   }
   const generationId = typeof body.generation_id === "string" ? body.generation_id.trim() : "";
   const uploadedKey = typeof body.uploaded_key === "string" ? body.uploaded_key.trim() : "";
-  if (!generationId && !uploadedKey) return badRequest("Selecione um áudio para começar.");
+  const isSales = body.kind === "sales";
+  if (!generationId && !uploadedKey && !isSales) {
+    return badRequest("Selecione um áudio para começar.");
+  }
 
   const admin = getAdmin();
+
+  // ── Vídeo Vendas TikTok: nasce SEM áudio (produto → análise → roteiro → voz) ──
+  if (isSales) {
+    const { data: created, error: insErr } = await admin
+      .from("video_projects")
+      .insert({ user_id: auth.user_id, status: "draft", kind: "sales" })
+      .select("id, status")
+      .single();
+    if (insErr || !created) return serverError("Failed to create video project");
+    return jsonOk({ id: created.id, status: created.status }, 201);
+  }
 
   // ── Caminho 2: áudio PRÓPRIO enviado pelo usuário ──────────────────────────
   if (uploadedKey) {

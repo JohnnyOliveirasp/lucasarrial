@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
-import { VideoWizard } from "@/components/video/video-wizard";
+import { ProjectSwitch } from "@/components/video/project-switch";
 
 /**
- * Wizard de vídeo (shell). Renderiza o stepper de 5 estágios e o conteúdo do
- * estágio atual. Fase 1: estágio Áudio concluído; demais como "em breve".
- * Estado vem de GET /api/v1/videos/[id] no client.
+ * Wizard de vídeo (shell). O ProjectSwitch decide pelo `kind` do projeto:
+ * story → VideoWizard (Vídeo História); sales → SalesSetup (Vídeo Vendas
+ * TikTok) até a voz existir, depois converge pro mesmo pipeline.
  */
 export default async function VideoWizardPage({
   params,
@@ -22,5 +22,5 @@ export default async function VideoWizardPage({
   } = await supabase.auth.getUser();
   if (!user) redirect(`/${locale}/login`);
 
-  return <VideoWizard projectId={id} locale={locale} />;
+  return <ProjectSwitch projectId={id} locale={locale} />;
 }

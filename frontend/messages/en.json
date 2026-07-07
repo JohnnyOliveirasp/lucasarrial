@@ -11,6 +11,7 @@
       "images": "Images",
       "videos": "Videos",
       "videoHistory": "Video Story",
+      "videoSales": "TikTok Sales Video",
       "settings": "Settings"
     },
     "comingSoon": "Coming soon",
@@ -225,10 +226,22 @@
     "eyebrow": "In production",
     "title": "For those whose time matters.",
     "items": {
-      "1": { "value": "1,247", "label": "Videos generated / month" },
-      "2": { "value": "89", "label": "Avatars cloned" },
-      "3": { "value": "3.6h", "label": "Average time saved" },
-      "4": { "value": "240%", "label": "Productivity vs. recording" }
+      "1": {
+        "value": "1,247",
+        "label": "Videos generated / month"
+      },
+      "2": {
+        "value": "89",
+        "label": "Avatars cloned"
+      },
+      "3": {
+        "value": "3.6h",
+        "label": "Average time saved"
+      },
+      "4": {
+        "value": "240%",
+        "label": "Productivity vs. recording"
+      }
     }
   },
   "pricing": {
@@ -242,7 +255,14 @@
         "cad": "/mo",
         "desc": "Your cloned voice and hours of audio, for one price.",
         "cta": "Get started",
-        "feats": ["100,000 credits every month", "Realistic voice cloning in minutes", "Audio ready in seconds", "Create as many voices as you need", "Public API to automate everything", "Top up credits anytime"]
+        "feats": [
+          "100,000 credits every month",
+          "Realistic voice cloning in minutes",
+          "Audio ready in seconds",
+          "Create as many voices as you need",
+          "Public API to automate everything",
+          "Top up credits anytime"
+        ]
       }
     }
   },
@@ -259,15 +279,30 @@
     "columns": {
       "product": {
         "title": "Product",
-        "items": { "1": "Features", "2": "Voice clone", "3": "Face clone", "4": "Pricing" }
+        "items": {
+          "1": "Features",
+          "2": "Voice clone",
+          "3": "Face clone",
+          "4": "Pricing"
+        }
       },
       "resources": {
         "title": "Resources",
-        "items": { "1": "How it works", "2": "Cases", "3": "Demo", "4": "Changelog" }
+        "items": {
+          "1": "How it works",
+          "2": "Cases",
+          "3": "Demo",
+          "4": "Changelog"
+        }
       },
       "company": {
         "title": "Company",
-        "items": { "1": "About", "2": "Contact", "3": "Careers", "4": "Blog" }
+        "items": {
+          "1": "About",
+          "2": "Contact",
+          "3": "Careers",
+          "4": "Blog"
+        }
       },
       "legal": {
         "title": "Legal"

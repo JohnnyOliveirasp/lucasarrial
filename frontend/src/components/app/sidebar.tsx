@@ -18,6 +18,7 @@ import {
   Images,
   Video,
   Clapperboard,
+  ShoppingBag,
   type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
@@ -87,13 +88,20 @@ export function Sidebar({
     },
   ];
 
-  // Sub-itens de "Vídeos". Por ora só o board (Histórico de Vídeos), entrada
-  // livre — o gate de créditos acontece dentro do wizard, nos estágios pagos.
+  // Sub-itens de "Vídeos". Entrada livre — o gate de créditos acontece dentro
+  // do wizard, nos estágios pagos.
   const videoChildren = [
     {
       href: "/app/videos/history",
       icon: Clapperboard,
       label: t("nav.videoHistory"),
+      locked: false,
+      lockTitle: "",
+    },
+    {
+      href: "/app/videos/vendas",
+      icon: ShoppingBag,
+      label: t("nav.videoSales"),
       locked: false,
       lockTitle: "",
     },

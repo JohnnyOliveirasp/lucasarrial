@@ -46,7 +46,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const admin = getAdmin();
   const { data: project } = await admin
     .from("video_projects")
-    .select("id, status, script_text, audio_duration_seconds, scene_count")
+    .select("id, kind, status, script_text, audio_duration_seconds, scene_count, product_analysis, product_price")
     .eq("id", id)
     .eq("user_id", auth.user_id)
     .maybeSingle();
@@ -69,7 +69,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   let generated;
   try {
-    generated = await generateScenes(script, n);
+    // Vídeo Vendas: cenas product-aware (Sonnet + análise) — o produto na mão/
+    // em uso na maioria das cenas. História: Haiku, comportamento original.
+    const product =
+      project.kind === "sales"
+        ? { analysis: project.product_analysis ?? null, price: project.product_price ?? null }
+        : null;
+    generated = await generateScenes(script, n, product);
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao gerar cenas");
   }
