@@ -1,3 +1,4 @@
+# Re-trigger build: 2026-07-07 (run anterior cancelado)
 name: Build ComfyUI Worker
 
 # Cancela runs anteriores na mesma branch se um novo push chegar (mesmo
