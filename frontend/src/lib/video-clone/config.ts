@@ -6,18 +6,21 @@
  * plataforma = R$97/180.000 = R$0,000539.
  */
 
-export type CloneTierId = "480p" | "720p";
+export type CloneTierId = "480p" | "720p" | "480p-v2";
 
 export type CloneTier = {
   id: CloneTierId;
   label: string;
   blurb: string;
+  /** Qual template de workflow usar (V1 = GGUF/7 steps; V2 = fp8/4 steps). */
+  flow: "v1" | "v2";
   /** Créditos por segundo de áudio (arredondado pra cima). */
   creditsPerSecond: number;
-  /** Resolução de saída (vertical 3:4, múltiplos que o fluxo aceita). */
+  /** Resolução de saída (vertical, múltiplos que o fluxo aceita). */
   width: number;
   height: number;
-  /** Arquivos no Network Volume usados pelo workflow. */
+  /** Arquivos no Network Volume usados pelo workflow (só o fluxo V1 injeta;
+   *  no V2 os modelos já estão fixos no template). */
   ggufModel: string;
   lora: string;
 };
@@ -26,7 +29,8 @@ export const CLONE_TIERS: readonly CloneTier[] = [
   {
     id: "480p",
     label: "Padrão",
-    blurb: "Rápido e econômico. Ótimo pra redes sociais.",
+    blurb: "Equilíbrio entre qualidade e custo. Ótimo pra redes sociais.",
+    flow: "v1",
     creditsPerSecond: 250,
     width: 640,
     height: 850,
@@ -34,9 +38,22 @@ export const CLONE_TIERS: readonly CloneTier[] = [
     lora: "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
   },
   {
+    id: "480p-v2",
+    label: "Turbo",
+    blurb: "Motor novo: gera mais rápido, com cores e movimento mais consistentes.",
+    flow: "v2",
+    creditsPerSecond: 250,
+    width: 480,
+    height: 832,
+    // Modelos fixos no template V2 (fp8 + rank128) — campos não usados.
+    ggufModel: "",
+    lora: "",
+  },
+  {
     id: "720p",
     label: "HD",
     blurb: "Mais nitidez e detalhe. Ideal pra anúncios.",
+    flow: "v1",
     creditsPerSecond: 625,
     width: 960,
     height: 1280,

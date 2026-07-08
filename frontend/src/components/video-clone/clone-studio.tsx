@@ -303,7 +303,7 @@ export function CloneStudio({
       {/* Qualidade */}
       <div className="flex flex-col gap-2">
         <span className={LABEL}>3. Qualidade</span>
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {CLONE_TIERS.map((t) => {
             const active = tierId === t.id;
             return (
@@ -321,7 +321,10 @@ export function CloneStudio({
                 >
                   <span className="flex items-center justify-between gap-2">
                     <span className="font-sans text-[14px] font-semibold text-[var(--ink)]">
-                      {t.label} · {t.id}
+                      {t.label}{" "}
+                      <span className="font-mono text-[10px] font-normal text-[var(--ash)]">
+                        {t.id.startsWith("720") ? "720p" : "480p"}
+                      </span>
                     </span>
                     {active && <Check className="h-4 w-4 text-[var(--silver)]" />}
                   </span>
