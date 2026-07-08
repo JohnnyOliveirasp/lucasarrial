@@ -26,6 +26,41 @@ def _download(url: str, dest: str):
             f.write(chunk)
 
 
+def _f32_pcm(wav: "torch.Tensor") -> "torch.Tensor":
+    """int PCM -> float32 [-1, 1] (mesma normalizacao do LoadAudio do ComfyUI)."""
+    if wav.dtype.is_floating_point:
+        return wav
+    if wav.dtype == torch.int16:
+        return wav.float() / (2 ** 15)
+    if wav.dtype == torch.int32:
+        return wav.float() / (2 ** 31)
+    raise ValueError(f"Unsupported wav dtype: {wav.dtype}")
+
+
+def _decode_audio_av(path: str):
+    """Decodifica audio (mp3/wav/etc) com PyAV — como o LoadAudio nativo do
+    ComfyUI. Evita torchaudio.load, que no torchaudio novo exige torchcodec."""
+    import av
+    with av.open(path) as af:
+        if not af.streams.audio:
+            raise ValueError("Nenhuma stream de audio no arquivo")
+        stream = af.streams.audio[0]
+        sample_rate = stream.codec_context.sample_rate
+        n_channels = stream.channels or 1
+        frames = []
+        for frame in af.decode(streams=stream.index):
+            buf = torch.from_numpy(frame.to_ndarray())
+            if buf.ndim == 1:
+                buf = buf[None, :]
+            if buf.shape[0] != n_channels:
+                # formato packed/interleaved -> (channels, samples)
+                buf = buf.view(-1, n_channels).t()
+            frames.append(buf)
+        if not frames:
+            raise ValueError("Nenhum frame de audio decodificado")
+        return _f32_pcm(torch.cat(frames, dim=1)), sample_rate
+
+
 class LoadImageFromURL:
     CATEGORY = "aiverse"
     RETURN_TYPES = ("IMAGE",)
@@ -56,11 +91,10 @@ class LoadAudioFromURL:
         return {"required": {"url": ("STRING", {"default": ""})}}
 
     def load(self, url):
-        import torchaudio
         import folder_paths
         dest = os.path.join(folder_paths.get_input_directory(), "aiverse_input_audio")
         _download(url, dest)
-        waveform, sample_rate = torchaudio.load(dest)
+        waveform, sample_rate = _decode_audio_av(dest)
         return ({"waveform": waveform.unsqueeze(0), "sample_rate": sample_rate},)
 
 
