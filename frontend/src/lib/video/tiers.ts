@@ -70,9 +70,9 @@ export const VIDEO_RESOLUTION = "720p";
 
 /** Prompt de movimento padrão quando o Sonnet (visão) falha — mantém o fluxo. */
 export const FALLBACK_MOVEMENT_PROMPT_PT =
-  "Animação sutil e realista do sujeito da imagem: leve movimento de cabeça, piscadas e um gesto natural, com um lento dolly-in de câmera. Mantém identidade, roupa, iluminação e fundo.";
+  "Animação sutil e realista do sujeito da imagem: leve movimento de cabeça, piscadas, micro-expressões e um gesto natural, com um lento dolly-in de câmera. Pele com textura natural e poros visíveis, grão de filme sutil, sem filtro de beleza. Mantém identidade, roupa, iluminação e fundo.";
 export const FALLBACK_MOVEMENT_PROMPT_EN =
-  "Subtle, lifelike animation of the subject from the image: gentle head movement, natural blinking and a small hand gesture, with a slow cinematic dolly-in. Keep identity, clothing, lighting and background stable.";
+  "Subtle, lifelike animation of the subject from the image: gentle head movement, natural blinking, micro-expressions and a small hand gesture, with a slow cinematic dolly-in. Natural skin texture with visible pores, subtle film grain, no beauty filter, no 3D render, no cartoon, no VFX look. Keep identity, clothing, lighting and background stable.";
 
 export function getTier(id: string | null | undefined): VideoTier | null {
   return VIDEO_TIERS.find((t) => t.id === id) ?? null;
