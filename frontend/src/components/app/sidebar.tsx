@@ -19,6 +19,7 @@ import {
   Video,
   Clapperboard,
   ShoppingBag,
+  UserSquare2,
   type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
@@ -102,6 +103,13 @@ export function Sidebar({
       href: "/app/videos/vendas",
       icon: ShoppingBag,
       label: t("nav.videoSales"),
+      locked: false,
+      lockTitle: "",
+    },
+    {
+      href: "/app/videos/clone",
+      icon: UserSquare2,
+      label: t("nav.videoClone"),
       locked: false,
       lockTitle: "",
     },
