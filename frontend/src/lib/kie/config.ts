@@ -24,13 +24,16 @@ export type AspectRatio = (typeof ASPECT_RATIOS)[number]["value"];
 export const ASPECT_VALUES = ASPECT_RATIOS.map((a) => a.value) as readonly string[];
 
 /**
- * Resoluções e o custo em créditos de cada uma. Travado com o Lucas:
- * 1K=12, 2K=22, 4K=30.
+ * Resoluções e o custo em créditos de cada uma.
+ * REPRECIFICADO 2026-07-08 (Johnny): lucro ≥70% sobre o custo REAL do Kie.
+ * Conta: custo Kie (créditos Kie × US$0,005 × câmbio 5,5) × 1,7 ÷ valor do
+ * crédito da plataforma (R$97/180.000 = R$0,000539). Kie: 1K=6, 2K=11, 4K=15
+ * créditos Kie. Antes era 12/22/30 (≈25× abaixo do custo — prejuízo).
  */
 export const RESOLUTIONS = [
-  { value: "1K", label: "1K", credits: 12, hint: "Padrão — rápido e barato. Ótimo pra redes sociais." },
-  { value: "2K", label: "2K", credits: 22, hint: "Mais nitidez. Bom pra impressão pequena." },
-  { value: "4K", label: "4K", credits: 30, hint: "Máxima resolução. Indisponível em quadrado (1:1) e automático." },
+  { value: "1K", label: "1K", credits: 525, hint: "Padrão — rápido e barato. Ótimo pra redes sociais." },
+  { value: "2K", label: "2K", credits: 960, hint: "Mais nitidez. Bom pra impressão pequena." },
+  { value: "4K", label: "4K", credits: 1320, hint: "Máxima resolução. Indisponível em quadrado (1:1) e automático." },
 ] as const;
 
 export type Resolution = (typeof RESOLUTIONS)[number]["value"];

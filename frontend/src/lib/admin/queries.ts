@@ -11,7 +11,7 @@ import {
   hotmartFeeBrl,
   imagesCostBrl,
   infraCostBrl,
-  kieCostBrlFromUserCredits,
+  kieCreditsCostBrl,
 } from "./cost";
 import { VIDEO_TIERS } from "@/lib/video/tiers";
 
@@ -117,7 +117,8 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
   const videosByTier = fin.scene_videos_by_tier ?? [];
   const videoCost = videosByTier.reduce((sum, v) => {
     const tier = VIDEO_TIERS.find((t) => t.id === v.tier);
-    return sum + kieCostBrlFromUserCredits((tier?.creditsPerClip ?? 30) * v.n);
+    // custo REAL: créditos Kie do tier (kieCost) × nº de clipes
+    return sum + kieCreditsCostBrl((tier?.kieCost ?? 15) * v.n);
   }, 0);
   const videoCount = videosByTier.reduce((s, v) => s + v.n, 0);
 

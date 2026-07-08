@@ -37,8 +37,9 @@ export function hotmartFeeBrl(grossBrl: number, sales: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Custos Kie (imagens + clipes de vídeo). Regra travada: créditos cobrados do
-// usuário = 2× o custo do Kie em créditos Kie → custo Kie = créditos/2.
+// Custos Kie (imagens + clipes de vídeo), calculados nos CRÉDITOS KIE reais
+// de cada operação (não mais derivados do preço ao usuário — a regra antiga
+// "créditos/2" morreu na reprecificação de 2026-07-08).
 // Kie vende crédito a US$0,005 (kie.ai/pricing).
 // ---------------------------------------------------------------------------
 
@@ -48,18 +49,18 @@ export const USD_BRL = 5.5;
 /** Preço do crédito Kie em US$ (kie.ai/pricing). */
 export const KIE_USD_PER_CREDIT = 0.005;
 
-/** Créditos cobrados do usuário por imagem, por resolução (kie/config.ts). */
-export const IMAGE_CREDITS_BY_RES: Record<string, number> = { "1K": 12, "2K": 22, "4K": 30 };
+/** Custo REAL no Kie (em créditos Kie) por imagem, por resolução. */
+export const KIE_IMAGE_CREDITS_BY_RES: Record<string, number> = { "1K": 6, "2K": 11, "4K": 15 };
 
-/** Custo Kie em R$ a partir dos créditos cobrados do usuário (regra 2×). */
-export function kieCostBrlFromUserCredits(userCredits: number): number {
-  return (userCredits / 2) * KIE_USD_PER_CREDIT * USD_BRL;
+/** Custo em R$ de N créditos Kie. */
+export function kieCreditsCostBrl(kieCredits: number): number {
+  return kieCredits * KIE_USD_PER_CREDIT * USD_BRL;
 }
 
 /** Custo Kie em R$ de um lote de imagens agrupado por resolução. */
 export function imagesCostBrl(byRes: Array<{ resolution: string; n: number }>): number {
   return byRes.reduce(
-    (sum, r) => sum + kieCostBrlFromUserCredits((IMAGE_CREDITS_BY_RES[r.resolution] ?? 12) * r.n),
+    (sum, r) => sum + kieCreditsCostBrl((KIE_IMAGE_CREDITS_BY_RES[r.resolution] ?? 6) * r.n),
     0,
   );
 }
@@ -71,8 +72,9 @@ export function imagesCostBrl(byRes: Array<{ resolution: string; n: number }>): 
 export const INFRA_USD_MONTH = {
   /** Servidor Hetzner (app + workers). */
   hetzner: 25,
-  /** RunPod Network Volume (HD dos modelos). */
-  runpodStorage: 15,
+  /** RunPod Network Volume (HD dos modelos InfiniteTalk, 60GB EU-NL-1).
+   *  O antigo de 200GB (US$15) foi apagado em 2026-07-08. */
+  runpodStorage: 4.2,
 } as const;
 
 export const INFRA_TOTAL_USD_MONTH = INFRA_USD_MONTH.hetzner + INFRA_USD_MONTH.runpodStorage;

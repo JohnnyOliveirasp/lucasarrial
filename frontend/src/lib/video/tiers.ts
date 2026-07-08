@@ -1,6 +1,9 @@
 /**
- * Tiers de geração de vídeo (image-to-video via Kie). Valores travados com o
- * Lucas: preço ao usuário = 2× o custo do Kie (mesma regra da imagem).
+ * Tiers de geração de vídeo (image-to-video via Kie).
+ * REPRECIFICADO 2026-07-08 (Johnny): lucro ≥70% sobre o custo REAL do Kie.
+ * Conta: kieCost (créditos Kie) × US$0,005 × câmbio 5,5 × 1,7 ÷ R$0,000539
+ * (valor do crédito = R$97/180.000). Antes era 30/180/206 ("2× em créditos",
+ * que ignorava que o crédito Kie vale ~50× o nosso — dava prejuízo).
  *
  * Os 3 modelos são exemplificados por vídeos de amostra em
  * /assets/video-samples/{grok,kling,seedance}.mp4 — a pessoa compara e escolhe
@@ -33,7 +36,7 @@ export const VIDEO_TIERS: readonly VideoTier[] = [
     label: "Bronze",
     kieModel: "grok-imagine-video-1-5-preview",
     kieCost: 15,
-    creditsPerClip: 30,
+    creditsPerClip: 1320,
     sampleSrc: "/assets/video-samples/grok.mp4",
     blurb: "Rápido e econômico. Bom pra volume.",
   },
@@ -43,7 +46,7 @@ export const VIDEO_TIERS: readonly VideoTier[] = [
     label: "Prata",
     kieModel: "kling/v3-turbo-image-to-video",
     kieCost: 90,
-    creditsPerClip: 180,
+    creditsPerClip: 7900,
     sampleSrc: "/assets/video-samples/kling.mp4",
     blurb: "Movimento mais natural e estável.",
   },
@@ -53,7 +56,7 @@ export const VIDEO_TIERS: readonly VideoTier[] = [
     label: "Gold",
     kieModel: "bytedance/seedance-2-mini",
     kieCost: 103,
-    creditsPerClip: 206,
+    creditsPerClip: 9000,
     sampleSrc: "/assets/video-samples/seedance.mp4",
     blurb: "Máxima qualidade e fidelidade.",
   },
