@@ -14,6 +14,9 @@ import {
   Loader2,
 } from "lucide-react";
 
+import { ImageAnimatePanel } from "./image-animate";
+import { downloadFromUrl } from "./download-file";
+
 type Img = {
   id: string;
   name: string | null;
@@ -25,6 +28,11 @@ type Img = {
   error_message: string | null;
   created_at: string;
   image_url: string | null;
+  video_status: "pending" | "generating" | "ready" | "failed" | null;
+  video_tier: string | null;
+  video_prompt_pt: string | null;
+  video_error: string | null;
+  video_url: string | null;
 };
 
 const STATUS_LABEL: Record<Img["status"], string> = {
@@ -38,7 +46,14 @@ function fallbackName(g: Img): string {
   return g.name?.trim() || `Imagem ${new Date(g.created_at).toLocaleDateString("pt-BR")}`;
 }
 
-export function ImageHistory({ reloadKey = 0 }: { reloadKey?: number }) {
+export function ImageHistory({
+  reloadKey = 0,
+  openAnimateId = null,
+}: {
+  reloadKey?: number;
+  /** Abre o painel "Animar" desta imagem (vindo do botão na tela de resultado). */
+  openAnimateId?: string | null;
+}) {
   const [items, setItems] = useState<Img[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +63,7 @@ export function ImageHistory({ reloadKey = 0 }: { reloadKey?: number }) {
   const [draft, setDraft] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<Img | null>(null);
+  const [animateId, setAnimateId] = useState<string | null>(null);
   const editRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -67,39 +83,24 @@ export function ImageHistory({ reloadKey = 0 }: { reloadKey?: number }) {
     load();
   }, [load, reloadKey]);
 
-  // Auto-refresh enquanto houver imagem em andamento (na fila/gerando).
-  const hasInflight = items.some((i) => i.status === "pending" || i.status === "generating");
+  // Pedido externo (botão "Animar" da tela de resultado) abre o painel.
+  useEffect(() => {
+    if (openAnimateId) setAnimateId(openAnimateId);
+  }, [openAnimateId]);
+
+  // Auto-refresh enquanto houver imagem OU vídeo em andamento (na fila/gerando).
+  const hasInflight = items.some(
+    (i) =>
+      i.status === "pending" ||
+      i.status === "generating" ||
+      i.video_status === "pending" ||
+      i.video_status === "generating",
+  );
   useEffect(() => {
     if (!hasInflight) return;
     const t = setInterval(load, 4000);
     return () => clearInterval(t);
   }, [hasInflight, load]);
-
-  async function download(url: string, label: string) {
-    let ext = "png";
-    try {
-      const m = new URL(url).pathname.match(/\.([a-z0-9]+)$/i);
-      if (m) ext = m[1].toLowerCase();
-    } catch {
-      /* png */
-    }
-    const safe =
-      (label || "imagem").trim().replace(/[\\/:*?"<>|]+/g, "").slice(0, 120) || "imagem";
-    try {
-      const res = await fetch(url, { cache: "no-store" });
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = `${safe}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objectUrl);
-    } catch {
-      window.open(url, "_blank");
-    }
-  }
 
   async function confirmDelete() {
     if (pending.length === 0) return;
@@ -188,7 +189,7 @@ export function ImageHistory({ reloadKey = 0 }: { reloadKey?: number }) {
         {items.map((g, idx) => (
           <li
             key={g.id}
-            className={`flex flex-col gap-3 bg-[var(--surface-card)] px-4 py-4 sm:flex-row sm:items-center ${
+            className={`flex flex-col gap-3 bg-[var(--surface-card)] px-4 py-4 sm:flex-row sm:flex-wrap sm:items-center ${
               idx > 0 ? "border-t border-[var(--hairline)]" : ""
             }`}
           >
@@ -268,18 +269,27 @@ export function ImageHistory({ reloadKey = 0 }: { reloadKey?: number }) {
             <div className="flex items-center gap-3 sm:justify-end">
               <button
                 type="button"
-                disabled
-                title="Em breve: gerar vídeo a partir desta imagem"
-                aria-label="Usar imagem (em breve)"
-                className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline)] px-2.5 py-1.5 font-mono text-[10px] tracking-wide text-[var(--ash)] opacity-50"
+                disabled={g.status !== "ready" || !g.image_url}
+                onClick={() => setAnimateId(animateId === g.id ? null : g.id)}
+                aria-expanded={animateId === g.id}
+                aria-label="Animar imagem (gerar vídeo)"
+                className={`inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-1.5 font-mono text-[10px] tracking-wide transition-colors disabled:opacity-40 ${
+                  animateId === g.id
+                    ? "border-[var(--hairline-bright)] text-[var(--ink)]"
+                    : "border-[var(--hairline)] text-[var(--silver)] hover:border-[var(--hairline-bright)] hover:text-[var(--ink)]"
+                }`}
               >
-                <Film className="h-3.5 w-3.5" />
-                Usar
+                {g.video_status === "pending" || g.video_status === "generating" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Film className="h-3.5 w-3.5" />
+                )}
+                {g.video_status === "ready" ? "Vídeo" : "Animar"}
               </button>
               <button
                 type="button"
                 disabled={!g.image_url}
-                onClick={() => g.image_url && download(g.image_url, fallbackName(g))}
+                onClick={() => g.image_url && downloadFromUrl(g.image_url, fallbackName(g))}
                 aria-label="Baixar"
                 className="text-[var(--mute)] transition-colors hover:text-[var(--ink)] disabled:opacity-30"
               >
@@ -294,6 +304,13 @@ export function ImageHistory({ reloadKey = 0 }: { reloadKey?: number }) {
                 <Trash2 className="h-5 w-5" />
               </button>
             </div>
+
+            {/* Painel de animação (a tela "corre" até ele ao abrir) */}
+            {animateId === g.id && (
+              <div className="w-full sm:basis-full">
+                <ImageAnimatePanel key={g.id} image={g} onChanged={load} />
+              </div>
+            )}
           </li>
         ))}
       </ul>
@@ -317,7 +334,7 @@ export function ImageHistory({ reloadKey = 0 }: { reloadKey?: number }) {
               <span className="truncate text-sm text-[var(--mute)]">{fallbackName(lightbox)}</span>
               <button
                 type="button"
-                onClick={() => download(lightbox.image_url!, fallbackName(lightbox))}
+                onClick={() => downloadFromUrl(lightbox.image_url!, fallbackName(lightbox))}
                 className="inline-flex h-9 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-4 text-[13px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
               >
                 <Download className="h-4 w-4" />

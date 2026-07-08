@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   const { data: rows, error } = await admin
     .from("image_generations")
     .select(
-      "id, name, prompt, aspect_ratio, resolution, credits_cost, image_path, status, error_message, created_at",
+      "id, name, prompt, aspect_ratio, resolution, credits_cost, image_path, status, error_message, created_at, video_status, video_path, video_tier, video_prompt_pt, video_error",
     )
     .eq("user_id", auth.user_id)
     .order("created_at", { ascending: false });
@@ -38,6 +38,14 @@ export async function GET(request: NextRequest) {
           image_url = null;
         }
       }
+      let video_url: string | null = null;
+      if (g.video_status === "ready" && g.video_path) {
+        try {
+          video_url = await createPresignedGet(imagesBucket(), g.video_path, 60 * 60);
+        } catch {
+          video_url = null;
+        }
+      }
       return {
         id: g.id,
         name: g.name,
@@ -49,6 +57,11 @@ export async function GET(request: NextRequest) {
         error_message: g.error_message,
         created_at: g.created_at,
         image_url,
+        video_status: g.video_status,
+        video_tier: g.video_tier,
+        video_prompt_pt: g.video_prompt_pt,
+        video_error: g.video_error,
+        video_url,
       };
     }),
   );
@@ -74,7 +87,7 @@ export async function DELETE(request: NextRequest) {
   const admin = getAdmin();
   const { data: rows, error } = await admin
     .from("image_generations")
-    .select("id, input_image_path, input_image_paths, image_path")
+    .select("id, input_image_path, input_image_paths, image_path, video_path")
     .eq("user_id", auth.user_id)
     .in("id", ids);
   if (error) return serverError("Failed to load images");
@@ -84,10 +97,11 @@ export async function DELETE(request: NextRequest) {
   try {
     const keys = found
       .flatMap((r) => [
-        // todas as refs (array novo) + a legada singular + o resultado
+        // todas as refs (array novo) + a legada singular + o resultado + vídeo
         ...(r.input_image_paths ?? []),
         r.input_image_path,
         r.image_path,
+        r.video_path,
       ])
       .filter((k): k is string => !!k);
     if (keys.length) await deleteKeys(imagesBucket(), [...new Set(keys)]);

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ImagePlus, Sparkles, Wand2, Download, X, Loader2, ShieldAlert } from "lucide-react";
+import { ImagePlus, Sparkles, Wand2, Download, Film, X, Loader2, ShieldAlert } from "lucide-react";
 import { SupportError } from "@/components/ui/support-error";
 import { PaywallModal } from "@/components/app/paywall-modal";
 import { AudioGeneratingIndicator } from "@/components/voice/audio-generating-indicator";
@@ -39,10 +39,13 @@ export function ImageStudio({
   creditsTotal,
   unlimited,
   onGenerated,
+  onAnimate,
 }: {
   creditsTotal: number;
   unlimited: boolean;
   onGenerated?: () => void;
+  /** Abre o painel "Animar" desta imagem no histórico (feature Vídeo). */
+  onAnimate?: (imageId: string) => void;
 }) {
   const [step, setStep] = useState<Step>("form");
   const [error, setError] = useState<string | null>(null);
@@ -313,6 +316,12 @@ export function ImageStudio({
             <Download className="h-4 w-4" />
             Baixar
           </button>
+          {onAnimate && (
+            <button type="button" onClick={() => onAnimate(result.id)} className={SECONDARY}>
+              <Film className="h-4 w-4" />
+              Animar (gerar vídeo)
+            </button>
+          )}
           <button type="button" onClick={reset} className={SECONDARY}>
             Gerar outra
           </button>

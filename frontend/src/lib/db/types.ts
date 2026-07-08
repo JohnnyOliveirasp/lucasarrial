@@ -175,6 +175,15 @@ export type ImageGenerationRow = {
   kie_task_id: string | null;
   error_message: string | null;
   created_at: Timestamp;
+  // Vídeo animado a partir da imagem (migration 28) — espelha video_scenes.
+  video_path: string | null;
+  video_status: ImageGenerationStatus | null;
+  video_kie_task_id: string | null;
+  video_prompt_pt: string | null;
+  video_prompt_en: string | null;
+  video_tier: string | null;
+  video_credits_cost: number | null;
+  video_error: string | null;
 };
 export type ImageGenerationInsert = {
   id?: string;

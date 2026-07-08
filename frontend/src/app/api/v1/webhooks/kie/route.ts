@@ -12,6 +12,7 @@ import type { NextRequest } from "next/server";
 import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { syncImageTask } from "@/lib/images/sync";
+import { syncImageVideo } from "@/lib/images/video-sync";
 import { syncSceneImage } from "@/lib/video/image-sync";
 import { syncSceneVideo } from "@/lib/video/video-sync";
 
@@ -92,6 +93,25 @@ export async function POST(request: NextRequest) {
       // best-effort; o poll do cliente ainda cobre
     }
     return jsonOk({ handled: "video_clip" });
+  }
+
+  // 4) Vídeo animado de imagem do Gerador de Imagem.
+  const { data: imgVideo } = await admin
+    .from("image_generations")
+    .select("id, user_id, video_status")
+    .eq("video_kie_task_id", taskId)
+    .maybeSingle();
+
+  if (imgVideo) {
+    if (imgVideo.video_status === "ready" || imgVideo.video_status === "failed") {
+      return jsonOk({ handled: "noop", status: imgVideo.video_status });
+    }
+    try {
+      await syncImageVideo(imgVideo.id, imgVideo.user_id, taskId);
+    } catch {
+      // best-effort; o poll do cliente ainda cobre
+    }
+    return jsonOk({ handled: "image_video" });
   }
 
   return jsonOk({ handled: "ignored", reason: "task not found" });

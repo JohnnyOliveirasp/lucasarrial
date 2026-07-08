@@ -17,13 +17,14 @@ import { getAdmin } from "@/lib/db/admin";
 import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { syncImageTask } from "@/lib/images/sync";
+import { syncImageVideo } from "@/lib/images/video-sync";
 import type { ImageGenerationStatus } from "@/lib/db/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 const POLLING: ImageGenerationStatus[] = ["pending", "generating"];
 const SELECT =
-  "id, user_id, name, prompt, aspect_ratio, resolution, credits_cost, image_path, status, error_message, kie_task_id, created_at";
+  "id, user_id, name, prompt, aspect_ratio, resolution, credits_cost, image_path, status, error_message, kie_task_id, created_at, video_status, video_path, video_kie_task_id, video_tier, video_prompt_pt, video_error";
 
 export async function GET(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -42,9 +43,13 @@ export async function GET(request: NextRequest, ctx: Ctx) {
   if (!gen) return notFound("Image");
 
   let current = gen;
-  if (POLLING.includes(gen.status) && gen.kie_task_id) {
+  const needsImageSync = POLLING.includes(gen.status) && gen.kie_task_id;
+  const needsVideoSync =
+    !!gen.video_status && POLLING.includes(gen.video_status) && !!gen.video_kie_task_id;
+  if (needsImageSync || needsVideoSync) {
     try {
-      await syncImageTask(gen.id, gen.user_id, gen.kie_task_id);
+      if (needsImageSync) await syncImageTask(gen.id, gen.user_id, gen.kie_task_id!);
+      if (needsVideoSync) await syncImageVideo(gen.id, gen.user_id, gen.video_kie_task_id!);
       const { data: refreshed } = await admin
         .from("image_generations")
         .select(SELECT)
@@ -65,7 +70,16 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     }
   }
 
-  return jsonOk({ image: { ...current, image_url } });
+  let video_url: string | null = null;
+  if (current.video_status === "ready" && current.video_path) {
+    try {
+      video_url = await createPresignedGet(imagesBucket(), current.video_path, 60 * 60);
+    } catch {
+      video_url = null;
+    }
+  }
+
+  return jsonOk({ image: { ...current, image_url, video_url } });
 }
 
 export async function PATCH(request: NextRequest, ctx: Ctx) {

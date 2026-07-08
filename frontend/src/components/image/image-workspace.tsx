@@ -16,6 +16,8 @@ export function ImageWorkspace({
   unlimited: boolean;
 }) {
   const [reloadKey, setReloadKey] = useState(0);
+  // "Animar" na tela de resultado → abre o painel de vídeo da imagem no histórico.
+  const [animateId, setAnimateId] = useState<string | null>(null);
 
   return (
     <div className="flex flex-col gap-12">
@@ -24,6 +26,7 @@ export function ImageWorkspace({
           creditsTotal={creditsTotal}
           unlimited={unlimited}
           onGenerated={() => setReloadKey((k) => k + 1)}
+          onAnimate={(id) => setAnimateId(id)}
         />
       </section>
 
@@ -31,7 +34,7 @@ export function ImageWorkspace({
         <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
           Suas imagens
         </h2>
-        <ImageHistory reloadKey={reloadKey} />
+        <ImageHistory reloadKey={reloadKey} openAnimateId={animateId} />
       </section>
     </div>
   );
