@@ -83,3 +83,39 @@ jobs:
           IMG="ghcr.io/${{ steps.owner.outputs.owner }}/lucasarrial-comfyui:${GITHUB_SHA::7}"
           docker run --rm --entrypoint python "$IMG" -c "import sageattention; print('sageattention OK', sageattention.__version__ if hasattr(sageattention,'__version__') else '')"
           docker run --rm --entrypoint python "$IMG" -c "import torchaudio; print('torchaudio OK', torchaudio.__version__)"
+
+  # Deploy no RunPod SEM recriar endpoint: template -> tag do commit + recicla
+  # workers. Só na main (produção). Requer secret RUNPOD_API_KEY.
+  deploy-runpod:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      TEMPLATE_ID: 810lqswobo
+      ENDPOINT_ID: 9get7wv7trn3wg
+      WORKERS_MAX: "2"
+    steps:
+      - name: Set lowercase repo owner
+        id: owner
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - name: Point template to new image + recycle workers
+        run: |
+          if [ -z "$RUNPOD_API_KEY" ]; then
+            echo "::warning::secret RUNPOD_API_KEY ausente — pulei o deploy no RunPod (fazer manual)."
+            exit 0
+          fi
+          IMG="ghcr.io/${{ steps.owner.outputs.owner }}/lucasarrial-comfyui:${GITHUB_SHA::7}"
+          echo "template -> $IMG"
+          curl -sf -X PATCH "https://rest.runpod.io/v1/templates/$TEMPLATE_ID" \
+            -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \
+            -d "{\"imageName\":\"$IMG\"}" -o /dev/null
+          echo "reciclando workers (0 -> $WORKERS_MAX)"
+          curl -sf -X PATCH "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID" \
+            -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \
+            -d '{"workersMax":0}' -o /dev/null
+          sleep 30
+          curl -sf -X PATCH "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID" \
+            -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \
+            -d "{\"workersMax\":$WORKERS_MAX}" -o /dev/null
+          echo "deploy RunPod ok: $IMG"
