@@ -189,6 +189,31 @@ def _handle_train(inp: dict) -> dict:
     if next_idx == 0:
         return {"error": "no usable speech segments after VAD/chunk"}
 
+    # ── Áudio ÚTIL pós-limpeza (anti-churn) ────────────────────────────────
+    # O usuário manda 20min BRUTOS; Demucs+VAD podem descartar quase tudo
+    # (ruído, música, silêncio). Medimos o que SOBROU e abortamos ANTES do
+    # treino se for pouco — barato (~1min de GPU) e o backend estorna os
+    # créditos com a mensagem certa, em vez de entregar uma voz ruim.
+    import soundfile as _sf
+    useful_seconds = 0.0
+    for _chunk in sorted(dataset_dir.glob("*.wav")):
+        try:
+            _info = _sf.info(str(_chunk))
+            useful_seconds += float(_info.frames) / float(_info.samplerate or 1)
+        except Exception:
+            pass
+    useful_seconds = round(useful_seconds, 1)
+    min_useful = float(os.environ.get("TRAIN_MIN_USEFUL_SECONDS", "600"))
+    _log("info", "train.useful_audio", useful_seconds=useful_seconds, min_required=min_useful)
+    if useful_seconds < min_useful:
+        return {
+            "voice_id": voice_id,
+            "error": "insufficient_audio",
+            "useful_seconds": useful_seconds,
+            "min_required_seconds": min_useful,
+            "dataset_chunks": next_idx,
+        }
+
     # ── Referência automática ──────────────────────────────────────────────
     # Pega 1 áudio (aleatório) já LIMPO pelo Demucs, corta REFERENCE_SECONDS e
     # sobe como a referência da voz. Substitui o upload manual de referência —
@@ -204,6 +229,7 @@ def _handle_train(inp: dict) -> dict:
     reference_uploaded = False
     reference_transcript: str | None = None
     reference_error: str | None = None
+    reference_clip_path: Path | None = None
     if reference_upload_url:
         norm_files = sorted(norm_dir.glob("*_mono16k.wav"))
         if norm_files:
@@ -231,6 +257,7 @@ def _handle_train(inp: dict) -> dict:
                 )
                 reference_uploaded = True
                 reference_transcript = transcript
+                reference_clip_path = ref_clip  # reusada na amostra pós-treino
                 _log(
                     "info", "train.reference.done",
                     seconds=REFERENCE_SECONDS, transcript_len=len(transcript),
@@ -298,6 +325,25 @@ def _handle_train(inp: dict) -> dict:
     )
     _log("info", "train.upload.done")
 
+    # ── Amostra automática (anti-churn): o usuário OUVE a voz na hora ──────
+    # Modelo/LoRA/referência já estão locais — sai quase grátis. Best-effort.
+    sample_info: dict = {"sample_uploaded": False, "sample_seconds": None, "sample_error": None}
+    sample_upload_url = inp.get("sample_upload_url")
+    if sample_upload_url:
+        from sample_gen import generate_training_sample, DEFAULT_SAMPLE_TEXT
+        sample_info = generate_training_sample(
+            model_dir=MODEL_DIR,
+            lora_path=latest_lora,
+            lora_rank=LORA_RANK,
+            lora_alpha=TRAIN_LORA_ALPHA,
+            ref_wav=reference_clip_path,
+            ref_text=reference_transcript,
+            sample_text=str(inp.get("sample_text") or DEFAULT_SAMPLE_TEXT),
+            upload_url=sample_upload_url,
+            work_dir=job_dir / "sample",
+            log=lambda **k: _log(k.pop("level", "info"), k.pop("event", "train.sample"), **k),
+        )
+
     elapsed = time.monotonic() - t0
     return {
         "voice_id": voice_id,
@@ -306,11 +352,13 @@ def _handle_train(inp: dict) -> dict:
         "steps": max_steps,
         "trainer_returncode": 0,
         "dataset_chunks": next_idx,
+        "useful_seconds": useful_seconds,
         "reference_uploaded": reference_uploaded,
         "reference_transcript": reference_transcript,
         "reference_error": reference_error,
         "lora_alpha": TRAIN_LORA_ALPHA,
         "lora_rank": LORA_RANK,
+        **sample_info,
     }
 
 

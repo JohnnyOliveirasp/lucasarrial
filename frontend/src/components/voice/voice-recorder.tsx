@@ -12,6 +12,10 @@ const SPEECH_RMS = 0.015; // acima disso considera fala
 const SILENCE_MS = 2000; // silêncio após falar → para automaticamente
 const MAX_SECONDS = 300; // trava por clipe (limita RAM a ~57MB/clipe)
 const CLIP_PEAK = 0.99; // saturação (clipping)
+// Piso de ruído: RMS médio dos frames SEM fala. Acima disso o ambiente está
+// barulhento (ar-condicionado, rua, TV) — o Demucs/VAD vai descartar áudio e
+// o clone sai pior. Aviso em tempo real (anti-churn).
+const NOISE_FLOOR_WARN = 0.008;
 const TARGET_SECONDS = 20 * 60; // meta de fala pro treino
 
 type Status = "idle" | "requesting" | "ready" | "recording" | "denied";
@@ -29,6 +33,8 @@ export function VoiceRecorder() {
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [clipping, setClipping] = useState(false);
+  const [noisy, setNoisy] = useState(false);
+  const noiseEmaRef = useRef<number | null>(null);
   const [clips, setClips] = useState<ClipView[]>([]);
 
   const ctxRef = useRef<AudioContext | null>(null);
@@ -117,6 +123,14 @@ export function VoiceRecorder() {
       }
       const r = rms(buf);
       setLevel(Math.min(1, r * 6));
+      // Piso de ruído (frames SEM fala): média móvel exponencial. Vale com o
+      // mic aberto mesmo antes de gravar — a pessoa arruma o ambiente ANTES.
+      if (r <= SPEECH_RMS) {
+        const prev = noiseEmaRef.current;
+        const ema = prev === null ? r : prev * 0.95 + r * 0.05;
+        noiseEmaRef.current = ema;
+        setNoisy(ema > NOISE_FLOOR_WARN);
+      }
       if (recordingRef.current) {
         const now = performance.now();
         if (peak >= CLIP_PEAK) setClipping(true);
@@ -293,6 +307,13 @@ export function VoiceRecorder() {
       {clipping && (
         <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[10px] tracking-wide text-[var(--status-warn)]">
           <AlertTriangle className="h-4 w-4" /> Áudio estourando — afaste o microfone ou fale mais baixo
+        </p>
+      )}
+
+      {noisy && !clipping && (status === "ready" || status === "recording") && (
+        <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[10px] tracking-wide text-[var(--status-warn)]">
+          <AlertTriangle className="h-4 w-4" /> Ambiente barulhento — a qualidade do clone cai. Procure um
+          lugar silencioso (sem TV, rua ou ar-condicionado).
         </p>
       )}
 

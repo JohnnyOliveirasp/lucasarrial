@@ -135,13 +135,28 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
           <span className="text-[var(--status-online)]">✓</span> Voz pronta
         </h2>
         <p className="text-sm text-[var(--body)]">
-          LoRA treinada e armazenada. Agora você pode gerar áudio com qualquer texto.
+          LoRA treinada e armazenada. Ouça a amostra abaixo — se gostou, é só gerar.
         </p>
+        <VoiceSamplePlayer voiceId={voiceId} />
         <Link
           href={`/app/voice-cloning/${voiceId}/generate`}
           className={`${PILL} w-fit`}
         >
           Gerar áudio →
+        </Link>
+      </section>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <section className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] p-6">
+        <h2 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
+          O treinamento não completou
+        </h2>
+        <VoiceErrorMessage voiceId={voiceId} />
+        <Link href="/app/voice-cloning/new" className={`${PILL} w-fit`}>
+          Tentar de novo com mais áudio →
         </Link>
       </section>
     );
@@ -164,4 +179,52 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
   }
 
   return null;
+}
+
+/** Amostra automática gerada no fim do treino (linha "Amostra automática" em
+ *  generations). Se não existir (treino antigo / falhou best-effort), some. */
+function VoiceSamplePlayer({ voiceId }: { voiceId: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/v1/generations", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        const rows = (j?.generations ?? []) as Array<{
+          voice_id: string;
+          name: string | null;
+          audio_url?: string | null;
+          status: string;
+        }>;
+        const sample = rows.find(
+          (g) => g.voice_id === voiceId && g.name === "Amostra automática" && g.status === "ready",
+        );
+        setUrl(sample?.audio_url ?? null);
+      })
+      .catch(() => {});
+  }, [voiceId]);
+  if (!url) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="font-mono text-[11px] uppercase tracking-wide text-[var(--ash)]">
+        🔊 Amostra da sua voz (gerada automaticamente)
+      </span>
+      <audio src={url} controls preload="metadata" className="w-full max-w-md" />
+    </div>
+  );
+}
+
+/** Mensagem de erro amigável da voz (ex.: áudio útil insuficiente + estorno). */
+function VoiceErrorMessage({ voiceId }: { voiceId: string }) {
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => {
+    fetch(`/api/v1/voices/${voiceId}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setMsg(j?.voice?.error_message ?? null))
+      .catch(() => {});
+  }, [voiceId]);
+  return (
+    <p className="text-sm text-[var(--body)]">
+      {msg || "Algo deu errado no treinamento. Tente novamente — se persistir, fale com o suporte."}
+    </p>
+  );
 }

@@ -1,0 +1,136 @@
+/**
+ * Finaliza um treino de voz (chamado pelo webhook do RunPod E pelo polling —
+ * quem chegar primeiro ganha). Concentra: transição idempotente do
+ * training_job (gate anti-duplicidade), atualização da voz, telemetria
+ * (useful_seconds/steps), ESTORNO quando o áudio útil foi insuficiente e a
+ * AMOSTRA automática (linha em generations pro usuário ouvir a voz na hora).
+ * Server-only.
+ */
+import { getAdmin } from "@/lib/db/admin";
+import { buildAutoReferenceKey } from "@/lib/r2/presigned";
+import { addExtraCredits } from "@/lib/credits/service";
+import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
+import type { VoiceStatus, VoiceUpdate } from "@/lib/db/types";
+
+export type TrainOutput = {
+  voice_id?: string;
+  lora_uploaded?: boolean;
+  reference_uploaded?: boolean;
+  reference_transcript?: string | null;
+  lora_alpha?: number;
+  elapsed_seconds?: number;
+  steps?: number;
+  trainer_returncode?: number;
+  dataset_chunks?: number;
+  useful_seconds?: number;
+  min_required_seconds?: number;
+  sample_uploaded?: boolean;
+  sample_seconds?: number | null;
+  sample_error?: string | null;
+  error?: string;
+  stdout_tail?: string;
+  stderr_tail?: string;
+};
+
+/** Texto fixo da amostra — TEM que bater com DEFAULT_SAMPLE_TEXT do worker. */
+const SAMPLE_TEXT =
+  "Oi! Esta é a minha voz clonada. Se você está me ouvindo com clareza, o treinamento funcionou muito bem.";
+
+/** Erros de dataset inútil → o usuário não recebeu nada; devolvemos os créditos. */
+function isDatasetError(error: string | undefined): boolean {
+  return error === "insufficient_audio" || error === "no usable speech segments after VAD/chunk";
+}
+
+function friendlyTrainError(out: TrainOutput, rawError: string): string {
+  if (isDatasetError(out.error)) {
+    const useful = Math.round((out.useful_seconds ?? 0) / 60);
+    const min = Math.round((out.min_required_seconds ?? 600) / 60);
+    return (
+      `Do áudio enviado, apenas ~${useful}min serviram para o treino (mínimo: ${min}min de fala limpa). ` +
+      `Seus créditos foram devolvidos. Grave num ambiente silencioso, falando continuamente, e tente de novo.`
+    );
+  }
+  return rawError.slice(0, 500);
+}
+
+export async function finalizeTraining(args: {
+  voiceId: string;
+  userId: string;
+  runpodJobId: string;
+  runpodStatus: string; // COMPLETED | FAILED | CANCELLED | TIMED_OUT
+  output: TrainOutput;
+  runpodError?: string | null;
+}): Promise<{ applied: boolean; status: VoiceStatus }> {
+  const { voiceId, userId, runpodJobId, runpodStatus, output: out } = args;
+  const admin = getAdmin();
+
+  const success = runpodStatus === "COMPLETED" && !out.error && out.trainer_returncode === 0;
+  const nextStatus: VoiceStatus = success ? "ready" : "failed";
+  const rawError = out.error || args.runpodError || `RunPod ${runpodStatus}`;
+  const errorMessage = success ? null : friendlyTrainError(out, rawError);
+
+  // ── Gate idempotente: só UM caminho (webhook OU poll) finaliza ──────────
+  const { data: claimed } = await admin
+    .from("training_jobs")
+    .update({
+      status: success ? "completed" : "failed",
+      elapsed_seconds: Math.round(out.elapsed_seconds ?? 0),
+      steps: out.steps ?? null,
+      useful_seconds: out.useful_seconds ?? null,
+      error_message: errorMessage,
+      finished_at: new Date().toISOString(),
+    } as never)
+    .eq("runpod_job_id", runpodJobId)
+    .in("status", ["queued", "running"])
+    .select("id");
+  if (!claimed || claimed.length === 0) {
+    return { applied: false, status: nextStatus };
+  }
+
+  // ── Voz ─────────────────────────────────────────────────────────────────
+  const update: VoiceUpdate = {
+    status: nextStatus,
+    error_message: errorMessage,
+    trained_at: success ? new Date().toISOString() : null,
+  };
+  if (success && out.reference_uploaded) {
+    update.reference_audio_path = buildAutoReferenceKey(userId, voiceId);
+    update.reference_transcript = out.reference_transcript ?? null;
+  }
+  if (success && typeof out.lora_alpha === "number") {
+    update.lora_alpha = out.lora_alpha;
+  }
+  await admin.from("voices").update(update).eq("id", voiceId);
+
+  // ── Estorno (dataset inútil = abort barato; usuário não perde créditos) ──
+  if (!success && isDatasetError(out.error)) {
+    await addExtraCredits({
+      userId,
+      amount: TRAINING_CREDIT_COST,
+      refType: "voice_train_refund",
+      refId: voiceId,
+    });
+  }
+
+  // ── Amostra automática → linha ready em generations (player do histórico) ─
+  if (success && out.sample_uploaded) {
+    const sampleKey = `${userId}/${voiceId}/sample.wav`;
+    // Re-treino sobrescreve o wav no R2; remove a linha antiga pra não duplicar.
+    await admin
+      .from("generations")
+      .delete()
+      .eq("voice_id", voiceId)
+      .eq("name", "Amostra automática");
+    await admin.from("generations").insert({
+      user_id: userId,
+      voice_id: voiceId,
+      name: "Amostra automática",
+      text_raw: SAMPLE_TEXT,
+      audio_path: sampleKey,
+      duration_seconds: out.sample_seconds ?? null,
+      status: "ready",
+    } as never);
+  }
+
+  return { applied: true, status: nextStatus };
+}

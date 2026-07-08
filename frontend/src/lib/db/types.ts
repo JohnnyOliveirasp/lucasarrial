@@ -115,6 +115,8 @@ export type TrainingJobRow = {
   status: TrainingJobStatus;
   steps: number | null;
   final_loss: number | null;
+  /** Áudio ÚTIL (pós Demucs+VAD) medido pelo worker — migration 30. */
+  useful_seconds: number | null;
   elapsed_seconds: number | null;
   error_message: string | null;
   started_at: Timestamp | null;
@@ -493,6 +495,39 @@ export type CreditCampaignGrantInsert = {
 };
 export type CreditCampaignGrantUpdate = Partial<CreditCampaignGrantRow>;
 
+// ───────── video_clones (Vídeo Clone / InfiniteTalk, migration 29) ─────────
+export type VideoCloneStatus = "pending" | "generating" | "ready" | "failed";
+export type VideoCloneRow = {
+  id: string;
+  user_id: string;
+  name: string | null;
+  image_path: string;
+  audio_path: string;
+  duration_seconds: number;
+  num_frames: number;
+  tier: "480p" | "720p";
+  credits_cost: number;
+  status: VideoCloneStatus;
+  runpod_job_id: string | null;
+  video_path: string | null;
+  error_message: string | null;
+  created_at: Timestamp;
+};
+export type VideoCloneInsert = {
+  id?: string;
+  user_id: string;
+  name?: string | null;
+  image_path: string;
+  audio_path: string;
+  duration_seconds: number;
+  num_frames: number;
+  tier: "480p" | "720p";
+  credits_cost?: number;
+  status?: VideoCloneStatus;
+  runpod_job_id?: string | null;
+};
+export type VideoCloneUpdate = Partial<VideoCloneRow>;
+
 // ───────── Database (composição) ─────────
 // Cada tabela precisa de `Relationships: []` pra satisfazer GenericTable do supabase-js v2.105+.
 type Relationship = {
@@ -514,6 +549,7 @@ export type Database = {
       image_generations: { Row: ImageGenerationRow; Insert: ImageGenerationInsert; Update: ImageGenerationUpdate; Relationships: Rel };
       video_projects: { Row: VideoProjectRow; Insert: VideoProjectInsert; Update: VideoProjectUpdate; Relationships: Rel };
       video_scenes: { Row: VideoSceneRow; Insert: VideoSceneInsert; Update: VideoSceneUpdate; Relationships: Rel };
+      video_clones: { Row: VideoCloneRow; Insert: VideoCloneInsert; Update: VideoCloneUpdate; Relationships: Rel };
       render_jobs: { Row: RenderJobRow; Insert: RenderJobInsert; Update: RenderJobUpdate; Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };

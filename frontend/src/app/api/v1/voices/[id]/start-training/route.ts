@@ -90,8 +90,12 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   let audioUrls: string[];
   let loraUploadUrl: string;
   let referenceUploadUrl: string;
+  let sampleUploadUrl: string;
   const loraKey = buildLoraKey(auth.user_id, voice.id);
   const referenceKey = buildAutoReferenceKey(auth.user_id, voice.id);
+  // Amostra automática pós-treino (anti-churn): o worker gera ~10s com a voz
+  // nova e sobe aqui; o webhook/sync vira uma linha em `generations` (ready).
+  const sampleKey = `${auth.user_id}/${voice.id}/sample.wav`;
 
   try {
     audioUrls = await Promise.all(
@@ -112,6 +116,13 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       "audio/wav",
       TRAIN_EXPIRES_SECONDS,
     );
+    // Bucket de generations = onde o player do histórico sabe ler.
+    sampleUploadUrl = await createPresignedPut(
+      R2_BUCKETS.generations,
+      sampleKey,
+      "audio/wav",
+      TRAIN_EXPIRES_SECONDS,
+    );
   } catch (e) {
     return serverError(
       e instanceof Error ? `R2 presigned: ${e.message}` : "R2 presigned failed",
@@ -128,6 +139,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         audio_urls: audioUrls,
         lora_upload_url: loraUploadUrl,
         reference_upload_url: referenceUploadUrl,
+        sample_upload_url: sampleUploadUrl,
         max_steps: DEFAULT_MAX_STEPS,
         language: "pt",
       },

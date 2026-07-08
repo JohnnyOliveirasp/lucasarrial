@@ -20,9 +20,8 @@
 import type { NextRequest } from "next/server";
 import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { buildAutoReferenceKey } from "@/lib/r2/presigned";
 import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
-import type { VoiceStatus, VoiceUpdate } from "@/lib/db/types";
+import { finalizeTraining, type TrainOutput } from "@/lib/voices/finalize-training";
 
 type RunpodWebhookPayload = {
   id: string;
@@ -95,51 +94,16 @@ async function handleTrainingWebhook(
   voiceId: string,
   userId: string,
 ) {
-  const admin = getAdmin();
-  const out = payload.output ?? {};
-
-  let nextStatus: VoiceStatus;
-  let errorMessage: string | null = null;
-
-  if (payload.status === "COMPLETED" && !out.error && out.trainer_returncode === 0) {
-    nextStatus = "ready";
-  } else {
-    nextStatus = "failed";
-    errorMessage = (
-      out.error ||
-      payload.error ||
-      `trainer_returncode=${out.trainer_returncode ?? "?"}`
-    ).slice(0, 500);
-  }
-
-  const update: VoiceUpdate = {
-    status: nextStatus,
-    error_message: errorMessage,
-    trained_at: nextStatus === "ready" ? new Date().toISOString() : null,
-  };
-
-  // Referência auto-extraída pelo worker (2 min de 1 áudio). A chave é
-  // determinística (mesma do start-training), então recalculamos aqui.
-  if (nextStatus === "ready" && out.reference_uploaded) {
-    update.reference_audio_path = buildAutoReferenceKey(userId, voiceId);
-    update.reference_transcript = out.reference_transcript ?? null;
-  }
-  // Alpha do LoRA usado no treino → grava por voz pra inferir com o valor certo.
-  if (nextStatus === "ready" && typeof out.lora_alpha === "number") {
-    update.lora_alpha = out.lora_alpha;
-  }
-
-  await admin.from("voices").update(update).eq("id", voiceId);
-
-  await admin
-    .from("training_jobs")
-    .update({
-      status: nextStatus === "ready" ? "completed" : "failed",
-      elapsed_seconds: Math.round(out.elapsed_seconds ?? 0),
-      error_message: errorMessage,
-      finished_at: new Date().toISOString(),
-    })
-    .eq("runpod_job_id", payload.id);
+  // Toda a lógica (voz + telemetria + estorno + amostra) vive no helper
+  // compartilhado com o polling — gate idempotente evita dupla finalização.
+  await finalizeTraining({
+    voiceId,
+    userId,
+    runpodJobId: payload.id,
+    runpodStatus: payload.status,
+    output: (payload.output ?? {}) as TrainOutput,
+    runpodError: payload.error ?? null,
+  });
 }
 
 async function handleGenerationWebhook(
