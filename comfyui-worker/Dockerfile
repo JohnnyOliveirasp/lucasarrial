@@ -18,6 +18,10 @@ RUN set -e; cd /comfyui/custom_nodes; \
       git -C audio-separation-nodes-comfyui checkout ac339561973f && \
       pip install --no-cache-dir -r audio-separation-nodes-comfyui/requirements.txt
 
+# --- Compilador C (triton JIT do sageattention/torch compile exige cc em runtime) ---
+RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # --- SageAttention (v1 = triton puro, sem nvcc; o fluxo usa attention_mode=sageattn) ---
 RUN pip install --no-cache-dir sageattention==1.0.6 boto3==1.34.162
 
