@@ -66,15 +66,35 @@ export function imagesCostBrl(byRes: Array<{ resolution: string; n: number }>): 
 }
 
 // ---------------------------------------------------------------------------
+// Vídeo Clone (InfiniteTalk no NOSSO RunPod serverless) — custo de GPU em R$
+// por SEGUNDO DE ÁUDIO, por tier. Medidos 2026-07-09 (L40S US$0,99/h):
+// V1 ~1,05s GPU/frame (7 steps); Turbo 4 steps ≈ 0,6×; 720p estimado 2,25×
+// pixels (nunca medido — ajustar quando rodar o 1º HD real).
+// ---------------------------------------------------------------------------
+export const CLONE_COST_BRL_PER_AUDIO_SECOND: Record<string, number> = {
+  "480p": 0.045,
+  "480p-v2": 0.0275,
+  "720p": 0.125,
+};
+
+/** Custo em R$ de um lote de Vídeo Clones agrupado por tier (seconds = soma). */
+export function videoClonesCostBrl(byTier: Array<{ tier: string; seconds: number }>): number {
+  return byTier.reduce(
+    (sum, t) => sum + (CLONE_COST_BRL_PER_AUDIO_SECOND[t.tier] ?? 0.045) * t.seconds,
+    0,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Custos fixos de infraestrutura (US$/mês) — pró-rateados pelo período visto.
 // Ajustar aqui quando o plano mudar. Futuro: puxar o RunPod via API (GraphQL).
 // ---------------------------------------------------------------------------
 export const INFRA_USD_MONTH = {
   /** Servidor Hetzner (app + workers). */
   hetzner: 25,
-  /** RunPod Network Volume (HD dos modelos InfiniteTalk, 60GB EU-NL-1).
-   *  O antigo de 200GB (US$15) foi apagado em 2026-07-08. */
-  runpodStorage: 4.2,
+  /** RunPod Network Volume (HD dos modelos InfiniteTalk, 80GB EU-NL-1 —
+   *  crescido de 60 p/ 80GB em 2026-07-09 pros modelos do Turbo). */
+  runpodStorage: 5.6,
 } as const;
 
 export const INFRA_TOTAL_USD_MONTH = INFRA_USD_MONTH.hetzner + INFRA_USD_MONTH.runpodStorage;

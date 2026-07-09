@@ -12,6 +12,7 @@ import {
   imagesCostBrl,
   infraCostBrl,
   kieCreditsCostBrl,
+  videoClonesCostBrl,
 } from "./cost";
 import { VIDEO_TIERS } from "@/lib/video/tiers";
 
@@ -95,13 +96,19 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
   const admin = getAdmin();
   const { since, until } = range;
 
-  const [mRes, fRes] = await Promise.all([
+  const [mRes, fRes, cRes] = await Promise.all([
     admin.rpc("admin_metrics", { p_since: since, p_until: until }),
     admin.rpc("admin_finance", { p_since: since, p_until: until }),
+    admin.rpc("admin_video_clones", { p_since: since, p_until: until }),
   ]);
 
   const metrics = (mRes.data ?? {}) as unknown as AdminMetrics;
   const fin = (fRes.data ?? {}) as unknown as FinanceRaw;
+  const clonesByTier = (cRes.data ?? []) as unknown as Array<{
+    tier: string;
+    n: number;
+    seconds: number;
+  }>;
 
   const subs = metrics.subs_active ?? 0;
   const mrr = subs * PLAN_PRICE_BRL; // projeção (assinantes ativos × plano)
@@ -121,12 +128,17 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
     return sum + kieCreditsCostBrl((tier?.kieCost ?? 15) * v.n);
   }, 0);
   const videoCount = videosByTier.reduce((s, v) => s + v.n, 0);
+  // Vídeo Clone (InfiniteTalk na NOSSA GPU) — custo por segundo de áudio/tier.
+  const cloneCost = videoClonesCostBrl(clonesByTier);
+  const cloneCount = clonesByTier.reduce((s, c) => s + c.n, 0);
+  const cloneMinutes = clonesByTier.reduce((s, c) => s + c.seconds, 0) / 60;
 
   const slices: CostSlice[] = [
     { key: "voice", label: "Voz (TTS)", brl: voiceCost, detail: `${(metrics.gens_chars_period ?? 0).toLocaleString("pt-BR")} caracteres` },
     { key: "training", label: "Treinos de voz", brl: trainCost, detail: `${metrics.trainings_period ?? 0} treinos` },
     { key: "image", label: "Imagens (Kie)", brl: imageCost, detail: `${imageCount} imagens` },
     { key: "video", label: "Vídeos (Kie)", brl: videoCost, detail: `${videoCount} clipes` },
+    { key: "clone", label: "Vídeo Clone (GPU)", brl: cloneCost, detail: `${cloneCount} vídeos · ${cloneMinutes.toFixed(1)}min` },
   ];
 
   // ---- dinheiro REAL (Hotmart, produto da plataforma, sem testes) ----
