@@ -1,9 +1,10 @@
 /**
  * Vídeo Clone (lip-sync InfiniteTalk no NOSSO RunPod serverless).
- * Preço por SEGUNDO de áudio, regra 2026-07-08 (Johnny): lucro ≥70% sobre o
- * custo real de GPU. Medido no smoke test: ~40s de GPU por segundo de áudio a
- * 640×850 na L40S (US$0,99/h) ≈ R$0,06/s. 720p ≈ 2,5× isso. Crédito da
- * plataforma = R$97/180.000 = R$0,000539.
+ * Preço por SEGUNDO de áudio. REPRECIFICADO 2026-07-09 (Johnny): margem alvo
+ * ~100% (2× o custo de GPU) pra ficar competitivo com HeyGen-likes.
+ * Custos medidos (L40S US$0,99/h, ~1,05s GPU/frame no V1; V2 = 4 steps ≈ 0,6×):
+ * V1 480p ≈ R$0,045/s áudio · V2 ≈ R$0,0275/s · 720p ≈ R$0,125/s (estimado).
+ * Crédito da plataforma = R$97/180.000 = R$0,000539.
  */
 
 export type CloneTierId = "480p" | "720p" | "480p-v2";
@@ -31,7 +32,7 @@ export const CLONE_TIERS: readonly CloneTier[] = [
     label: "Padrão",
     blurb: "Equilíbrio entre qualidade e custo. Ótimo pra redes sociais.",
     flow: "v1",
-    creditsPerSecond: 250,
+    creditsPerSecond: 170,
     width: 640,
     height: 850,
     ggufModel: "wan2.1-i2v-14b-480p-Q5_K_M.gguf",
@@ -42,7 +43,7 @@ export const CLONE_TIERS: readonly CloneTier[] = [
     label: "Turbo",
     blurb: "Motor novo: gera mais rápido, com cores e movimento mais consistentes.",
     flow: "v2",
-    creditsPerSecond: 250,
+    creditsPerSecond: 105,
     width: 480,
     height: 832,
     // Modelos fixos no template V2 (fp8 + rank128) — campos não usados.
@@ -54,7 +55,7 @@ export const CLONE_TIERS: readonly CloneTier[] = [
     label: "HD",
     blurb: "Mais nitidez e detalhe. Ideal pra anúncios.",
     flow: "v1",
-    creditsPerSecond: 625,
+    creditsPerSecond: 465,
     width: 960,
     height: 1280,
     ggufModel: "wan2.1-i2v-14b-720p-Q5_K_M.gguf",
