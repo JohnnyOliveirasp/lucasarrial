@@ -10,7 +10,11 @@ import { getAdmin } from "@/lib/db/admin";
 import { buildAutoReferenceKey } from "@/lib/r2/presigned";
 import { addExtraCredits } from "@/lib/credits/service";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
+import { sendEmail, escapeHtml } from "@/lib/email/resend";
+import { bypassesBilling } from "@/lib/credits/access";
 import type { VoiceStatus, VoiceUpdate } from "@/lib/db/types";
+
+const SUPPORT_EMAIL = "suporte@fastcloner.com";
 
 export type TrainOutput = {
   voice_id?: string;
@@ -50,7 +54,39 @@ function friendlyTrainError(out: TrainOutput, rawError: string): string {
       `Seus créditos foram devolvidos. Grave num ambiente silencioso, falando continuamente, e tente de novo.`
     );
   }
-  return rawError.slice(0, 500);
+  // Falha técnica: culpa NOSSA, não do usuário — o estorno é automático.
+  return (
+    "Tivemos um problema técnico durante o treinamento — não foi culpa sua. " +
+    "Seus créditos foram devolvidos automaticamente e nossa equipe já foi notificada. " +
+    "Por favor, tente treinar novamente."
+  );
+}
+
+/** Alerta interno: falha TÉCNICA de treino vai pro suporte na hora. Best-effort. */
+async function alertSupportTrainFailure(args: {
+  userId: string;
+  userEmail: string | null;
+  voiceId: string;
+  runpodJobId: string;
+  runpodStatus: string;
+  rawError: string;
+  refunded: boolean;
+}): Promise<void> {
+  const userEmail = args.userEmail ?? "(sem e-mail)";
+  await sendEmail({
+    to: SUPPORT_EMAIL,
+    subject: `⚠️ Falha técnica no treino de voz — ${userEmail}`,
+    html:
+      `<p>Um treino de voz falhou por erro <strong>técnico</strong> (não é erro de dataset do usuário).</p>` +
+      `<ul>` +
+      `<li><strong>Usuário:</strong> ${escapeHtml(userEmail)} (${args.userId})</li>` +
+      `<li><strong>Voz:</strong> ${args.voiceId}</li>` +
+      `<li><strong>Job RunPod:</strong> ${args.runpodJobId} (${escapeHtml(args.runpodStatus)})</li>` +
+      `<li><strong>Erro:</strong> <code>${escapeHtml(args.rawError.slice(0, 500))}</code></li>` +
+      `<li><strong>Estorno de ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos:</strong> ${args.refunded ? "aplicado automaticamente" : "FALHOU — aplicar manualmente!"}</li>` +
+      `</ul>` +
+      `<p>O usuário viu uma mensagem amigável avisando do estorno. Detalhes completos no /admin.</p>`,
+  });
 }
 
 export async function finalizeTraining(args: {
@@ -67,6 +103,8 @@ export async function finalizeTraining(args: {
   const success = runpodStatus === "COMPLETED" && !out.error && out.trainer_returncode === 0;
   const nextStatus: VoiceStatus = success ? "ready" : "failed";
   const rawError = out.error || args.runpodError || `RunPod ${runpodStatus}`;
+  // Admin vê o erro CRU (diagnóstico); o usuário vê a versão amigável.
+  const adminError = success ? null : rawError.slice(0, 500);
   const errorMessage = success ? null : friendlyTrainError(out, rawError);
 
   // ── Gate idempotente: só UM caminho (webhook OU poll) finaliza ──────────
@@ -77,7 +115,7 @@ export async function finalizeTraining(args: {
       elapsed_seconds: Math.round(out.elapsed_seconds ?? 0),
       steps: out.steps ?? null,
       useful_seconds: out.useful_seconds ?? null,
-      error_message: errorMessage,
+      error_message: adminError,
       finished_at: new Date().toISOString(),
     } as never)
     .eq("runpod_job_id", runpodJobId)
@@ -102,14 +140,41 @@ export async function finalizeTraining(args: {
   }
   await admin.from("voices").update(update).eq("id", voiceId);
 
-  // ── Estorno (dataset inútil = abort barato; usuário não perde créditos) ──
-  if (!success && isDatasetError(out.error)) {
-    await addExtraCredits({
-      userId,
-      amount: TRAINING_CREDIT_COST,
-      refType: "voice_train_refund",
-      refId: voiceId,
-    });
+  // ── Estorno em QUALQUER falha (dataset OU técnica): usuário não recebeu ──
+  // nada, não paga nada. Só quem foi COBRADO (equipe/admin não paga o treino).
+  // Idempotente via gate acima (só um caminho chega aqui por job).
+  if (!success) {
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("email")
+      .eq("id", userId)
+      .maybeSingle();
+    const userEmail = (profile as { email?: string } | null)?.email ?? null;
+    const billed = !bypassesBilling(userEmail);
+
+    let refunded = !billed; // não cobrado = nada a devolver
+    if (billed) {
+      const r = await addExtraCredits({
+        userId,
+        amount: TRAINING_CREDIT_COST,
+        refType: "voice_train_refund",
+        refId: voiceId,
+      });
+      refunded = r.ok;
+    }
+
+    // Falha técnica → alerta imediato pro suporte (best-effort).
+    if (!isDatasetError(out.error)) {
+      await alertSupportTrainFailure({
+        userId,
+        userEmail,
+        voiceId,
+        runpodJobId,
+        runpodStatus,
+        rawError,
+        refunded,
+      });
+    }
   }
 
   // ── Amostra automática → linha ready em generations (player do histórico) ─

@@ -330,19 +330,23 @@ def _handle_train(inp: dict) -> dict:
     sample_info: dict = {"sample_uploaded": False, "sample_seconds": None, "sample_error": None}
     sample_upload_url = inp.get("sample_upload_url")
     if sample_upload_url:
-        from sample_gen import generate_training_sample, DEFAULT_SAMPLE_TEXT
-        sample_info = generate_training_sample(
-            model_dir=MODEL_DIR,
-            lora_path=latest_lora,
-            lora_rank=LORA_RANK,
-            lora_alpha=TRAIN_LORA_ALPHA,
-            ref_wav=reference_clip_path,
-            ref_text=reference_transcript,
-            sample_text=str(inp.get("sample_text") or DEFAULT_SAMPLE_TEXT),
-            upload_url=sample_upload_url,
-            work_dir=job_dir / "sample",
-            log=lambda **k: _log(k.pop("level", "info"), k.pop("event", "train.sample"), **k),
-        )
+        try:
+            from sample_gen import generate_training_sample, DEFAULT_SAMPLE_TEXT
+            sample_info = generate_training_sample(
+                model_dir=MODEL_DIR,
+                lora_path=latest_lora,
+                lora_rank=LORA_RANK,
+                lora_alpha=TRAIN_LORA_ALPHA,
+                ref_wav=reference_clip_path,
+                ref_text=reference_transcript,
+                sample_text=str(inp.get("sample_text") or DEFAULT_SAMPLE_TEXT),
+                upload_url=sample_upload_url,
+                work_dir=job_dir / "sample",
+                log=lambda **k: _log(k.pop("level", "info"), k.pop("event", "train.sample"), **k),
+            )
+        except Exception as exc:  # amostra é mimo: NUNCA pode derrubar um treino que já deu certo
+            _log("error", "train.sample.crashed", error=str(exc))
+            sample_info["sample_error"] = str(exc)[:300]
 
     elapsed = time.monotonic() - t0
     return {

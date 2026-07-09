@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Handler + pipeline
 COPY handler.py .
+COPY sample_gen.py .
 COPY voice_pipeline ./voice_pipeline
 
 # RunPod Serverless ENTRYPOINT
