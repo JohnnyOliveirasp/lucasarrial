@@ -134,9 +134,15 @@ def _mark_repetitions(speeches_tx: list[dict]) -> list[dict]:
             if not b:
                 continue
             sim = difflib.SequenceMatcher(None, a, b).ratio()
-            pa, pb = a.split()[:PREFIX_WORDS], b.split()[:PREFIX_WORDS]
+            aw, bw = a.split(), b.split()
+            pa, pb = aw[:PREFIX_WORDS], bw[:PREFIX_WORDS]
             same_prefix = len(pa) >= 2 and pa == pb[:len(pa)]
-            fragment = len(a.split()) <= 5 and b.startswith(a[: max(8, len(a) // 2)])
+            # Fragmento abortado: curto E retomado com as MESMAS 2+ palavras
+            # iniciais. Exigir 2 palavras (não só o começo do texto) evita
+            # cortar retórica intencional tipo "Roteiros genéricos? Morrerão.
+            # Roteiros com pessoalidade viverão." (bug do teste do Lucas
+            # 2026-07-10: 'roteiros genéricos' removida com sim=0.27).
+            fragment = 2 <= len(aw) <= 5 and len(bw) >= 2 and aw[:2] == bw[:2]
             if sim >= SIM_THRESHOLD or same_prefix or fragment:
                 speeches_tx[i]["manter"] = False
                 speeches_tx[i]["motivo"] = f"repetida (sim={sim:.2f} c/ fala {j})"
