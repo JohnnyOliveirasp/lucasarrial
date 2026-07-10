@@ -102,9 +102,13 @@ jobs:
           fi
           IMG="ghcr.io/${{ steps.owner.outputs.owner }}/lucasarrial-runpod:${GITHUB_SHA::7}"
           echo "template -> $IMG"
-          curl -sf -X PATCH "https://rest.runpod.io/v1/templates/$TEMPLATE_ID" \
-            -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \
-            -d "{\"imageName\":\"$IMG\"}" -o /dev/null
+          # Template acoplado ao endpoint NAO existe no REST (/v1/templates -> 404).
+          # Unico caminho que funciona e o GraphQL saveTemplate (validado 2026-07-09).
+          QUERY=$(printf 'mutation { saveTemplate(input: { id: "%s", name: "fast_cloner_runpod_002__template__67cmg", imageName: "%s", containerDiskInGb: 50, volumeInGb: 0, dockerArgs: "", env: [], isServerless: true }) { id imageName } }' "$TEMPLATE_ID" "$IMG")
+          RESP=$(curl -sf -X POST "https://api.runpod.io/graphql?api_key=$RUNPOD_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$(python3 -c 'import json,sys;print(json.dumps({"query":sys.argv[1]}))' "$QUERY")")
+          echo "$RESP" | grep -q "\"imageName\":\"$IMG\"" || { echo "::error::saveTemplate nao aplicou: $RESP"; exit 1; }
           echo "reciclando workers (0 -> $WORKERS_MAX)"
           curl -sf -X PATCH "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID" \
             -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \
