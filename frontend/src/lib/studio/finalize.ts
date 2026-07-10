@@ -89,3 +89,56 @@ export async function finalizeStudioAudio(args: {
   }
   return { applied: true };
 }
+
+// ───── F1: montagem (áudio limpo + cenas → vídeo 9:16) ─────
+
+export type MontageOutput = {
+  montage?: boolean;
+  uploaded?: boolean;
+  duration?: number;
+  segments?: number;
+  plan_report?: string;
+  error?: string;
+};
+
+export async function finalizeStudioMontage(args: {
+  projectId: string;
+  userId: string;
+  montageJobId: string;
+  runpodStatus: string;
+  output: MontageOutput;
+  runpodError?: string | null;
+}): Promise<{ applied: boolean }> {
+  const { projectId, userId, montageJobId, runpodStatus, output: out } = args;
+  const admin = getAdmin();
+
+  const success = runpodStatus === "COMPLETED" && !out.error && out.uploaded === true;
+  const rawError = out.error || args.runpodError || `RunPod ${runpodStatus}`;
+
+  const { data: claimed } = await admin
+    .from("studio_projects")
+    .update({
+      montage_status: success ? "ready" : "failed",
+      montage_report: out.plan_report ?? null,
+      montage_error: success
+        ? null
+        : "A montagem falhou por um problema técnico — nossa equipe já foi avisada. Tente novamente.",
+    } as never)
+    .eq("id", projectId)
+    .eq("montage_job_id", montageJobId)
+    .eq("montage_status", "processing")
+    .select("id");
+  if (!claimed || claimed.length === 0) return { applied: false };
+
+  if (!success) {
+    // F1 (pré-produção, só admin) não cobra créditos — alerta sem estorno.
+    await handleTechFailure({
+      feature: "Vídeo Estúdio (montagem F1)",
+      userId,
+      refId: projectId,
+      jobId: montageJobId,
+      rawError,
+    });
+  }
+  return { applied: true };
+}

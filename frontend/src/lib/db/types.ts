@@ -530,6 +530,7 @@ export type VideoCloneUpdate = Partial<VideoCloneRow>;
 
 // ───────── studio_projects (Vídeo Estúdio F0, migration 33) ─────────
 export type StudioProjectStatus = "processing" | "audio_ready" | "failed";
+export type StudioMontageStatus = "idle" | "processing" | "ready" | "failed";
 export type StudioTranscriptWord = { start: number; end: number; word: string };
 export type StudioProjectRow = {
   id: string;
@@ -546,6 +547,11 @@ export type StudioProjectRow = {
   edit_report: string | null;
   runpod_job_id: string | null;
   error_message: string | null;
+  montage_status: StudioMontageStatus;
+  montage_job_id: string | null;
+  video_path: string | null;
+  montage_error: string | null;
+  montage_report: string | null;
   created_at: Timestamp;
 };
 export type StudioProjectInsert = {

@@ -22,7 +22,12 @@ import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
 import { finalizeTraining, type TrainOutput } from "@/lib/voices/finalize-training";
-import { finalizeStudioAudio, type AudioEditOutput } from "@/lib/studio/finalize";
+import {
+  finalizeStudioAudio,
+  finalizeStudioMontage,
+  type AudioEditOutput,
+  type MontageOutput,
+} from "@/lib/studio/finalize";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 
 type RunpodWebhookPayload = {
@@ -104,6 +109,25 @@ export async function POST(request: NextRequest) {
       runpodError: payload.error ?? null,
     });
     return jsonOk({ handled: "studio" });
+  }
+
+  // 4. Tenta achar em studio_projects pela MONTAGEM (Vídeo Estúdio F1)
+  const { data: studioMontage } = await admin
+    .from("studio_projects")
+    .select("id, user_id")
+    .eq("montage_job_id", payload.id as never)
+    .maybeSingle();
+
+  if (studioMontage) {
+    await finalizeStudioMontage({
+      projectId: (studioMontage as { id: string }).id,
+      userId: (studioMontage as { user_id: string }).user_id,
+      montageJobId: payload.id,
+      runpodStatus: payload.status,
+      output: (payload.output ?? {}) as MontageOutput,
+      runpodError: payload.error ?? null,
+    });
+    return jsonOk({ handled: "studio_montage" });
   }
 
   // Job não corresponde a nada nosso — descarta silenciosamente

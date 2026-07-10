@@ -770,6 +770,10 @@ def handler(event: dict) -> dict:
             # Vídeo Estúdio F0: limpeza de gravação (repetições/pausas) + words
             from audio_edit import handle_audio_edit
             return handle_audio_edit(inp, log=_log)
+        if job_type == "montage":
+            # Vídeo Estúdio F1: áudio limpo + cenas -> vídeo 9:16 montado
+            from montage import handle_montage
+            return handle_montage(inp, log=_log)
         if job_type == "health":
             return {"ok": True, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
         return {"error": f"unknown type '{job_type}' (use train/inference/transcribe/audio_edit/health)"}
