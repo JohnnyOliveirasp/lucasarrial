@@ -53,6 +53,8 @@ export function StudioWorkspace({
   const [name, setName] = useState("");
   const [recording, setRecording] = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
+  const [mics, setMics] = useState<{ deviceId: string; label: string }[]>([]);
+  const [micId, setMicId] = useState<string>("");
   const [busy, setBusy] = useState<"upload" | "submit" | null>(null);
   const [project, setProject] = useState<StudioProjectDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,11 +67,44 @@ export function StudioWorkspace({
   const inflight = project?.status === "processing";
   const canAfford = unlimited || creditsTotal >= STUDIO_CLEAN_COST;
 
+  // ───── seletor de microfone ─────
+  // Labels só aparecem depois da permissão; pedimos 1x ao montar (isto é uma
+  // tela de gravação — a permissão é o esperado) e re-listamos em devicechange.
+  useEffect(() => {
+    let alive = true;
+    async function loadMics(askPermission: boolean) {
+      try {
+        if (askPermission) {
+          const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+          s.getTracks().forEach((t) => t.stop());
+        }
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        if (!alive) return;
+        setMics(
+          devs
+            .filter((d) => d.kind === "audioinput" && d.deviceId !== "default")
+            .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Microfone ${i + 1}` })),
+        );
+      } catch {
+        /* sem permissão: segue com o padrão do sistema */
+      }
+    }
+    loadMics(true);
+    const onChange = () => loadMics(false);
+    navigator.mediaDevices?.addEventListener?.("devicechange", onChange);
+    return () => {
+      alive = false;
+      navigator.mediaDevices?.removeEventListener?.("devicechange", onChange);
+    };
+  }, []);
+
   // ───── gravador simples (MediaRecorder) ─────
   async function startRecording() {
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: micId ? { deviceId: { exact: micId } } : true,
+      });
       const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : "audio/webm";
@@ -284,6 +319,22 @@ export function StudioWorkspace({
 
             <div className="flex flex-col gap-3">
               <span className={LABEL}>1. Grave sua fala (pode errar e repetir a frase — a gente corta)</span>
+              {mics.length > 0 && (
+                <select
+                  value={micId}
+                  onChange={(e) => setMicId(e.target.value)}
+                  disabled={recording}
+                  aria-label="Escolher microfone"
+                  className="h-11 w-full max-w-md rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 font-sans text-sm text-[var(--ink)] focus:border-[var(--hairline-bright)] focus:outline-none disabled:opacity-50"
+                >
+                  <option value="">Microfone padrão do sistema</option>
+                  {mics.map((m) => (
+                    <option key={m.deviceId} value={m.deviceId}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              )}
               <div className="flex flex-wrap items-center gap-3">
                 {!recording ? (
                   <button type="button" onClick={startRecording} disabled={!!busy} className={GHOST}>
