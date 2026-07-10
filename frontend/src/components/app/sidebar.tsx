@@ -114,13 +114,6 @@ export function Sidebar({
       locked: false,
       lockTitle: "",
     },
-    {
-      href: "/app/videos/studio",
-      icon: Wand2,
-      label: t("nav.videoStudio"),
-      locked: false,
-      lockTitle: "",
-    },
   ];
 
   return (
@@ -255,13 +248,28 @@ export function Sidebar({
 
           {isAdmin && (
             <li className="mt-2 border-t border-[var(--hairline)] pt-2">
-              <NavLeaf
-                href="/admin"
-                icon={ShieldCheck}
-                label="Admin"
-                active={pathname.includes("/admin")}
-                bare
-              />
+              {/* Área de PRÉ-PRODUÇÃO: produtos novos em validação, só admin vê.
+                  Validou → o item migra pro grupo público (Vídeos etc.). */}
+              <span className="block px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ash)]">
+                Teste pré-produção
+              </span>
+              <ul className="flex flex-col gap-1">
+                <NavLeaf
+                  href="/app/videos/studio"
+                  icon={Wand2}
+                  label={t("nav.videoStudio")}
+                  active={pathname.endsWith("/app/videos/studio")}
+                />
+              </ul>
+              <div className="mt-2 border-t border-[var(--hairline)] pt-2">
+                <NavLeaf
+                  href="/admin"
+                  icon={ShieldCheck}
+                  label="Admin"
+                  active={pathname.includes("/admin")}
+                  bare
+                />
+              </div>
             </li>
           )}
         </ul>

@@ -11,6 +11,7 @@ import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonError, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
+import { isAdmin } from "@/lib/admin/guard";
 import { getBalance, debitCredits } from "@/lib/credits/service";
 import { STUDIO_CLEAN_COST } from "@/lib/credits/config";
 import { R2_BUCKETS } from "@/lib/r2/client";
@@ -23,6 +24,8 @@ const JOB_EXPIRES_SECONDS = 7200; // presigned válido por 2h (sobra pra fila)
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
+  // 🚧 PRÉ-PRODUÇÃO: só admin até validar (remover junto com o guard da página).
+  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
 
   const { data: rows, error } = await getAdmin()
     .from("studio_projects")
@@ -39,6 +42,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
+  // 🚧 PRÉ-PRODUÇÃO: só admin até validar (remover junto com o guard da página).
+  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const admin = getAdmin();
 
   let body: { audio_key?: unknown; name?: unknown } = {};

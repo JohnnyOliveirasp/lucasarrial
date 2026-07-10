@@ -4,6 +4,7 @@ import { setRequestLocale } from "next-intl/server";
 import { Lock } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
+import { isAdmin } from "@/lib/admin/guard";
 import { STUDIO_CLEAN_COST } from "@/lib/credits/config";
 import { StudioWorkspace } from "@/components/studio/studio-workspace";
 import { Eyebrow } from "@/components/ui";
@@ -36,6 +37,10 @@ export default async function VideoStudioPage({
     .single();
 
   const email = profile?.email ?? user.email ?? null;
+
+  // 🚧 PRÉ-PRODUÇÃO: só admin acessa até o Lucas validar. Liberar = remover
+  // este guard + mover o item do menu pro grupo Vídeos (sidebar.tsx).
+  if (!(await isAdmin(email))) redirect(`/${locale}/app/dashboard`);
   const team = bypassesBilling(email);
   const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
   const creditsTotal =
