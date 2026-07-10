@@ -18,11 +18,13 @@ import {
   type AudioEditOutput,
   type MontageOutput,
 } from "@/lib/studio/finalize";
+import { syncStudioScene } from "@/lib/studio/scenes";
+import type { StudioScenePlanItem, StudioSceneRow } from "@/lib/db/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 const SELECT =
-  "id, user_id, name, status, raw_audio_path, clean_audio_path, duration_raw_seconds, duration_clean_seconds, kept_takes, removed_takes, transcript_words, edit_report, runpod_job_id, error_message, montage_status, montage_job_id, video_path, montage_error, montage_report, created_at";
+  "id, user_id, name, status, raw_audio_path, clean_audio_path, duration_raw_seconds, duration_clean_seconds, kept_takes, removed_takes, transcript_words, edit_report, runpod_job_id, error_message, montage_status, montage_job_id, video_path, montage_error, montage_report, scenes_status, scene_plan, created_at";
 
 export async function GET(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -91,6 +93,50 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     }
   }
 
+  // F3: sincroniza cenas pendentes com o Kie (still → anima → R2 banco)
+  const scenes: { id: string; concept: string; status: string; reused: boolean }[] = [];
+  const plan = (current.scene_plan ?? []) as StudioScenePlanItem[];
+  if (Array.isArray(plan) && plan.length > 0) {
+    const ids = [...new Set(plan.map((p) => p.scene_id))];
+    const { data: rows } = await admin
+      .from("studio_scenes")
+      .select("id, user_id, concept, prompt_en, dialect, status, kie_task_id, image_path, video_path, error_message, created_at")
+      .in("id", ids);
+    let sceneRows = (rows ?? []) as StudioSceneRow[];
+
+    if (current.scenes_status === "generating") {
+      const pending = sceneRows.filter((s) => s.status === "generating_still" || s.status === "animating");
+      await Promise.all(pending.map((s) => syncStudioScene(s).catch(() => {})));
+      if (pending.length > 0) {
+        const { data: fresh } = await admin
+          .from("studio_scenes")
+          .select("id, user_id, concept, prompt_en, dialect, status, kie_task_id, image_path, video_path, error_message, created_at")
+          .in("id", ids);
+        sceneRows = (fresh ?? []) as StudioSceneRow[];
+      }
+      const anyPending = sceneRows.some((s) => s.status !== "ready" && s.status !== "failed");
+      const anyFailed = sceneRows.some((s) => s.status === "failed");
+      if (!anyPending) {
+        const nextStatus = anyFailed ? "failed" : "ready";
+        await admin
+          .from("studio_projects")
+          .update({ scenes_status: nextStatus } as never)
+          .eq("id", id)
+          .eq("scenes_status", "generating");
+        current = { ...current, scenes_status: nextStatus };
+      }
+    }
+
+    const byId = new Map(sceneRows.map((s) => [s.id, s]));
+    const seen = new Set<string>();
+    for (const p of plan) {
+      if (seen.has(p.scene_id)) continue;
+      seen.add(p.scene_id);
+      const s = byId.get(p.scene_id);
+      if (s) scenes.push({ id: s.id, concept: s.concept, status: s.status, reused: p.reused });
+    }
+  }
+
   let clean_audio_url: string | null = null;
   if (current.status === "audio_ready" && current.clean_audio_path) {
     try {
@@ -131,6 +177,8 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       montage_error: current.montage_error,
       montage_report: current.montage_report,
       video_url,
+      scenes_status: current.scenes_status,
+      scenes,
     },
   });
 }

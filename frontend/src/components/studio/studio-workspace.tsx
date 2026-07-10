@@ -43,7 +43,9 @@ export function StudioWorkspace({
   const chunksRef = useRef<Blob[]>([]);
 
   const inflight =
-    project?.status === "processing" || project?.montage_status === "processing";
+    project?.status === "processing" ||
+    project?.montage_status === "processing" ||
+    project?.scenes_status === "generating";
   const canAfford = unlimited || creditsTotal >= STUDIO_CLEAN_COST;
 
   // ───── seletor de microfone ─────
@@ -187,7 +189,24 @@ export function StudioWorkspace({
     }
   }
 
-  // Poll do projeto em andamento (o GET sincroniza com o RunPod).
+  // ───── F3: gerar/re-tentar as cenas do roteiro ─────
+  async function startScenes() {
+    if (!project) return;
+    setBusy("submit");
+    setError(null);
+    try {
+      const res = await fetch(`/api/v1/studio/${project.id}/scenes`, { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error?.message || "Falha ao iniciar as cenas");
+      setProject({ ...project, scenes_status: j.scenes?.status === "ready" ? "ready" : "generating" });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Poll do projeto em andamento (o GET sincroniza RunPod + Kie).
   useEffect(() => {
     if (!project || !inflight) return;
     const t = setInterval(async () => {
@@ -196,7 +215,11 @@ export function StudioWorkspace({
         if (!res.ok) return;
         const j = await res.json();
         if (j.project) setProject(j.project as StudioProjectDetail);
-        if (j.project?.status !== "processing" && j.project?.montage_status !== "processing") {
+        if (
+          j.project?.status !== "processing" &&
+          j.project?.montage_status !== "processing" &&
+          j.project?.scenes_status !== "generating"
+        ) {
           setReloadKey((k) => k + 1);
         }
       } catch {
@@ -233,6 +256,7 @@ export function StudioWorkspace({
             project={project}
             busy={!!busy}
             onMontage={startMontage}
+            onScenes={startScenes}
             onReset={reset}
           />
         ) : (

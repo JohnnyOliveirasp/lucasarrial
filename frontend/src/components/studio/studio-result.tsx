@@ -31,6 +31,8 @@ export type StudioProjectDetail = {
   montage_error?: string | null;
   montage_report?: string | null;
   video_url?: string | null;
+  scenes_status?: "idle" | "generating" | "ready" | "failed";
+  scenes?: { id: string; concept: string; status: string; reused: boolean }[];
 };
 
 export function fmtSecs(s: number | null | undefined): string {
@@ -44,12 +46,15 @@ export function StudioResult({
   project,
   busy,
   onMontage,
+  onScenes,
   onReset,
 }: {
   project: StudioProjectDetail;
   busy: boolean;
   /** Dispara a montagem com a trilha escolhida (null = sem música). */
   onMontage: (musicKey: string | null) => void;
+  /** Gera (ou re-tenta) as cenas do roteiro falado. */
+  onScenes: () => void;
   onReset: () => void;
 }) {
   const transcript = project.transcript_words?.map((w) => w.word.trim()).join(" ") ?? "";
@@ -126,9 +131,68 @@ export function StudioResult({
             </button>
           </div>
 
+          {/* ───── F3: cenas do roteiro (banco pessoal) ───── */}
+          <div className="mt-1 flex flex-col gap-3 border-t border-dashed border-[var(--hairline-strong)] pt-4">
+            <span className={LABEL}>Cenas do roteiro (b-roll gerado por IA)</span>
+
+            {(!project.scenes_status || project.scenes_status === "idle") && (
+              <button type="button" onClick={onScenes} disabled={busy} className={`${GHOST} w-fit`}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
+                Gerar cenas do roteiro
+              </button>
+            )}
+
+            {project.scenes_status === "generating" && (
+              <span className="flex items-center gap-2 text-sm text-[var(--ink)]">
+                <Loader2 className="h-5 w-5 animate-spin text-[var(--silver)]" />
+                Gerando cenas — {(project.scenes ?? []).filter((s) => s.status === "ready").length}/
+                {(project.scenes ?? []).length} prontas… (~1-3 min por cena)
+              </span>
+            )}
+
+            {project.scenes_status === "ready" && (
+              <span className="font-mono text-[11px] tracking-wide text-[var(--silver)]">
+                ✓ {(project.scenes ?? []).length} cenas prontas
+                {(project.scenes ?? []).some((s) => s.reused)
+                  ? ` (${(project.scenes ?? []).filter((s) => s.reused).length} do seu banco, de graça)`
+                  : ""} — a montagem vai usar as SUAS cenas.
+              </span>
+            )}
+
+            {project.scenes_status === "failed" && (
+              <div className="flex flex-col gap-2">
+                <p className="font-mono text-[11px] tracking-wide text-[var(--status-error)]">
+                  {(project.scenes ?? []).filter((s) => s.status === "failed").length} cena(s) falharam na geração.
+                </p>
+                <button type="button" onClick={onScenes} disabled={busy} className={`${GHOST} w-fit`}>
+                  <RefreshCw className="h-4 w-4" /> Tentar as cenas que falharam
+                </button>
+              </div>
+            )}
+
+            {(project.scenes ?? []).length > 0 && (
+              <ul className="flex flex-wrap gap-1.5">
+                {(project.scenes ?? []).map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--surface-card)] px-3 py-1 font-mono text-[10px] tracking-wide text-[var(--mute)]"
+                  >
+                    {s.status === "ready" ? "✓" : s.status === "failed" ? "✕" : <Loader2 className="h-3 w-3 animate-spin" />}
+                    {s.concept}
+                    {s.reused && <span className="text-[var(--ash)]">· banco</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           {/* ───── F1/F2: vídeo montado + legenda + música ───── */}
           <div className="mt-1 flex flex-col gap-3 border-t border-dashed border-[var(--hairline-strong)] pt-4">
-            <span className={LABEL}>Vídeo de teste — montagem + legenda + música (cenas fixas)</span>
+            <span className={LABEL}>
+              {project.scenes_status === "ready"
+                ? "Montar o vídeo — com as suas cenas + legenda + música"
+                : "Vídeo de teste — montagem + legenda + música (cenas fixas)"}
+            </span>
 
             {(!project.montage_status || project.montage_status === "idle") && (
               <div className="flex flex-wrap items-center gap-3">

@@ -552,8 +552,45 @@ export type StudioProjectRow = {
   video_path: string | null;
   montage_error: string | null;
   montage_report: string | null;
+  scenes_status: StudioScenesStatus;
+  scene_plan: StudioScenePlanItem[] | null;
   created_at: Timestamp;
 };
+export type StudioScenesStatus = "idle" | "generating" | "ready" | "failed";
+/** Item do mapa frase→cena de um projeto (ordem = frases do transcript). */
+export type StudioScenePlanItem = {
+  sentence: number;
+  text: string;
+  scene_id: string;
+  reused: boolean;
+};
+
+// ───────── studio_scenes (banco pessoal de b-roll, migration 35) ─────────
+export type StudioSceneStatus =
+  | "planning" | "generating_still" | "animating" | "ready" | "failed";
+export type StudioSceneRow = {
+  id: string;
+  user_id: string;
+  concept: string;
+  prompt_en: string;
+  dialect: "realista" | "craft";
+  status: StudioSceneStatus;
+  kie_task_id: string | null;
+  image_path: string | null;
+  video_path: string | null;
+  error_message: string | null;
+  created_at: Timestamp;
+};
+export type StudioSceneInsert = {
+  id?: string;
+  user_id: string;
+  concept: string;
+  prompt_en: string;
+  dialect?: "realista" | "craft";
+  status?: StudioSceneStatus;
+  kie_task_id?: string | null;
+};
+export type StudioSceneUpdate = Partial<StudioSceneRow>;
 export type StudioProjectInsert = {
   id?: string;
   user_id: string;
@@ -588,6 +625,7 @@ export type Database = {
       video_scenes: { Row: VideoSceneRow; Insert: VideoSceneInsert; Update: VideoSceneUpdate; Relationships: Rel };
       video_clones: { Row: VideoCloneRow; Insert: VideoCloneInsert; Update: VideoCloneUpdate; Relationships: Rel };
       studio_projects: { Row: StudioProjectRow; Insert: StudioProjectInsert; Update: StudioProjectUpdate; Relationships: Rel };
+      studio_scenes: { Row: StudioSceneRow; Insert: StudioSceneInsert; Update: StudioSceneUpdate; Relationships: Rel };
       render_jobs: { Row: RenderJobRow; Insert: RenderJobInsert; Update: RenderJobUpdate; Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };

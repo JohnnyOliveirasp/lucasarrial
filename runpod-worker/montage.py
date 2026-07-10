@@ -69,13 +69,19 @@ def _voice_end_before(words: list[dict], t: float) -> float:
     return max(ends) if ends else 0.0
 
 
-def build_plan(words: list[dict], n_scenes: int, total: float) -> list[dict]:
-    """Uma cena por frase (ciclando o banco de teste) → janelas encadeadas sem
-    gap → fatiadas em sub-planos ≤2,5s com offset/zoom alternados.
-    Retorna [{scene, t0, t1, src_offset, zoom}]."""
+def build_plan(words: list[dict], n_scenes: int, total: float,
+               sentence_scene: list[int] | None = None) -> list[dict]:
+    """Uma cena por frase (mapa frase→cena do planejador F3, ou ciclando o
+    banco de teste) → janelas encadeadas sem gap → fatiadas em sub-planos
+    ≤2,5s com offset/zoom alternados. Retorna [{scene, t0, t1, src_offset, zoom}]."""
     sents = sentences_from_words(words)
     if not sents:
         sents = [{"start": 0.0, "end": total, "text": ""}]
+
+    def scene_for(i: int) -> int:
+        if sentence_scene and i < len(sentence_scene):
+            return max(0, min(int(sentence_scene[i]), n_scenes - 1))
+        return i % n_scenes
 
     # 1. Janela de cada cena: J-cut na frase, encadeada até a próxima (B4)
     windows = []
@@ -84,7 +90,7 @@ def build_plan(words: list[dict], n_scenes: int, total: float) -> list[dict]:
         # B1+B2: entra 0,3s antes, mas nunca dentro de silêncio morto
         t0 = 0.0 if i == 0 else max(anchor - JCUT_S,
                                     _voice_end_before(words, anchor) + 0.02)
-        windows.append({"scene": i % n_scenes, "t0": round(t0, 2)})
+        windows.append({"scene": scene_for(i), "t0": round(t0, 2)})
     for i, win in enumerate(windows):
         win["t1"] = windows[i + 1]["t0"] if i + 1 < len(windows) else round(total, 2)
     windows = [w for w in windows if w["t1"] - w["t0"] >= 0.05]
@@ -166,7 +172,8 @@ def handle_montage(inp: dict, log) -> dict:
     scenes = download_to_dir(scene_urls, job_dir / "scenes")
     total = _duration(audio)
 
-    plan = build_plan(words, len(scenes), total)
+    plan = build_plan(words, len(scenes), total,
+                      sentence_scene=inp.get("sentence_scene"))
     # H1 sem deslocar o timeline: a capa SUBSTITUI os primeiros 0,08s do
     # primeiro plano (senão todo J-cut atrasaria 0,08s em relação à fala).
     plan[0]["t0"] = round(plan[0]["t0"] + COVER_S, 3)
