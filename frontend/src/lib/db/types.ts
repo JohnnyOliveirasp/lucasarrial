@@ -528,6 +528,37 @@ export type VideoCloneInsert = {
 };
 export type VideoCloneUpdate = Partial<VideoCloneRow>;
 
+// ───────── studio_projects (Vídeo Estúdio F0, migration 33) ─────────
+export type StudioProjectStatus = "processing" | "audio_ready" | "failed";
+export type StudioTranscriptWord = { start: number; end: number; word: string };
+export type StudioProjectRow = {
+  id: string;
+  user_id: string;
+  name: string | null;
+  status: StudioProjectStatus;
+  raw_audio_path: string;
+  clean_audio_path: string | null;
+  duration_raw_seconds: number | null;
+  duration_clean_seconds: number | null;
+  kept_takes: number | null;
+  removed_takes: number | null;
+  transcript_words: StudioTranscriptWord[] | null;
+  edit_report: string | null;
+  runpod_job_id: string | null;
+  error_message: string | null;
+  created_at: Timestamp;
+};
+export type StudioProjectInsert = {
+  id?: string;
+  user_id: string;
+  name?: string | null;
+  status?: StudioProjectStatus;
+  raw_audio_path: string;
+  clean_audio_path?: string | null;
+  runpod_job_id?: string | null;
+};
+export type StudioProjectUpdate = Partial<StudioProjectRow>;
+
 // ───────── Database (composição) ─────────
 // Cada tabela precisa de `Relationships: []` pra satisfazer GenericTable do supabase-js v2.105+.
 type Relationship = {
@@ -550,6 +581,7 @@ export type Database = {
       video_projects: { Row: VideoProjectRow; Insert: VideoProjectInsert; Update: VideoProjectUpdate; Relationships: Rel };
       video_scenes: { Row: VideoSceneRow; Insert: VideoSceneInsert; Update: VideoSceneUpdate; Relationships: Rel };
       video_clones: { Row: VideoCloneRow; Insert: VideoCloneInsert; Update: VideoCloneUpdate; Relationships: Rel };
+      studio_projects: { Row: StudioProjectRow; Insert: StudioProjectInsert; Update: StudioProjectUpdate; Relationships: Rel };
       render_jobs: { Row: RenderJobRow; Insert: RenderJobInsert; Update: RenderJobUpdate; Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };

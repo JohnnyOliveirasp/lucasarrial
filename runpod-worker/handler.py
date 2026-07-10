@@ -766,9 +766,13 @@ def handler(event: dict) -> dict:
             return _handle_inference(inp)
         if job_type == "transcribe":
             return _handle_transcribe(inp)
+        if job_type == "audio_edit":
+            # Vídeo Estúdio F0: limpeza de gravação (repetições/pausas) + words
+            from audio_edit import handle_audio_edit
+            return handle_audio_edit(inp, log=_log)
         if job_type == "health":
             return {"ok": True, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
-        return {"error": f"unknown type '{job_type}' (use train/inference/transcribe/health)"}
+        return {"error": f"unknown type '{job_type}' (use train/inference/transcribe/audio_edit/health)"}
     except Exception as exc:
         _log("error", "job.failed", error=str(exc), type=job_type, tb=traceback.format_exc()[:2000])
         return {"error": str(exc), "type": job_type, "traceback": traceback.format_exc()[:2000]}

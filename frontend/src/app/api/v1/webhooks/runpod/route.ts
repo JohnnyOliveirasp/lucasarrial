@@ -22,6 +22,7 @@ import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
 import { finalizeTraining, type TrainOutput } from "@/lib/voices/finalize-training";
+import { finalizeStudioAudio, type AudioEditOutput } from "@/lib/studio/finalize";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 
 type RunpodWebhookPayload = {
@@ -84,6 +85,25 @@ export async function POST(request: NextRequest) {
   if (generation) {
     await handleGenerationWebhook(payload, generation.id, generation.user_id, generation.audio_path);
     return jsonOk({ handled: "generation" });
+  }
+
+  // 3. Tenta achar em studio_projects (Vídeo Estúdio: audio_edit)
+  const { data: studio } = await admin
+    .from("studio_projects")
+    .select("id, user_id")
+    .eq("runpod_job_id", payload.id as never)
+    .maybeSingle();
+
+  if (studio) {
+    await finalizeStudioAudio({
+      projectId: (studio as { id: string }).id,
+      userId: (studio as { user_id: string }).user_id,
+      runpodJobId: payload.id,
+      runpodStatus: payload.status,
+      output: (payload.output ?? {}) as AudioEditOutput,
+      runpodError: payload.error ?? null,
+    });
+    return jsonOk({ handled: "studio" });
   }
 
   // Job não corresponde a nada nosso — descarta silenciosamente

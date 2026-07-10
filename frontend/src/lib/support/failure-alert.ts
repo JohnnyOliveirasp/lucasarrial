@@ -25,6 +25,8 @@ export type TechFailureArgs = {
   debitRefType?: string;
   /** ref_type do estorno (aparece no extrato; também é a chave de idempotência). */
   refundRefType?: string;
+  /** false = só estorna, sem e-mail (erro de INPUT do usuário, não falha nossa). */
+  alertSupport?: boolean;
 };
 
 /**
@@ -97,6 +99,7 @@ export async function handleTechFailure(a: TechFailureArgs): Promise<void> {
         refundRefType: a.refundRefType,
       });
     }
+    if (a.alertSupport === false) return;
 
     await sendEmail({
       to: SUPPORT_EMAIL,

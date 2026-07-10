@@ -12,6 +12,13 @@ export const TRAINING_CREDIT_COST = 10_000;
 /** Mínimo cobrado por geração (cobre o cold-start da GPU serverless). */
 export const GENERATION_MIN_CREDITS = 400;
 
+/**
+ * Vídeo Estúdio F0 — limpeza de áudio (whisper + edição na GPU).
+ * PLACEHOLDER até a precificação da F5: cobre o custo GPU (~R$0,15/job)
+ * e evita abuso; estorno automático em falha.
+ */
+export const STUDIO_CLEAN_COST = 500;
+
 /** Custo em créditos de uma geração = nº de caracteres, com piso. */
 export function generationCreditCost(text: string): number {
   return Math.max(GENERATION_MIN_CREDITS, text.length);
