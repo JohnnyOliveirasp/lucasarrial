@@ -22,6 +22,7 @@ import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
 import { finalizeTraining, type TrainOutput } from "@/lib/voices/finalize-training";
+import { handleTechFailure } from "@/lib/support/failure-alert";
 
 type RunpodWebhookPayload = {
   id: string;
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (generation) {
-    await handleGenerationWebhook(payload, generation.id, generation.audio_path);
+    await handleGenerationWebhook(payload, generation.id, generation.user_id, generation.audio_path);
     return jsonOk({ handled: "generation" });
   }
 
@@ -109,6 +110,7 @@ async function handleTrainingWebhook(
 async function handleGenerationWebhook(
   payload: RunpodWebhookPayload,
   generationId: string,
+  userId: string,
   audioPath: string | null,
 ) {
   const out = payload.output ?? {};
@@ -119,11 +121,27 @@ async function handleGenerationWebhook(
     return;
   }
 
-  await getAdmin()
+  const rawError = out.error || payload.error || `RunPod ${payload.status}`;
+  // Gate idempotente (corrida webhook×poll): só quem transiciona pra failed
+  // dispara a contingência (estorno + e-mail pro suporte).
+  const { data: claimed } = await getAdmin()
     .from("generations")
     .update({
       status: "failed",
-      error_message: (out.error || payload.error || "unknown").slice(0, 500),
+      error_message: rawError.slice(0, 500),
     })
-    .eq("id", generationId);
+    .eq("id", generationId)
+    .in("status", ["pending", "generating"])
+    .select("id");
+  if (claimed && claimed.length > 0) {
+    await handleTechFailure({
+      feature: "Geração de áudio (TTS)",
+      userId,
+      refId: generationId,
+      jobId: payload.id,
+      rawError,
+      debitRefType: "generation",
+      refundRefType: "generation_refund",
+    });
+  }
 }

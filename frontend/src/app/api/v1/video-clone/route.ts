@@ -23,6 +23,7 @@ import {
 } from "@/lib/video-clone/config";
 import { buildInfiniteTalkWorkflow } from "@/lib/video-clone/workflow";
 import { runInfiniteTalk } from "@/lib/video-clone/runpod";
+import { handleTechFailure } from "@/lib/support/failure-alert";
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
@@ -224,6 +225,13 @@ export async function POST(request: NextRequest) {
       .from("video_clones")
       .update({ status: "failed", error_message: "Falha ao iniciar a geração. Tente novamente." })
       .eq("id", created.id);
+    // Falha ANTES do débito (nada a estornar) — mas o suporte precisa saber.
+    await handleTechFailure({
+      feature: "Vídeo Clone (início do job)",
+      userId: auth.user_id,
+      refId: created.id,
+      rawError: e instanceof Error ? e.message : String(e),
+    });
     return serverError("Falha ao iniciar a geração do vídeo.");
   }
 

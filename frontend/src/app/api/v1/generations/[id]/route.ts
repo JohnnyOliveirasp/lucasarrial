@@ -19,11 +19,42 @@ import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { runpodGetStatus, inferenceEndpoint } from "@/lib/runpod/client";
 import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
+import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { GenerationStatus } from "@/lib/db/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 const POLLING_STATUSES: GenerationStatus[] = ["pending", "generating"];
+
+/**
+ * Marca a geração como failed com gate idempotente (corrida poll×webhook) e,
+ * só pra quem venceu a transição, dispara a contingência: estorno automático
+ * do débito + e-mail pro suporte.
+ */
+async function failGeneration(
+  generationId: string,
+  userId: string,
+  jobId: string | null,
+  rawError: string,
+): Promise<void> {
+  const { data: claimed } = await getAdmin()
+    .from("generations")
+    .update({ status: "failed", error_message: rawError.slice(0, 500) })
+    .eq("id", generationId)
+    .in("status", POLLING_STATUSES)
+    .select("id");
+  if (claimed && claimed.length > 0) {
+    await handleTechFailure({
+      feature: "Geração de áudio (TTS)",
+      userId,
+      refId: generationId,
+      jobId,
+      rawError,
+      debitRefType: "generation",
+      refundRefType: "generation_refund",
+    });
+  }
+}
 
 export async function GET(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -57,13 +88,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
           // Converte WAV->MP3 e marca ready (audio_path passa a apontar pro .mp3).
           await finalizeGenerationSuccess(id, gen.audio_path, out);
         } else {
-          await admin
-            .from("generations")
-            .update({
-              status: "failed",
-              error_message: (out.error ?? "unknown").slice(0, 500),
-            })
-            .eq("id", id);
+          await failGeneration(id, auth.user_id, gen.runpod_job_id, out.error ?? "unknown");
         }
 
         const { data: refreshed } = await admin
@@ -75,13 +100,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
           .maybeSingle();
         if (refreshed) current = refreshed;
       } else if (resp.status === "FAILED" || resp.status === "CANCELLED" || resp.status === "TIMED_OUT") {
-        await admin
-          .from("generations")
-          .update({
-            status: "failed",
-            error_message: `RunPod ${resp.status}: ${resp.error ?? ""}`.slice(0, 500),
-          })
-          .eq("id", id);
+        await failGeneration(id, auth.user_id, gen.runpod_job_id, `RunPod ${resp.status}: ${resp.error ?? ""}`);
       }
     } catch {
       // ignora — devolve estado atual
