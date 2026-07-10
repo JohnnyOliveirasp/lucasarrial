@@ -9,11 +9,12 @@ modos_organico/montar_n5_v3.py), regras B/C/G/H do 01_EDICAO_REGRAS.md:
   G1  zoom leve e contínuo em todo plano (rampa 1.00x→~1.08x)
   H1  capa: 0,08s de cena de contexto no primeiro frame
 
-F1 = só cenas + áudio (sem rosto, legenda ou música — F2/F4). O áudio limpo
-da F0 manda no tempo total; a última cena estica até o fim.
+F2 (no mesmo job): legenda karaokê queimada (regras D, módulo finish.py) e
+música opcional com ducking+boom (regras E) — o usuário ESCOLHE a trilha ou
+"sem música". O áudio limpo da F0 manda no tempo total.
 
 Input:  { audio_url, words: [{start,end,word}], scene_urls: [..],
-          output_upload_url }
+          output_upload_url, captions?: bool=True, music_url?: str|None }
 Output: { montage: True, uploaded, duration, segments, plan_report }
 """
 
@@ -194,10 +195,32 @@ def handle_montage(inp: dict, log) -> dict:
           "-i", str(lst), "-c", "copy", str(silent)])
 
     # Mux com o áudio limpo (o áudio manda na duração final)
-    final = job_dir / "final.mp4"
+    base = job_dir / "base.mp4"
     _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent), "-i", str(audio),
           "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-          "-t", f"{total:.3f}", str(final)])
+          "-t", f"{total:.3f}", str(base)])
+
+    # ── F2: legenda karaokê (D) + música opcional com ducking (E) ────────────
+    from finish import burn_karaoke, mix_music
+
+    current = base
+    if inp.get("captions", True):
+        cuts = sorted({seg["t0"] for seg in plan if seg["t0"] > 0.1})
+        captioned = job_dir / "captioned.mp4"
+        burn_karaoke(current, words, captioned, cuts=list(cuts),
+                     suppress_windows=[tuple(wdw) for wdw in inp.get("suppress_windows") or []])
+        current = captioned
+        log("info", "montage.captions.done")
+
+    music_url = inp.get("music_url")
+    if music_url:
+        music = download_to_dir([music_url], job_dir / "music")[0]
+        with_music = job_dir / "with_music.mp4"
+        mix_music(current, music, with_music)
+        current = with_music
+        log("info", "montage.music.done")
+
+    final = current
     final_dur = _duration(final)
 
     upload_file_to_presigned_url(final, output_upload_url, content_type="video/mp4")

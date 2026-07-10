@@ -26,6 +26,17 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const { id } = await ctx.params;
 
+  // Trilha escolhida pelo usuário — ou nenhuma ("Sem música").
+  let musicKey: string | null = null;
+  try {
+    const body = (await request.json()) as { music_key?: unknown };
+    if (typeof body.music_key === "string" && body.music_key.startsWith("studio-music/")) {
+      musicKey = body.music_key;
+    }
+  } catch {
+    /* sem body = sem música */
+  }
+
   const admin = getAdmin();
   const { data: project, error } = await admin
     .from("studio_projects")
@@ -51,12 +62,16 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   let audioUrl: string;
   let sceneUrls: string[];
   let videoPutUrl: string;
+  let musicUrl: string | null = null;
   try {
     audioUrl = await createPresignedGet(R2_BUCKETS.generations, project.clean_audio_path, JOB_EXPIRES_SECONDS);
     sceneUrls = await Promise.all(
       TEST_SCENE_KEYS.map((k) => createPresignedGet(R2_BUCKETS.voices, k, JOB_EXPIRES_SECONDS)),
     );
     videoPutUrl = await createPresignedPut(imagesBucket(), videoKey, "video/mp4", JOB_EXPIRES_SECONDS);
+    if (musicKey) {
+      musicUrl = await createPresignedGet(R2_BUCKETS.voices, musicKey, JOB_EXPIRES_SECONDS);
+    }
   } catch {
     return serverError("Não consegui preparar os arquivos da montagem.");
   }
@@ -70,6 +85,8 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         words,
         scene_urls: sceneUrls,
         output_upload_url: videoPutUrl,
+        captions: true,
+        music_url: musicUrl,
       },
       { webhook: webhookUrlFor("generation") },
     );

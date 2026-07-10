@@ -5,6 +5,7 @@
  * áudio (F0) + montagem do vídeo de teste (F1). Extraído do workspace pra
  * manter os arquivos <400 linhas.
  */
+import { useEffect, useState } from "react";
 import { Clapperboard, Download, Loader2, RefreshCw } from "lucide-react";
 import { downloadFromUrl } from "@/components/image/download-file";
 
@@ -47,10 +48,22 @@ export function StudioResult({
 }: {
   project: StudioProjectDetail;
   busy: boolean;
-  onMontage: () => void;
+  /** Dispara a montagem com a trilha escolhida (null = sem música). */
+  onMontage: (musicKey: string | null) => void;
   onReset: () => void;
 }) {
   const transcript = project.transcript_words?.map((w) => w.word.trim()).join(" ") ?? "";
+  const [tracks, setTracks] = useState<{ key: string; label: string }[]>([]);
+  const [musicKey, setMusicKey] = useState<string>("");
+
+  // Banco de trilhas (R2 studio-music/) — o usuário escolhe, ou "Sem música".
+  useEffect(() => {
+    if (project.status !== "audio_ready") return;
+    fetch("/api/v1/studio/music", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setTracks(j?.tracks ?? []))
+      .catch(() => {});
+  }, [project.status]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -113,15 +126,30 @@ export function StudioResult({
             </button>
           </div>
 
-          {/* ───── F1: vídeo de teste montado a partir do áudio limpo ───── */}
+          {/* ───── F1/F2: vídeo montado + legenda + música ───── */}
           <div className="mt-1 flex flex-col gap-3 border-t border-dashed border-[var(--hairline-strong)] pt-4">
-            <span className={LABEL}>Vídeo de teste — motor de montagem (cenas fixas)</span>
+            <span className={LABEL}>Vídeo de teste — montagem + legenda + música (cenas fixas)</span>
 
             {(!project.montage_status || project.montage_status === "idle") && (
-              <button type="button" onClick={onMontage} disabled={busy} className={`${PILL} w-fit`}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
-                Montar vídeo de teste
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <select
+                  value={musicKey}
+                  onChange={(e) => setMusicKey(e.target.value)}
+                  aria-label="Trilha sonora"
+                  className="h-11 w-full max-w-xs rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 font-sans text-sm text-[var(--ink)] focus:border-[var(--hairline-bright)] focus:outline-none"
+                >
+                  <option value="">Sem música</option>
+                  {tracks.map((t) => (
+                    <option key={t.key} value={t.key}>
+                      🎵 {t.label}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => onMontage(musicKey || null)} disabled={busy} className={PILL}>
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
+                  Montar vídeo de teste
+                </button>
+              </div>
             )}
 
             {project.montage_status === "processing" && (
@@ -149,7 +177,20 @@ export function StudioResult({
                   >
                     <Download className="h-4 w-4" /> Baixar vídeo
                   </button>
-                  <button type="button" onClick={onMontage} disabled={busy} className={GHOST}>
+                  <select
+                    value={musicKey}
+                    onChange={(e) => setMusicKey(e.target.value)}
+                    aria-label="Trilha sonora"
+                    className="h-11 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 font-sans text-sm text-[var(--ink)] focus:border-[var(--hairline-bright)] focus:outline-none"
+                  >
+                    <option value="">Sem música</option>
+                    {tracks.map((t) => (
+                      <option key={t.key} value={t.key}>
+                        🎵 {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => onMontage(musicKey || null)} disabled={busy} className={GHOST}>
                     <RefreshCw className="h-4 w-4" /> Montar de novo
                   </button>
                   {project.montage_report && (
@@ -171,7 +212,7 @@ export function StudioResult({
                 <p className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]">
                   {project.montage_error || "A montagem falhou. Tente novamente."}
                 </p>
-                <button type="button" onClick={onMontage} disabled={busy} className={`${GHOST} w-fit`}>
+                <button type="button" onClick={() => onMontage(musicKey || null)} disabled={busy} className={`${GHOST} w-fit`}>
                   <RefreshCw className="h-4 w-4" /> Tentar montar de novo
                 </button>
               </div>
