@@ -70,15 +70,24 @@ def _voice_end_before(words: list[dict], t: float) -> float:
 
 
 def build_plan(words: list[dict], n_scenes: int, total: float,
-               sentence_scene: list[int] | None = None) -> list[dict]:
+               sentence_scene: list[int] | None = None,
+               face_sentences: list[dict] | None = None) -> list[dict]:
     """Uma cena por frase (mapa frase→cena do planejador F3, ou ciclando o
     banco de teste) → janelas encadeadas sem gap → fatiadas em sub-planos
-    ≤2,5s com offset/zoom alternados. Retorna [{scene, t0, t1, src_offset, zoom}]."""
+    ≤2,5s com offset/zoom alternados.
+    F4: frases-âncora usam o clipe de ROSTO (lip-sync): janela começa EXATO na
+    frase (sem pre-roll de J-cut) e os sub-planos tocam o clipe CONTÍNUO —
+    só o zoom varia (jump-cut de vlog, C1-rosto).
+    Retorna [{scene, t0, t1, src_offset, zoom, face?}]."""
     sents = sentences_from_words(words)
     if not sents:
         sents = [{"start": 0.0, "end": total, "text": ""}]
 
+    faces = {int(f["sentence"]): f for f in (face_sentences or [])}
+
     def scene_for(i: int) -> int:
+        if i in faces:
+            return max(0, min(int(faces[i]["scene"]), n_scenes - 1))
         if sentence_scene and i < len(sentence_scene):
             return max(0, min(int(sentence_scene[i]), n_scenes - 1))
         return i % n_scenes
@@ -87,6 +96,12 @@ def build_plan(words: list[dict], n_scenes: int, total: float,
     windows = []
     for i, s in enumerate(sents):
         anchor = s["start"]
+        if i in faces:
+            # rosto entra no início exato da frase (áudio do clipe = a frase)
+            t0 = 0.0 if i == 0 else round(anchor, 2)
+            windows.append({"scene": scene_for(i), "t0": t0,
+                            "face_start": round(anchor, 2)})
+            continue
         # B1+B2: entra 0,3s antes, mas nunca dentro de silêncio morto
         t0 = 0.0 if i == 0 else max(anchor - JCUT_S,
                                     _voice_end_before(words, anchor) + 0.02)
@@ -94,10 +109,10 @@ def build_plan(words: list[dict], n_scenes: int, total: float,
     for i, win in enumerate(windows):
         win["t1"] = windows[i + 1]["t0"] if i + 1 < len(windows) else round(total, 2)
     windows = [w for w in windows if w["t1"] - w["t0"] >= 0.05]
-    # janelas muito curtas grudam na anterior
+    # janelas muito curtas grudam na anterior (rosto nunca é engolido)
     merged = []
     for win in windows:
-        if merged and win["t1"] - win["t0"] < MIN_SEG_S:
+        if merged and win["t1"] - win["t0"] < MIN_SEG_S and "face_start" not in win:
             merged[-1]["t1"] = win["t1"]
         else:
             merged.append(win)
@@ -108,29 +123,40 @@ def build_plan(words: list[dict], n_scenes: int, total: float,
         length = win["t1"] - win["t0"]
         n_sub = max(1, round(length / SUB_PLAN_S + 0.25))
         step = length / n_sub
+        is_face = "face_start" in win
         for k in range(n_sub):
             a = win["t0"] + k * step
             b = win["t1"] if k == n_sub - 1 else a + step
+            if is_face:
+                # playback contínuo do lip-sync; só o zoom troca entre cortes
+                src_offset = round(a - win["face_start"], 2)
+            else:
+                # offset avança no clipe-fonte a cada sub-plano ("2º ângulo")
+                src_offset = round(k * (step + 0.8), 2)
             plan.append({
                 "scene": win["scene"],
                 "t0": round(a, 2),
                 "t1": round(b, 2),
-                # offset avança no clipe-fonte a cada sub-plano ("2º ângulo")
-                "src_offset": round(k * (step + 0.8), 2),
+                "src_offset": max(0.0, src_offset),
                 "zoom": ZOOMS[zi % len(ZOOMS)],
+                "face": is_face,
             })
             zi += 1
     return plan
 
 
 def _render_segment(scene: Path, seg: dict, out: Path) -> None:
-    """Um sub-plano: trim (loop se a cena for curta) + 9:16 + zoompan (G1)."""
+    """Um sub-plano: trim (loop se a cena for curta) + 9:16 + zoompan (G1).
+    Rosto (F4): offset é EXATO (lip-sync) — nunca aplica módulo/realinha."""
     dur = seg["t1"] - seg["t0"]
     force, cap = seg["zoom"]
     scene_dur = _duration(scene)
-    offset = seg["src_offset"] % max(scene_dur - 0.5, 0.5)
-    if offset + dur > scene_dur:
-        offset = max(0.0, scene_dur - dur - 0.1)
+    if seg.get("face"):
+        offset = min(seg["src_offset"], max(0.0, scene_dur - 0.1))
+    else:
+        offset = seg["src_offset"] % max(scene_dur - 0.5, 0.5)
+        if offset + dur > scene_dur:
+            offset = max(0.0, scene_dur - dur - 0.1)
     vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
           f"fps={FPS},zoompan=z='min(1+{force}*on,{cap})'"
           f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS},"
@@ -173,7 +199,8 @@ def handle_montage(inp: dict, log) -> dict:
     total = _duration(audio)
 
     plan = build_plan(words, len(scenes), total,
-                      sentence_scene=inp.get("sentence_scene"))
+                      sentence_scene=inp.get("sentence_scene"),
+                      face_sentences=inp.get("face_sentences"))
     # H1 sem deslocar o timeline: a capa SUBSTITUI os primeiros 0,08s do
     # primeiro plano (senão todo J-cut atrasaria 0,08s em relação à fala).
     plan[0]["t0"] = round(plan[0]["t0"] + COVER_S, 3)

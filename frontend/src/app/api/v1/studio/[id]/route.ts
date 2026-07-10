@@ -19,12 +19,13 @@ import {
   type MontageOutput,
 } from "@/lib/studio/finalize";
 import { syncStudioScene } from "@/lib/studio/scenes";
-import type { StudioScenePlanItem, StudioSceneRow } from "@/lib/db/types";
+import { syncFaceSegments } from "@/lib/studio/face";
+import type { StudioFaceSegment, StudioScenePlanItem, StudioSceneRow } from "@/lib/db/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 const SELECT =
-  "id, user_id, name, status, raw_audio_path, clean_audio_path, duration_raw_seconds, duration_clean_seconds, kept_takes, removed_takes, transcript_words, edit_report, runpod_job_id, error_message, montage_status, montage_job_id, video_path, montage_error, montage_report, scenes_status, scene_plan, created_at";
+  "id, user_id, name, status, raw_audio_path, clean_audio_path, duration_raw_seconds, duration_clean_seconds, kept_takes, removed_takes, transcript_words, edit_report, runpod_job_id, error_message, montage_status, montage_job_id, video_path, montage_error, montage_report, scenes_status, scene_plan, face_status, face_image_path, face_segments, created_at";
 
 export async function GET(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -137,6 +138,22 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     }
   }
 
+  // F4: sincroniza os jobs de rosto (InfiniteTalk) pendentes
+  if (current.face_status === "processing") {
+    await syncFaceSegments({
+      id,
+      user_id: auth.user_id,
+      face_status: current.face_status,
+      face_segments: (current.face_segments ?? null) as StudioFaceSegment[] | null,
+    }).catch(() => {});
+    const { data: fresh } = await admin
+      .from("studio_projects")
+      .select(SELECT)
+      .eq("id", id)
+      .maybeSingle();
+    if (fresh) current = fresh;
+  }
+
   let clean_audio_url: string | null = null;
   if (current.status === "audio_ready" && current.clean_audio_path) {
     try {
@@ -179,6 +196,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       video_url,
       scenes_status: current.scenes_status,
       scenes,
+      face_status: current.face_status,
     },
   });
 }

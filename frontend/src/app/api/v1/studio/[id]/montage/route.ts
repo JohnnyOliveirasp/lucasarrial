@@ -12,7 +12,7 @@ import { R2_BUCKETS, imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet, createPresignedPut } from "@/lib/r2/presigned";
 import { runpodSubmitTrain, webhookUrlFor } from "@/lib/runpod/client";
 import { handleTechFailure } from "@/lib/support/failure-alert";
-import type { StudioScenePlanItem, StudioSceneRow } from "@/lib/db/types";
+import type { StudioFaceSegment, StudioScenePlanItem, StudioSceneRow } from "@/lib/db/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const admin = getAdmin();
   const { data: project, error } = await admin
     .from("studio_projects")
-    .select("id, status, montage_status, clean_audio_path, transcript_words, scenes_status, scene_plan")
+    .select("id, status, montage_status, clean_audio_path, transcript_words, scenes_status, scene_plan, face_status, face_segments")
     .eq("id", id)
     .eq("user_id", auth.user_id)
     .maybeSingle();
@@ -87,6 +87,19 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     }
   }
 
+  // F4: rosto pronto → os clipes viram "cenas" extras nas frases-âncora
+  // (janela exata da frase, sem J-cut — o lábio está sincronizado ao áudio).
+  const faceSegs = (project.face_segments ?? []) as StudioFaceSegment[];
+  const faceSentences: { sentence: number; scene: number; start: number }[] = [];
+  if (project.face_status === "ready" && faceSegs.length > 0) {
+    for (const f of faceSegs) {
+      if (f.status !== "ready" || !f.video_path) continue;
+      const idx = sceneKeys.length;
+      sceneKeys.push({ bucket: "images", key: f.video_path });
+      faceSentences.push({ sentence: f.sentence, scene: idx, start: f.start });
+    }
+  }
+
   // Presigned: áudio limpo + cenas (GET) e vídeo final (PUT, permanente)
   const videoKey = `${auth.user_id}/studio/${id}/video.mp4`;
   let audioUrl: string;
@@ -117,6 +130,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         words,
         scene_urls: sceneUrls,
         sentence_scene: sentenceScene,
+        face_sentences: faceSentences.length > 0 ? faceSentences : null,
         output_upload_url: videoPutUrl,
         captions: true,
         music_url: musicUrl,

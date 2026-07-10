@@ -554,7 +554,21 @@ export type StudioProjectRow = {
   montage_report: string | null;
   scenes_status: StudioScenesStatus;
   scene_plan: StudioScenePlanItem[] | null;
+  face_status: StudioFaceStatus;
+  face_image_path: string | null;
+  face_segments: StudioFaceSegment[] | null;
   created_at: Timestamp;
+};
+export type StudioFaceStatus = "idle" | "processing" | "ready" | "failed";
+export type StudioFaceSegment = {
+  role: "hook" | "close";
+  sentence: number;
+  start: number;
+  end: number;
+  audio_path: string;
+  video_path: string;
+  job_id: string | null;
+  status: "processing" | "ready" | "failed";
 };
 export type StudioScenesStatus = "idle" | "generating" | "ready" | "failed";
 /** Item do mapa frase→cena de um projeto (ordem = frases do transcript). */

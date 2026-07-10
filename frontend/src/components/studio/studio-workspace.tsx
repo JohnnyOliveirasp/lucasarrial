@@ -45,7 +45,8 @@ export function StudioWorkspace({
   const inflight =
     project?.status === "processing" ||
     project?.montage_status === "processing" ||
-    project?.scenes_status === "generating";
+    project?.scenes_status === "generating" ||
+    project?.face_status === "processing";
   const canAfford = unlimited || creditsTotal >= STUDIO_CLEAN_COST;
 
   // ───── seletor de microfone ─────
@@ -206,7 +207,37 @@ export function StudioWorkspace({
     }
   }
 
-  // Poll do projeto em andamento (o GET sincroniza RunPod + Kie).
+  // ───── F4: foto do aluno → presença (InfiniteTalk) nos âncoras ─────
+  async function startFace(file: File) {
+    if (!project) return;
+    setBusy("submit");
+    setError(null);
+    try {
+      const pres = await fetch("/api/v1/studio/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "image", filename: file.name, content_type: file.type, size: file.size }),
+      });
+      const pj = await pres.json().catch(() => ({}));
+      if (!pres.ok) throw new Error(pj?.error?.message || "Falha ao preparar upload da foto");
+      const put = await fetch(pj.upload_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+      if (!put.ok) throw new Error("Falha no upload da foto");
+      const res = await fetch(`/api/v1/studio/${project.id}/face`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_key: pj.key }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error?.message || "Falha ao iniciar o rosto");
+      setProject({ ...project, face_status: "processing" });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Poll do projeto em andamento (o GET sincroniza RunPod + Kie + InfiniteTalk).
   useEffect(() => {
     if (!project || !inflight) return;
     const t = setInterval(async () => {
@@ -218,7 +249,8 @@ export function StudioWorkspace({
         if (
           j.project?.status !== "processing" &&
           j.project?.montage_status !== "processing" &&
-          j.project?.scenes_status !== "generating"
+          j.project?.scenes_status !== "generating" &&
+          j.project?.face_status !== "processing"
         ) {
           setReloadKey((k) => k + 1);
         }
@@ -257,6 +289,7 @@ export function StudioWorkspace({
             busy={!!busy}
             onMontage={startMontage}
             onScenes={startScenes}
+            onFace={startFace}
             onReset={reset}
           />
         ) : (

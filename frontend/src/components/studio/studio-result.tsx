@@ -5,8 +5,8 @@
  * áudio (F0) + montagem do vídeo de teste (F1). Extraído do workspace pra
  * manter os arquivos <400 linhas.
  */
-import { useEffect, useState } from "react";
-import { Clapperboard, Download, Loader2, RefreshCw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Clapperboard, Download, Loader2, RefreshCw, UserSquare2 } from "lucide-react";
 import { downloadFromUrl } from "@/components/image/download-file";
 
 const PILL =
@@ -33,6 +33,7 @@ export type StudioProjectDetail = {
   video_url?: string | null;
   scenes_status?: "idle" | "generating" | "ready" | "failed";
   scenes?: { id: string; concept: string; status: string; reused: boolean }[];
+  face_status?: "idle" | "processing" | "ready" | "failed";
 };
 
 export function fmtSecs(s: number | null | undefined): string {
@@ -47,6 +48,7 @@ export function StudioResult({
   busy,
   onMontage,
   onScenes,
+  onFace,
   onReset,
 }: {
   project: StudioProjectDetail;
@@ -55,8 +57,11 @@ export function StudioResult({
   onMontage: (musicKey: string | null) => void;
   /** Gera (ou re-tenta) as cenas do roteiro falado. */
   onScenes: () => void;
+  /** Gera a presença (rosto) com a foto escolhida. */
+  onFace: (file: File) => void;
   onReset: () => void;
 }) {
+  const faceInput = useRef<HTMLInputElement>(null);
   const transcript = project.transcript_words?.map((w) => w.word.trim()).join(" ") ?? "";
   const [tracks, setTracks] = useState<{ key: string; label: string }[]>([]);
   const [musicKey, setMusicKey] = useState<string>("");
@@ -183,6 +188,44 @@ export function StudioResult({
                   </li>
                 ))}
               </ul>
+            )}
+          </div>
+
+          {/* ───── F4: presença (rosto lip-sync) no hook e no fechamento ───── */}
+          <div className="mt-1 flex flex-col gap-3 border-t border-dashed border-[var(--hairline-strong)] pt-4">
+            <span className={LABEL}>Sua presença no vídeo (rosto na abertura e no fechamento)</span>
+            <input
+              ref={faceInput}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => e.target.files?.[0] && onFace(e.target.files[0])}
+            />
+            {(!project.face_status || project.face_status === "idle" || project.face_status === "failed") && (
+              <div className="flex flex-col gap-2">
+                {project.face_status === "failed" && (
+                  <p className="font-mono text-[11px] tracking-wide text-[var(--status-error)]">
+                    A geração do rosto falhou. Tente novamente.
+                  </p>
+                )}
+                <button type="button" onClick={() => faceInput.current?.click()} disabled={busy} className={`${GHOST} w-fit`}>
+                  <UserSquare2 className="h-4 w-4" /> Escolher minha foto e gerar
+                </button>
+                <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
+                  Opcional — sem foto, o vídeo sai só com as cenas.
+                </span>
+              </div>
+            )}
+            {project.face_status === "processing" && (
+              <span className="flex items-center gap-2 text-sm text-[var(--ink)]">
+                <Loader2 className="h-5 w-5 animate-spin text-[var(--silver)]" />
+                Gerando você falando (abertura e fechamento)… leva alguns minutos.
+              </span>
+            )}
+            {project.face_status === "ready" && (
+              <span className="font-mono text-[11px] tracking-wide text-[var(--silver)]">
+                ✓ Presença pronta — você abre e fecha o vídeo falando.
+              </span>
             )}
           </div>
 
