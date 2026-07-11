@@ -12,6 +12,7 @@ import { AudioLines, Loader2, Mic, Scissors, Square, Upload } from "lucide-react
 import { STUDIO_CLEAN_COST } from "@/lib/credits/config";
 import { PaywallModal } from "@/components/app/paywall-modal";
 import { StudioHistory } from "./studio-history";
+import { StudioScript } from "./studio-script";
 import { StudioResult, fmtSecs, type StudioProjectDetail } from "./studio-result";
 
 const PILL =
@@ -293,8 +294,9 @@ export function StudioWorkspace({
             onReset={reset}
           />
         ) : (
-          /* ───── formulário: gravar OU subir ───── */
+          /* ───── formulário: roteiro (opcional) → gravar OU subir ───── */
           <div className="flex flex-col gap-6">
+            <StudioScript />
             <input
               ref={fileInput}
               type="file"

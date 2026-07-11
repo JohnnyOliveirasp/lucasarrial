@@ -1,13 +1,17 @@
 /**
  * POST /api/v1/studio/[id]/montage — Vídeo Estúdio F1: monta o vídeo 9:16 a
- * partir do áudio limpo (F0) + banco de CENAS DE TESTE fixo. Sem cobrança na
- * F1 (pré-produção, só admin). O GET /studio/[id] faz o poll até ready.
+ * partir do áudio limpo (F0) + cenas do aluno (F3) ou banco de teste.
+ * F5: cobra STUDIO_MONTAGE_COST (ref = jobId, único por tentativa; estorno
+ * automático em falha no finalize). O GET /studio/[id] faz o poll até ready.
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { isAdmin } from "@/lib/admin/guard";
+import { debitCredits } from "@/lib/credits/service";
+import { gateStudioCredits } from "@/lib/studio/billing";
+import { STUDIO_MONTAGE_COST } from "@/lib/studio/pricing";
 import { R2_BUCKETS, imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet, createPresignedPut } from "@/lib/r2/presigned";
 import { runpodSubmitTrain, webhookUrlFor } from "@/lib/runpod/client";
@@ -57,6 +61,15 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   if (!Array.isArray(words) || words.length === 0) {
     return badRequest("Este projeto não tem transcrição — refaça a limpeza do áudio.");
   }
+
+  // Gate F5: montagem tem preço fixo (render na GPU vox).
+  const gate = await gateStudioCredits({
+    userId: auth.user_id,
+    email: auth.email,
+    cost: STUDIO_MONTAGE_COST,
+    action: "montar o vídeo",
+  });
+  if (!gate.ok) return gate.deny;
 
   // F3: cenas do PRÓPRIO aluno quando o plano está pronto; senão, banco de teste.
   // sentence_scene[i] = índice (em sceneKeys) da cena da frase i — mesma
@@ -158,5 +171,18 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     } as never)
     .eq("id", id);
 
-  return jsonOk({ montage: { status: "processing" } }, 201);
+  // Débito depois do job no ar (padrão da casa); ref = jobId — único por
+  // tentativa, é a chave do estorno automático em falha (finalize).
+  if (gate.billed) {
+    await debitCredits({
+      userId: auth.user_id,
+      amount: STUDIO_MONTAGE_COST,
+      kind: "video",
+      refType: "studio_montage",
+      refId: jobId,
+      note: "Vídeo Estúdio — montagem do vídeo",
+    });
+  }
+
+  return jsonOk({ montage: { status: "processing", cost: gate.billed ? STUDIO_MONTAGE_COST : 0 } }, 201);
 }

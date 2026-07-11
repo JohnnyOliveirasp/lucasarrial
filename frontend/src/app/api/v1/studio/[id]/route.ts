@@ -101,7 +101,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     const ids = [...new Set(plan.map((p) => p.scene_id))];
     const { data: rows } = await admin
       .from("studio_scenes")
-      .select("id, user_id, concept, prompt_en, dialect, status, kie_task_id, image_path, video_path, error_message, created_at")
+      .select("id, user_id, concept, prompt_en, dialect, status, kie_task_id, qa_retried, debit_ref, image_path, video_path, error_message, created_at")
       .in("id", ids);
     let sceneRows = (rows ?? []) as StudioSceneRow[];
 
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       if (pending.length > 0) {
         const { data: fresh } = await admin
           .from("studio_scenes")
-          .select("id, user_id, concept, prompt_en, dialect, status, kie_task_id, image_path, video_path, error_message, created_at")
+          .select("id, user_id, concept, prompt_en, dialect, status, kie_task_id, qa_retried, debit_ref, image_path, video_path, error_message, created_at")
           .in("id", ids);
         sceneRows = (fresh ?? []) as StudioSceneRow[];
       }

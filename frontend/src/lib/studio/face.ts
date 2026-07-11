@@ -17,12 +17,11 @@ import { createPresignedGet } from "@/lib/r2/presigned";
 import { buildInfiniteTalkWorkflow } from "@/lib/video-clone/workflow";
 import { runInfiniteTalk, getInfiniteTalkStatus } from "@/lib/video-clone/runpod";
 import { getCloneTier } from "@/lib/video-clone/config";
+import { STUDIO_FACE_TIER_ID, sentencesWithTimes } from "@/lib/studio/pricing";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { StudioTranscriptWord } from "@/lib/db/types";
 
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
-/** Turbo (V2 fp8/4-steps): mais barato e rápido — o padrão do rosto. */
-const FACE_TIER_ID = "480p-v2";
 
 export type FaceSegment = {
   role: "hook" | "close";
@@ -34,25 +33,6 @@ export type FaceSegment = {
   job_id: string | null;
   status: "processing" | "ready" | "failed";
 };
-
-/** Frases com timestamps (mesma segmentação do worker/planejador). */
-export function sentencesWithTimes(
-  words: StudioTranscriptWord[],
-): { start: number; end: number; text: string }[] {
-  const sents: { start: number; end: number; text: string }[] = [];
-  let cur: StudioTranscriptWord[] = [];
-  for (const w of words) {
-    cur.push(w);
-    if (/[.!?…]$/.test(w.word.trim())) {
-      sents.push({ start: cur[0].start, end: cur[cur.length - 1].end, text: cur.map((x) => x.word.trim()).join(" ") });
-      cur = [];
-    }
-  }
-  if (cur.length) {
-    sents.push({ start: cur[0].start, end: cur[cur.length - 1].end, text: cur.map((x) => x.word.trim()).join(" ") });
-  }
-  return sents;
-}
 
 /** Corta [start,end] de um WAV via ffmpeg (pipe, sem arquivo temporário). */
 function cutWav(wav: Buffer, start: number, end: number): Promise<Buffer> {
@@ -104,7 +84,7 @@ export async function startFaceGeneration(args: {
   if (!obj.Body) throw new Error("áudio limpo não encontrado");
   const wav = Buffer.from(await obj.Body.transformToByteArray());
 
-  const tier = getCloneTier(FACE_TIER_ID);
+  const tier = getCloneTier(STUDIO_FACE_TIER_ID);
   if (!tier) throw new Error("tier do rosto indisponível");
   const imageUrl = await createPresignedGet(R2_BUCKETS.generations, args.imageKey, 7200);
 
@@ -177,6 +157,20 @@ export async function syncFaceSegments(project: {
     .from("studio_projects")
     .update({ face_segments: segs, face_status: nextStatus } as never)
     .eq("id", project.id);
+
+  // F5: falhou de vez → estorna a tentativa (débito ref = job do hook).
+  // O alerta pro suporte já saiu por segmento acima; aqui é SÓ o estorno.
+  if (nextStatus === "failed") {
+    await handleTechFailure({
+      feature: "Vídeo Estúdio (rosto F4 — estorno)",
+      userId: project.user_id,
+      refId: segs[0]?.job_id ?? project.id,
+      rawError: "rosto falhou — estorno automático da tentativa",
+      debitRefType: "studio_face",
+      refundRefType: "studio_face_refund",
+      alertSupport: false,
+    });
+  }
 }
 
 /** Bucket onde o comfy worker grava os MP4 do rosto (mesmo do Vídeo Clone). */

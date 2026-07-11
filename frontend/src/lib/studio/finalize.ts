@@ -122,7 +122,7 @@ export async function finalizeStudioMontage(args: {
       montage_report: out.plan_report ?? null,
       montage_error: success
         ? null
-        : "A montagem falhou por um problema técnico — nossa equipe já foi avisada. Tente novamente.",
+        : "A montagem falhou por um problema técnico — seus créditos foram devolvidos e nossa equipe já foi avisada. Tente novamente.",
     } as never)
     .eq("id", projectId)
     .eq("montage_job_id", montageJobId)
@@ -131,13 +131,15 @@ export async function finalizeStudioMontage(args: {
   if (!claimed || claimed.length === 0) return { applied: false };
 
   if (!success) {
-    // F1 (pré-produção, só admin) não cobra créditos — alerta sem estorno.
+    // F5: estorna o débito desta tentativa (ref = jobId) + alerta o suporte.
     await handleTechFailure({
-      feature: "Vídeo Estúdio (montagem F1)",
+      feature: "Vídeo Estúdio (montagem)",
       userId,
-      refId: projectId,
+      refId: montageJobId,
       jobId: montageJobId,
       rawError,
+      debitRefType: "studio_montage",
+      refundRefType: "studio_montage_refund",
     });
   }
   return { applied: true };

@@ -590,6 +590,10 @@ export type StudioSceneRow = {
   dialect: "realista" | "craft";
   status: StudioSceneStatus;
   kie_task_id: string | null;
+  /** QA F5: já regerou o still 1x por texto quebrado? */
+  qa_retried: boolean;
+  /** Referência do débito da tentativa paga (chave do estorno automático). */
+  debit_ref: string | null;
   image_path: string | null;
   video_path: string | null;
   error_message: string | null;

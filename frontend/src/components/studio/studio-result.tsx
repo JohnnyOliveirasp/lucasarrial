@@ -8,6 +8,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Clapperboard, Download, Loader2, RefreshCw, UserSquare2 } from "lucide-react";
 import { downloadFromUrl } from "@/components/image/download-file";
+import { STUDIO_MONTAGE_COST, STUDIO_SCENE_COST, studioFaceCost } from "@/lib/studio/pricing";
+
+const fmtCr = (n: number) => n.toLocaleString("pt-BR");
 
 const PILL =
   "inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-6 font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98] disabled:opacity-50";
@@ -63,6 +66,7 @@ export function StudioResult({
 }) {
   const faceInput = useRef<HTMLInputElement>(null);
   const transcript = project.transcript_words?.map((w) => w.word.trim()).join(" ") ?? "";
+  const faceCost = studioFaceCost(project.transcript_words ?? []);
   const [tracks, setTracks] = useState<{ key: string; label: string }[]>([]);
   const [musicKey, setMusicKey] = useState<string>("");
 
@@ -141,10 +145,15 @@ export function StudioResult({
             <span className={LABEL}>Cenas do roteiro (b-roll gerado por IA)</span>
 
             {(!project.scenes_status || project.scenes_status === "idle") && (
-              <button type="button" onClick={onScenes} disabled={busy} className={`${GHOST} w-fit`}>
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
-                Gerar cenas do roteiro
-              </button>
+              <div className="flex flex-col gap-1.5">
+                <button type="button" onClick={onScenes} disabled={busy} className={`${GHOST} w-fit`}>
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
+                  Gerar cenas do roteiro
+                </button>
+                <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
+                  {fmtCr(STUDIO_SCENE_COST)} cr por cena NOVA — cenas do seu banco entram de graça (elas ficam salvas pra sempre).
+                </span>
+              </div>
             )}
 
             {project.scenes_status === "generating" && (
@@ -209,10 +218,10 @@ export function StudioResult({
                   </p>
                 )}
                 <button type="button" onClick={() => faceInput.current?.click()} disabled={busy} className={`${GHOST} w-fit`}>
-                  <UserSquare2 className="h-4 w-4" /> Escolher minha foto e gerar
+                  <UserSquare2 className="h-4 w-4" /> Escolher minha foto e gerar{faceCost > 0 ? ` · ${fmtCr(faceCost)} cr` : ""}
                 </button>
                 <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-                  Opcional — sem foto, o vídeo sai só com as cenas.
+                  Opcional — sem foto, o vídeo sai só com as cenas. Preço do Clone Turbo sobre a abertura e o fechamento.
                 </span>
               </div>
             )}
@@ -254,7 +263,7 @@ export function StudioResult({
                 </select>
                 <button type="button" onClick={() => onMontage(musicKey || null)} disabled={busy} className={PILL}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
-                  Montar vídeo de teste
+                  {project.scenes_status === "ready" ? "Montar vídeo" : "Montar vídeo de teste"} · {fmtCr(STUDIO_MONTAGE_COST)} cr
                 </button>
               </div>
             )}
@@ -298,8 +307,11 @@ export function StudioResult({
                     ))}
                   </select>
                   <button type="button" onClick={() => onMontage(musicKey || null)} disabled={busy} className={GHOST}>
-                    <RefreshCw className="h-4 w-4" /> Montar de novo
+                    <RefreshCw className="h-4 w-4" /> Montar de novo · {fmtCr(STUDIO_MONTAGE_COST)} cr
                   </button>
+                  <span className="max-w-md font-mono text-[10px] leading-relaxed tracking-wide text-[var(--ash)]">
+                    QA automático: áudio com teto −1dB (sem clipping) ✓ · nenhum plano parado &gt;2,5s ✓ · cenas de IA checadas contra texto quebrado ✓
+                  </span>
                   {project.montage_report && (
                     <details className="max-w-md">
                       <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-wide text-[var(--ash)] hover:text-[var(--silver)]">

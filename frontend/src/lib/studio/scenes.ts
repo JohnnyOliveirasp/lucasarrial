@@ -14,6 +14,8 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { r2, imagesBucket } from "@/lib/r2/client";
 import { getAdmin } from "@/lib/db/admin";
 import { kieCreateVideoTask, kieGetTask, friendlyKieError } from "@/lib/kie/client";
+import { stillTextLooksBroken } from "@/lib/studio/scene-qa";
+import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { StudioSceneRow } from "@/lib/db/types";
 
 const KIE_BASE = "https://api.kie.ai/api/v1/jobs";
@@ -56,15 +58,21 @@ async function kieCreateStill(prompt: string): Promise<string> {
   return json.data.taskId;
 }
 
-/** Dispara o still de uma cena (planning|failed → generating_still). */
-export async function startSceneStill(scene: Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">): Promise<void> {
+/**
+ * Dispara o still de uma cena (planning|failed → generating_still).
+ * Devolve o taskId do Kie quando despachou (é a referência do débito F5,
+ * gravada em debit_ref pelo chamador que cobra) ou null se nem começou
+ * (nada foi cobrado — a falha aqui não estorna).
+ */
+export async function startSceneStill(scene: Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">): Promise<string | null> {
   const admin = getAdmin();
   try {
     const taskId = await kieCreateStill(`${scene.prompt_en}, ${DIALECT_SUFFIX[scene.dialect]}`);
     await admin
       .from("studio_scenes")
-      .update({ status: "generating_still", kie_task_id: taskId, error_message: null } as never)
+      .update({ status: "generating_still", kie_task_id: taskId, qa_retried: false, error_message: null } as never)
       .eq("id", scene.id);
+    return taskId;
   } catch (e) {
     await admin
       .from("studio_scenes")
@@ -73,14 +81,32 @@ export async function startSceneStill(scene: Pick<StudioSceneRow, "id" | "prompt
         error_message: friendlyKieError(e instanceof Error ? e.message : "erro"),
       } as never)
       .eq("id", scene.id);
+    return null;
   }
 }
 
-async function failScene(sceneId: string, raw: string): Promise<void> {
+/**
+ * Marca a cena como failed + ESTORNA o débito dela (F5; debit_ref é a chave,
+ * único por tentativa paga) + alerta o suporte quando é falha técnica.
+ */
+async function failScene(
+  scene: Pick<StudioSceneRow, "id" | "user_id" | "debit_ref">,
+  raw: string,
+  alertSupport = true,
+): Promise<void> {
   await getAdmin()
     .from("studio_scenes")
     .update({ status: "failed", error_message: friendlyKieError(raw).slice(0, 300) } as never)
-    .eq("id", sceneId);
+    .eq("id", scene.id);
+  await handleTechFailure({
+    feature: "Vídeo Estúdio (cena de b-roll F3)",
+    userId: scene.user_id,
+    refId: scene.debit_ref ?? scene.id,
+    rawError: raw,
+    debitRefType: "studio_scene",
+    refundRefType: "studio_scene_refund",
+    alertSupport,
+  });
 }
 
 /** Sincroniza UMA cena pendente com o Kie (chamado pelo poll do projeto). */
@@ -90,15 +116,37 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
   if (scene.status === "generating_still" && scene.kie_task_id) {
     const info = await kieGetTask(scene.kie_task_id);
     if (info.state === "fail") {
-      await failScene(scene.id, info.failMsg || info.failCode || "still falhou");
+      await failScene(scene, info.failMsg || info.failCode || "still falhou");
       return;
     }
     if (info.state !== "success") return;
     const stillUrl = info.resultUrls[0];
     if (!stillUrl) {
-      await failScene(scene.id, "still sem resultado");
+      await failScene(scene, "still sem resultado");
       return;
     }
+
+    // QA automático (F5): texto quebrado não sobe. Regera o still 1x
+    // (a variação do modelo costuma resolver); persistindo, reprova a cena
+    // com estorno — SEM e-mail pro suporte (não é falha de infra).
+    const broken = await stillTextLooksBroken(stillUrl);
+    if (broken && !scene.qa_retried) {
+      try {
+        const retryTask = await kieCreateStill(`${scene.prompt_en}, ${DIALECT_SUFFIX[scene.dialect]}`);
+        await admin
+          .from("studio_scenes")
+          .update({ kie_task_id: retryTask, qa_retried: true } as never)
+          .eq("id", scene.id);
+      } catch (e) {
+        await failScene(scene, e instanceof Error ? e.message : "regerar still falhou");
+      }
+      return;
+    }
+    if (broken) {
+      await failScene(scene, "A cena saiu com texto ilegível (QA automático). Gere as cenas de novo.", false);
+      return;
+    }
+
     try {
       const { taskId } = await kieCreateVideoTask({
         model: VIDEO_MODEL,
@@ -113,7 +161,7 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
         .update({ status: "animating", kie_task_id: taskId } as never)
         .eq("id", scene.id);
     } catch (e) {
-      await failScene(scene.id, e instanceof Error ? e.message : "animação não iniciou");
+      await failScene(scene, e instanceof Error ? e.message : "animação não iniciou");
     }
     return;
   }
@@ -121,13 +169,13 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
   if (scene.status === "animating" && scene.kie_task_id) {
     const info = await kieGetTask(scene.kie_task_id);
     if (info.state === "fail") {
-      await failScene(scene.id, info.failMsg || info.failCode || "animação falhou");
+      await failScene(scene, info.failMsg || info.failCode || "animação falhou");
       return;
     }
     if (info.state !== "success") return;
     const videoUrl = info.resultUrls[0];
     if (!videoUrl) {
-      await failScene(scene.id, "animação sem resultado");
+      await failScene(scene, "animação sem resultado");
       return;
     }
     try {
@@ -148,7 +196,7 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
         .update({ status: "ready", video_path: key, error_message: null } as never)
         .eq("id", scene.id);
     } catch (e) {
-      await failScene(scene.id, e instanceof Error ? `salvar cena: ${e.message}` : "salvar cena falhou");
+      await failScene(scene, e instanceof Error ? `salvar cena: ${e.message}` : "salvar cena falhou");
     }
   }
 }

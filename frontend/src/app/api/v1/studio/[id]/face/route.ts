@@ -2,14 +2,18 @@
  * POST /api/v1/studio/[id]/face — Vídeo Estúdio F4: gera a presença do aluno
  * (InfiniteTalk Turbo) nos pontos-âncora: hook (1ª frase) e fechamento
  * (última). Body: { image_key } (foto do aluno via /studio/upload-url).
- * O GET /studio/[id] sincroniza os jobs até ready. Sem cobrança na F4
- * (pré-produção, só admin) — preço vem na F5.
+ * O GET /studio/[id] sincroniza os jobs até ready. F5: cobra como o Vídeo
+ * Clone Turbo (105 cr/s dos trechos de hook+fechamento, mín. 5s cada);
+ * estorno automático se a tentativa falhar (syncFaceSegments).
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { isAdmin } from "@/lib/admin/guard";
+import { debitCredits } from "@/lib/credits/service";
+import { gateStudioCredits } from "@/lib/studio/billing";
+import { studioFaceCost } from "@/lib/studio/pricing";
 import { startFaceGeneration } from "@/lib/studio/face";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { StudioTranscriptWord } from "@/lib/db/types";
@@ -52,6 +56,16 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const words = (project.transcript_words ?? []) as StudioTranscriptWord[];
   if (words.length === 0) return badRequest("Este projeto não tem transcrição.");
 
+  // Gate F5: mesma conta da UI (hook + fechamento, preço do Clone Turbo).
+  const cost = studioFaceCost(words);
+  const gate = await gateStudioCredits({
+    userId: auth.user_id,
+    email: auth.email,
+    cost,
+    action: "gerar sua presença no vídeo",
+  });
+  if (!gate.ok) return gate.deny;
+
   try {
     const segments = await startFaceGeneration({
       projectId: id,
@@ -68,7 +82,19 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         face_segments: segments,
       } as never)
       .eq("id", id);
-    return jsonOk({ face: { status: "processing", segments: segments.length } }, 201);
+    // Débito depois dos jobs no ar (padrão da casa); ref = job do hook —
+    // único por tentativa, é a chave do estorno automático em falha.
+    if (gate.billed && cost > 0) {
+      await debitCredits({
+        userId: auth.user_id,
+        amount: cost,
+        kind: "video",
+        refType: "studio_face",
+        refId: segments[0]?.job_id ?? id,
+        note: "Vídeo Estúdio — presença (rosto) no hook e fechamento",
+      });
+    }
+    return jsonOk({ face: { status: "processing", segments: segments.length, cost: gate.billed ? cost : 0 } }, 201);
   } catch (e) {
     await admin
       .from("studio_projects")

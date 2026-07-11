@@ -14,10 +14,11 @@ export const GENERATION_MIN_CREDITS = 400;
 
 /**
  * Vídeo Estúdio F0 — limpeza de áudio (whisper + edição na GPU).
- * PLACEHOLDER até a precificação da F5: cobre o custo GPU (~R$0,15/job)
- * e evita abuso; estorno automático em falha.
+ * Preço F5 (método Vídeo Clone): custo GPU medido ~R$0,15/job × margem 2×
+ * ≈ R$0,30 → 550 créditos. Estorno automático em falha. Os demais preços
+ * do Estúdio ficam em lib/studio/pricing.ts.
  */
-export const STUDIO_CLEAN_COST = 500;
+export const STUDIO_CLEAN_COST = 550;
 
 /** Custo em créditos de uma geração = nº de caracteres, com piso. */
 export function generationCreditCost(text: string): number {

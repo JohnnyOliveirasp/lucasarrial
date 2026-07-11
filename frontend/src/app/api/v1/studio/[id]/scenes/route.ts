@@ -2,17 +2,45 @@
  * POST /api/v1/studio/[id]/scenes — Vídeo Estúdio F3: planeja e dispara as
  * cenas de b-roll do roteiro FALADO (1 por frase), reusando o banco pessoal.
  * O GET /studio/[id] sincroniza cada cena (still → anima → R2) até 'ready'.
- * Sem cobrança na F3 (pré-produção, só admin) — preço vem na F5.
+ * F5: cobra STUDIO_SCENE_COST por cena NOVA despachada (reuso do banco é
+ * grátis); débito por cena (ref = taskId do Kie) com estorno automático em
+ * falha (failScene). Retry re-cobra só as cenas re-despachadas.
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { isAdmin } from "@/lib/admin/guard";
+import { debitCredits } from "@/lib/credits/service";
+import { gateStudioCredits } from "@/lib/studio/billing";
+import { STUDIO_SCENE_COST } from "@/lib/studio/pricing";
 import { planScenes, sentencesFromWords, type BankScene } from "@/lib/studio/scene-planner";
 import { startSceneStill } from "@/lib/studio/scenes";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { StudioScenePlanItem, StudioSceneRow, StudioTranscriptWord } from "@/lib/db/types";
+
+/** Despachou → grava a referência do débito e cobra (quem paga). */
+async function chargeDispatchedScene(args: {
+  userId: string;
+  projectId: string;
+  sceneId: string;
+  taskId: string;
+  billed: boolean;
+}): Promise<void> {
+  await getAdmin()
+    .from("studio_scenes")
+    .update({ debit_ref: args.taskId } as never)
+    .eq("id", args.sceneId);
+  if (!args.billed) return;
+  await debitCredits({
+    userId: args.userId,
+    amount: STUDIO_SCENE_COST,
+    kind: "video",
+    refType: "studio_scene",
+    refId: args.taskId,
+    note: `Vídeo Estúdio — cena de b-roll (projeto ${args.projectId})`,
+  });
+}
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -35,7 +63,8 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   if (project.status !== "audio_ready") return badRequest("O áudio ainda não está pronto.");
   if (project.scenes_status === "generating") return badRequest("As cenas já estão sendo geradas.");
 
-  // Retry: plano já existe → só re-dispara as cenas que falharam.
+  // Retry: plano já existe → só re-dispara as cenas que falharam (a tentativa
+  // anterior foi estornada; a nova é cobrada de novo, cena a cena).
   if (project.scenes_status === "failed" && Array.isArray(project.scene_plan) && project.scene_plan.length > 0) {
     const ids = [...new Set((project.scene_plan as StudioScenePlanItem[]).map((p) => p.scene_id))];
     const { data: failed } = await admin
@@ -43,11 +72,24 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       .select("id, prompt_en, dialect")
       .in("id", ids)
       .eq("status", "failed");
-    for (const s of (failed ?? []) as Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">[]) {
-      await startSceneStill(s);
+    const failedRows = (failed ?? []) as Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">[];
+    const retryGate = await gateStudioCredits({
+      userId: auth.user_id,
+      email: auth.email,
+      cost: failedRows.length * STUDIO_SCENE_COST,
+      action: `refazer ${failedRows.length} cena(s)`,
+    });
+    if (!retryGate.ok) return retryGate.deny;
+    for (const s of failedRows) {
+      const taskId = await startSceneStill(s);
+      if (taskId) {
+        await chargeDispatchedScene({
+          userId: auth.user_id, projectId: id, sceneId: s.id, taskId, billed: retryGate.billed,
+        });
+      }
     }
     await admin.from("studio_projects").update({ scenes_status: "generating" } as never).eq("id", id);
-    return jsonOk({ scenes: { status: "generating", retried: (failed ?? []).length } }, 201);
+    return jsonOk({ scenes: { status: "generating", retried: failedRows.length } }, 201);
   }
 
   const words = (project.transcript_words ?? []) as StudioTranscriptWord[];
@@ -77,6 +119,16 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     return serverError("Não consegui planejar as cenas agora. Tente novamente.");
   }
 
+  // Gate F5: cobra só as cenas NOVAS (reuso do banco pessoal é grátis).
+  const plannedNew = plan.filter((p) => !p.reuse_id).length;
+  const gate = await gateStudioCredits({
+    userId: auth.user_id,
+    email: auth.email,
+    cost: plannedNew * STUDIO_SCENE_COST,
+    action: `gerar ${plannedNew} cena(s) nova(s)`,
+  });
+  if (!gate.ok) return gate.deny;
+
   // Cria as cenas novas + monta o mapa frase→cena do projeto.
   const scenePlan: StudioScenePlanItem[] = [];
   let newScenes = 0;
@@ -97,7 +149,12 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       .single();
     if (insErr || !created) return serverError("Falha ao criar as cenas.");
     const row = created as Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">;
-    await startSceneStill(row);
+    const taskId = await startSceneStill(row);
+    if (taskId) {
+      await chargeDispatchedScene({
+        userId: auth.user_id, projectId: id, sceneId: row.id, taskId, billed: gate.billed,
+      });
+    }
     newScenes += 1;
     scenePlan.push({ sentence: p.sentence, text: sentences[p.sentence] ?? "", scene_id: row.id, reused: false });
   }
