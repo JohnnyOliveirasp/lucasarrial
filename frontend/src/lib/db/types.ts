@@ -620,6 +620,56 @@ export type StudioProjectInsert = {
 };
 export type StudioProjectUpdate = Partial<StudioProjectRow>;
 
+// ───────── Agente de suporte WhatsApp (F0) ─────────
+export type AgentChatKind = "private" | "group";
+export type AgentChatMode = "auto" | "human";
+export type AgentChatRow = {
+  id: string;
+  wa_jid: string;
+  kind: AgentChatKind;
+  name: string | null;
+  mode: AgentChatMode;
+  last_message_at: Timestamp | null;
+  created_at: Timestamp;
+};
+export type AgentChatInsert = {
+  id?: string;
+  wa_jid: string;
+  kind: AgentChatKind;
+  name?: string | null;
+  mode?: AgentChatMode;
+  last_message_at?: Timestamp | null;
+};
+export type AgentChatUpdate = Partial<AgentChatRow>;
+
+export type AgentMessageKind =
+  | "text" | "audio" | "image" | "video" | "document" | "sticker" | "other";
+export type AgentMessageRow = {
+  id: string;
+  chat_id: string;
+  wa_message_id: string | null;
+  sender_jid: string | null;
+  sender_name: string | null;
+  from_me: boolean;
+  role: "user" | "agent" | "human";
+  kind: AgentMessageKind;
+  content: string | null;
+  created_at: Timestamp;
+};
+export type AgentMessageInsert = {
+  id?: string;
+  chat_id: string;
+  wa_message_id?: string | null;
+  sender_jid?: string | null;
+  sender_name?: string | null;
+  from_me?: boolean;
+  role?: "user" | "agent" | "human";
+  kind?: AgentMessageKind;
+  content?: string | null;
+  created_at?: Timestamp;
+};
+export type AgentMessageUpdate = Partial<AgentMessageRow>;
+
 // ───────── Database (composição) ─────────
 // Cada tabela precisa de `Relationships: []` pra satisfazer GenericTable do supabase-js v2.105+.
 type Relationship = {
@@ -644,6 +694,8 @@ export type Database = {
       video_clones: { Row: VideoCloneRow; Insert: VideoCloneInsert; Update: VideoCloneUpdate; Relationships: Rel };
       studio_projects: { Row: StudioProjectRow; Insert: StudioProjectInsert; Update: StudioProjectUpdate; Relationships: Rel };
       studio_scenes: { Row: StudioSceneRow; Insert: StudioSceneInsert; Update: StudioSceneUpdate; Relationships: Rel };
+      agent_chats: { Row: AgentChatRow; Insert: AgentChatInsert; Update: AgentChatUpdate; Relationships: Rel };
+      agent_messages: { Row: AgentMessageRow; Insert: AgentMessageInsert; Update: AgentMessageUpdate; Relationships: Rel };
       render_jobs: { Row: RenderJobRow; Insert: RenderJobInsert; Update: RenderJobUpdate; Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };
