@@ -24,11 +24,23 @@ export type CloneJobStatus =
   | "CANCELLED"
   | "TIMED_OUT";
 
-export async function runInfiniteTalk(workflow: unknown): Promise<{ jobId: string }> {
+export async function runInfiniteTalk(
+  workflow: unknown,
+  opts?: {
+    /** policy.executionTimeout do job — SEM isso vale o default do endpoint
+     *  (15min), que mata V1 com áudio >20s. Ver cloneExecutionTimeoutMs. */
+    executionTimeoutMs?: number;
+    /** Webhook de finalização (estorno/ready sem depender do poll da página). */
+    webhook?: string;
+  },
+): Promise<{ jobId: string }> {
+  const body: Record<string, unknown> = { input: { workflow } };
+  if (opts?.webhook) body.webhook = opts.webhook;
+  if (opts?.executionTimeoutMs) body.policy = { executionTimeout: opts.executionTimeoutMs };
   const res = await fetch(`${BASE}/${endpointId()}/run`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey()}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ input: { workflow } }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     throw new Error(`RunPod run ${res.status}: ${(await res.text()).slice(0, 300)}`);

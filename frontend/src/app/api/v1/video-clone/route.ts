@@ -19,10 +19,12 @@ import { transcribeUploadedAudio } from "@/lib/video/transcribe";
 import {
   CLONE_MAX_AUDIO_SECONDS,
   cloneCreditsCost,
+  cloneExecutionTimeoutMs,
   getCloneTier,
 } from "@/lib/video-clone/config";
 import { buildInfiniteTalkWorkflow } from "@/lib/video-clone/workflow";
 import { runInfiniteTalk } from "@/lib/video-clone/runpod";
+import { webhookUrlFor } from "@/lib/runpod/client";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 
 export async function GET(request: NextRequest) {
@@ -214,7 +216,13 @@ export async function POST(request: NextRequest) {
   });
 
   try {
-    const { jobId } = await runInfiniteTalk(workflow);
+    // Timeout dimensionado por tier+duração (o default do endpoint, 15min,
+    // matava V1 >20s) + webhook: falha/sucesso finaliza e estorna mesmo com
+    // a página fechada.
+    const { jobId } = await runInfiniteTalk(workflow, {
+      executionTimeoutMs: cloneExecutionTimeoutMs(tier, duration),
+      webhook: webhookUrlFor("generation"),
+    });
     await admin
       .from("video_clones")
       .update({ runpod_job_id: jobId, num_frames: numFrames, video_path: s3Key })

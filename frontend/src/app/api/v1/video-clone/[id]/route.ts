@@ -12,21 +12,12 @@ import { getAdmin } from "@/lib/db/admin";
 import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { getInfiniteTalkStatus } from "@/lib/video-clone/runpod";
-import { handleTechFailure } from "@/lib/support/failure-alert";
+import { finalizeVideoClone } from "@/lib/video-clone/finalize";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 const SELECT =
   "id, user_id, name, duration_seconds, tier, credits_cost, status, error_message, runpod_job_id, video_path, created_at";
-
-function friendlyError(raw: string): string {
-  const base = (() => {
-    if (/out of memory|oom/i.test(raw)) return "A geração ficou sem memória. Tente a qualidade Padrão.";
-    if (/timed?_?out/i.test(raw)) return "A geração demorou demais e foi cancelada. Tente novamente.";
-    return "A geração falhou. Tente novamente — se persistir, fale com o suporte.";
-  })();
-  return `${base} Os créditos cobrados foram devolvidos automaticamente.`;
-}
 
 export async function GET(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -48,33 +39,15 @@ export async function GET(request: NextRequest, ctx: Ctx) {
   if (polling && current.runpod_job_id) {
     try {
       const st = await getInfiniteTalkStatus(current.runpod_job_id);
-      if (st.status === "COMPLETED") {
-        await admin
-          .from("video_clones")
-          .update({ status: "ready", error_message: null })
-          .eq("id", id);
-      } else if (st.status === "FAILED" || st.status === "CANCELLED" || st.status === "TIMED_OUT") {
-        console.error("[video-clone] job falhou:", current.runpod_job_id, st.error);
-        const rawError = st.error ?? st.status;
-        // Gate idempotente: só quem transiciona pra failed dispara a
-        // contingência (estorno automático + e-mail pro suporte).
-        const { data: claimed } = await admin
-          .from("video_clones")
-          .update({ status: "failed", error_message: friendlyError(rawError) })
-          .eq("id", id)
-          .in("status", ["pending", "generating"])
-          .select("id");
-        if (claimed && claimed.length > 0) {
-          await handleTechFailure({
-            feature: "Vídeo Clone (lip-sync)",
-            userId: auth.user_id,
-            refId: id,
-            jobId: current.runpod_job_id,
-            rawError,
-            debitRefType: "video_clone",
-            refundRefType: "video_clone_refund",
-          });
-        }
+      if (st.status === "COMPLETED" || st.status === "FAILED" || st.status === "CANCELLED" || st.status === "TIMED_OUT") {
+        // Finalização compartilhada com o webhook (gate idempotente lá dentro).
+        await finalizeVideoClone({
+          cloneId: id,
+          userId: auth.user_id,
+          jobId: current.runpod_job_id,
+          runpodStatus: st.status,
+          rawError: st.error,
+        });
       } else if (st.status === "IN_PROGRESS" && current.status === "pending") {
         await admin.from("video_clones").update({ status: "generating" }).eq("id", id);
       }

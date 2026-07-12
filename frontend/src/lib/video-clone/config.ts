@@ -82,3 +82,19 @@ export function cloneCreditsCost(tier: CloneTier, seconds: number): number {
   const billed = Math.max(CLONE_MIN_BILLED_SECONDS, Math.ceil(seconds));
   return billed * tier.creditsPerSecond;
 }
+
+/**
+ * Teto de execução do job no RunPod (policy.executionTimeout), dimensionado
+ * pro PIOR caso medido nos logs de 2026-07-12: worker L40S frio ≈ 10min só
+ * carregando modelos + V1 480p ≈ 2,5min por janela de ~72 frames (7 steps ×
+ * ~19,5s/step). O default do endpoint (15min) matava QUALQUER áudio >20s no
+ * V1 — e até jobs de 11s quando caíam num L40S frio. HD nunca foi medido:
+ * folga maior. O teto é rede de segurança, não meta — job saudável termina
+ * bem antes.
+ */
+export function cloneExecutionTimeoutMs(tier: CloneTier, seconds: number): number {
+  const billed = Math.max(CLONE_MIN_BILLED_SECONDS, Math.ceil(seconds));
+  // Segundos de GPU por segundo de áudio, com folga pra GPU mais lenta da fila.
+  const perAudioSecond = tier.flow === "v2" ? 30 : tier.id === "720p" ? 180 : 60;
+  return (20 * 60 + billed * perAudioSecond) * 1000;
+}

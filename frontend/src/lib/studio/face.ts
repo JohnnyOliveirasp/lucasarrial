@@ -16,7 +16,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { buildInfiniteTalkWorkflow } from "@/lib/video-clone/workflow";
 import { runInfiniteTalk, getInfiniteTalkStatus } from "@/lib/video-clone/runpod";
-import { getCloneTier } from "@/lib/video-clone/config";
+import { cloneExecutionTimeoutMs, getCloneTier } from "@/lib/video-clone/config";
 import { STUDIO_FACE_TIER_ID, sentencesWithTimes } from "@/lib/studio/pricing";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { StudioTranscriptWord } from "@/lib/db/types";
@@ -106,7 +106,10 @@ export async function startFaceGeneration(args: {
       tier,
       durationSeconds: a.end - a.start + 0.05,
     });
-    const { jobId } = await runInfiniteTalk(workflow);
+    // Timeout por job (o default do endpoint, 15min, mata worker frio).
+    const { jobId } = await runInfiniteTalk(workflow, {
+      executionTimeoutMs: cloneExecutionTimeoutMs(tier, a.end - a.start + 0.05),
+    });
     segments.push({
       role: a.role, sentence: a.sentence, start: a.start, end: a.end,
       audio_path: audioKey, video_path: videoKey, job_id: jobId, status: "processing",

@@ -28,6 +28,7 @@ import {
   type AudioEditOutput,
   type MontageOutput,
 } from "@/lib/studio/finalize";
+import { finalizeVideoClone } from "@/lib/video-clone/finalize";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 
 type RunpodWebhookPayload = {
@@ -128,6 +129,25 @@ export async function POST(request: NextRequest) {
       runpodError: payload.error ?? null,
     });
     return jsonOk({ handled: "studio_montage" });
+  }
+
+  // 5. Tenta achar em video_clones (InfiniteTalk — endpoint próprio; sem o
+  //    webhook a finalização dependia do usuário manter a página aberta)
+  const { data: clone } = await admin
+    .from("video_clones")
+    .select("id, user_id")
+    .eq("runpod_job_id", payload.id as never)
+    .maybeSingle();
+
+  if (clone) {
+    await finalizeVideoClone({
+      cloneId: (clone as { id: string }).id,
+      userId: (clone as { user_id: string }).user_id,
+      jobId: payload.id,
+      runpodStatus: payload.status,
+      rawError: payload.output?.error || payload.error || null,
+    });
+    return jsonOk({ handled: "video_clone" });
   }
 
   // Job não corresponde a nada nosso — descarta silenciosamente
