@@ -88,31 +88,52 @@ async function ensureChat(jid: string, m: EvolutionMessage): Promise<AgentChatRo
   return (retry as AgentChatRow | null) ?? null;
 }
 
-/** Ingere UMA mensagem do webhook. Nunca lança (webhook responde 200 sempre). */
-export async function ingestMessage(m: EvolutionMessage): Promise<void> {
+export type IngestedMessage = {
+  chat: AgentChatRow;
+  messageId: string;
+  waMessageId: string | null;
+  fromMe: boolean;
+  kind: AgentMessageKind;
+  content: string | null;
+};
+
+/**
+ * Ingere UMA mensagem do webhook. Nunca lança (webhook responde 200 sempre).
+ * Devolve o que salvou (pro pipeline de resposta decidir) ou null se
+ * ignorada/duplicada.
+ */
+export async function ingestMessage(m: EvolutionMessage): Promise<IngestedMessage | null> {
   try {
     const jid = m.key?.remoteJid ?? "";
-    if (!jid || jid === "status@broadcast") return;
+    if (!jid || jid === "status@broadcast") return null;
     const type = m.messageType;
-    if (type && IGNORED_TYPES.has(type)) return;
+    if (type && IGNORED_TYPES.has(type)) return null;
 
     const chat = await ensureChat(jid, m);
-    if (!chat) return;
+    if (!chat) return null;
 
     const fromMe = m.key?.fromMe === true;
+    const kind = kindOf(type);
+    const content = textOf(m);
     const admin = getAdmin();
-    await admin.from("agent_messages").insert({
-      chat_id: chat.id,
-      wa_message_id: m.key?.id ?? null,
-      sender_jid: fromMe ? null : (m.key?.participant ?? jid),
-      sender_name: fromMe ? null : (m.pushName ?? null),
-      from_me: fromMe,
-      // fromMe na F0 = Johnny respondendo pelo celular (a IA ainda não fala).
-      role: fromMe ? "human" : "user",
-      kind: kindOf(type),
-      content: textOf(m),
-    } as never);
-    // Índice único (chat_id, wa_message_id) absorve retries — erro é ignorado.
+    const { data: saved } = await admin
+      .from("agent_messages")
+      .insert({
+        chat_id: chat.id,
+        wa_message_id: m.key?.id ?? null,
+        sender_jid: fromMe ? null : (m.key?.participant ?? jid),
+        sender_name: fromMe ? null : (m.pushName ?? null),
+        from_me: fromMe,
+        // fromMe sem row prévia = humano respondendo pelo celular (a resposta
+        // do agente entra pelo pipeline com o MESMO wa_message_id → dedupe).
+        role: fromMe ? "human" : "user",
+        kind,
+        content,
+      } as never)
+      .select("id")
+      .maybeSingle();
+    // Índice único (chat_id, wa_message_id) absorve retries/eco do sendText.
+    if (!saved) return null;
 
     await admin
       .from("agent_chats")
@@ -124,7 +145,17 @@ export async function ingestMessage(m: EvolutionMessage): Promise<void> {
           : {}),
       } as never)
       .eq("id", chat.id);
+
+    return {
+      chat,
+      messageId: (saved as { id: string }).id,
+      waMessageId: m.key?.id ?? null,
+      fromMe,
+      kind,
+      content,
+    };
   } catch {
     // ingestão é best-effort; a mensagem seguinte não pode ser bloqueada
+    return null;
   }
 }

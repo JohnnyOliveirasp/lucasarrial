@@ -23,13 +23,19 @@ async function downloadAudio(key: string): Promise<Uint8Array> {
  * Mesmo padrão do worker de render (render/subtitles.mjs).
  */
 export async function transcribeUploadedAudio(key: string): Promise<Transcription> {
+  const bytes = await downloadAudio(key);
+  return transcribeAudioBuffer(bytes, key.split("/").pop() || "audio.mp3");
+}
+
+/** Transcreve bytes de áudio direto (usado também pelo agente de suporte). */
+export async function transcribeAudioBuffer(
+  bytes: Uint8Array,
+  filename: string,
+): Promise<Transcription> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
 
-  const bytes = await downloadAudio(key);
-
   const form = new FormData();
-  const filename = key.split("/").pop() || "audio.mp3";
   form.append("file", new Blob([Buffer.from(bytes)]), filename);
   form.append("model", "whisper-1");
   form.append("response_format", "verbose_json");

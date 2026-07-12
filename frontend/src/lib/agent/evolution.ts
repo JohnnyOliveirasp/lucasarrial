@@ -76,10 +76,34 @@ export async function getGroupSubject(groupJid: string): Promise<string | null> 
   }
 }
 
-/** Envia texto pra um jid (privado ou grupo). Usado a partir da F1/F2. */
-export async function sendText(jid: string, text: string): Promise<void> {
-  await evo(`/message/sendText/${agentInstance()}`, {
+/**
+ * Envia texto pra um jid (privado ou grupo). delay = "digitando…" (ms).
+ * Devolve o id da mensagem enviada (dedupe: o webhook devolve essa mesma
+ * mensagem como fromMe e o índice único ignora a segunda gravação).
+ */
+export async function sendText(jid: string, text: string, delayMs = 2000): Promise<string | null> {
+  const json = await evo<{ key?: { id?: string } }>(`/message/sendText/${agentInstance()}`, {
     method: "POST",
-    body: JSON.stringify({ number: jid, text }),
+    body: JSON.stringify({ number: jid, text, delay: delayMs }),
   });
+  return json.key?.id ?? null;
+}
+
+/** Baixa a mídia de uma mensagem (base64) — usado pra transcrever áudios. */
+export async function getMediaBase64(
+  waMessageId: string,
+): Promise<{ base64: string; mimetype: string } | null> {
+  try {
+    const json = await evo<{ base64?: string; mimetype?: string }>(
+      `/chat/getBase64FromMediaMessage/${agentInstance()}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ message: { key: { id: waMessageId } }, convertToMp4: false }),
+      },
+    );
+    if (!json.base64) return null;
+    return { base64: json.base64, mimetype: json.mimetype ?? "audio/ogg" };
+  } catch {
+    return null;
+  }
 }
