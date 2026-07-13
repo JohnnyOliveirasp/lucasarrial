@@ -6,7 +6,7 @@
 import type { NextRequest } from "next/server";
 import { gateAdmin } from "@/lib/admin/api";
 import { jsonOk } from "@/lib/api/responses";
-import { agentInstance, getConnectionState, getQrCode } from "@/lib/agent/evolution";
+import { connectionState, instanceLabel, qrCode } from "@/lib/agent/provider";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const gate = await gateAdmin(request);
   if ("res" in gate) return gate.res;
 
-  const state = await getConnectionState();
-  const qr = state === "open" ? null : await getQrCode();
-  return jsonOk({ instance: agentInstance(), state, qr });
+  const state = await connectionState();
+  const qr = state === "open" ? null : await qrCode();
+  return jsonOk({ instance: instanceLabel(), state, qr });
 }

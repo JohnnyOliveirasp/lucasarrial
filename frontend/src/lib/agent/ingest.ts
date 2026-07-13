@@ -5,7 +5,7 @@
  * o cérebro entra na F1.
  */
 import { getAdmin } from "@/lib/db/admin";
-import { getGroupSubject } from "@/lib/agent/evolution";
+import { groupSubject } from "@/lib/agent/provider";
 import type { AgentChatRow, AgentMessageKind } from "@/lib/db/types";
 
 /** Shape (parcial) do data de MESSAGES_UPSERT da Evolution v2 (Baileys). */
@@ -71,7 +71,7 @@ async function ensureChat(jid: string, m: EvolutionMessage): Promise<AgentChatRo
 
   const isGroup = jid.endsWith("@g.us");
   const name = isGroup
-    ? await getGroupSubject(jid)
+    ? await groupSubject(jid)
     : m.key?.fromMe
       ? null // privado iniciado por nós: nome vem quando a pessoa responder
       : m.pushName || null;
@@ -95,14 +95,19 @@ export type IngestedMessage = {
   fromMe: boolean;
   kind: AgentMessageKind;
   content: string | null;
+  /** URL da mídia (WAHA entrega no webhook; usado pra transcrever áudio). */
+  mediaUrl: string | null;
 };
 
 /**
- * Ingere UMA mensagem do webhook. Nunca lança (webhook responde 200 sempre).
- * Devolve o que salvou (pro pipeline de resposta decidir) ou null se
- * ignorada/duplicada.
+ * Ingere UMA mensagem do webhook (formato Evolution/Baileys — o webhook da
+ * WAHA é convertido pra este shape antes). Nunca lança (webhook responde 200
+ * sempre). Devolve o que salvou ou null se ignorada/duplicada.
  */
-export async function ingestMessage(m: EvolutionMessage): Promise<IngestedMessage | null> {
+export async function ingestMessage(
+  m: EvolutionMessage,
+  opts?: { mediaUrl?: string | null },
+): Promise<IngestedMessage | null> {
   try {
     const jid = m.key?.remoteJid ?? "";
     if (!jid || jid === "status@broadcast") return null;
@@ -153,6 +158,7 @@ export async function ingestMessage(m: EvolutionMessage): Promise<IngestedMessag
       fromMe,
       kind,
       content,
+      mediaUrl: opts?.mediaUrl ?? null,
     };
   } catch {
     // ingestão é best-effort; a mensagem seguinte não pode ser bloqueada

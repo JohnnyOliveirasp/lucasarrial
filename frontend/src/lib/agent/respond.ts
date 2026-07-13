@@ -12,7 +12,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { buildAgentReply } from "@/lib/agent/brain";
-import { getMediaBase64, sendText } from "@/lib/agent/evolution";
+import { fetchAudioBytes, sendAgentText } from "@/lib/agent/provider";
 import type { IngestedMessage } from "@/lib/agent/ingest";
 import { transcribeAudioBuffer } from "@/lib/video/transcribe";
 import type { AgentMessageRow } from "@/lib/db/types";
@@ -43,12 +43,9 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
 
     // Áudio → transcreve e grava a transcrição na própria mensagem.
     if (msg.kind === "audio") {
-      if (!msg.waMessageId) return;
-      const media = await getMediaBase64(msg.waMessageId);
-      if (!media) return;
-      const bytes = Buffer.from(media.base64, "base64");
-      const ext = media.mimetype.includes("mp4") ? "m4a" : "ogg";
-      const t = await transcribeAudioBuffer(new Uint8Array(bytes), `audio.${ext}`);
+      const bytes = await fetchAudioBytes({ waMessageId: msg.waMessageId, mediaUrl: msg.mediaUrl });
+      if (!bytes) return;
+      const t = await transcribeAudioBuffer(new Uint8Array(bytes), "audio.ogg");
       if (!t.text) return;
       await admin
         .from("agent_messages")
@@ -69,7 +66,7 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     if (history.length === 0 || history[history.length - 1].from_me) return;
 
     const reply = await buildAgentReply(history);
-    const sentId = await sendText(msg.chat.wa_jid, reply);
+    const sentId = await sendAgentText(msg.chat.wa_jid, reply);
 
     // Grava a resposta com o wa_message_id do envio — quando o eco fromMe
     // voltar pelo webhook, o índice único descarta a duplicata.
