@@ -2,11 +2,11 @@
  * Agente de suporte — pipeline de resposta. Server-only.
  * Decide se a mensagem recém-ingerida merece resposta da IA e responde.
  *
- * Guards:
- *   - PRIVADO: 🚧 só números da allowlist AGENT_TEST_NUMBERS (csv de dígitos;
- *     vazio/ausente = não responde NINGUÉM — seguro por padrão)
+ * Guards (decisões do Johnny 2026-07-13):
+ *   - PRIVADO: responde QUALQUER pessoa (assunto restrito à plataforma pelo
+ *     prompt; toda conversa fica registrada no banco/painel)
  *   - GRUPO: só quando a mensagem MARCA (@) ou RESPONDE o número do suporte
- *     (decisão do Johnny 2026-07-13) — e a resposta sai CITANDO a pessoa
+ *     — e a resposta sai CITANDO a pessoa
  *   - só chats em mode 'auto' (etiqueta humano cala a IA — F2)
  * Áudio: baixa do provedor → Whisper → responde a transcrição.
  * Best-effort: nunca lança (o webhook não pode falhar por causa da IA).
@@ -20,27 +20,13 @@ import type { AgentMessageRow } from "@/lib/db/types";
 
 const HISTORY_LIMIT = 50; // memória da conversa: a Mary relê as últimas 50
 
-/** 🚧 F1: allowlist de teste (dígitos, ex. "13522548533,5511999999999"). */
-function isAllowedNumber(waJid: string): boolean {
-  const allow = (process.env.AGENT_TEST_NUMBERS ?? "")
-    .split(",")
-    .map((s) => s.replace(/\D/g, ""))
-    .filter(Boolean);
-  if (allow.length === 0) return false;
-  const digits = waJid.split("@")[0].replace(/\D/g, "");
-  return allow.includes(digits);
-}
-
 /** Responde a mensagem ingerida quando os guards permitem. Nunca lança. */
 export async function maybeRespond(msg: IngestedMessage): Promise<void> {
   try {
     if (msg.fromMe) return;
     if (msg.chat.mode !== "auto") return;
-    if (msg.chat.kind === "group") {
-      if (!msg.mentioned) return; // grupo: só quando marcada/respondida
-    } else {
-      if (!isAllowedNumber(msg.chat.wa_jid)) return; // 🚧 F1: allowlist no privado
-    }
+    // Grupo: só quando marcada/respondida. Privado: responde qualquer pessoa.
+    if (msg.chat.kind === "group" && !msg.mentioned) return;
     if (msg.kind !== "text" && msg.kind !== "audio") return;
 
     const admin = getAdmin();
