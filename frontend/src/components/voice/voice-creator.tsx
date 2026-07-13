@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Upload, X, AudioLines, Check, FolderUp } from "lucide-react";
+import { Upload, X, AudioLines, Check, FolderUp, Mic } from "lucide-react";
 import { measureAudioDuration, formatDuration } from "@/lib/audio/duration";
 import { filterAudioFiles, gatherAudioFromDataTransfer } from "@/lib/audio/collect";
+import { listClips, deleteClip } from "@/lib/audio/clip-store";
 
 const MIN_DURATION_SECONDS = 20 * 60; // 20 minutos
 const REC_DURATION_SECONDS = 30 * 60; // 30 minutos
@@ -40,8 +41,43 @@ export function VoiceCreator() {
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [overallProgress, setOverallProgress] = useState(0);
+  const [recorderImport, setRecorderImport] = useState<{ count: number; skipped: number } | null>(null);
+  const recorderClipIds = useRef<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 🎙️ BUGFIX 2026-07-13: as gravações do Gravador (IndexedDB) NUNCA eram
+  // carregadas aqui — quem gravava 20min caía num upload vazio e ficava em
+  // loop no formulário. Agora os clipes entram automaticamente como arquivos.
+  useEffect(() => {
+    listClips()
+      .then((clips) => {
+        if (clips.length === 0) return;
+        // Teto do backend: 20 arquivos/voz — mantém os MAIORES clipes.
+        const sorted = [...clips].sort((a, b) => b.seconds - a.seconds);
+        const kept = sorted.slice(0, MAX_FILES);
+        const additions: LocalFile[] = kept
+          .sort((a, b) => a.createdAt - b.createdAt)
+          .map((c, i) => ({
+            id: `rec-${c.id}`,
+            // Normaliza o mime ("audio/webm;codecs=opus" → "audio/webm"):
+            // o backend valida por igualdade exata.
+            file: new File([c.blob], `gravacao-${String(i + 1).padStart(2, "0")}.webm`, {
+              type: "audio/webm",
+            }),
+            // Duração medida pelo próprio gravador (blobs do MediaRecorder
+            // reportam Infinity no <audio> — não dá pra re-medir).
+            duration: c.seconds,
+            progress: 0,
+            state: "idle",
+          }));
+        recorderClipIds.current = kept.map((c) => c.id);
+        setFiles((prev) => [...additions, ...prev]);
+        setRecorderImport({ count: kept.length, skipped: clips.length - kept.length });
+      })
+      .catch(() => {});
+    // roda 1x no mount — os clipes vêm da página do Gravador
+  }, []);
 
   // Callback ref: aplica webkitdirectory ASSIM QUE o input monta no DOM.
   // (useEffect não serve aqui — o input só renderiza no step "upload".)
@@ -127,6 +163,13 @@ export function VoiceCreator() {
 
   function removeFile(id: string) {
     setFiles((prev) => prev.filter((f) => f.id !== id));
+    // Clipe do Gravador removido da lista → some do IndexedDB também
+    // (senão ele reapareceria na próxima visita).
+    if (id.startsWith("rec-")) {
+      const clipId = id.slice(4);
+      recorderClipIds.current = recorderClipIds.current.filter((c) => c !== clipId);
+      deleteClip(clipId).catch(() => {});
+    }
   }
 
   function onDropzoneFiles(list: FileList | null) {
@@ -232,6 +275,12 @@ export function VoiceCreator() {
       return;
     }
 
+    // Gravações do Gravador enviadas com sucesso → limpa o IndexedDB
+    // (best-effort; se falhar, só reapareceriam pré-carregadas).
+    for (const clipId of recorderClipIds.current) {
+      deleteClip(clipId).catch(() => {});
+    }
+
     setStep("done");
     router.push(`/app/voice-cloning/${voiceId}`);
     router.refresh();
@@ -283,6 +332,19 @@ export function VoiceCreator() {
           e.target.value = "";
         }}
       />
+
+      {recorderImport && (
+        <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-2.5 text-sm text-[var(--ink)]">
+          <Mic className="h-4 w-4 flex-shrink-0 text-[var(--status-online)]" />
+          <span>
+            {recorderImport.count} gravaç{recorderImport.count === 1 ? "ão" : "ões"} do Gravador
+            {" "}carregada{recorderImport.count === 1 ? "" : "s"} automaticamente.
+            {recorderImport.skipped > 0
+              ? ` (${recorderImport.skipped} clipe(s) menores ficaram de fora — limite de ${MAX_FILES} arquivos.)`
+              : ""}
+          </span>
+        </p>
+      )}
 
       {files.length > 0 && (
         <FileList files={files} onRemove={removeFile} t={t} />
