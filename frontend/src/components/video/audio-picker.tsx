@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { Link, useRouter } from "@/i18n/navigation";
 import { AudioLines, Loader2, ArrowRight, Check } from "lucide-react";
 import { MAX_AUDIO_SECONDS, sceneCountForDuration } from "@/lib/video/config";
 import { AudioUpload } from "@/components/video/audio-upload";
@@ -29,7 +29,9 @@ function fmtDuration(secs: number | null): string {
   return m > 0 ? `${m}min${r.toString().padStart(2, "0")}s` : `${r}s`;
 }
 
-export function AudioPicker({ locale }: { locale: string }) {
+export function AudioPicker() {
+  const t = useTranslations("videoWizard.audioPick");
+  const tc = useTranslations("videoWizard.common");
   const router = useRouter();
   const [items, setItems] = useState<Audio[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,15 +42,15 @@ export function AudioPicker({ locale }: { locale: string }) {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/v1/videos/audios", { cache: "no-store" });
-      if (!res.ok) throw new Error("Falha ao carregar seus áudios");
+      if (!res.ok) throw new Error(t("loadFailed"));
       const json = await res.json();
       setItems((json.audios ?? []) as Audio[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : tc("error"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t, tc]);
 
   useEffect(() => {
     load();
@@ -64,10 +66,10 @@ export function AudioPicker({ locale }: { locale: string }) {
         body: JSON.stringify({ generation_id: id }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error?.message || "Falha ao criar o vídeo");
-      router.push(`/${locale}/app/videos/${json.id}`);
+      if (!res.ok) throw new Error(json?.error?.message || t("createFailed"));
+      router.push(`/app/videos/${json.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : tc("error"));
       setCreating(false);
     }
   }
@@ -76,7 +78,7 @@ export function AudioPicker({ locale }: { locale: string }) {
     return (
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--silver)]" />
-        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">Carregando áudios…</p>
+        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">{t("loading")}</p>
       </section>
     );
   }
@@ -87,25 +89,24 @@ export function AudioPicker({ locale }: { locale: string }) {
         <section className="flex flex-col items-center gap-5 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
           <AudioLines className="h-10 w-10 text-[var(--ash)]" />
           <p className="max-w-sm text-sm text-[var(--mute)]">
-            Você ainda não tem áudios de até {MAX_AUDIO_SECONDS}s. Gere um áudio com
-            o seu roteiro primeiro e ele aparece aqui.
+            {t("empty", { s: MAX_AUDIO_SECONDS })}
           </p>
           <Link
-            href={`/${locale}/app/voice-cloning/generate`}
+            href="/app/voice-cloning/generate"
             className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98]"
           >
-            Gerar Áudio
+            {t("generateAudio")}
             <ArrowRight className="h-4 w-4" />
           </Link>
         </section>
-        <AudioUpload locale={locale} />
+        <AudioUpload />
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <AudioUpload locale={locale} />
+      <AudioUpload />
       {error && (
         <p
           role="alert"
@@ -147,7 +148,7 @@ export function AudioPicker({ locale }: { locale: string }) {
                     <span className="flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-wide text-[var(--ash)]">
                       <span>{a.voice_name}</span>
                       <span>· {fmtDuration(a.duration_seconds)}</span>
-                      <span>· ~{sceneCountForDuration(a.duration_seconds ?? 0)} cenas</span>
+                      <span>· {t("sceneCount", { n: sceneCountForDuration(a.duration_seconds ?? 0) })}</span>
                     </span>
                     <span className="line-clamp-2 max-w-xl text-[13px] text-[var(--mute)]">
                       {a.text_raw}
@@ -161,7 +162,7 @@ export function AudioPicker({ locale }: { locale: string }) {
                   {a.audio_url ? (
                     <audio controls preload="metadata" src={a.audio_url} className="h-9 w-full sm:max-w-sm" />
                   ) : (
-                    <span className="font-mono text-[11px] text-[var(--ash)]">áudio indisponível</span>
+                    <span className="font-mono text-[11px] text-[var(--ash)]">{tc("audioUnavailable")}</span>
                   )}
                   <button
                     type="button"
@@ -170,7 +171,7 @@ export function AudioPicker({ locale }: { locale: string }) {
                     className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98] disabled:opacity-50"
                   >
                     {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-                    {creating ? "Criando…" : "Usar este áudio"}
+                    {creating ? t("creating") : t("useThis")}
                   </button>
                 </div>
               )}

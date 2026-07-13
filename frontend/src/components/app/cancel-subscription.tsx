@@ -2,18 +2,20 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui";
 
-const REASONS = [
-  "Está caro",
-  "Não estou usando o suficiente",
-  "Faltou um recurso que eu precisava",
-  "Tive um problema técnico",
-  "Outro motivo",
-];
+const REASON_KEYS = [
+  "expensive",
+  "notUsing",
+  "missingFeature",
+  "technicalIssue",
+  "other",
+] as const;
 
 export function CancelSubscription() {
+  const t = useTranslations("shell.cancelSub");
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -45,7 +47,7 @@ export function CancelSubscription() {
         onClick={() => setOpen(true)}
         className="text-[13px] text-[var(--mute)] underline-offset-4 transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:text-[var(--status-error)] hover:underline"
       >
-        Cancelar assinatura
+        {t("trigger")}
       </button>
 
       {open && (
@@ -54,62 +56,63 @@ export function CancelSubscription() {
             {done ? (
               <div className="flex flex-col gap-4">
                 <h3 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
-                  Assinatura cancelada
+                  {t("doneTitle")}
                 </h3>
                 <p className="text-[14px] leading-relaxed text-[var(--mute)]">
-                  Seu acesso continua até o fim do período já pago. Obrigado pelo
-                  retorno — ele ajuda a melhorar a plataforma.
+                  {t("doneBody")}
                 </p>
                 <Button
                   variant="primary"
                   onClick={() => setOpen(false)}
                   className="self-start"
                 >
-                  Fechar
+                  {t("close")}
                 </Button>
               </div>
             ) : (
               <div className="flex flex-col gap-5">
                 <div className="flex flex-col gap-2">
                   <h3 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
-                    Antes de ir…
+                    {t("title")}
                   </h3>
                   <p className="text-[14px] leading-relaxed text-[var(--mute)]">
-                    Pode cancelar tranquilo. Só nos conta o motivo (opcional) —
-                    ajuda a melhorar.
+                    {t("body")}
                   </p>
                 </div>
 
                 <div className="flex flex-col gap-2.5">
-                  {REASONS.map((r) => (
-                    <label
-                      key={r}
-                      className="flex cursor-pointer items-center gap-3 text-[14px] text-[var(--body)]"
-                    >
-                      <input
-                        type="radio"
-                        name="cancel-reason"
-                        value={r}
-                        checked={reason === r}
-                        onChange={() => setReason(r)}
-                        className="accent-[var(--ink)]"
-                      />
-                      {r}
-                    </label>
-                  ))}
+                  {REASON_KEYS.map((k) => {
+                    const r = t(`reasons.${k}`);
+                    return (
+                      <label
+                        key={k}
+                        className="flex cursor-pointer items-center gap-3 text-[14px] text-[var(--body)]"
+                      >
+                        <input
+                          type="radio"
+                          name="cancel-reason"
+                          value={r}
+                          checked={reason === r}
+                          onChange={() => setReason(r)}
+                          className="accent-[var(--ink)]"
+                        />
+                        {r}
+                      </label>
+                    );
+                  })}
                 </div>
 
                 <textarea
                   value={detail}
                   onChange={(e) => setDetail(e.target.value)}
                   rows={2}
-                  placeholder="Quer detalhar? (opcional)"
+                  placeholder={t("detailPlaceholder")}
                   className="resize-none rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3.5 py-2.5 text-[14px] text-[var(--ink)] placeholder:text-[var(--ash)] focus:border-[var(--hairline-bright)] focus:outline-none"
                 />
 
                 <div className="flex items-center justify-between gap-3">
                   <Button variant="ghost" onClick={() => setOpen(false)}>
-                    Voltar
+                    {t("back")}
                   </Button>
                   <Button
                     variant="secondary"
@@ -122,7 +125,7 @@ export function CancelSubscription() {
                     }
                     className="text-[var(--status-error)] hover:border-[var(--status-error)]"
                   >
-                    {loading ? "Cancelando…" : "Confirmar cancelamento"}
+                    {loading ? t("canceling") : t("confirm")}
                   </Button>
                 </div>
               </div>

@@ -8,6 +8,7 @@
  * Painel de resultado em studio-result.tsx (regra: <400 linhas por arquivo).
  */
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { AudioLines, Loader2, Mic, Scissors, Square, Upload } from "lucide-react";
 import { STUDIO_CLEAN_COST } from "@/lib/credits/config";
 import { PaywallModal } from "@/components/app/paywall-modal";
@@ -28,6 +29,7 @@ export function StudioWorkspace({
   creditsTotal: number;
   unlimited: boolean;
 }) {
+  const t = useTranslations("studio");
   const [audio, setAudio] = useState<{ file: File; preview: string; source: "rec" | "file" } | null>(null);
   const [name, setName] = useState("");
   const [recording, setRecording] = useState(false);
@@ -66,7 +68,7 @@ export function StudioWorkspace({
         setMics(
           devs
             .filter((d) => d.kind === "audioinput" && d.deviceId !== "default")
-            .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Microfone ${i + 1}` })),
+            .map((d, i) => ({ deviceId: d.deviceId, label: d.label || t("workspace.micFallback", { n: i + 1 }) })),
         );
       } catch {
         /* sem permissão: segue com o padrão do sistema */
@@ -105,7 +107,7 @@ export function StudioWorkspace({
       setRecSeconds(0);
       setRecording(true);
     } catch {
-      setError("Não consegui acessar o microfone. Verifique a permissão do navegador.");
+      setError(t("workspace.micError"));
     }
   }
 
@@ -137,13 +139,13 @@ export function StudioWorkspace({
         }),
       });
       const pj = await pres.json().catch(() => ({}));
-      if (!pres.ok) throw new Error(pj?.error?.message || "Falha ao preparar upload");
+      if (!pres.ok) throw new Error(pj?.error?.message || t("workspace.errPrepareUpload"));
       const put = await fetch(pj.upload_url, {
         method: "PUT",
         headers: { "Content-Type": audio.file.type },
         body: audio.file,
       });
-      if (!put.ok) throw new Error("Falha no upload do áudio");
+      if (!put.ok) throw new Error(t("workspace.errUploadAudio"));
 
       const res = await fetch("/api/v1/studio", {
         method: "POST",
@@ -155,7 +157,7 @@ export function StudioWorkspace({
         setPaywall({ subscribed: !!j?.error?.details?.subscribed });
         return;
       }
-      if (!res.ok) throw new Error(j?.error?.message || "Falha ao iniciar o processamento");
+      if (!res.ok) throw new Error(j?.error?.message || t("workspace.errStartProcessing"));
       setProject({
         id: j.project.id, name: name || null, status: "processing",
         duration_raw_seconds: null, duration_clean_seconds: null,
@@ -164,7 +166,7 @@ export function StudioWorkspace({
       });
       setReloadKey((k) => k + 1);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setBusy(null);
     }
@@ -182,10 +184,10 @@ export function StudioWorkspace({
         body: JSON.stringify({ music_key: musicKey }),
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j?.error?.message || "Falha ao iniciar a montagem");
+      if (!res.ok) throw new Error(j?.error?.message || t("workspace.errStartMontage"));
       setProject({ ...project, montage_status: "processing", montage_error: null });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setBusy(null);
     }
@@ -199,10 +201,10 @@ export function StudioWorkspace({
     try {
       const res = await fetch(`/api/v1/studio/${project.id}/scenes`, { method: "POST" });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j?.error?.message || "Falha ao iniciar as cenas");
+      if (!res.ok) throw new Error(j?.error?.message || t("workspace.errStartScenes"));
       setProject({ ...project, scenes_status: j.scenes?.status === "ready" ? "ready" : "generating" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setBusy(null);
     }
@@ -220,19 +222,19 @@ export function StudioWorkspace({
         body: JSON.stringify({ kind: "image", filename: file.name, content_type: file.type, size: file.size }),
       });
       const pj = await pres.json().catch(() => ({}));
-      if (!pres.ok) throw new Error(pj?.error?.message || "Falha ao preparar upload da foto");
+      if (!pres.ok) throw new Error(pj?.error?.message || t("workspace.errPreparePhotoUpload"));
       const put = await fetch(pj.upload_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
-      if (!put.ok) throw new Error("Falha no upload da foto");
+      if (!put.ok) throw new Error(t("workspace.errUploadPhoto"));
       const res = await fetch(`/api/v1/studio/${project.id}/face`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image_key: pj.key }),
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j?.error?.message || "Falha ao iniciar o rosto");
+      if (!res.ok) throw new Error(j?.error?.message || t("workspace.errStartFace"));
       setProject({ ...project, face_status: "processing" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setBusy(null);
     }
@@ -309,16 +311,16 @@ export function StudioWorkspace({
             />
 
             <div className="flex flex-col gap-3">
-              <span className={LABEL}>1. Grave sua fala (pode errar e repetir a frase — a gente corta)</span>
+              <span className={LABEL}>{t("workspace.step1")}</span>
               {mics.length > 0 && (
                 <select
                   value={micId}
                   onChange={(e) => setMicId(e.target.value)}
                   disabled={recording}
-                  aria-label="Escolher microfone"
+                  aria-label={t("workspace.micSelectAria")}
                   className="h-11 w-full max-w-md rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 font-sans text-sm text-[var(--ink)] focus:border-[var(--hairline-bright)] focus:outline-none disabled:opacity-50"
                 >
-                  <option value="">Microfone padrão do sistema</option>
+                  <option value="">{t("workspace.micDefault")}</option>
                   {mics.map((m) => (
                     <option key={m.deviceId} value={m.deviceId}>
                       {m.label}
@@ -329,35 +331,35 @@ export function StudioWorkspace({
               <div className="flex flex-wrap items-center gap-3">
                 {!recording ? (
                   <button type="button" onClick={startRecording} disabled={!!busy} className={GHOST}>
-                    <Mic className="h-4 w-4" /> {audio?.source === "rec" ? "Regravar" : "Gravar agora"}
+                    <Mic className="h-4 w-4" /> {audio?.source === "rec" ? t("workspace.reRecord") : t("workspace.recordNow")}
                   </button>
                 ) : (
                   <button type="button" onClick={stopRecording} className={PILL}>
-                    <Square className="h-4 w-4" /> Parar · {fmtSecs(recSeconds)}
+                    <Square className="h-4 w-4" /> {t("workspace.stop")} · {fmtSecs(recSeconds)}
                   </button>
                 )}
                 <button type="button" onClick={() => fileInput.current?.click()} disabled={recording || !!busy} className={GHOST}>
-                  <Upload className="h-4 w-4" /> Ou subir um áudio
+                  <Upload className="h-4 w-4" /> {t("workspace.uploadInstead")}
                 </button>
               </div>
               {audio && !recording && (
                 <div className="flex flex-col gap-1.5">
                   <audio src={audio.preview} controls preload="metadata" className="w-full max-w-xl" />
                   <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-                    {audio.source === "rec" ? "Gravação pronta." : audio.file.name} Ouça antes de enviar, se quiser.
+                    {audio.source === "rec" ? t("workspace.recordingReady") : audio.file.name} {t("workspace.listenHint")}
                   </span>
                 </div>
               )}
             </div>
 
             <div className="flex flex-col gap-2">
-              <span className={LABEL}>2. Nome (opcional)</span>
+              <span className={LABEL}>{t("workspace.step2")}</span>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={120}
-                placeholder="Ex.: Vídeo sobre o lançamento"
+                placeholder={t("workspace.namePlaceholder")}
                 className="h-11 w-full max-w-md rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 font-sans text-sm text-[var(--ink)] placeholder:text-[var(--ash)] focus:border-[var(--hairline-bright)] focus:outline-none"
               />
             </div>
@@ -370,11 +372,11 @@ export function StudioWorkspace({
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-4">
               <span className="font-mono text-[11px] tracking-wide text-[var(--ash)]">
-                {`Custo: ${STUDIO_CLEAN_COST.toLocaleString("pt-BR")} créditos por áudio${!canAfford ? ` (você tem ${creditsTotal.toLocaleString("pt-BR")})` : ""}`}
+                {`${t("workspace.costLine", { cost: STUDIO_CLEAN_COST.toLocaleString("pt-BR") })}${!canAfford ? ` ${t("workspace.youHave", { credits: creditsTotal.toLocaleString("pt-BR") })}` : ""}`}
               </span>
               <button type="button" disabled={!audio || recording || !!busy} onClick={submit} className={PILL}>
                 {busy === "submit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scissors className="h-4 w-4" />}
-                {busy === "submit" ? "Enviando…" : `Limpar meu áudio · ${STUDIO_CLEAN_COST.toLocaleString("pt-BR")} cr`}
+                {busy === "submit" ? t("workspace.sending") : `${t("workspace.cleanCta")} · ${STUDIO_CLEAN_COST.toLocaleString("pt-BR")} cr`}
               </button>
             </div>
           </div>
@@ -383,17 +385,12 @@ export function StudioWorkspace({
 
       <section className="flex flex-col gap-4">
         <h2 className="flex items-center gap-2 font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          <AudioLines className="h-5 w-5 text-[var(--silver)]" /> Seus áudios
+          <AudioLines className="h-5 w-5 text-[var(--silver)]" /> {t("workspace.historyTitle")}
         </h2>
         <StudioHistory reloadKey={reloadKey} onOpen={openFromHistory} />
       </section>
 
-      <PaywallModal
-        open={!!paywall}
-        onClose={() => setPaywall(null)}
-        subscribed={paywall?.subscribed ?? false}
-        action="preparar o áudio no Vídeo Estúdio"
-      />
+      <PaywallModal open={!!paywall} onClose={() => setPaywall(null)} subscribed={paywall?.subscribed ?? false} action={t("workspace.paywallAction")} />
     </div>
   );
 }

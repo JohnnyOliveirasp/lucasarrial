@@ -1,6 +1,6 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import { setRequestLocale } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
+import { Link, redirect } from "@/i18n/navigation";
+import type { Locale } from "@/i18n/routing";
 import { Lock } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
@@ -23,12 +23,13 @@ export default async function VideoClonePage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const t = await getTranslations("videoClone");
 
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect(`/${locale}/login`);
+  if (!user) return redirect({ href: "/login", locale: locale as Locale });
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -46,13 +47,12 @@ export default async function VideoClonePage({
   return (
     <div className="flex flex-col gap-10">
       <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
-        <Eyebrow>Vídeos</Eyebrow>
+        <Eyebrow>{t("page.eyebrow")}</Eyebrow>
         <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
-          Vídeo Clone
+          {t("page.title")}
         </h1>
         <p className="max-w-xl text-sm text-[var(--mute)]">
-          Envie uma foto sua e um áudio — a gente gera o vídeo de você falando,
-          com movimento labial sincronizado. Perfeito pra avatares e conteúdo.
+          {t("page.description")}
         </p>
       </header>
 
@@ -63,27 +63,28 @@ export default async function VideoClonePage({
           <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
             <h2 className="flex items-center gap-2 font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
               <Lock className="h-5 w-5 text-[var(--silver)]" />
-              {subscribed
-                ? "Créditos insuficientes para gerar o Vídeo Clone"
-                : "Assine para gerar Vídeo Clone"}
+              {subscribed ? t("page.lockedNoCredits") : t("page.lockedNoPlan")}
             </h2>
             <p className="max-w-xl text-sm text-[var(--mute)]">
               {subscribed
-                ? `Gerar um Vídeo Clone custa a partir de ${CLONE_MIN_CREDITS.toLocaleString("pt-BR")} créditos e você tem ${creditsTotal.toLocaleString("pt-BR")}. Compre um pacote para continuar.`
-                : "Você não tem um plano vigente. O Vídeo Clone consome créditos do plano: assine para liberar seus créditos mensais."}
+                ? t("page.lockedNoCreditsBody", {
+                    min: CLONE_MIN_CREDITS.toLocaleString("pt-BR"),
+                    have: creditsTotal.toLocaleString("pt-BR"),
+                  })
+                : t("page.lockedNoPlanBody")}
             </p>
             <Link
-              href={subscribed ? `/${locale}/app/credits` : `/${locale}/planos`}
+              href={subscribed ? "/app/credits" : "/planos"}
               className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-[background-color,border-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] active:scale-[0.98]"
             >
-              {subscribed ? "Comprar créditos" : "Assinar agora"}
+              {subscribed ? t("page.buyCredits") : t("page.subscribe")}
               <span aria-hidden>→</span>
             </Link>
           </section>
 
           <section className="flex flex-col gap-4">
             <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-              Seus vídeos
+              {t("yourVideos")}
             </h2>
             <CloneHistory />
           </section>

@@ -1,5 +1,6 @@
-import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
+import { redirect } from "@/i18n/navigation";
+import type { Locale } from "@/i18n/routing";
 import { createClient } from "@/lib/supabase/server";
 import { ProjectSwitch } from "@/components/video/project-switch";
 
@@ -20,7 +21,7 @@ export default async function VideoWizardPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect(`/${locale}/login`);
+  if (!user) redirect({ href: "/login", locale: locale as Locale });
 
   return <ProjectSwitch projectId={id} locale={locale} />;
 }

@@ -7,14 +7,15 @@
  * transcreve com Whisper, revalida a duração real e cria o projeto).
  */
 import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { useRouter } from "@/i18n/navigation";
 import { Upload, Loader2, AlertCircle } from "lucide-react";
 import { MAX_AUDIO_SECONDS } from "@/lib/video/config";
 
 type Phase = "idle" | "reading" | "uploading" | "creating";
 
 /** Duração via metadados, sem enviar nada. Rejeita se o browser não decodificar. */
-function readDuration(file: File): Promise<number> {
+function readDuration(file: File, onError: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const el = new Audio();
@@ -25,7 +26,7 @@ function readDuration(file: File): Promise<number> {
     };
     el.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error("Não conseguimos ler esse arquivo de áudio."));
+      reject(new Error(onError));
     };
     el.src = url;
   });
@@ -36,7 +37,8 @@ function fmt(secs: number): string {
   return `${Math.floor(s / 60)}min${String(s % 60).padStart(2, "0")}s`;
 }
 
-export function AudioUpload({ locale }: { locale: string }) {
+export function AudioUpload() {
+  const t = useTranslations("videoWizard.audioUpload");
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -48,21 +50,19 @@ export function AudioUpload({ locale }: { locale: string }) {
     setError(null);
 
     if (file.size > 25 * 1024 * 1024) {
-      setError("Arquivo muito grande (máx. 25MB).");
+      setError(t("tooLarge"));
       return;
     }
 
     try {
       // 1) Trava de duração NO NAVEGADOR — nada sobe se passar de 1min30s.
       setPhase("reading");
-      const duration = await readDuration(file);
+      const duration = await readDuration(file, t("unreadable"));
       if (!Number.isFinite(duration) || duration <= 0) {
-        throw new Error("Não conseguimos ler a duração desse áudio.");
+        throw new Error(t("noDuration"));
       }
       if (duration > MAX_AUDIO_SECONDS) {
-        throw new Error(
-          `Seu áudio tem ${fmt(duration)} — o máximo é ${fmt(MAX_AUDIO_SECONDS)}. Corte o áudio e tente de novo.`,
-        );
+        throw new Error(t("tooLong", { dur: fmt(duration), max: fmt(MAX_AUDIO_SECONDS) }));
       }
 
       // 2) Presigned PUT → upload direto pro R2.
@@ -77,14 +77,14 @@ export function AudioUpload({ locale }: { locale: string }) {
         }),
       });
       const slot = await slotRes.json().catch(() => ({}));
-      if (!slotRes.ok) throw new Error(slot?.error?.message || "Falha ao preparar o upload.");
+      if (!slotRes.ok) throw new Error(slot?.error?.message || t("prepareFailed"));
 
       const putRes = await fetch(slot.upload_url, {
         method: "PUT",
         headers: { "Content-Type": file.type || "audio/mpeg" },
         body: file,
       });
-      if (!putRes.ok) throw new Error("Falha ao enviar o áudio. Tente novamente.");
+      if (!putRes.ok) throw new Error(t("putFailed"));
 
       // 3) Cria o projeto (server transcreve + revalida duração real).
       setPhase("creating");
@@ -94,28 +94,28 @@ export function AudioUpload({ locale }: { locale: string }) {
         body: JSON.stringify({ uploaded_key: slot.key }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error?.message || "Falha ao criar o vídeo.");
+      if (!res.ok) throw new Error(json?.error?.message || t("createFailed"));
 
-      router.push(`/${locale}/app/videos/${json.id}`);
+      router.push(`/app/videos/${json.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao processar o áudio.");
+      setError(e instanceof Error ? e.message : t("processFailed"));
       setPhase("idle");
     }
   }
 
   const PHASE_LABEL: Record<Exclude<Phase, "idle">, string> = {
-    reading: "Lendo o áudio…",
-    uploading: "Enviando…",
-    creating: "Transcrevendo e criando o projeto…",
+    reading: t("phaseReading"),
+    uploading: t("phaseUploading"),
+    creating: t("phaseCreating"),
   };
 
   return (
     <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-base font-semibold text-[var(--ink)]">Ou envie a sua própria voz</span>
+          <span className="text-base font-semibold text-[var(--ink)]">{t("title")}</span>
           <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-            MP3, WAV, M4A, OGG ou FLAC · máx. {fmt(MAX_AUDIO_SECONDS)} · o roteiro das cenas vem do que é falado
+            {t("formats", { max: fmt(MAX_AUDIO_SECONDS) })}
           </span>
         </div>
         <button
@@ -125,7 +125,7 @@ export function AudioUpload({ locale }: { locale: string }) {
           className="inline-flex h-10 w-fit shrink-0 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98] disabled:opacity-50"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          {busy ? PHASE_LABEL[phase as Exclude<Phase, "idle">] : "Enviar áudio"}
+          {busy ? PHASE_LABEL[phase as Exclude<Phase, "idle">] : t("send")}
         </button>
       </div>
 

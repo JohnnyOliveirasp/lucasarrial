@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { CloneStudio } from "./clone-studio";
 import { CloneHistory } from "./clone-history";
 
@@ -12,6 +13,7 @@ export function CloneWorkspace({
   creditsTotal: number;
   unlimited: boolean;
 }) {
+  const t = useTranslations("videoClone");
   const [reloadKey, setReloadKey] = useState(0);
 
   return (
@@ -26,7 +28,7 @@ export function CloneWorkspace({
 
       <section className="flex flex-col gap-4">
         <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          Seus vídeos
+          {t("yourVideos")}
         </h2>
         <CloneHistory reloadKey={reloadKey} />
       </section>

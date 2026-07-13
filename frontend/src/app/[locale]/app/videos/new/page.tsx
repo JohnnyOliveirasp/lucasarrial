@@ -1,5 +1,6 @@
-import { redirect } from "next/navigation";
-import { setRequestLocale } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
+import { redirect } from "@/i18n/navigation";
+import type { Locale } from "@/i18n/routing";
 import { createClient } from "@/lib/supabase/server";
 import { AudioPicker } from "@/components/video/audio-picker";
 import { Eyebrow } from "@/components/ui";
@@ -16,27 +17,27 @@ export default async function NewVideoPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const t = await getTranslations("videoWizard.pages");
 
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect(`/${locale}/login`);
+  if (!user) redirect({ href: "/login", locale: locale as Locale });
 
   return (
     <div className="flex flex-col gap-10">
       <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
-        <Eyebrow>Novo vídeo · Passo 1 de 5</Eyebrow>
+        <Eyebrow>{t("newEyebrow")}</Eyebrow>
         <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
-          Escolha o áudio
+          {t("newTitle")}
         </h1>
         <p className="max-w-xl text-sm text-[var(--mute)]">
-          Selecione um áudio que você já gerou (com o roteiro). Ele define as
-          cenas do vídeo. Limite de 1min30s por enquanto.
+          {t("newIntro")}
         </p>
       </header>
 
-      <AudioPicker locale={locale} />
+      <AudioPicker />
     </div>
   );
 }

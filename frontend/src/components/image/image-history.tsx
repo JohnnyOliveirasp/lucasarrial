@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import {
   Eye,
   Download,
@@ -35,17 +36,6 @@ type Img = {
   video_url: string | null;
 };
 
-const STATUS_LABEL: Record<Img["status"], string> = {
-  pending: "Na fila",
-  generating: "Gerando…",
-  ready: "Pronto",
-  failed: "Falhou",
-};
-
-function fallbackName(g: Img): string {
-  return g.name?.trim() || `Imagem ${new Date(g.created_at).toLocaleDateString("pt-BR")}`;
-}
-
 export function ImageHistory({
   reloadKey = 0,
   openAnimateId = null,
@@ -54,6 +44,7 @@ export function ImageHistory({
   /** Abre o painel "Animar" desta imagem (vindo do botão na tela de resultado). */
   openAnimateId?: string | null;
 }) {
+  const t = useTranslations("images.history");
   const [items, setItems] = useState<Img[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,18 +57,22 @@ export function ImageHistory({
   const [animateId, setAnimateId] = useState<string | null>(null);
   const editRef = useRef<HTMLInputElement>(null);
 
+  const fallbackName = (g: Img): string =>
+    g.name?.trim() ||
+    t("fallbackName", { date: new Date(g.created_at).toLocaleDateString("pt-BR") });
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/v1/images", { cache: "no-store" });
-      if (!res.ok) throw new Error("Falha ao carregar histórico");
+      if (!res.ok) throw new Error(t("errors.load"));
       const json = await res.json();
       setItems((json.images ?? []) as Img[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("errors.generic"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load();
@@ -114,12 +109,12 @@ export function ImageHistory({
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Falha ao apagar");
+        throw new Error(j?.error?.message || t("errors.delete"));
       }
       setPending([]);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("errors.generic"));
     } finally {
       setDeleting(false);
     }
@@ -140,13 +135,13 @@ export function ImageHistory({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
-      if (!res.ok) throw new Error("Falha ao renomear");
+      if (!res.ok) throw new Error(t("errors.rename"));
       setItems((prev) =>
         prev.map((g) => (g.id === id ? { ...g, name: name === "" ? null : name } : g)),
       );
       setEditingId(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("errors.generic"));
     } finally {
       setSavingId(null);
     }
@@ -157,7 +152,7 @@ export function ImageHistory({
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--silver)]" />
         <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">
-          Carregando histórico…
+          {t("loading")}
         </p>
       </section>
     );
@@ -168,7 +163,7 @@ export function ImageHistory({
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <ImageIcon className="h-10 w-10 text-[var(--ash)]" />
         <p className="text-sm text-[var(--mute)]">
-          Nenhuma imagem ainda. Gere a primeira acima e ela aparece aqui.
+          {t("empty")}
         </p>
       </section>
     );
@@ -198,7 +193,7 @@ export function ImageHistory({
               type="button"
               onClick={() => g.image_url && setLightbox(g)}
               disabled={!g.image_url}
-              aria-label="Ver imagem"
+              aria-label={t("viewImage")}
               className="relative h-16 w-16 shrink-0 overflow-hidden rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)] disabled:cursor-default"
             >
               {g.image_url ? (
@@ -235,12 +230,12 @@ export function ImageHistory({
                     maxLength={120}
                     disabled={savingId === g.id}
                     className="w-52 rounded-[var(--radius-sm)] border border-[var(--hairline-bright)] bg-[var(--surface-deep)] px-2 py-1 text-base font-semibold text-[var(--ink)] outline-none disabled:opacity-50"
-                    aria-label="Nome da imagem"
+                    aria-label={t("nameLabel")}
                   />
-                  <button type="button" onClick={() => saveEdit(g.id)} aria-label="Salvar" className="text-[var(--silver)] hover:text-[var(--ink)]">
+                  <button type="button" onClick={() => saveEdit(g.id)} aria-label={t("save")} className="text-[var(--silver)] hover:text-[var(--ink)]">
                     <Check className="h-4 w-4" />
                   </button>
-                  <button type="button" onClick={() => setEditingId(null)} aria-label="Cancelar" className="text-[var(--mute)] hover:text-[var(--ink)]">
+                  <button type="button" onClick={() => setEditingId(null)} aria-label={t("cancel")} className="text-[var(--mute)] hover:text-[var(--ink)]">
                     <X className="h-4 w-4" />
                   </button>
                 </span>
@@ -249,7 +244,7 @@ export function ImageHistory({
                   <span className="truncate text-base font-semibold text-[var(--ink)]">
                     {fallbackName(g)}
                   </span>
-                  <button type="button" onClick={() => startEdit(g)} aria-label="Renomear" className="text-[var(--mute)] hover:text-[var(--ink)]">
+                  <button type="button" onClick={() => startEdit(g)} aria-label={t("rename")} className="text-[var(--mute)] hover:text-[var(--ink)]">
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
                 </span>
@@ -259,7 +254,7 @@ export function ImageHistory({
                 <span>· {g.aspect_ratio} · {g.resolution}</span>
                 {g.status !== "ready" && (
                   <span className={g.status === "failed" ? "text-[var(--status-error)]" : "text-[var(--mute)]"}>
-                    · {STATUS_LABEL[g.status]}
+                    · {t(`status.${g.status}`)}
                   </span>
                 )}
               </div>
@@ -272,7 +267,7 @@ export function ImageHistory({
                 disabled={g.status !== "ready" || !g.image_url}
                 onClick={() => setAnimateId(animateId === g.id ? null : g.id)}
                 aria-expanded={animateId === g.id}
-                aria-label="Animar imagem (gerar vídeo)"
+                aria-label={t("animateAria")}
                 className={`inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-1.5 font-mono text-[10px] tracking-wide transition-colors disabled:opacity-40 ${
                   animateId === g.id
                     ? "border-[var(--hairline-bright)] text-[var(--ink)]"
@@ -284,13 +279,13 @@ export function ImageHistory({
                 ) : (
                   <Film className="h-3.5 w-3.5" />
                 )}
-                {g.video_status === "ready" ? "Vídeo" : "Animar"}
+                {g.video_status === "ready" ? t("video") : t("animate")}
               </button>
               <button
                 type="button"
                 disabled={!g.image_url}
                 onClick={() => g.image_url && downloadFromUrl(g.image_url, fallbackName(g))}
-                aria-label="Baixar"
+                aria-label={t("download")}
                 className="text-[var(--mute)] transition-colors hover:text-[var(--ink)] disabled:opacity-30"
               >
                 <Download className="h-5 w-5" />
@@ -298,7 +293,7 @@ export function ImageHistory({
               <button
                 type="button"
                 onClick={() => setPending([g.id])}
-                aria-label="Apagar"
+                aria-label={t("delete")}
                 className="text-[var(--mute)] transition-colors hover:text-[var(--status-error)]"
               >
                 <Trash2 className="h-5 w-5" />
@@ -338,7 +333,7 @@ export function ImageHistory({
                 className="inline-flex h-9 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-4 text-[13px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
               >
                 <Download className="h-4 w-4" />
-                Baixar
+                {t("download")}
               </button>
             </div>
           </div>
@@ -360,12 +355,13 @@ export function ImageHistory({
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
               <h3 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-                Apagar imagem?
+                {t("deleteTitle")}
               </h3>
             </div>
             <p className="text-sm text-[var(--body)]">
-              Ação <strong className="text-[var(--ink)]">irreversível</strong>. Remove a imagem do
-              armazenamento e do histórico.
+              {t.rich("deleteWarning", {
+                strong: (chunks) => <strong className="text-[var(--ink)]">{chunks}</strong>,
+              })}
             </p>
             <div className="flex justify-end gap-3">
               <button
@@ -373,7 +369,7 @@ export function ImageHistory({
                 onClick={() => !deleting && setPending([])}
                 className="inline-flex h-10 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
               >
-                Cancelar
+                {t("cancel")}
               </button>
               <button
                 type="button"
@@ -382,7 +378,7 @@ export function ImageHistory({
                 className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--status-error)] hover:border-[var(--hairline-bright)] disabled:opacity-40"
               >
                 <Trash2 className="h-4 w-4" />
-                {deleting ? "Apagando…" : "Apagar"}
+                {deleting ? t("deleting") : t("delete")}
               </button>
             </div>
           </div>

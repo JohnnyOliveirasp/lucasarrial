@@ -312,5 +312,993 @@
     },
     "copyright": "© 2026 FastCloner. All rights reserved.",
     "status": "All systems operational"
+  },
+  "images": {
+    "page": {
+      "eyebrow": "Images",
+      "title": "Generate Image",
+      "description": "Upload your photo, describe the scene, and generate an image of yourself in any setting — keeping your face. Download it or save it for later.",
+      "lockedTitleSubscribed": "Not enough credits to generate an image",
+      "lockedTitleUnsubscribed": "Subscribe to generate images",
+      "lockedBodySubscribed": "Generating an image costs from {min} credits (1K) and you have {credits}. Buy a pack to continue.",
+      "lockedBodyUnsubscribed": "You don't have an active plan. Generating images uses plan credits: subscribe to unlock 100,000 credits per month and create your images.",
+      "buyCredits": "Buy credits",
+      "subscribeNow": "Subscribe now",
+      "yourImages": "Your images"
+    },
+    "studio": {
+      "errors": {
+        "prepareUpload": "Failed to prepare the upload",
+        "sendImage": "Failed to upload the image",
+        "upload": "Upload error",
+        "invalidFiles": "Upload image files (JPG, PNG, or WEBP).",
+        "maxPhotos": "Maximum of {max} photos.",
+        "maxPhotosIgnored": "Maximum of {max} photos — some were skipped.",
+        "blockedFallback": "Content not allowed",
+        "generatePrompt": "Failed to generate the prompt",
+        "generic": "Error",
+        "generationFailed": "Generation failed",
+        "generateImage": "Failed to generate the image"
+      },
+      "result": {
+        "title": "Image generated",
+        "alt": "Generated image",
+        "download": "Download",
+        "animate": "Animate (generate video)",
+        "again": "Generate another"
+      },
+      "generating": {
+        "label": "Generating your image…",
+        "hint": "It can take from a few seconds to ~1 min. You can follow it in the history below."
+      },
+      "refs": {
+        "label": "1. Your photos (reference)",
+        "hint": "Upload 1 or more photos of the SAME person — the more angles and expressions, the better the likeness. The result keeps the face from these photos. Use sharp, well-lit photos.",
+        "dropzone": "Click or drag your photos here",
+        "formats": "JPG, PNG or WEBP · up to {max} photos",
+        "remove": "Remove photo",
+        "addMore": "Add more photos"
+      },
+      "idea": {
+        "label": "2. Your idea (optional)",
+        "hint": "Describe what you want (e.g. 'me on a beach at sunset, professional photo style'). Click Generate prompt and the AI builds a consistent prompt for you.",
+        "placeholder": "E.g. me in a suit in a modern office, professional photo…",
+        "generatingBtn": "Generating prompt…",
+        "generateBtn": "Generate automatic prompt"
+      },
+      "prompt": {
+        "label": "3. Prompt",
+        "hint": "The text describing the image to generate (English works best). You can type it right here or use the button above. Edit it as much as you like.",
+        "placeholder": "A photorealistic portrait of the person in the reference photo…"
+      },
+      "aspect": {
+        "label": "4. Aspect ratio",
+        "hint": "The image format. 'Auto' lets the model choose (output at 1K). Vertical 9:16 for Stories/Reels, Square 1:1 for the feed, etc."
+      },
+      "resolution": {
+        "label": "5. Resolution",
+        "hint": "The image quality/size. The higher, the sharper — and the more credits. 4K is not available in 'Auto' or Square (1:1).",
+        "unavailable": "Not available for this aspect ratio",
+        "needCredits": "You need {credits} credits for {resolution}"
+      },
+      "submit": {
+        "generate": "Generate image · {cost} credits",
+        "insufficient": "Not enough credits",
+        "balance": "You have {credits} credits · this one costs {cost}.",
+        "minNotice": "You have {credits} credits. You need at least {min} to generate an image (1K).",
+        "buyCredits": "Buy credits"
+      },
+      "supportAction": "generate the image",
+      "paywallAction": "generate image"
+    },
+    "history": {
+      "status": {
+        "pending": "Queued",
+        "generating": "Generating…",
+        "ready": "Ready",
+        "failed": "Failed"
+      },
+      "fallbackName": "Image {date}",
+      "errors": {
+        "load": "Failed to load history",
+        "delete": "Failed to delete",
+        "rename": "Failed to rename",
+        "generic": "Error"
+      },
+      "loading": "Loading history…",
+      "empty": "No images yet. Generate your first one above and it will show up here.",
+      "viewImage": "View image",
+      "nameLabel": "Image name",
+      "save": "Save",
+      "cancel": "Cancel",
+      "rename": "Rename",
+      "animateAria": "Animate image (generate video)",
+      "video": "Video",
+      "animate": "Animate",
+      "download": "Download",
+      "delete": "Delete",
+      "deleteTitle": "Delete image?",
+      "deleteWarning": "This action is <strong>irreversible</strong>. It removes the image from storage and from the history.",
+      "deleting": "Deleting…"
+    },
+    "animate": {
+      "errors": {
+        "start": "Failed to start the video",
+        "generic": "Error"
+      },
+      "downloadVideo": "Download video",
+      "retryHint": "Want a different motion? Adjust the prompt below and generate again (new credit cost).",
+      "generating": "Generating video…",
+      "generatingHint": "It can take a few minutes. You can leave and come back.",
+      "tierCredits": "{credits} credits",
+      "movementLabel": "Desired motion (in your language — we translate it for you)",
+      "cost": "Cost: {credits} credits · {seconds}s clip · 720p",
+      "selectModel": "Select a model above",
+      "sending": "Sending…",
+      "regenerate": "Generate again",
+      "animateBtn": "Animate",
+      "paywallAction": "animate this image"
+    }
+  },
+  "misc": {
+    "plans": {
+      "eyebrow": "Plans",
+      "titleLine1": "Subscribe and unlock",
+      "titleLine2": "your voice",
+      "planName": "Full Access",
+      "tagline": "AI voice cloning, unlimited for your content.",
+      "features": [
+        "Clone your voice with just a few minutes of audio",
+        "Unlimited audio generation",
+        "API to plug into your workflows",
+        "History and audio downloads",
+        "7-day guarantee — cancel and get a refund",
+        "Email support"
+      ],
+      "loginCta": "Sign in to subscribe",
+      "subscribeCta": "Subscribe now",
+      "comingSoon": "Checkout coming soon",
+      "linkedTo": "Purchase linked to {email}"
+    },
+    "paymentApproved": {
+      "eyebrow": "Payment approved",
+      "titleLine1": "All set,",
+      "titleLine2": "welcome!",
+      "intro": "We received your purchase confirmation. Access unlocks automatically in moments — just sign in with the <strong>same email you used to buy</strong>.",
+      "step1": "Click the button below and sign in with Google.",
+      "step2": "Use the <strong>same email</strong> from your purchase — that's how we unlock your access and credits.",
+      "step3": "Done: clone your voice and start generating audio.",
+      "ctaDashboard": "Go to the platform",
+      "ctaLogin": "Sign in to access",
+      "supportHint": "Just paid and still locked? Wait a few moments and refresh. If it persists, contact"
+    },
+    "paymentPending": {
+      "eyebrow": "Payment processing",
+      "title": "Almost there!",
+      "intro": "We received your order. As soon as the payment is confirmed, your access unlocks <strong>automatically</strong> and you get a confirmation email.",
+      "howLong": "How long does it take?",
+      "pixLabel": "Pix",
+      "pixDesc": "confirmation usually lands within a few minutes.",
+      "boletoLabel": "Boleto",
+      "boletoDesc": "may take up to a few business days after payment.",
+      "cardLabel": "Card",
+      "cardDesc": "under anti-fraud review — usually clears in minutes.",
+      "confirmedQuestion": "Already got the confirmation?",
+      "loginLink": "Sign in",
+      "questions": "Questions:"
+    },
+    "supportError": {
+      "title": "Oops, something went wrong",
+      "defaultAction": "complete the operation",
+      "body": "We couldn't {action}. The error was logged on our side — try again in a few minutes.",
+      "contact": "If it keeps happening, contact support:"
+    }
+  },
+  "sales": {
+    "board": {
+      "eyebrow": "Videos",
+      "title": "TikTok Sales Video",
+      "description": "Upload your product photos, pick who presents it, and the AI creates the sales script, the scenes, and the full video — TikTok-ready, up to 60 seconds."
+    },
+    "new": {
+      "eyebrow": "TikTok Sales Video",
+      "title": "New sales video"
+    },
+    "setup": {
+      "back": "Board",
+      "loadingProject": "Loading project…",
+      "productTitle": "1 · The product",
+      "photosCount": "{n}/{max} photos",
+      "productAlt": "product {n}",
+      "personAlt": "presenter {n}",
+      "removePhoto": "Remove photo",
+      "addPhoto": "+ add ({n}/{max})",
+      "productHint": "Upload 1 to 4 product photos — you can select several at once; different angles help the AI.",
+      "pricePlaceholder": "Price (optional) — e.g. $19.99",
+      "linkPlaceholder": "Product link (optional)",
+      "descriptionPlaceholder": "Describe the product and what you want to highlight (optional) — the AI uses this in the script.",
+      "personTitle": "2 · Who presents",
+      "personHint": "The person who appears in the scenes presenting the product — upload 1 to 6 photos (more angles make the face more faithful in the scenes).",
+      "consentLabel": "I confirm I have permission to use this person's image.",
+      "analysisTitle": "3 · Product Analysis",
+      "analyzeLocked": "Upload the product photos AND the presenter's photo (with consent checked) to unlock the analysis.",
+      "analyze": "Analyze product ({cost} cr)",
+      "analyzeAgain": "Analyze again ({cost} cr)",
+      "analysisHint": "The AI looks at the photos (and what you provided) and builds the sales angle — the base of the script.",
+      "scriptTitle": "4 · Sales script (max 60s)",
+      "wandTitle": "The AI improves the current script",
+      "wand": "Magic wand ({cost} cr)",
+      "redo": "Redo ({cost} cr)",
+      "generateScript": "Generate script ({cost} cr)",
+      "scriptMeta": "editing by hand is free · {n} words",
+      "saveEdit": "Save edit",
+      "errors": {
+        "loadProject": "Error loading the project",
+        "upload": "Upload error",
+        "needProduct": "Upload at least 1 product photo.",
+        "needPerson": "Upload the presenter's photo — the analysis uses both.",
+        "needConsent": "Confirm the consent about using this person's photo.",
+        "analyze": "Analysis error",
+        "script": "Script error",
+        "wand": "Magic wand error",
+        "save": "Error saving"
+      }
+    },
+    "voice": {
+      "title": "5 · The narrating voice (max {max}s)",
+      "generating": "Generating the audio with your voice…",
+      "generatingLong": "Generating the audio with your voice… (may take 1-2 min)",
+      "attaching": "Attaching the audio to the project…",
+      "reading": "Reading the audio…",
+      "sending": "Uploading…",
+      "transcribing": "Transcribing and attaching…",
+      "cloneOption": "Narrate with my cloned voice",
+      "noVoices": "You don't have a ready voice yet — train one in Voices, or upload a recorded audio below.",
+      "generateAudio": "Generate audio ({cost} cr)",
+      "uploadOption": "I already recorded the product audio",
+      "uploadButton": "Upload audio",
+      "uploadHint": "MP3/WAV/M4A/OGG · max {max}s · the transcription of what you say replaces the script",
+      "errors": {
+        "generationFailed": "The audio generation failed.",
+        "timeout": "The generation took too long — check History and try attaching again.",
+        "generate": "Error generating the audio.",
+        "tooLarge": "File too large (max 25MB).",
+        "readFile": "We couldn't read that audio file.",
+        "readDuration": "We couldn't read that audio's duration.",
+        "tooLong": "Your audio is {n}s — in Sales Video the max is {max}s.",
+        "uploadFailed": "Failed to upload the audio. Please try again.",
+        "process": "Error processing the audio."
+      }
+    }
+  },
+  "videoClone": {
+    "yourVideos": "Your videos",
+    "page": {
+      "eyebrow": "Videos",
+      "title": "Video Clone",
+      "description": "Upload a photo of yourself and an audio — we generate the video of you speaking, with synced lip movement. Perfect for avatars and content.",
+      "lockedNoCredits": "Not enough credits to generate a Video Clone",
+      "lockedNoPlan": "Subscribe to generate Video Clone",
+      "lockedNoCreditsBody": "Generating a Video Clone costs from {min} credits and you have {have}. Buy a pack to continue.",
+      "lockedNoPlanBody": "You don't have an active plan. Video Clone uses plan credits: subscribe to unlock your monthly credits.",
+      "buyCredits": "Buy credits",
+      "subscribe": "Subscribe now"
+    },
+    "studio": {
+      "stepImage": "1. Person's photo",
+      "stepAudio": "2. Audio with the speech (up to {max}s)",
+      "stepQuality": "3. Quality",
+      "perSecond": "{n} credits/second of audio",
+      "cost": "Cost: {seconds}s × {rate} = {cost} credits",
+      "costBalance": "(you have {have})",
+      "pickToSeeCost": "Pick the photo and the audio to see the cost",
+      "sending": "Sending…",
+      "generate": "Generate Video Clone",
+      "generateWithCost": "Generate Video Clone · {cost} cr",
+      "generatingLabel": "Generating video",
+      "generatingTitle": "Generating your Video Clone",
+      "generatingHint": "Takes a few minutes. You can leave and come back — it's saved in your history.",
+      "download": "Download video",
+      "again": "Generate another",
+      "retry": "Try again",
+      "noSpeech": "(we didn't detect speech in this audio)",
+      "paywallAction": "generate the Video Clone",
+      "errors": {
+        "readAudio": "We couldn't read that audio. Try MP3 or WAV.",
+        "tooLong": "The audio is {n}s — the max is {max}s (1min30s).",
+        "upload": "Upload error",
+        "start": "Failed to start the generation",
+        "failed": "The generation failed. Please try again.",
+        "generic": "Error"
+      }
+    },
+    "pickers": {
+      "myPhotos": "My photos",
+      "uploadPhoto": "Upload photo",
+      "photoHint": "📸 Best result: a photo from the <strong>waist up</strong>, with a sharp, well-lit face.",
+      "loadingPhotos": "Loading your photos…",
+      "noPhotos": "You don't have any generated photos yet.",
+      "createPhoto": "Create my photo in the Image Generator →",
+      "createAnotherPhoto": "Create another photo in the Image Generator →",
+      "changePhoto": "Change photo",
+      "choosePhotoFile": "Choose file (PNG, JPG, WEBP)",
+      "myAudios": "My audios",
+      "uploadAudio": "Upload audio",
+      "loadingAudios": "Loading your audios…",
+      "noAudios": "You don't have any generated audios (up to {max}s) yet.",
+      "createAudio": "Generate an audio with your voice →",
+      "createAnotherAudio": "Generate a new audio with your voice →",
+      "transcription": "Transcription: “{text}”",
+      "transcribing": "Transcribing the audio…",
+      "changeAudio": "Change audio",
+      "chooseAudioFile": "Choose file (MP3, WAV · up to {max}s)"
+    },
+    "history": {
+      "loading": "Loading…",
+      "empty": "No Video Clone yet. Generate your first one above.",
+      "inflightTitle": "Generating your Video Clone",
+      "inflightHint": " — it may take a few minutes. You can leave and come back.",
+      "fallbackName": "Video Clone {date}",
+      "status": {
+        "pending": "Queued",
+        "generating": "Generating…",
+        "ready": "Ready",
+        "failed": "Failed"
+      },
+      "nameAria": "Video name",
+      "save": "Save",
+      "cancel": "Cancel",
+      "rename": "Rename",
+      "watch": "Watch",
+      "download": "Download",
+      "delete": "Delete",
+      "deleting": "Deleting…",
+      "deleteTitle": "Delete video?",
+      "deleteBody": "This action is <strong>irreversible</strong>. It removes the video, the photo, and the audio from storage.",
+      "errors": {
+        "load": "Failed to load history",
+        "delete": "Failed to delete",
+        "rename": "Failed to rename",
+        "generic": "Error"
+      }
+    }
+  },
+  "studio": {
+    "page": {
+      "eyebrow": "Videos",
+      "title": "Video Studio",
+      "subtitle": "Record your speech without fear of mistakes — repeat the line as many times as you want. We cut the mistakes, shrink the pauses and return your audio clean, ready to become a video.",
+      "gateTitleCredits": "Not enough credits to use Video Studio",
+      "gateTitleSubscribe": "Subscribe to use Video Studio",
+      "gateBodyCredits": "Preparing an audio costs {cost} credits and you have {credits}. Buy a pack to continue.",
+      "gateBodySubscribe": "You don't have an active plan. Video Studio uses plan credits: subscribe to unlock your monthly credits.",
+      "gateCtaBuy": "Buy credits",
+      "gateCtaSubscribe": "Subscribe now"
+    },
+    "common": {
+      "error": "Error"
+    },
+    "workspace": {
+      "micFallback": "Microphone {n}",
+      "micError": "Couldn't access the microphone. Check your browser permission.",
+      "errPrepareUpload": "Failed to prepare upload",
+      "errUploadAudio": "Audio upload failed",
+      "errStartProcessing": "Failed to start processing",
+      "errStartMontage": "Failed to start the assembly",
+      "errStartScenes": "Failed to start the scenes",
+      "errPreparePhotoUpload": "Failed to prepare photo upload",
+      "errUploadPhoto": "Photo upload failed",
+      "errStartFace": "Failed to start face generation",
+      "step1": "1. Record your speech (feel free to mess up and repeat the line — we cut it)",
+      "micSelectAria": "Choose microphone",
+      "micDefault": "System default microphone",
+      "reRecord": "Record again",
+      "recordNow": "Record now",
+      "stop": "Stop",
+      "uploadInstead": "Or upload an audio",
+      "recordingReady": "Recording ready.",
+      "listenHint": "Listen before sending, if you like.",
+      "step2": "2. Name (optional)",
+      "namePlaceholder": "E.g.: Video about the launch",
+      "costLine": "Cost: {cost} credits per audio",
+      "youHave": "(you have {credits})",
+      "sending": "Sending…",
+      "cleanCta": "Clean my audio",
+      "historyTitle": "Your audio files",
+      "paywallAction": "prepare your audio in Video Studio"
+    },
+    "script": {
+      "label": "Script (optional) — the AI writes it in viral documentary format",
+      "errGenerate": "Failed to generate the script",
+      "ideaPlaceholder": "What's the video idea? E.g.: how I built a system that edits video by itself",
+      "durationAria": "Target script length",
+      "durationOption": "~{s}s of speech",
+      "writing": "Writing…",
+      "redo": "Redo",
+      "generate": "Generate script",
+      "scriptAria": "Generated script (editable)",
+      "hint": "Read it while recording, your way — improvising is fine. The edit follows what you SAY, not this text."
+    },
+    "result": {
+      "processingTitle": "Editing your audio — cutting mistakes and pauses…",
+      "processingHint": "Takes ~1-2 minutes. You can leave and come back — it stays saved in your history.",
+      "statRaw": "raw: {d}",
+      "statClean": "→ clean: {d}",
+      "statRemoved": "{n, plural, one {# bad take removed} other {# bad takes removed}}",
+      "statNoRepeats": "no repeats detected",
+      "transcriptLabel": "What stayed in the audio",
+      "editReport": "Edit report (take by take)",
+      "downloadClean": "Download clean audio",
+      "prepareAnother": "Prepare another audio",
+      "scenesLabel": "Script scenes (AI-generated b-roll)",
+      "scenesGenerate": "Generate script scenes",
+      "scenesCostHint": "{cost} cr per NEW scene — scenes from your library come in for free (they're saved forever).",
+      "scenesGenerating": "Generating scenes — {ready}/{total} ready… (~1-3 min per scene)",
+      "scenesReadyCount": "{n} scenes ready",
+      "scenesFromBank": "({n} from your library, free)",
+      "scenesWillUseYours": "the assembly will use YOUR scenes.",
+      "scenesFailed": "{n, plural, one {# scene failed to generate.} other {# scenes failed to generate.}}",
+      "scenesRetry": "Retry the failed scenes",
+      "bankChip": "library",
+      "faceLabel": "Your presence in the video (face on the opening and closing)",
+      "faceFailed": "Face generation failed. Try again.",
+      "faceCta": "Choose my photo and generate",
+      "faceHint": "Optional — without a photo, the video ships with scenes only. Clone Turbo pricing over the opening and closing.",
+      "faceProcessing": "Generating you speaking (opening and closing)… takes a few minutes.",
+      "faceReady": "✓ Presence ready — you open and close the video speaking.",
+      "montageLabelScenes": "Assemble the video — with your scenes + captions + music",
+      "montageLabelTest": "Test video — assembly + captions + music (fixed scenes)",
+      "trackAria": "Soundtrack",
+      "noMusic": "No music",
+      "montageCta": "Assemble video",
+      "montageCtaTest": "Assemble test video",
+      "montageProcessing": "Assembling the video — J-cuts, pacing and zoom… (~2-4 min)",
+      "downloadVideo": "Download video",
+      "remake": "Assemble again",
+      "qa": "Automatic QA: audio capped at −1dB (no clipping) ✓ · no static shot >2.5s ✓ · AI scenes checked for broken text ✓",
+      "cutPlan": "Cut plan",
+      "montageFailed": "The assembly failed. Try again.",
+      "montageRetry": "Try assembling again",
+      "failedFallback": "Processing failed. Try again.",
+      "tryAgain": "Try again"
+    },
+    "history": {
+      "loading": "Loading…",
+      "empty": "No audio prepared yet — record your first one above.",
+      "unnamed": "Untitled audio",
+      "cleanSecs": "{s}s clean",
+      "cuts": "{n, plural, one {# cut} other {# cuts}}",
+      "ready": "ready",
+      "processing": "processing",
+      "failed": "failed"
+    }
+  },
+  "videoWizard": {
+    "common": {
+      "loading": "Loading…",
+      "loadingProject": "Loading project…",
+      "error": "Error",
+      "projectNotFound": "Project not found",
+      "audioUnavailable": "audio unavailable",
+      "sceneAlt": "Scene {n}",
+      "videoFallbackName": "Video {date}",
+      "cancel": "Cancel",
+      "regenerate": "Regenerate",
+      "sending": "Sending…"
+    },
+    "paywall": {
+      "insufficientTitle": "Not enough credits",
+      "subscribeTitle": "Subscribe to generate",
+      "subscribeAiTitle": "Subscribe to use AI",
+      "buyPack": "Buy a credit pack to continue.",
+      "buyPackShort": "Buy a pack to continue.",
+      "subscribeVideos": "Subscribe to unlock credits and generate your videos.",
+      "subscribeImages": "Subscribe to unlock credits and generate your images.",
+      "subscribePlain": "Subscribe to unlock credits.",
+      "improveCost": "Improving the prompt with AI costs 1 credit.",
+      "close": "Close",
+      "buyCredits": "Buy credits",
+      "subscribeNow": "Subscribe now"
+    },
+    "board": {
+      "status": {
+        "draft": "Draft",
+        "scenes": "Scenes",
+        "images": "Images",
+        "videos": "Videos",
+        "rendering": "Assembling…",
+        "done": "Ready",
+        "failed": "Failed"
+      },
+      "loadFailed": "Couldn't load your videos",
+      "deleteFailed": "Couldn't delete",
+      "renameFailed": "Couldn't rename",
+      "newVideo": "New video",
+      "empty": "No videos yet. Start by picking one of your audios (up to 1min30s) and let the AI build the scenes.",
+      "projectCount": "{n, plural, one {# project} other {# projects}}",
+      "nameAria": "Video name",
+      "save": "Save",
+      "rename": "Rename",
+      "delete": "Delete",
+      "sceneMeta": "{n} scenes",
+      "open": "Open",
+      "deleteTitle": "Delete video?",
+      "deleteWarning": "This action is <strong>irreversible</strong>. It removes the project and everything it generated.",
+      "deleting": "Deleting…"
+    },
+    "wizard": {
+      "stages": {
+        "audio": "Audio",
+        "scenes": "Scenes",
+        "images": "Images",
+        "videos": "Videos",
+        "final": "Final"
+      },
+      "backBoard": "Back to board",
+      "board": "Board",
+      "eyebrow": "Video wizard",
+      "salesHeader": "Product & presenter",
+      "productAlt": "product {n}",
+      "presenterAlt": "presenter {n}",
+      "seeAnalysis": "view product analysis",
+      "audioSelected": "Audio selected",
+      "sceneEstimate": "~{n} scenes of {s}s"
+    },
+    "scenes": {
+      "loadFailed": "Couldn't load scenes",
+      "generateFailed": "Couldn't generate scenes",
+      "saveFailed": "Couldn't save",
+      "improveFailed": "Couldn't improve",
+      "loading": "Loading scenes…",
+      "generateTitle": "Generate scenes",
+      "intro": "The AI will split your script into <strong>~{n} scenes</strong> in order, with a visual prompt in Portuguese for each one. You can edit everything later. Generating scenes is free.",
+      "generating": "Generating scenes…",
+      "count": "{n} scenes",
+      "editHint": "edit by hand or use the ✨ (1 credit)",
+      "saved": "saved",
+      "improveTitle": "Improve prompt with AI (1 credit)",
+      "improve": "Improve",
+      "promptAria": "Scene {n} prompt",
+      "nextHint": "When the scenes look good, generate the images below."
+    },
+    "images": {
+      "loadFailed": "Couldn't load images",
+      "uploadFailed": "Couldn't upload one of the photos. Try again.",
+      "refSaveFailed": "Couldn't save the reference",
+      "generateFailed": "Couldn't generate images",
+      "regenFailed": "Couldn't regenerate",
+      "blockedCount": "{n} scene(s) were blocked by content moderation.",
+      "blockedScene": "Content blocked by moderation in this scene.",
+      "refTitle": "Your reference photo",
+      "refIntro": "Upload <strong>1 to 6 photos of yourself</strong> (face or waist up). Recommended: 2–3 angles. This photo becomes the standard and is used in <strong>every scene</strong>.",
+      "removeAria": "Remove",
+      "upload": "Upload",
+      "consent": "I understand that the photo(s) I uploaded will be used in <strong>every scene</strong>, that I must upload a <strong>clear photo of myself</strong> (face or waist up), and that poor results caused by an unsuitable photo are my responsibility.",
+      "generatingImages": "Generating images…",
+      "saveAndGenerate": "Save and generate images",
+      "costHint": "Each image costs 12 credits (1K). It can take a few minutes.",
+      "gridTitle": "Scene images",
+      "generating": "Generating…",
+      "generatePending": "Generate {n} image(s)",
+      "regenTitle": "Generate again (1K, 12 credits)",
+      "resolutionAria": "Scene {n} resolution"
+    },
+    "videoStage": {
+      "loadFailed": "Couldn't load the videos",
+      "generateFailed": "Couldn't generate the videos",
+      "gate": "Generate and finish <strong>all scene images</strong> to unlock video generation."
+    },
+    "grid": {
+      "title": "Scene videos",
+      "tierMeta": "· {medal} {label} · {cost} cr/scene",
+      "retryTitle": "Generate/regenerate the {n} pending scenes ({cr} credits)",
+      "retryLabel": "Regenerate {n} video(s) · {cr} cr",
+      "providerIssue": "The video service is temporarily unavailable (provider limit). We've already notified support automatically. Once it's back, just click <strong>Regenerate</strong> — you won't lose your prompt.",
+      "generatingBatch": "Generating your videos",
+      "generatingHint": " — it can take a few minutes. You can leave and come back.",
+      "generatingClip": "Generating video",
+      "failed": "failed",
+      "promptPlaceholder": "Motion prompt (pt-BR) — generated automatically",
+      "genFailed": "Generation failed",
+      "regenTitle": "Regenerate the video ({cr} credits)",
+      "useMyPrompt": "Generate with my prompt",
+      "wandTitle": "New AI prompt (Sonnet sees the image): 15 credits + the video"
+    },
+    "tiers": {
+      "title": "Choose the video model",
+      "intro": "These three samples were generated from the <strong>same image</strong> and the <strong>same prompt</strong> below — only the model changes. See which one got closest to what you want and pick it. The cost is per scene.",
+      "samplePrompt": "Prompt used in the 3 samples",
+      "perClip": "{n} cr/scene",
+      "summarySelected": "{medal} {label} · {n} scenes",
+      "selectPrompt": "Select a model above",
+      "totalLine": "{cost} × {n} = {total} credits in total",
+      "specLine": "{n} scenes of {s}s · 9:16 · 720p",
+      "approveN": "Approve and generate {n} videos · {total} cr",
+      "approve": "Approve and generate",
+      "backgroundHint": "Generation runs in the background and can take a few minutes. You can leave and come back — progress is saved."
+    },
+    "final": {
+      "positions": {
+        "bottom": "Bottom",
+        "center": "Center",
+        "top": "Top"
+      },
+      "styleLabel": "Caption style",
+      "positionLabel": "Position",
+      "sizeLabel": "Size",
+      "sizeNormal": "Normal",
+      "sizeLarge": "Large",
+      "previewA": "your",
+      "previewB": "caption",
+      "queueFailed": "Couldn't queue the assembly",
+      "title": "Final video",
+      "download": "Download video",
+      "reassemble": "Assemble again",
+      "reassembleHint": "(with the chosen style)",
+      "renderingTitle": "Assembling your final video…",
+      "renderingHint": "Joining the clips with the audio. It can take a few minutes — you can leave and come back.",
+      "failedTitle": "Assembly failed",
+      "failedFallback": "Unknown assembly error.",
+      "retry": "Try assembling again",
+      "intro": "Joins all clips in scene order with your audio, adds synced captions, and trims to the length of the narration.",
+      "approve": "Approve videos and assemble the final cut",
+      "waitClips": "Wait for all clips to be ready."
+    },
+    "audioPick": {
+      "loadFailed": "Couldn't load your audios",
+      "createFailed": "Couldn't create the video",
+      "loading": "Loading audios…",
+      "empty": "You don't have any audios up to {s}s yet. Generate an audio with your script first and it will show up here.",
+      "generateAudio": "Generate Audio",
+      "sceneCount": "~{n} scenes",
+      "creating": "Creating…",
+      "useThis": "Use this audio"
+    },
+    "audioUpload": {
+      "unreadable": "We couldn't read that audio file.",
+      "tooLarge": "File too large (max 25MB).",
+      "noDuration": "We couldn't read the duration of that audio.",
+      "tooLong": "Your audio is {dur} — the maximum is {max}. Trim the audio and try again.",
+      "prepareFailed": "Couldn't prepare the upload.",
+      "putFailed": "Couldn't upload the audio. Try again.",
+      "createFailed": "Couldn't create the video.",
+      "processFailed": "Error processing the audio.",
+      "phaseReading": "Reading the audio…",
+      "phaseUploading": "Uploading…",
+      "phaseCreating": "Transcribing and creating the project…",
+      "title": "Or upload your own voice",
+      "formats": "MP3, WAV, M4A, OGG or FLAC · max {max} · the scene script comes from what's spoken",
+      "send": "Upload audio"
+    },
+    "pages": {
+      "newEyebrow": "New video · Step 1 of 5",
+      "newTitle": "Choose the audio",
+      "newIntro": "Select an audio you've already generated (with the script). It defines the video's scenes. 1min30s limit for now.",
+      "historyEyebrow": "Videos",
+      "historyTitle": "Video Story",
+      "historyIntro": "Turn one of your audios into a full video: the script becomes scenes, images and clips, assembled with captions at the end. Start with an audio up to 1min30s."
+    }
+  },
+  "voiceCreate": {
+    "recorderImport": {
+      "loaded": "{count, plural, one {# Recorder clip loaded automatically.} other {# Recorder clips loaded automatically.}}",
+      "skipped": "({skipped} shorter clip(s) were left out — limit of {max} files.)"
+    },
+    "fileList": {
+      "remove": "Remove"
+    },
+    "meter": {
+      "minThreshold": "minimum threshold"
+    },
+    "recorder": {
+      "title": "Record voice",
+      "accumulated": "Speech recorded",
+      "clipping": "Audio is clipping — move the mic away or speak more softly",
+      "noisy": "Noisy environment — clone quality drops. Find a quiet spot (no TV, street noise or AC).",
+      "recordingAuto": "Recording… stops on its own after {seconds}s of silence",
+      "activateMic": "Enable microphone",
+      "requesting": "Requesting permission…",
+      "record": "Record",
+      "stop": "Stop",
+      "stopRecording": "Stop recording",
+      "deleteClip": "Delete clip",
+      "clipsRecorded": "Recorded clips ({count})",
+      "targetMet": "{minutes}-min goal reached",
+      "sendToTraining": "Send for training",
+      "keepRecording": "You can keep recording to improve it — the cleaner the audio, the better the cloned voice.",
+      "errors": {
+        "micDenied": "Microphone permission denied — allow the mic in your browser and try again.",
+        "micGeneric": "Couldn't access the microphone."
+      }
+    },
+    "script": {
+      "pickPrompt": "Pick a theme to generate your reading script.",
+      "pickTheme": "Pick a theme",
+      "generating": "Generating script…",
+      "generatingHint": "The AI is writing your text",
+      "error": "Couldn't generate the script right now.",
+      "retry": "Try again",
+      "changeTheme": "Change theme",
+      "generateAnother": "Generate another",
+      "print": "Download / Print",
+      "title": "Pick a theme",
+      "subtitle": "The AI writes a text in that style for you to read and record.",
+      "close": "Close",
+      "picker": {
+        "pickPrompt": "Pick a theme to generate your reading script.",
+        "pickTheme": "Pick a theme",
+        "generating": "Generating script…",
+        "generatingHint": "The AI is writing your text",
+        "error": "Couldn't generate the script right now.",
+        "retry": "Try again",
+        "changeTheme": "Change theme",
+        "generateAnother": "Generate another",
+        "print": "Download / Print",
+        "title": "Pick a theme",
+        "subtitle": "The AI writes a text in that style for you to read and record.",
+        "close": "Close"
+      }
+    }
+  },
+  "voice": {
+    "common": {
+      "error": "Error",
+      "networkError": "Network error",
+      "cancel": "Cancel",
+      "deleting": "Deleting…",
+      "deleteFailed": "Failed to delete"
+    },
+    "generating": {
+      "label": "Generating audio…"
+    },
+    "history": {
+      "status": {
+        "pending": "Queued",
+        "generating": "Generating…",
+        "ready": "Ready",
+        "failed": "Failed"
+      },
+      "loadError": "Failed to load history",
+      "renameError": "Failed to rename",
+      "loading": "Loading history…",
+      "empty": "No audio generated yet. Generate audio with a ready voice and it will show up here.",
+      "selectedCount": "{n} selected",
+      "selectAll": "Select all",
+      "deleteSelected": "Delete selected",
+      "nameInputAria": "Audio name",
+      "saveNameAria": "Save name",
+      "editNameAria": "Edit audio name",
+      "voiceUsedTitle": "Voice used",
+      "ownerTitle": "Generation owner",
+      "showLess": "show less",
+      "showFull": "show full text",
+      "downloadAria": "Download",
+      "deleteOneAria": "Delete this audio",
+      "deleteModal": {
+        "title": "Delete {n, plural, one {# audio} other {# audios}}?",
+        "body": "This action is <strong>irreversible</strong>. It removes the audio from storage and from your history.",
+        "confirm": "Delete"
+      }
+    },
+    "generator": {
+      "startError": "Failed to start generation",
+      "textLabel": "Text to synthesize",
+      "placeholder": "Hi, this is a test of my cloned voice…",
+      "pauseLabel": "Pause between sentences",
+      "pauseNatural": "Natural",
+      "pauseMedium": "Medium",
+      "pauseLong": "Long",
+      "supportAction": "generate the audio",
+      "generating": "Generating…",
+      "generate": "Generate audio",
+      "sessionTitle": "Generations this session",
+      "generatingWord": "Generating",
+      "failed": "Generation failed",
+      "downloadAria": "Download audio",
+      "download": "Download",
+      "generatedIn": "· generated in {s}s",
+      "savedNote": "All audio is also saved to your History.",
+      "paywallAction": "generate audio"
+    },
+    "panel": {
+      "startError": "Failed to start training",
+      "awaitingTitle": "Ready to train",
+      "awaitingBody": "Audio validated and stored in R2. Click below to kick off training on RunPod (~15-30 min). You can close this tab — the UI updates on its own.",
+      "starting": "Starting…",
+      "start": "Start training",
+      "paywallAction": "clone your voice",
+      "rejectedBody": "These audio files don't reach the 20-minute minimum. Upload more audio in a new voice.",
+      "rejectedCta": "+ Train new voice",
+      "readyTitle": "Voice ready",
+      "readyBody": "LoRA trained and stored. Listen to the sample below — if you like it, just generate.",
+      "readyCta": "Generate audio →",
+      "failedTitle": "Training didn't complete",
+      "failedCta": "Try again with more audio →",
+      "training": "Training…",
+      "waiting": "Waiting…",
+      "trainingBody": "Pipeline running on RunPod (~15-30 min). Refreshing every {s}s.",
+      "waitingBody": "Refreshing every {s}s.",
+      "sampleLabel": "🔊 Sample of your voice (generated automatically)",
+      "failedFallback": "Something went wrong during training. Try again — if it persists, contact support."
+    },
+    "deleteVoice": {
+      "title": "Delete — irreversible action",
+      "closeAria": "Close",
+      "whatLabel": "What to delete",
+      "voiceOption": "Delete the entire voice",
+      "voiceOptionDesc": "Removes EVERYTHING: uploaded audio, the LoRA, generated audio, references and all database records. Cannot be recovered.",
+      "loraOption": "Delete only the LoRA",
+      "loraOptionDesc": "Keeps your uploaded audio. The voice goes back to \"ready to train\" and you can retrain without uploading again.",
+      "confirmLabel": "To confirm, type the voice name:",
+      "deleteLora": "Delete LoRA",
+      "deleteVoiceBtn": "Delete voice",
+      "dangerZone": "Danger zone",
+      "dangerBody": "Deleting is <strong>irreversible</strong>. It removes files from storage (R2) and database records — this can't be undone.",
+      "dangerCta": "Delete voice / LoRA"
+    },
+    "rowMenu": {
+      "actionsAria": "Voice actions",
+      "delete": "Delete"
+    },
+    "list": {
+      "status": {
+        "uploading": "Uploading audio",
+        "validating": "Validating",
+        "awaiting_training": "Ready to train",
+        "rejected_too_short": "< 20min · Rejected",
+        "training": "Training",
+        "ready": "Ready",
+        "failed": "Failed"
+      },
+      "noCreditsTitle": "Not enough credits to train",
+      "subscribeTitle": "Subscribe to train a voice",
+      "noCreditsBody": "Training a voice costs {cost} credits and you have {total}. Buy a pack to continue — generating audio with ready voices stays available.",
+      "subscribeBody": "You don't have an active plan. Training a voice is part of the plan: subscribe to unlock 100,000 credits per month and train your voice.",
+      "buyCredits": "Buy credits",
+      "subscribeNow": "Subscribe now"
+    },
+    "detail": {
+      "eyebrow": "Voice",
+      "status": {
+        "uploading": "Uploading audio",
+        "validating": "Validating",
+        "awaiting_training": "Ready to train",
+        "rejected_too_short": "Rejected — < 20min",
+        "training": "Training…",
+        "ready": "✓ Ready",
+        "failed": "Failed"
+      },
+      "files": "Files",
+      "totalDuration": "Total duration",
+      "model": "Model",
+      "trainedVoice": "Trained voice",
+      "supportAction": "train this voice"
+    },
+    "generatePage": {
+      "eyebrow": "Generate audio · {name}",
+      "title": "Synthesis",
+      "subtitle": "Type your text and generate. The voice reference is set automatically from your training."
+    },
+    "scriptPage": {
+      "eyebrow": "Voice recording",
+      "title": "Script",
+      "subtitle": "Read this script out loud while recording, varying your tone in each block — that's how the model learns your voice's range. Don't like it? Generate another. Want to read on paper? Download or print it."
+    }
+  },
+  "shell": {
+    "topbar": {
+      "creditsTitle": "View and buy credits",
+      "creditsUnlimited": "Credits: ∞",
+      "credits": "credits",
+      "myAccount": "My account"
+    },
+    "sidebar": {
+      "lockTraining": "You need {n} credits to train a voice.",
+      "lockGenerateAudio": "Train a voice first to generate audio.",
+      "lockApi": "Subscribe to unlock the API.",
+      "preProduction": "Pre-production testing",
+      "admin": "Admin"
+    },
+    "apiDocs": {
+      "copied": "Copied",
+      "copy": "Copy",
+      "yourVoiceId": "YOUR_VOICE_ID",
+      "yourKey": "YOUR_KEY",
+      "sampleText": "Hello, this is a test of my voice.",
+      "pollComment": "# Repeat every ~30s until \"status\": \"ready\".\n# The response then includes \"audio_url\" (.mp3 link, valid for 1h).",
+      "title": "How to use (cURL)",
+      "readyVoices": "Your ready voices (use the ID in the call)",
+      "noReadyVoices": "No voice ready yet. Train a voice first.",
+      "step1": "1. Generate audio → returns generation_id",
+      "step2": "2. Check status (poll ~30s) → audio_url when ready",
+      "fullDocs": "Full documentation (Swagger)"
+    },
+    "apiKeys": {
+      "loadError": "Failed to load keys",
+      "genericError": "Error",
+      "createError": "Failed to create key",
+      "revokeError": "Failed to revoke",
+      "title": "API keys",
+      "description": "Use a key to generate audio outside the site (cURL, n8n, scripts). The key is tied to your account and only accesses your voices.",
+      "copyOnce": "Copy it now — the key won't be shown again",
+      "copied": "Copied",
+      "copy": "Copy",
+      "namePlaceholder": "Key name (e.g. n8n machine)",
+      "creating": "Creating…",
+      "create": "Create key",
+      "loading": "Loading…",
+      "empty": "No keys yet. Create your first one above.",
+      "revokedBadge": "revoked",
+      "meta": "created {created} · last used {used}",
+      "revokeAria": "Revoke key",
+      "revoke": "Revoke",
+      "revokeTitle": "Revoke “{name}”?",
+      "revokeBody": "Anyone using this key stops working immediately. This action is <strong>irreversible</strong>.",
+      "cancel": "Cancel",
+      "revoking": "Revoking…"
+    },
+    "buyCredits": {
+      "startError": "Could not start the purchase.",
+      "connectionError": "Connection error while starting the purchase.",
+      "credits": "credits",
+      "wait": "Please wait",
+      "buy": "Buy",
+      "footnote": "Payment via Stripe. One-time credits never expire."
+    },
+    "cancelSub": {
+      "trigger": "Cancel subscription",
+      "doneTitle": "Subscription canceled",
+      "doneBody": "Your access continues until the end of the period you already paid for. Thanks for the feedback — it helps us improve.",
+      "close": "Close",
+      "title": "Before you go…",
+      "body": "Feel free to cancel. Just tell us why (optional) — it helps us improve.",
+      "reasons": {
+        "expensive": "Too expensive",
+        "notUsing": "Not using it enough",
+        "missingFeature": "Missing a feature I needed",
+        "technicalIssue": "Had a technical issue",
+        "other": "Other reason"
+      },
+      "detailPlaceholder": "Want to elaborate? (optional)",
+      "back": "Back",
+      "canceling": "Canceling…",
+      "confirm": "Confirm cancellation"
+    },
+    "consent": {
+      "registerError": "Failed to record your acceptance",
+      "genericError": "Error",
+      "title": "Before you continue",
+      "subtitle": "Read and accept our terms to use the platform.",
+      "declaration": "I declare that I have read and agree to the <strong>Terms of Use</strong>, the <strong>Privacy Policy</strong> and the <strong>Usage Policy</strong>.",
+      "signOut": "Sign out",
+      "submitting": "Recording…",
+      "accept": "Accept and continue"
+    },
+    "deleteAccount": {
+      "deleteError": "Could not delete the account.",
+      "genericError": "Error",
+      "dangerZone": "Danger zone",
+      "warning": "Deleting your account erases <strong>all your audio</strong>, cancels your subscription and is <strong>irreversible</strong>. To come back, you'll have to create a new account.",
+      "trigger": "Delete my account",
+      "modalTitle": "Delete account",
+      "noUndo": "This action <strong>cannot be undone</strong>. When you delete:",
+      "consequence1": "all generated audio will be erased;",
+      "consequence2": "your subscription is canceled automatically;",
+      "consequence3": "you'll need to create a new account to come back.",
+      "whyLeaving": "Why are you leaving? (optional)",
+      "reasons": {
+        "noNeed": "I don't need it anymore",
+        "expensive": "Too expensive",
+        "missingFeature": "Missing a feature I needed",
+        "technicalIssue": "Had a technical issue",
+        "privacy": "Privacy concerns",
+        "other": "Other reason"
+      },
+      "detailPlaceholder": "Want to elaborate? (optional)",
+      "typeToConfirm": "Type <strong>{email}</strong> to confirm",
+      "back": "Back",
+      "deleting": "Deleting…",
+      "confirm": "Delete permanently"
+    }
   }
 }

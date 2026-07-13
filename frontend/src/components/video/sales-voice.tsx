@@ -9,6 +9,7 @@
  * Anexou → o projeto converge pro pipeline normal (cenas → imagens → final).
  */
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { AudioLines, Upload, Loader2, AlertCircle, Mic2 } from "lucide-react";
 import { SALES_MAX_AUDIO_SECONDS } from "@/lib/video/config";
 
@@ -17,7 +18,7 @@ type Phase = "idle" | "generating" | "uploading" | "attaching";
 
 const MIN_TTS_CREDITS = 400;
 
-function readDuration(file: File): Promise<number> {
+function readDuration(file: File, errorMessage: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const el = new Audio();
@@ -28,7 +29,7 @@ function readDuration(file: File): Promise<number> {
     };
     el.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error("Não conseguimos ler esse arquivo de áudio."));
+      reject(new Error(errorMessage));
     };
     el.src = url;
   });
@@ -41,7 +42,7 @@ async function api(path: string, method: string, body?: unknown) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json?.error?.message || "Algo deu errado.");
+  if (!res.ok) throw new Error(json?.error?.message || "");
   return json;
 }
 
@@ -54,6 +55,7 @@ export function SalesVoice({
   script: string;
   onAttached: () => void;
 }) {
+  const t = useTranslations("sales.voice");
   const inputRef = useRef<HTMLInputElement>(null);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string>("");
@@ -82,7 +84,7 @@ export function SalesVoice({
     if (!voiceId) return;
     setError(null);
     setPhase("generating");
-    setNote("Gerando o áudio com a sua voz…");
+    setNote(t("generating"));
     try {
       const gen = await api(`/api/v1/voices/${voiceId}/generate`, "POST", { text: script });
       const genId = gen.generation_id as string;
@@ -99,18 +101,18 @@ export function SalesVoice({
           break;
         }
         if (status === "failed") {
-          throw new Error(st.generation?.error_message || "A geração do áudio falhou.");
+          throw new Error(st.generation?.error_message || t("errors.generationFailed"));
         }
-        setNote("Gerando o áudio com a sua voz… (pode levar 1-2 min)");
+        setNote(t("generatingLong"));
       }
-      if (!ready) throw new Error("A geração demorou demais — veja o Histórico e tente anexar de novo.");
+      if (!ready) throw new Error(t("errors.timeout"));
 
       setPhase("attaching");
-      setNote("Anexando o áudio ao projeto…");
+      setNote(t("attaching"));
       await api(`/api/v1/videos/${projectId}/audio`, "POST", { generation_id: genId });
       onAttached();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao gerar o áudio.");
+      setError(e instanceof Error && e.message ? e.message : t("errors.generate"));
       setPhase("idle");
       setNote(null);
     }
@@ -119,23 +121,23 @@ export function SalesVoice({
   async function handleUpload(file: File) {
     setError(null);
     if (file.size > 25 * 1024 * 1024) {
-      setError("Arquivo muito grande (máx. 25MB).");
+      setError(t("errors.tooLarge"));
       return;
     }
     setPhase("uploading");
-    setNote("Lendo o áudio…");
+    setNote(t("reading"));
     try {
-      const duration = await readDuration(file);
+      const duration = await readDuration(file, t("errors.readFile"));
       if (!Number.isFinite(duration) || duration <= 0) {
-        throw new Error("Não conseguimos ler a duração desse áudio.");
+        throw new Error(t("errors.readDuration"));
       }
       if (duration > SALES_MAX_AUDIO_SECONDS) {
         throw new Error(
-          `Seu áudio tem ${Math.round(duration)}s — no Vídeo Vendas o máximo é ${SALES_MAX_AUDIO_SECONDS}s.`,
+          t("errors.tooLong", { n: Math.round(duration), max: SALES_MAX_AUDIO_SECONDS }),
         );
       }
 
-      setNote("Enviando…");
+      setNote(t("sending"));
       const slot = await api("/api/v1/videos/upload-audio", "POST", {
         filename: file.name,
         content_type: file.type || "audio/mpeg",
@@ -146,14 +148,14 @@ export function SalesVoice({
         headers: { "Content-Type": file.type || "audio/mpeg" },
         body: file,
       });
-      if (!put.ok) throw new Error("Falha ao enviar o áudio. Tente novamente.");
+      if (!put.ok) throw new Error(t("errors.uploadFailed"));
 
       setPhase("attaching");
-      setNote("Transcrevendo e anexando…");
+      setNote(t("transcribing"));
       await api(`/api/v1/videos/${projectId}/audio`, "POST", { uploaded_key: slot.key });
       onAttached();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao processar o áudio.");
+      setError(e instanceof Error && e.message ? e.message : t("errors.process"));
       setPhase("idle");
       setNote(null);
     }
@@ -169,7 +171,7 @@ export function SalesVoice({
       <div className="flex items-center gap-2">
         <AudioLines className="h-5 w-5 text-[var(--silver)]" />
         <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          5 · A voz que narra (máx. {SALES_MAX_AUDIO_SECONDS}s)
+          {t("title", { max: SALES_MAX_AUDIO_SECONDS })}
         </h2>
       </div>
 
@@ -188,10 +190,10 @@ export function SalesVoice({
 
       {/* A — voz clonada */}
       <div className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)] p-4">
-        <span className="text-[14px] font-medium text-[var(--ink)]">Narrar com a minha voz clonada</span>
+        <span className="text-[14px] font-medium text-[var(--ink)]">{t("cloneOption")}</span>
         {voices.length === 0 ? (
           <span className="font-mono text-[11px] text-[var(--ash)]">
-            Você ainda não tem uma voz pronta — treine uma em Vozes, ou envie um áudio gravado abaixo.
+            {t("noVoices")}
           </span>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
@@ -213,7 +215,7 @@ export function SalesVoice({
               ) : (
                 <Mic2 className="h-4 w-4" />
               )}
-              Gerar áudio ({ttsCost.toLocaleString("pt-BR")} cr)
+              {t("generateAudio", { cost: ttsCost.toLocaleString("pt-BR") })}
             </button>
           </div>
         )}
@@ -221,14 +223,14 @@ export function SalesVoice({
 
       {/* B — áudio próprio */}
       <div className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)] p-4">
-        <span className="text-[14px] font-medium text-[var(--ink)]">Já gravei o áudio do produto</span>
+        <span className="text-[14px] font-medium text-[var(--ink)]">{t("uploadOption")}</span>
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" onClick={() => inputRef.current?.click()} disabled={busy} className={ghostBtnCls}>
             {phase === "uploading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            Enviar áudio
+            {t("uploadButton")}
           </button>
           <span className="font-mono text-[10px] text-[var(--ash)]">
-            MP3/WAV/M4A/OGG · máx. {SALES_MAX_AUDIO_SECONDS}s · a transcrição do que você fala substitui o roteiro
+            {t("uploadHint", { max: SALES_MAX_AUDIO_SECONDS })}
           </span>
         </div>
         <input

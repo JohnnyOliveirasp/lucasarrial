@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { RefreshCw, Printer, FileText, X, Sparkles, Wand2 } from "lucide-react";
 import { AudioGeneratingIndicator } from "@/components/voice/audio-generating-indicator";
 import { SCRIPT_THEMES } from "@/lib/llm/script-themes";
@@ -21,6 +22,7 @@ const SECONDARY =
  * naquele estilo, em blocos com direção emocional. A pessoa lê variando o tom.
  */
 export function ScriptReader() {
+  const t = useTranslations("voiceCreate.script");
   const [status, setStatus] = useState<Status>("idle");
   const [script, setScript] = useState<VoiceScript | null>(null);
   const [themeId, setThemeId] = useState<string | null>(null);
@@ -84,29 +86,29 @@ ${blocksHtml}
       {status === "idle" && !pickerOpen && (
         <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
           <Wand2 className="h-7 w-7 text-[var(--silver)]" />
-          <p className="text-sm text-[var(--mute)]">Escolha um tema pra gerar seu roteiro de leitura.</p>
+          <p className="text-sm text-[var(--mute)]">{t("pickPrompt")}</p>
           <button type="button" onClick={() => setPickerOpen(true)} className={PILL}>
             <Sparkles className="h-4 w-4" />
-            Escolher tema
+            {t("pickTheme")}
           </button>
         </section>
       )}
 
       {status === "loading" && (
-        <AudioGeneratingIndicator label="Gerando roteiro…" hint="A IA está escrevendo seu texto" />
+        <AudioGeneratingIndicator label={t("generating")} hint={t("generatingHint")} />
       )}
 
       {status === "error" && (
         <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
-          <p className="text-sm text-[var(--ink)]">Não consegui gerar o roteiro agora.</p>
+          <p className="text-sm text-[var(--ink)]">{t("error")}</p>
           <div className="flex flex-wrap gap-3">
             <button type="button" onClick={() => themeId && fetchScript(themeId)} className={`${PILL} w-fit`}>
               <RefreshCw className="h-4 w-4" />
-              Tentar de novo
+              {t("retry")}
             </button>
             <button type="button" onClick={() => setPickerOpen(true)} className={`${SECONDARY} w-fit`}>
               <Sparkles className="h-4 w-4" />
-              Trocar tema
+              {t("changeTheme")}
             </button>
           </div>
         </section>
@@ -117,15 +119,15 @@ ${blocksHtml}
           <div className="flex flex-wrap gap-3">
             <button type="button" onClick={() => themeId && fetchScript(themeId)} className={PILL}>
               <RefreshCw className="h-4 w-4" />
-              Gerar outro
+              {t("generateAnother")}
             </button>
             <button type="button" onClick={() => setPickerOpen(true)} className={SECONDARY}>
               <Sparkles className="h-4 w-4" />
-              Trocar tema
+              {t("changeTheme")}
             </button>
             <button type="button" onClick={printScript} className={SECONDARY}>
               <Printer className="h-4 w-4" />
-              Baixar / Imprimir
+              {t("print")}
             </button>
           </div>
 
@@ -168,6 +170,7 @@ function ThemePicker({
   onClose: () => void;
   closable: boolean;
 }) {
+  const t = useTranslations("voiceCreate.script.picker");
   // trava o scroll do body enquanto o popup está aberto
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -192,17 +195,17 @@ function ThemePicker({
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h3 className="text-xl font-semibold tracking-[-0.02em] text-[var(--ink)]">
-              Escolha um tema
+              {t("title")}
             </h3>
             <p className="mt-1 text-[13px] text-[var(--mute)]">
-              A IA gera um texto nesse estilo pra você ler e gravar.
+              {t("subtitle")}
             </p>
           </div>
           {closable && (
             <button
               type="button"
               onClick={onClose}
-              aria-label="Fechar"
+              aria-label={t("close")}
               className="flex-none text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
             >
               <X className="size-5" />
@@ -211,18 +214,18 @@ function ThemePicker({
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {SCRIPT_THEMES.map((t) => (
+          {SCRIPT_THEMES.map((theme) => (
             <button
-              key={t.id}
+              key={theme.id}
               type="button"
-              onClick={() => onPick(t.id)}
+              onClick={() => onPick(theme.id)}
               className="flex items-start gap-3 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-4 text-left transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-elevated)]"
             >
-              <span className="text-2xl leading-none">{t.emoji}</span>
+              <span className="text-2xl leading-none">{theme.emoji}</span>
               <span className="min-w-0">
-                <span className="block text-sm font-medium text-[var(--ink)]">{t.label}</span>
+                <span className="block text-sm font-medium text-[var(--ink)]">{theme.label}</span>
                 <span className="mt-0.5 block text-[12px] leading-snug text-[var(--ash)]">
-                  {t.hint}
+                  {theme.hint}
                 </span>
               </span>
             </button>

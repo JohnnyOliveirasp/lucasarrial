@@ -1,5 +1,6 @@
-import { redirect } from "next/navigation";
-import { setRequestLocale } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
+import { redirect } from "@/i18n/navigation";
+import type { Locale } from "@/i18n/routing";
 import { createClient } from "@/lib/supabase/server";
 import { VideoBoard } from "@/components/video/video-board";
 import { Eyebrow } from "@/components/ui";
@@ -19,28 +20,27 @@ export default async function VideoHistoryPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const t = await getTranslations("videoWizard.pages");
 
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect(`/${locale}/login`);
+  if (!user) redirect({ href: "/login", locale: locale as Locale });
 
   return (
     <div className="flex flex-col gap-10">
       <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
-        <Eyebrow>Vídeos</Eyebrow>
+        <Eyebrow>{t("historyEyebrow")}</Eyebrow>
         <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
-          Vídeo História
+          {t("historyTitle")}
         </h1>
         <p className="max-w-xl text-sm text-[var(--mute)]">
-          Transforme um áudio seu em um vídeo completo: o roteiro vira cenas,
-          imagens e clipes, montados com legenda no final. Comece por um áudio
-          de até 1min30s.
+          {t("historyIntro")}
         </p>
       </header>
 
-      <VideoBoard locale={locale} />
+      <VideoBoard />
     </div>
   );
 }

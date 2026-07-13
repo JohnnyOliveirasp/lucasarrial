@@ -1,19 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Input } from "@/components/ui";
 
-const REASONS = [
-  "Não preciso mais",
-  "Está caro",
-  "Faltou um recurso que eu precisava",
-  "Tive um problema técnico",
-  "Preocupação com privacidade",
-  "Outro motivo",
-];
+const REASON_KEYS = [
+  "noNeed",
+  "expensive",
+  "missingFeature",
+  "technicalIssue",
+  "privacy",
+  "other",
+] as const;
 
 type Props = {
   /** E-mail da conta — o usuário precisa digitar exatamente este pra confirmar. */
@@ -26,6 +27,7 @@ const dangerWash = {
 } as const;
 
 export function DeleteAccount({ email }: Props) {
+  const t = useTranslations("shell.deleteAccount");
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -49,7 +51,7 @@ export function DeleteAccount({ email }: Props) {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Não foi possível excluir a conta.");
+        throw new Error(j?.error?.message || t("deleteError"));
       }
       // Conta apagada → encerra a sessão e manda pra home.
       const supabase = createClient();
@@ -57,7 +59,7 @@ export function DeleteAccount({ email }: Props) {
       router.push("/");
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("genericError"));
       setLoading(false);
     }
   }
@@ -69,23 +71,21 @@ export function DeleteAccount({ email }: Props) {
     >
       <h2 className="flex items-center gap-2 text-[13px] font-medium text-[var(--status-error)]">
         <AlertTriangle className="h-4 w-4" />
-        Zona perigosa
+        {t("dangerZone")}
       </h2>
       <p className="max-w-xl text-[14px] leading-relaxed text-[var(--mute)]">
-        Excluir a conta apaga{" "}
-        <strong className="font-medium text-[var(--ink)]">
-          todos os seus áudios
-        </strong>
-        , cancela a assinatura e é{" "}
-        <strong className="font-medium text-[var(--ink)]">irreversível</strong>. Pra
-        voltar, você terá que criar uma conta nova.
+        {t.rich("warning", {
+          strong: (chunks) => (
+            <strong className="font-medium text-[var(--ink)]">{chunks}</strong>
+          ),
+        })}
       </p>
       <button
         type="button"
         onClick={() => setOpen(true)}
         className="self-start text-[13px] text-[var(--status-error)] underline-offset-4 transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:underline"
       >
-        Excluir minha conta
+        {t("trigger")}
       </button>
 
       {open && (
@@ -97,49 +97,52 @@ export function DeleteAccount({ email }: Props) {
             <div className="flex flex-col gap-2">
               <h3 className="flex items-center gap-2.5 text-[22px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
                 <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
-                Excluir conta
+                {t("modalTitle")}
               </h3>
               <div className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-3.5 text-[14px] text-[var(--body)]">
-                Esta ação{" "}
-                <strong className="font-medium text-[var(--ink)]">
-                  não tem volta
-                </strong>
-                . Ao excluir:
+                {t.rich("noUndo", {
+                  strong: (chunks) => (
+                    <strong className="font-medium text-[var(--ink)]">{chunks}</strong>
+                  ),
+                })}
                 <ul className="mt-2 list-disc pl-5 text-[var(--mute)]">
-                  <li>todos os áudios gerados serão apagados;</li>
-                  <li>sua assinatura é cancelada automaticamente;</li>
-                  <li>você precisará criar uma nova conta pra voltar.</li>
+                  <li>{t("consequence1")}</li>
+                  <li>{t("consequence2")}</li>
+                  <li>{t("consequence3")}</li>
                 </ul>
               </div>
             </div>
 
             <div className="flex flex-col gap-2.5">
               <span className="text-[13px] text-[var(--silver)]">
-                Por que está saindo? (opcional)
+                {t("whyLeaving")}
               </span>
-              {REASONS.map((r) => (
-                <label
-                  key={r}
-                  className="flex cursor-pointer items-center gap-3 text-[14px] text-[var(--body)]"
-                >
-                  <input
-                    type="radio"
-                    name="delete-reason"
-                    value={r}
-                    checked={reason === r}
-                    onChange={() => setReason(r)}
-                    className="accent-[var(--status-error)]"
-                  />
-                  {r}
-                </label>
-              ))}
+              {REASON_KEYS.map((k) => {
+                const r = t(`reasons.${k}`);
+                return (
+                  <label
+                    key={k}
+                    className="flex cursor-pointer items-center gap-3 text-[14px] text-[var(--body)]"
+                  >
+                    <input
+                      type="radio"
+                      name="delete-reason"
+                      value={r}
+                      checked={reason === r}
+                      onChange={() => setReason(r)}
+                      className="accent-[var(--status-error)]"
+                    />
+                    {r}
+                  </label>
+                );
+              })}
             </div>
 
             <textarea
               value={detail}
               onChange={(e) => setDetail(e.target.value)}
               rows={2}
-              placeholder="Quer detalhar? (opcional)"
+              placeholder={t("detailPlaceholder")}
               className="resize-none rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3.5 py-2.5 text-[14px] text-[var(--ink)] placeholder:text-[var(--ash)] focus:border-[var(--status-error)] focus:outline-none"
             />
 
@@ -148,9 +151,12 @@ export function DeleteAccount({ email }: Props) {
                 htmlFor="confirm-email"
                 className="text-[13px] text-[var(--silver)]"
               >
-                Digite{" "}
-                <span className="font-medium text-[var(--ink)]">{email}</span> para
-                confirmar
+                {t.rich("typeToConfirm", {
+                  email,
+                  strong: (chunks) => (
+                    <span className="font-medium text-[var(--ink)]">{chunks}</span>
+                  ),
+                })}
               </label>
               <Input
                 id="confirm-email"
@@ -175,7 +181,7 @@ export function DeleteAccount({ email }: Props) {
                 onClick={() => setOpen(false)}
                 disabled={loading}
               >
-                Voltar
+                {t("back")}
               </Button>
               <Button
                 variant="secondary"
@@ -188,7 +194,7 @@ export function DeleteAccount({ email }: Props) {
                 }
                 className="text-[var(--status-error)] hover:border-[var(--status-error)] disabled:hover:border-[var(--hairline-strong)]"
               >
-                {loading ? "Excluindo…" : "Excluir permanentemente"}
+                {loading ? t("deleting") : t("confirm")}
               </Button>
             </div>
           </div>

@@ -1,6 +1,5 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import { setRequestLocale } from "next-intl/server";
+import { Link, redirect } from "@/i18n/navigation";
+import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Lock } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
@@ -24,12 +23,13 @@ export default async function ImagesPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const t = await getTranslations("images.page");
 
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect(`/${locale}/login`);
+  if (!user) return redirect({ href: "/login", locale });
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -47,13 +47,12 @@ export default async function ImagesPage({
   return (
     <div className="flex flex-col gap-10">
       <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
-        <Eyebrow>Imagens</Eyebrow>
+        <Eyebrow>{t("eyebrow")}</Eyebrow>
         <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
-          Gerar Imagem
+          {t("title")}
         </h1>
         <p className="max-w-xl text-sm text-[var(--mute)]">
-          Envie sua foto, descreva a cena e gere uma imagem sua em qualquer
-          cenário — mantendo o seu rosto. Baixe ou guarde pra usar depois.
+          {t("description")}
         </p>
       </header>
 
@@ -65,26 +64,29 @@ export default async function ImagesPage({
             <h2 className="flex items-center gap-2 font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
               <Lock className="h-5 w-5 text-[var(--silver)]" />
               {subscribed
-                ? "Créditos insuficientes para gerar imagem"
-                : "Assine para gerar imagens"}
+                ? t("lockedTitleSubscribed")
+                : t("lockedTitleUnsubscribed")}
             </h2>
             <p className="max-w-xl text-sm text-[var(--mute)]">
               {subscribed
-                ? `Gerar uma imagem custa a partir de ${IMAGE_MIN_CREDITS} créditos (1K) e você tem ${creditsTotal.toLocaleString("pt-BR")}. Compre um pacote para continuar.`
-                : "Você não tem um plano vigente. Gerar imagens consome créditos do plano: assine para liberar 100.000 créditos por mês e criar suas imagens."}
+                ? t("lockedBodySubscribed", {
+                    min: IMAGE_MIN_CREDITS,
+                    credits: creditsTotal.toLocaleString("pt-BR"),
+                  })
+                : t("lockedBodyUnsubscribed")}
             </p>
             <Link
-              href={subscribed ? `/${locale}/app/credits` : `/${locale}/planos`}
+              href={subscribed ? "/app/credits" : "/planos"}
               className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-[background-color,border-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] active:scale-[0.98]"
             >
-              {subscribed ? "Comprar créditos" : "Assinar agora"}
+              {subscribed ? t("buyCredits") : t("subscribeNow")}
               <span aria-hidden>→</span>
             </Link>
           </section>
 
           <section className="flex flex-col gap-4">
             <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-              Suas imagens
+              {t("yourImages")}
             </h2>
             <ImageHistory />
           </section>

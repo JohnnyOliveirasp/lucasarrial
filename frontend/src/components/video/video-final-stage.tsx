@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Clapperboard, Loader2, Download, AlertTriangle, RefreshCw, Type, AlignVerticalSpaceAround, CaseSensitive } from "lucide-react";
 import {
   SUBTITLE_PRESETS,
@@ -32,11 +33,7 @@ type RenderState = {
   job: { id: string; status: string; error: string | null } | null;
 };
 
-const POSITION_LABELS: { id: SubtitlePosition; label: string }[] = [
-  { id: "bottom", label: "Baixo" },
-  { id: "center", label: "Centro" },
-  { id: "top", label: "Alto" },
-];
+const POSITIONS: SubtitlePosition[] = ["bottom", "center", "top"];
 
 function StylePicker({
   value,
@@ -55,6 +52,7 @@ function StylePicker({
   onSize: (s: SubtitleSize) => void;
   disabled?: boolean;
 }) {
+  const t = useTranslations("videoWizard.final");
   const preset = getSubtitlePreset(value);
   const effectivePosition = position ?? preset.defaultPosition;
   const effectiveSize: SubtitleSize = size ?? "normal";
@@ -65,12 +63,14 @@ function StylePicker({
 
       <div className="flex flex-col gap-2">
         <span className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wide text-[var(--ash)]">
-          <Type className="h-3.5 w-3.5" /> Estilo da legenda
+          <Type className="h-3.5 w-3.5" /> {t("styleLabel")}
         </span>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {SUBTITLE_PRESETS.map((s) => {
             const active = value === s.id;
-            const words = s.css.uppercase ? ["SUA", "LEGENDA"] : ["sua", "legenda"];
+            const words = s.css.uppercase
+              ? [t("previewA").toUpperCase(), t("previewB").toUpperCase()]
+              : [t("previewA"), t("previewB")];
             return (
               <button
                 key={s.id}
@@ -123,31 +123,31 @@ function StylePicker({
       <div className="flex flex-wrap gap-6">
         <div className="flex flex-col gap-2">
           <span className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wide text-[var(--ash)]">
-            <AlignVerticalSpaceAround className="h-3.5 w-3.5" /> Posição
+            <AlignVerticalSpaceAround className="h-3.5 w-3.5" /> {t("positionLabel")}
           </span>
           <div className="flex gap-1.5">
-            {POSITION_LABELS.map((p) => (
+            {POSITIONS.map((p) => (
               <button
-                key={p.id}
+                key={p}
                 type="button"
                 disabled={disabled}
-                onClick={() => onPosition(p.id)}
-                aria-pressed={effectivePosition === p.id}
+                onClick={() => onPosition(p)}
+                aria-pressed={effectivePosition === p}
                 className={[
                   "h-9 rounded-[var(--radius)] border px-4 font-sans text-[13px] transition-colors disabled:opacity-50",
-                  effectivePosition === p.id
+                  effectivePosition === p
                     ? "border-[var(--hairline-bright)] bg-[var(--surface-elevated)] text-[var(--ink)]"
                     : "border-[var(--hairline-strong)] bg-[var(--surface-card)] text-[var(--mute)] hover:border-[var(--hairline-bright)]",
                 ].join(" ")}
               >
-                {p.label}
+                {t(`positions.${p}`)}
               </button>
             ))}
           </div>
         </div>
         <div className="flex flex-col gap-2">
           <span className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wide text-[var(--ash)]">
-            <CaseSensitive className="h-3.5 w-3.5" /> Tamanho
+            <CaseSensitive className="h-3.5 w-3.5" /> {t("sizeLabel")}
           </span>
           <div className="flex gap-1.5">
             {(["normal", "large"] as const).map((sz) => (
@@ -164,7 +164,7 @@ function StylePicker({
                     : "border-[var(--hairline-strong)] bg-[var(--surface-card)] text-[var(--mute)] hover:border-[var(--hairline-bright)]",
                 ].join(" ")}
               >
-                {sz === "normal" ? "Normal" : "Grande"}
+                {sz === "normal" ? t("sizeNormal") : t("sizeLarge")}
               </button>
             ))}
           </div>
@@ -186,6 +186,8 @@ export function VideoFinalStage({
   projectId: string;
   allVideosReady: boolean;
 }) {
+  const t = useTranslations("videoWizard.final");
+  const tc = useTranslations("videoWizard.common");
   const [state, setState] = useState<RenderState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -228,10 +230,10 @@ export function VideoFinalStage({
         body: JSON.stringify({ style, position, size }),
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j?.error?.message || "Falha ao enfileirar a montagem");
+      if (!res.ok) throw new Error(j?.error?.message || t("queueFailed"));
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : tc("error"));
     } finally {
       setBusy(false);
     }
@@ -242,7 +244,7 @@ export function VideoFinalStage({
     return (
       <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
         <h2 className="flex items-center gap-2 font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          <Clapperboard className="h-5 w-5 text-[var(--silver)]" /> Vídeo final
+          <Clapperboard className="h-5 w-5 text-[var(--silver)]" /> {t("title")}
         </h2>
         <div className="mx-auto w-full max-w-[280px] overflow-hidden rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)]">
           <video src={state.final_video_url} controls playsInline className="aspect-[9/16] w-full" />
@@ -258,11 +260,11 @@ export function VideoFinalStage({
         />
         <div className="flex flex-wrap items-center gap-2">
           <a href={state.final_video_url} download="video-final.mp4" className={PILL}>
-            <Download className="h-4 w-4" /> Baixar vídeo
+            <Download className="h-4 w-4" /> {t("download")}
           </a>
           <button type="button" onClick={approve} disabled={busy} className="inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-6 font-sans text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)] disabled:opacity-50">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Montar de novo{" "}
-            <span className="font-mono text-[11px] text-[var(--ash)]">(com o estilo escolhido)</span>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {t("reassemble")}{" "}
+            <span className="font-mono text-[11px] text-[var(--ash)]">{t("reassembleHint")}</span>
           </button>
         </div>
       </section>
@@ -278,9 +280,9 @@ export function VideoFinalStage({
           <Clapperboard className="relative h-7 w-7 text-[var(--silver)]" />
         </span>
         <div className="flex flex-col gap-1">
-          <p className="font-sans text-[15px] font-medium text-[var(--ink)]">Montando seu vídeo final…</p>
+          <p className="font-sans text-[15px] font-medium text-[var(--ink)]">{t("renderingTitle")}</p>
           <p className="font-mono text-[11px] tracking-wide text-[var(--ash)]">
-            Juntando os clipes com o áudio. Pode levar alguns minutos — pode sair e voltar.
+            {t("renderingHint")}
           </p>
         </div>
       </section>
@@ -292,13 +294,13 @@ export function VideoFinalStage({
     return (
       <section className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] p-6">
         <h2 className="flex items-center gap-2 font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" /> A montagem falhou
+          <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" /> {t("failedTitle")}
         </h2>
         <p className="font-mono text-[11px] text-[var(--status-error)]">
-          {state.error_message || state.job?.error || "Erro desconhecido na montagem."}
+          {state.error_message || state.job?.error || t("failedFallback")}
         </p>
         <button type="button" onClick={approve} disabled={busy} className={`${PILL} w-fit`}>
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Tentar montar de novo
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {t("retry")}
         </button>
       </section>
     );
@@ -308,11 +310,10 @@ export function VideoFinalStage({
   return (
     <section className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
       <h2 className="flex items-center gap-2 font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
-        <Clapperboard className="h-5 w-5 text-[var(--silver)]" /> Vídeo final
+        <Clapperboard className="h-5 w-5 text-[var(--silver)]" /> {t("title")}
       </h2>
       <p className="max-w-xl text-sm text-[var(--mute)]">
-        Junta todos os clipes na ordem das cenas com o seu áudio, adiciona a legenda sincronizada e
-        corta no tamanho da narração.
+        {t("intro")}
       </p>
       <StylePicker
         value={style}
@@ -326,11 +327,11 @@ export function VideoFinalStage({
       {error && <p className="font-mono text-[11px] text-[var(--status-error)]">{error}</p>}
       <button type="button" onClick={approve} disabled={!allVideosReady || busy} className={`${PILL} w-fit`}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
-        Aprovar vídeos e montar o final
+        {t("approve")}
       </button>
       {!allVideosReady && (
         <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-          Aguarde todos os clipes ficarem prontos.
+          {t("waitClips")}
         </span>
       )}
     </section>

@@ -1,7 +1,7 @@
-import Link from "next/link";
 import Script from "next/script";
-import { setRequestLocale } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Check } from "lucide-react";
+import { Link } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buildHotmartCheckoutUrl } from "@/lib/payments/hotmart-checkout";
 import { Card, Badge, Eyebrow } from "@/components/ui";
@@ -19,21 +19,6 @@ import { Card, Badge, Eyebrow } from "@/components/ui";
  * valores reais do produto.
  */
 
-const PLAN = {
-  name: "Acesso Completo",
-  tagline: "Clonagem de voz com IA, ilimitada para o seu conteúdo.",
-  price: "R$ 97",
-  period: "/mês",
-  features: [
-    "Clone a sua voz com poucos minutos de áudio",
-    "Geração de áudio ilimitada",
-    "API para integrar nos seus fluxos",
-    "Histórico e download dos áudios",
-    "7 dias de garantia — cancele e peça reembolso",
-    "Suporte por e-mail",
-  ],
-};
-
 export default async function PlanosPage({
   params,
 }: {
@@ -41,6 +26,9 @@ export default async function PlanosPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const t = await getTranslations({ locale, namespace: "misc.plans" });
+  const tPro = await getTranslations({ locale, namespace: "pricing.tiers.pro" });
+  const features = t.raw("features") as string[];
 
   const supabase = await createClient();
   const {
@@ -58,7 +46,6 @@ export default async function PlanosPage({
   const checkoutUrl = base
     ? buildHotmartCheckoutUrl(base, { email: user?.email, name: displayName })
     : "";
-  const loginHref = `/${locale}/login?redirectTo=/${locale}/planos`;
 
   return (
     <main className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-12 px-6 py-20">
@@ -68,32 +55,32 @@ export default async function PlanosPage({
       />
 
       <header className="relative flex flex-col gap-3">
-        <Eyebrow>Planos</Eyebrow>
+        <Eyebrow>{t("eyebrow")}</Eyebrow>
         <h1 className="font-display text-6xl leading-[0.95] tracking-[-0.03em] text-[var(--ink)]">
-          Assine e libere
+          {t("titleLine1")}
           <br />
-          a sua voz
+          {t("titleLine2")}
         </h1>
-        <p className="max-w-xl text-sm text-[var(--mute)]">{PLAN.tagline}</p>
+        <p className="max-w-xl text-sm text-[var(--mute)]">{t("tagline")}</p>
       </header>
 
       <Card elevated className="relative border-[var(--hairline-bright)] p-0">
         <div className="flex flex-col gap-3 border-b border-[var(--hairline)] p-8">
           <Badge variant="soft" className="w-fit">
-            {PLAN.name}
+            {t("planName")}
           </Badge>
           <div className="flex items-baseline gap-1.5">
             <span className="font-semibold text-5xl tracking-[-0.03em] text-[var(--ink)]">
-              {PLAN.price}
+              {tPro("price")}
             </span>
             <span className="font-mono text-sm text-[var(--ash)]">
-              {PLAN.period}
+              {tPro("cad")}
             </span>
           </div>
         </div>
 
         <ul className="flex flex-col gap-4 p-8">
-          {PLAN.features.map((feature) => (
+          {features.map((feature) => (
             <li
               key={feature}
               className="flex items-start gap-3 text-sm text-[var(--ink)]"
@@ -107,10 +94,13 @@ export default async function PlanosPage({
         <div className="border-t border-[var(--hairline)] p-8">
           {!user ? (
             <Link
-              href={loginHref}
+              href={{
+                pathname: "/login",
+                query: { redirectTo: `/${locale}/planos` },
+              }}
               className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[15px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
             >
-              Entrar para assinar
+              {t("loginCta")}
             </Link>
           ) : checkoutUrl ? (
             <>
@@ -129,17 +119,17 @@ export default async function PlanosPage({
                 href={checkoutUrl}
                 className="hotmart-fb hotmart__button-checkout inline-flex h-11 w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[15px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
               >
-                Assinar agora
+                {t("subscribeCta")}
               </a>
             </>
           ) : (
             <div className="inline-flex h-11 w-full cursor-not-allowed items-center justify-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[15px] font-medium text-[var(--ash)]">
-              Checkout em breve
+              {t("comingSoon")}
             </div>
           )}
           {user && (
             <p className="mt-4 text-center font-mono text-[11px] text-[var(--ash)]">
-              Compra vinculada a {user.email}
+              {t("linkedTo", { email: user.email ?? "" })}
             </p>
           )}
         </div>

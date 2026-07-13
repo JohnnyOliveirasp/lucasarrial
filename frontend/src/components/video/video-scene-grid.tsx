@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Loader2, Wand2, RefreshCw, AlertTriangle, Film, ServerCrash } from "lucide-react";
 import { getTier } from "@/lib/video/tiers";
 
@@ -40,6 +41,8 @@ export function VideoSceneGrid({
   onPaywall: (p: Paywall) => void;
   onGenerateAll: () => void;
 }) {
+  const t = useTranslations("videoWizard.grid");
+  const tc = useTranslations("videoWizard.common");
   const tier = getTier(tierId);
   const clipCost = tier?.creditsPerClip ?? 0;
   const generatingAny = scenes.some(
@@ -57,10 +60,10 @@ export function VideoSceneGrid({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          <Film className="h-5 w-5 text-[var(--silver)]" /> Vídeos das cenas
+          <Film className="h-5 w-5 text-[var(--silver)]" /> {t("title")}
           {tier && (
             <span className="font-mono text-[11px] font-normal text-[var(--ash)]">
-              · {tier.medal} {tier.label} · {clipCost} cr/cena
+              {t("tierMeta", { medal: tier.medal, label: tier.label, cost: clipCost })}
             </span>
           )}
         </h2>
@@ -69,7 +72,7 @@ export function VideoSceneGrid({
             type="button"
             onClick={onGenerateAll}
             disabled={generatingAll || generatingAny}
-            title={`Gerar/regerar as ${retry.length} cenas pendentes (${retry.length * clipCost} créditos)`}
+            title={t("retryTitle", { n: retry.length, cr: retry.length * clipCost })}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98] disabled:opacity-50"
           >
             {generatingAll ? (
@@ -78,8 +81,8 @@ export function VideoSceneGrid({
               <RefreshCw className="h-4 w-4" />
             )}
             {generatingAll
-              ? "Enviando…"
-              : `Regerar ${retry.length} vídeo(s) · ${retry.length * clipCost} cr`}
+              ? tc("sending")
+              : t("retryLabel", { n: retry.length, cr: retry.length * clipCost })}
           </button>
         )}
       </div>
@@ -88,9 +91,9 @@ export function VideoSceneGrid({
         <div className="flex items-start gap-3 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-4 py-3">
           <ServerCrash className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-error)]" />
           <span className="text-[13px] text-[var(--body)]">
-            O serviço de vídeo está temporariamente indisponível (limite do provedor). Já avisamos o
-            suporte automaticamente. Assim que normalizar, é só clicar em <strong>Regerar</strong> —
-            você não perde o prompt.
+            {t.rich("providerIssue", {
+              strong: (chunks) => <strong>{chunks}</strong>,
+            })}
           </span>
         </div>
       )}
@@ -101,7 +104,7 @@ export function VideoSceneGrid({
             <Film className="h-5 w-5 text-[var(--silver)]" />
           </span>
           <span className="text-[13px] text-[var(--body)]">
-            Gerando seus vídeos<span className="dots" /> — pode levar alguns minutos. Pode sair e voltar.
+            {t("generatingBatch")}<span className="dots" />{t("generatingHint")}
           </span>
         </div>
       )}
@@ -135,6 +138,8 @@ function SceneCard({
   onReload: () => void;
   onPaywall: (p: Paywall) => void;
 }) {
+  const t = useTranslations("videoWizard.grid");
+  const tc = useTranslations("videoWizard.common");
   const serverPrompt = scene.video_prompt_pt ?? "";
   const [prompt, setPrompt] = useState(serverPrompt);
   const [busy, setBusy] = useState<"regen" | "wand" | null>(null);
@@ -168,10 +173,10 @@ function SceneCard({
         onPaywall({ subscribed: !!j?.error?.details?.subscribed });
         return;
       }
-      if (!res.ok) throw new Error(j?.error?.message || "Falha na geração");
+      if (!res.ok) throw new Error(j?.error?.message || t("genFailed"));
       onReload();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Erro");
+      setErr(e instanceof Error ? e.message : tc("error"));
     } finally {
       setBusy(null);
     }
@@ -203,7 +208,7 @@ function SceneCard({
             {/* Poster = imagem da cena (first frame) */}
             {scene.image_url ? (
               /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={scene.image_url} alt={`Cena ${scene.idx}`} className="h-full w-full object-cover" />
+              <img src={scene.image_url} alt={tc("sceneAlt", { n: scene.idx })} className="h-full w-full object-cover" />
             ) : (
               <span className="flex h-full w-full items-center justify-center text-[var(--ash)]">
                 <Film className="h-6 w-6" />
@@ -214,7 +219,7 @@ function SceneCard({
                 <span className="shimmer absolute inset-0" aria-hidden />
                 <Loader2 className="relative h-6 w-6 animate-spin text-white" />
                 <span className="relative font-mono text-[10px] uppercase tracking-wide text-white">
-                  Gerando vídeo
+                  {t("generatingClip")}
                 </span>
               </span>
             )}
@@ -222,7 +227,7 @@ function SceneCard({
               <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-[var(--canvas)]/60">
                 <AlertTriangle className="h-6 w-6 text-[var(--status-error)]" />
                 <span className="px-2 text-center font-mono text-[9px] text-white/80">
-                  {scene.video_error?.slice(0, 60) || "falhou"}
+                  {scene.video_error?.slice(0, 60) || t("failed")}
                 </span>
               </span>
             )}
@@ -236,7 +241,7 @@ function SceneCard({
       <textarea
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
-        placeholder="Prompt de movimento (pt-BR) — será gerado automaticamente"
+        placeholder={t("promptPlaceholder")}
         rows={3}
         disabled={inflight}
         className="w-full resize-none rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)] p-2 text-[11px] leading-snug text-[var(--body)] outline-none focus:border-[var(--hairline-bright)] disabled:opacity-60"
@@ -253,7 +258,7 @@ function SceneCard({
           type="button"
           onClick={regenerate}
           disabled={!!busy || inflight}
-          title={`Regerar o vídeo (${clipCost} créditos)`}
+          title={t("regenTitle", { cr: clipCost })}
           className="inline-flex flex-1 items-center justify-center gap-1 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] py-1.5 font-sans text-[11px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)] disabled:opacity-50"
         >
           {busy === "regen" ? (
@@ -261,13 +266,13 @@ function SceneCard({
           ) : (
             <RefreshCw className="h-3 w-3 text-[var(--silver)]" />
           )}
-          {dirty ? "Gerar com meu prompt" : "Regerar"}
+          {dirty ? t("useMyPrompt") : tc("regenerate")}
         </button>
         <button
           type="button"
           onClick={wand}
           disabled={!!busy || inflight}
-          title="Novo prompt com IA (Sonnet vê a imagem): 15 créditos + o vídeo"
+          title={t("wandTitle")}
           className="inline-flex items-center justify-center gap-1 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-2 py-1.5 font-sans text-[11px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)] disabled:opacity-50"
         >
           {busy === "wand" ? (

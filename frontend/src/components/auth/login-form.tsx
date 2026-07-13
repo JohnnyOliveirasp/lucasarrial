@@ -1,10 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { Link, useRouter } from "@/i18n/navigation";
+import { routing } from "@/i18n/routing";
 import { createClient } from "@/lib/supabase/client";
+
+const LOCALE_PREFIX_RE = new RegExp(`^/(${routing.locales.join("|")})(?=/|$)`);
 
 const GOOGLE_ICON = (
   <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden>
@@ -30,7 +33,8 @@ export function LoginForm() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const redirectTo = search.get("redirectTo") || "/app/dashboard";
+  const rawRedirect = search.get("redirectTo") || "/app/dashboard";
+  const redirectTo = rawRedirect.replace(LOCALE_PREFIX_RE, "") || "/app/dashboard";
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -63,7 +67,7 @@ export function LoginForm() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(rawRedirect)}`,
       },
     });
 

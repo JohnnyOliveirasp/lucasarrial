@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { Link, usePathname } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import {
   LayoutDashboard,
@@ -46,6 +45,7 @@ export function Sidebar({
   hasReadyVoice,
 }: Props) {
   const t = useTranslations("app");
+  const tShell = useTranslations("shell.sidebar");
   const pathname = usePathname();
   const inVoices =
     pathname.includes("/app/voice-cloning") || pathname.endsWith("/app/history");
@@ -55,7 +55,9 @@ export function Sidebar({
   const [videosOpen, setVideosOpen] = useState(false);
   const showVideos = videosOpen || inVideos;
 
-  const lockTrainingTitle = `Você precisa de ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos para treinar uma voz.`;
+  const lockTrainingTitle = tShell("lockTraining", {
+    n: TRAINING_CREDIT_COST.toLocaleString("pt-BR"),
+  });
 
   // Sub-itens de "Vozes". Travas iguais às de antes: Gerar Voz livre, Gravador
   // pede crédito p/ treinar; Gerar Áudio (novo) pede voz pronta.
@@ -72,7 +74,7 @@ export function Sidebar({
       icon: AudioLines,
       label: t("nav.generateAudio"),
       locked: !unlimited && !hasReadyVoice,
-      lockTitle: "Treine uma voz primeiro para gerar áudio.",
+      lockTitle: tShell("lockGenerateAudio"),
     },
     {
       href: "/app/voice-cloning/script",
@@ -243,7 +245,7 @@ export function Sidebar({
             label={t("nav.settings")}
             active={pathname.endsWith("/app/settings")}
             locked={!unlimited && !subscribed}
-            lockTitle="Assine o plano para liberar a API."
+            lockTitle={tShell("lockApi")}
           />
 
           {isAdmin && (
@@ -251,7 +253,7 @@ export function Sidebar({
               {/* Área de PRÉ-PRODUÇÃO: produtos novos em validação, só admin vê.
                   Validou → o item migra pro grupo público (Vídeos etc.). */}
               <span className="block px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ash)]">
-                Teste pré-produção
+                {tShell("preProduction")}
               </span>
               <ul className="flex flex-col gap-1">
                 <NavLeaf
@@ -265,7 +267,7 @@ export function Sidebar({
                 <NavLeaf
                   href="/admin"
                   icon={ShieldCheck}
-                  label="Admin"
+                  label={tShell("admin")}
                   active={pathname.includes("/admin")}
                   bare
                 />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import {
   Download,
   Trash2,
@@ -26,14 +27,8 @@ type Gen = {
   user_email?: string | null;
 };
 
-const STATUS_LABEL: Record<Gen["status"], string> = {
-  pending: "Na fila",
-  generating: "Gerando…",
-  ready: "Pronto",
-  failed: "Falhou",
-};
-
 export function GenerationsHistory() {
+  const t = useTranslations("voice");
   const [items, setItems] = useState<Gen[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -58,15 +53,15 @@ export function GenerationsHistory() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/v1/generations", { cache: "no-store" });
-      if (!res.ok) throw new Error("Falha ao carregar histórico");
+      if (!res.ok) throw new Error(t("history.loadError"));
       const json = await res.json();
       setItems((json.generations ?? []) as Gen[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load();
@@ -131,13 +126,13 @@ export function GenerationsHistory() {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Falha ao apagar");
+        throw new Error(j?.error?.message || t("common.deleteFailed"));
       }
       setSelected(new Set());
       setPending([]);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setDeleting(false);
     }
@@ -168,7 +163,7 @@ export function GenerationsHistory() {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Falha ao renomear");
+        throw new Error(j?.error?.message || t("history.renameError"));
       }
       setItems((prev) =>
         prev.map((g) => (g.id === id ? { ...g, name: name === "" ? null : name } : g)),
@@ -176,7 +171,7 @@ export function GenerationsHistory() {
       setEditingId(null);
       setDraft("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setSavingId(null);
     }
@@ -187,7 +182,7 @@ export function GenerationsHistory() {
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <div className="h-10 w-10 animate-spin rounded-[var(--radius-full)] border-2 border-[var(--hairline-strong)] border-t-[var(--silver)]" />
         <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">
-          Carregando histórico…
+          {t("history.loading")}
         </p>
       </section>
     );
@@ -198,7 +193,7 @@ export function GenerationsHistory() {
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <HistoryIcon className="h-10 w-10 text-[var(--ash)]" />
         <p className="text-sm text-[var(--mute)]">
-          Nenhum áudio gerado ainda. Gere um áudio numa voz pronta e ele aparece aqui.
+          {t("history.empty")}
         </p>
       </section>
     );
@@ -216,7 +211,9 @@ export function GenerationsHistory() {
             className="accent-[var(--ink)]"
           />
           <span className="font-mono text-[10px] tracking-wide text-[var(--mute)]">
-            {selected.size > 0 ? `${selected.size} selecionado(s)` : "Selecionar tudo"}
+            {selected.size > 0
+              ? t("history.selectedCount", { n: selected.size })
+              : t("history.selectAll")}
           </span>
         </label>
         {selected.size > 0 && (
@@ -226,7 +223,7 @@ export function GenerationsHistory() {
             className="inline-flex h-9 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-4 font-sans text-[13px] font-medium text-[var(--status-error)] transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)]"
           >
             <Trash2 className="h-4 w-4" />
-            Apagar selecionados
+            {t("history.deleteSelected")}
           </button>
         )}
       </div>
@@ -273,13 +270,13 @@ export function GenerationsHistory() {
                         placeholder={g.voice_name}
                         disabled={savingId === g.id}
                         className="w-48 rounded-[var(--radius-sm)] border border-[var(--hairline-bright)] bg-[var(--surface-deep)] px-2 py-1 text-lg font-semibold leading-none text-[var(--ink)] outline-none disabled:opacity-50"
-                        aria-label="Nome do áudio"
+                        aria-label={t("history.nameInputAria")}
                       />
                       <button
                         type="button"
                         onClick={() => saveEdit(g.id)}
                         disabled={savingId === g.id}
-                        aria-label="Salvar nome"
+                        aria-label={t("history.saveNameAria")}
                         className="text-[var(--silver)] transition-colors hover:text-[var(--ink)] disabled:opacity-40"
                       >
                         <Check className="h-4 w-4" />
@@ -288,7 +285,7 @@ export function GenerationsHistory() {
                         type="button"
                         onClick={cancelEdit}
                         disabled={savingId === g.id}
-                        aria-label="Cancelar"
+                        aria-label={t("common.cancel")}
                         className="text-[var(--mute)] transition-colors hover:text-[var(--ink)] disabled:opacity-40"
                       >
                         <X className="h-4 w-4" />
@@ -302,7 +299,7 @@ export function GenerationsHistory() {
                       <button
                         type="button"
                         onClick={() => startEdit(g)}
-                        aria-label="Editar nome do áudio"
+                        aria-label={t("history.editNameAria")}
                         className="text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -315,7 +312,7 @@ export function GenerationsHistory() {
                   {g.name?.trim() && editingId !== g.id && (
                     <span
                       className="font-mono text-[10px] tracking-wide text-[var(--ash)]"
-                      title="Voz usada"
+                      title={t("history.voiceUsedTitle")}
                     >
                       · {g.voice_name}
                     </span>
@@ -323,7 +320,7 @@ export function GenerationsHistory() {
                   {g.user_email && (
                     <span
                       className="rounded-[var(--radius-full)] border border-[var(--hairline-strong)] px-2 py-0.5 font-mono text-[9px] tracking-wide text-[var(--silver)]"
-                      title="Dono da geração"
+                      title={t("history.ownerTitle")}
                     >
                       {g.user_email}
                     </span>
@@ -348,7 +345,7 @@ export function GenerationsHistory() {
                         expanded.has(g.id) ? "rotate-180" : ""
                       }`}
                     />
-                    {expanded.has(g.id) ? "ver menos" : "ver texto completo"}
+                    {expanded.has(g.id) ? t("history.showLess") : t("history.showFull")}
                   </button>
                 )}
               </div>
@@ -368,7 +365,7 @@ export function GenerationsHistory() {
                       onClick={() =>
                         download(g.audio_url!, g.name?.trim() ? g.name : g.voice_name)
                       }
-                      aria-label="Baixar"
+                      aria-label={t("history.downloadAria")}
                       className="text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
                     >
                       <Download className="h-5 w-5" />
@@ -380,13 +377,13 @@ export function GenerationsHistory() {
                       g.status === "failed" ? "text-[var(--status-error)]" : "text-[var(--mute)]"
                     }`}
                   >
-                    {STATUS_LABEL[g.status]}
+                    {t(`history.status.${g.status}`)}
                   </span>
                 )}
                 <button
                   type="button"
                   onClick={() => setPending([g.id])}
-                  aria-label="Apagar este áudio"
+                  aria-label={t("history.deleteOneAria")}
                   className="text-[var(--mute)] transition-colors hover:text-[var(--status-error)]"
                 >
                   <Trash2 className="h-5 w-5" />
@@ -412,12 +409,15 @@ export function GenerationsHistory() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
               <h3 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-                Apagar {pending.length} áudio{pending.length > 1 ? "s" : ""}?
+                {t("history.deleteModal.title", { n: pending.length })}
               </h3>
             </div>
             <p className="text-sm text-[var(--body)]">
-              Ação <strong className="text-[var(--ink)]">irreversível</strong>. Remove o(s) áudio(s) do
-              armazenamento e do histórico.
+              {t.rich("history.deleteModal.body", {
+                strong: (chunks) => (
+                  <strong className="text-[var(--ink)]">{chunks}</strong>
+                ),
+              })}
             </p>
             {error && (
               <p className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]">
@@ -430,7 +430,7 @@ export function GenerationsHistory() {
                 onClick={() => !deleting && setPending([])}
                 className="inline-flex h-10 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)]"
               >
-                Cancelar
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -439,7 +439,7 @@ export function GenerationsHistory() {
                 className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium text-[var(--status-error)] transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] active:scale-[0.98] disabled:opacity-40"
               >
                 <Trash2 className="h-4 w-4" />
-                {deleting ? "Apagando…" : "Apagar"}
+                {deleting ? t("common.deleting") : t("history.deleteModal.confirm")}
               </button>
             </div>
           </div>

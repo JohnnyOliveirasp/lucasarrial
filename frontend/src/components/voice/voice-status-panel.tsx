@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 import type { VoiceStatus } from "@/lib/db/types";
 import { PaywallModal } from "@/components/app/paywall-modal";
 
@@ -19,6 +20,7 @@ const PILL =
   "inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98] disabled:opacity-[0.42] disabled:pointer-events-none";
 
 export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
+  const t = useTranslations("voice");
   const router = useRouter();
   const [status, setStatus] = useState<VoiceStatus>(initialStatus);
   const [training, setTraining] = useState(false);
@@ -64,14 +66,14 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
         return;
       }
       if (!res.ok) {
-        setError(json?.error?.message || "Falha ao iniciar treinamento");
+        setError(json?.error?.message || t("panel.startError"));
         setTraining(false);
         return;
       }
       setStatus("training");
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro de rede");
+      setError(e instanceof Error ? e.message : t("common.networkError"));
       setTraining(false);
     }
   }
@@ -81,11 +83,10 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
       <>
       <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
         <h2 className="text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          Pronta para treinar
+          {t("panel.awaitingTitle")}
         </h2>
         <p className="text-sm text-[var(--body)]">
-          Áudios validados e armazenados no R2. Clique abaixo pra disparar o treinamento
-          no RunPod (~15-30min). Você pode fechar a aba — a UI atualiza sozinha.
+          {t("panel.awaitingBody")}
         </p>
         {error && (
           <p className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]">
@@ -98,14 +99,14 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
           disabled={training}
           className={`${PILL} w-fit`}
         >
-          {training ? "Disparando…" : "Iniciar treinamento"}
+          {training ? t("panel.starting") : t("panel.start")}
         </button>
       </section>
       <PaywallModal
         open={noCredits}
         onClose={() => setNoCredits(false)}
         subscribed={subscribed}
-        action="clonar a sua voz"
+        action={t("panel.paywallAction")}
         detail={paywallDetail}
       />
       </>
@@ -116,13 +117,13 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
     return (
       <section className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
         <p className="text-sm text-[var(--ink)]">
-          Esses áudios não atingem o mínimo de 20 minutos. Suba mais áudio numa nova voz.
+          {t("panel.rejectedBody")}
         </p>
         <Link
           href="/app/voice-cloning/new"
           className={`${PILL} w-fit`}
         >
-          + Treinar nova voz
+          {t("panel.rejectedCta")}
         </Link>
       </section>
     );
@@ -132,17 +133,17 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
     return (
       <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] p-6">
         <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          <span className="text-[var(--status-online)]">✓</span> Voz pronta
+          <span className="text-[var(--status-online)]">✓</span> {t("panel.readyTitle")}
         </h2>
         <p className="text-sm text-[var(--body)]">
-          LoRA treinada e armazenada. Ouça a amostra abaixo — se gostou, é só gerar.
+          {t("panel.readyBody")}
         </p>
         <VoiceSamplePlayer voiceId={voiceId} />
         <Link
           href={`/app/voice-cloning/${voiceId}/generate`}
           className={`${PILL} w-fit`}
         >
-          Gerar áudio →
+          {t("panel.readyCta")}
         </Link>
       </section>
     );
@@ -152,11 +153,11 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
     return (
       <section className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] p-6">
         <h2 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          O treinamento não completou
+          {t("panel.failedTitle")}
         </h2>
         <VoiceErrorMessage voiceId={voiceId} />
         <Link href="/app/voice-cloning/new" className={`${PILL} w-fit`}>
-          Tentar de novo com mais áudio →
+          {t("panel.failedCta")}
         </Link>
       </section>
     );
@@ -167,12 +168,12 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
       <section className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
         <p className="flex items-center gap-2 font-mono text-[12px] tracking-wide text-[var(--silver)]">
           <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-[var(--radius-full)] bg-[var(--status-warn)]" />
-          {status === "training" ? "Treinando…" : "Aguardando…"}
+          {status === "training" ? t("panel.training") : t("panel.waiting")}
         </p>
         <p className="text-sm text-[var(--mute)]">
           {status === "training"
-            ? `Pipeline rodando no RunPod (~15-30min). Atualizando a cada ${POLL_MS / 1000}s.`
-            : `Atualizando a cada ${POLL_MS / 1000}s.`}
+            ? t("panel.trainingBody", { s: POLL_MS / 1000 })
+            : t("panel.waitingBody", { s: POLL_MS / 1000 })}
         </p>
       </section>
     );
@@ -184,6 +185,7 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
 /** Amostra automática gerada no fim do treino (linha "Amostra automática" em
  *  generations). Se não existir (treino antigo / falhou best-effort), some. */
 function VoiceSamplePlayer({ voiceId }: { voiceId: string }) {
+  const t = useTranslations("voice");
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     fetch("/api/v1/generations", { cache: "no-store" })
@@ -206,7 +208,7 @@ function VoiceSamplePlayer({ voiceId }: { voiceId: string }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="font-mono text-[11px] uppercase tracking-wide text-[var(--ash)]">
-        🔊 Amostra da sua voz (gerada automaticamente)
+        {t("panel.sampleLabel")}
       </span>
       <audio src={url} controls preload="metadata" className="w-full max-w-md" />
     </div>
@@ -215,6 +217,7 @@ function VoiceSamplePlayer({ voiceId }: { voiceId: string }) {
 
 /** Mensagem de erro amigável da voz (ex.: áudio útil insuficiente + estorno). */
 function VoiceErrorMessage({ voiceId }: { voiceId: string }) {
+  const t = useTranslations("voice");
   const [msg, setMsg] = useState<string | null>(null);
   useEffect(() => {
     fetch(`/api/v1/voices/${voiceId}`, { cache: "no-store" })
@@ -224,7 +227,7 @@ function VoiceErrorMessage({ voiceId }: { voiceId: string }) {
   }, [voiceId]);
   return (
     <p className="text-sm text-[var(--body)]">
-      {msg || "Algo deu errado no treinamento. Tente novamente — se persistir, fale com o suporte."}
+      {msg || t("panel.failedFallback")}
     </p>
   );
 }

@@ -8,6 +8,7 @@
  * Custo em créditos SEMPRE visível antes de confirmar.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Check, Clock, Download, Film, Loader2, RefreshCw } from "lucide-react";
 import { VIDEO_TIERS, VideoTierId, FALLBACK_MOVEMENT_PROMPT_PT, VIDEO_DURATION_SECONDS } from "@/lib/video/tiers";
 import { PaywallModal } from "@/components/app/paywall-modal";
@@ -33,6 +34,7 @@ export function ImageAnimatePanel({
   image: AnimatableImage;
   onChanged: () => void;
 }) {
+  const t = useTranslations("images.animate");
   const [tier, setTier] = useState<VideoTierId | null>(
     (VIDEO_TIERS.find((t) => t.id === image.video_tier)?.id as VideoTierId) ?? null,
   );
@@ -90,13 +92,13 @@ export function ImageAnimatePanel({
         setPaywall({ subscribed: !!j?.error?.details?.subscribed });
         return;
       }
-      if (!res.ok) throw new Error(j?.error?.message || "Falha ao iniciar o vídeo");
+      if (!res.ok) throw new Error(j?.error?.message || t("errors.start"));
       setStatus("pending");
       setVideoUrl(null);
       setVideoError(null);
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("errors.generic"));
     } finally {
       setSubmitting(false);
     }
@@ -125,10 +127,10 @@ export function ImageAnimatePanel({
           />
           <div className="flex flex-col gap-2">
             <button type="button" onClick={downloadVideo} className={PILL}>
-              <Download className="h-4 w-4" /> Baixar vídeo
+              <Download className="h-4 w-4" /> {t("downloadVideo")}
             </button>
             <p className="max-w-xs font-mono text-[10px] tracking-wide text-[var(--ash)]">
-              Quer outro movimento? Ajuste o prompt abaixo e gere de novo (novo custo em créditos).
+              {t("retryHint")}
             </p>
           </div>
         </div>
@@ -139,9 +141,9 @@ export function ImageAnimatePanel({
         <div className="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] px-4 py-3">
           <Loader2 className="h-5 w-5 animate-spin text-[var(--silver)]" />
           <div className="flex flex-col">
-            <span className="text-sm text-[var(--ink)]">Gerando vídeo…</span>
+            <span className="text-sm text-[var(--ink)]">{t("generating")}</span>
             <span className="flex items-center gap-1 font-mono text-[10px] tracking-wide text-[var(--ash)]">
-              <Clock className="h-3 w-3" /> Pode levar alguns minutos. Você pode sair e voltar.
+              <Clock className="h-3 w-3" /> {t("generatingHint")}
             </span>
           </div>
         </div>
@@ -158,13 +160,13 @@ export function ImageAnimatePanel({
       {!inflight && (
         <>
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {VIDEO_TIERS.map((t) => {
-              const active = tier === t.id;
+            {VIDEO_TIERS.map((tv) => {
+              const active = tier === tv.id;
               return (
-                <li key={t.id}>
+                <li key={tv.id}>
                   <button
                     type="button"
-                    onClick={() => setTier(t.id)}
+                    onClick={() => setTier(tv.id)}
                     aria-pressed={active}
                     className={[
                       "flex w-full flex-col gap-1.5 rounded-[var(--radius)] border p-3 text-left transition-[border-color,box-shadow] duration-[var(--dur-base)] ease-[var(--ease-out)]",
@@ -175,12 +177,14 @@ export function ImageAnimatePanel({
                   >
                     <span className="flex items-center justify-between gap-2">
                       <span className="font-sans text-[14px] font-semibold text-[var(--ink)]">
-                        {t.medal} {t.label}
+                        {tv.medal} {tv.label}
                       </span>
                       {active && <Check className="h-4 w-4 text-[var(--silver)]" />}
                     </span>
-                    <span className="font-mono text-[11px] text-[var(--silver)]">{t.creditsPerClip} créditos</span>
-                    <span className="text-[12px] leading-snug text-[var(--mute)]">{t.blurb}</span>
+                    <span className="font-mono text-[11px] text-[var(--silver)]">
+                      {t("tierCredits", { credits: tv.creditsPerClip })}
+                    </span>
+                    <span className="text-[12px] leading-snug text-[var(--mute)]">{tv.blurb}</span>
                   </button>
                 </li>
               );
@@ -189,7 +193,7 @@ export function ImageAnimatePanel({
 
           <label className="flex flex-col gap-1.5">
             <span className="font-mono text-[11px] uppercase tracking-wide text-[var(--ash)]">
-              Movimento desejado (em português — traduzimos pra você)
+              {t("movementLabel")}
             </span>
             <textarea
               value={promptPt}
@@ -209,8 +213,8 @@ export function ImageAnimatePanel({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="font-mono text-[11px] tracking-wide text-[var(--ash)]">
               {selected
-                ? `Custo: ${selected.creditsPerClip} créditos · clipe de ${VIDEO_DURATION_SECONDS}s · 720p`
-                : "Selecione um modelo acima"}
+                ? t("cost", { credits: selected.creditsPerClip, seconds: VIDEO_DURATION_SECONDS })
+                : t("selectModel")}
             </span>
             <button type="button" disabled={!selected || submitting} onClick={submit} className={PILL}>
               {submitting ? (
@@ -221,10 +225,10 @@ export function ImageAnimatePanel({
                 <Film className="h-4 w-4" />
               )}
               {submitting
-                ? "Enviando…"
+                ? t("sending")
                 : selected
-                  ? `${status === "ready" || status === "failed" ? "Gerar de novo" : "Animar"} · ${selected.creditsPerClip} cr`
-                  : "Animar"}
+                  ? `${status === "ready" || status === "failed" ? t("regenerate") : t("animateBtn")} · ${selected.creditsPerClip} cr`
+                  : t("animateBtn")}
             </button>
           </div>
         </>
@@ -234,7 +238,7 @@ export function ImageAnimatePanel({
         open={!!paywall}
         onClose={() => setPaywall(null)}
         subscribed={paywall?.subscribed ?? false}
-        action="animar esta imagem"
+        action={t("paywallAction")}
       />
     </div>
   );

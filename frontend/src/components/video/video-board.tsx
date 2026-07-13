@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 import {
   Plus,
   Trash2,
@@ -26,22 +27,8 @@ type Project = {
   created_at: string;
 };
 
-const STATUS_LABEL: Record<Project["status"], string> = {
-  draft: "Rascunho",
-  scenes: "Cenas",
-  images: "Imagens",
-  videos: "Vídeos",
-  rendering: "Montando…",
-  done: "Pronto",
-  failed: "Falhou",
-};
-
 // Estágios "em processamento" → auto-refresh do board.
 const INFLIGHT = new Set<Project["status"]>(["rendering"]);
-
-function fallbackName(p: Project): string {
-  return p.name?.trim() || `Vídeo ${new Date(p.created_at).toLocaleDateString("pt-BR")}`;
-}
 
 function fmtDuration(secs: number | null): string {
   if (secs == null) return "—";
@@ -51,7 +38,9 @@ function fmtDuration(secs: number | null): string {
   return m > 0 ? `${m}min${r.toString().padStart(2, "0")}s` : `${r}s`;
 }
 
-export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: "story" | "sales" }) {
+export function VideoBoard({ kind = "story" }: { locale?: string; kind?: "story" | "sales" }) {
+  const t = useTranslations("videoWizard.board");
+  const tc = useTranslations("videoWizard.common");
   const [items, setItems] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,15 +54,15 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/videos?kind=${kind}`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Falha ao carregar seus vídeos");
+      if (!res.ok) throw new Error(t("loadFailed"));
       const json = await res.json();
       setItems((json.projects ?? []) as Project[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : tc("error"));
     } finally {
       setLoading(false);
     }
-  }, [kind]);
+  }, [kind, t, tc]);
 
   useEffect(() => {
     load();
@@ -98,12 +87,12 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Falha ao apagar");
+        throw new Error(j?.error?.message || t("deleteFailed"));
       }
       setPending([]);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : tc("error"));
     } finally {
       setDeleting(false);
     }
@@ -124,13 +113,13 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
-      if (!res.ok) throw new Error("Falha ao renomear");
+      if (!res.ok) throw new Error(t("renameFailed"));
       setItems((prev) =>
         prev.map((p) => (p.id === id ? { ...p, name: name === "" ? null : name } : p)),
       );
       setEditingId(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : tc("error"));
     } finally {
       setSavingId(null);
     }
@@ -138,11 +127,11 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
 
   const NewButton = (
     <Link
-      href={kind === "sales" ? `/${locale}/app/videos/vendas/new` : `/${locale}/app/videos/new`}
+      href={kind === "sales" ? "/app/videos/vendas/new" : "/app/videos/new"}
       className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98]"
     >
       <Plus className="h-4 w-4" />
-      Novo vídeo
+      {t("newVideo")}
     </Link>
   );
 
@@ -150,7 +139,7 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
     return (
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--silver)]" />
-        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">Carregando…</p>
+        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">{tc("loading")}</p>
       </section>
     );
   }
@@ -159,10 +148,7 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
     return (
       <section className="flex flex-col items-center gap-5 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <Clapperboard className="h-10 w-10 text-[var(--ash)]" />
-        <p className="max-w-sm text-sm text-[var(--mute)]">
-          Nenhum vídeo ainda. Comece escolhendo um áudio seu (de até 1min30s) e
-          deixe a IA montar as cenas.
-        </p>
+        <p className="max-w-sm text-sm text-[var(--mute)]">{t("empty")}</p>
         {NewButton}
       </section>
     );
@@ -172,7 +158,7 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <span className="font-mono text-[11px] tracking-wide text-[var(--ash)]">
-          {items.length} {items.length === 1 ? "projeto" : "projetos"}
+          {t("projectCount", { n: items.length })}
         </span>
         {NewButton}
       </div>
@@ -220,21 +206,24 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
                     maxLength={120}
                     disabled={savingId === p.id}
                     className="w-52 rounded-[var(--radius-sm)] border border-[var(--hairline-bright)] bg-[var(--surface-deep)] px-2 py-1 text-base font-semibold text-[var(--ink)] outline-none disabled:opacity-50"
-                    aria-label="Nome do vídeo"
+                    aria-label={t("nameAria")}
                   />
-                  <button type="button" onClick={() => saveEdit(p.id)} aria-label="Salvar" className="text-[var(--silver)] hover:text-[var(--ink)]">
+                  <button type="button" onClick={() => saveEdit(p.id)} aria-label={t("save")} className="text-[var(--silver)] hover:text-[var(--ink)]">
                     <Check className="h-4 w-4" />
                   </button>
-                  <button type="button" onClick={() => setEditingId(null)} aria-label="Cancelar" className="text-[var(--mute)] hover:text-[var(--ink)]">
+                  <button type="button" onClick={() => setEditingId(null)} aria-label={tc("cancel")} className="text-[var(--mute)] hover:text-[var(--ink)]">
                     <X className="h-4 w-4" />
                   </button>
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5">
                   <span className="truncate text-base font-semibold text-[var(--ink)]">
-                    {fallbackName(p)}
+                    {p.name?.trim() ||
+                      tc("videoFallbackName", {
+                        date: new Date(p.created_at).toLocaleDateString("pt-BR"),
+                      })}
                   </span>
-                  <button type="button" onClick={() => startEdit(p)} aria-label="Renomear" className="text-[var(--mute)] hover:text-[var(--ink)]">
+                  <button type="button" onClick={() => startEdit(p)} aria-label={t("rename")} className="text-[var(--mute)] hover:text-[var(--ink)]">
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
                 </span>
@@ -249,26 +238,26 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
                         : "text-[var(--mute)]"
                   }
                 >
-                  {STATUS_LABEL[p.status]}
+                  {t(`status.${p.status}`)}
                 </span>
                 <span>· {fmtDuration(p.audio_duration_seconds)}</span>
-                {p.scene_count != null && <span>· {p.scene_count} cenas</span>}
+                {p.scene_count != null && <span>· {t("sceneMeta", { n: p.scene_count })}</span>}
                 <span>· {new Date(p.created_at).toLocaleString("pt-BR")}</span>
               </div>
             </div>
 
             <div className="flex items-center gap-3 sm:justify-end">
               <Link
-                href={`/${locale}/app/videos/${p.id}`}
+                href={`/app/videos/${p.id}`}
                 className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-3 py-1.5 font-sans text-[13px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)]"
               >
-                Abrir
+                {t("open")}
                 <ChevronRight className="h-3.5 w-3.5" />
               </Link>
               <button
                 type="button"
                 onClick={() => setPending([p.id])}
-                aria-label="Apagar"
+                aria-label={t("delete")}
                 className="text-[var(--mute)] transition-colors hover:text-[var(--status-error)]"
               >
                 <Trash2 className="h-5 w-5" />
@@ -292,12 +281,13 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
               <h3 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-                Apagar vídeo?
+                {t("deleteTitle")}
               </h3>
             </div>
             <p className="text-sm text-[var(--body)]">
-              Ação <strong className="text-[var(--ink)]">irreversível</strong>. Remove o projeto e
-              tudo que ele já gerou.
+              {t.rich("deleteWarning", {
+                strong: (chunks) => <strong className="text-[var(--ink)]">{chunks}</strong>,
+              })}
             </p>
             <div className="flex justify-end gap-3">
               <button
@@ -305,7 +295,7 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
                 onClick={() => !deleting && setPending([])}
                 className="inline-flex h-10 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
               >
-                Cancelar
+                {tc("cancel")}
               </button>
               <button
                 type="button"
@@ -314,7 +304,7 @@ export function VideoBoard({ locale, kind = "story" }: { locale: string; kind?: 
                 className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--status-error)] hover:border-[var(--hairline-bright)] disabled:opacity-40"
               >
                 <Trash2 className="h-4 w-4" />
-                {deleting ? "Apagando…" : "Apagar"}
+                {deleting ? t("deleting") : t("delete")}
               </button>
             </div>
           </div>

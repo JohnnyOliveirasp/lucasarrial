@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { Upload, X, AudioLines, Check, FolderUp, Mic } from "lucide-react";
 import { measureAudioDuration, formatDuration } from "@/lib/audio/duration";
@@ -33,6 +33,7 @@ const SECONDARY =
 
 export function VoiceCreator() {
   const t = useTranslations("app.voiceCloningNew");
+  const tc = useTranslations("voiceCreate");
   const router = useRouter();
 
   const [step, setStep] = useState<Step>("form");
@@ -337,10 +338,9 @@ export function VoiceCreator() {
         <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-2.5 text-sm text-[var(--ink)]">
           <Mic className="h-4 w-4 flex-shrink-0 text-[var(--status-online)]" />
           <span>
-            {recorderImport.count} gravaç{recorderImport.count === 1 ? "ão" : "ões"} do Gravador
-            {" "}carregada{recorderImport.count === 1 ? "" : "s"} automaticamente.
+            {tc("recorderImport.loaded", { count: recorderImport.count })}
             {recorderImport.skipped > 0
-              ? ` (${recorderImport.skipped} clipe(s) menores ficaram de fora — limite de ${MAX_FILES} arquivos.)`
+              ? ` ${tc("recorderImport.skipped", { skipped: recorderImport.skipped, max: MAX_FILES })}`
               : ""}
           </span>
         </p>
@@ -556,6 +556,7 @@ function FileList({
   onRemove: (id: string) => void;
   t: TFn;
 }) {
+  const tc = useTranslations("voiceCreate");
   return (
     <ul className="flex flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)]">
       {files.map((f, i) => (
@@ -581,7 +582,7 @@ function FileList({
             onClick={() => onRemove(f.id)}
             disabled={f.state === "uploading"}
             className="text-[var(--mute)] transition-colors hover:text-[var(--ink)] disabled:opacity-30"
-            aria-label="Remove"
+            aria-label={tc("fileList.remove")}
           >
             <X className="h-4 w-4" />
           </button>
@@ -606,6 +607,7 @@ function DurationMeter({
   meets: boolean;
   t: TFn;
 }) {
+  const tc = useTranslations("voiceCreate");
   const pct = Math.min(100, (total / recommended) * 100);
   return (
     <div className="flex flex-col gap-2">
@@ -627,7 +629,7 @@ function DurationMeter({
         <div
           className="absolute inset-y-0 w-px bg-[var(--ink)]"
           style={{ left: `${(min / recommended) * 100}%` }}
-          aria-label="minimum threshold"
+          aria-label={tc("meter.minThreshold")}
         />
       </div>
       <div className="flex items-center justify-between font-mono text-[10px] tracking-wide text-[var(--ash)]">

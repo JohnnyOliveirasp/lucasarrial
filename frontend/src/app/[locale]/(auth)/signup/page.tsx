@@ -1,6 +1,6 @@
-import Link from "next/link";
 import Image from "next/image";
 import { getTranslations, setRequestLocale } from "next-intl/server";
+import { Link } from "@/i18n/navigation";
 import { SignupForm } from "@/components/auth/signup-form";
 
 export default async function SignupPage({

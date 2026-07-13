@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 import {
   AudioLines,
   Clapperboard,
@@ -38,11 +39,11 @@ type Project = {
 
 // Os 5 estágios do pipeline. `key` casa com os status que já "passaram" dele.
 const STAGES = [
-  { id: "audio", label: "Áudio", icon: AudioLines },
-  { id: "scenes", label: "Cenas", icon: Layers },
-  { id: "images", label: "Imagens", icon: ImageIcon },
-  { id: "videos", label: "Vídeos", icon: Film },
-  { id: "final", label: "Final", icon: Clapperboard },
+  { id: "audio", icon: AudioLines },
+  { id: "scenes", icon: Layers },
+  { id: "images", icon: ImageIcon },
+  { id: "videos", icon: Film },
+  { id: "final", icon: Clapperboard },
 ] as const;
 
 // Índice do estágio "atual" a partir do status do projeto.
@@ -65,7 +66,9 @@ function fmtDuration(secs: number | null): string {
   return m > 0 ? `${m}min${r.toString().padStart(2, "0")}s` : `${r}s`;
 }
 
-export function VideoWizard({ projectId, locale }: { projectId: string; locale: string }) {
+export function VideoWizard({ projectId }: { projectId: string }) {
+  const t = useTranslations("videoWizard.wizard");
+  const tc = useTranslations("videoWizard.common");
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,30 +76,28 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/videos/${projectId}`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Projeto não encontrado");
+      if (!res.ok) throw new Error(tc("projectNotFound"));
       const json = await res.json();
       setProject(json.project as Project);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : tc("error"));
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, tc]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   const boardHref =
-    project?.kind === "sales"
-      ? `/${locale}/app/videos/vendas`
-      : `/${locale}/app/videos/history`;
+    project?.kind === "sales" ? "/app/videos/vendas" : "/app/videos/history";
 
   if (loading) {
     return (
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--silver)]" />
-        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">Carregando projeto…</p>
+        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">{tc("loadingProject")}</p>
       </section>
     );
   }
@@ -104,13 +105,13 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
   if (error || !project) {
     return (
       <div className="flex flex-col gap-5">
-        <p className="text-sm text-[var(--status-error)]">{error ?? "Projeto não encontrado"}</p>
+        <p className="text-sm text-[var(--status-error)]">{error ?? tc("projectNotFound")}</p>
         <Link
           href={boardHref}
           className="inline-flex h-10 w-fit items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
         >
           <ArrowLeft className="h-4 w-4" />
-          Voltar ao board
+          {t("backBoard")}
         </Link>
       </div>
     );
@@ -128,12 +129,14 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
           className="inline-flex w-fit items-center gap-1.5 font-mono text-[11px] tracking-wide text-[var(--ash)] transition-colors hover:text-[var(--ink)]"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Board
+          {t("board")}
         </Link>
-        <Eyebrow>Wizard de vídeo</Eyebrow>
+        <Eyebrow>{t("eyebrow")}</Eyebrow>
         <h1 className="font-sans text-[32px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
           {project.name?.trim() ||
-            `Vídeo ${new Date(project.created_at).toLocaleDateString("pt-BR")}`}
+            tc("videoFallbackName", {
+              date: new Date(project.created_at).toLocaleDateString("pt-BR"),
+            })}
         </h1>
       </header>
 
@@ -156,7 +159,7 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
                 ].join(" ")}
               >
                 <Icon className={`h-4 w-4 ${done ? "text-[var(--silver)]" : ""}`} />
-                {stage.label}
+                {t(`stages.${stage.id}`)}
               </span>
               {i < STAGES.length - 1 && (
                 <span className="h-px w-4 bg-[var(--hairline)]" aria-hidden />
@@ -171,7 +174,7 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
         <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
-              Produto & apresentador
+              {t("salesHeader")}
             </h2>
             {project.product_price && (
               <span className="font-mono text-[12px] text-[var(--silver)]">{project.product_price}</span>
@@ -180,17 +183,17 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
           <div className="flex flex-wrap gap-3">
             {(project.product_images ?? []).map((img, i) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={img.key} src={img.url} alt={`produto ${i + 1}`} className="h-20 w-20 rounded-[var(--radius)] border border-[var(--hairline-strong)] object-cover" />
+              <img key={img.key} src={img.url} alt={t("productAlt", { n: i + 1 })} className="h-20 w-20 rounded-[var(--radius)] border border-[var(--hairline-strong)] object-cover" />
             ))}
             {(project.reference_images ?? []).map((img, i) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={img.key} src={img.url} alt={`apresentador(a) ${i + 1}`} className="h-20 w-20 rounded-full border border-[var(--hairline-strong)] object-cover" />
+              <img key={img.key} src={img.url} alt={t("presenterAlt", { n: i + 1 })} className="h-20 w-20 rounded-full border border-[var(--hairline-strong)] object-cover" />
             ))}
           </div>
           {project.product_analysis && (
             <details className="group">
               <summary className="cursor-pointer font-mono text-[11px] tracking-wide text-[var(--ash)] transition-colors hover:text-[var(--ink)]">
-                ver análise do produto
+                {t("seeAnalysis")}
               </summary>
               <div className="mt-2 whitespace-pre-wrap rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)] p-4 text-[13px] leading-relaxed text-[var(--body)]">
                 {project.product_analysis}
@@ -207,20 +210,18 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
             <Check className="h-3.5 w-3.5" />
           </span>
           <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
-            Áudio selecionado
+            {t("audioSelected")}
           </h2>
         </div>
         {project.audio_url ? (
           <audio controls preload="metadata" src={project.audio_url} className="h-9 w-full sm:max-w-md" />
         ) : (
-          <p className="font-mono text-[11px] text-[var(--ash)]">áudio indisponível</p>
+          <p className="font-mono text-[11px] text-[var(--ash)]">{tc("audioUnavailable")}</p>
         )}
         <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] tracking-wide text-[var(--ash)]">
           <span>{fmtDuration(project.audio_duration_seconds)}</span>
           <span>· {project.aspect_ratio}</span>
-          <span>
-            · ~{sceneCount} cenas de {SECONDS_PER_SCENE}s
-          </span>
+          <span>· {t("sceneEstimate", { n: sceneCount, s: SECONDS_PER_SCENE })}</span>
         </div>
         {project.script_text && (
           <p className="line-clamp-3 max-w-2xl rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)] p-3 text-[13px] text-[var(--mute)]">
@@ -232,7 +233,6 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
       {/* Estágio 2 — Cenas */}
       <SceneStage
         projectId={project.id}
-        locale={locale}
         status={project.status}
         estimatedScenes={sceneCount}
         onProjectChanged={load}
@@ -240,12 +240,12 @@ export function VideoWizard({ projectId, locale }: { projectId: string; locale: 
 
       {/* Estágio 3 — Imagens (aparece quando as cenas já existem) */}
       {(project.scene_count ?? 0) > 0 && (
-        <ImageStage projectId={project.id} locale={locale} onProjectChanged={load} />
+        <ImageStage projectId={project.id} onProjectChanged={load} />
       )}
 
       {/* Estágio 4 — Vídeos (aparece quando as cenas já existem; gate interno exige imagens prontas) */}
       {(project.scene_count ?? 0) > 0 && (
-        <VideoStage projectId={project.id} locale={locale} onProjectChanged={load} />
+        <VideoStage projectId={project.id} onProjectChanged={load} />
       )}
 
     </div>

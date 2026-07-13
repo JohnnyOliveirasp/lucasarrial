@@ -5,6 +5,7 @@
  * listar (só prefixo + metadados) e revogar. Tudo via sessão do painel.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { KeyRound, Plus, Copy, Check, Trash2, AlertTriangle } from "lucide-react";
 import { Button, Input, Badge } from "@/components/ui";
 
@@ -18,6 +19,7 @@ type ApiKey = {
 };
 
 export function ApiKeysManager() {
+  const t = useTranslations("shell.apiKeys");
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
@@ -31,15 +33,15 @@ export function ApiKeysManager() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/v1/api-keys", { cache: "no-store" });
-      if (!res.ok) throw new Error("Falha ao carregar chaves");
+      if (!res.ok) throw new Error(t("loadError"));
       const json = await res.json();
       setKeys((json.api_keys ?? []) as ApiKey[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("genericError"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load();
@@ -57,14 +59,14 @@ export function ApiKeysManager() {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Falha ao gerar chave");
+        throw new Error(j?.error?.message || t("createError"));
       }
       const json = await res.json();
       setNewKey(json.api_key.key as string);
       setName("");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("genericError"));
     } finally {
       setCreating(false);
     }
@@ -91,12 +93,12 @@ export function ApiKeysManager() {
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Falha ao revogar");
+        throw new Error(j?.error?.message || t("revokeError"));
       }
       setPendingRevoke(null);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("genericError"));
     } finally {
       setRevoking(false);
     }
@@ -110,19 +112,18 @@ export function ApiKeysManager() {
       <div className="flex items-center gap-2.5">
         <KeyRound className="h-5 w-5 text-[var(--silver)]" />
         <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
-          Chaves de API
+          {t("title")}
         </h2>
       </div>
       <p className="text-[14px] leading-relaxed text-[var(--mute)]">
-        Use uma chave pra gerar áudio por fora do site (cURL, n8n, scripts). A
-        chave fica amarrada à sua conta e só acessa as suas vozes.
+        {t("description")}
       </p>
 
       {/* Segredo recém-criado (aparece uma única vez) */}
       {newKey && (
         <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] p-4">
           <span className="text-[13px] text-[var(--silver)]">
-            Copie agora — a chave não será mostrada de novo
+            {t("copyOnce")}
           </span>
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2.5 font-mono text-[13px] text-[var(--silver)]">
@@ -135,7 +136,7 @@ export function ApiKeysManager() {
                 copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />
               }
             >
-              {copied ? "Copiado" : "Copiar"}
+              {copied ? t("copied") : t("copy")}
             </Button>
           </div>
         </div>
@@ -147,7 +148,7 @@ export function ApiKeysManager() {
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Nome da chave (ex: máquina n8n)"
+          placeholder={t("namePlaceholder")}
           maxLength={60}
           iconLeft={<KeyRound className="h-4 w-4" />}
           className="sm:flex-1"
@@ -159,7 +160,7 @@ export function ApiKeysManager() {
           iconLeft={<Plus className="h-4 w-4" />}
           className="shrink-0"
         >
-          {creating ? "Gerando…" : "Gerar chave"}
+          {creating ? t("creating") : t("create")}
         </Button>
       </div>
 
@@ -174,10 +175,10 @@ export function ApiKeysManager() {
 
       {/* Lista */}
       {loading ? (
-        <p className="text-[13px] text-[var(--ash)]">Carregando…</p>
+        <p className="text-[13px] text-[var(--ash)]">{t("loading")}</p>
       ) : keys.length === 0 ? (
         <p className="rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] px-4 py-7 text-center text-[14px] text-[var(--mute)]">
-          Nenhuma chave ainda. Gere a primeira acima.
+          {t("empty")}
         </p>
       ) : (
         <ul className="flex flex-col rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
@@ -200,12 +201,12 @@ export function ApiKeysManager() {
                     </code>
                     {revoked && (
                       <Badge variant="soft" className="text-[var(--ash)]">
-                        revogada
+                        {t("revokedBadge")}
                       </Badge>
                     )}
                   </div>
                   <span className="text-[12px] text-[var(--ash)]">
-                    criada {fmt(k.created_at)} · último uso {fmt(k.last_used_at)}
+                    {t("meta", { created: fmt(k.created_at), used: fmt(k.last_used_at) })}
                   </span>
                 </div>
                 {!revoked && (
@@ -213,11 +214,11 @@ export function ApiKeysManager() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setPendingRevoke(k)}
-                    aria-label="Revogar chave"
+                    aria-label={t("revokeAria")}
                     iconLeft={<Trash2 className="h-3.5 w-3.5" />}
                     className="self-start text-[var(--mute)] hover:text-[var(--status-error)] sm:self-center"
                   >
-                    Revogar
+                    {t("revoke")}
                   </Button>
                 )}
               </li>
@@ -241,19 +242,22 @@ export function ApiKeysManager() {
             <div className="flex items-center gap-2.5">
               <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
               <h3 className="text-[20px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
-                Revogar “{pendingRevoke.name}”?
+                {t("revokeTitle", { name: pendingRevoke.name })}
               </h3>
             </div>
             <p className="text-[14px] leading-relaxed text-[var(--mute)]">
-              Quem estiver usando essa chave para de funcionar na hora. Ação{" "}
-              <strong className="font-medium text-[var(--ink)]">irreversível</strong>.
+              {t.rich("revokeBody", {
+                strong: (chunks) => (
+                  <strong className="font-medium text-[var(--ink)]">{chunks}</strong>
+                ),
+              })}
             </p>
             <div className="flex justify-end gap-3">
               <Button
                 variant="ghost"
                 onClick={() => !revoking && setPendingRevoke(null)}
               >
-                Cancelar
+                {t("cancel")}
               </Button>
               <Button
                 variant="secondary"
@@ -262,7 +266,7 @@ export function ApiKeysManager() {
                 iconLeft={<Trash2 className="h-4 w-4" />}
                 className="text-[var(--status-error)] hover:border-[var(--status-error)]"
               >
-                {revoking ? "Revogando…" : "Revogar"}
+                {revoking ? t("revoking") : t("revoke")}
               </Button>
             </div>
           </div>

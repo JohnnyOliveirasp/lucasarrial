@@ -7,7 +7,8 @@
  * - Fast path por localStorage (por versão) pra não piscar a cada navegação.
  */
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
 import { CheckCircle2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { LEGAL_DOCS, CONSENT_VERSION } from "@/lib/legal";
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui";
 const CACHE_PREFIX = `aiverse-consent-${CONSENT_VERSION}`;
 
 export function ConsentGate() {
+  const t = useTranslations("shell.consent");
   const router = useRouter();
   const [checkedServer, setCheckedServer] = useState(false);
   const [show, setShow] = useState(false);
@@ -71,7 +73,7 @@ export function ConsentGate() {
       const res = await fetch("/api/v1/consent", { method: "POST" });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Falha ao registrar o aceite");
+        throw new Error(j?.error?.message || t("registerError"));
       }
       try {
         if (cacheKeyRef.current) localStorage.setItem(cacheKeyRef.current, "1");
@@ -80,7 +82,7 @@ export function ConsentGate() {
       }
       setShow(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("genericError"));
     } finally {
       setSubmitting(false);
     }
@@ -111,10 +113,10 @@ export function ConsentGate() {
             id="consent-title"
             className="font-sans text-2xl font-semibold tracking-[-0.02em] text-[var(--ink)]"
           >
-            Antes de continuar
+            {t("title")}
           </h2>
           <p className="text-sm text-[var(--mute)]">
-            Leia e aceite nossos termos para usar a plataforma.
+            {t("subtitle")}
           </p>
           <div className="flex flex-wrap gap-2">
             {LEGAL_DOCS.map((d, i) => (
@@ -149,10 +151,11 @@ export function ConsentGate() {
               className="mt-0.5 size-4 accent-[var(--ink)]"
             />
             <span className="text-sm text-[var(--body)]">
-              Declaro que li e concordo com os{" "}
-              <strong className="font-semibold text-[var(--ink)]">Termos de Uso</strong>, a{" "}
-              <strong className="font-semibold text-[var(--ink)]">Política de Privacidade</strong> e a{" "}
-              <strong className="font-semibold text-[var(--ink)]">Política de Uso</strong>.
+              {t.rich("declaration", {
+                strong: (chunks) => (
+                  <strong className="font-semibold text-[var(--ink)]">{chunks}</strong>
+                ),
+              })}
             </span>
           </label>
 
@@ -172,7 +175,7 @@ export function ConsentGate() {
               disabled={submitting}
               iconLeft={<LogOut className="h-4 w-4" />}
             >
-              Sair
+              {t("signOut")}
             </Button>
             <Button
               variant="primary"
@@ -180,7 +183,7 @@ export function ConsentGate() {
               disabled={!agree || submitting}
               iconLeft={<CheckCircle2 className="h-4 w-4" />}
             >
-              {submitting ? "Registrando…" : "Aceitar e continuar"}
+              {submitting ? t("submitting") : t("accept")}
             </Button>
           </div>
         </div>

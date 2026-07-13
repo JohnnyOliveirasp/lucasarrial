@@ -6,6 +6,7 @@
  * manter os arquivos <400 linhas.
  */
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Clapperboard, Download, Loader2, RefreshCw, UserSquare2 } from "lucide-react";
 import { downloadFromUrl } from "@/components/image/download-file";
 import { STUDIO_MONTAGE_COST, STUDIO_SCENE_COST, studioFaceCost } from "@/lib/studio/pricing";
@@ -64,6 +65,7 @@ export function StudioResult({
   onFace: (file: File) => void;
   onReset: () => void;
 }) {
+  const t = useTranslations("studio");
   const faceInput = useRef<HTMLInputElement>(null);
   const transcript = project.transcript_words?.map((w) => w.word.trim()).join(" ") ?? "";
   const faceCost = studioFaceCost(project.transcript_words ?? []);
@@ -85,11 +87,9 @@ export function StudioResult({
         <div className="flex items-center gap-3">
           <Loader2 className="h-6 w-6 animate-spin text-[var(--silver)]" />
           <div className="flex flex-col">
-            <span className="text-sm text-[var(--ink)]">
-              Editando seu áudio — cortando erros e pausas…
-            </span>
+            <span className="text-sm text-[var(--ink)]">{t("result.processingTitle")}</span>
             <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-              Leva ~1-2 minutos. Pode sair e voltar — fica salvo no histórico.
+              {t("result.processingHint")}
             </span>
           </div>
         </div>
@@ -98,12 +98,12 @@ export function StudioResult({
       {project.status === "audio_ready" && (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 font-mono text-[11px] tracking-wide text-[var(--silver)]">
-            <span>bruto: {fmtSecs(project.duration_raw_seconds)}</span>
-            <span>→ limpo: {fmtSecs(project.duration_clean_seconds)}</span>
+            <span>{t("result.statRaw", { d: fmtSecs(project.duration_raw_seconds) })}</span>
+            <span>{t("result.statClean", { d: fmtSecs(project.duration_clean_seconds) })}</span>
             <span>
               {project.removed_takes
-                ? `${project.removed_takes} trecho(s) errado(s) removido(s)`
-                : "nenhuma repetição detectada"}
+                ? t("result.statRemoved", { n: project.removed_takes })
+                : t("result.statNoRepeats")}
             </span>
           </div>
           {project.clean_audio_url && (
@@ -111,14 +111,14 @@ export function StudioResult({
           )}
           {transcript && (
             <div className="flex flex-col gap-1.5">
-              <span className={LABEL}>O que ficou no áudio</span>
+              <span className={LABEL}>{t("result.transcriptLabel")}</span>
               <p className="max-w-2xl text-sm leading-relaxed text-[var(--mute)]">{transcript}</p>
             </div>
           )}
           {project.edit_report && (
             <details className="max-w-2xl">
               <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-wide text-[var(--ash)] hover:text-[var(--silver)]">
-                Relatório da edição (fala a fala)
+                {t("result.editReport")}
               </summary>
               <pre className="mt-2 overflow-x-auto rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-3 font-mono text-[11px] leading-relaxed text-[var(--mute)]">
                 {project.edit_report}
@@ -132,26 +132,26 @@ export function StudioResult({
                 onClick={() => downloadFromUrl(project.clean_audio_url!, project.name || "audio-limpo", "wav")}
                 className={GHOST}
               >
-                <Download className="h-4 w-4" /> Baixar áudio limpo
+                <Download className="h-4 w-4" /> {t("result.downloadClean")}
               </button>
             )}
             <button type="button" onClick={onReset} className={GHOST}>
-              <RefreshCw className="h-4 w-4" /> Preparar outro áudio
+              <RefreshCw className="h-4 w-4" /> {t("result.prepareAnother")}
             </button>
           </div>
 
           {/* ───── F3: cenas do roteiro (banco pessoal) ───── */}
           <div className="mt-1 flex flex-col gap-3 border-t border-dashed border-[var(--hairline-strong)] pt-4">
-            <span className={LABEL}>Cenas do roteiro (b-roll gerado por IA)</span>
+            <span className={LABEL}>{t("result.scenesLabel")}</span>
 
             {(!project.scenes_status || project.scenes_status === "idle") && (
               <div className="flex flex-col gap-1.5">
                 <button type="button" onClick={onScenes} disabled={busy} className={`${GHOST} w-fit`}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
-                  Gerar cenas do roteiro
+                  {t("result.scenesGenerate")}
                 </button>
                 <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-                  {fmtCr(STUDIO_SCENE_COST)} cr por cena NOVA — cenas do seu banco entram de graça (elas ficam salvas pra sempre).
+                  {t("result.scenesCostHint", { cost: fmtCr(STUDIO_SCENE_COST) })}
                 </span>
               </div>
             )}
@@ -159,27 +159,29 @@ export function StudioResult({
             {project.scenes_status === "generating" && (
               <span className="flex items-center gap-2 text-sm text-[var(--ink)]">
                 <Loader2 className="h-5 w-5 animate-spin text-[var(--silver)]" />
-                Gerando cenas — {(project.scenes ?? []).filter((s) => s.status === "ready").length}/
-                {(project.scenes ?? []).length} prontas… (~1-3 min por cena)
+                {t("result.scenesGenerating", {
+                  ready: (project.scenes ?? []).filter((s) => s.status === "ready").length,
+                  total: (project.scenes ?? []).length,
+                })}
               </span>
             )}
 
             {project.scenes_status === "ready" && (
               <span className="font-mono text-[11px] tracking-wide text-[var(--silver)]">
-                ✓ {(project.scenes ?? []).length} cenas prontas
+                ✓ {t("result.scenesReadyCount", { n: (project.scenes ?? []).length })}
                 {(project.scenes ?? []).some((s) => s.reused)
-                  ? ` (${(project.scenes ?? []).filter((s) => s.reused).length} do seu banco, de graça)`
-                  : ""} — a montagem vai usar as SUAS cenas.
+                  ? ` ${t("result.scenesFromBank", { n: (project.scenes ?? []).filter((s) => s.reused).length })}`
+                  : ""} — {t("result.scenesWillUseYours")}
               </span>
             )}
 
             {project.scenes_status === "failed" && (
               <div className="flex flex-col gap-2">
                 <p className="font-mono text-[11px] tracking-wide text-[var(--status-error)]">
-                  {(project.scenes ?? []).filter((s) => s.status === "failed").length} cena(s) falharam na geração.
+                  {t("result.scenesFailed", { n: (project.scenes ?? []).filter((s) => s.status === "failed").length })}
                 </p>
                 <button type="button" onClick={onScenes} disabled={busy} className={`${GHOST} w-fit`}>
-                  <RefreshCw className="h-4 w-4" /> Tentar as cenas que falharam
+                  <RefreshCw className="h-4 w-4" /> {t("result.scenesRetry")}
                 </button>
               </div>
             )}
@@ -193,7 +195,7 @@ export function StudioResult({
                   >
                     {s.status === "ready" ? "✓" : s.status === "failed" ? "✕" : <Loader2 className="h-3 w-3 animate-spin" />}
                     {s.concept}
-                    {s.reused && <span className="text-[var(--ash)]">· banco</span>}
+                    {s.reused && <span className="text-[var(--ash)]">· {t("result.bankChip")}</span>}
                   </li>
                 ))}
               </ul>
@@ -202,7 +204,7 @@ export function StudioResult({
 
           {/* ───── F4: presença (rosto lip-sync) no hook e no fechamento ───── */}
           <div className="mt-1 flex flex-col gap-3 border-t border-dashed border-[var(--hairline-strong)] pt-4">
-            <span className={LABEL}>Sua presença no vídeo (rosto na abertura e no fechamento)</span>
+            <span className={LABEL}>{t("result.faceLabel")}</span>
             <input
               ref={faceInput}
               type="file"
@@ -214,26 +216,26 @@ export function StudioResult({
               <div className="flex flex-col gap-2">
                 {project.face_status === "failed" && (
                   <p className="font-mono text-[11px] tracking-wide text-[var(--status-error)]">
-                    A geração do rosto falhou. Tente novamente.
+                    {t("result.faceFailed")}
                   </p>
                 )}
                 <button type="button" onClick={() => faceInput.current?.click()} disabled={busy} className={`${GHOST} w-fit`}>
-                  <UserSquare2 className="h-4 w-4" /> Escolher minha foto e gerar{faceCost > 0 ? ` · ${fmtCr(faceCost)} cr` : ""}
+                  <UserSquare2 className="h-4 w-4" /> {t("result.faceCta")}{faceCost > 0 ? ` · ${fmtCr(faceCost)} cr` : ""}
                 </button>
                 <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-                  Opcional — sem foto, o vídeo sai só com as cenas. Preço do Clone Turbo sobre a abertura e o fechamento.
+                  {t("result.faceHint")}
                 </span>
               </div>
             )}
             {project.face_status === "processing" && (
               <span className="flex items-center gap-2 text-sm text-[var(--ink)]">
                 <Loader2 className="h-5 w-5 animate-spin text-[var(--silver)]" />
-                Gerando você falando (abertura e fechamento)… leva alguns minutos.
+                {t("result.faceProcessing")}
               </span>
             )}
             {project.face_status === "ready" && (
               <span className="font-mono text-[11px] tracking-wide text-[var(--silver)]">
-                ✓ Presença pronta — você abre e fecha o vídeo falando.
+                {t("result.faceReady")}
               </span>
             )}
           </div>
@@ -241,9 +243,7 @@ export function StudioResult({
           {/* ───── F1/F2: vídeo montado + legenda + música ───── */}
           <div className="mt-1 flex flex-col gap-3 border-t border-dashed border-[var(--hairline-strong)] pt-4">
             <span className={LABEL}>
-              {project.scenes_status === "ready"
-                ? "Montar o vídeo — com as suas cenas + legenda + música"
-                : "Vídeo de teste — montagem + legenda + música (cenas fixas)"}
+              {project.scenes_status === "ready" ? t("result.montageLabelScenes") : t("result.montageLabelTest")}
             </span>
 
             {(!project.montage_status || project.montage_status === "idle") && (

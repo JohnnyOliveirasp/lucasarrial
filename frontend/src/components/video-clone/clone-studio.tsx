@@ -7,6 +7,7 @@
  * Quem não tem foto/áudio cria nas telas próprias (links nos seletores).
  */
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Check, Clock, Download, Film, Loader2, RefreshCw } from "lucide-react";
 import {
   CLONE_MAX_AUDIO_SECONDS,
@@ -31,9 +32,9 @@ async function presignAndPut(kind: "image" | "audio", file: File): Promise<strin
     body: JSON.stringify({ kind, filename: file.name, content_type: file.type, size: file.size }),
   });
   const j = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(j?.error?.message || "Falha ao preparar upload");
+  if (!res.ok) throw new Error(j?.error?.message || "");
   const put = await fetch(j.upload_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
-  if (!put.ok) throw new Error("Falha no upload do arquivo");
+  if (!put.ok) throw new Error("");
   return j.key as string;
 }
 
@@ -63,6 +64,7 @@ export function CloneStudio({
   unlimited: boolean;
   onChanged: () => void;
 }) {
+  const t = useTranslations("videoClone.studio");
   const [image, setImage] = useState<ImageChoice | null>(null);
   const [audio, setAudio] = useState<AudioChoice | null>(null);
   const [uploading, setUploading] = useState<"image" | "audio" | null>(null);
@@ -86,7 +88,7 @@ export function CloneStudio({
       const key = await presignAndPut("image", file);
       setImage({ kind: "upload", key, preview: URL.createObjectURL(file) });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro no upload");
+      setError(e instanceof Error && e.message ? e.message : t("errors.upload"));
     } finally {
       setUploading(null);
     }
@@ -96,11 +98,11 @@ export function CloneStudio({
     setError(null);
     const seconds = await readAudioDuration(file);
     if (seconds <= 0) {
-      setError("Não conseguimos ler esse áudio. Tente MP3 ou WAV.");
+      setError(t("errors.readAudio"));
       return;
     }
     if (seconds > CLONE_MAX_AUDIO_SECONDS) {
-      setError(`O áudio tem ${Math.round(seconds)}s — o máximo é ${CLONE_MAX_AUDIO_SECONDS}s (1min30s).`);
+      setError(t("errors.tooLong", { n: Math.round(seconds), max: CLONE_MAX_AUDIO_SECONDS }));
       return;
     }
     setUploading("audio");
@@ -121,7 +123,7 @@ export function CloneStudio({
             prev && prev.kind === "upload" && prev.key === key
               ? {
                   ...prev,
-                  text: (j.text as string)?.trim() || "(não detectamos fala nesse áudio)",
+                  text: (j.text as string)?.trim() || t("noSpeech"),
                   seconds: typeof j.duration_seconds === "number" && j.duration_seconds > 0 ? j.duration_seconds : prev.seconds,
                 }
               : prev,
@@ -129,7 +131,7 @@ export function CloneStudio({
         })
         .catch(() => {});
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro no upload");
+      setError(e instanceof Error && e.message ? e.message : t("errors.upload"));
     } finally {
       setUploading(null);
     }
@@ -156,11 +158,11 @@ export function CloneStudio({
         setPaywall({ subscribed: !!j?.error?.details?.subscribed });
         return;
       }
-      if (!res.ok) throw new Error(j?.error?.message || "Falha ao iniciar a geração");
+      if (!res.ok) throw new Error(j?.error?.message || t("errors.start"));
       setJob({ id: j.clone.id, status: "pending", video_url: null, error: null });
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error && e.message ? e.message : t("errors.generic"));
     } finally {
       setSubmitting(false);
     }
@@ -169,7 +171,7 @@ export function CloneStudio({
   // Poll do job em andamento (o GET sincroniza com o RunPod).
   useEffect(() => {
     if (!job || !inflight) return;
-    const t = setInterval(async () => {
+    const timer = setInterval(async () => {
       try {
         const res = await fetch(`/api/v1/video-clone/${job.id}`, { cache: "no-store" });
         if (!res.ok) return;
@@ -181,7 +183,7 @@ export function CloneStudio({
         /* próximo tick */
       }
     }, 5000);
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   }, [job, inflight, onChanged]);
 
   function reset() {
@@ -208,7 +210,7 @@ export function CloneStudio({
                 <span className="vc-shimmer absolute inset-0" aria-hidden />
                 <Loader2 className="relative h-7 w-7 animate-spin text-white" />
                 <span className="relative font-mono text-[10px] uppercase tracking-wide text-white">
-                  Gerando vídeo
+                  {t("generatingLabel")}
                 </span>
               </span>
             </div>
@@ -216,11 +218,11 @@ export function CloneStudio({
               <span className="vc-reel flex items-center gap-2 text-sm text-[var(--ink)]">
                 <Film className="h-5 w-5 text-[var(--silver)]" />
                 <span>
-                  Gerando seu Vídeo Clone<span className="vc-dots" />
+                  {t("generatingTitle")}<span className="vc-dots" />
                 </span>
               </span>
               <span className="flex items-center gap-1 font-mono text-[10px] tracking-wide text-[var(--ash)]">
-                <Clock className="h-3 w-3" /> Leva alguns minutos. Pode sair e voltar — fica salvo no histórico.
+                <Clock className="h-3 w-3" /> {t("generatingHint")}
               </span>
             </div>
           </div>
@@ -237,10 +239,10 @@ export function CloneStudio({
             />
             <div className="flex flex-col gap-2">
               <button type="button" onClick={() => downloadFromUrl(job.video_url!, "video-clone", "mp4")} className={PILL}>
-                <Download className="h-4 w-4" /> Baixar vídeo
+                <Download className="h-4 w-4" /> {t("download")}
               </button>
               <button type="button" onClick={reset} className={PILL}>
-                <RefreshCw className="h-4 w-4" /> Gerar outro
+                <RefreshCw className="h-4 w-4" /> {t("again")}
               </button>
             </div>
           </div>
@@ -248,10 +250,10 @@ export function CloneStudio({
         {job.status === "failed" && (
           <div className="flex flex-col gap-3">
             <p className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]">
-              {job.error || "A geração falhou. Tente novamente."}
+              {job.error || t("errors.failed")}
             </p>
             <button type="button" onClick={reset} className={`${PILL} w-fit`}>
-              <RefreshCw className="h-4 w-4" /> Tentar de novo
+              <RefreshCw className="h-4 w-4" /> {t("retry")}
             </button>
           </div>
         )}
@@ -279,7 +281,7 @@ export function CloneStudio({
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <div className="flex flex-col gap-3">
-          <span className={LABEL}>1. Foto da pessoa</span>
+          <span className={LABEL}>{t("stepImage")}</span>
           <ImagePicker
             selected={image}
             onSelect={setImage}
@@ -289,7 +291,7 @@ export function CloneStudio({
         </div>
 
         <div className="flex flex-col gap-3">
-          <span className={LABEL}>2. Áudio com a fala (até {CLONE_MAX_AUDIO_SECONDS}s)</span>
+          <span className={LABEL}>{t("stepAudio", { max: CLONE_MAX_AUDIO_SECONDS })}</span>
           <AudioPicker
             selected={audio}
             onSelect={setAudio}
@@ -302,15 +304,15 @@ export function CloneStudio({
 
       {/* Qualidade */}
       <div className="flex flex-col gap-2">
-        <span className={LABEL}>3. Qualidade</span>
+        <span className={LABEL}>{t("stepQuality")}</span>
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {CLONE_TIERS.map((t) => {
-            const active = tierId === t.id;
+          {CLONE_TIERS.map((opt) => {
+            const active = tierId === opt.id;
             return (
-              <li key={t.id}>
+              <li key={opt.id}>
                 <button
                   type="button"
-                  onClick={() => setTierId(t.id)}
+                  onClick={() => setTierId(opt.id)}
                   aria-pressed={active}
                   className={[
                     "flex w-full flex-col gap-1.5 rounded-[var(--radius)] border p-3 text-left transition-[border-color,box-shadow] duration-[var(--dur-base)] ease-[var(--ease-out)]",
@@ -321,17 +323,17 @@ export function CloneStudio({
                 >
                   <span className="flex items-center justify-between gap-2">
                     <span className="font-sans text-[14px] font-semibold text-[var(--ink)]">
-                      {t.label}{" "}
+                      {opt.label}{" "}
                       <span className="font-mono text-[10px] font-normal text-[var(--ash)]">
-                        {t.id.startsWith("720") ? "720p" : "480p"}
+                        {opt.id.startsWith("720") ? "720p" : "480p"}
                       </span>
                     </span>
                     {active && <Check className="h-4 w-4 text-[var(--silver)]" />}
                   </span>
                   <span className="font-mono text-[11px] text-[var(--silver)]">
-                    {t.creditsPerSecond} créditos/segundo de áudio
+                    {t("perSecond", { n: opt.creditsPerSecond })}
                   </span>
-                  <span className="text-[12px] leading-snug text-[var(--mute)]">{t.blurb}</span>
+                  <span className="text-[12px] leading-snug text-[var(--mute)]">{opt.blurb}</span>
                 </button>
               </li>
             );
@@ -349,12 +351,12 @@ export function CloneStudio({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-4">
         <span className="font-mono text-[11px] tracking-wide text-[var(--ash)]">
           {audio
-            ? `Custo: ${Math.max(5, Math.ceil(audio.seconds))}s × ${tier.creditsPerSecond} = ${cost.toLocaleString("pt-BR")} créditos${!canAfford ? ` (você tem ${creditsTotal.toLocaleString("pt-BR")})` : ""}`
-            : "Escolha a foto e o áudio pra ver o custo"}
+            ? `${t("cost", { seconds: Math.max(5, Math.ceil(audio.seconds)), rate: tier.creditsPerSecond, cost: cost.toLocaleString("pt-BR") })}${!canAfford ? ` ${t("costBalance", { have: creditsTotal.toLocaleString("pt-BR") })}` : ""}`
+            : t("pickToSeeCost")}
         </span>
         <button type="button" disabled={!image || !audio || submitting || !!uploading} onClick={generate} className={PILL}>
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
-          {submitting ? "Enviando…" : audio ? `Gerar Vídeo Clone · ${cost.toLocaleString("pt-BR")} cr` : "Gerar Vídeo Clone"}
+          {submitting ? t("sending") : audio ? t("generateWithCost", { cost: cost.toLocaleString("pt-BR") }) : t("generate")}
         </button>
       </div>
 
@@ -362,7 +364,7 @@ export function CloneStudio({
         open={!!paywall}
         onClose={() => setPaywall(null)}
         subscribed={paywall?.subscribed ?? false}
-        action="gerar o Vídeo Clone"
+        action={t("paywallAction")}
       />
     </section>
   );

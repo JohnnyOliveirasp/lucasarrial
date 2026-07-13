@@ -11,7 +11,9 @@
  * pelo board via /videos/[id] (carrega o projeto existente).
  */
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { getPathname, useRouter } from "@/i18n/navigation";
+import type { Locale } from "@/i18n/routing";
 import {
   ShoppingBag,
   UserRound,
@@ -49,13 +51,13 @@ async function uploadImage(file: File): Promise<string> {
     body: JSON.stringify({ filename: file.name, content_type: file.type || "image/jpeg" }),
   });
   const slot = await slotRes.json().catch(() => ({}));
-  if (!slotRes.ok) throw new Error(slot?.error?.message || "Falha ao preparar o upload.");
+  if (!slotRes.ok) throw new Error(slot?.error?.message || "");
   const put = await fetch(slot.upload_url, {
     method: "PUT",
     headers: { "Content-Type": file.type || "image/jpeg" },
     body: file,
   });
-  if (!put.ok) throw new Error("Falha ao enviar a foto.");
+  if (!put.ok) throw new Error("");
   return slot.key as string;
 }
 
@@ -66,11 +68,12 @@ async function api(path: string, method: string, body?: unknown) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json?.error?.message || "Algo deu errado.");
+  if (!res.ok) throw new Error(json?.error?.message || "");
   return json;
 }
 
 export function SalesSetup({ locale, projectId }: { locale: string; projectId?: string }) {
+  const t = useTranslations("sales.setup");
   const router = useRouter();
   const [id, setId] = useState<string | null>(projectId ?? null);
   const [productPhotos, setProductPhotos] = useState<LocalPhoto[]>([]);
@@ -109,12 +112,12 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
         // Ciência já foi dada quando as fotos da pessoa foram salvas.
         if ((p.reference_images ?? []).length > 0) setConsent(true);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao carregar o projeto");
+        setError(e instanceof Error && e.message ? e.message : t("errors.loadProject"));
       } finally {
         setLoading(false);
       }
     })();
-  }, [projectId]);
+  }, [projectId, t]);
 
   const addProductPhotos = useCallback(
     async (files: FileList) => {
@@ -127,12 +130,12 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
           setProductPhotos((prev) => [...prev, { key, previewUrl: URL.createObjectURL(file) }]);
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro no upload");
+        setError(e instanceof Error && e.message ? e.message : t("errors.upload"));
       } finally {
         setBusy(null);
       }
     },
-    [productPhotos.length],
+    [productPhotos.length, t],
   );
 
   const addPersonPhotos = useCallback(
@@ -146,12 +149,12 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
           setPersonPhotos((prev) => [...prev, { key, previewUrl: URL.createObjectURL(file) }]);
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro no upload");
+        setError(e instanceof Error && e.message ? e.message : t("errors.upload"));
       } finally {
         setBusy(null);
       }
     },
-    [personPhotos.length],
+    [personPhotos.length, t],
   );
 
   /** Garante projeto criado + produto/pessoa salvos; devolve o id. */
@@ -162,7 +165,11 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
       pid = created.id as string;
       setId(pid);
       // URL passa a apontar pro projeto — F5 não perde nada.
-      window.history.replaceState(null, "", `/${locale}/app/videos/${pid}`);
+      window.history.replaceState(
+        null,
+        "",
+        getPathname({ href: `/app/videos/${pid}`, locale: locale as Locale }),
+      );
     }
     if (productPhotos.length > 0) {
       await api(`/api/v1/videos/${pid}/product`, "PATCH", {
@@ -191,15 +198,15 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
   async function runAnalyze() {
     setError(null);
     if (!hasProduct) {
-      setError("Envie ao menos 1 foto do produto.");
+      setError(t("errors.needProduct"));
       return;
     }
     if (!hasPerson) {
-      setError("Envie a foto de quem vai apresentar — a análise usa as duas.");
+      setError(t("errors.needPerson"));
       return;
     }
     if (!personConsentOk) {
-      setError("Confirme a ciência sobre o uso da foto da pessoa.");
+      setError(t("errors.needConsent"));
       return;
     }
     setBusy("analyze");
@@ -208,7 +215,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
       const json = await api(`/api/v1/videos/${pid}/analyze`, "POST");
       setAnalysis(json.analysis as string);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro na análise");
+      setError(e instanceof Error && e.message ? e.message : t("errors.analyze"));
     } finally {
       setBusy(null);
     }
@@ -222,7 +229,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
       setScript(json.script as string);
       setScriptDirty(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro no roteiro");
+      setError(e instanceof Error && e.message ? e.message : t("errors.script"));
     } finally {
       setBusy(null);
     }
@@ -239,7 +246,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
       const json = await api(`/api/v1/videos/${id}/script-wand`, "POST");
       setScript(json.script as string);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro na varinha");
+      setError(e instanceof Error && e.message ? e.message : t("errors.wand"));
     } finally {
       setBusy(null);
     }
@@ -253,7 +260,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
       await api(`/api/v1/videos/${id}/script`, "PATCH", { script });
       setScriptDirty(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar");
+      setError(e instanceof Error && e.message ? e.message : t("errors.save"));
     } finally {
       setBusy(null);
     }
@@ -263,7 +270,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
     return (
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--silver)]" />
-        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">Carregando projeto…</p>
+        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">{t("loadingProject")}</p>
       </section>
     );
   }
@@ -279,11 +286,11 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
     <div className="flex flex-col gap-8">
       <button
         type="button"
-        onClick={() => router.push(`/${locale}/app/videos/vendas`)}
+        onClick={() => router.push("/app/videos/vendas")}
         className="inline-flex w-fit items-center gap-1.5 font-mono text-[11px] tracking-wide text-[var(--ash)] transition-colors hover:text-[var(--ink)]"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        Board
+        {t("back")}
       </button>
 
       {error && (
@@ -296,17 +303,17 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
       <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
         <div className="flex items-center gap-2">
           <ShoppingBag className="h-5 w-5 text-[var(--silver)]" />
-          <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">1 · O produto</h2>
-          <span className="font-mono text-[11px] text-[var(--ash)]">{productPhotos.length}/4 fotos</span>
+          <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">{t("productTitle")}</h2>
+          <span className="font-mono text-[11px] text-[var(--ash)]">{t("photosCount", { n: productPhotos.length, max: 4 })}</span>
         </div>
         <div className="flex flex-wrap gap-3">
           {productPhotos.map((p, i) => (
             <div key={p.key} className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.previewUrl} alt={`produto ${i + 1}`} className="h-24 w-24 rounded-[var(--radius)] border border-[var(--hairline-strong)] object-cover" />
+              <img src={p.previewUrl} alt={t("productAlt", { n: i + 1 })} className="h-24 w-24 rounded-[var(--radius)] border border-[var(--hairline-strong)] object-cover" />
               <button
                 type="button"
-                aria-label="Remover foto"
+                aria-label={t("removePhoto")}
                 onClick={() => setProductPhotos((prev) => prev.filter((x) => x.key !== p.key))}
                 className="absolute -right-2 -top-2 inline-flex size-5 items-center justify-center rounded-full border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] text-[var(--mute)] hover:text-[var(--ink)]"
               >
@@ -317,7 +324,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
           {productPhotos.length < 4 && (
             <label className={`${ghostBtnCls} h-24 w-24 cursor-pointer flex-col gap-1 font-mono text-[10px] text-[var(--ash)]`}>
               {busy === "upload" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />}
-              + adicionar ({productPhotos.length}/4)
+              {t("addPhoto", { n: productPhotos.length, max: 4 })}
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
@@ -332,15 +339,15 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
           )}
         </div>
         <p className="font-mono text-[11px] text-[var(--ash)]">
-          Envie de 1 a 4 fotos do produto — dá pra selecionar várias de uma vez; ângulos diferentes ajudam a IA.
+          {t("productHint")}
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <input className={inputCls} placeholder="Preço (opcional) — ex: R$ 89,90" value={price} onChange={(e) => setPrice(e.target.value)} maxLength={60} />
-          <input className={inputCls} placeholder="Link do produto (opcional)" value={link} onChange={(e) => setLink(e.target.value)} maxLength={300} />
+          <input className={inputCls} placeholder={t("pricePlaceholder")} value={price} onChange={(e) => setPrice(e.target.value)} maxLength={60} />
+          <input className={inputCls} placeholder={t("linkPlaceholder")} value={link} onChange={(e) => setLink(e.target.value)} maxLength={300} />
         </div>
         <textarea
           className={`${inputCls} h-auto min-h-[72px] py-2`}
-          placeholder="Descreva o produto e o que você quer destacar (opcional) — a IA usa isso no roteiro."
+          placeholder={t("descriptionPlaceholder")}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           maxLength={1000}
@@ -351,17 +358,17 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
       <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
         <div className="flex items-center gap-2">
           <UserRound className="h-5 w-5 text-[var(--silver)]" />
-          <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">2 · Quem apresenta</h2>
-          <span className="font-mono text-[11px] text-[var(--ash)]">{personPhotos.length}/6 fotos</span>
+          <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">{t("personTitle")}</h2>
+          <span className="font-mono text-[11px] text-[var(--ash)]">{t("photosCount", { n: personPhotos.length, max: 6 })}</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {personPhotos.map((p, i) => (
             <div key={p.key} className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.previewUrl} alt={`apresentador(a) ${i + 1}`} className="h-24 w-24 rounded-[var(--radius)] border border-[var(--hairline-strong)] object-cover" />
+              <img src={p.previewUrl} alt={t("personAlt", { n: i + 1 })} className="h-24 w-24 rounded-[var(--radius)] border border-[var(--hairline-strong)] object-cover" />
               <button
                 type="button"
-                aria-label="Remover foto"
+                aria-label={t("removePhoto")}
                 onClick={() => setPersonPhotos((prev) => prev.filter((x) => x.key !== p.key))}
                 className="absolute -right-2 -top-2 inline-flex size-5 items-center justify-center rounded-full border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] text-[var(--mute)] hover:text-[var(--ink)]"
               >
@@ -372,7 +379,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
           {personPhotos.length < 6 && (
             <label className={`${ghostBtnCls} h-24 w-24 cursor-pointer flex-col gap-1 font-mono text-[10px] text-[var(--ash)]`}>
               {busy === "upload" ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserRound className="h-4 w-4" />}
-              + adicionar ({personPhotos.length}/6)
+              {t("addPhoto", { n: personPhotos.length, max: 6 })}
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
@@ -386,14 +393,13 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
             </label>
           )}
           <p className="max-w-sm text-[13px] text-[var(--mute)]">
-            A pessoa que aparece nas cenas apresentando o produto — envie de 1 a
-            6 fotos (quanto mais ângulos, mais fiel o rosto sai nas cenas).
+            {t("personHint")}
           </p>
         </div>
         {personPhotos.length > 0 && (
           <label className="inline-flex cursor-pointer items-start gap-2 text-[13px] text-[var(--mute)]">
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5" />
-            Confirmo que tenho autorização pra usar a imagem dessa pessoa.
+            {t("consentLabel")}
           </label>
         )}
       </section>
@@ -403,17 +409,17 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-[var(--silver)]" />
-            <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">3 · Análise do Produto</h2>
+            <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">{t("analysisTitle")}</h2>
           </div>
           <button
             type="button"
             onClick={runAnalyze}
             disabled={busy !== null || !canAnalyze}
-            title={canAnalyze ? "" : "Envie as fotos do produto E de quem apresenta (com a ciência marcada) pra liberar a análise."}
+            title={canAnalyze ? "" : t("analyzeLocked")}
             className={btnCls}
           >
             {busy === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {analysis ? `Analisar de novo (${SALES_AI_COST} cr)` : `Analisar produto (${SALES_AI_COST} cr)`}
+            {analysis ? t("analyzeAgain", { cost: SALES_AI_COST }) : t("analyze", { cost: SALES_AI_COST })}
           </button>
         </div>
         {analysis ? (
@@ -422,7 +428,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
           </div>
         ) : (
           <p className="font-mono text-[11px] text-[var(--ash)]">
-            A IA olha as fotos (e o que você informou) e monta o ângulo de venda — base do roteiro.
+            {t("analysisHint")}
           </p>
         )}
       </section>
@@ -433,18 +439,18 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Wand2 className="h-5 w-5 text-[var(--silver)]" />
-              <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">4 · Roteiro de venda (máx. 60s)</h2>
+              <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">{t("scriptTitle")}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
               {script && (
-                <button type="button" onClick={runWand} disabled={busy !== null} className={ghostBtnCls} title="A IA melhora o roteiro atual">
+                <button type="button" onClick={runWand} disabled={busy !== null} className={ghostBtnCls} title={t("wandTitle")}>
                   {busy === "wand" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                  Varinha ({SALES_AI_COST} cr)
+                  {t("wand", { cost: SALES_AI_COST })}
                 </button>
               )}
               <button type="button" onClick={runScript} disabled={busy !== null} className={btnCls}>
                 {busy === "script" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-                {script ? `Refazer (${SALES_AI_COST} cr)` : `Gerar roteiro (${SALES_AI_COST} cr)`}
+                {script ? t("redo", { cost: SALES_AI_COST }) : t("generateScript", { cost: SALES_AI_COST })}
               </button>
             </div>
           </div>
@@ -461,12 +467,12 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
               />
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="font-mono text-[11px] text-[var(--ash)]">
-                  editar na mão é grátis · {script.trim().split(/\s+/).filter(Boolean).length} palavras
+                  {t("scriptMeta", { n: script.trim().split(/\s+/).filter(Boolean).length })}
                 </span>
                 {scriptDirty && (
                   <button type="button" onClick={saveScript} disabled={busy !== null} className={ghostBtnCls}>
                     {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    Salvar edição
+                    {t("saveEdit")}
                   </button>
                 )}
               </div>

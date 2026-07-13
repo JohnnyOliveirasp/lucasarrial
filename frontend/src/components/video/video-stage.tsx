@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 import { Loader2, ImageIcon } from "lucide-react";
 import { VideoTierId } from "@/lib/video/tiers";
 import { VideoTierPicker } from "@/components/video/video-tier-picker";
@@ -14,13 +15,13 @@ const PILL =
 /** Estágio 4 do wizard: geração dos clipes de vídeo (image-to-video via Kie). */
 export function VideoStage({
   projectId,
-  locale,
   onProjectChanged,
 }: {
   projectId: string;
-  locale: string;
   onProjectChanged: () => void;
 }) {
+  const t = useTranslations("videoWizard.videoStage");
+  const tc = useTranslations("videoWizard.common");
   const [scenes, setScenes] = useState<VideoScene[]>([]);
   const [tier, setTier] = useState<string | null>(null);
   const [allImagesReady, setAllImagesReady] = useState(false);
@@ -32,17 +33,17 @@ export function VideoStage({
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/videos/${projectId}/videos`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Falha ao carregar os vídeos");
+      if (!res.ok) throw new Error(t("loadFailed"));
       const j = await res.json();
       setScenes((j.scenes ?? []) as VideoScene[]);
       setTier(j.tier ?? null);
       setAllImagesReady(!!j.all_images_ready);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : tc("error"));
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, t, tc]);
 
   useEffect(() => {
     load();
@@ -78,11 +79,11 @@ export function VideoStage({
         setPaywall({ subscribed: !!j?.error?.details?.subscribed });
         return;
       }
-      if (!res.ok) throw new Error(j?.error?.message || "Falha ao gerar os vídeos");
+      if (!res.ok) throw new Error(j?.error?.message || t("generateFailed"));
       onProjectChanged();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : tc("error"));
     } finally {
       setGenerating(false);
     }
@@ -92,7 +93,7 @@ export function VideoStage({
     return (
       <section className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
         <Loader2 className="h-5 w-5 animate-spin text-[var(--silver)]" />
-        <span className="font-mono text-[12px] tracking-wide text-[var(--mute)]">Carregando…</span>
+        <span className="font-mono text-[12px] tracking-wide text-[var(--mute)]">{tc("loading")}</span>
       </section>
     );
   }
@@ -103,8 +104,9 @@ export function VideoStage({
       <section className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
         <ImageIcon className="h-5 w-5 text-[var(--ash)]" />
         <p className="text-sm text-[var(--mute)]">
-          Gere e finalize <strong className="text-[var(--ink)]">todas as imagens</strong> das cenas para
-          liberar a geração dos vídeos.
+          {t.rich("gate", {
+            strong: (chunks) => <strong className="text-[var(--ink)]">{chunks}</strong>,
+          })}
         </p>
       </section>
     );
@@ -145,21 +147,20 @@ export function VideoStage({
       )}
 
       {paywall && (
-        <PaywallInline locale={locale} subscribed={paywall.subscribed} onClose={() => setPaywall(null)} />
+        <PaywallInline subscribed={paywall.subscribed} onClose={() => setPaywall(null)} />
       )}
     </div>
   );
 }
 
 function PaywallInline({
-  locale,
   subscribed,
   onClose,
 }: {
-  locale: string;
   subscribed: boolean;
   onClose: () => void;
 }) {
+  const tp = useTranslations("videoWizard.paywall");
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur"
@@ -172,12 +173,10 @@ function PaywallInline({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          {subscribed ? "Créditos insuficientes" : "Assine para gerar"}
+          {subscribed ? tp("insufficientTitle") : tp("subscribeTitle")}
         </h3>
         <p className="text-sm text-[var(--body)]">
-          {subscribed
-            ? "Compre um pacote de créditos para continuar."
-            : "Assine o plano para liberar créditos e gerar os vídeos."}
+          {subscribed ? tp("buyPack") : tp("subscribeVideos")}
         </p>
         <div className="flex justify-end gap-3">
           <button
@@ -185,10 +184,10 @@ function PaywallInline({
             onClick={onClose}
             className="inline-flex h-10 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
           >
-            Fechar
+            {tp("close")}
           </button>
-          <Link href={subscribed ? `/${locale}/app/credits` : `/${locale}/planos`} className={PILL}>
-            {subscribed ? "Comprar créditos" : "Assinar agora"}
+          <Link href={subscribed ? "/app/credits" : "/planos"} className={PILL}>
+            {subscribed ? tp("buyCredits") : tp("subscribeNow")}
           </Link>
         </div>
       </div>

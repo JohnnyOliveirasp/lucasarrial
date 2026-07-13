@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { AudioLines, Download, Loader2, AlertTriangle } from "lucide-react";
 import { formatDuration } from "@/lib/audio/duration";
 import { SupportError } from "@/components/ui/support-error";
@@ -41,6 +42,7 @@ const ANIM_CSS = `
 `;
 
 export function VoiceGenerator({ voiceId }: Props) {
+  const t = useTranslations("voice");
   const router = useRouter();
   const [text, setText] = useState("");
   // Pausa entre frases (vai como chunk_silence_ms; backend já aceita).
@@ -113,7 +115,7 @@ export function VoiceGenerator({ voiceId }: Props) {
       }
       if (!genRes.ok) {
         const j = await genRes.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Falha ao iniciar geração");
+        throw new Error(j?.error?.message || t("generator.startError"));
       }
       const { generation_id } = await genRes.json();
       setTakes((prev) => [
@@ -130,7 +132,7 @@ export function VoiceGenerator({ voiceId }: Props) {
         ...prev,
       ]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setSubmitting(false);
     }
@@ -161,7 +163,7 @@ export function VoiceGenerator({ voiceId }: Props) {
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="gen-text" className="font-mono text-[11px] tracking-wide text-[var(--mute)]">
-            Texto a sintetizar
+            {t("generator.textLabel")}
           </label>
           <textarea
             id="gen-text"
@@ -170,7 +172,7 @@ export function VoiceGenerator({ voiceId }: Props) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={5}
-            placeholder="Olá, este é um teste da minha voz clonada…"
+            placeholder={t("generator.placeholder")}
             className="resize-none rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-3 text-sm text-[var(--ink)] placeholder:text-[var(--ash)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none"
           />
           <span className="self-end font-mono text-[10px] tabular-nums text-[var(--ash)]">
@@ -181,13 +183,13 @@ export function VoiceGenerator({ voiceId }: Props) {
         {/* Ritmo da fala — controle simples por cima do chunk_silence_ms */}
         <div className="flex flex-col gap-1.5">
           <span className="font-mono text-[11px] tracking-wide text-[var(--mute)]">
-            Pausa entre frases
+            {t("generator.pauseLabel")}
           </span>
           <div className="flex flex-wrap gap-2">
             {[
-              { v: null, label: "Natural" },
-              { v: 250, label: "Média" },
-              { v: 550, label: "Longa" },
+              { v: null, label: t("generator.pauseNatural") },
+              { v: 250, label: t("generator.pauseMedium") },
+              { v: 550, label: t("generator.pauseLong") },
             ].map((opt) => (
               <button
                 key={opt.label}
@@ -206,7 +208,7 @@ export function VoiceGenerator({ voiceId }: Props) {
           </div>
         </div>
 
-        {error && <SupportError action="gerar o áudio" />}
+        {error && <SupportError action={t("generator.supportAction")} />}
 
         <button type="submit" disabled={!canSubmit} className={`${PILL} w-fit`}>
           {submitting || inflight ? (
@@ -214,7 +216,7 @@ export function VoiceGenerator({ voiceId }: Props) {
           ) : (
             <AudioLines className="h-4 w-4" />
           )}
-          {inflight ? "Gerando…" : "Gerar áudio"}
+          {inflight ? t("generator.generating") : t("generator.generate")}
         </button>
       </form>
 
@@ -222,53 +224,55 @@ export function VoiceGenerator({ voiceId }: Props) {
       {takes.length > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="font-mono text-[11px] uppercase tracking-wide text-[var(--ash)]">
-            Gerações desta sessão
+            {t("generator.sessionTitle")}
           </h2>
           <ul className="flex flex-col gap-2">
-            {takes.map((t) => (
+            {takes.map((take) => (
               <li
-                key={t.id}
+                key={take.id}
                 className="relative flex flex-col gap-2 overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-3"
               >
-                {(t.status === "pending" || t.status === "generating") && (
+                {(take.status === "pending" || take.status === "generating") && (
                   <>
                     <span className="vg-shimmer pointer-events-none absolute inset-0" aria-hidden />
                     <span className="flex items-center gap-2 text-sm text-[var(--body)]">
                       <Loader2 className="h-4 w-4 animate-spin text-[var(--silver)]" />
-                      Gerando<span className="vg-dots" />
+                      {t("generator.generatingWord")}<span className="vg-dots" />
                     </span>
                   </>
                 )}
-                {t.status === "failed" && (
+                {take.status === "failed" && (
                   <span className="flex items-center gap-2 font-mono text-[11px] text-[var(--status-error)]">
                     <AlertTriangle className="h-4 w-4" />
-                    {t.error_message || "Geração falhou"}
+                    {take.error_message || t("generator.failed")}
                   </span>
                 )}
-                {t.status === "ready" && t.audio_url && (
+                {take.status === "ready" && take.audio_url && (
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <audio src={t.audio_url} controls preload="metadata" className="w-full sm:flex-1" />
+                    <audio src={take.audio_url} controls preload="metadata" className="w-full sm:flex-1" />
                     <button
                       type="button"
-                      onClick={() => downloadAudio(t.audio_url!)}
-                      aria-label="Baixar áudio"
+                      onClick={() => downloadAudio(take.audio_url!)}
+                      aria-label={t("generator.downloadAria")}
                       className="inline-flex h-9 w-fit shrink-0 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-3 text-[13px] text-[var(--ink)] hover:border-[var(--hairline-bright)]"
                     >
-                      <Download className="h-4 w-4" /> Baixar
+                      <Download className="h-4 w-4" /> {t("generator.download")}
                     </button>
                   </div>
                 )}
-                <p className="line-clamp-2 text-[12px] leading-snug text-[var(--mute)]">“{t.text}”</p>
+                <p className="line-clamp-2 text-[12px] leading-snug text-[var(--mute)]">“{take.text}”</p>
                 <div className="flex gap-3 font-mono text-[10px] tracking-wide text-[var(--ash)]">
-                  <span>{new Date(t.startedAt).toLocaleTimeString("pt-BR")}</span>
-                  {t.duration_seconds ? <span>· {formatDuration(t.duration_seconds)}</span> : null}
-                  {t.elapsed_seconds ? <span>· gerou em {t.elapsed_seconds.toFixed(1)}s</span> : null}
+                  <span>{new Date(take.startedAt).toLocaleTimeString("pt-BR")}</span>
+                  {take.duration_seconds ? <span>· {formatDuration(take.duration_seconds)}</span> : null}
+                  {take.elapsed_seconds ? (
+                    <span>{t("generator.generatedIn", { s: take.elapsed_seconds.toFixed(1) })}</span>
+                  ) : null}
                 </div>
               </li>
             ))}
           </ul>
           <p className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-            Todos os áudios também ficam salvos no Histórico.
+            {t("generator.savedNote")}
           </p>
         </section>
       )}
@@ -277,7 +281,7 @@ export function VoiceGenerator({ voiceId }: Props) {
         open={noCredits}
         onClose={() => setNoCredits(false)}
         subscribed={subscribed}
-        action="gerar áudio"
+        action={t("generator.paywallAction")}
         detail={paywallDetail}
       />
     </div>

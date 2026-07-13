@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { useLocale } from "next-intl";
+import { Link } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
 import { Mic, Square, Trash2, AlertCircle, AlertTriangle, Check, ArrowRight } from "lucide-react";
 import { workletUrl, rms, concatFloat32, encodeWav } from "@/lib/audio/recorder";
 import { formatDuration } from "@/lib/audio/duration";
@@ -27,7 +27,7 @@ type ClipView = { id: string; seconds: number; createdAt: number; url: string };
  * 2 vai subir os clipes do IndexedDB pro R2.
  */
 export function VoiceRecorder() {
-  const locale = useLocale();
+  const t = useTranslations("voiceCreate.recorder");
   const [status, setStatus] = useState<Status>("idle");
   const [level, setLevel] = useState(0);
   const [seconds, setSeconds] = useState(0);
@@ -191,8 +191,8 @@ export function VoiceRecorder() {
     } catch (e) {
       setError(
         e instanceof DOMException && e.name === "NotAllowedError"
-          ? "Permissão de microfone negada — libere o mic no navegador e tente de novo."
-          : "Não consegui acessar o microfone.",
+          ? t("errors.micDenied")
+          : t("errors.micGeneric"),
       );
       setStatus("denied");
     }
@@ -252,7 +252,7 @@ export function VoiceRecorder() {
             <button
               type="button"
               onClick={startRecording}
-              aria-label="Gravar"
+              aria-label={t("record")}
               className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-full)] bg-[var(--pill-bg)] text-[var(--pill-ink)] transition-transform hover:scale-110 active:scale-95"
             >
               <Mic className="h-4 w-4" />
@@ -261,7 +261,7 @@ export function VoiceRecorder() {
             <button
               type="button"
               onClick={stopRecording}
-              aria-label="Parar gravação"
+              aria-label={t("stopRecording")}
               className="flex h-9 w-9 animate-pulse items-center justify-center rounded-[var(--radius-full)] border-2 border-[var(--status-error)] text-[var(--status-error)]"
             >
               <Square className="h-4 w-4 fill-current" />
@@ -273,13 +273,13 @@ export function VoiceRecorder() {
       <section className="flex flex-col gap-5 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
       <div className="flex items-center gap-2">
         <Mic className="h-4 w-4 text-[var(--silver)]" />
-        <h2 className="font-mono text-[12px] tracking-wide text-[var(--silver)]">Gravar voz</h2>
+        <h2 className="font-mono text-[12px] tracking-wide text-[var(--silver)]">{t("title")}</h2>
       </div>
 
       {/* Progresso acumulado (anti-perda: vem do IndexedDB) */}
       <div className="flex flex-col gap-1.5">
         <div className="flex justify-between font-mono text-[10px] tracking-wide text-[var(--mute)]">
-          <span>Fala acumulada</span>
+          <span>{t("accumulated")}</span>
           <span className="tabular-nums text-[var(--silver)]">
             {formatDuration(totalSeconds)} / {formatDuration(TARGET_SECONDS)}
           </span>
@@ -306,21 +306,20 @@ export function VoiceRecorder() {
 
       {clipping && (
         <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[10px] tracking-wide text-[var(--status-warn)]">
-          <AlertTriangle className="h-4 w-4" /> Áudio estourando — afaste o microfone ou fale mais baixo
+          <AlertTriangle className="h-4 w-4" /> {t("clipping")}
         </p>
       )}
 
       {noisy && !clipping && (status === "ready" || status === "recording") && (
         <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[10px] tracking-wide text-[var(--status-warn)]">
-          <AlertTriangle className="h-4 w-4" /> Ambiente barulhento — a qualidade do clone cai. Procure um
-          lugar silencioso (sem TV, rua ou ar-condicionado).
+          <AlertTriangle className="h-4 w-4" /> {t("noisy")}
         </p>
       )}
 
       {status === "recording" && (
         <p className="flex items-center gap-2 font-mono text-[10px] tracking-wide text-[var(--mute)]">
           <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-[var(--radius-full)] bg-[var(--status-error)]" />
-          Gravando… para sozinho após {SILENCE_MS / 1000}s de silêncio
+          {t("recordingAuto", { seconds: SILENCE_MS / 1000 })}
         </p>
       )}
 
@@ -334,20 +333,20 @@ export function VoiceRecorder() {
       <div className="flex flex-wrap gap-3">
         {(status === "idle" || status === "denied") && (
           <button type="button" onClick={activateMic} className={btnPrimary}>
-            <Mic className="h-4 w-4" /> Ativar microfone
+            <Mic className="h-4 w-4" /> {t("activateMic")}
           </button>
         )}
         {status === "requesting" && (
-          <span className="font-mono text-[12px] tracking-wide text-[var(--silver)]">Pedindo permissão…</span>
+          <span className="font-mono text-[12px] tracking-wide text-[var(--silver)]">{t("requesting")}</span>
         )}
         {status === "ready" && (
           <button type="button" onClick={startRecording} className={btnPrimary}>
-            <Mic className="h-4 w-4" /> Gravar
+            <Mic className="h-4 w-4" /> {t("record")}
           </button>
         )}
         {status === "recording" && (
           <button type="button" onClick={stopRecording} className={btnOutline}>
-            <Square className="h-4 w-4" /> Parar
+            <Square className="h-4 w-4" /> {t("stop")}
           </button>
         )}
       </div>
@@ -356,7 +355,7 @@ export function VoiceRecorder() {
       {clips.length > 0 && (
         <div className="flex flex-col gap-3 border-t border-[var(--hairline)] pt-4">
           <span className="font-mono text-[10px] tracking-wide text-[var(--mute)]">
-            Áudios gravados ({clips.length})
+            {t("clipsRecorded", { count: clips.length })}
           </span>
           {clips.map((c, i) => (
             <div key={c.id} className="flex items-center gap-3">
@@ -368,7 +367,7 @@ export function VoiceRecorder() {
               <button
                 type="button"
                 onClick={() => removeClip(c.id)}
-                aria-label="Apagar clipe"
+                aria-label={t("deleteClip")}
                 className="text-[var(--mute)] transition-colors hover:text-[var(--status-error)]"
               >
                 <Trash2 className="h-4 w-4" />
@@ -383,16 +382,16 @@ export function VoiceRecorder() {
       {targetMet && (
         <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] p-4">
           <p className="flex items-center gap-2 font-mono text-[10px] tracking-wide text-[var(--status-online)]">
-            <Check className="h-4 w-4" /> Meta de 20 min atingida
+            <Check className="h-4 w-4" /> {t("targetMet", { minutes: TARGET_SECONDS / 60 })}
           </p>
           <Link
-            href={`/${locale}/app/voice-cloning/new`}
+            href="/app/voice-cloning/new"
             className={`${btnOutline} justify-center`}
           >
-            Enviar para treinamento <ArrowRight className="h-4 w-4" />
+            {t("sendToTraining")} <ArrowRight className="h-4 w-4" />
           </Link>
           <p className="text-xs text-[var(--mute)]">
-            Pode continuar gravando se quiser melhorar — quanto mais limpo, melhor a voz clonada.
+            {t("keepRecording")}
           </p>
         </div>
       )}

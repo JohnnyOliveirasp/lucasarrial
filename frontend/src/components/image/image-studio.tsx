@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 import { ImagePlus, Sparkles, Wand2, Download, Film, X, Loader2, ShieldAlert } from "lucide-react";
 import { SupportError } from "@/components/ui/support-error";
 import { PaywallModal } from "@/components/app/paywall-modal";
@@ -47,6 +48,7 @@ export function ImageStudio({
   /** Abre o painel "Animar" desta imagem no histórico (feature Vídeo). */
   onAnimate?: (imageId: string) => void;
 }) {
+  const t = useTranslations("images.studio");
   const [step, setStep] = useState<Step>("form");
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
@@ -111,7 +113,7 @@ export function ImageStudio({
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message || "Falha ao preparar upload");
+        throw new Error(j?.error?.message || t("errors.prepareUpload"));
       }
       const { key, upload_url } = await r.json();
       const put = await fetch(upload_url, {
@@ -119,12 +121,12 @@ export function ImageStudio({
         headers: { "Content-Type": file.type },
         body: file,
       });
-      if (!put.ok) throw new Error("Falha ao enviar a imagem");
+      if (!put.ok) throw new Error(t("errors.sendImage"));
       setRefs((prev) =>
         prev.map((x) => (x.id === id ? { ...x, key, uploading: false } : x)),
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro no upload");
+      setError(e instanceof Error ? e.message : t("errors.upload"));
       setRefs((prev) => {
         const found = prev.find((x) => x.id === id);
         if (found) URL.revokeObjectURL(found.preview);
@@ -137,17 +139,17 @@ export function ImageStudio({
     setError(null);
     const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (imgs.length === 0) {
-      setError("Envie arquivos de imagem (JPG, PNG ou WEBP).");
+      setError(t("errors.invalidFiles"));
       return;
     }
     const room = MAX_IMAGES - refs.length;
     if (room <= 0) {
-      setError(`Máximo de ${MAX_IMAGES} fotos.`);
+      setError(t("errors.maxPhotos", { max: MAX_IMAGES }));
       return;
     }
     const take = imgs.slice(0, room);
     if (take.length < imgs.length) {
-      setError(`Máximo de ${MAX_IMAGES} fotos — algumas foram ignoradas.`);
+      setError(t("errors.maxPhotosIgnored", { max: MAX_IMAGES }));
     }
     const created = take.map((file) => ({
       file,
@@ -192,15 +194,15 @@ export function ImageStudio({
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         if (j?.error?.code === "content_blocked") {
-          setBlocked(j.error.message || "Conteúdo não permitido");
+          setBlocked(j.error.message || t("errors.blockedFallback"));
           return;
         }
-        throw new Error(j?.error?.message || "Falha ao gerar prompt");
+        throw new Error(j?.error?.message || t("errors.generatePrompt"));
       }
       const { prompt: out } = await r.json();
       setPrompt(out);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("errors.generic"));
     } finally {
       setGenPrompting(false);
     }
@@ -219,7 +221,7 @@ export function ImageStudio({
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
           setStep(image.status === "ready" ? "done" : "error");
-          if (image.status === "failed") setError(image.error_message || "Geração falhou");
+          if (image.status === "failed") setError(image.error_message || t("errors.generationFailed"));
           onGenerated?.();
         }
       } catch {
@@ -257,17 +259,17 @@ export function ImageStudio({
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         if (j?.error?.code === "content_blocked") {
-          setBlocked(j.error.message || "Conteúdo não permitido");
+          setBlocked(j.error.message || t("errors.blockedFallback"));
           setStep("form");
           return;
         }
-        throw new Error(j?.error?.message || "Falha ao gerar imagem");
+        throw new Error(j?.error?.message || t("errors.generateImage"));
       }
       const { id } = await r.json();
       poll(id);
       onGenerated?.(); // já aparece como "na fila" no histórico
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("errors.generic"));
       setStep("error");
     }
   }
@@ -304,26 +306,26 @@ export function ImageStudio({
     return (
       <section className="flex flex-col gap-5 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-6">
         <h2 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          Imagem gerada
+          {t("result.title")}
         </h2>
         <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)]">
           {/* presigned R2 → <img> simples (sem config de domínio no next/image) */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={result.image_url} alt="Imagem gerada" className="mx-auto max-h-[60vh] w-auto" />
+          <img src={result.image_url} alt={t("result.alt")} className="mx-auto max-h-[60vh] w-auto" />
         </div>
         <div className="flex flex-wrap gap-3">
           <button type="button" onClick={() => download(result.image_url!)} className={PILL}>
             <Download className="h-4 w-4" />
-            Baixar
+            {t("result.download")}
           </button>
           {onAnimate && (
             <button type="button" onClick={() => onAnimate(result.id)} className={SECONDARY}>
               <Film className="h-4 w-4" />
-              Animar (gerar vídeo)
+              {t("result.animate")}
             </button>
           )}
           <button type="button" onClick={reset} className={SECONDARY}>
-            Gerar outra
+            {t("result.again")}
           </button>
         </div>
       </section>
@@ -333,8 +335,8 @@ export function ImageStudio({
   if (step === "submitting" || step === "polling") {
     return (
       <AudioGeneratingIndicator
-        label="Gerando sua imagem…"
-        hint="Pode levar de alguns segundos a ~1 min. Pode acompanhar no histórico abaixo."
+        label={t("generating.label")}
+        hint={t("generating.hint")}
       />
     );
   }
@@ -345,8 +347,8 @@ export function ImageStudio({
       {/* Coluna 1 — referências (1 ou mais fotos) */}
       <div className="flex flex-col gap-2">
         <span className={LABEL}>
-          1. Suas fotos (referência)
-          <FieldHint text="Envie 1 ou mais fotos da MESMA pessoa — quanto mais ângulos e expressões, melhor a semelhança. O resultado mantém o rosto destas fotos. Use fotos nítidas e bem iluminadas." />
+          {t("refs.label")}
+          <FieldHint text={t("refs.hint")} />
         </span>
         <input
           ref={fileInputRef}
@@ -371,10 +373,10 @@ export function ImageStudio({
           >
             <ImagePlus className="h-10 w-10 text-[var(--ash)]" />
             <span className="text-sm text-[var(--mute)]">
-              Clique ou arraste suas fotos aqui
+              {t("refs.dropzone")}
             </span>
             <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-              JPG, PNG ou WEBP · até {MAX_IMAGES} fotos
+              {t("refs.formats", { max: MAX_IMAGES })}
             </span>
           </button>
         ) : (
@@ -401,7 +403,7 @@ export function ImageStudio({
                 <button
                   type="button"
                   onClick={() => removeRef(r.id)}
-                  aria-label="Remover foto"
+                  aria-label={t("refs.remove")}
                   className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]/90 text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -412,7 +414,7 @@ export function ImageStudio({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                aria-label="Adicionar mais fotos"
+                aria-label={t("refs.addMore")}
                 className="flex aspect-square flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] text-[var(--ash)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--silver)]"
               >
                 <ImagePlus className="h-5 w-5" />
@@ -430,15 +432,15 @@ export function ImageStudio({
         {/* Ideia → prompt automático */}
         <div className="flex flex-col gap-2">
           <span className={LABEL}>
-            2. Sua ideia (opcional)
-            <FieldHint text="Descreva em português o que você quer (ex.: 'eu numa praia ao pôr do sol, estilo foto profissional'). Clique em Gerar prompt e a IA monta um prompt consistente pra você." />
+            {t("idea.label")}
+            <FieldHint text={t("idea.hint")} />
           </span>
           <textarea
             value={idea}
             onChange={(e) => setIdea(e.target.value)}
             maxLength={IDEA_MAX}
             rows={2}
-            placeholder="Ex.: eu de terno num escritório moderno, foto profissional…"
+            placeholder={t("idea.placeholder")}
             className="resize-none rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2.5 text-sm text-[var(--ink)] placeholder:text-[var(--ash)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none"
           />
           <button
@@ -452,22 +454,22 @@ export function ImageStudio({
             ) : (
               <Sparkles className="h-4 w-4" />
             )}
-            {genPrompting ? "Gerando prompt…" : "Gerar prompt automático"}
+            {genPrompting ? t("idea.generatingBtn") : t("idea.generateBtn")}
           </button>
         </div>
 
         {/* Prompt final */}
         <div className="flex flex-col gap-2">
           <span className={LABEL}>
-            3. Prompt
-            <FieldHint text="O texto que descreve a imagem a gerar (em inglês funciona melhor). Você pode escrever direto aqui ou usar o botão acima. Pode editar à vontade." />
+            {t("prompt.label")}
+            <FieldHint text={t("prompt.hint")} />
           </span>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             maxLength={PROMPT_MAX}
             rows={4}
-            placeholder="A photorealistic portrait of the person in the reference photo…"
+            placeholder={t("prompt.placeholder")}
             className="resize-none rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-3 text-sm text-[var(--ink)] placeholder:text-[var(--ash)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none"
           />
           <span className="self-end font-mono text-[10px] tabular-nums text-[var(--ash)]">
@@ -478,8 +480,8 @@ export function ImageStudio({
         {/* Proporção */}
         <div className="flex flex-col gap-2">
           <span className={LABEL}>
-            4. Proporção
-            <FieldHint text="O formato da imagem. 'Automático' deixa o modelo escolher (sai em 1K). Vertical 9:16 pra Stories/Reels, Quadrado 1:1 pra feed, etc." />
+            {t("aspect.label")}
+            <FieldHint text={t("aspect.hint")} />
           </span>
           <div className="flex flex-wrap gap-2">
             {ASPECT_RATIOS.map((a) => (
@@ -504,8 +506,8 @@ export function ImageStudio({
         {/* Resolução */}
         <div className="flex flex-col gap-2">
           <span className={LABEL}>
-            5. Resolução
-            <FieldHint text="A qualidade/tamanho da imagem. Quanto maior, mais nitidez e mais créditos. 4K não está disponível em 'Automático' nem em Quadrado (1:1)." />
+            {t("resolution.label")}
+            <FieldHint text={t("resolution.hint")} />
           </span>
           <div className="flex flex-wrap gap-2">
             {RESOLUTIONS.map((r) => {
@@ -514,9 +516,9 @@ export function ImageStudio({
               const allowed = allowedByAspect && affordable;
               const selected = resolution === r.value;
               const title = !allowedByAspect
-                ? "Indisponível para esta proporção"
+                ? t("resolution.unavailable")
                 : !affordable
-                  ? `Você precisa de ${r.credits} créditos para ${r.value}`
+                  ? t("resolution.needCredits", { credits: r.credits, resolution: r.value })
                   : r.hint;
               return (
                 <button
@@ -552,13 +554,13 @@ export function ImageStudio({
           </div>
         )}
 
-        {error && <SupportError action="gerar a imagem" />}
+        {error && <SupportError action={t("supportAction")} />}
 
         <PaywallModal
           open={noCredits}
           onClose={() => setNoCredits(false)}
           subscribed={subscribed}
-          action="gerar imagem"
+          action={t("paywallAction")}
           detail={paywallDetail}
         />
 
@@ -566,22 +568,24 @@ export function ImageStudio({
         <div className="flex flex-col gap-2">
           <button type="button" onClick={handleGenerate} disabled={!canSubmit} className={PILL}>
             <Wand2 className="h-4 w-4" />
-            {hasMinCredits ? `Gerar imagem · ${cost} créditos` : "Créditos insuficientes"}
+            {hasMinCredits ? t("submit.generate", { cost }) : t("submit.insufficient")}
           </button>
           {!unlimited &&
             (hasMinCredits ? (
               <span className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-                Você tem {creditsTotal.toLocaleString("pt-BR")} créditos · esta custa {cost}.
+                {t("submit.balance", { credits: creditsTotal.toLocaleString("pt-BR"), cost })}
               </span>
             ) : (
               <span className="text-[12px] leading-snug text-[var(--mute)]">
-                Você tem {creditsTotal.toLocaleString("pt-BR")} créditos. São necessários no
-                mínimo {IMAGE_MIN_CREDITS} para gerar uma imagem (1K).{" "}
+                {t("submit.minNotice", {
+                  credits: creditsTotal.toLocaleString("pt-BR"),
+                  min: IMAGE_MIN_CREDITS,
+                })}{" "}
                 <Link
                   href="/app/credits"
                   className="font-medium text-[var(--ink)] underline underline-offset-2 hover:text-white"
                 >
-                  Comprar créditos
+                  {t("submit.buyCredits")}
                 </Link>
               </span>
             ))}

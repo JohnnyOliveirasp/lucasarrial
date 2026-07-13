@@ -6,6 +6,7 @@
  * Swagger completo.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Copy, Check, Terminal, BookOpen, ArrowUpRight } from "lucide-react";
 
 type Voice = {
@@ -15,6 +16,7 @@ type Voice = {
 };
 
 function CopyButton({ value, label }: { value: string; label?: string }) {
+  const t = useTranslations("shell.apiDocs");
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -31,12 +33,13 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
       className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] px-2.5 py-1.5 font-sans text-[12px] text-[var(--mute)] transition-[color,border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:text-[var(--ink)]"
     >
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      {copied ? "Copiado" : label ?? "Copiar"}
+      {copied ? t("copied") : label ?? t("copy")}
     </button>
   );
 }
 
 export function ApiDocs() {
+  const t = useTranslations("shell.apiDocs");
   const [voices, setVoices] = useState<Voice[]>([]);
   const [origin, setOrigin] = useState("https://fastcloner.com");
 
@@ -60,35 +63,34 @@ export function ApiDocs() {
   }, [load]);
 
   const ready = voices.filter((v) => v.status === "ready");
-  const sampleVoiceId = ready[0]?.id ?? "SEU_VOICE_ID";
+  const sampleVoiceId = ready[0]?.id ?? t("yourVoiceId");
 
   const curlGenerate = `curl -X POST "${origin}/api/v1/voices/${sampleVoiceId}/generate" \\
-  -H "x-api-key: SUA_CHAVE" \\
+  -H "x-api-key: ${t("yourKey")}" \\
   -H "Content-Type: application/json" \\
-  -d '{"text": "Olá, isso é um teste da minha voz."}'`;
+  -d '{"text": "${t("sampleText")}"}'`;
 
   const curlPoll = `curl "${origin}/api/v1/generations/GENERATION_ID" \\
-  -H "x-api-key: SUA_CHAVE"
-# Repita a cada ~30s até "status": "ready".
-# Aí a resposta traz "audio_url" (link do .mp3, válido por 1h).`;
+  -H "x-api-key: ${t("yourKey")}"
+${t("pollComment")}`;
 
   return (
     <section className="flex flex-col gap-6">
       <div className="flex items-center gap-2.5">
         <Terminal className="h-5 w-5 text-[var(--silver)]" />
         <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
-          Como usar (cURL)
+          {t("title")}
         </h2>
       </div>
 
       {/* Vozes prontas */}
       <div className="flex flex-col gap-2.5">
         <span className="text-[13px] text-[var(--silver)]">
-          Suas vozes prontas (use o ID na chamada)
+          {t("readyVoices")}
         </span>
         {ready.length === 0 ? (
           <p className="text-[14px] text-[var(--mute)]">
-            Nenhuma voz pronta ainda. Treine uma voz primeiro.
+            {t("noReadyVoices")}
           </p>
         ) : (
           <ul className="flex flex-col rounded-[var(--radius)] border border-[var(--hairline-strong)]">
@@ -118,7 +120,7 @@ export function ApiDocs() {
       <div className="flex flex-col gap-2.5">
         <div className="flex items-center justify-between gap-3">
           <span className="text-[13px] text-[var(--silver)]">
-            1. Gerar áudio → devolve generation_id
+            {t("step1")}
           </span>
           <CopyButton value={curlGenerate} />
         </div>
@@ -131,7 +133,7 @@ export function ApiDocs() {
       <div className="flex flex-col gap-2.5">
         <div className="flex items-center justify-between gap-3">
           <span className="text-[13px] text-[var(--silver)]">
-            2. Consultar status (polling ~30s) → audio_url quando pronto
+            {t("step2")}
           </span>
           <CopyButton value={curlPoll} />
         </div>
@@ -147,7 +149,7 @@ export function ApiDocs() {
         className="inline-flex w-fit items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] py-2.5 text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-[background-color,border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)]"
       >
         <BookOpen className="h-4 w-4" />
-        Documentação completa (Swagger)
+        {t("fullDocs")}
         <ArrowUpRight className="h-4 w-4 text-[var(--ash)]" />
       </a>
     </section>

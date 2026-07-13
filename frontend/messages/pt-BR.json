@@ -312,5 +312,993 @@
     },
     "copyright": "© 2026 FastCloner. Todos os direitos reservados.",
     "status": "Todos os sistemas operacionais"
+  },
+  "images": {
+    "page": {
+      "eyebrow": "Imagens",
+      "title": "Gerar Imagem",
+      "description": "Envie sua foto, descreva a cena e gere uma imagem sua em qualquer cenário — mantendo o seu rosto. Baixe ou guarde pra usar depois.",
+      "lockedTitleSubscribed": "Créditos insuficientes para gerar imagem",
+      "lockedTitleUnsubscribed": "Assine para gerar imagens",
+      "lockedBodySubscribed": "Gerar uma imagem custa a partir de {min} créditos (1K) e você tem {credits}. Compre um pacote para continuar.",
+      "lockedBodyUnsubscribed": "Você não tem um plano vigente. Gerar imagens consome créditos do plano: assine para liberar 100.000 créditos por mês e criar suas imagens.",
+      "buyCredits": "Comprar créditos",
+      "subscribeNow": "Assinar agora",
+      "yourImages": "Suas imagens"
+    },
+    "studio": {
+      "errors": {
+        "prepareUpload": "Falha ao preparar upload",
+        "sendImage": "Falha ao enviar a imagem",
+        "upload": "Erro no upload",
+        "invalidFiles": "Envie arquivos de imagem (JPG, PNG ou WEBP).",
+        "maxPhotos": "Máximo de {max} fotos.",
+        "maxPhotosIgnored": "Máximo de {max} fotos — algumas foram ignoradas.",
+        "blockedFallback": "Conteúdo não permitido",
+        "generatePrompt": "Falha ao gerar prompt",
+        "generic": "Erro",
+        "generationFailed": "Geração falhou",
+        "generateImage": "Falha ao gerar imagem"
+      },
+      "result": {
+        "title": "Imagem gerada",
+        "alt": "Imagem gerada",
+        "download": "Baixar",
+        "animate": "Animar (gerar vídeo)",
+        "again": "Gerar outra"
+      },
+      "generating": {
+        "label": "Gerando sua imagem…",
+        "hint": "Pode levar de alguns segundos a ~1 min. Pode acompanhar no histórico abaixo."
+      },
+      "refs": {
+        "label": "1. Suas fotos (referência)",
+        "hint": "Envie 1 ou mais fotos da MESMA pessoa — quanto mais ângulos e expressões, melhor a semelhança. O resultado mantém o rosto destas fotos. Use fotos nítidas e bem iluminadas.",
+        "dropzone": "Clique ou arraste suas fotos aqui",
+        "formats": "JPG, PNG ou WEBP · até {max} fotos",
+        "remove": "Remover foto",
+        "addMore": "Adicionar mais fotos"
+      },
+      "idea": {
+        "label": "2. Sua ideia (opcional)",
+        "hint": "Descreva em português o que você quer (ex.: 'eu numa praia ao pôr do sol, estilo foto profissional'). Clique em Gerar prompt e a IA monta um prompt consistente pra você.",
+        "placeholder": "Ex.: eu de terno num escritório moderno, foto profissional…",
+        "generatingBtn": "Gerando prompt…",
+        "generateBtn": "Gerar prompt automático"
+      },
+      "prompt": {
+        "label": "3. Prompt",
+        "hint": "O texto que descreve a imagem a gerar (em inglês funciona melhor). Você pode escrever direto aqui ou usar o botão acima. Pode editar à vontade.",
+        "placeholder": "A photorealistic portrait of the person in the reference photo…"
+      },
+      "aspect": {
+        "label": "4. Proporção",
+        "hint": "O formato da imagem. 'Automático' deixa o modelo escolher (sai em 1K). Vertical 9:16 pra Stories/Reels, Quadrado 1:1 pra feed, etc."
+      },
+      "resolution": {
+        "label": "5. Resolução",
+        "hint": "A qualidade/tamanho da imagem. Quanto maior, mais nitidez e mais créditos. 4K não está disponível em 'Automático' nem em Quadrado (1:1).",
+        "unavailable": "Indisponível para esta proporção",
+        "needCredits": "Você precisa de {credits} créditos para {resolution}"
+      },
+      "submit": {
+        "generate": "Gerar imagem · {cost} créditos",
+        "insufficient": "Créditos insuficientes",
+        "balance": "Você tem {credits} créditos · esta custa {cost}.",
+        "minNotice": "Você tem {credits} créditos. São necessários no mínimo {min} para gerar uma imagem (1K).",
+        "buyCredits": "Comprar créditos"
+      },
+      "supportAction": "gerar a imagem",
+      "paywallAction": "gerar imagem"
+    },
+    "history": {
+      "status": {
+        "pending": "Na fila",
+        "generating": "Gerando…",
+        "ready": "Pronto",
+        "failed": "Falhou"
+      },
+      "fallbackName": "Imagem {date}",
+      "errors": {
+        "load": "Falha ao carregar histórico",
+        "delete": "Falha ao apagar",
+        "rename": "Falha ao renomear",
+        "generic": "Erro"
+      },
+      "loading": "Carregando histórico…",
+      "empty": "Nenhuma imagem ainda. Gere a primeira acima e ela aparece aqui.",
+      "viewImage": "Ver imagem",
+      "nameLabel": "Nome da imagem",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "rename": "Renomear",
+      "animateAria": "Animar imagem (gerar vídeo)",
+      "video": "Vídeo",
+      "animate": "Animar",
+      "download": "Baixar",
+      "delete": "Apagar",
+      "deleteTitle": "Apagar imagem?",
+      "deleteWarning": "Ação <strong>irreversível</strong>. Remove a imagem do armazenamento e do histórico.",
+      "deleting": "Apagando…"
+    },
+    "animate": {
+      "errors": {
+        "start": "Falha ao iniciar o vídeo",
+        "generic": "Erro"
+      },
+      "downloadVideo": "Baixar vídeo",
+      "retryHint": "Quer outro movimento? Ajuste o prompt abaixo e gere de novo (novo custo em créditos).",
+      "generating": "Gerando vídeo…",
+      "generatingHint": "Pode levar alguns minutos. Você pode sair e voltar.",
+      "tierCredits": "{credits} créditos",
+      "movementLabel": "Movimento desejado (em português — traduzimos pra você)",
+      "cost": "Custo: {credits} créditos · clipe de {seconds}s · 720p",
+      "selectModel": "Selecione um modelo acima",
+      "sending": "Enviando…",
+      "regenerate": "Gerar de novo",
+      "animateBtn": "Animar",
+      "paywallAction": "animar esta imagem"
+    }
+  },
+  "misc": {
+    "plans": {
+      "eyebrow": "Planos",
+      "titleLine1": "Assine e libere",
+      "titleLine2": "a sua voz",
+      "planName": "Acesso Completo",
+      "tagline": "Clonagem de voz com IA, ilimitada para o seu conteúdo.",
+      "features": [
+        "Clone a sua voz com poucos minutos de áudio",
+        "Geração de áudio ilimitada",
+        "API para integrar nos seus fluxos",
+        "Histórico e download dos áudios",
+        "7 dias de garantia — cancele e peça reembolso",
+        "Suporte por e-mail"
+      ],
+      "loginCta": "Entrar para assinar",
+      "subscribeCta": "Assinar agora",
+      "comingSoon": "Checkout em breve",
+      "linkedTo": "Compra vinculada a {email}"
+    },
+    "paymentApproved": {
+      "eyebrow": "Pagamento aprovado",
+      "titleLine1": "Tudo certo,",
+      "titleLine2": "bem-vindo!",
+      "intro": "Recebemos a confirmação da sua compra. O acesso é liberado automaticamente em instantes — basta entrar com o <strong>mesmo e-mail que você usou na compra</strong>.",
+      "step1": "Clique no botão abaixo e entre com o Google.",
+      "step2": "Use o <strong>mesmo e-mail</strong> da compra — é por ele que liberamos o seu acesso e os seus créditos.",
+      "step3": "Pronto: clone a sua voz e comece a gerar áudio.",
+      "ctaDashboard": "Ir para a plataforma",
+      "ctaLogin": "Entrar para acessar",
+      "supportHint": "Acabou de pagar e ainda não liberou? Aguarde alguns instantes e atualize. Persistindo, fale com"
+    },
+    "paymentPending": {
+      "eyebrow": "Pagamento em processamento",
+      "title": "Quase lá!",
+      "intro": "Recebemos o seu pedido. Assim que o pagamento for confirmado, o seu acesso é liberado <strong>automaticamente</strong> e você recebe um e-mail de confirmação.",
+      "howLong": "Quanto tempo leva?",
+      "pixLabel": "Pix",
+      "pixDesc": "confirmação costuma sair em alguns minutos.",
+      "boletoLabel": "Boleto",
+      "boletoDesc": "pode levar até alguns dias úteis após o pagamento.",
+      "cardLabel": "Cartão",
+      "cardDesc": "em análise antifraude — normalmente sai em minutos.",
+      "confirmedQuestion": "Já recebeu a confirmação?",
+      "loginLink": "Entrar",
+      "questions": "Dúvidas:"
+    },
+    "supportError": {
+      "title": "Ops, algo deu errado",
+      "defaultAction": "concluir a operação",
+      "body": "Não foi possível {action}. O erro foi registrado do nosso lado — tente de novo em alguns minutos.",
+      "contact": "Se continuar, fale com o suporte:"
+    }
+  },
+  "sales": {
+    "board": {
+      "eyebrow": "Vídeos",
+      "title": "Vídeo Vendas TikTok",
+      "description": "Suba as fotos do seu produto, escolha quem apresenta e a IA cria o roteiro de venda, as cenas e o vídeo completo — pronto pro TikTok, com até 60 segundos."
+    },
+    "new": {
+      "eyebrow": "Vídeo Vendas TikTok",
+      "title": "Novo vídeo de venda"
+    },
+    "setup": {
+      "back": "Board",
+      "loadingProject": "Carregando projeto…",
+      "productTitle": "1 · O produto",
+      "photosCount": "{n}/{max} fotos",
+      "productAlt": "produto {n}",
+      "personAlt": "apresentador(a) {n}",
+      "removePhoto": "Remover foto",
+      "addPhoto": "+ adicionar ({n}/{max})",
+      "productHint": "Envie de 1 a 4 fotos do produto — dá pra selecionar várias de uma vez; ângulos diferentes ajudam a IA.",
+      "pricePlaceholder": "Preço (opcional) — ex: R$ 89,90",
+      "linkPlaceholder": "Link do produto (opcional)",
+      "descriptionPlaceholder": "Descreva o produto e o que você quer destacar (opcional) — a IA usa isso no roteiro.",
+      "personTitle": "2 · Quem apresenta",
+      "personHint": "A pessoa que aparece nas cenas apresentando o produto — envie de 1 a 6 fotos (quanto mais ângulos, mais fiel o rosto sai nas cenas).",
+      "consentLabel": "Confirmo que tenho autorização pra usar a imagem dessa pessoa.",
+      "analysisTitle": "3 · Análise do Produto",
+      "analyzeLocked": "Envie as fotos do produto E de quem apresenta (com a ciência marcada) pra liberar a análise.",
+      "analyze": "Analisar produto ({cost} cr)",
+      "analyzeAgain": "Analisar de novo ({cost} cr)",
+      "analysisHint": "A IA olha as fotos (e o que você informou) e monta o ângulo de venda — base do roteiro.",
+      "scriptTitle": "4 · Roteiro de venda (máx. 60s)",
+      "wandTitle": "A IA melhora o roteiro atual",
+      "wand": "Varinha ({cost} cr)",
+      "redo": "Refazer ({cost} cr)",
+      "generateScript": "Gerar roteiro ({cost} cr)",
+      "scriptMeta": "editar na mão é grátis · {n} palavras",
+      "saveEdit": "Salvar edição",
+      "errors": {
+        "loadProject": "Erro ao carregar o projeto",
+        "upload": "Erro no upload",
+        "needProduct": "Envie ao menos 1 foto do produto.",
+        "needPerson": "Envie a foto de quem vai apresentar — a análise usa as duas.",
+        "needConsent": "Confirme a ciência sobre o uso da foto da pessoa.",
+        "analyze": "Erro na análise",
+        "script": "Erro no roteiro",
+        "wand": "Erro na varinha",
+        "save": "Erro ao salvar"
+      }
+    },
+    "voice": {
+      "title": "5 · A voz que narra (máx. {max}s)",
+      "generating": "Gerando o áudio com a sua voz…",
+      "generatingLong": "Gerando o áudio com a sua voz… (pode levar 1-2 min)",
+      "attaching": "Anexando o áudio ao projeto…",
+      "reading": "Lendo o áudio…",
+      "sending": "Enviando…",
+      "transcribing": "Transcrevendo e anexando…",
+      "cloneOption": "Narrar com a minha voz clonada",
+      "noVoices": "Você ainda não tem uma voz pronta — treine uma em Vozes, ou envie um áudio gravado abaixo.",
+      "generateAudio": "Gerar áudio ({cost} cr)",
+      "uploadOption": "Já gravei o áudio do produto",
+      "uploadButton": "Enviar áudio",
+      "uploadHint": "MP3/WAV/M4A/OGG · máx. {max}s · a transcrição do que você fala substitui o roteiro",
+      "errors": {
+        "generationFailed": "A geração do áudio falhou.",
+        "timeout": "A geração demorou demais — veja o Histórico e tente anexar de novo.",
+        "generate": "Erro ao gerar o áudio.",
+        "tooLarge": "Arquivo muito grande (máx. 25MB).",
+        "readFile": "Não conseguimos ler esse arquivo de áudio.",
+        "readDuration": "Não conseguimos ler a duração desse áudio.",
+        "tooLong": "Seu áudio tem {n}s — no Vídeo Vendas o máximo é {max}s.",
+        "uploadFailed": "Falha ao enviar o áudio. Tente novamente.",
+        "process": "Erro ao processar o áudio."
+      }
+    }
+  },
+  "videoClone": {
+    "yourVideos": "Seus vídeos",
+    "page": {
+      "eyebrow": "Vídeos",
+      "title": "Vídeo Clone",
+      "description": "Envie uma foto sua e um áudio — a gente gera o vídeo de você falando, com movimento labial sincronizado. Perfeito pra avatares e conteúdo.",
+      "lockedNoCredits": "Créditos insuficientes para gerar o Vídeo Clone",
+      "lockedNoPlan": "Assine para gerar Vídeo Clone",
+      "lockedNoCreditsBody": "Gerar um Vídeo Clone custa a partir de {min} créditos e você tem {have}. Compre um pacote para continuar.",
+      "lockedNoPlanBody": "Você não tem um plano vigente. O Vídeo Clone consome créditos do plano: assine para liberar seus créditos mensais.",
+      "buyCredits": "Comprar créditos",
+      "subscribe": "Assinar agora"
+    },
+    "studio": {
+      "stepImage": "1. Foto da pessoa",
+      "stepAudio": "2. Áudio com a fala (até {max}s)",
+      "stepQuality": "3. Qualidade",
+      "perSecond": "{n} créditos/segundo de áudio",
+      "cost": "Custo: {seconds}s × {rate} = {cost} créditos",
+      "costBalance": "(você tem {have})",
+      "pickToSeeCost": "Escolha a foto e o áudio pra ver o custo",
+      "sending": "Enviando…",
+      "generate": "Gerar Vídeo Clone",
+      "generateWithCost": "Gerar Vídeo Clone · {cost} cr",
+      "generatingLabel": "Gerando vídeo",
+      "generatingTitle": "Gerando seu Vídeo Clone",
+      "generatingHint": "Leva alguns minutos. Pode sair e voltar — fica salvo no histórico.",
+      "download": "Baixar vídeo",
+      "again": "Gerar outro",
+      "retry": "Tentar de novo",
+      "noSpeech": "(não detectamos fala nesse áudio)",
+      "paywallAction": "gerar o Vídeo Clone",
+      "errors": {
+        "readAudio": "Não conseguimos ler esse áudio. Tente MP3 ou WAV.",
+        "tooLong": "O áudio tem {n}s — o máximo é {max}s (1min30s).",
+        "upload": "Erro no upload",
+        "start": "Falha ao iniciar a geração",
+        "failed": "A geração falhou. Tente novamente.",
+        "generic": "Erro"
+      }
+    },
+    "pickers": {
+      "myPhotos": "Minhas fotos",
+      "uploadPhoto": "Enviar foto",
+      "photoHint": "📸 Melhor resultado: foto da <strong>metade do corpo pra cima</strong>, rosto nítido e bem iluminado.",
+      "loadingPhotos": "Carregando suas fotos…",
+      "noPhotos": "Você ainda não tem fotos geradas.",
+      "createPhoto": "Criar minha foto no Gerador de Imagem →",
+      "createAnotherPhoto": "Criar outra foto no Gerador de Imagem →",
+      "changePhoto": "Trocar foto",
+      "choosePhotoFile": "Escolher arquivo (PNG, JPG, WEBP)",
+      "myAudios": "Meus áudios",
+      "uploadAudio": "Enviar áudio",
+      "loadingAudios": "Carregando seus áudios…",
+      "noAudios": "Você ainda não tem áudios gerados (até {max}s).",
+      "createAudio": "Gerar um áudio com a sua voz →",
+      "createAnotherAudio": "Gerar novo áudio com a sua voz →",
+      "transcription": "Transcrição: “{text}”",
+      "transcribing": "Transcrevendo o áudio…",
+      "changeAudio": "Trocar áudio",
+      "chooseAudioFile": "Escolher arquivo (MP3, WAV · até {max}s)"
+    },
+    "history": {
+      "loading": "Carregando…",
+      "empty": "Nenhum Vídeo Clone ainda. Gere o primeiro acima.",
+      "inflightTitle": "Gerando seu Vídeo Clone",
+      "inflightHint": " — pode levar alguns minutos. Pode sair e voltar.",
+      "fallbackName": "Vídeo Clone {date}",
+      "status": {
+        "pending": "Na fila",
+        "generating": "Gerando…",
+        "ready": "Pronto",
+        "failed": "Falhou"
+      },
+      "nameAria": "Nome do vídeo",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "rename": "Renomear",
+      "watch": "Assistir",
+      "download": "Baixar",
+      "delete": "Apagar",
+      "deleting": "Apagando…",
+      "deleteTitle": "Apagar vídeo?",
+      "deleteBody": "Ação <strong>irreversível</strong>. Remove o vídeo, a foto e o áudio do armazenamento.",
+      "errors": {
+        "load": "Falha ao carregar histórico",
+        "delete": "Falha ao apagar",
+        "rename": "Falha ao renomear",
+        "generic": "Erro"
+      }
+    }
+  },
+  "studio": {
+    "page": {
+      "eyebrow": "Vídeos",
+      "title": "Vídeo Estúdio",
+      "subtitle": "Grave sua fala sem medo de errar — repita a frase quantas vezes quiser. A gente corta os erros, encolhe as pausas e devolve o áudio limpo, pronto pra virar vídeo.",
+      "gateTitleCredits": "Créditos insuficientes para usar o Vídeo Estúdio",
+      "gateTitleSubscribe": "Assine para usar o Vídeo Estúdio",
+      "gateBodyCredits": "Preparar um áudio custa {cost} créditos e você tem {credits}. Compre um pacote para continuar.",
+      "gateBodySubscribe": "Você não tem um plano vigente. O Vídeo Estúdio consome créditos do plano: assine para liberar seus créditos mensais.",
+      "gateCtaBuy": "Comprar créditos",
+      "gateCtaSubscribe": "Assinar agora"
+    },
+    "common": {
+      "error": "Erro"
+    },
+    "workspace": {
+      "micFallback": "Microfone {n}",
+      "micError": "Não consegui acessar o microfone. Verifique a permissão do navegador.",
+      "errPrepareUpload": "Falha ao preparar upload",
+      "errUploadAudio": "Falha no upload do áudio",
+      "errStartProcessing": "Falha ao iniciar o processamento",
+      "errStartMontage": "Falha ao iniciar a montagem",
+      "errStartScenes": "Falha ao iniciar as cenas",
+      "errPreparePhotoUpload": "Falha ao preparar upload da foto",
+      "errUploadPhoto": "Falha no upload da foto",
+      "errStartFace": "Falha ao iniciar o rosto",
+      "step1": "1. Grave sua fala (pode errar e repetir a frase — a gente corta)",
+      "micSelectAria": "Escolher microfone",
+      "micDefault": "Microfone padrão do sistema",
+      "reRecord": "Regravar",
+      "recordNow": "Gravar agora",
+      "stop": "Parar",
+      "uploadInstead": "Ou subir um áudio",
+      "recordingReady": "Gravação pronta.",
+      "listenHint": "Ouça antes de enviar, se quiser.",
+      "step2": "2. Nome (opcional)",
+      "namePlaceholder": "Ex.: Vídeo sobre o lançamento",
+      "costLine": "Custo: {cost} créditos por áudio",
+      "youHave": "(você tem {credits})",
+      "sending": "Enviando…",
+      "cleanCta": "Limpar meu áudio",
+      "historyTitle": "Seus áudios",
+      "paywallAction": "preparar o áudio no Vídeo Estúdio"
+    },
+    "script": {
+      "label": "Roteiro (opcional) — a IA escreve no formato documentário viral",
+      "errGenerate": "Falha ao gerar o roteiro",
+      "ideaPlaceholder": "Qual a ideia do vídeo? Ex.: como montei um sistema que edita vídeo sozinho",
+      "durationAria": "Duração alvo do roteiro",
+      "durationOption": "~{s}s de fala",
+      "writing": "Escrevendo…",
+      "redo": "Refazer",
+      "generate": "Gerar roteiro",
+      "scriptAria": "Roteiro gerado (editável)",
+      "hint": "Leia gravando do seu jeito — pode improvisar. A edição segue o que você FALAR, não este texto."
+    },
+    "result": {
+      "processingTitle": "Editando seu áudio — cortando erros e pausas…",
+      "processingHint": "Leva ~1-2 minutos. Pode sair e voltar — fica salvo no histórico.",
+      "statRaw": "bruto: {d}",
+      "statClean": "→ limpo: {d}",
+      "statRemoved": "{n, plural, one {# trecho errado removido} other {# trechos errados removidos}}",
+      "statNoRepeats": "nenhuma repetição detectada",
+      "transcriptLabel": "O que ficou no áudio",
+      "editReport": "Relatório da edição (fala a fala)",
+      "downloadClean": "Baixar áudio limpo",
+      "prepareAnother": "Preparar outro áudio",
+      "scenesLabel": "Cenas do roteiro (b-roll gerado por IA)",
+      "scenesGenerate": "Gerar cenas do roteiro",
+      "scenesCostHint": "{cost} cr por cena NOVA — cenas do seu banco entram de graça (elas ficam salvas pra sempre).",
+      "scenesGenerating": "Gerando cenas — {ready}/{total} prontas… (~1-3 min por cena)",
+      "scenesReadyCount": "{n} cenas prontas",
+      "scenesFromBank": "({n} do seu banco, de graça)",
+      "scenesWillUseYours": "a montagem vai usar as SUAS cenas.",
+      "scenesFailed": "{n, plural, one {# cena falhou na geração.} other {# cenas falharam na geração.}}",
+      "scenesRetry": "Tentar as cenas que falharam",
+      "bankChip": "banco",
+      "faceLabel": "Sua presença no vídeo (rosto na abertura e no fechamento)",
+      "faceFailed": "A geração do rosto falhou. Tente novamente.",
+      "faceCta": "Escolher minha foto e gerar",
+      "faceHint": "Opcional — sem foto, o vídeo sai só com as cenas. Preço do Clone Turbo sobre a abertura e o fechamento.",
+      "faceProcessing": "Gerando você falando (abertura e fechamento)… leva alguns minutos.",
+      "faceReady": "✓ Presença pronta — você abre e fecha o vídeo falando.",
+      "montageLabelScenes": "Montar o vídeo — com as suas cenas + legenda + música",
+      "montageLabelTest": "Vídeo de teste — montagem + legenda + música (cenas fixas)",
+      "trackAria": "Trilha sonora",
+      "noMusic": "Sem música",
+      "montageCta": "Montar vídeo",
+      "montageCtaTest": "Montar vídeo de teste",
+      "montageProcessing": "Montando o vídeo — J-cuts, ritmo e zoom… (~2-4 min)",
+      "downloadVideo": "Baixar vídeo",
+      "remake": "Montar de novo",
+      "qa": "QA automático: áudio com teto −1dB (sem clipping) ✓ · nenhum plano parado >2,5s ✓ · cenas de IA checadas contra texto quebrado ✓",
+      "cutPlan": "Plano de cortes",
+      "montageFailed": "A montagem falhou. Tente novamente.",
+      "montageRetry": "Tentar montar de novo",
+      "failedFallback": "O processamento falhou. Tente novamente.",
+      "tryAgain": "Tentar de novo"
+    },
+    "history": {
+      "loading": "Carregando…",
+      "empty": "Nenhum áudio preparado ainda — grave o primeiro acima.",
+      "unnamed": "Áudio sem nome",
+      "cleanSecs": "{s}s limpos",
+      "cuts": "{n, plural, one {# corte} other {# cortes}}",
+      "ready": "pronto",
+      "processing": "processando",
+      "failed": "falhou"
+    }
+  },
+  "videoWizard": {
+    "common": {
+      "loading": "Carregando…",
+      "loadingProject": "Carregando projeto…",
+      "error": "Erro",
+      "projectNotFound": "Projeto não encontrado",
+      "audioUnavailable": "áudio indisponível",
+      "sceneAlt": "Cena {n}",
+      "videoFallbackName": "Vídeo {date}",
+      "cancel": "Cancelar",
+      "regenerate": "Regerar",
+      "sending": "Enviando…"
+    },
+    "paywall": {
+      "insufficientTitle": "Créditos insuficientes",
+      "subscribeTitle": "Assine para gerar",
+      "subscribeAiTitle": "Assine para usar a IA",
+      "buyPack": "Compre um pacote de créditos para continuar.",
+      "buyPackShort": "Compre um pacote para continuar.",
+      "subscribeVideos": "Assine o plano para liberar créditos e gerar os vídeos.",
+      "subscribeImages": "Assine o plano para liberar créditos e gerar as imagens.",
+      "subscribePlain": "Assine o plano para liberar créditos.",
+      "improveCost": "Melhorar o prompt com IA custa 1 crédito.",
+      "close": "Fechar",
+      "buyCredits": "Comprar créditos",
+      "subscribeNow": "Assinar agora"
+    },
+    "board": {
+      "status": {
+        "draft": "Rascunho",
+        "scenes": "Cenas",
+        "images": "Imagens",
+        "videos": "Vídeos",
+        "rendering": "Montando…",
+        "done": "Pronto",
+        "failed": "Falhou"
+      },
+      "loadFailed": "Falha ao carregar seus vídeos",
+      "deleteFailed": "Falha ao apagar",
+      "renameFailed": "Falha ao renomear",
+      "newVideo": "Novo vídeo",
+      "empty": "Nenhum vídeo ainda. Comece escolhendo um áudio seu (de até 1min30s) e deixe a IA montar as cenas.",
+      "projectCount": "{n, plural, one {# projeto} other {# projetos}}",
+      "nameAria": "Nome do vídeo",
+      "save": "Salvar",
+      "rename": "Renomear",
+      "delete": "Apagar",
+      "sceneMeta": "{n} cenas",
+      "open": "Abrir",
+      "deleteTitle": "Apagar vídeo?",
+      "deleteWarning": "Ação <strong>irreversível</strong>. Remove o projeto e tudo que ele já gerou.",
+      "deleting": "Apagando…"
+    },
+    "wizard": {
+      "stages": {
+        "audio": "Áudio",
+        "scenes": "Cenas",
+        "images": "Imagens",
+        "videos": "Vídeos",
+        "final": "Final"
+      },
+      "backBoard": "Voltar ao board",
+      "board": "Board",
+      "eyebrow": "Wizard de vídeo",
+      "salesHeader": "Produto & apresentador",
+      "productAlt": "produto {n}",
+      "presenterAlt": "apresentador(a) {n}",
+      "seeAnalysis": "ver análise do produto",
+      "audioSelected": "Áudio selecionado",
+      "sceneEstimate": "~{n} cenas de {s}s"
+    },
+    "scenes": {
+      "loadFailed": "Falha ao carregar cenas",
+      "generateFailed": "Falha ao gerar cenas",
+      "saveFailed": "Falha ao salvar",
+      "improveFailed": "Falha ao melhorar",
+      "loading": "Carregando cenas…",
+      "generateTitle": "Gerar cenas",
+      "intro": "A IA vai dividir o seu roteiro em <strong>~{n} cenas</strong> em ordem, com um prompt visual em português pra cada uma. Você pode editar tudo depois. Gerar as cenas é grátis.",
+      "generating": "Gerando cenas…",
+      "count": "{n} cenas",
+      "editHint": "edite à mão ou use a ✨ (1 crédito)",
+      "saved": "salvo",
+      "improveTitle": "Melhorar prompt com IA (1 crédito)",
+      "improve": "Melhorar",
+      "promptAria": "Prompt da cena {n}",
+      "nextHint": "Quando as cenas estiverem boas, gere as imagens abaixo."
+    },
+    "images": {
+      "loadFailed": "Falha ao carregar imagens",
+      "uploadFailed": "Falha ao enviar uma das fotos. Tente de novo.",
+      "refSaveFailed": "Falha ao salvar a referência",
+      "generateFailed": "Falha ao gerar imagens",
+      "regenFailed": "Falha ao regerar",
+      "blockedCount": "{n} cena(s) foram bloqueadas pela moderação de conteúdo.",
+      "blockedScene": "Conteúdo bloqueado pela moderação nessa cena.",
+      "refTitle": "Sua foto de referência",
+      "refIntro": "Envie de <strong>1 a 6 fotos suas</strong> (rosto ou da cintura pra cima). Recomendado: 2–3 ângulos. Essa foto vira o padrão e é usada em <strong>todas as cenas</strong>.",
+      "removeAria": "Remover",
+      "upload": "Enviar",
+      "consent": "Estou ciente de que a(s) foto(s) que enviei serão usadas em <strong>todas as cenas</strong>, que devo enviar uma foto <strong>minha e nítida</strong> (rosto ou da cintura pra cima), e que o resultado ruim por foto inadequada é de minha responsabilidade.",
+      "generatingImages": "Gerando imagens…",
+      "saveAndGenerate": "Salvar e gerar imagens",
+      "costHint": "Cada imagem custa 12 créditos (1K). Pode levar alguns minutos.",
+      "gridTitle": "Imagens das cenas",
+      "generating": "Gerando…",
+      "generatePending": "Gerar {n} imagem(ns)",
+      "regenTitle": "Gerar novamente (1K, 12 créditos)",
+      "resolutionAria": "Resolução da cena {n}"
+    },
+    "videoStage": {
+      "loadFailed": "Falha ao carregar os vídeos",
+      "generateFailed": "Falha ao gerar os vídeos",
+      "gate": "Gere e finalize <strong>todas as imagens</strong> das cenas para liberar a geração dos vídeos."
+    },
+    "grid": {
+      "title": "Vídeos das cenas",
+      "tierMeta": "· {medal} {label} · {cost} cr/cena",
+      "retryTitle": "Gerar/regerar as {n} cenas pendentes ({cr} créditos)",
+      "retryLabel": "Regerar {n} vídeo(s) · {cr} cr",
+      "providerIssue": "O serviço de vídeo está temporariamente indisponível (limite do provedor). Já avisamos o suporte automaticamente. Assim que normalizar, é só clicar em <strong>Regerar</strong> — você não perde o prompt.",
+      "generatingBatch": "Gerando seus vídeos",
+      "generatingHint": " — pode levar alguns minutos. Pode sair e voltar.",
+      "generatingClip": "Gerando vídeo",
+      "failed": "falhou",
+      "promptPlaceholder": "Prompt de movimento (pt-BR) — será gerado automaticamente",
+      "genFailed": "Falha na geração",
+      "regenTitle": "Regerar o vídeo ({cr} créditos)",
+      "useMyPrompt": "Gerar com meu prompt",
+      "wandTitle": "Novo prompt com IA (Sonnet vê a imagem): 15 créditos + o vídeo"
+    },
+    "tiers": {
+      "title": "Escolha o modelo de vídeo",
+      "intro": "Estes três exemplos foram gerados a partir da <strong>mesma imagem</strong> e do <strong>mesmo prompt</strong> abaixo — só muda o modelo. Veja qual chegou mais perto do que você quer e escolha. O custo é por cena.",
+      "samplePrompt": "Prompt usado nos 3 exemplos",
+      "perClip": "{n} cr/cena",
+      "summarySelected": "{medal} {label} · {n} cenas",
+      "selectPrompt": "Selecione um modelo acima",
+      "totalLine": "{cost} × {n} = {total} créditos no total",
+      "specLine": "{n} cenas de {s}s · 9:16 · 720p",
+      "approveN": "Aprovar e gerar {n} vídeos · {total} cr",
+      "approve": "Aprovar e gerar",
+      "backgroundHint": "A geração roda em segundo plano e pode levar alguns minutos. Você pode sair e voltar — o progresso fica salvo."
+    },
+    "final": {
+      "positions": {
+        "bottom": "Baixo",
+        "center": "Centro",
+        "top": "Alto"
+      },
+      "styleLabel": "Estilo da legenda",
+      "positionLabel": "Posição",
+      "sizeLabel": "Tamanho",
+      "sizeNormal": "Normal",
+      "sizeLarge": "Grande",
+      "previewA": "sua",
+      "previewB": "legenda",
+      "queueFailed": "Falha ao enfileirar a montagem",
+      "title": "Vídeo final",
+      "download": "Baixar vídeo",
+      "reassemble": "Montar de novo",
+      "reassembleHint": "(com o estilo escolhido)",
+      "renderingTitle": "Montando seu vídeo final…",
+      "renderingHint": "Juntando os clipes com o áudio. Pode levar alguns minutos — pode sair e voltar.",
+      "failedTitle": "A montagem falhou",
+      "failedFallback": "Erro desconhecido na montagem.",
+      "retry": "Tentar montar de novo",
+      "intro": "Junta todos os clipes na ordem das cenas com o seu áudio, adiciona a legenda sincronizada e corta no tamanho da narração.",
+      "approve": "Aprovar vídeos e montar o final",
+      "waitClips": "Aguarde todos os clipes ficarem prontos."
+    },
+    "audioPick": {
+      "loadFailed": "Falha ao carregar seus áudios",
+      "createFailed": "Falha ao criar o vídeo",
+      "loading": "Carregando áudios…",
+      "empty": "Você ainda não tem áudios de até {s}s. Gere um áudio com o seu roteiro primeiro e ele aparece aqui.",
+      "generateAudio": "Gerar Áudio",
+      "sceneCount": "~{n} cenas",
+      "creating": "Criando…",
+      "useThis": "Usar este áudio"
+    },
+    "audioUpload": {
+      "unreadable": "Não conseguimos ler esse arquivo de áudio.",
+      "tooLarge": "Arquivo muito grande (máx. 25MB).",
+      "noDuration": "Não conseguimos ler a duração desse áudio.",
+      "tooLong": "Seu áudio tem {dur} — o máximo é {max}. Corte o áudio e tente de novo.",
+      "prepareFailed": "Falha ao preparar o upload.",
+      "putFailed": "Falha ao enviar o áudio. Tente novamente.",
+      "createFailed": "Falha ao criar o vídeo.",
+      "processFailed": "Erro ao processar o áudio.",
+      "phaseReading": "Lendo o áudio…",
+      "phaseUploading": "Enviando…",
+      "phaseCreating": "Transcrevendo e criando o projeto…",
+      "title": "Ou envie a sua própria voz",
+      "formats": "MP3, WAV, M4A, OGG ou FLAC · máx. {max} · o roteiro das cenas vem do que é falado",
+      "send": "Enviar áudio"
+    },
+    "pages": {
+      "newEyebrow": "Novo vídeo · Passo 1 de 5",
+      "newTitle": "Escolha o áudio",
+      "newIntro": "Selecione um áudio que você já gerou (com o roteiro). Ele define as cenas do vídeo. Limite de 1min30s por enquanto.",
+      "historyEyebrow": "Vídeos",
+      "historyTitle": "Vídeo História",
+      "historyIntro": "Transforme um áudio seu em um vídeo completo: o roteiro vira cenas, imagens e clipes, montados com legenda no final. Comece por um áudio de até 1min30s."
+    }
+  },
+  "voiceCreate": {
+    "recorderImport": {
+      "loaded": "{count, plural, one {# gravação do Gravador carregada automaticamente.} other {# gravações do Gravador carregadas automaticamente.}}",
+      "skipped": "({skipped} clipe(s) menores ficaram de fora — limite de {max} arquivos.)"
+    },
+    "fileList": {
+      "remove": "Remover"
+    },
+    "meter": {
+      "minThreshold": "mínimo exigido"
+    },
+    "recorder": {
+      "title": "Gravar voz",
+      "accumulated": "Fala acumulada",
+      "clipping": "Áudio estourando — afaste o microfone ou fale mais baixo",
+      "noisy": "Ambiente barulhento — a qualidade do clone cai. Procure um lugar silencioso (sem TV, rua ou ar-condicionado).",
+      "recordingAuto": "Gravando… para sozinho após {seconds}s de silêncio",
+      "activateMic": "Ativar microfone",
+      "requesting": "Pedindo permissão…",
+      "record": "Gravar",
+      "stop": "Parar",
+      "stopRecording": "Parar gravação",
+      "deleteClip": "Apagar clipe",
+      "clipsRecorded": "Áudios gravados ({count})",
+      "targetMet": "Meta de {minutes} min atingida",
+      "sendToTraining": "Enviar para treinamento",
+      "keepRecording": "Pode continuar gravando se quiser melhorar — quanto mais limpo, melhor a voz clonada.",
+      "errors": {
+        "micDenied": "Permissão de microfone negada — libere o mic no navegador e tente de novo.",
+        "micGeneric": "Não consegui acessar o microfone."
+      }
+    },
+    "script": {
+      "pickPrompt": "Escolha um tema pra gerar seu roteiro de leitura.",
+      "pickTheme": "Escolher tema",
+      "generating": "Gerando roteiro…",
+      "generatingHint": "A IA está escrevendo seu texto",
+      "error": "Não consegui gerar o roteiro agora.",
+      "retry": "Tentar de novo",
+      "changeTheme": "Trocar tema",
+      "generateAnother": "Gerar outro",
+      "print": "Baixar / Imprimir",
+      "title": "Escolha um tema",
+      "subtitle": "A IA gera um texto nesse estilo pra você ler e gravar.",
+      "close": "Fechar",
+      "picker": {
+        "pickPrompt": "Escolha um tema pra gerar seu roteiro de leitura.",
+        "pickTheme": "Escolher tema",
+        "generating": "Gerando roteiro…",
+        "generatingHint": "A IA está escrevendo seu texto",
+        "error": "Não consegui gerar o roteiro agora.",
+        "retry": "Tentar de novo",
+        "changeTheme": "Trocar tema",
+        "generateAnother": "Gerar outro",
+        "print": "Baixar / Imprimir",
+        "title": "Escolha um tema",
+        "subtitle": "A IA gera um texto nesse estilo pra você ler e gravar.",
+        "close": "Fechar"
+      }
+    }
+  },
+  "voice": {
+    "common": {
+      "error": "Erro",
+      "networkError": "Erro de rede",
+      "cancel": "Cancelar",
+      "deleting": "Apagando…",
+      "deleteFailed": "Falha ao apagar"
+    },
+    "generating": {
+      "label": "Gerando áudio…"
+    },
+    "history": {
+      "status": {
+        "pending": "Na fila",
+        "generating": "Gerando…",
+        "ready": "Pronto",
+        "failed": "Falhou"
+      },
+      "loadError": "Falha ao carregar histórico",
+      "renameError": "Falha ao renomear",
+      "loading": "Carregando histórico…",
+      "empty": "Nenhum áudio gerado ainda. Gere um áudio numa voz pronta e ele aparece aqui.",
+      "selectedCount": "{n} selecionado(s)",
+      "selectAll": "Selecionar tudo",
+      "deleteSelected": "Apagar selecionados",
+      "nameInputAria": "Nome do áudio",
+      "saveNameAria": "Salvar nome",
+      "editNameAria": "Editar nome do áudio",
+      "voiceUsedTitle": "Voz usada",
+      "ownerTitle": "Dono da geração",
+      "showLess": "ver menos",
+      "showFull": "ver texto completo",
+      "downloadAria": "Baixar",
+      "deleteOneAria": "Apagar este áudio",
+      "deleteModal": {
+        "title": "Apagar {n, plural, one {# áudio} other {# áudios}}?",
+        "body": "Ação <strong>irreversível</strong>. Remove o(s) áudio(s) do armazenamento e do histórico.",
+        "confirm": "Apagar"
+      }
+    },
+    "generator": {
+      "startError": "Falha ao iniciar geração",
+      "textLabel": "Texto a sintetizar",
+      "placeholder": "Olá, este é um teste da minha voz clonada…",
+      "pauseLabel": "Pausa entre frases",
+      "pauseNatural": "Natural",
+      "pauseMedium": "Média",
+      "pauseLong": "Longa",
+      "supportAction": "gerar o áudio",
+      "generating": "Gerando…",
+      "generate": "Gerar áudio",
+      "sessionTitle": "Gerações desta sessão",
+      "generatingWord": "Gerando",
+      "failed": "Geração falhou",
+      "downloadAria": "Baixar áudio",
+      "download": "Baixar",
+      "generatedIn": "· gerou em {s}s",
+      "savedNote": "Todos os áudios também ficam salvos no Histórico.",
+      "paywallAction": "gerar áudio"
+    },
+    "panel": {
+      "startError": "Falha ao iniciar treinamento",
+      "awaitingTitle": "Pronta para treinar",
+      "awaitingBody": "Áudios validados e armazenados no R2. Clique abaixo pra disparar o treinamento no RunPod (~15-30min). Você pode fechar a aba — a UI atualiza sozinha.",
+      "starting": "Disparando…",
+      "start": "Iniciar treinamento",
+      "paywallAction": "clonar a sua voz",
+      "rejectedBody": "Esses áudios não atingem o mínimo de 20 minutos. Suba mais áudio numa nova voz.",
+      "rejectedCta": "+ Treinar nova voz",
+      "readyTitle": "Voz pronta",
+      "readyBody": "LoRA treinada e armazenada. Ouça a amostra abaixo — se gostou, é só gerar.",
+      "readyCta": "Gerar áudio →",
+      "failedTitle": "O treinamento não completou",
+      "failedCta": "Tentar de novo com mais áudio →",
+      "training": "Treinando…",
+      "waiting": "Aguardando…",
+      "trainingBody": "Pipeline rodando no RunPod (~15-30min). Atualizando a cada {s}s.",
+      "waitingBody": "Atualizando a cada {s}s.",
+      "sampleLabel": "🔊 Amostra da sua voz (gerada automaticamente)",
+      "failedFallback": "Algo deu errado no treinamento. Tente novamente — se persistir, fale com o suporte."
+    },
+    "deleteVoice": {
+      "title": "Apagar — ação irreversível",
+      "closeAria": "Fechar",
+      "whatLabel": "O que apagar",
+      "voiceOption": "Apagar a voz inteira",
+      "voiceOptionDesc": "Remove TUDO: áudios enviados, a LoRA, áudios gerados, referências e todos os registros no banco. Não dá pra recuperar.",
+      "loraOption": "Apagar só a LoRA",
+      "loraOptionDesc": "Mantém os áudios enviados. A voz volta pra \"pronta pra treinar\" e você pode retreinar sem subir áudio de novo.",
+      "confirmLabel": "Pra confirmar, digite o nome da voz:",
+      "deleteLora": "Apagar LoRA",
+      "deleteVoiceBtn": "Apagar voz",
+      "dangerZone": "Zona de perigo",
+      "dangerBody": "Apagar é <strong>irreversível</strong>. Remove os arquivos do armazenamento (R2) e os registros do banco — não dá pra desfazer.",
+      "dangerCta": "Apagar voz / LoRA"
+    },
+    "rowMenu": {
+      "actionsAria": "Ações da voz",
+      "delete": "Apagar"
+    },
+    "list": {
+      "status": {
+        "uploading": "Subindo áudios",
+        "validating": "Validando",
+        "awaiting_training": "Pronta pra treinar",
+        "rejected_too_short": "< 20min · Rejeitado",
+        "training": "Treinando",
+        "ready": "Pronta",
+        "failed": "Falhou"
+      },
+      "noCreditsTitle": "Créditos insuficientes para treinar",
+      "subscribeTitle": "Assine para treinar uma voz",
+      "noCreditsBody": "Treinar uma voz custa {cost} créditos e você tem {total}. Compre um pacote para continuar — a geração de áudio com vozes já prontas segue liberada.",
+      "subscribeBody": "Você não tem um plano vigente. Treinar uma voz faz parte do plano: assine para liberar 100.000 créditos por mês e treinar a sua voz.",
+      "buyCredits": "Comprar créditos",
+      "subscribeNow": "Assinar agora"
+    },
+    "detail": {
+      "eyebrow": "Voz",
+      "status": {
+        "uploading": "Subindo áudios",
+        "validating": "Validando",
+        "awaiting_training": "Pronta pra treinar",
+        "rejected_too_short": "Rejeitado — < 20min",
+        "training": "Treinando…",
+        "ready": "✓ Pronta",
+        "failed": "Falhou"
+      },
+      "files": "Arquivos",
+      "totalDuration": "Duração total",
+      "model": "Modelo",
+      "trainedVoice": "Voz treinada",
+      "supportAction": "treinar esta voz"
+    },
+    "generatePage": {
+      "eyebrow": "Gerar áudio · {name}",
+      "title": "Síntese",
+      "subtitle": "Digite o texto e gere. A referência de voz é definida automaticamente a partir do seu treino."
+    },
+    "scriptPage": {
+      "eyebrow": "Gravação de voz",
+      "title": "Roteiro",
+      "subtitle": "Leia este roteiro em voz alta enquanto grava, variando o tom em cada bloco — é assim que o modelo aprende o alcance da sua voz. Não gostou? Gere outro. Quer ler no papel? Baixe ou imprima."
+    }
+  },
+  "shell": {
+    "topbar": {
+      "creditsTitle": "Ver e comprar créditos",
+      "creditsUnlimited": "Créditos: ∞",
+      "credits": "créditos",
+      "myAccount": "Minha conta"
+    },
+    "sidebar": {
+      "lockTraining": "Você precisa de {n} créditos para treinar uma voz.",
+      "lockGenerateAudio": "Treine uma voz primeiro para gerar áudio.",
+      "lockApi": "Assine o plano para liberar a API.",
+      "preProduction": "Teste pré-produção",
+      "admin": "Admin"
+    },
+    "apiDocs": {
+      "copied": "Copiado",
+      "copy": "Copiar",
+      "yourVoiceId": "SEU_VOICE_ID",
+      "yourKey": "SUA_CHAVE",
+      "sampleText": "Olá, isso é um teste da minha voz.",
+      "pollComment": "# Repita a cada ~30s até \"status\": \"ready\".\n# Aí a resposta traz \"audio_url\" (link do .mp3, válido por 1h).",
+      "title": "Como usar (cURL)",
+      "readyVoices": "Suas vozes prontas (use o ID na chamada)",
+      "noReadyVoices": "Nenhuma voz pronta ainda. Treine uma voz primeiro.",
+      "step1": "1. Gerar áudio → devolve generation_id",
+      "step2": "2. Consultar status (polling ~30s) → audio_url quando pronto",
+      "fullDocs": "Documentação completa (Swagger)"
+    },
+    "apiKeys": {
+      "loadError": "Falha ao carregar chaves",
+      "genericError": "Erro",
+      "createError": "Falha ao gerar chave",
+      "revokeError": "Falha ao revogar",
+      "title": "Chaves de API",
+      "description": "Use uma chave pra gerar áudio por fora do site (cURL, n8n, scripts). A chave fica amarrada à sua conta e só acessa as suas vozes.",
+      "copyOnce": "Copie agora — a chave não será mostrada de novo",
+      "copied": "Copiado",
+      "copy": "Copiar",
+      "namePlaceholder": "Nome da chave (ex: máquina n8n)",
+      "creating": "Gerando…",
+      "create": "Gerar chave",
+      "loading": "Carregando…",
+      "empty": "Nenhuma chave ainda. Gere a primeira acima.",
+      "revokedBadge": "revogada",
+      "meta": "criada {created} · último uso {used}",
+      "revokeAria": "Revogar chave",
+      "revoke": "Revogar",
+      "revokeTitle": "Revogar “{name}”?",
+      "revokeBody": "Quem estiver usando essa chave para de funcionar na hora. Ação <strong>irreversível</strong>.",
+      "cancel": "Cancelar",
+      "revoking": "Revogando…"
+    },
+    "buyCredits": {
+      "startError": "Não foi possível iniciar a compra.",
+      "connectionError": "Falha de conexão ao iniciar a compra.",
+      "credits": "créditos",
+      "wait": "Aguarde",
+      "buy": "Comprar",
+      "footnote": "Pagamento via Stripe. Créditos avulsos não expiram."
+    },
+    "cancelSub": {
+      "trigger": "Cancelar assinatura",
+      "doneTitle": "Assinatura cancelada",
+      "doneBody": "Seu acesso continua até o fim do período já pago. Obrigado pelo retorno — ele ajuda a melhorar a plataforma.",
+      "close": "Fechar",
+      "title": "Antes de ir…",
+      "body": "Pode cancelar tranquilo. Só nos conta o motivo (opcional) — ajuda a melhorar.",
+      "reasons": {
+        "expensive": "Está caro",
+        "notUsing": "Não estou usando o suficiente",
+        "missingFeature": "Faltou um recurso que eu precisava",
+        "technicalIssue": "Tive um problema técnico",
+        "other": "Outro motivo"
+      },
+      "detailPlaceholder": "Quer detalhar? (opcional)",
+      "back": "Voltar",
+      "canceling": "Cancelando…",
+      "confirm": "Confirmar cancelamento"
+    },
+    "consent": {
+      "registerError": "Falha ao registrar o aceite",
+      "genericError": "Erro",
+      "title": "Antes de continuar",
+      "subtitle": "Leia e aceite nossos termos para usar a plataforma.",
+      "declaration": "Declaro que li e concordo com os <strong>Termos de Uso</strong>, a <strong>Política de Privacidade</strong> e a <strong>Política de Uso</strong>.",
+      "signOut": "Sair",
+      "submitting": "Registrando…",
+      "accept": "Aceitar e continuar"
+    },
+    "deleteAccount": {
+      "deleteError": "Não foi possível excluir a conta.",
+      "genericError": "Erro",
+      "dangerZone": "Zona perigosa",
+      "warning": "Excluir a conta apaga <strong>todos os seus áudios</strong>, cancela a assinatura e é <strong>irreversível</strong>. Pra voltar, você terá que criar uma conta nova.",
+      "trigger": "Excluir minha conta",
+      "modalTitle": "Excluir conta",
+      "noUndo": "Esta ação <strong>não tem volta</strong>. Ao excluir:",
+      "consequence1": "todos os áudios gerados serão apagados;",
+      "consequence2": "sua assinatura é cancelada automaticamente;",
+      "consequence3": "você precisará criar uma nova conta pra voltar.",
+      "whyLeaving": "Por que está saindo? (opcional)",
+      "reasons": {
+        "noNeed": "Não preciso mais",
+        "expensive": "Está caro",
+        "missingFeature": "Faltou um recurso que eu precisava",
+        "technicalIssue": "Tive um problema técnico",
+        "privacy": "Preocupação com privacidade",
+        "other": "Outro motivo"
+      },
+      "detailPlaceholder": "Quer detalhar? (opcional)",
+      "typeToConfirm": "Digite <strong>{email}</strong> para confirmar",
+      "back": "Voltar",
+      "deleting": "Excluindo…",
+      "confirm": "Excluir permanentemente"
+    }
   }
 }

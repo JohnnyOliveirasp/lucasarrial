@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { ImageStudio } from "@/components/image/image-studio";
 import { ImageHistory } from "@/components/image/image-history";
 
@@ -15,6 +16,7 @@ export function ImageWorkspace({
   creditsTotal: number;
   unlimited: boolean;
 }) {
+  const t = useTranslations("images.page");
   const [reloadKey, setReloadKey] = useState(0);
   // "Animar" na tela de resultado → abre o painel de vídeo da imagem no histórico.
   const [animateId, setAnimateId] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export function ImageWorkspace({
 
       <section className="flex flex-col gap-4">
         <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          Suas imagens
+          {t("yourImages")}
         </h2>
         <ImageHistory reloadKey={reloadKey} openAnimateId={animateId} />
       </section>

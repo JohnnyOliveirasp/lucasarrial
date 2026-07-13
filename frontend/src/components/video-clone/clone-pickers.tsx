@@ -7,7 +7,8 @@
  * Quem não tem, cria: links pro Gerador de Imagem / Gerar Voz.
  */
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 import { Check, Loader2, Upload } from "lucide-react";
 
 export type ImageChoice =
@@ -45,6 +46,7 @@ export function ImagePicker({
   onUploadClick: () => void;
   uploading: boolean;
 }) {
+  const t = useTranslations("videoClone.pickers");
   const [tab, setTab] = useState<"history" | "upload">("history");
   const [items, setItems] = useState<HistImage[] | null>(null);
 
@@ -60,27 +62,29 @@ export function ImagePicker({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => setTab("history")} className={tabCls(tab === "history")}>
-          Minhas fotos
+          {t("myPhotos")}
         </button>
         <button type="button" onClick={() => setTab("upload")} className={tabCls(tab === "upload")}>
-          Enviar foto
+          {t("uploadPhoto")}
         </button>
       </div>
       <p className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
-        📸 Melhor resultado: foto da <strong className="text-[var(--silver)]">metade do corpo pra cima</strong>, rosto nítido e bem iluminado.
+        {t.rich("photoHint", {
+          strong: (chunks) => <strong className="text-[var(--silver)]">{chunks}</strong>,
+        })}
       </p>
 
       {tab === "history" &&
         (items === null ? (
           <div className="flex items-center gap-2 p-4 text-[var(--mute)]">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm">Carregando suas fotos…</span>
+            <span className="text-sm">{t("loadingPhotos")}</span>
           </div>
         ) : items.length === 0 ? (
           <div className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] p-4 text-sm text-[var(--mute)]">
-            Você ainda não tem fotos geradas.{" "}
+            {t("noPhotos")}{" "}
             <Link href="/app/images" className="text-[var(--silver)] underline hover:text-[var(--ink)]">
-              Criar minha foto no Gerador de Imagem →
+              {t("createPhoto")}
             </Link>
           </div>
         ) : (
@@ -111,7 +115,7 @@ export function ImagePicker({
               })}
             </ul>
             <Link href="/app/images" className="w-fit font-mono text-[10px] tracking-wide text-[var(--silver)] underline hover:text-[var(--ink)]">
-              Criar outra foto no Gerador de Imagem →
+              {t("createAnotherPhoto")}
             </Link>
           </>
         ))}
@@ -129,7 +133,7 @@ export function ImagePicker({
             className="flex w-fit items-center gap-2 rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] px-4 py-3 text-sm text-[var(--mute)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--ink)] disabled:opacity-50"
           >
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {selected?.kind === "upload" ? "Trocar foto" : "Escolher arquivo (PNG, JPG, WEBP)"}
+            {selected?.kind === "upload" ? t("changePhoto") : t("choosePhotoFile")}
           </button>
         </div>
       )}
@@ -150,6 +154,7 @@ export function AudioPicker({
   uploading: boolean;
   maxSeconds: number;
 }) {
+  const t = useTranslations("videoClone.pickers");
   const [tab, setTab] = useState<"history" | "upload">("history");
   const [items, setItems] = useState<HistAudio[] | null>(null);
 
@@ -165,10 +170,10 @@ export function AudioPicker({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => setTab("history")} className={tabCls(tab === "history")}>
-          Meus áudios
+          {t("myAudios")}
         </button>
         <button type="button" onClick={() => setTab("upload")} className={tabCls(tab === "upload")}>
-          Enviar áudio
+          {t("uploadAudio")}
         </button>
       </div>
 
@@ -176,13 +181,13 @@ export function AudioPicker({
         (items === null ? (
           <div className="flex items-center gap-2 p-4 text-[var(--mute)]">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm">Carregando seus áudios…</span>
+            <span className="text-sm">{t("loadingAudios")}</span>
           </div>
         ) : items.length === 0 ? (
           <div className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] p-4 text-sm text-[var(--mute)]">
-            Você ainda não tem áudios gerados (até {maxSeconds}s).{" "}
+            {t("noAudios", { max: maxSeconds })}{" "}
             <Link href="/app/voice-cloning/generate" className="text-[var(--silver)] underline hover:text-[var(--ink)]">
-              Gerar um áudio com a sua voz →
+              {t("createAudio")}
             </Link>
           </div>
         ) : (
@@ -225,7 +230,7 @@ export function AudioPicker({
               })}
             </ul>
             <Link href="/app/voice-cloning/generate" className="w-fit font-mono text-[10px] tracking-wide text-[var(--silver)] underline hover:text-[var(--ink)]">
-              Gerar novo áudio com a sua voz →
+              {t("createAnotherAudio")}
             </Link>
           </>
         ))}
@@ -238,11 +243,11 @@ export function AudioPicker({
               <audio src={selected.preview} controls preload="metadata" className="w-full" />
               {selected.text ? (
                 <span className="max-h-28 overflow-y-auto text-[12px] leading-snug text-[var(--mute)]">
-                  Transcrição: “{selected.text}”
+                  {t("transcription", { text: selected.text })}
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5 font-mono text-[10px] tracking-wide text-[var(--ash)]">
-                  <Loader2 className="h-3 w-3 animate-spin" /> Transcrevendo o áudio…
+                  <Loader2 className="h-3 w-3 animate-spin" /> {t("transcribing")}
                 </span>
               )}
             </div>
@@ -254,7 +259,7 @@ export function AudioPicker({
             className="flex w-fit items-center gap-2 rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] px-4 py-3 text-sm text-[var(--mute)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--ink)] disabled:opacity-50"
           >
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {selected?.kind === "upload" ? "Trocar áudio" : `Escolher arquivo (MP3, WAV · até ${maxSeconds}s)`}
+            {selected?.kind === "upload" ? t("changeAudio") : t("chooseAudioFile", { max: maxSeconds })}
           </button>
         </div>
       )}

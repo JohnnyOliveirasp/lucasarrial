@@ -7,6 +7,7 @@
  * lista só recarrega).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import {
   AlertTriangle,
   Check,
@@ -33,18 +34,8 @@ type Clone = {
   image_url: string | null;
 };
 
-const STATUS_LABEL: Record<Clone["status"], string> = {
-  pending: "Na fila",
-  generating: "Gerando…",
-  ready: "Pronto",
-  failed: "Falhou",
-};
-
-function fallbackName(c: Clone): string {
-  return c.name?.trim() || `Vídeo Clone ${new Date(c.created_at).toLocaleDateString("pt-BR")}`;
-}
-
 export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
+  const t = useTranslations("videoClone.history");
   const [items, setItems] = useState<Clone[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,18 +46,24 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
   const [draft, setDraft] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
 
+  const fallbackName = useCallback(
+    (c: Clone): string =>
+      c.name?.trim() || t("fallbackName", { date: new Date(c.created_at).toLocaleDateString("pt-BR") }),
+    [t],
+  );
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/v1/video-clone", { cache: "no-store" });
-      if (!res.ok) throw new Error("Falha ao carregar histórico");
+      if (!res.ok) throw new Error(t("errors.load"));
       const json = await res.json();
       setItems((json.clones ?? []) as Clone[]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("errors.generic"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load();
@@ -76,7 +73,7 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
   useEffect(() => {
     if (!hasInflight) return;
     // Cutuca o sync de cada job em andamento e recarrega a lista.
-    const t = setInterval(async () => {
+    const timer = setInterval(async () => {
       await Promise.all(
         items
           .filter((i) => i.status === "pending" || i.status === "generating")
@@ -84,7 +81,7 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
       );
       load();
     }, 6000);
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   }, [hasInflight, items, load]);
 
   async function confirmDelete() {
@@ -96,11 +93,11 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: pendingDelete }),
       });
-      if (!res.ok) throw new Error("Falha ao apagar");
+      if (!res.ok) throw new Error(t("errors.delete"));
       setPendingDelete([]);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("errors.generic"));
     } finally {
       setDeleting(false);
     }
@@ -114,11 +111,11 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
-      if (!res.ok) throw new Error("Falha ao renomear");
+      if (!res.ok) throw new Error(t("errors.rename"));
       setItems((prev) => prev.map((c) => (c.id === id ? { ...c, name: name || null } : c)));
       setEditingId(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro");
+      setError(e instanceof Error ? e.message : t("errors.generic"));
     }
   }
 
@@ -126,7 +123,7 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
     return (
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--silver)]" />
-        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">Carregando…</p>
+        <p className="font-mono text-[12px] tracking-wide text-[var(--mute)]">{t("loading")}</p>
       </section>
     );
   }
@@ -135,7 +132,7 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
     return (
       <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
         <Clapperboard className="h-10 w-10 text-[var(--ash)]" />
-        <p className="text-sm text-[var(--mute)]">Nenhum Vídeo Clone ainda. Gere o primeiro acima.</p>
+        <p className="text-sm text-[var(--mute)]">{t("empty")}</p>
       </section>
     );
   }
@@ -150,7 +147,7 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
             <Clapperboard className="h-5 w-5 text-[var(--silver)]" />
           </span>
           <span className="text-[13px] text-[var(--body)]">
-            Gerando seu Vídeo Clone<span className="vc-dots" /> — pode levar alguns minutos. Pode sair e voltar.
+            {t("inflightTitle")}<span className="vc-dots" />{t("inflightHint")}
           </span>
         </div>
       )}
@@ -197,15 +194,15 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
                     }}
                     maxLength={120}
                     className="w-52 rounded-[var(--radius-sm)] border border-[var(--hairline-bright)] bg-[var(--surface-deep)] px-2 py-1 text-base font-semibold text-[var(--ink)] outline-none"
-                    aria-label="Nome do vídeo"
+                    aria-label={t("nameAria")}
                   />
-                  <button type="button" onClick={() => saveName(c.id)} aria-label="Salvar" className="text-[var(--silver)] hover:text-[var(--ink)]"><Check className="h-4 w-4" /></button>
-                  <button type="button" onClick={() => setEditingId(null)} aria-label="Cancelar" className="text-[var(--mute)] hover:text-[var(--ink)]"><X className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => saveName(c.id)} aria-label={t("save")} className="text-[var(--silver)] hover:text-[var(--ink)]"><Check className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setEditingId(null)} aria-label={t("cancel")} className="text-[var(--mute)] hover:text-[var(--ink)]"><X className="h-4 w-4" /></button>
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5">
                   <span className="truncate text-base font-semibold text-[var(--ink)]">{fallbackName(c)}</span>
-                  <button type="button" onClick={() => { setEditingId(c.id); setDraft(c.name ?? ""); requestAnimationFrame(() => editRef.current?.focus()); }} aria-label="Renomear" className="text-[var(--mute)] hover:text-[var(--ink)]"><Pencil className="h-3.5 w-3.5" /></button>
+                  <button type="button" onClick={() => { setEditingId(c.id); setDraft(c.name ?? ""); requestAnimationFrame(() => editRef.current?.focus()); }} aria-label={t("rename")} className="text-[var(--mute)] hover:text-[var(--ink)]"><Pencil className="h-3.5 w-3.5" /></button>
                 </span>
               )}
               <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-wide text-[var(--ash)]">
@@ -214,7 +211,7 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
                 <span>· {c.credits_cost.toLocaleString("pt-BR")} cr</span>
                 {c.status !== "ready" && (
                   <span className={c.status === "failed" ? "text-[var(--status-error)]" : "text-[var(--mute)]"}>
-                    · {STATUS_LABEL[c.status]}
+                    · {t(`status.${c.status}`)}
                     {(c.status === "pending" || c.status === "generating") && <span className="vc-dots" />}
                   </span>
                 )}
@@ -233,18 +230,18 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
                 aria-expanded={openId === c.id}
                 className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline)] px-2.5 py-1.5 font-mono text-[10px] tracking-wide text-[var(--silver)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--ink)] disabled:opacity-40"
               >
-                <Clapperboard className="h-3.5 w-3.5" /> Assistir
+                <Clapperboard className="h-3.5 w-3.5" /> {t("watch")}
               </button>
               <button
                 type="button"
                 disabled={!c.video_url}
                 onClick={() => c.video_url && downloadFromUrl(c.video_url, fallbackName(c), "mp4")}
-                aria-label="Baixar"
+                aria-label={t("download")}
                 className="text-[var(--mute)] transition-colors hover:text-[var(--ink)] disabled:opacity-30"
               >
                 <Download className="h-5 w-5" />
               </button>
-              <button type="button" onClick={() => setPendingDelete([c.id])} aria-label="Apagar" className="text-[var(--mute)] transition-colors hover:text-[var(--status-error)]">
+              <button type="button" onClick={() => setPendingDelete([c.id])} aria-label={t("delete")} className="text-[var(--mute)] transition-colors hover:text-[var(--status-error)]">
                 <Trash2 className="h-5 w-5" />
               </button>
             </div>
@@ -264,17 +261,19 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
           <div className="flex w-full max-w-md flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
-              <h3 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">Apagar vídeo?</h3>
+              <h3 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">{t("deleteTitle")}</h3>
             </div>
             <p className="text-sm text-[var(--body)]">
-              Ação <strong className="text-[var(--ink)]">irreversível</strong>. Remove o vídeo, a foto e o áudio do armazenamento.
+              {t.rich("deleteBody", {
+                strong: (chunks) => <strong className="text-[var(--ink)]">{chunks}</strong>,
+              })}
             </p>
             <div className="flex justify-end gap-3">
               <button type="button" onClick={() => !deleting && setPendingDelete([])} className="inline-flex h-10 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]">
-                Cancelar
+                {t("cancel")}
               </button>
               <button type="button" onClick={confirmDelete} disabled={deleting} className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--status-error)] hover:border-[var(--hairline-bright)] disabled:opacity-40">
-                <Trash2 className="h-4 w-4" /> {deleting ? "Apagando…" : "Apagar"}
+                <Trash2 className="h-4 w-4" /> {deleting ? t("deleting") : t("delete")}
               </button>
             </div>
           </div>

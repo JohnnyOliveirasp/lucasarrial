@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { Coins, Loader2 } from "lucide-react";
 import { CREDIT_PACKAGES } from "@/lib/credits/config";
 import { Button, Card, Stat } from "@/components/ui";
@@ -9,6 +10,7 @@ const brl = (cents: number) =>
   (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export function BuyCredits() {
+  const t = useTranslations("shell.buyCredits");
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,9 +28,9 @@ export function BuyCredits() {
         window.location.href = data.url; // redireciona pro checkout do Stripe
         return;
       }
-      setError(data?.error?.message ?? "Não foi possível iniciar a compra.");
+      setError(data?.error?.message ?? t("startError"));
     } catch {
-      setError("Falha de conexão ao iniciar a compra.");
+      setError(t("connectionError"));
     }
     setLoading(null);
   }
@@ -55,7 +57,7 @@ export function BuyCredits() {
               <Stat
                 size="sm"
                 value={pkg.credits.toLocaleString("pt-BR")}
-                label="créditos"
+                label={t("credits")}
               />
 
               <div className="mt-auto flex flex-col gap-4">
@@ -73,7 +75,7 @@ export function BuyCredits() {
                     ) : undefined
                   }
                 >
-                  {loading === pkg.id ? "Aguarde" : "Comprar"}
+                  {loading === pkg.id ? t("wait") : t("buy")}
                 </Button>
               </div>
             </Card>
@@ -88,7 +90,7 @@ export function BuyCredits() {
       )}
 
       <p className="text-[13px] text-[var(--ash)]">
-        Pagamento via Stripe. Créditos avulsos não expiram.
+        {t("footnote")}
       </p>
     </section>
   );
