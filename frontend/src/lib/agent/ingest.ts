@@ -97,6 +97,10 @@ export type IngestedMessage = {
   content: string | null;
   /** URL da mídia (WAHA entrega no webhook; usado pra transcrever áudio). */
   mediaUrl: string | null;
+  /** A mensagem marcou (@) ou respondeu o número do suporte? (gatilho de grupo) */
+  mentioned: boolean;
+  /** Id serializado da mensagem original (WAHA) — pra responder CITANDO. */
+  replyToId: string | null;
 };
 
 /**
@@ -106,7 +110,7 @@ export type IngestedMessage = {
  */
 export async function ingestMessage(
   m: EvolutionMessage,
-  opts?: { mediaUrl?: string | null },
+  opts?: { mediaUrl?: string | null; mentioned?: boolean; replyToId?: string | null },
 ): Promise<IngestedMessage | null> {
   try {
     const jid = m.key?.remoteJid ?? "";
@@ -159,6 +163,8 @@ export async function ingestMessage(
       kind,
       content,
       mediaUrl: opts?.mediaUrl ?? null,
+      mentioned: opts?.mentioned ?? false,
+      replyToId: opts?.replyToId ?? null,
     };
   } catch {
     // ingestão é best-effort; a mensagem seguinte não pode ser bloqueada

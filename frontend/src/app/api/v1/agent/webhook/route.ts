@@ -29,10 +29,31 @@ type WahaMessagePayload = {
   body?: string;
   hasMedia?: boolean;
   media?: { url?: string; mimetype?: string } | null;
-  _data?: { notifyName?: string };
+  mentionedIds?: string[];
+  _data?: { notifyName?: string; Info?: { PushName?: string } };
 };
 
-/** Converte o payload da WAHA (webjs) pro shape Evolution/Baileys do ingest. */
+/** A mensagem marca (@) o número do suporte? Olha o corpo, a lista de
+ *  menções normalizada E o payload cru (GOWS aninha o contextInfo fundo). */
+function mentionsAgent(p: WahaMessagePayload): boolean {
+  const selfIds = (process.env.AGENT_SELF_IDS ?? "")
+    .split(",")
+    .map((s) => s.replace(/\D/g, ""))
+    .filter(Boolean);
+  if (selfIds.length === 0) return false;
+  const body = p.body ?? "";
+  if (selfIds.some((id) => body.includes(`@${id}`))) return true;
+  const mentioned = (p.mentionedIds ?? []).map((j) => j.replace(/\D/g, ""));
+  if (mentioned.some((d) => selfIds.includes(d))) return true;
+  try {
+    const raw = JSON.stringify(p._data ?? {});
+    return selfIds.some((id) => raw.includes(`${id}@lid`) || raw.includes(`${id}@s.whatsapp.net`) || raw.includes(`${id}@c.us`));
+  } catch {
+    return false;
+  }
+}
+
+/** Converte o payload da WAHA (webjs/gows) pro shape Evolution/Baileys do ingest. */
 function wahaToEvolution(p: WahaMessagePayload): { m: EvolutionMessage; mediaUrl: string | null } {
   const norm = (jid: string | null | undefined) =>
     (jid ?? "").replace(/@c\.us$/, "@s.whatsapp.net");
@@ -56,7 +77,8 @@ function wahaToEvolution(p: WahaMessagePayload): { m: EvolutionMessage; mediaUrl
         id: (p.id ?? "").split("_").pop() || p.id || undefined,
         participant: p.participant ? norm(p.participant) : undefined,
       },
-      pushName: p._data?.notifyName,
+      // webjs = notifyName · gows = Info.PushName
+      pushName: p._data?.notifyName ?? p._data?.Info?.PushName,
       messageType,
       message: { conversation: p.body || undefined },
     },
@@ -79,10 +101,14 @@ export async function POST(request: NextRequest) {
 
   const event = (payload.event ?? "").toLowerCase().replace(/_/g, ".");
 
-  // WAHA (webjs): evento "message" com payload plano.
+  // WAHA (webjs/gows): evento "message" com payload plano.
   if (event === "message" && payload.payload) {
     const { m, mediaUrl } = wahaToEvolution(payload.payload);
-    const ingested = await ingestMessage(m, { mediaUrl });
+    const ingested = await ingestMessage(m, {
+      mediaUrl,
+      mentioned: mentionsAgent(payload.payload),
+      replyToId: payload.payload.id ?? null,
+    });
     if (ingested) await maybeRespond(ingested);
     return jsonOk({ handled: "waha_message" });
   }

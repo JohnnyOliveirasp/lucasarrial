@@ -1,13 +1,14 @@
 /**
- * Agente de suporte — pipeline de resposta (F1). Server-only.
+ * Agente de suporte — pipeline de resposta. Server-only.
  * Decide se a mensagem recém-ingerida merece resposta da IA e responde.
  *
- * Guards da F1 (pré-produção do agente):
- *   - só PRIVADO (🚧 grupo entra na F3, com classificador)
- *   - só chats em mode 'auto' (etiqueta humano cala a IA — F2)
- *   - 🚧 só números da allowlist AGENT_TEST_NUMBERS (csv de dígitos;
+ * Guards:
+ *   - PRIVADO: 🚧 só números da allowlist AGENT_TEST_NUMBERS (csv de dígitos;
  *     vazio/ausente = não responde NINGUÉM — seguro por padrão)
- * Áudio: baixa da Evolution → Whisper → responde a transcrição.
+ *   - GRUPO: só quando a mensagem MARCA (@) ou RESPONDE o número do suporte
+ *     (decisão do Johnny 2026-07-13) — e a resposta sai CITANDO a pessoa
+ *   - só chats em mode 'auto' (etiqueta humano cala a IA — F2)
+ * Áudio: baixa do provedor → Whisper → responde a transcrição.
  * Best-effort: nunca lança (o webhook não pode falhar por causa da IA).
  */
 import { getAdmin } from "@/lib/db/admin";
@@ -17,7 +18,7 @@ import type { IngestedMessage } from "@/lib/agent/ingest";
 import { transcribeAudioBuffer } from "@/lib/video/transcribe";
 import type { AgentMessageRow } from "@/lib/db/types";
 
-const HISTORY_LIMIT = 30;
+const HISTORY_LIMIT = 50; // memória da conversa: a Mary relê as últimas 50
 
 /** 🚧 F1: allowlist de teste (dígitos, ex. "13522548533,5511999999999"). */
 function isAllowedNumber(waJid: string): boolean {
@@ -34,9 +35,12 @@ function isAllowedNumber(waJid: string): boolean {
 export async function maybeRespond(msg: IngestedMessage): Promise<void> {
   try {
     if (msg.fromMe) return;
-    if (msg.chat.kind !== "private") return; // 🚧 F3: grupo
     if (msg.chat.mode !== "auto") return;
-    if (!isAllowedNumber(msg.chat.wa_jid)) return; // 🚧 F1: allowlist
+    if (msg.chat.kind === "group") {
+      if (!msg.mentioned) return; // grupo: só quando marcada/respondida
+    } else {
+      if (!isAllowedNumber(msg.chat.wa_jid)) return; // 🚧 F1: allowlist no privado
+    }
     if (msg.kind !== "text" && msg.kind !== "audio") return;
 
     const admin = getAdmin();
@@ -65,8 +69,11 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     const history = ((rows ?? []) as AgentMessageRow[]).reverse();
     if (history.length === 0 || history[history.length - 1].from_me) return;
 
-    const reply = await buildAgentReply(history);
-    const sentId = await sendAgentText(msg.chat.wa_jid, reply);
+    const reply = await buildAgentReply(history, { group: msg.chat.kind === "group" });
+    // No grupo a resposta sai CITANDO a mensagem de quem marcou.
+    const sentId = await sendAgentText(msg.chat.wa_jid, reply, {
+      replyTo: msg.chat.kind === "group" ? msg.replyToId : null,
+    });
 
     // Grava a resposta com o wa_message_id do envio — quando o eco fromMe
     // voltar pelo webhook, o índice único descarta a duplicata.

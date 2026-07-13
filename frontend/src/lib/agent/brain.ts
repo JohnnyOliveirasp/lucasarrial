@@ -30,7 +30,10 @@ function toTurns(history: AgentMessageRow[]): { role: "user" | "assistant"; cont
 }
 
 /** Gera a resposta do agente pro histórico dado (última mensagem = do aluno). */
-export async function buildAgentReply(history: AgentMessageRow[]): Promise<string> {
+export async function buildAgentReply(
+  history: AgentMessageRow[],
+  opts?: { group?: boolean },
+): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("LLM indisponível (sem chave)");
 
@@ -38,6 +41,10 @@ export async function buildAgentReply(history: AgentMessageRow[]): Promise<strin
   if (turns.length === 0 || turns[turns.length - 1].role !== "user") {
     throw new Error("histórico sem mensagem do aluno no fim");
   }
+
+  const system = opts?.group
+    ? `${buildAgentSystem()}\n\nCONTEXTO: você está respondendo DENTRO DE UM GRUPO de alunos (várias pessoas conversando — os nomes prefixam as mensagens). Responda SÓ à última pessoa, que te marcou. Seja ainda mais curto que no privado. Dúvida longa/pessoal → convide a pessoa a te chamar no privado.`
+    : buildAgentSystem();
 
   const res = await fetch(ANTHROPIC_API, {
     method: "POST",
@@ -49,7 +56,7 @@ export async function buildAgentReply(history: AgentMessageRow[]): Promise<strin
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 600,
-      system: [{ type: "text", text: buildAgentSystem() }],
+      system: [{ type: "text", text: system }],
       messages: turns,
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),

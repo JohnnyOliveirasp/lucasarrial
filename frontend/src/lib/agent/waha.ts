@@ -72,15 +72,40 @@ export function toWahaChatId(jid: string): string {
   return jid.replace(/@s\.whatsapp\.net$/, "@c.us");
 }
 
-/** Envia texto. Devolve o id da mensagem (dedupe do eco no webhook). */
-export async function wahaSendText(jid: string, text: string): Promise<string | null> {
+/**
+ * Envia texto. Devolve o id da mensagem (dedupe do eco no webhook).
+ * replyTo (id serializado da mensagem original) = responde CITANDO — usado
+ * nos grupos pra ficar claro a quem a resposta se dirige.
+ */
+export async function wahaSendText(
+  jid: string,
+  text: string,
+  opts?: { replyTo?: string | null },
+): Promise<string | null> {
   const res = await waha(`/api/sendText`, {
     method: "POST",
-    body: JSON.stringify({ session: SESSION, chatId: toWahaChatId(jid), text }),
+    body: JSON.stringify({
+      session: SESSION,
+      chatId: toWahaChatId(jid),
+      text,
+      ...(opts?.replyTo ? { reply_to: opts.replyTo } : {}),
+    }),
   });
   if (!res.ok) throw new Error(`WAHA sendText ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const json = (await res.json()) as { id?: { id?: string; _serialized?: string } };
   return json.id?.id ?? json.id?._serialized ?? null;
+}
+
+/** Assunto (nome) de um grupo. */
+export async function wahaGroupSubject(groupJid: string): Promise<string | null> {
+  try {
+    const res = await waha(`/api/${SESSION}/groups/${encodeURIComponent(groupJid)}`);
+    if (!res.ok) return null;
+    const json = (await res.json()) as { subject?: string; name?: string; Name?: string };
+    return json.subject ?? json.name ?? json.Name ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

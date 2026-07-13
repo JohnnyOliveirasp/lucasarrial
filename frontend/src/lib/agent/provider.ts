@@ -25,14 +25,21 @@ export function instanceLabel(): string {
   return agentProvider() === "waha" ? "waha:default" : evo.agentInstance();
 }
 
-/** Nome (assunto) de um grupo — WAHA não expõe fácil; preenche depois. */
+/** Nome (assunto) de um grupo. */
 export async function groupSubject(groupJid: string): Promise<string | null> {
-  return agentProvider() === "waha" ? null : evo.getGroupSubject(groupJid);
+  return agentProvider() === "waha" ? waha.wahaGroupSubject(groupJid) : evo.getGroupSubject(groupJid);
 }
 
-/** Envia texto; devolve o id da mensagem enviada (pro dedupe do eco). */
-export async function sendAgentText(jid: string, text: string): Promise<string | null> {
-  return agentProvider() === "waha" ? waha.wahaSendText(jid, text) : evo.sendText(jid, text);
+/** Envia texto; devolve o id da mensagem enviada (pro dedupe do eco).
+ *  replyTo = cita a mensagem original (grupos; só WAHA). */
+export async function sendAgentText(
+  jid: string,
+  text: string,
+  opts?: { replyTo?: string | null },
+): Promise<string | null> {
+  return agentProvider() === "waha"
+    ? waha.wahaSendText(jid, text, opts)
+    : evo.sendText(jid, text);
 }
 
 /**
