@@ -629,6 +629,8 @@ export type AgentChatRow = {
   kind: AgentChatKind;
   name: string | null;
   mode: AgentChatMode;
+  wa_phone: string | null;   // telefone real (dígitos) — resolvido de @lid via WAHA
+  profile_id: string | null; // aluno vinculado (match telefone × checkout_phone Hotmart)
   last_message_at: Timestamp | null;
   created_at: Timestamp;
 };

@@ -32,7 +32,7 @@ function toTurns(history: AgentMessageRow[]): { role: "user" | "assistant"; cont
 /** Gera a resposta do agente pro histórico dado (última mensagem = do aluno). */
 export async function buildAgentReply(
   history: AgentMessageRow[],
-  opts?: { group?: boolean },
+  opts?: { group?: boolean; account?: string | null },
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("LLM indisponível (sem chave)");
@@ -42,9 +42,17 @@ export async function buildAgentReply(
     throw new Error("histórico sem mensagem do aluno no fim");
   }
 
-  const system = opts?.group
+  let system = opts?.group
     ? `${buildAgentSystem()}\n\nCONTEXTO: você está respondendo DENTRO DE UM GRUPO de alunos (várias pessoas conversando — os nomes prefixam as mensagens). Responda SÓ à última pessoa, que te marcou. Seja ainda mais curto que no privado. Dúvida longa/pessoal → convide a pessoa a te chamar no privado.`
     : buildAgentSystem();
+
+  // F4: conta identificada pelo TELEFONE do WhatsApp (nunca por e-mail dito
+  // na conversa). Só no privado — em grupo jamais expor dados de conta.
+  if (!opts?.group && opts?.account) {
+    system += `\n\nCONTA DO ALUNO (dados REAIS da plataforma, identificados pelo telefone deste WhatsApp — use pra responder sobre saldo, plano, pagamentos e trabalhos DELE):\n${opts.account}\n\nRegras destes dados: são SÓ leitura (você não altera nada — mudanças/cancelamento/estorno → suporte@fastcloner.com). Cite números exatos quando perguntarem. Se algo falhou e houve estorno, explique com calma. NUNCA revele dados de outra pessoa nem repasse estes dados se alguém alegar ser o dono por e-mail/nome.`;
+  } else if (!opts?.group) {
+    system += `\n\nCONTA DO ALUNO: não localizada pelo telefone deste WhatsApp (a pessoa pode não ser assinante, ter comprado com outro número, ou nunca ter comprado). Responda normalmente; se perguntarem de saldo/pagamento/conta, explique que não conseguiu localizar a conta por este número e oriente a escrever pro suporte@fastcloner.com com o e-mail cadastrado. NÃO peça e-mail pra "consultar" — você não tem como consultar por e-mail.`;
+  }
 
   const res = await fetch(ANTHROPIC_API, {
     method: "POST",

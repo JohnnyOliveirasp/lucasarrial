@@ -20,11 +20,23 @@ export async function GET(request: NextRequest, ctx: Ctx) {
   const admin = getAdmin();
   const { data: chat, error } = await admin
     .from("agent_chats")
-    .select("id, wa_jid, kind, name, mode, last_message_at")
+    .select("id, wa_jid, kind, name, mode, wa_phone, profile_id, last_message_at")
     .eq("id", id)
     .maybeSingle();
   if (error) return serverError("Failed to load chat");
   if (!chat) return notFound("Chat");
+
+  // F4: aluno vinculado (telefone × Hotmart) — e-mail exibido no painel.
+  let profile: { email: string; display_name: string | null } | null = null;
+  const profileId = (chat as { profile_id?: string | null }).profile_id;
+  if (profileId) {
+    const { data: p } = await admin
+      .from("profiles")
+      .select("email, display_name")
+      .eq("id", profileId)
+      .maybeSingle();
+    profile = (p as typeof profile) ?? null;
+  }
 
   const { data: messages, error: mErr } = await admin
     .from("agent_messages")
@@ -34,7 +46,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     .limit(200);
   if (mErr) return serverError("Failed to load messages");
 
-  return jsonOk({ chat, messages: (messages ?? []).reverse() });
+  return jsonOk({ chat: { ...chat, profile }, messages: (messages ?? []).reverse() });
 }
 
 export async function PATCH(request: NextRequest, ctx: Ctx) {

@@ -12,6 +12,7 @@
  * Best-effort: nunca lança (o webhook não pode falhar por causa da IA).
  */
 import { getAdmin } from "@/lib/db/admin";
+import { buildAccountContext, ensureChatIdentity } from "@/lib/agent/account";
 import { buildAgentReply } from "@/lib/agent/brain";
 import { fetchAudioBytes, sendAgentText } from "@/lib/agent/provider";
 import type { IngestedMessage } from "@/lib/agent/ingest";
@@ -75,7 +76,15 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     const history = ((rows ?? []) as AgentMessageRow[]).reverse();
     if (history.length === 0 || history[history.length - 1].from_me) return;
 
-    const reply = await buildAgentReply(history, { group: msg.chat.kind === "group" });
+    // F4: no privado, resolve quem é o aluno (LID→telefone→perfil) e entrega
+    // o snapshot da conta pra Mary responder com dados reais (só leitura).
+    let account: string | null = null;
+    if (msg.chat.kind === "private") {
+      const profileId = await ensureChatIdentity(msg.chat);
+      if (profileId) account = await buildAccountContext(profileId);
+    }
+
+    const reply = await buildAgentReply(history, { group: msg.chat.kind === "group", account });
     // No grupo a resposta sai CITANDO a mensagem de quem marcou.
     const sentId = await sendAgentText(msg.chat.wa_jid, reply, {
       replyTo: msg.chat.kind === "group" ? msg.replyToId : null,

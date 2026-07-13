@@ -100,6 +100,25 @@ export async function wahaSendText(
   return json.id?.id ?? json.id?._serialized ?? null;
 }
 
+/**
+ * Resolve um LID (identificador anônimo do GOWS) pro telefone real.
+ * O store do whatsmeow guarda o mapeamento lid→pn de todo contato visto:
+ * GET /api/{session}/lids/{lid} → { lid, pn: "5511...@c.us" }.
+ * Devolve SÓ os dígitos do telefone, ou null se o engine não conhece o LID.
+ */
+export async function wahaLidToPhone(lid: string): Promise<string | null> {
+  try {
+    const id = lid.includes("@") ? lid : `${lid}@lid`;
+    const res = await waha(`/api/${SESSION}/lids/${encodeURIComponent(id)}`);
+    if (!res.ok) return null;
+    const json = (await res.json()) as { pn?: string | null };
+    const digits = (json.pn ?? "").replace(/\D/g, "");
+    return digits || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Assunto (nome) de um grupo. */
 export async function wahaGroupSubject(groupJid: string): Promise<string | null> {
   try {

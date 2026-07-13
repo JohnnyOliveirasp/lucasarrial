@@ -18,6 +18,11 @@ type Msg = {
   id: string; sender_name: string | null; from_me: boolean;
   role: string; kind: string; content: string | null; created_at: string;
 };
+/** Detalhe do chat aberto (F4): telefone resolvido + aluno vinculado. */
+type ChatDetail = {
+  wa_phone: string | null;
+  profile: { email: string; display_name: string | null } | null;
+};
 
 const CARD = "rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)]";
 
@@ -37,6 +42,7 @@ export function AgentPanel() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [open, setOpen] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [detail, setDetail] = useState<ChatDetail | null>(null);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -105,7 +111,11 @@ export function AgentPanel() {
     if (showSpinner) setLoadingMsgs(true);
     try {
       const r = await fetch(`/api/v1/agent/chats/${chat.id}`, { cache: "no-store" });
-      if (r.ok) setMessages((await r.json()).messages ?? []);
+      if (r.ok) {
+        const j = await r.json();
+        setMessages(j.messages ?? []);
+        setDetail(j.chat ?? null);
+      }
     } catch { /* próximo tick */ } finally {
       setLoadingMsgs(false);
     }
@@ -120,6 +130,7 @@ export function AgentPanel() {
 
   useEffect(() => {
     if (!open) return;
+    setDetail(null); // não vazar o vínculo do chat anterior enquanto carrega
     loadMessages(open, true);
     const t = setInterval(() => loadMessages(open, false), 7_000);
     return () => clearInterval(t);
@@ -213,6 +224,11 @@ export function AgentPanel() {
             <span className="font-mono text-[11px] uppercase tracking-wide text-[var(--ash)]">
               {open ? (open.name || open.wa_jid.split("@")[0]) : "Selecione uma conversa"}
             </span>
+            {open && open.kind === "private" && (
+              <span className="font-mono text-[10px] text-[var(--mute)]" title="Aluno vinculado pelo telefone (Hotmart)">
+                {detail?.profile ? `🎓 ${detail.profile.email}` : detail?.wa_phone ? `📞 +${detail.wa_phone} · sem conta` : ""}
+              </span>
+            )}
             {open && (
               <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] ${open.mode === "human" ? "border-amber-500/40 text-amber-400" : "border-emerald-500/40 text-emerald-400"}`}>
                 {open.mode === "human" ? <UserRound className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
