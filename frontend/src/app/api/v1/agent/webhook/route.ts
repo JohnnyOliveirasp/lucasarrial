@@ -9,7 +9,7 @@
 import type { NextRequest } from "next/server";
 import { jsonError, jsonOk } from "@/lib/api/responses";
 import { ingestMessage, type EvolutionMessage } from "@/lib/agent/ingest";
-import { maybeRespond } from "@/lib/agent/respond";
+import { maybeRespond, pauseChatForHuman } from "@/lib/agent/respond";
 
 type EvolutionWebhook = {
   event?: string;
@@ -25,6 +25,8 @@ type WahaMessagePayload = {
   from?: string;
   to?: string;
   fromMe?: boolean;
+  /** "api" = enviado pelo nosso sistema · "app" = digitado no celular/web. */
+  source?: string;
   participant?: string | null;
   body?: string;
   hasMedia?: boolean;
@@ -101,15 +103,25 @@ export async function POST(request: NextRequest) {
 
   const event = (payload.event ?? "").toLowerCase().replace(/_/g, ".");
 
-  // WAHA (webjs/gows): evento "message" com payload plano.
-  if (event === "message" && payload.payload) {
-    const { m, mediaUrl } = wahaToEvolution(payload.payload);
+  // WAHA (webjs/gows): evento "message"/"message.any" com payload plano.
+  if ((event === "message" || event === "message.any") && payload.payload) {
+    const p = payload.payload;
+    // Eco do que NÓS enviamos pela API (resposta da IA / painel): o pipeline
+    // já gravou a mensagem — descarta (e o dedupe segura qualquer corrida).
+    if (p.fromMe && p.source === "api") return jsonOk({ handled: "api_echo" });
+
+    const { m, mediaUrl } = wahaToEvolution(p);
     const ingested = await ingestMessage(m, {
       mediaUrl,
-      mentioned: mentionsAgent(payload.payload),
-      replyToId: payload.payload.id ?? null,
+      mentioned: mentionsAgent(p),
+      replyToId: p.id ?? null,
     });
-    if (ingested) await maybeRespond(ingested);
+    if (ingested?.fromMe) {
+      // Humano respondeu pelo CELULAR/web → auto-pausa a IA nessa conversa.
+      await pauseChatForHuman(ingested.chat.id);
+    } else if (ingested) {
+      await maybeRespond(ingested);
+    }
     return jsonOk({ handled: "waha_message" });
   }
 

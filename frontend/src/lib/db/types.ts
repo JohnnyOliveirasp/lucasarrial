@@ -670,6 +670,10 @@ export type AgentMessageInsert = {
 };
 export type AgentMessageUpdate = Partial<AgentMessageRow>;
 
+export type AgentSettingsRow = { id: number; enabled: boolean; updated_at: Timestamp };
+export type AgentSettingsInsert = { id?: number; enabled?: boolean };
+export type AgentSettingsUpdate = Partial<AgentSettingsRow>;
+
 // ───────── Database (composição) ─────────
 // Cada tabela precisa de `Relationships: []` pra satisfazer GenericTable do supabase-js v2.105+.
 type Relationship = {
@@ -696,6 +700,7 @@ export type Database = {
       studio_scenes: { Row: StudioSceneRow; Insert: StudioSceneInsert; Update: StudioSceneUpdate; Relationships: Rel };
       agent_chats: { Row: AgentChatRow; Insert: AgentChatInsert; Update: AgentChatUpdate; Relationships: Rel };
       agent_messages: { Row: AgentMessageRow; Insert: AgentMessageInsert; Update: AgentMessageUpdate; Relationships: Rel };
+      agent_settings: { Row: AgentSettingsRow; Insert: AgentSettingsInsert; Update: AgentSettingsUpdate; Relationships: Rel };
       render_jobs: { Row: RenderJobRow; Insert: RenderJobInsert; Update: RenderJobUpdate; Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };

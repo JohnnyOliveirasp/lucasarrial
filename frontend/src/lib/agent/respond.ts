@@ -20,11 +20,31 @@ import type { AgentMessageRow } from "@/lib/db/types";
 
 const HISTORY_LIMIT = 50; // memória da conversa: a Mary relê as últimas 50
 
+/** Interruptor GERAL (botão "Desligar" do painel — F2). */
+export async function agentEnabled(): Promise<boolean> {
+  const { data } = await getAdmin().from("agent_settings").select("enabled").eq("id", 1).maybeSingle();
+  return (data as { enabled?: boolean } | null)?.enabled !== false;
+}
+
+/**
+ * Auto-pausa (F2): humano respondeu pelo CELULAR/web nessa conversa → a IA
+ * cala nela até um admin devolver. Chamado pelo webhook quando chega fromMe
+ * que não é eco do pipeline (eco cai no dedupe e nem chega aqui).
+ */
+export async function pauseChatForHuman(chatId: string): Promise<void> {
+  await getAdmin()
+    .from("agent_chats")
+    .update({ mode: "human" } as never)
+    .eq("id", chatId)
+    .eq("mode", "auto");
+}
+
 /** Responde a mensagem ingerida quando os guards permitem. Nunca lança. */
 export async function maybeRespond(msg: IngestedMessage): Promise<void> {
   try {
     if (msg.fromMe) return;
     if (msg.chat.mode !== "auto") return;
+    if (!(await agentEnabled())) return; // botão geral "Desligada"
     // Grupo: só quando marcada/respondida. Privado: responde qualquer pessoa.
     if (msg.chat.kind === "group" && !msg.mentioned) return;
     if (msg.kind !== "text" && msg.kind !== "audio") return;

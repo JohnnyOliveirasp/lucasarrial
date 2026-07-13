@@ -92,7 +92,11 @@ export async function wahaSendText(
     }),
   });
   if (!res.ok) throw new Error(`WAHA sendText ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const json = (await res.json()) as { id?: { id?: string; _serialized?: string } };
+  // webjs devolve id objeto {id,_serialized}; GOWS devolve string
+  // "true_<jid>_<ID>" — normaliza pro MESMO valor que o webhook usa (último
+  // segmento), senão o eco da própria mensagem duplica no banco.
+  const json = (await res.json()) as { id?: string | { id?: string; _serialized?: string } };
+  if (typeof json.id === "string") return json.id.split("_").pop() ?? json.id;
   return json.id?.id ?? json.id?._serialized ?? null;
 }
 

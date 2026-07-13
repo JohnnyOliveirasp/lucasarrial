@@ -1,10 +1,11 @@
 /**
- * GET /api/v1/agent/chats/[id] — mensagens de uma conversa do suporte
- * (ordem cronológica, últimas 200). Admin-only.
+ * /api/v1/agent/chats/[id] — Admin-only.
+ *   GET   → mensagens da conversa (ordem cronológica, últimas 200)
+ *   PATCH → { mode: "auto" | "human" } — Devolver pra IA / Assumir (F2)
  */
 import type { NextRequest } from "next/server";
 import { gateAdmin } from "@/lib/admin/api";
-import { jsonOk, notFound, serverError } from "@/lib/api/responses";
+import { badRequest, jsonOk, notFound, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 
 export const dynamic = "force-dynamic";
@@ -34,4 +35,30 @@ export async function GET(request: NextRequest, ctx: Ctx) {
   if (mErr) return serverError("Failed to load messages");
 
   return jsonOk({ chat, messages: (messages ?? []).reverse() });
+}
+
+export async function PATCH(request: NextRequest, ctx: Ctx) {
+  const gate = await gateAdmin(request);
+  if ("res" in gate) return gate.res;
+  const { id } = await ctx.params;
+
+  let body: { mode?: unknown } = {};
+  try {
+    body = await request.json();
+  } catch {
+    return badRequest("Corpo inválido");
+  }
+  if (body.mode !== "auto" && body.mode !== "human") {
+    return badRequest("'mode' precisa ser 'auto' ou 'human'");
+  }
+
+  const { data, error } = await getAdmin()
+    .from("agent_chats")
+    .update({ mode: body.mode } as never)
+    .eq("id", id)
+    .select("id, mode")
+    .maybeSingle();
+  if (error) return serverError("Failed to update chat mode");
+  if (!data) return notFound("Chat");
+  return jsonOk({ chat: data });
 }
