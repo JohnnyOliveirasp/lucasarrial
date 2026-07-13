@@ -177,14 +177,16 @@ export function ImageAnimatePanel({
                   >
                     <span className="flex items-center justify-between gap-2">
                       <span className="font-sans text-[14px] font-semibold text-[var(--ink)]">
-                        {tv.medal} {tv.label}
+                        {tv.medal} {t(`tiers.${tv.id}.label`)}
                       </span>
                       {active && <Check className="h-4 w-4 text-[var(--silver)]" />}
                     </span>
                     <span className="font-mono text-[11px] text-[var(--silver)]">
                       {t("tierCredits", { credits: tv.creditsPerClip })}
                     </span>
-                    <span className="text-[12px] leading-snug text-[var(--mute)]">{tv.blurb}</span>
+                    <span className="text-[12px] leading-snug text-[var(--mute)]">
+                      {t(`tiers.${tv.id}.blurb`)}
+                    </span>
                   </button>
                 </li>
               );

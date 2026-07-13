@@ -373,13 +373,36 @@
       },
       "aspect": {
         "label": "4. Proporción",
-        "hint": "El formato de la imagen. 'Automático' deja que el modelo elija (sale en 1K). Vertical 9:16 para Stories/Reels, Cuadrado 1:1 para el feed, etc."
+        "hint": "El formato de la imagen. 'Automático' deja que el modelo elija (sale en 1K). Vertical 9:16 para Stories/Reels, Cuadrado 1:1 para el feed, etc.",
+        "options": {
+          "auto": "Automático",
+          "1x1": "Cuadrado (1:1)",
+          "4x5": "Retrato (4:5)",
+          "9x16": "Vertical (9:16)",
+          "16x9": "Horizontal (16:9)",
+          "3x2": "Paisaje (3:2)",
+          "2x3": "Póster (2:3)"
+        },
+        "hints": {
+          "auto": "El modelo elige la mejor proporción (sale en 1K).",
+          "1x1": "Feed, perfil, avatar.",
+          "4x5": "Post vertical de feed (Instagram).",
+          "9x16": "Stories, Reels, TikTok.",
+          "16x9": "Portada, YouTube, presentación.",
+          "3x2": "Foto clásica horizontal.",
+          "2x3": "Foto clásica vertical."
+        }
       },
       "resolution": {
         "label": "5. Resolución",
         "hint": "La calidad/tamaño de la imagen. Cuanto mayor, más nitidez y más créditos. 4K no está disponible en 'Automático' ni en Cuadrado (1:1).",
         "unavailable": "No disponible para esta proporción",
-        "needCredits": "Necesitas {credits} créditos para {resolution}"
+        "needCredits": "Necesitas {credits} créditos para {resolution}",
+        "hints": {
+          "1K": "Estándar — rápido y barato. Ideal para redes sociales.",
+          "2K": "Más nitidez. Bueno para impresiones pequeñas.",
+          "4K": "Resolución máxima. No disponible en cuadrado (1:1) ni automático."
+        }
       },
       "submit": {
         "generate": "Generar imagen · {cost} créditos",
@@ -437,7 +460,21 @@
       "sending": "Enviando…",
       "regenerate": "Generar de nuevo",
       "animateBtn": "Animar",
-      "paywallAction": "animar esta imagen"
+      "paywallAction": "animar esta imagen",
+      "tiers": {
+        "bronze": {
+          "label": "Bronze",
+          "blurb": "Rápido y económico. Bueno para volumen."
+        },
+        "prata": {
+          "label": "Plata",
+          "blurb": "Movimiento más natural y estable."
+        },
+        "gold": {
+          "label": "Gold",
+          "blurb": "Máxima calidad y fidelidad."
+        }
+      }
     }
   },
   "misc": {

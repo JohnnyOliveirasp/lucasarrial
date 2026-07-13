@@ -373,13 +373,36 @@
       },
       "aspect": {
         "label": "4. Aspect ratio",
-        "hint": "The image format. 'Auto' lets the model choose (output at 1K). Vertical 9:16 for Stories/Reels, Square 1:1 for the feed, etc."
+        "hint": "The image format. 'Auto' lets the model choose (output at 1K). Vertical 9:16 for Stories/Reels, Square 1:1 for the feed, etc.",
+        "options": {
+          "auto": "Auto",
+          "1x1": "Square (1:1)",
+          "4x5": "Portrait (4:5)",
+          "9x16": "Vertical (9:16)",
+          "16x9": "Widescreen (16:9)",
+          "3x2": "Landscape (3:2)",
+          "2x3": "Poster (2:3)"
+        },
+        "hints": {
+          "auto": "The model picks the best ratio (output at 1K).",
+          "1x1": "Feed, profile, avatar.",
+          "4x5": "Vertical feed post (Instagram).",
+          "9x16": "Stories, Reels, TikTok.",
+          "16x9": "Covers, YouTube, presentations.",
+          "3x2": "Classic landscape photo.",
+          "2x3": "Classic portrait photo."
+        }
       },
       "resolution": {
         "label": "5. Resolution",
         "hint": "The image quality/size. The higher, the sharper — and the more credits. 4K is not available in 'Auto' or Square (1:1).",
         "unavailable": "Not available for this aspect ratio",
-        "needCredits": "You need {credits} credits for {resolution}"
+        "needCredits": "You need {credits} credits for {resolution}",
+        "hints": {
+          "1K": "Default — fast and cheap. Great for social media.",
+          "2K": "Sharper. Good for small prints.",
+          "4K": "Maximum resolution. Not available for square (1:1) or auto."
+        }
       },
       "submit": {
         "generate": "Generate image · {cost} credits",
@@ -437,7 +460,21 @@
       "sending": "Sending…",
       "regenerate": "Generate again",
       "animateBtn": "Animate",
-      "paywallAction": "animate this image"
+      "paywallAction": "animate this image",
+      "tiers": {
+        "bronze": {
+          "label": "Bronze",
+          "blurb": "Fast and affordable. Good for volume."
+        },
+        "prata": {
+          "label": "Silver",
+          "blurb": "More natural, stable motion."
+        },
+        "gold": {
+          "label": "Gold",
+          "blurb": "Top quality and fidelity."
+        }
+      }
     }
   },
   "misc": {

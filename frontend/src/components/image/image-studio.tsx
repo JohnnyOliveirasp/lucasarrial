@@ -488,7 +488,7 @@ export function ImageStudio({
               <button
                 key={a.value}
                 type="button"
-                title={a.hint}
+                title={t(`aspect.hints.${a.value.replace(":", "x")}`)}
                 onClick={() => setAspect(a.value)}
                 className={[
                   "rounded-[var(--radius)] border px-3 py-2 text-[13px] font-medium transition-colors",
@@ -497,7 +497,7 @@ export function ImageStudio({
                     : "border-[var(--hairline-strong)] bg-[var(--surface-card)] text-[var(--mute)] hover:border-[var(--hairline-bright)] hover:text-[var(--ink)]",
                 ].join(" ")}
               >
-                {a.label}
+                {t(`aspect.options.${a.value.replace(":", "x")}`)}
               </button>
             ))}
           </div>
@@ -519,7 +519,7 @@ export function ImageStudio({
                 ? t("resolution.unavailable")
                 : !affordable
                   ? t("resolution.needCredits", { credits: r.credits, resolution: r.value })
-                  : r.hint;
+                  : t(`resolution.hints.${r.value}`);
               return (
                 <button
                   key={r.value}
