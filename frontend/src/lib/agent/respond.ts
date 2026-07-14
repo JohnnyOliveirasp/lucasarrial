@@ -266,8 +266,9 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
       account,
       image,
     });
-    // Escalação real: o marcador interno sai da mensagem e vira aviso à equipe.
-    const { clean, reason } = extractEscalation(reply);
+    // Escalação real: o marcador interno sai da mensagem e vira aviso à
+    // equipe (ou SÓ ao técnico, se [ESCALAR-TECNICO] — erro de sistema).
+    const { clean, reason, technical } = extractEscalation(reply);
     if (!clean) return;
 
     // Envio humanizado: visto + digitando… + (no privado) até 3 mensagens.
@@ -288,6 +289,7 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
       await notifyTeamEscalation({
         chat: msg.chat,
         reason,
+        technical,
         lastUserText: history[history.length - 1]?.content ?? msg.content,
       });
     }
