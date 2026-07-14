@@ -17,7 +17,9 @@ const SYSTEM = `Você filtra mensagens de um grupo de WhatsApp de alunos da Fast
 
 Responda APENAS "SIM" ou "NAO". Na dúvida, "NAO".
 
-"NAO" para: conversa social, piada, elogio, agradecimento, desabafo, aluno respondendo outro aluno, assunto fora da plataforma, mensagem ambígua ou incompleta, dúvida que alguém já respondeu nas mensagens seguintes, e mensagens dirigidas a uma pessoa específica sobre assunto pessoal.`;
+"NAO" para: conversa social, piada, elogio, agradecimento, desabafo, aluno respondendo outro aluno, assunto fora da plataforma, mensagem ambígua ou incompleta, dúvida que alguém já respondeu nas mensagens seguintes, e mensagens dirigidas a uma pessoa específica sobre assunto pessoal.
+
+OUTRAS FERRAMENTAS: os alunos também usam ferramentas de terceiros no curso (HeyGen, ElevenLabs e similares). Dúvida sobre essas ferramentas → "NAO" (não é a plataforma FastCloner). Dúvida ambígua que não diz a ferramenta (ex.: "meu vídeo não gerou", "a voz ficou ruim"): use as mensagens anteriores da conversa pra identificar o contexto; se não der pra ter CERTEZA de que é sobre o FastCloner → "NAO".`;
 
 /**
  * A Mary deve responder esta mensagem de grupo mesmo sem ter sido marcada?

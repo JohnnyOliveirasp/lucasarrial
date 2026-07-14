@@ -270,6 +270,9 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     // equipe (ou SÓ ao técnico, se [ESCALAR-TECNICO] — erro de sistema).
     const { clean, reason, technical } = extractEscalation(reply);
     if (!clean) return;
+    // F6: entrada espontânea com contexto incerto (outra ferramenta? HeyGen/
+    // ElevenLabs?) → a Mary responde "PULAR" e a gente descarta em silêncio.
+    if (unprompted && /^\[?PULAR\]?\.?$/i.test(clean.trim())) return;
 
     // Envio humanizado: visto + digitando… + (no privado) até 3 mensagens.
     // No grupo a resposta sai CITANDO a mensagem de quem marcou.
