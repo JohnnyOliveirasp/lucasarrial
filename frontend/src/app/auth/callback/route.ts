@@ -9,6 +9,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAdmin } from "@/lib/db/admin";
+import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 /**
@@ -25,6 +26,7 @@ async function ensureProfile(
       data: { user },
     } = await supabase.auth.getUser();
     if (!user || !user.email) return;
+    const email = user.email;
     const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
     await getAdmin()
       .from("profiles")
@@ -43,6 +45,9 @@ async function ensureProfile(
         },
         { onConflict: "id", ignoreDuplicates: true },
       );
+    // Resgata compras feitas ANTES da conta existir (entitlement órfão →
+    // vincula + credita o ciclo). Caso Juliano/Victor/Gustavo 2026-07-13.
+    await claimPurchasesOnLogin(user.id, email);
   } catch {
     /* não bloqueia o login */
   }

@@ -27,6 +27,8 @@ import {
 } from "@/lib/credits/service";
 import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
+import { sendEmail, escapeHtml } from "@/lib/email/resend";
+import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
 import type { EntitlementStatus, Json } from "@/lib/db/types";
 
 const PROVIDER = "hotmart" as const;
@@ -182,6 +184,12 @@ async function processEvent(
       // janela de uma campanha ativa, credita o bônus no saldo extra. No-op se
       // não houver campanha; idempotente (não dá bônus 2x na renovação).
       await applyPurchaseCampaignBonus(userId, externalId);
+    } else {
+      // Compra aprovada SEM conta correspondente: o entitlement fica órfão e o
+      // login resgata sozinho quando a conta nascer com ESTE e-mail (claim.ts).
+      // Se a pessoa criar a conta com OUTRO e-mail (caso Juliano 2026-07-13),
+      // só um humano resolve — então avisamos a equipe na hora.
+      await alertOrphanPurchase(buyerEmail, externalId);
     }
     await setPendingPayment(buyerEmail, null); // pagou → limpa o pendente
     return "granted";
@@ -212,6 +220,36 @@ async function processEvent(
   }
 
   return "ignored";
+}
+
+/**
+ * Aprovação sem conta na plataforma → e-mail pra equipe (best-effort).
+ * O acesso em si NÃO se perde (entitlement órfão + resgate no login); o aviso
+ * existe pro caso do e-mail da compra ≠ e-mail da conta, que exige humano.
+ */
+async function alertOrphanPurchase(buyerEmail: string, externalId: string): Promise<void> {
+  try {
+    const admin = getAdmin();
+    const to = new Set<string>([SUPPORT_EMAIL]);
+    const { data } = await admin.from("admin_emails").select("email");
+    for (const r of (data ?? []) as { email: string | null }[]) {
+      if (r.email) to.add(r.email.toLowerCase());
+    }
+    await sendEmail({
+      to: [...to],
+      subject: `⚠️ Compra aprovada SEM conta na plataforma: ${buyerEmail}`,
+      html:
+        `<p>A Hotmart aprovou uma compra, mas não existe conta na plataforma com o e-mail do comprador — os créditos ficam pendentes.</p>` +
+        `<ul>` +
+        `<li><strong>E-mail da compra:</strong> ${escapeHtml(buyerEmail)}</li>` +
+        `<li><strong>Assinatura/transação:</strong> ${escapeHtml(externalId)}</li>` +
+        `</ul>` +
+        `<p>Se a pessoa criar a conta com ESTE e-mail, o sistema credita sozinho no primeiro login. ` +
+        `Se ela usar outro e-mail (ex.: login Google diferente do e-mail do checkout), é preciso vincular manualmente — confirme com o aluno qual e-mail ele usa pra logar.</p>`,
+    });
+  } catch {
+    /* aviso é best-effort; nunca derruba o webhook */
+  }
 }
 
 function mapRevokeStatus(eventType: string): Exclude<EntitlementStatus, "active"> | null {
