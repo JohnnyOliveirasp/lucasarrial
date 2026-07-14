@@ -95,8 +95,10 @@ export type IngestedMessage = {
   fromMe: boolean;
   kind: AgentMessageKind;
   content: string | null;
-  /** URL da mídia (WAHA entrega no webhook; usado pra transcrever áudio). */
+  /** URL da mídia (WAHA entrega no webhook; áudio → Whisper, imagem → visão). */
   mediaUrl: string | null;
+  /** Mimetype da mídia (ex.: image/jpeg) — necessário pro Claude ver a imagem. */
+  mediaType: string | null;
   /** A mensagem marcou (@) ou respondeu o número do suporte? (gatilho de grupo) */
   mentioned: boolean;
   /** Id serializado da mensagem original (WAHA) — pra responder CITANDO. */
@@ -110,7 +112,12 @@ export type IngestedMessage = {
  */
 export async function ingestMessage(
   m: EvolutionMessage,
-  opts?: { mediaUrl?: string | null; mentioned?: boolean; replyToId?: string | null },
+  opts?: {
+    mediaUrl?: string | null;
+    mediaType?: string | null;
+    mentioned?: boolean;
+    replyToId?: string | null;
+  },
 ): Promise<IngestedMessage | null> {
   try {
     const jid = m.key?.remoteJid ?? "";
@@ -163,6 +170,7 @@ export async function ingestMessage(
       kind,
       content,
       mediaUrl: opts?.mediaUrl ?? null,
+      mediaType: opts?.mediaType ?? null,
       mentioned: opts?.mentioned ?? false,
       replyToId: opts?.replyToId ?? null,
     };

@@ -11,6 +11,14 @@ const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const MODEL = process.env.AGENT_MODEL || "claude-sonnet-4-5";
 const TIMEOUT_MS = 45_000;
 
+/** Imagem anexada à ÚLTIMA mensagem do aluno (Claude é multimodal). */
+export type AgentImage = { data: string; mediaType: string };
+
+type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+type Turn = { role: "user" | "assistant"; content: string | ContentBlock[] };
+
 /** Vira o histórico do banco em turns user/assistant pro Claude. */
 function toTurns(history: AgentMessageRow[]): { role: "user" | "assistant"; content: string }[] {
   const turns: { role: "user" | "assistant"; content: string }[] = [];
@@ -32,14 +40,28 @@ function toTurns(history: AgentMessageRow[]): { role: "user" | "assistant"; cont
 /** Gera a resposta do agente pro histórico dado (última mensagem = do aluno). */
 export async function buildAgentReply(
   history: AgentMessageRow[],
-  opts?: { group?: boolean; account?: string | null },
+  opts?: { group?: boolean; account?: string | null; image?: AgentImage | null },
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("LLM indisponível (sem chave)");
 
-  const turns = toTurns(history);
+  const turns: Turn[] = toTurns(history);
   if (turns.length === 0 || turns[turns.length - 1].role !== "user") {
     throw new Error("histórico sem mensagem do aluno no fim");
+  }
+
+  // Foto/print do aluno: anexa a imagem em si no ÚLTIMO turn (as anteriores
+  // ficam só como texto "[imagem] ..." no histórico — barato e suficiente).
+  if (opts?.image) {
+    const last = turns[turns.length - 1];
+    const text = typeof last.content === "string" ? last.content : "";
+    last.content = [
+      {
+        type: "image",
+        source: { type: "base64", media_type: opts.image.mediaType, data: opts.image.data },
+      },
+      { type: "text", text: text || "[o aluno enviou esta imagem]" },
+    ];
   }
 
   let system = opts?.group

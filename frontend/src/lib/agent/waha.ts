@@ -119,6 +119,30 @@ export async function wahaLidToPhone(lid: string): Promise<string | null> {
   }
 }
 
+/** Marca o chat como lido (✔✔ azul) — parte da simulação de digitação. */
+export async function wahaSendSeen(jid: string): Promise<void> {
+  try {
+    await waha(`/api/sendSeen`, {
+      method: "POST",
+      body: JSON.stringify({ session: SESSION, chatId: toWahaChatId(jid) }),
+    });
+  } catch {
+    /* cosmético — nunca trava o envio */
+  }
+}
+
+/** Liga/desliga o "digitando…" no chat (simulação de digitação humana). */
+export async function wahaSetTyping(jid: string, on: boolean): Promise<void> {
+  try {
+    await waha(`/api/${on ? "startTyping" : "stopTyping"}`, {
+      method: "POST",
+      body: JSON.stringify({ session: SESSION, chatId: toWahaChatId(jid) }),
+    });
+  } catch {
+    /* cosmético — nunca trava o envio */
+  }
+}
+
 /** Assunto (nome) de um grupo. */
 export async function wahaGroupSubject(groupJid: string): Promise<string | null> {
   try {

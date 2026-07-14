@@ -43,10 +43,10 @@ export async function sendAgentText(
 }
 
 /**
- * Bytes do áudio de uma mensagem: WAHA entrega a URL no próprio webhook;
- * Evolution busca pelo id da mensagem.
+ * Bytes da mídia de uma mensagem (áudio, imagem…): WAHA entrega a URL no
+ * próprio webhook; Evolution busca pelo id da mensagem.
  */
-export async function fetchAudioBytes(args: {
+export async function fetchMediaBytes(args: {
   waMessageId: string | null;
   mediaUrl: string | null;
 }): Promise<Buffer | null> {
@@ -56,4 +56,13 @@ export async function fetchAudioBytes(args: {
   if (!args.waMessageId) return null;
   const media = await evo.getMediaBase64(args.waMessageId);
   return media ? Buffer.from(media.base64, "base64") : null;
+}
+
+/** Marca como lido + "digitando…" (simulação humana; só WAHA — Evolution é no-op). */
+export async function sendSeen(jid: string): Promise<void> {
+  if (agentProvider() === "waha") await waha.wahaSendSeen(jid);
+}
+
+export async function setTyping(jid: string, on: boolean): Promise<void> {
+  if (agentProvider() === "waha") await waha.wahaSetTyping(jid, on);
 }

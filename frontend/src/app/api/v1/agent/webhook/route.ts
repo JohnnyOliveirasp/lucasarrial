@@ -113,6 +113,7 @@ export async function POST(request: NextRequest) {
     const { m, mediaUrl } = wahaToEvolution(p);
     const ingested = await ingestMessage(m, {
       mediaUrl,
+      mediaType: p.media?.mimetype ?? null,
       mentioned: mentionsAgent(p),
       replyToId: p.id ?? null,
     });
