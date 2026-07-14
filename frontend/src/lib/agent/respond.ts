@@ -5,8 +5,11 @@
  * Guards (decisões do Johnny 2026-07-13):
  *   - PRIVADO: responde QUALQUER pessoa (assunto restrito à plataforma pelo
  *     prompt; toda conversa fica registrada no banco/painel)
- *   - GRUPO: só quando a mensagem MARCA (@) ou RESPONDE o número do suporte
- *     — e a resposta sai CITANDO a pessoa
+ *   - GRUPO marcada/respondida: responde sempre, CITANDO a pessoa
+ *   - GRUPO sem menção (F6): classificador Haiku conservador decide se é
+ *     dúvida clara da plataforma (ex.: pergunta pro Lucas/equipe); antes de
+ *     responder espera AGENT_GROUP_GRACE_MS dando preferência ao humano —
+ *     se a equipe (fromMe) falar no meio, a Mary desiste
  *   - só chats em mode 'auto' (etiqueta humano cala a IA — F2)
  *   - DEBOUNCE: espera a pessoa terminar de "picotar" as mensagens e responde
  *     UMA vez (a mensagem mais nova responde; as anteriores desistem)
@@ -23,6 +26,7 @@ import { buildAgentReply, type AgentImage } from "@/lib/agent/brain";
 import { fetchMediaBytes } from "@/lib/agent/provider";
 import { sendHumanized } from "@/lib/agent/humanize";
 import { extractEscalation, notifyTeamEscalation } from "@/lib/agent/escalate";
+import { shouldAnswerUnprompted } from "@/lib/agent/classify";
 import type { IngestedMessage } from "@/lib/agent/ingest";
 import { transcribeAudioBuffer } from "@/lib/video/transcribe";
 import type { AgentMessageRow } from "@/lib/db/types";
@@ -30,6 +34,10 @@ import type { AgentMessageRow } from "@/lib/db/types";
 const HISTORY_LIMIT = 50; // memória da conversa: a Mary relê as últimas 50
 const DEBOUNCE_MS = Number(process.env.AGENT_DEBOUNCE_MS ?? 6_000);
 const RATE_LIMIT_PER_DAY = Number(process.env.AGENT_RATE_LIMIT_PER_DAY ?? 40);
+// F6 — grupo sem menção: AGENT_GROUP_PROACTIVE=0 desliga; a espera dá
+// preferência ao humano (equipe respondeu no meio → Mary desiste).
+const GROUP_PROACTIVE = (process.env.AGENT_GROUP_PROACTIVE ?? "1") !== "0";
+const GROUP_GRACE_MS = Number(process.env.AGENT_GROUP_GRACE_MS ?? 45_000);
 const IMAGE_MAX_BYTES = 4_500_000; // limite da API (5MB) com folga
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
@@ -72,6 +80,45 @@ async function supersededAfterDebounce(msg: IngestedMessage): Promise<boolean> {
     .maybeSingle();
   const latestId = (data as { id: string } | null)?.id;
   return Boolean(latestId && latestId !== msg.messageId);
+}
+
+/**
+ * F6 (grupo sem menção): depois da espera de cortesia, desiste se
+ *   - a equipe/Mary (fromMe) falou no chat depois da mensagem avaliada, ou
+ *   - o MESMO aluno mandou mensagem mais nova (a mais nova avalia o lote).
+ * Mensagens de OUTROS alunos não cancelam (grupo movimentado é normal) —
+ * "alguém já respondeu a dúvida?" fica a cargo do classificador.
+ */
+async function groupHandledMeanwhile(msg: IngestedMessage): Promise<boolean> {
+  const admin = getAdmin();
+  const { data: me } = await admin
+    .from("agent_messages")
+    .select("created_at")
+    .eq("id", msg.messageId)
+    .maybeSingle();
+  const since = (me as { created_at: string } | null)?.created_at;
+  if (!since) return true; // sem referência = fica quieta
+  const { count } = await admin
+    .from("agent_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("chat_id", msg.chat.id)
+    .eq("from_me", true)
+    .gt("created_at", since);
+  if ((count ?? 0) > 0) return true;
+  if (msg.senderJid) {
+    const { data: newer } = await admin
+      .from("agent_messages")
+      .select("id")
+      .eq("chat_id", msg.chat.id)
+      .eq("sender_jid", msg.senderJid)
+      .eq("from_me", false)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const latest = (newer as { id: string } | null)?.id;
+    if (latest && latest !== msg.messageId) return true;
+  }
+  return false;
 }
 
 /** Grava uma resposta enviada (uma row por parte — dedupe do eco por id). */
@@ -140,8 +187,10 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     if (msg.fromMe) return;
     if (msg.chat.mode !== "auto") return;
     if (!(await agentEnabled())) return; // botão geral "Desligada"
-    // Grupo: só quando marcada/respondida. Privado: responde qualquer pessoa.
-    if (msg.chat.kind === "group" && !msg.mentioned) return;
+    // Grupo marcada/respondida: responde sempre. Sem menção: fluxo F6
+    // (classificador + espera de cortesia), só texto/áudio. Privado: todos.
+    const unprompted = msg.chat.kind === "group" && !msg.mentioned;
+    if (unprompted && (!GROUP_PROACTIVE || (msg.kind !== "text" && msg.kind !== "audio"))) return;
     if (msg.kind !== "text" && msg.kind !== "audio" && msg.kind !== "image") return;
 
     const admin = getAdmin();
@@ -170,7 +219,12 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     }
 
     // Mensagens picotadas: a mais nova responde pelo lote; esta desiste.
-    if (await supersededAfterDebounce(msg)) return;
+    // F6: sem menção a espera é MAIOR (cortesia) e só fromMe/mesmo-aluno
+    // cancelam — o burburinho normal do grupo não pode calar a Mary.
+    if (unprompted) {
+      await sleep(GROUP_GRACE_MS);
+      if (await groupHandledMeanwhile(msg)) return;
+    } else if (await supersededAfterDebounce(msg)) return;
     // Durante a espera um humano pode ter assumido/pausado — re-checa o modo.
     const { data: freshChat } = await admin
       .from("agent_chats")
@@ -191,6 +245,10 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     const history = ((rows ?? []) as AgentMessageRow[]).reverse();
     if (history.length === 0 || history[history.length - 1].from_me) return;
 
+    // F6: sem menção, só responde se o classificador (conservador) aprovar —
+    // ele vê o que chegou durante a espera (detecta "alguém já respondeu").
+    if (unprompted && !(await shouldAnswerUnprompted(history, msg.messageId))) return;
+
     // F4: no privado, resolve quem é o aluno (LID→telefone→perfil) e entrega
     // o snapshot da conta pra Mary responder com dados reais (só leitura).
     let account: string | null = null;
@@ -204,6 +262,7 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
 
     const reply = await buildAgentReply(history, {
       group: msg.chat.kind === "group",
+      unprompted,
       account,
       image,
     });

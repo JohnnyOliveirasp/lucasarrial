@@ -40,7 +40,13 @@ function toTurns(history: AgentMessageRow[]): { role: "user" | "assistant"; cont
 /** Gera a resposta do agente pro histórico dado (última mensagem = do aluno). */
 export async function buildAgentReply(
   history: AgentMessageRow[],
-  opts?: { group?: boolean; account?: string | null; image?: AgentImage | null },
+  opts?: {
+    group?: boolean;
+    /** F6: grupo SEM menção — a Mary entra por conta própria (tom humilde). */
+    unprompted?: boolean;
+    account?: string | null;
+    image?: AgentImage | null;
+  },
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("LLM indisponível (sem chave)");
@@ -65,7 +71,9 @@ export async function buildAgentReply(
   }
 
   let system = opts?.group
-    ? `${buildAgentSystem()}\n\nCONTEXTO: você está respondendo DENTRO DE UM GRUPO de alunos (várias pessoas conversando — os nomes prefixam as mensagens). Responda SÓ à última pessoa, que te marcou. Seja ainda mais curto que no privado. Dúvida longa/pessoal → convide a pessoa a te chamar no privado.`
+    ? opts?.unprompted
+      ? `${buildAgentSystem()}\n\nCONTEXTO: você está DENTRO DE UM GRUPO de alunos (várias pessoas conversando — os nomes prefixam as mensagens). NINGUÉM te marcou: você está entrando por conta própria porque a última mensagem é claramente uma dúvida sobre a plataforma. Responda SÓ essa dúvida, direto ao ponto, sem se justificar por ter entrado. Se a equipe preferir responder, ótimo — você é o reforço, não a dona da conversa. Seja ainda mais curta que no privado. Dúvida longa/pessoal → convide a pessoa a te chamar no privado.`
+      : `${buildAgentSystem()}\n\nCONTEXTO: você está respondendo DENTRO DE UM GRUPO de alunos (várias pessoas conversando — os nomes prefixam as mensagens). Responda SÓ à última pessoa, que te marcou. Seja ainda mais curto que no privado. Dúvida longa/pessoal → convide a pessoa a te chamar no privado.`
     : buildAgentSystem();
 
   // F4: conta identificada pelo TELEFONE do WhatsApp (nunca por e-mail dito

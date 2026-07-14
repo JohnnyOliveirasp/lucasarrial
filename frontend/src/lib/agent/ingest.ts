@@ -101,6 +101,8 @@ export type IngestedMessage = {
   mediaType: string | null;
   /** A mensagem marcou (@) ou respondeu o número do suporte? (gatilho de grupo) */
   mentioned: boolean;
+  /** JID de quem mandou (participant no grupo; o próprio chat no privado). */
+  senderJid: string | null;
   /** Id serializado da mensagem original (WAHA) — pra responder CITANDO. */
   replyToId: string | null;
 };
@@ -172,6 +174,7 @@ export async function ingestMessage(
       mediaUrl: opts?.mediaUrl ?? null,
       mediaType: opts?.mediaType ?? null,
       mentioned: opts?.mentioned ?? false,
+      senderJid: fromMe ? null : (m.key?.participant ?? jid),
       replyToId: opts?.replyToId ?? null,
     };
   } catch {
