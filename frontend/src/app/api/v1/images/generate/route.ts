@@ -163,7 +163,19 @@ export async function POST(request: NextRequest) {
     );
     taskId = created.taskId;
   } catch (e) {
-    return serverError(e instanceof Error ? `Kie: ${e.message}` : "Kie createTask failed");
+    const msg = e instanceof Error ? e.message : "Kie createTask failed";
+    console.error("[images/generate] Kie createTask falhou:", msg);
+    // Rejeição upstream conhecida (ex.: 2026-07-15 o gpt-image-2 desativou
+    // temporariamente 4:5/5:4): erro ACIONÁVEL → 400 com instrução clara,
+    // não o 500 genérico que esconde a causa do aluno.
+    if (/aspect ratio/i.test(msg)) {
+      return jsonError(
+        "aspect_unavailable",
+        "A proporção escolhida está temporariamente indisponível no gerador de imagens. Escolha outra proporção (ex.: 1:1, 9:16 ou 16:9) e tente de novo.",
+        400,
+      );
+    }
+    return serverError(`Kie: ${msg}`);
   }
 
   const id = randomUUID();

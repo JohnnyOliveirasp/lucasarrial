@@ -258,7 +258,9 @@ export function ImageStudio({
       }
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        if (j?.error?.code === "content_blocked") {
+        // Erros ACIONÁVEIS pelo usuário (moderação, proporção indisponível no
+        // provedor) mostram a mensagem real no form — não o "Ops" genérico.
+        if (j?.error?.code === "content_blocked" || j?.error?.code === "aspect_unavailable") {
           setBlocked(j.error.message || t("errors.blockedFallback"));
           setStep("form");
           return;
