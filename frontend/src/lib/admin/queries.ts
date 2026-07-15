@@ -143,7 +143,9 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
 
   // ---- dinheiro REAL (Hotmart, produto da plataforma, sem testes) ----
   const revenuePeriod = fin.paid_total_period ?? 0;
-  const costPeriod = voiceCost + trainCost + imageCost + videoCost;
+  // TODAS as fatias da pizza entram no gasto — cloneCost (GPU) ficava de fora
+  // e o lucro saía superestimado.
+  const costPeriod = voiceCost + trainCost + imageCost + videoCost + cloneCost;
   const feePeriod = hotmartFeeBrl(revenuePeriod, fin.paid_count_period ?? 0);
   const refunds = fin.refund_total ?? 0;
   // Decisão Johnny 2026-07-06 (opção B): lucro/prejuízo = CAIXA REAL; a promoção
