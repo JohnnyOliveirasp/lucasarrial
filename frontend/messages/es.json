@@ -31,13 +31,13 @@
           "name": "Generación de Video",
           "description": "Crea videos cortos desde texto y voz clonada."
         },
-        "avatar": {
-          "name": "Avatar Parlante",
-          "description": "Tu imagen cobra vida con tu voz clonada."
+        "videoClone": {
+          "name": "Video Clon",
+          "description": "Tu rostro y tu voz clonada en videos con sincronía labial."
         },
-        "transcription": {
-          "name": "Transcripción Premium",
-          "description": "Transcripción multilingüe con diarización de hablantes."
+        "socialPublish": {
+          "name": "Publicación Automática",
+          "description": "Publica tus videos automáticamente en las redes sociales."
         }
       }
     },

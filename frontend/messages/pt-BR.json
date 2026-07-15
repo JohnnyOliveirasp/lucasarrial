@@ -35,13 +35,13 @@
           "name": "Geração de Vídeo",
           "description": "Crie vídeos curtos a partir de texto e voz clonada."
         },
-        "avatar": {
-          "name": "Avatar Falante",
-          "description": "Sua imagem ganha vida com sua voz clonada."
+        "videoClone": {
+          "name": "Vídeo Clone",
+          "description": "Seu rosto e sua voz clonada em vídeos com sincronia labial."
         },
-        "transcription": {
-          "name": "Transcrição Premium",
-          "description": "Transcrição multilíngue com diarização de falantes."
+        "socialPublish": {
+          "name": "Publicação Automática",
+          "description": "Publique seus vídeos automaticamente nas redes sociais."
         }
       }
     },

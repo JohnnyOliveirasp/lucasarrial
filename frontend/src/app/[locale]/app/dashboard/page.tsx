@@ -1,10 +1,10 @@
 import { Link } from "@/i18n/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { Mic2, Video, UserCircle2, FileAudio } from "lucide-react";
+import { Mic2, Video, UserSquare2, Share2 } from "lucide-react";
 import { Eyebrow } from "@/components/ui";
 
 type Tool = {
-  key: "voiceCloning" | "videoGen" | "avatar" | "transcription";
+  key: "voiceCloning" | "videoGen" | "videoClone" | "socialPublish";
   href: string;
   icon: typeof Mic2;
   active: boolean;
@@ -13,8 +13,9 @@ type Tool = {
 const TOOLS: Tool[] = [
   { key: "voiceCloning", href: "/app/voice-cloning", icon: Mic2, active: true },
   { key: "videoGen", href: "/app/videos/history", icon: Video, active: true },
-  { key: "avatar", href: "#", icon: UserCircle2, active: false },
-  { key: "transcription", href: "#", icon: FileAudio, active: false },
+  // Vídeo Clone (lip-sync) — mesmo destino/ícone do item "Vídeos" do menu.
+  { key: "videoClone", href: "/app/videos/clone", icon: UserSquare2, active: true },
+  { key: "socialPublish", href: "#", icon: Share2, active: false },
 ];
 
 export default async function DashboardPage({
