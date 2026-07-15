@@ -53,7 +53,48 @@
       "generateAudioTitle": "Gerar Áudio",
       "generateAudioSubtitle": "Escolha uma voz pronta e gere áudio com qualquer texto.",
       "generateAudioEmpty": "Você ainda não tem voz pronta. Treine uma voz primeiro.",
-      "pickVoiceCta": "Gerar áudio"
+      "pickVoiceCta": "Gerar áudio",
+      "detail": {
+        "eyebrow": "Voz",
+        "files": "Arquivos",
+        "totalDuration": "Duração total",
+        "model": "Modelo",
+        "trainedVoice": "Voz treinada",
+        "supportAction": "treinar esta voz"
+      },
+      "deleteVoice": {
+        "title": "Apagar — ação irreversível",
+        "close": "Fechar",
+        "whatToDelete": "O que apagar",
+        "wholeTitle": "Apagar a voz inteira",
+        "wholeDesc": "Remove TUDO: áudios enviados, a LoRA, áudios gerados, referências e todos os registros no banco. Não dá pra recuperar.",
+        "loraTitle": "Apagar só a LoRA",
+        "loraDesc": "Mantém os áudios enviados. A voz volta pra \"pronta pra treinar\" e você pode retreinar sem subir áudio de novo.",
+        "confirmLabel": "Pra confirmar, digite o nome da voz:",
+        "failed": "Falha ao apagar",
+        "networkError": "Erro de rede",
+        "cancel": "Cancelar",
+        "deleting": "Apagando…",
+        "deleteLora": "Apagar LoRA",
+        "deleteVoiceCta": "Apagar voz"
+      },
+      "statuses": {
+        "uploading": "Subindo áudios",
+        "validating": "Validando",
+        "awaiting_training": "Pronta pra treinar",
+        "rejected_too_short": "< 20min · Rejeitado",
+        "training": "Treinando",
+        "ready": "Pronta",
+        "failed": "Falhou"
+      },
+      "paywall": {
+        "titleNoCredits": "Créditos insuficientes para treinar",
+        "titleNoPlan": "Assine para treinar uma voz",
+        "bodyNoCredits": "Treinar uma voz custa {cost} créditos e você tem {balance}. Compre um pacote para continuar — a geração de áudio com vozes já prontas segue liberada.",
+        "bodyNoPlan": "Você não tem um plano vigente. Treinar uma voz faz parte do plano: assine para liberar 100.000 créditos por mês e treinar a sua voz.",
+        "ctaCredits": "Comprar créditos",
+        "ctaSubscribe": "Assinar agora"
+      }
     },
     "voiceCloningNew": {
       "eyebrow": "01 · Treinar voz",

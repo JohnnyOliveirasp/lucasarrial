@@ -49,7 +49,48 @@
       "generateAudioTitle": "Generar Audio",
       "generateAudioSubtitle": "Elige una voz lista y genera audio con cualquier texto.",
       "generateAudioEmpty": "Aún no tienes una voz lista. Entrena una voz primero.",
-      "pickVoiceCta": "Generar audio"
+      "pickVoiceCta": "Generar audio",
+      "detail": {
+        "eyebrow": "Voz",
+        "files": "Archivos",
+        "totalDuration": "Duración total",
+        "model": "Modelo",
+        "trainedVoice": "Voz entrenada",
+        "supportAction": "entrenar esta voz"
+      },
+      "deleteVoice": {
+        "title": "Eliminar — acción irreversible",
+        "close": "Cerrar",
+        "whatToDelete": "Qué eliminar",
+        "wholeTitle": "Eliminar la voz completa",
+        "wholeDesc": "Elimina TODO: audios subidos, la LoRA, audios generados, referencias y todos los registros. No se puede recuperar.",
+        "loraTitle": "Eliminar solo la LoRA",
+        "loraDesc": "Mantiene los audios subidos. La voz vuelve a \"lista para entrenar\" y puedes reentrenar sin subir audio de nuevo.",
+        "confirmLabel": "Para confirmar, escribe el nombre de la voz:",
+        "failed": "Error al eliminar",
+        "networkError": "Error de red",
+        "cancel": "Cancelar",
+        "deleting": "Eliminando…",
+        "deleteLora": "Eliminar LoRA",
+        "deleteVoiceCta": "Eliminar voz"
+      },
+      "statuses": {
+        "uploading": "Subiendo audios",
+        "validating": "Validando",
+        "awaiting_training": "Lista para entrenar",
+        "rejected_too_short": "< 20min · Rechazado",
+        "training": "Entrenando",
+        "ready": "Lista",
+        "failed": "Falló"
+      },
+      "paywall": {
+        "titleNoCredits": "Créditos insuficientes para entrenar",
+        "titleNoPlan": "Suscríbete para entrenar una voz",
+        "bodyNoCredits": "Entrenar una voz cuesta {cost} créditos y tienes {balance}. Compra un paquete para continuar — la generación de audio con voces listas sigue disponible.",
+        "bodyNoPlan": "No tienes un plan vigente. Entrenar una voz es parte del plan: suscríbete para desbloquear 100.000 créditos al mes y entrenar tu voz.",
+        "ctaCredits": "Comprar créditos",
+        "ctaSubscribe": "Suscribirse ahora"
+      }
     },
     "voiceCloningNew": {
       "eyebrow": "01 · Entrenar voz",

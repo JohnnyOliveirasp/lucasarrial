@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { redirect } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Mic2, Plus, Lock } from "lucide-react";
@@ -16,15 +16,10 @@ type VoiceRow = {
   created_at: string;
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  uploading: "Subindo áudios",
-  validating: "Validando",
-  awaiting_training: "Pronta pra treinar",
-  rejected_too_short: "< 20min · Rejeitado",
-  training: "Treinando",
-  ready: "Pronta",
-  failed: "Falhou",
-};
+const STATUS_KEYS = new Set([
+  "uploading", "validating", "awaiting_training", "rejected_too_short",
+  "training", "ready", "failed",
+]);
 
 export default async function VoiceCloningPage({
   params,
@@ -88,19 +83,24 @@ export default async function VoiceCloningPage({
           <h2 className="flex items-center gap-2 font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
             <Lock className="h-5 w-5 text-[var(--silver)]" />
             {subscribed
-              ? "Créditos insuficientes para treinar"
-              : "Assine para treinar uma voz"}
+              ? t("voiceCloning.paywall.titleNoCredits")
+              : t("voiceCloning.paywall.titleNoPlan")}
           </h2>
           <p className="max-w-xl text-sm text-[var(--mute)]">
             {subscribed
-              ? `Treinar uma voz custa ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos e você tem ${creditsTotal.toLocaleString("pt-BR")}. Compre um pacote para continuar — a geração de áudio com vozes já prontas segue liberada.`
-              : "Você não tem um plano vigente. Treinar uma voz faz parte do plano: assine para liberar 100.000 créditos por mês e treinar a sua voz."}
+              ? t("voiceCloning.paywall.bodyNoCredits", {
+                  cost: TRAINING_CREDIT_COST.toLocaleString(locale),
+                  balance: creditsTotal.toLocaleString(locale),
+                })
+              : t("voiceCloning.paywall.bodyNoPlan")}
           </p>
           <Link
-            href={subscribed ? `/${locale}/app/credits` : `/${locale}/planos`}
+            href={subscribed ? "/app/credits" : "/planos"}
             className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-[background-color,border-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] active:scale-[0.98]"
           >
-            {subscribed ? "Comprar créditos" : "Assinar agora"}
+            {subscribed
+              ? t("voiceCloning.paywall.ctaCredits")
+              : t("voiceCloning.paywall.ctaSubscribe")}
             <span aria-hidden>→</span>
           </Link>
         </section>
@@ -130,7 +130,11 @@ export default async function VoiceCloningPage({
                     {new Date(v.created_at).toLocaleDateString(locale)}
                   </span>
                 </div>
-                <Badge variant="soft">{STATUS_LABEL[v.status] ?? v.status}</Badge>
+                <Badge variant="soft">
+                  {STATUS_KEYS.has(v.status)
+                    ? t(`voiceCloning.statuses.${v.status}`)
+                    : v.status}
+                </Badge>
                 <span className="text-[var(--mute)]" aria-hidden>
                   →
                 </span>

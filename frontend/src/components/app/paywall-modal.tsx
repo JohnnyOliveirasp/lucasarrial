@@ -10,7 +10,7 @@
  *  - sem assinatura  → "Assinar agora" (/planos)   — assinar dá 100k créditos/mês
  *  - assinante ativo → "Comprar créditos" (/app/credits) — pacote avulso (Stripe)
  */
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { Coins, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui";
 

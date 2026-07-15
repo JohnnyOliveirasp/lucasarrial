@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { setRequestLocale } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Mic2, Clock, Check, AlertCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { formatDuration } from "@/lib/audio/duration";
@@ -11,14 +11,14 @@ import { Eyebrow, Badge } from "@/components/ui";
 
 type BadgeTone = "neutral" | "active" | "danger" | "success";
 
-const STATUS_BADGE: Record<VoiceStatus, { label: string; tone: BadgeTone }> = {
-  uploading:           { label: "Subindo áudios",        tone: "neutral" },
-  validating:          { label: "Validando",             tone: "neutral" },
-  awaiting_training:   { label: "Pronta pra treinar",    tone: "active"  },
-  rejected_too_short:  { label: "Rejeitado — < 20min",   tone: "danger"  },
-  training:            { label: "Treinando…",            tone: "active"  },
-  ready:               { label: "✓ Pronta",              tone: "success" },
-  failed:              { label: "Falhou",                tone: "danger"  },
+const STATUS_TONE: Record<VoiceStatus, BadgeTone> = {
+  uploading: "neutral",
+  validating: "neutral",
+  awaiting_training: "active",
+  rejected_too_short: "danger",
+  training: "active",
+  ready: "success",
+  failed: "danger",
 };
 
 const TONE_DOT: Record<BadgeTone, string | undefined> = {
@@ -35,6 +35,7 @@ export default async function VoiceDetailPage({
 }) {
   const { locale, id } = await params;
   setRequestLocale(locale);
+  const t = await getTranslations({ locale, namespace: "app.voiceCloning" });
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -51,9 +52,12 @@ export default async function VoiceDetailPage({
 
   if (!voice) notFound();
 
-  const badge =
-    STATUS_BADGE[voice.status as VoiceStatus] ??
-    { label: voice.status, tone: "neutral" as const };
+  const tone = STATUS_TONE[voice.status as VoiceStatus] ?? ("neutral" as const);
+  const statusLabel =
+    voice.status in STATUS_TONE
+      ? `${voice.status === "ready" ? "✓ " : ""}${t(`statuses.${voice.status}`)}`
+      : voice.status;
+  const badge = { label: statusLabel, tone };
   const fileCount = Array.isArray(voice.raw_audio_paths)
     ? voice.raw_audio_paths.length
     : 0;
@@ -61,7 +65,7 @@ export default async function VoiceDetailPage({
   return (
     <div className="flex max-w-3xl flex-col gap-10">
       <header className="glow-voice relative -mx-6 -mt-6 flex flex-col gap-3 px-6 pb-2 pt-6">
-        <Eyebrow>Voz</Eyebrow>
+        <Eyebrow>{t("detail.eyebrow")}</Eyebrow>
         <h1 className="font-sans text-[40px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--ink)]">
           {voice.name}
         </h1>
@@ -79,12 +83,12 @@ export default async function VoiceDetailPage({
       <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <StatCard
           icon={<Mic2 className="h-5 w-5" />}
-          label="Arquivos"
+          label={t("detail.files")}
           value={String(fileCount)}
         />
         <StatCard
           icon={<Clock className="h-5 w-5" />}
-          label="Duração total"
+          label={t("detail.totalDuration")}
           value={voice.duration_seconds ? formatDuration(voice.duration_seconds) : "—"}
         />
         <div className="relative flex flex-col gap-2 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5">
@@ -96,10 +100,10 @@ export default async function VoiceDetailPage({
             )}
           </span>
           <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--ash)]">
-            Modelo
+            {t("detail.model")}
           </span>
           <span className="font-sans text-lg font-semibold leading-tight text-[var(--ink)]">
-            {voice.status === "ready" && voice.lora_path ? "Voz treinada" : "—"}
+            {voice.status === "ready" && voice.lora_path ? t("detail.trainedVoice") : "—"}
           </span>
           <div className="absolute right-1 top-1">
             <VoiceRowMenu
@@ -111,7 +115,7 @@ export default async function VoiceDetailPage({
         </div>
       </section>
 
-      {voice.status === "failed" && <SupportError action="treinar esta voz" />}
+      {voice.status === "failed" && <SupportError action={t("detail.supportAction")} />}
 
       <VoiceStatusPanel
         voiceId={voice.id}

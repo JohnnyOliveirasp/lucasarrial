@@ -49,7 +49,48 @@
       "generateAudioTitle": "Generate Audio",
       "generateAudioSubtitle": "Pick a ready voice and generate audio with any text.",
       "generateAudioEmpty": "You don't have a ready voice yet. Train a voice first.",
-      "pickVoiceCta": "Generate audio"
+      "pickVoiceCta": "Generate audio",
+      "detail": {
+        "eyebrow": "Voice",
+        "files": "Files",
+        "totalDuration": "Total duration",
+        "model": "Model",
+        "trainedVoice": "Trained voice",
+        "supportAction": "train this voice"
+      },
+      "deleteVoice": {
+        "title": "Delete — irreversible action",
+        "close": "Close",
+        "whatToDelete": "What to delete",
+        "wholeTitle": "Delete the entire voice",
+        "wholeDesc": "Removes EVERYTHING: uploaded audio, the LoRA, generated audio, references and all database records. This cannot be undone.",
+        "loraTitle": "Delete only the LoRA",
+        "loraDesc": "Keeps the uploaded audio. The voice goes back to \"ready to train\" and you can retrain without uploading audio again.",
+        "confirmLabel": "To confirm, type the voice name:",
+        "failed": "Failed to delete",
+        "networkError": "Network error",
+        "cancel": "Cancel",
+        "deleting": "Deleting…",
+        "deleteLora": "Delete LoRA",
+        "deleteVoiceCta": "Delete voice"
+      },
+      "statuses": {
+        "uploading": "Uploading audio",
+        "validating": "Validating",
+        "awaiting_training": "Ready to train",
+        "rejected_too_short": "< 20min · Rejected",
+        "training": "Training",
+        "ready": "Ready",
+        "failed": "Failed"
+      },
+      "paywall": {
+        "titleNoCredits": "Not enough credits to train",
+        "titleNoPlan": "Subscribe to train a voice",
+        "bodyNoCredits": "Training a voice costs {cost} credits and you have {balance}. Buy a pack to continue — audio generation with ready voices stays available.",
+        "bodyNoPlan": "You don't have an active plan. Voice training is part of the plan: subscribe to unlock 100,000 credits per month and train your voice.",
+        "ctaCredits": "Buy credits",
+        "ctaSubscribe": "Subscribe now"
+      }
     },
     "voiceCloningNew": {
       "eyebrow": "01 · Train voice",

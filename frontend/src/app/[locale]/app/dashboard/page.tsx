@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Mic2, Video, UserCircle2, FileAudio } from "lucide-react";
 import { Eyebrow } from "@/components/ui";

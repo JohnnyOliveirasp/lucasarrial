@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@/i18n/navigation";
 import { redirect } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { AudioLines } from "lucide-react";
@@ -53,7 +53,7 @@ export default async function GenerateAudioPage({
           <AudioLines className="h-10 w-10 text-[var(--ash)]" />
           <p className="text-sm text-[var(--mute)]">{t("voiceCloning.generateAudioEmpty")}</p>
           <Link
-            href={`/${locale}/app/voice-cloning`}
+            href="/app/voice-cloning"
             className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
           >
             {t("voiceCloning.createButton")}
@@ -64,7 +64,7 @@ export default async function GenerateAudioPage({
           {list.map((v) => (
             <li key={v.id}>
               <Link
-                href={`/${locale}/app/voice-cloning/${v.id}/generate`}
+                href={`/app/voice-cloning/${v.id}/generate`}
                 className="grid grid-cols-[1fr_auto_auto] items-center gap-4 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-5 py-4 transition-[border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)]"
               >
                 <div className="flex flex-col gap-1">

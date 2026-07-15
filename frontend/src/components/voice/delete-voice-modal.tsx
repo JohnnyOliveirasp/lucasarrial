@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
 import { Trash2, AlertTriangle, X } from "lucide-react";
 
 type Target = "lora" | "voice";
@@ -19,6 +20,7 @@ type DialogProps = {
 
 export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }: DialogProps) {
   const router = useRouter();
+  const t = useTranslations("app.voiceCloning.deleteVoice");
   // Padrão = voz INTEIRA. Antes o padrão era "lora" quando a voz estava pronta,
   // e quem queria excluir a voz apagava só a LoRA sem perceber — a voz seguia
   // na lista ("pronta pra treinar") e parecia que o delete não funcionava.
@@ -50,7 +52,7 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(json?.error?.message || "Falha ao apagar");
+        setError(json?.error?.message || t("failed"));
         setDeleting(false);
         return;
       }
@@ -64,7 +66,7 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
         router.refresh();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro de rede");
+      setError(e instanceof Error ? e.message : t("networkError"));
       setDeleting(false);
     }
   }
@@ -85,13 +87,13 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
         <div className="flex items-start justify-between gap-4">
           <h3 className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
             <AlertTriangle className="h-5 w-5 text-[var(--status-error)]" />
-            Apagar — ação irreversível
+            {t("title")}
           </h3>
           <button
             type="button"
             onClick={close}
             className="text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
-            aria-label="Fechar"
+            aria-label={t("close")}
           >
             <X className="h-5 w-5" />
           </button>
@@ -100,7 +102,7 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
         {/* Escolha do alvo */}
         <div className="flex flex-col gap-2">
           <span className="font-mono text-[10px] tracking-wide text-[var(--mute)]">
-            O que apagar
+            {t("whatToDelete")}
           </span>
 
           <label
@@ -118,11 +120,8 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
               onChange={() => setTarget("voice")}
             />
             <span className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-[var(--ink)]">Apagar a voz inteira</span>
-              <span className="text-xs text-[var(--mute)]">
-                Remove TUDO: áudios enviados, a LoRA, áudios gerados, referências e todos os
-                registros no banco. Não dá pra recuperar.
-              </span>
+              <span className="text-sm font-medium text-[var(--ink)]">{t("wholeTitle")}</span>
+              <span className="text-xs text-[var(--mute)]">{t("wholeDesc")}</span>
             </span>
           </label>
 
@@ -142,11 +141,8 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
                 onChange={() => setTarget("lora")}
               />
               <span className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium text-[var(--ink)]">Apagar só a LoRA</span>
-                <span className="text-xs text-[var(--mute)]">
-                  Mantém os áudios enviados. A voz volta pra &quot;pronta pra treinar&quot; e você
-                  pode retreinar sem subir áudio de novo.
-                </span>
+                <span className="text-sm font-medium text-[var(--ink)]">{t("loraTitle")}</span>
+                <span className="text-xs text-[var(--mute)]">{t("loraDesc")}</span>
               </span>
             </label>
           )}
@@ -158,7 +154,7 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
             htmlFor="confirm-name"
             className="font-mono text-[10px] tracking-wide text-[var(--mute)]"
           >
-            Pra confirmar, digite o nome da voz: <span className="text-[var(--silver)]">{voiceName}</span>
+            {t("confirmLabel")} <span className="text-[var(--silver)]">{voiceName}</span>
           </label>
           <input
             id="confirm-name"
@@ -186,7 +182,7 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
             onClick={close}
             className="inline-flex h-10 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)]"
           >
-            Cancelar
+            {t("cancel")}
           </button>
           <button
             type="button"
@@ -195,7 +191,7 @@ export function DeleteVoiceDialog({ voiceId, voiceName, hasLora, open, onClose }
             className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium text-[var(--status-error)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Trash2 className="h-4 w-4" />
-            {deleting ? "Apagando…" : target === "lora" ? "Apagar LoRA" : "Apagar voz"}
+            {deleting ? t("deleting") : target === "lora" ? t("deleteLora") : t("deleteVoiceCta")}
           </button>
         </div>
       </div>
