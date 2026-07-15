@@ -82,7 +82,10 @@ export function GenerationsHistory() {
     );
   }
 
-  async function download(url: string, label: string) {
+  async function download(g: Gen) {
+    let url = g.audio_url;
+    if (!url) return;
+    const label = g.name?.trim() ? g.name : g.voice_name;
     // Extensão real do arquivo (no R2 é .mp3); deriva do path da URL, fallback mp3.
     let ext = "mp3";
     try {
@@ -98,9 +101,26 @@ export function GenerationsHistory() {
         .replace(/[\\/:*?"<>|]+/g, "")
         .replace(/\s+/g, " ")
         .slice(0, 120) || "audio";
+    // Sem checar res.ok, uma URL presignada expirada (1h) virava um "mp3"
+    // contendo o XML de erro do R2 — arquivo corrompido pro aluno.
+    const fetchBlob = async (u: string) => {
+      const res = await fetch(u, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.blob();
+    };
     try {
-      const res = await fetch(url, { cache: "no-store" });
-      const blob = await res.blob();
+      let blob: Blob;
+      try {
+        blob = await fetchBlob(url);
+      } catch {
+        // URL expirada — pede uma fresca pro backend e tenta 1x de novo.
+        const r = await fetch(`/api/v1/generations/${g.id}`, { cache: "no-store" });
+        const j = await r.json().catch(() => null);
+        const fresh: string | null = j?.generation?.audio_url ?? null;
+        if (!fresh) throw new Error("no fresh audio_url");
+        url = fresh;
+        blob = await fetchBlob(fresh);
+      }
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
@@ -362,9 +382,7 @@ export function GenerationsHistory() {
                     />
                     <button
                       type="button"
-                      onClick={() =>
-                        download(g.audio_url!, g.name?.trim() ? g.name : g.voice_name)
-                      }
+                      onClick={() => download(g)}
                       aria-label={t("history.downloadAria")}
                       className="text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
                     >

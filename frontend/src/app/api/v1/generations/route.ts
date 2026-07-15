@@ -110,22 +110,24 @@ export async function DELETE(request: NextRequest) {
   const admin = getAdmin();
   const { data: rows, error } = await admin
     .from("generations")
-    .select("id, audio_path, reference_audio_path")
+    .select("id, audio_path")
     .eq("user_id", auth.user_id)
     .in("id", ids);
   if (error) return serverError("Failed to load generations");
   const found = (rows ?? []) as Array<{
     id: string;
     audio_path: string | null;
-    reference_audio_path: string | null;
   }>;
   if (found.length === 0) return jsonOk({ deleted: 0 });
 
   try {
+    // Apaga SÓ o áudio gerado. O reference_audio_path da geração é um snapshot
+    // de voices.reference_audio_path (o ref/auto.wav PERSISTENTE da voz,
+    // compartilhado por todas as gerações) — apagá-lo aqui quebrava a voz
+    // inteira: toda geração futura falhava com "Failed to download .../ref/auto.wav".
+    // A ref é limpa junto com a voz (delete da voz usa deleteByPrefix).
     const audioKeys = found.map((r) => r.audio_path).filter((k): k is string => !!k);
-    const refKeys = found.map((r) => r.reference_audio_path).filter((k): k is string => !!k);
     if (audioKeys.length) await deleteKeys(R2_BUCKETS.generations, audioKeys);
-    if (refKeys.length) await deleteKeys(R2_BUCKETS.voices, refKeys);
   } catch (e) {
     return serverError(e instanceof Error ? `R2: ${e.message}` : "R2 cleanup failed");
   }
