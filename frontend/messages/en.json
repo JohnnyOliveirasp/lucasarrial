@@ -588,7 +588,42 @@
     "imageOnly": "[screen capture]",
     "typing": "Mary is typing…",
     "imageError": "I couldn't read that image — try a PNG or JPG.",
-    "errorGeneric": "Couldn't send right now. Try again in a moment."
+    "errorGeneric": "Couldn't send right now. Try again in a moment.",
+    "record": "Record audio",
+    "recording": "recording… tap send",
+    "cancelRecording": "Discard recording",
+    "suggestions": {
+      "dashboard": {
+        "q1": "What can I do on the platform?",
+        "q2": "How do I start cloning my voice?",
+        "q3": "How do credits work?"
+      },
+      "voices": {
+        "q1": "How do I train my voice?",
+        "q2": "What audio do I need to upload?",
+        "q3": "My audio sounds off — what now?"
+      },
+      "images": {
+        "q1": "How do I generate an image with my face?",
+        "q2": "How much does each image cost?",
+        "q3": "How do I animate an image?"
+      },
+      "clone": {
+        "q1": "How does Clone Video work?",
+        "q2": "What video and audio should I upload?",
+        "q3": "How much does it cost per second?"
+      },
+      "videos": {
+        "q1": "How do I create a video from scratch?",
+        "q2": "How much do scenes cost?",
+        "q3": "How do I add captions?"
+      },
+      "general": {
+        "q1": "How do credits work?",
+        "q2": "Where do I see my balance?",
+        "q3": "I want to talk to a human"
+      }
+    }
   },
   "sales": {
     "board": {

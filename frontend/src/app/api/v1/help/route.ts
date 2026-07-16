@@ -17,6 +17,7 @@ import { buildAccountContext } from "@/lib/agent/account";
 import { extractEscalation } from "@/lib/agent/escalate";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
+import { transcribeAudioBuffer } from "@/lib/video/transcribe";
 import type { AgentMessageRow } from "@/lib/db/types";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,33 @@ const TEXT_MAX = 2000;
 const RATE_LIMIT_PER_DAY = Number(process.env.HELP_RATE_LIMIT_PER_DAY ?? 60);
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const IMAGE_MAX_B64 = 6_000_000; // ~4,5MB de imagem (limite da API com folga)
+const AUDIO_TYPES = new Set(["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"]);
+const AUDIO_MAX_B64 = 8_000_000; // ~6MB (~1min de opus sobra muito)
+
+/** Mary fala (TTS OpenAI): resposta em áudio quando o aluno mandou áudio. */
+async function maryTts(text: string): Promise<string | null> {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return null;
+    // Tira markdown/emoji da fala (o texto formatado continua indo por escrito).
+    const spoken = text
+      .replace(/\*\*?|__|~~|`/g, "")
+      .replace(/\p{Extended_Pictographic}/gu, "")
+      .trim()
+      .slice(0, 1500);
+    if (!spoken) return null;
+    const res = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "tts-1", voice: "nova", input: spoken, response_format: "mp3" }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) return null;
+    return Buffer.from(await res.arrayBuffer()).toString("base64");
+  } catch {
+    return null; // áudio é bônus — nunca derruba a resposta em texto
+  }
+}
 
 type HelpRow = {
   id: string;
@@ -104,6 +132,7 @@ export async function POST(request: NextRequest) {
     pathname?: unknown;
     locale?: unknown;
     image?: { data?: unknown; media_type?: unknown } | null;
+    audio?: { data?: unknown; media_type?: unknown } | null;
   };
   try {
     body = await request.json();
@@ -111,7 +140,7 @@ export async function POST(request: NextRequest) {
     return badRequest("Invalid JSON body");
   }
 
-  const text = typeof body.text === "string" ? body.text.trim() : "";
+  let text = typeof body.text === "string" ? body.text.trim() : "";
   const pathname =
     typeof body.pathname === "string" ? body.pathname.slice(0, 200) : null;
   const locale = typeof body.locale === "string" ? body.locale.slice(0, 8) : "pt-BR";
@@ -123,6 +152,30 @@ export async function POST(request: NextRequest) {
     if (!IMAGE_TYPES.has(mediaType)) return badRequest("Formato de imagem não suportado");
     if (!data || data.length > IMAGE_MAX_B64) return badRequest("Imagem grande demais (máx ~4MB)");
     image = { data, mediaType };
+  }
+
+  // Áudio (voz do aluno, estilo WhatsApp): Whisper transcreve no idioma da
+  // interface e a transcrição vira a mensagem. Resposta volta em texto + TTS.
+  let voiceNote = false;
+  if (body.audio && typeof body.audio === "object") {
+    const data = typeof body.audio.data === "string" ? body.audio.data : "";
+    const mediaType = typeof body.audio.media_type === "string" ? body.audio.media_type : "";
+    if (!AUDIO_TYPES.has(mediaType)) return badRequest("Formato de áudio não suportado");
+    if (!data || data.length > AUDIO_MAX_B64) return badRequest("Áudio grande demais (máx 60s)");
+    try {
+      const ext = mediaType.split("/")[1] ?? "webm";
+      const tr = await transcribeAudioBuffer(
+        Buffer.from(data, "base64"),
+        `voice.${ext}`,
+        locale.slice(0, 2),
+      );
+      if (!tr.text) return badRequest("Não consegui entender o áudio — tenta de novo?");
+      text = tr.text.trim().slice(0, TEXT_MAX);
+      voiceNote = true;
+    } catch (e) {
+      console.error("[help] transcrição falhou:", e instanceof Error ? e.message : e);
+      return serverError("Não consegui processar o áudio agora — escreva a dúvida ou tente de novo.");
+    }
   }
 
   if (!text && !image) return badRequest("Mensagem vazia");
@@ -147,11 +200,11 @@ export async function POST(request: NextRequest) {
   }
 
   // Grava a mensagem do aluno.
-  const userContent = text || "[imagem]";
+  const userContent = voiceNote ? `🎤 ${text}` : text || "[imagem]";
   const { error: insErr } = await admin.from("help_messages").insert({
     user_id: auth.user_id,
     from_me: false,
-    content: image && text ? `${text}\n[o aluno anexou um print]` : userContent,
+    content: image && text ? `${userContent}\n[o aluno anexou um print]` : userContent,
     pathname,
     has_image: Boolean(image),
   } as never);
@@ -206,5 +259,12 @@ export async function POST(request: NextRequest) {
     .single();
   if (repErr) return serverError("Failed to save reply");
 
-  return jsonOk({ message: saved });
+  // Aluno mandou voz → Mary responde falando também (best-effort).
+  const replyAudio = voiceNote ? await maryTts(finalReply) : null;
+
+  return jsonOk({
+    message: saved,
+    user_transcript: voiceNote ? userContent : null,
+    reply_audio: replyAudio ? { data: replyAudio, media_type: "audio/mpeg" } : null,
+  });
 }

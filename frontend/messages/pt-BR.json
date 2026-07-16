@@ -588,7 +588,42 @@
     "imageOnly": "[print da tela]",
     "typing": "Mary está digitando…",
     "imageError": "Não consegui ler essa imagem — tenta um PNG ou JPG.",
-    "errorGeneric": "Não consegui enviar agora. Tenta de novo em instantes."
+    "errorGeneric": "Não consegui enviar agora. Tenta de novo em instantes.",
+    "record": "Gravar áudio",
+    "recording": "gravando… toque em enviar",
+    "cancelRecording": "Descartar gravação",
+    "suggestions": {
+      "dashboard": {
+        "q1": "O que dá pra fazer na plataforma?",
+        "q2": "Como começo a clonar minha voz?",
+        "q3": "Como funcionam os créditos?"
+      },
+      "voices": {
+        "q1": "Como treino minha voz?",
+        "q2": "Que áudios preciso enviar?",
+        "q3": "Meu áudio saiu estranho, o que faço?"
+      },
+      "images": {
+        "q1": "Como gero uma imagem com meu rosto?",
+        "q2": "Quanto custa cada imagem?",
+        "q3": "Como animo uma imagem?"
+      },
+      "clone": {
+        "q1": "Como funciona o Vídeo Clone?",
+        "q2": "Que vídeo e áudio devo enviar?",
+        "q3": "Quanto custa por segundo?"
+      },
+      "videos": {
+        "q1": "Como crio um vídeo do zero?",
+        "q2": "Quanto custam as cenas?",
+        "q3": "Como coloco legendas?"
+      },
+      "general": {
+        "q1": "Como funcionam os créditos?",
+        "q2": "Onde vejo meu saldo?",
+        "q3": "Quero falar com um humano"
+      }
+    }
   },
   "sales": {
     "board": {

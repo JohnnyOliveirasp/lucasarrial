@@ -31,6 +31,8 @@ export async function transcribeUploadedAudio(key: string): Promise<Transcriptio
 export async function transcribeAudioBuffer(
   bytes: Uint8Array,
   filename: string,
+  /** ISO-639-1 ("pt" | "es" | "en"...) — default pt, comportamento inalterado. */
+  language = "pt",
 ): Promise<Transcription> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not configured");
@@ -39,7 +41,7 @@ export async function transcribeAudioBuffer(
   form.append("file", new Blob([Buffer.from(bytes)]), filename);
   form.append("model", "whisper-1");
   form.append("response_format", "verbose_json");
-  form.append("language", "pt");
+  form.append("language", language);
 
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",

@@ -588,7 +588,42 @@
     "imageOnly": "[captura de pantalla]",
     "typing": "Mary está escribiendo…",
     "imageError": "No pude leer esa imagen — prueba con PNG o JPG.",
-    "errorGeneric": "No pude enviar ahora. Intenta de nuevo en un momento."
+    "errorGeneric": "No pude enviar ahora. Intenta de nuevo en un momento.",
+    "record": "Grabar audio",
+    "recording": "grabando… toca enviar",
+    "cancelRecording": "Descartar grabación",
+    "suggestions": {
+      "dashboard": {
+        "q1": "¿Qué puedo hacer en la plataforma?",
+        "q2": "¿Cómo empiezo a clonar mi voz?",
+        "q3": "¿Cómo funcionan los créditos?"
+      },
+      "voices": {
+        "q1": "¿Cómo entreno mi voz?",
+        "q2": "¿Qué audios necesito subir?",
+        "q3": "Mi audio salió raro, ¿qué hago?"
+      },
+      "images": {
+        "q1": "¿Cómo genero una imagen con mi rostro?",
+        "q2": "¿Cuánto cuesta cada imagen?",
+        "q3": "¿Cómo animo una imagen?"
+      },
+      "clone": {
+        "q1": "¿Cómo funciona Video Clon?",
+        "q2": "¿Qué video y audio debo subir?",
+        "q3": "¿Cuánto cuesta por segundo?"
+      },
+      "videos": {
+        "q1": "¿Cómo creo un video desde cero?",
+        "q2": "¿Cuánto cuestan las escenas?",
+        "q3": "¿Cómo pongo subtítulos?"
+      },
+      "general": {
+        "q1": "¿Cómo funcionan los créditos?",
+        "q2": "¿Dónde veo mi saldo?",
+        "q3": "Quiero hablar con un humano"
+      }
+    }
   },
   "sales": {
     "board": {
