@@ -55,7 +55,14 @@
       "generateAudioEmpty": "Você ainda não tem voz pronta. Treine uma voz primeiro.",
       "pickVoiceCta": "Gerar áudio",
       "stockTitle": "Vozes prontas",
-      "stockCredit": "Vozes do catálogo FastCloner, treinadas a partir dos acervos públicos CML-TTS (UFG/CEIA) e LibriTTS-R — licença CC-BY 4.0.",
+      "stockCredit": "Vozes do catálogo FastCloner, treinadas a partir dos acervos públicos CML-TTS (UFG/CEIA), MLS e LibriTTS-R — licença CC-BY 4.0.",
+      "stockNoSample": "Amostra indisponível",
+      "stockLang": {
+        "all": "Todas",
+        "pt": "Português",
+        "es": "Espanhol",
+        "en": "Inglês"
+      },
       "detail": {
         "eyebrow": "Voz",
         "files": "Arquivos",

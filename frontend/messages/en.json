@@ -51,7 +51,14 @@
       "generateAudioEmpty": "You don't have a ready voice yet. Train a voice first.",
       "pickVoiceCta": "Generate audio",
       "stockTitle": "Ready voices",
-      "stockCredit": "FastCloner catalog voices, trained from the public CML-TTS (UFG/CEIA) and LibriTTS-R collections — CC-BY 4.0 license.",
+      "stockCredit": "FastCloner catalog voices, trained from the public CML-TTS (UFG/CEIA), MLS and LibriTTS-R collections — CC-BY 4.0 license.",
+      "stockNoSample": "Sample unavailable",
+      "stockLang": {
+        "all": "All",
+        "pt": "Portuguese",
+        "es": "Spanish",
+        "en": "English"
+      },
       "detail": {
         "eyebrow": "Voice",
         "files": "Files",

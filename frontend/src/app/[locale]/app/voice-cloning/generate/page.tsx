@@ -3,9 +3,19 @@ import { redirect } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { AudioLines } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { createPresignedGet } from "@/lib/r2/presigned";
+import { R2_BUCKETS } from "@/lib/r2/client";
 import { Eyebrow, Badge } from "@/components/ui";
+import { StockVoices } from "@/components/voice/stock-voices";
 
-type VoiceRow = { id: string; name: string; created_at: string; is_stock?: boolean | null };
+type VoiceRow = {
+  id: string;
+  user_id?: string;
+  name: string;
+  created_at: string;
+  is_stock?: boolean | null;
+  sample_url?: string | null;
+};
 
 /**
  * "Gerar Áudio" — landing do sub-menu Vozes. Lista as vozes PRONTAS do usuário;
@@ -30,14 +40,28 @@ export default async function GenerateAudioPage({
   // Minhas vozes + Vozes Prontas do catálogo (is_stock; a RLS já libera SELECT).
   const { data: voices } = await supabase
     .from("voices")
-    .select("id, name, created_at, is_stock")
+    .select("id, user_id, name, created_at, is_stock, language")
     .or(`user_id.eq.${user.id},is_stock.eq.true`)
     .eq("status", "ready")
     .order("created_at", { ascending: false });
 
-  const all = (voices ?? []) as VoiceRow[];
+  const all = (voices ?? []) as (VoiceRow & { language?: string | null })[];
   const list = all.filter((v) => !v.is_stock);
-  const stock = all.filter((v) => v.is_stock);
+  // Amostra de ~10s de cada voz do catálogo (gerada no treino) — presigned 1h.
+  const stock = await Promise.all(
+    all
+      .filter((v) => v.is_stock)
+      .map(async (v) => ({
+        id: v.id,
+        name: v.name,
+        language: v.language ?? "pt",
+        sample_url: await createPresignedGet(
+          R2_BUCKETS.generations,
+          `${v.user_id}/${v.id}/sample.wav`,
+          3600,
+        ).catch(() => null),
+      })),
+  );
 
   return (
     <div className="flex flex-col gap-10">
@@ -67,18 +91,9 @@ export default async function GenerateAudioPage({
           {list.length > 0 && <VoiceList voices={list} locale={locale} cta={t("voiceCloning.pickVoiceCta")} />}
 
           {/* Catálogo "Vozes Prontas" (is_stock): treinadas pela FastCloner a
-              partir de acervos CC-BY — a seção só existe quando há estoque. */}
-          {stock.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-                  {t("voiceCloning.stockTitle")}
-                </h2>
-                <p className="text-xs text-[var(--ash)]">{t("voiceCloning.stockCredit")}</p>
-              </div>
-              <VoiceList voices={stock} locale={locale} cta={t("voiceCloning.pickVoiceCta")} />
-            </section>
-          )}
+              partir de acervos CC-BY — a seção só existe quando há estoque.
+              Player de amostra + combo de idioma no client component. */}
+          {stock.length > 0 && <StockVoices voices={stock} />}
         </>
       )}
     </div>
