@@ -49,6 +49,17 @@ def score_reference_transcript(transcript: str, language: str = "pt") -> float:
         score += len(re.findall(r"\b(entao|então)\b", lower)) * 8
         score += len(re.findall(r"\b(nao|não)\b", lower)) * 10
         score += len(re.findall(r"\b(ta|tá|ne|né)\b", lower)) * 6
+    # FRASE-TEMA repetida (caso "me levantar" 2026-07-16): se o bi/trigrama
+    # FINAL da referencia aparece de novo no corpo, o continuation ecoa essa
+    # frase nas emendas da geracao. Vale pra qualquer idioma.
+    tokens = [re.sub(r"[.,!?;:…]+$", "", w) for w in words]
+    for n in (3, 2):
+        if len(tokens) >= n * 2 + 2:
+            tail = " ".join(tokens[-n:])
+            body = " ".join(tokens[:-n])
+            if tail and tail in body:
+                score += 60
+                break
     score += abs(len(words) - 85) * 0.1
     return round(score * 10) / 10
 
@@ -95,7 +106,7 @@ def _candidate_offsets(duration: float, ref_seconds: int, max_candidates: int) -
     return [round(lo + i * step, 1) for i in range(n)]
 
 
-def select_reference_clip(
+def select_reference_candidates(
     norm_files: list[Path],
     work_dir: Path,
     ref_seconds: int,
@@ -103,23 +114,20 @@ def select_reference_clip(
     language: str = "pt",
     max_candidates: int = 6,
     log: Callable[..., None] = lambda **k: None,
-) -> "tuple[Path, str] | None":
-    """Escolhe a melhor janela de `ref_seconds` entre os audios normalizados.
-
-    Concentra os candidatos no arquivo mais longo (mais material p/ variar),
-    gera janelas em offsets diferentes, transcreve cada, pontua e devolve
-    (clip_path, transcript) do menor score. Fallback: primeiros `ref_seconds` do
-    1o arquivo. Devolve None se nada transcreveu.
+) -> "list[tuple[Path, str]]":
+    """Como select_reference_clip, mas devolve TODAS as candidatas válidas
+    RANQUEADAS (melhor primeiro). Usado pelo QA pós-treino: se a amostra sair
+    contaminada com a 1ª referência, o handler tenta a 2ª, a 3ª…
     """
     files = [f for f in norm_files if f and f.exists()]
     if not files:
-        return None
+        return []
     primary = max(files, key=_audio_duration_seconds)
     duration = _audio_duration_seconds(primary)
     offsets = _candidate_offsets(duration, ref_seconds, max_candidates)
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    best: "tuple[float, Path, str] | None" = None
+    scored: "list[tuple[float, Path, str]]" = []
     for i, off in enumerate(offsets):
         clip = work_dir / f"ref_cand_{i}_{int(off)}s.wav"
         if not _slice_window(primary, clip, off, ref_seconds):
@@ -132,13 +140,13 @@ def select_reference_clip(
         score = score_reference_transcript(transcript, language=language)
         log(level="info", event="reference.candidate", offset=off, score=score,
             transcript_len=len(transcript))
-        if best is None or score < best[0]:
-            best = (score, clip, transcript)
+        scored.append((score, clip, transcript))
 
-    if best is not None:
+    if scored:
+        scored.sort(key=lambda t: t[0])
         log(level="info", event="reference.selected", source=primary.name,
-            score=best[0], seconds=ref_seconds)
-        return best[1], best[2]
+            score=scored[0][0], seconds=ref_seconds, candidates=len(scored))
+        return [(clip, transcript) for _, clip, transcript in scored]
 
     # Fallback: primeiros ref_seconds do 1o arquivo (melhor que nada).
     fb = work_dir / "ref_fallback.wav"
@@ -146,5 +154,22 @@ def select_reference_clip(
         transcript = (transcribe_fn(fb) or "").strip()
         if transcript:
             log(level="info", event="reference.fallback", source=files[0].name)
-            return fb, transcript
-    return None
+            return [(fb, transcript)]
+    return []
+
+
+def select_reference_clip(
+    norm_files: list[Path],
+    work_dir: Path,
+    ref_seconds: int,
+    transcribe_fn: Callable[[Path], "str | None"],
+    language: str = "pt",
+    max_candidates: int = 6,
+    log: Callable[..., None] = lambda **k: None,
+) -> "tuple[Path, str] | None":
+    """Escolhe a melhor janela de `ref_seconds` (compat: 1ª do ranking)."""
+    ranked = select_reference_candidates(
+        norm_files, work_dir, ref_seconds, transcribe_fn,
+        language=language, max_candidates=max_candidates, log=log,
+    )
+    return ranked[0] if ranked else None

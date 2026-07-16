@@ -65,6 +65,34 @@ WORKSPACE = Path(os.environ.get("WORKSPACE_DIR", "/workspace/jobs"))
 # limite de contexto (~8192 tokens). A janela é ESCOLHIDA por score (anti-bordão),
 # não cortada do início — ver voice_pipeline.reference.select_reference_clip.
 REFERENCE_SECONDS = int(os.environ.get("REFERENCE_SECONDS", "30"))
+# QA da amostra pós-treino (caso "me levantar" 2026-07-16): transcreve a
+# amostra e compara com o texto esperado; abaixo disso = referência vazando
+# conteúdo → re-tenta com a próxima candidata do ranking.
+SAMPLE_QA_MIN_SIMILARITY = float(os.environ.get("SAMPLE_QA_MIN_SIMILARITY", "0.82"))
+SAMPLE_QA_MAX_ATTEMPTS = int(os.environ.get("SAMPLE_QA_MAX_ATTEMPTS", "3"))
+
+
+def _sample_qa_similarity(sample_path, whisper_model: str, language: str, expected: str):
+    """Similaridade (0..1) entre a transcrição da amostra e o texto esperado.
+    None = Whisper falhou (não bloqueia — QA é rede de segurança, não gate)."""
+    import difflib
+    import re as _re
+    import unicodedata
+
+    try:
+        got = _transcribe_with_retry(sample_path, whisper_model, language, attempts=2) or ""
+    except Exception:
+        return None
+
+    def norm(s: str) -> list[str]:
+        s = unicodedata.normalize("NFD", (s or "").lower())
+        s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+        return [w for w in _re.sub(r"[^a-z0-9\s]", " ", s).split() if w]
+
+    a, b = norm(expected), norm(got)
+    if not b:
+        return 0.0
+    return round(difflib.SequenceMatcher(None, a, b).ratio(), 3)
 
 # Alpha/rank do LoRA. O alpha é GRAVADO por voz no treino e devolvido na
 # inferência (cada LoRA infere com o alpha que treinou). Vozes novas usam 16,
@@ -129,7 +157,7 @@ def _handle_train(inp: dict) -> dict:
         build_train_manifest,
         create_training_config,
         run_training,
-        select_reference_clip,
+        select_reference_candidates,
     )
 
     voice_id = inp.get("voice_id") or "anonymous"
@@ -230,6 +258,7 @@ def _handle_train(inp: dict) -> dict:
     reference_transcript: str | None = None
     reference_error: str | None = None
     reference_clip_path: Path | None = None
+    ref_candidates: "list[tuple[Path, str]]" = []  # ranking p/ o QA da amostra
     if reference_upload_url:
         norm_files = sorted(norm_dir.glob("*_mono16k.wav"))
         if norm_files:
@@ -238,7 +267,7 @@ def _handle_train(inp: dict) -> dict:
             # transcreve cada uma e escolhe a de menor risco de "filler"
             # ("então/não/tá/né" na borda). Conserta a raiz do bug "então não"
             # (a ref aleatória da Pri terminava em "...apertando o botão não").
-            selected = select_reference_clip(
+            ref_candidates = select_reference_candidates(
                 norm_files,
                 work_dir=job_dir / "ref_candidates",
                 ref_seconds=REFERENCE_SECONDS,
@@ -250,6 +279,7 @@ def _handle_train(inp: dict) -> dict:
                     k.pop("level", "info"), k.pop("event", "train.reference"), **k
                 ),
             )
+            selected = ref_candidates[0] if ref_candidates else None
             if selected:
                 ref_clip, transcript = selected
                 upload_file_to_presigned_url(
@@ -325,25 +355,55 @@ def _handle_train(inp: dict) -> dict:
     )
     _log("info", "train.upload.done")
 
-    # ── Amostra automática (anti-churn): o usuário OUVE a voz na hora ──────
-    # Modelo/LoRA/referência já estão locais — sai quase grátis. Best-effort.
+    # ── Amostra automática (anti-churn) + QA anti-eco ───────────────────────
+    # Gera a amostra, TRANSCREVE e compara com o texto esperado. Similaridade
+    # baixa = referência vazando conteúdo na geração (caso "me levantar"
+    # 2026-07-16) → troca a referência pela PRÓXIMA candidata do ranking e
+    # tenta de novo (até SAMPLE_QA_MAX_ATTEMPTS). Best-effort: falha de QA
+    # nunca derruba o treino; se nada passar, sample_qa="failed" avisa o
+    # backend (que alerta o suporte).
     sample_info: dict = {"sample_uploaded": False, "sample_seconds": None, "sample_error": None}
     sample_upload_url = inp.get("sample_upload_url")
     if sample_upload_url:
         try:
             from sample_gen import generate_training_sample, DEFAULT_SAMPLE_TEXT
-            sample_info = generate_training_sample(
-                model_dir=MODEL_DIR,
-                lora_path=latest_lora,
-                lora_rank=LORA_RANK,
-                lora_alpha=TRAIN_LORA_ALPHA,
-                ref_wav=reference_clip_path,
-                ref_text=reference_transcript,
-                sample_text=str(inp.get("sample_text") or DEFAULT_SAMPLE_TEXT),
-                upload_url=sample_upload_url,
-                work_dir=job_dir / "sample",
-                log=lambda **k: _log(k.pop("level", "info"), k.pop("event", "train.sample"), **k),
+            sample_text = str(inp.get("sample_text") or DEFAULT_SAMPLE_TEXT)
+            candidates = (
+                ref_candidates[:SAMPLE_QA_MAX_ATTEMPTS]
+                if ref_candidates
+                else [(reference_clip_path, reference_transcript)]
             )
+            for attempt, (cand_clip, cand_text) in enumerate(candidates):
+                if attempt > 0 and reference_upload_url and cand_clip is not None:
+                    # promove a candidata: substitui a referência OFICIAL (mesma
+                    # chave R2) e o transcript que vai pro banco via webhook.
+                    upload_file_to_presigned_url(cand_clip, reference_upload_url, content_type="audio/wav")
+                    reference_clip_path, reference_transcript = cand_clip, cand_text
+                    _log("info", "train.sample.qa.ref_swapped", attempt=attempt)
+                sample_info = generate_training_sample(
+                    model_dir=MODEL_DIR,
+                    lora_path=latest_lora,
+                    lora_rank=LORA_RANK,
+                    lora_alpha=TRAIN_LORA_ALPHA,
+                    ref_wav=cand_clip,
+                    ref_text=cand_text,
+                    sample_text=sample_text,
+                    upload_url=sample_upload_url,
+                    work_dir=job_dir / "sample",
+                    log=lambda **k: _log(k.pop("level", "info"), k.pop("event", "train.sample"), **k),
+                )
+                if not sample_info.get("sample_uploaded"):
+                    break  # falha técnica de geração/upload — sem QA a fazer
+                sim = _sample_qa_similarity(
+                    job_dir / "sample" / "training_sample.wav",
+                    whisper_model, language, sample_text,
+                )
+                sample_info["sample_qa_similarity"] = sim
+                _log("info", "train.sample.qa", attempt=attempt, similarity=sim)
+                if sim is None or sim >= SAMPLE_QA_MIN_SIMILARITY:
+                    sample_info["sample_qa"] = "passed" if attempt == 0 else "retried_passed"
+                    break
+                sample_info["sample_qa"] = "failed"  # segue pro próximo candidato
         except Exception as exc:  # amostra é mimo: NUNCA pode derrubar um treino que já deu certo
             _log("error", "train.sample.crashed", error=str(exc))
             sample_info["sample_error"] = str(exc)[:300]

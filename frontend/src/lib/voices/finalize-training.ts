@@ -31,6 +31,9 @@ export type TrainOutput = {
   sample_uploaded?: boolean;
   sample_seconds?: number | null;
   sample_error?: string | null;
+  /** QA anti-eco da amostra (worker): passed | retried_passed | failed. */
+  sample_qa?: string | null;
+  sample_qa_similarity?: number | null;
   error?: string;
   stdout_tail?: string;
   stderr_tail?: string;
@@ -174,6 +177,30 @@ export async function finalizeTraining(args: {
         rawError,
         refunded,
       });
+    }
+  }
+
+  // ── QA da amostra reprovou mesmo após retries → alerta o suporte ────────
+  // A voz continua ready (o aluno pode usar), mas alguém deve OUVIR a amostra
+  // e, se preciso, trocar a referência (caso "me levantar" 2026-07-16).
+  if (success && out.sample_qa === "failed") {
+    try {
+      const { data: profile } = await admin
+        .from("profiles").select("email").eq("id", userId).maybeSingle();
+      const email = (profile as { email?: string } | null)?.email ?? "(sem e-mail)";
+      await sendEmail({
+        to: SUPPORT_EMAIL,
+        subject: `⚠️ QA da amostra reprovou — voz ${voiceId} — ${email}`,
+        html:
+          `<p>O treino terminou OK, mas a amostra automática saiu DIFERENTE do texto esperado ` +
+          `mesmo após trocar a referência (similaridade: ${out.sample_qa_similarity ?? "?"}). ` +
+          `Provável eco da referência na geração.</p>` +
+          `<ul><li><strong>Usuário:</strong> ${escapeHtml(email)}</li>` +
+          `<li><strong>Voz:</strong> ${voiceId}</li></ul>` +
+          `<p>Ação: ouvir a amostra no /admin e, se confirmar eco, trocar a referência da voz.</p>`,
+      });
+    } catch {
+      /* alerta é best-effort */
     }
   }
 
