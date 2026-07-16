@@ -572,6 +572,24 @@
       "contact": "If it keeps happening, contact support:"
     }
   },
+  "help": {
+    "title": "Mary",
+    "subtitle": "FastCloner Assistant",
+    "badge": "Help",
+    "open": "Open help chat",
+    "close": "Close help chat",
+    "greeting": "Hi! I'm Mary, FastCloner's assistant. 😊 Tell me what you need — and feel free to paste a screenshot so I can see exactly where you are.",
+    "placeholder": "Type your question…",
+    "send": "Send",
+    "attach": "Attach screenshot",
+    "capture": "Capture my screen",
+    "attached": "Screenshot attached",
+    "removeImage": "Remove image",
+    "imageOnly": "[screen capture]",
+    "typing": "Mary is typing…",
+    "imageError": "I couldn't read that image — try a PNG or JPG.",
+    "errorGeneric": "Couldn't send right now. Try again in a moment."
+  },
   "sales": {
     "board": {
       "eyebrow": "Videos",

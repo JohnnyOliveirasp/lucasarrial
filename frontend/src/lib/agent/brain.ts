@@ -46,6 +46,8 @@ export async function buildAgentReply(
     unprompted?: boolean;
     account?: string | null;
     image?: AgentImage | null;
+    /** Canal web (balão do app): contexto extra anexado ao system prompt. */
+    systemExtra?: string | null;
   },
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -83,6 +85,8 @@ export async function buildAgentReply(
   } else if (!opts?.group) {
     system += `\n\nCONTA DO ALUNO: não localizada pelo telefone deste WhatsApp (a pessoa pode não ser assinante, ter comprado com outro número, ou nunca ter comprado). Responda normalmente; se perguntarem de saldo/pagamento/conta, explique que não conseguiu localizar a conta por este número e oriente a escrever pro suporte@fastcloner.com com o e-mail cadastrado. NÃO peça e-mail pra "consultar" — você não tem como consultar por e-mail.`;
   }
+
+  if (opts?.systemExtra) system += `\n\n${opts.systemExtra}`;
 
   const res = await fetch(ANTHROPIC_API, {
     method: "POST",

@@ -572,6 +572,24 @@
       "contact": "Se continuar, fale com o suporte:"
     }
   },
+  "help": {
+    "title": "Mary",
+    "subtitle": "Assistente da FastCloner",
+    "badge": "Ajuda",
+    "open": "Abrir chat de ajuda",
+    "close": "Fechar chat de ajuda",
+    "greeting": "Oi! Eu sou a Mary, assistente da FastCloner. 😊 Me conta sua dúvida — e se quiser, cola um print da tela que eu vejo exatamente onde você está.",
+    "placeholder": "Escreva sua dúvida…",
+    "send": "Enviar",
+    "attach": "Anexar print",
+    "capture": "Capturar minha tela",
+    "attached": "Print anexado",
+    "removeImage": "Remover imagem",
+    "imageOnly": "[print da tela]",
+    "typing": "Mary está digitando…",
+    "imageError": "Não consegui ler essa imagem — tenta um PNG ou JPG.",
+    "errorGeneric": "Não consegui enviar agora. Tenta de novo em instantes."
+  },
   "sales": {
     "board": {
       "eyebrow": "Vídeos",

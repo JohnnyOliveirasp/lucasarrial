@@ -6,6 +6,7 @@ import { ConsentGate } from "@/components/app/consent-gate";
 import { PresencePinger } from "@/components/admin/presence-pinger";
 import { PurchaseAutoRefresh } from "@/components/app/purchase-auto-refresh";
 import { PendingPaymentBanner } from "@/components/app/pending-payment-banner";
+import { HelpWidget } from "@/components/app/help-widget";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { isAdmin } from "@/lib/admin/guard";
@@ -74,6 +75,7 @@ export default async function AppLayout({
       <ConsentGate />
       <PresencePinger />
       <PurchaseAutoRefresh />
+      <HelpWidget />
     </div>
   );
 }
