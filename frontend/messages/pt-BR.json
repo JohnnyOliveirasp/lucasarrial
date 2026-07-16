@@ -54,6 +54,8 @@
       "generateAudioSubtitle": "Escolha uma voz pronta e gere áudio com qualquer texto.",
       "generateAudioEmpty": "Você ainda não tem voz pronta. Treine uma voz primeiro.",
       "pickVoiceCta": "Gerar áudio",
+      "stockTitle": "Vozes prontas",
+      "stockCredit": "Vozes do catálogo FastCloner, treinadas a partir dos acervos públicos CML-TTS (UFG/CEIA) e LibriTTS-R — licença CC-BY 4.0.",
       "detail": {
         "eyebrow": "Voz",
         "files": "Arquivos",

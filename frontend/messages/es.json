@@ -50,6 +50,8 @@
       "generateAudioSubtitle": "Elige una voz lista y genera audio con cualquier texto.",
       "generateAudioEmpty": "Aún no tienes una voz lista. Entrena una voz primero.",
       "pickVoiceCta": "Generar audio",
+      "stockTitle": "Voces listas",
+      "stockCredit": "Voces del catálogo FastCloner, entrenadas a partir de los acervos públicos CML-TTS (UFG/CEIA) y LibriTTS-R — licencia CC-BY 4.0.",
       "detail": {
         "eyebrow": "Voz",
         "files": "Archivos",

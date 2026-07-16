@@ -20,7 +20,8 @@ export default async function GeneratePage({
     .from("voices")
     .select("id, name, status, lora_path")
     .eq("id", id)
-    .eq("user_id", user.id)
+    // Dono OU voz do catálogo (is_stock — RLS libera a leitura).
+    .or(`user_id.eq.${user.id},is_stock.eq.true`)
     .maybeSingle();
 
   if (!voice) notFound();

@@ -50,6 +50,8 @@
       "generateAudioSubtitle": "Pick a ready voice and generate audio with any text.",
       "generateAudioEmpty": "You don't have a ready voice yet. Train a voice first.",
       "pickVoiceCta": "Generate audio",
+      "stockTitle": "Ready voices",
+      "stockCredit": "FastCloner catalog voices, trained from the public CML-TTS (UFG/CEIA) and LibriTTS-R collections — CC-BY 4.0 license.",
       "detail": {
         "eyebrow": "Voice",
         "files": "Files",
