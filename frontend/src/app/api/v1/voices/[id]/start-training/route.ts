@@ -41,10 +41,24 @@ const TRAIN_EXPIRES_SECONDS = 2 * 60 * 60; // 2h
 // daqui responde melhor a 500 + alpha=16.
 const DEFAULT_MAX_STEPS = 500;
 
+// Idiomas aceitos pro Whisper do treino (referência/amostra). Default pt —
+// comportamento inalterado pro app; es/en usados pelas Vozes Prontas.
+const TRAIN_LANGUAGES = new Set(["pt", "es", "en"]);
+
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
   const { id } = await ctx.params;
+
+  let language = "pt";
+  try {
+    const body = (await request.json()) as { language?: unknown };
+    if (typeof body?.language === "string" && TRAIN_LANGUAGES.has(body.language)) {
+      language = body.language;
+    }
+  } catch {
+    /* sem body → pt */
+  }
 
   const admin = getAdmin();
 
@@ -141,7 +155,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         reference_upload_url: referenceUploadUrl,
         sample_upload_url: sampleUploadUrl,
         max_steps: DEFAULT_MAX_STEPS,
-        language: "pt",
+        language,
       },
       { webhook: webhookUrlFor("training") },
     );
