@@ -200,6 +200,27 @@
       "resent": "Código reenviado. Verifique seu email.",
       "resendIn": "Aguarde {seconds}s pra reenviar"
     },
+    "forgot": {
+      "title": "Recuperar senha",
+      "subtitle": "Digite seu email e enviaremos um link pra criar uma senha nova.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "voce@exemplo.com",
+      "submit": "Enviar link",
+      "submitting": "Enviando…",
+      "sent": "Se este email tiver uma conta, você vai receber um link pra redefinir a senha. Confira a caixa de entrada (e o spam).",
+      "backToLogin": "← Voltar pro login"
+    },
+    "reset": {
+      "title": "Nova senha",
+      "subtitle": "Escolha a sua nova senha.",
+      "passwordLabel": "Nova senha",
+      "submit": "Salvar nova senha",
+      "submitting": "Salvando…",
+      "expired": "Este link expirou ou já foi usado. Peça um novo.",
+      "samePassword": "A nova senha precisa ser diferente da atual.",
+      "weak": "Senha muito curta: use pelo menos 8 caracteres.",
+      "requestAgain": "Pedir um novo link"
+    },
     "errors": {
       "invalidCredentials": "Email ou senha incorretos.",
       "emailNotConfirmed": "Confirme seu email antes de entrar.",

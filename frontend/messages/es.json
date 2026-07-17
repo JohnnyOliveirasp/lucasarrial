@@ -196,6 +196,27 @@
       "resent": "Código reenviado. Revisa tu email.",
       "resendIn": "Espera {seconds}s para reenviar"
     },
+    "forgot": {
+      "title": "Recuperar contraseña",
+      "subtitle": "Escribe tu email y te enviaremos un enlace para crear una contraseña nueva.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "tu@ejemplo.com",
+      "submit": "Enviar enlace",
+      "submitting": "Enviando…",
+      "sent": "Si este email tiene una cuenta, recibirás un enlace para restablecer la contraseña. Revisa tu bandeja de entrada (y el spam).",
+      "backToLogin": "← Volver al login"
+    },
+    "reset": {
+      "title": "Nueva contraseña",
+      "subtitle": "Elige tu nueva contraseña.",
+      "passwordLabel": "Nueva contraseña",
+      "submit": "Guardar nueva contraseña",
+      "submitting": "Guardando…",
+      "expired": "Este enlace expiró o ya fue usado. Pide uno nuevo.",
+      "samePassword": "La nueva contraseña debe ser diferente a la actual.",
+      "weak": "Contraseña muy corta: usa al menos 8 caracteres.",
+      "requestAgain": "Pedir un nuevo enlace"
+    },
     "errors": {
       "invalidCredentials": "Email o contraseña incorrectos.",
       "emailNotConfirmed": "Confirma tu email antes de iniciar sesión.",

@@ -196,6 +196,27 @@
       "resent": "Code resent. Check your email.",
       "resendIn": "Wait {seconds}s to resend"
     },
+    "forgot": {
+      "title": "Recover password",
+      "subtitle": "Enter your email and we'll send you a link to create a new password.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you@example.com",
+      "submit": "Send link",
+      "submitting": "Sending…",
+      "sent": "If this email has an account, you'll receive a link to reset your password. Check your inbox (and spam).",
+      "backToLogin": "← Back to login"
+    },
+    "reset": {
+      "title": "New password",
+      "subtitle": "Choose your new password.",
+      "passwordLabel": "New password",
+      "submit": "Save new password",
+      "submitting": "Saving…",
+      "expired": "This link expired or was already used. Request a new one.",
+      "samePassword": "The new password must be different from the current one.",
+      "weak": "Password too short: use at least 8 characters.",
+      "requestAgain": "Request a new link"
+    },
     "errors": {
       "invalidCredentials": "Invalid email or password.",
       "emailNotConfirmed": "Please confirm your email before signing in.",
