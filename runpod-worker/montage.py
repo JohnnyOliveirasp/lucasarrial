@@ -190,7 +190,8 @@ def _render_segment(scene: Path, seg: dict, out: Path) -> None:
         vf = (f"fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,"
               f"crop={W}:{H},setsar=1")
         _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1",
-              "-t", f"{dur:.3f}", "-i", str(scene), "-vf", vf, "-an",
+              "-t", f"{dur + 0.25:.3f}", "-i", str(scene), "-vf", vf,
+              "-frames:v", str(max(1, round(dur * FPS))), "-an",
               "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
               "-pix_fmt", "yuv420p", str(out)])
         return
@@ -209,9 +210,13 @@ def _render_segment(scene: Path, seg: dict, out: Path) -> None:
               f"crop={W}:{H},zoompan=z='min(1+{force}*on,{cap})'"
               f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS},"
               f"setsar=1")
+    # -frames:v EXATO: com -t decimal o ffmpeg incluia 1 frame extra em bordas
+    # de arredondamento (pts 0.066667 < t "0.0667") e o vídeo somava frames a
+    # mais que o áudio — pego pela QA final (delta 0.145s no smoke da máquina).
+    n_frames = max(1, round(dur * FPS))
     _run(["ffmpeg", "-y", "-loglevel", "error",
-          "-stream_loop", "-1", "-ss", f"{offset:.2f}", "-t", f"{dur:.3f}",
-          "-i", str(scene), "-vf", vf, "-an",
+          "-stream_loop", "-1", "-ss", f"{offset:.2f}", "-t", f"{dur + 0.25:.3f}",
+          "-i", str(scene), "-vf", vf, "-frames:v", str(n_frames), "-an",
           "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
           "-pix_fmt", "yuv420p", str(out)])
 
@@ -224,10 +229,11 @@ def _render_cover(scene: Path, out: Path, dur: float = COVER_S) -> None:
     else:
         _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "1.0", "-i", str(scene),
               "-frames:v", "1", str(frame)])
-    _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-t", f"{dur:.4f}",
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-t", f"{dur + 0.25:.3f}",
           "-i", str(frame),
           "-vf", f"fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,"
                  f"crop={W}:{H},setsar=1",
+          "-frames:v", str(max(1, round(dur * FPS))),
           "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
           "-pix_fmt", "yuv420p", str(out)])
 
