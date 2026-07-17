@@ -20,6 +20,8 @@ COPY sample_gen.py .
 COPY audio_edit.py .
 COPY montage.py .
 COPY finish.py .
+COPY tts_prepare.py .
+COPY variants.py .
 COPY voice_pipeline ./voice_pipeline
 
 # RunPod Serverless ENTRYPOINT
