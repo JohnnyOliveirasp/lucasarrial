@@ -302,10 +302,10 @@ export async function advanceMachine(p: MachineProject, email: string): Promise<
       if (resp.status !== "COMPLETED") return;
       const out = (resp.output ?? {}) as {
         tts_prepare?: boolean; words?: StudioTranscriptWord[]; error?: string;
-        similarity?: number; duration_raw?: number; duration_clean?: number;
-        transcript?: string;
+        qa_failed?: boolean; similarity?: number; duration_raw?: number;
+        duration_clean?: number; transcript?: string;
       };
-      if (out.error === "tts_qa_failed") {
+      if (out.qa_failed) {
         // §3.3: fala gerada infiel ao roteiro → regenera o TTS UMA vez.
         const already = await admin
           .from("studio_projects").select("error_message").eq("id", p.id).maybeSingle();

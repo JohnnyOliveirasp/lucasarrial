@@ -141,10 +141,13 @@ def handle_tts_prepare(inp: dict, log) -> dict:
         return {"error": "no_speech", "detail": "transcrição vazia do TTS"}
 
     # §3.3 QA de fidelidade: motor de fala repete/troca palavra às vezes.
+    # Reprovação NÃO usa a chave "error" (RunPod marcaria o job FAILED e o
+    # backend perderia o similarity/transcript) — volta como COMPLETED com
+    # qa_failed=True e o backend decide regenerar.
     sim = similarity(script, transcript)
     log("info", "tts_prepare.qa", similarity=sim)
     if sim < QA_MIN_SIMILARITY:
-        return {"error": "tts_qa_failed", "similarity": sim,
+        return {"tts_prepare": False, "qa_failed": True, "similarity": sim,
                 "transcript": transcript[:500]}
 
     upload_file_to_presigned_url(clean, output_upload_url, content_type="audio/wav")
