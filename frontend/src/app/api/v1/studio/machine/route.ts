@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
   try {
     await startMachineTts(project);
   } catch (e) {
+    console.error("[machine] startMachineTts falhou:", e instanceof Error ? e.stack ?? e.message : e);
     await admin
       .from("studio_projects")
       .update({ status: "failed", machine_step: "failed", error_message: "Falha ao iniciar a narração." } as never)
