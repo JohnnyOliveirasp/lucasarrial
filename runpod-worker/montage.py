@@ -50,6 +50,30 @@ def _duration(path: Path) -> float:
     return float(r.stdout.strip())
 
 
+def _stream_duration(path: Path, kind: str) -> float:
+    """Duração do stream v:0 ou a:0 (QA de sync — regra 5 da máquina)."""
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", kind,
+                        "-show_entries", "stream=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+                       capture_output=True, text=True)
+    out = r.stdout.strip()
+    return float(out) if out else 0.0
+
+
+def _snap(t: float) -> float:
+    """Corte na GRADE DE FRAMES (regra 2): múltiplo de 1/FPS — senão cada
+    corte deriva ~33ms e acumula ~0,5s em 15 cortes (bug real do estúdio)."""
+    return round(round(t * FPS) / FPS, 4)
+
+
+def _assert_duration(label: str, got: float, want: float, tol: float = 0.1) -> None:
+    """Regras 5/6: pós-passe NUNCA muda a duração; >0,1s = bug, aborta o job."""
+    if abs(got - want) > tol:
+        raise RuntimeError(
+            f"QA duração ({label}): {got:.3f}s vs esperado {want:.3f}s "
+            f"(delta {abs(got - want):.3f}s > {tol}s)")
+
+
 def sentences_from_words(words: list[dict]) -> list[dict]:
     """Agrupa words em frases (fronteira = pontuação forte no fim do token)."""
     sents, cur = [], []
@@ -135,19 +159,23 @@ def build_plan(words: list[dict], n_scenes: int, total: float,
                 src_offset = round(k * (step + 0.8), 2)
             plan.append({
                 "scene": win["scene"],
-                "t0": round(a, 2),
-                "t1": round(b, 2),
+                # regra 2 da máquina: todo corte snapado na grade de frames
+                "t0": _snap(a),
+                "t1": _snap(b),
                 "src_offset": max(0.0, src_offset),
                 "zoom": ZOOMS[zi % len(ZOOMS)],
                 "face": is_face,
             })
             zi += 1
-    return plan
+    return [p for p in plan if p["t1"] - p["t0"] >= 1.0 / FPS]
 
 
 def _render_segment(scene: Path, seg: dict, out: Path) -> None:
     """Um sub-plano: trim (loop se a cena for curta) + 9:16 + zoompan (G1).
-    Rosto (F4): offset é EXATO (lip-sync) — nunca aplica módulo/realinha."""
+    Rosto (F4): offset é EXATO (lip-sync) — nunca aplica módulo/realinha.
+    Slide/estático: PROIBIDO zoom (regra do Lucas) — só scale, quadro parado.
+    fps={FPS} é SEMPRE o primeiro filtro (regra 1: fonte 24fps entregaria
+    menos frames e o vídeo encurtaria/atrasaria em relação ao áudio)."""
     dur = seg["t1"] - seg["t0"]
     force, cap = seg["zoom"]
     scene_dur = _duration(scene)
@@ -157,10 +185,14 @@ def _render_segment(scene: Path, seg: dict, out: Path) -> None:
         offset = seg["src_offset"] % max(scene_dur - 0.5, 0.5)
         if offset + dur > scene_dur:
             offset = max(0.0, scene_dur - dur - 0.1)
-    vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-          f"fps={FPS},zoompan=z='min(1+{force}*on,{cap})'"
-          f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS},"
-          f"setsar=1")
+    if seg.get("static"):
+        vf = (f"fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,"
+              f"crop={W}:{H},setsar=1")
+    else:
+        vf = (f"fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,"
+              f"crop={W}:{H},zoompan=z='min(1+{force}*on,{cap})'"
+              f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS},"
+              f"setsar=1")
     _run(["ffmpeg", "-y", "-loglevel", "error",
           "-stream_loop", "-1", "-ss", f"{offset:.2f}", "-t", f"{dur:.3f}",
           "-i", str(scene), "-vf", vf, "-an",
@@ -168,15 +200,15 @@ def _render_segment(scene: Path, seg: dict, out: Path) -> None:
           "-pix_fmt", "yuv420p", str(out)])
 
 
-def _render_cover(scene: Path, out: Path) -> None:
+def _render_cover(scene: Path, out: Path, dur: float = COVER_S) -> None:
     """H1: capa = frame de contexto (2 frames, vira a thumbnail do feed)."""
     frame = out.with_suffix(".png")
     _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "1.0", "-i", str(scene),
           "-frames:v", "1", str(frame)])
-    _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-t", f"{COVER_S}",
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-t", f"{dur:.4f}",
           "-i", str(frame),
-          "-vf", f"scale={W}:{H}:force_original_aspect_ratio=increase,"
-                 f"crop={W}:{H},fps={FPS},setsar=1",
+          "-vf", f"fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,"
+                 f"crop={W}:{H},setsar=1",
           "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
           "-pix_fmt", "yuv420p", str(out)])
 
@@ -201,9 +233,18 @@ def handle_montage(inp: dict, log) -> dict:
     plan = build_plan(words, len(scenes), total,
                       sentence_scene=inp.get("sentence_scene"),
                       face_sentences=inp.get("face_sentences"))
+    # Slides/artes: cenas marcadas como estáticas NUNCA levam zoom (regra do
+    # Lucas: "slide é estático e só vai passando").
+    static = {int(i) for i in (inp.get("static_scenes") or [])}
+    for seg in plan:
+        if seg["scene"] in static and not seg["face"]:
+            seg["static"] = True
+            seg["src_offset"] = 0.0
     # H1 sem deslocar o timeline: a capa SUBSTITUI os primeiros 0,08s do
     # primeiro plano (senão todo J-cut atrasaria 0,08s em relação à fala).
-    plan[0]["t0"] = round(plan[0]["t0"] + COVER_S, 3)
+    # Snap na grade de frames pra soma das durações continuar frame-exata.
+    plan[0]["t0"] = _snap(plan[0]["t0"] + COVER_S)
+    cover_s = plan[0]["t0"]
     log("info", "montage.plan", segments=len(plan), duration=round(total, 1))
 
     # Renderiza capa + cada sub-plano e concatena (concat demuxer, sem reencode)
@@ -211,7 +252,7 @@ def handle_montage(inp: dict, log) -> dict:
     seg_dir.mkdir()
     files = []
     cover = seg_dir / "000_cover.mp4"
-    _render_cover(scenes[plan[0]["scene"]], cover)
+    _render_cover(scenes[plan[0]["scene"]], cover, dur=cover_s)
     files.append(cover)
     report = []
     for i, seg in enumerate(plan):
@@ -225,14 +266,20 @@ def handle_montage(inp: dict, log) -> dict:
     lst = job_dir / "list.txt"
     lst.write_text("\n".join(f"file '{f.as_posix()}'" for f in files), encoding="utf-8")
     silent = job_dir / "video_silent.mp4"
+    # Regra 3 da máquina: concat SEMPRE com RE-ENCODE, nunca `-c copy` — pts
+    # sujo nas emendas faz o enable=between() da legenda pular grupos inteiros.
     _run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
-          "-i", str(lst), "-c", "copy", str(silent)])
+          "-i", str(lst), "-vf", f"fps={FPS},setsar=1",
+          "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+          "-pix_fmt", "yuv420p", "-an", str(silent)])
 
     # Mux com o áudio limpo (o áudio manda na duração final)
     base = job_dir / "base.mp4"
     _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent), "-i", str(audio),
           "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
           "-t", f"{total:.3f}", str(base)])
+    base_dur = _duration(base)
+    _assert_duration("base vs áudio", base_dur, total, tol=0.15)
 
     # ── F2: legenda karaokê (D) + música opcional com ducking (E) ────────────
     from finish import burn_karaoke, mix_music
@@ -243,6 +290,8 @@ def handle_montage(inp: dict, log) -> dict:
         captioned = job_dir / "captioned.mp4"
         burn_karaoke(current, words, captioned, cuts=list(cuts),
                      suppress_windows=[tuple(wdw) for wdw in inp.get("suppress_windows") or []])
+        # Regra 6: pós-passe NUNCA muda a duração (>0,1s = bug, aborta)
+        _assert_duration("legenda", _duration(captioned), base_dur)
         current = captioned
         log("info", "montage.captions.done")
 
@@ -251,11 +300,15 @@ def handle_montage(inp: dict, log) -> dict:
         music = download_to_dir([music_url], job_dir / "music")[0]
         with_music = job_dir / "with_music.mp4"
         mix_music(current, music, with_music)
+        _assert_duration("música", _duration(with_music), base_dur)
         current = with_music
         log("info", "montage.music.done")
 
     final = current
     final_dur = _duration(final)
+    # Regra 5: QA final — stream de vídeo ≈ stream de áudio (>0,1s = bug)
+    _assert_duration("QA final vídeo×áudio",
+                     _stream_duration(final, "v:0"), _stream_duration(final, "a:0"))
 
     upload_file_to_presigned_url(final, output_upload_url, content_type="video/mp4")
     log("info", "montage.done", duration=round(final_dur, 2), segments=len(plan))

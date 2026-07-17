@@ -21,11 +21,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-W, H = 1080, 1920
 FONT_PATH = os.environ.get(
     "STUDIO_CAPTION_FONT", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 )
-CAPTION_SIZE = 72
+# Tamanho relativo à ALTURA real do vídeo (72px em 1920 ≈ 3,75%). A resolução
+# NUNCA é fixa: era hardcoded 1080x1920 e em vídeo horizontal a legenda caía
+# fora do quadro (bug real registrado na MAQUINA_EDICAO_AUTOMATICA.md §3.4).
+CAPTION_SIZE_FRAC = 0.0375
 Y_FRAC = 0.68          # centro-baixo
 MAX_WORDS = 2
 MAX_GROUP_DUR = 1.1
@@ -35,6 +37,15 @@ def _run(cmd: list[str]) -> None:
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"ffmpeg: {r.stderr.strip()[-400:]}")
+
+
+def video_size(path: Path) -> tuple[int, int]:
+    """(w, h) reais do stream de vídeo, via ffprobe."""
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                        "-show_entries", "stream=width,height", "-of", "csv=p=0",
+                        str(path)], capture_output=True, text=True)
+    w, h = r.stdout.strip().split(",")[:2]
+    return int(w), int(h)
 
 
 def _groups(words: list[dict]) -> list[list[dict]]:
@@ -57,13 +68,15 @@ def _groups(words: list[dict]) -> list[list[dict]]:
     return gs
 
 
-def _group_png(palavras: list[dict], out_png: Path) -> Path:
-    """PNG transparente 1080x1920 com o grupo centralizado no centro-baixo."""
+def _group_png(palavras: list[dict], out_png: Path, size: tuple[int, int]) -> Path:
+    """PNG transparente NA RESOLUÇÃO REAL do vídeo, grupo no centro-baixo."""
     from PIL import Image, ImageDraw, ImageFont
 
+    W, H = size
+    caption_px = max(24, int(H * CAPTION_SIZE_FRAC))
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    font = ImageFont.truetype(FONT_PATH, CAPTION_SIZE)
+    font = ImageFont.truetype(FONT_PATH, caption_px)
     toks = [w["word"].strip() for w in palavras]
 
     max_w = int(W * 0.86)
@@ -79,9 +92,9 @@ def _group_png(palavras: list[dict], out_png: Path) -> Path:
     if cur:
         lines.append(cur)
 
-    lh = int(CAPTION_SIZE * 1.25)
+    lh = int(caption_px * 1.25)
     y0 = int(H * Y_FRAC - lh * len(lines) / 2)
-    stroke = max(2, int(CAPTION_SIZE * 0.06))
+    stroke = max(2, int(caption_px * 0.06))
     for i, ln in enumerate(lines):
         lw = sum(d.textlength(t + " ", font=font) for t in ln) - d.textlength(" ", font=font)
         x = (W - lw) / 2
@@ -109,6 +122,7 @@ def burn_karaoke(
     sup = suppress_windows or []
     groups = _groups(words)
     tmp = Path(tempfile.mkdtemp(prefix="karaoke_"))
+    size = video_size(video_in)  # resolução REAL — nunca assumir 1080x1920
 
     items: list[tuple[Path, float, float]] = []
     for i, g in enumerate(groups):
@@ -124,7 +138,7 @@ def burn_karaoke(
                 fim = c - 0.02
                 break
         fim = max(fim, g[-1]["end"] - 0.02)
-        png = _group_png(g, tmp / f"g{i:03d}.png")
+        png = _group_png(g, tmp / f"g{i:03d}.png", size)
         items.append((png, round(ini, 2), round(fim, 2)))
 
     src = video_in
