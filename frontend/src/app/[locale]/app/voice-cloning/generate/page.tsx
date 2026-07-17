@@ -1,12 +1,10 @@
-import { Link } from "@/i18n/navigation";
 import { redirect } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { AudioLines } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { R2_BUCKETS } from "@/lib/r2/client";
-import { Eyebrow, Badge } from "@/components/ui";
-import { StockVoices } from "@/components/voice/stock-voices";
+import { Eyebrow } from "@/components/ui";
+import { VoicesTabs } from "@/components/voice/voices-tabs";
 
 type VoiceRow = {
   id: string;
@@ -14,7 +12,9 @@ type VoiceRow = {
   name: string;
   created_at: string;
   is_stock?: boolean | null;
-  sample_url?: string | null;
+  language?: string | null;
+  accent?: string | null;
+  description?: string | null;
 };
 
 /**
@@ -40,21 +40,26 @@ export default async function GenerateAudioPage({
   // Minhas vozes + Vozes Prontas do catálogo (is_stock; a RLS já libera SELECT).
   const { data: voices } = await supabase
     .from("voices")
-    .select("id, user_id, name, created_at, is_stock, language")
+    .select("id, user_id, name, created_at, is_stock, language, accent, description")
     .or(`user_id.eq.${user.id},is_stock.eq.true`)
     .eq("status", "ready")
     .order("created_at", { ascending: false });
 
-  const all = (voices ?? []) as (VoiceRow & { language?: string | null })[];
-  const list = all.filter((v) => !v.is_stock);
-  // Amostra de ~10s de cada voz do catálogo (gerada no treino) — presigned 1h.
+  const all = (voices ?? []) as VoiceRow[];
+  const list = all
+    .filter((v) => !v.is_stock)
+    .map((v) => ({ id: v.id, name: v.name, created_at: v.created_at }));
+  // Catálogo (aba Explorar): amostra de ~15s de cada voz — presigned 1h.
   const stock = await Promise.all(
     all
       .filter((v) => v.is_stock)
+      .sort((a, b) => a.name.localeCompare(b.name))
       .map(async (v) => ({
         id: v.id,
         name: v.name,
         language: v.language ?? "pt",
+        accent: v.accent ?? null,
+        description: v.description ?? null,
         sample_url: await createPresignedGet(
           R2_BUCKETS.generations,
           `${v.user_id}/${v.id}/sample.wav`,
@@ -75,55 +80,9 @@ export default async function GenerateAudioPage({
         </p>
       </header>
 
-      {list.length === 0 && stock.length === 0 ? (
-        <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
-          <AudioLines className="h-10 w-10 text-[var(--ash)]" />
-          <p className="text-sm text-[var(--mute)]">{t("voiceCloning.generateAudioEmpty")}</p>
-          <Link
-            href="/app/voice-cloning"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
-          >
-            {t("voiceCloning.createButton")}
-          </Link>
-        </section>
-      ) : (
-        <>
-          {list.length > 0 && <VoiceList voices={list} locale={locale} cta={t("voiceCloning.pickVoiceCta")} />}
-
-          {/* Catálogo "Vozes Prontas" (is_stock): treinadas pela FastCloner a
-              partir de acervos CC-BY — a seção só existe quando há estoque.
-              Player de amostra + combo de idioma no client component. */}
-          {stock.length > 0 && <StockVoices voices={stock} />}
-        </>
-      )}
+      {/* Abas estilo ElevenLabs: Minhas Vozes | Explorar (catálogo is_stock).
+          Sem voz própria, abre direto no Explorar. */}
+      <VoicesTabs myVoices={list} stock={stock} locale={locale} />
     </div>
-  );
-}
-
-function VoiceList({ voices, locale, cta }: { voices: VoiceRow[]; locale: string; cta: string }) {
-  return (
-    <ul className="flex flex-col gap-2">
-      {voices.map((v) => (
-        <li key={v.id}>
-          <Link
-            href={`/app/voice-cloning/${v.id}/generate`}
-            className="grid grid-cols-[1fr_auto_auto] items-center gap-4 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-5 py-4 transition-[border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)]"
-          >
-            <div className="flex flex-col gap-1">
-              <span className="font-sans text-base font-medium leading-tight text-[var(--ink)]">
-                {v.name}
-              </span>
-              <span className="text-xs text-[var(--ash)]">
-                {new Date(v.created_at).toLocaleDateString(locale)}
-              </span>
-            </div>
-            <Badge variant="soft">{cta}</Badge>
-            <span className="text-[var(--mute)]" aria-hidden>
-              →
-            </span>
-          </Link>
-        </li>
-      ))}
-    </ul>
   );
 }

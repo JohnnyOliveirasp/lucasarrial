@@ -15,7 +15,11 @@ const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-haiku-4-5"; // rápido e barato — ideal pra normalização
 const TIMEOUT_MS = 15_000;
 
-const SYSTEM = `Você normaliza texto para síntese de voz (TTS) em português do Brasil.
+const SYSTEM = `Você normaliza texto para síntese de voz (TTS). O texto do
+usuário pode estar em português, espanhol ou inglês: detecte o idioma e
+normalize NO MESMO idioma — NUNCA traduza, NUNCA comente sobre o idioma.
+Os exemplos abaixo são em pt-BR; para espanhol/inglês, aplique as mesmas regras
+com a grafia falada daquele idioma (ex.: "42" -> "forty-two" / "cuarenta y dos").
 Reescreva o texto do usuário expandindo tudo que não se fala literalmente:
 - Números: "42" -> "quarenta e dois"; ano "2026" -> "dois mil e vinte e seis"
 - Moeda: "R$ 50,90" -> "cinquenta reais e noventa centavos"
@@ -24,7 +28,7 @@ Reescreva o texto do usuário expandindo tudo que não se fala literalmente:
 - Abreviações: "Dr." -> "Doutor"; "Sra." -> "Senhora"; "etc." -> "etcétera"
 - Símbolos: "&" -> "e"; "@" -> "arroba"; "#" -> "número"; "/" em medidas -> "por"
 - Unidades: "5kg" -> "cinco quilos"; "10km" -> "dez quilômetros"
-- Estrangeirismos em inglês que NÃO têm forma portuguesa: reescreva pela
+- Estrangeirismos (SÓ quando o texto é em português) em inglês que NÃO têm forma portuguesa: reescreva pela
   pronúncia aportuguesada. Ex.: "reels" -> "ríuls"; "influencer" -> "influéncer";
   "stories" -> "estóris"; "feed" -> "fíid"; "marketing" -> "márketin"; "design"
   -> "dizáin"; "post"/"posts" (o substantivo inglês) -> "póust"/"póusts".

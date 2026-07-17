@@ -50,12 +50,15 @@
       "generateAudioSubtitle": "Elige una voz lista y genera audio con cualquier texto.",
       "generateAudioEmpty": "Aún no tienes una voz lista. Entrena una voz primero.",
       "pickVoiceCta": "Generar audio",
-      "stockTitle": "Voces listas",
+      "tabMyVoices": "Mis Voces",
+      "tabExplore": "Explorar",
       "stockCredit": "Voces del catálogo FastCloner, entrenadas a partir de los acervos públicos CML-TTS (UFG/CEIA), MLS y LibriTTS-R — licencia CC-BY 4.0.",
-      "stockNoSample": "Muestra no disponible",
+      "stockPlay": "Escuchar muestra de {name}",
+      "stockPause": "Pausar muestra de {name}",
       "stockLang": {
         "all": "Todas",
         "pt": "Portugués",
+        "ptPT": "Portugués (PT)",
         "es": "Español",
         "en": "Inglés"
       },
