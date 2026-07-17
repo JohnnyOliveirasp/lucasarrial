@@ -20,12 +20,13 @@ import {
 } from "@/lib/studio/finalize";
 import { syncStudioScene } from "@/lib/studio/scenes";
 import { syncFaceSegments } from "@/lib/studio/face";
+import { advanceMachine, type MachineProject } from "@/lib/studio/machine";
 import type { StudioFaceSegment, StudioScenePlanItem, StudioSceneRow } from "@/lib/db/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 const SELECT =
-  "id, user_id, name, status, raw_audio_path, clean_audio_path, duration_raw_seconds, duration_clean_seconds, kept_takes, removed_takes, transcript_words, edit_report, runpod_job_id, error_message, montage_status, montage_job_id, video_path, montage_error, montage_report, scenes_status, scene_plan, face_status, face_image_path, face_segments, created_at";
+  "id, user_id, name, status, raw_audio_path, clean_audio_path, duration_raw_seconds, duration_clean_seconds, kept_takes, removed_takes, transcript_words, edit_report, runpod_job_id, error_message, montage_status, montage_job_id, video_path, montage_error, montage_report, scenes_status, scene_plan, face_status, face_image_path, face_segments, created_at, auto_pilot, machine_step, machine_job_id, machine_voice_id, machine_music_key, script_text";
 
 export async function GET(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -154,6 +155,19 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     if (fresh) current = fresh;
   }
 
+  // Máquina automática (E5): avança 1 passo por poll (tts → prepare →
+  // cenas → montagem). Best-effort — erro aqui não derruba o GET.
+  const machineStep = String(current.machine_step ?? "");
+  if (current.auto_pilot && machineStep !== "" && machineStep !== "done" && machineStep !== "failed") {
+    await advanceMachine(current as unknown as MachineProject, auth.email ?? "");
+    const { data: fresh } = await admin
+      .from("studio_projects")
+      .select(SELECT)
+      .eq("id", id)
+      .maybeSingle();
+    if (fresh) current = fresh;
+  }
+
   let clean_audio_url: string | null = null;
   if (current.status === "audio_ready" && current.clean_audio_path) {
     try {
@@ -197,6 +211,8 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       scenes_status: current.scenes_status,
       scenes,
       face_status: current.face_status,
+      auto_pilot: current.auto_pilot,
+      machine_step: current.machine_step,
     },
   });
 }

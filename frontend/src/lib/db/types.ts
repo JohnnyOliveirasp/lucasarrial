@@ -92,6 +92,11 @@ export type VoiceRow = {
   trained_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;
+  /** Vozes Prontas (catálogo FastCloner) — migs 43-45. */
+  is_stock: boolean | null;
+  language: string | null;
+  accent: string | null;
+  description: string | null;
 };
 export type VoiceInsert = {
   id?: string;
@@ -558,6 +563,16 @@ export type StudioProjectRow = {
   face_image_path: string | null;
   face_segments: StudioFaceSegment[] | null;
   created_at: Timestamp;
+  /** Máquina de Edição Automática (mig 46). */
+  auto_pilot: boolean;
+  script_text: string | null;
+  machine_voice_id: string | null;
+  machine_step: string | null;
+  machine_job_id: string | null;
+  machine_music_key: string | null;
+  variants_job_id: string | null;
+  variants_status: string | null;
+  variant_paths: string[] | null;
 };
 export type StudioFaceStatus = "idle" | "processing" | "ready" | "failed";
 export type StudioFaceSegment = {
@@ -589,6 +604,9 @@ export type StudioSceneRow = {
   prompt_en: string;
   dialect: "realista" | "craft";
   status: StudioSceneStatus;
+  /** §2.7 da máquina: 'broll' reusa pra sempre; 'produto' é específico. */
+  kind: "broll" | "produto";
+  tags: string[];
   kie_task_id: string | null;
   /** QA F5: já regerou o still 1x por texto quebrado? */
   qa_retried: boolean;

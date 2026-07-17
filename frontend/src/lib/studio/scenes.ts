@@ -21,8 +21,11 @@ import type { StudioSceneRow } from "@/lib/db/types";
 const KIE_BASE = "https://api.kie.ai/api/v1/jobs";
 const STILL_MODEL = "gpt-image-2-text-to-image";
 const VIDEO_MODEL = "grok-imagine-video-1-5-preview";
+// E3 (MAQUINA_EDICAO_AUTOMATICA.md §2.5): ritmo REAL — sem o pedido explícito
+// o Grok entrega tudo em câmera lenta/flutuante (regra 4 validada em produção).
 const MOTION_PROMPT =
-  "subtle handheld camera movement, natural ambient motion, realistic, no faces";
+  "subtle handheld camera movement, natural ambient motion, realistic, " +
+  "real-time everyday pacing, brisk — NOT slow-motion, not dreamy or floaty, no faces";
 
 /** Prompt-base do dialeto (03_DIALETOS_VISUAIS.md, literal). */
 const DIALECT_SUFFIX: Record<"realista" | "craft", string> = {
@@ -30,7 +33,11 @@ const DIALECT_SUFFIX: Record<"realista" | "craft", string> = {
     "shot on iphone, handheld amateur footage, imperfect natural lighting, slightly grainy, " +
     "realistic documentary style, candid, not staged, no cinematic color grade, no professional " +
     "lighting setup, looks like a real person filmed this casually, vertical 9:16 portrait " +
-    "composition, no faces, no text watermark",
+    // E3 §2.5: câmera fixa/média distância + mãos vazias + textura real de pele
+    // (anti-plastificação §2.4) — regras validadas em produção no estúdio.
+    "composition, fixed camera framing, medium distance — never a close-up, hands empty unless " +
+    "holding the featured object, real skin texture, no retouching, no beauty filter, " +
+    "no faces, no text watermark",
   craft:
     "top-down macro shot of handcrafted paper and wood objects arranged on a wooden desk, " +
     "warm natural window light, tactile textures, visible hand shadows, DIY/tabletop aesthetic, " +

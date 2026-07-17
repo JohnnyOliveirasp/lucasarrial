@@ -60,6 +60,13 @@ def _stream_duration(path: Path, kind: str) -> float:
     return float(out) if out else 0.0
 
 
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+def _is_image(path: Path) -> bool:
+    return path.suffix.lower() in _IMAGE_EXTS
+
+
 def _snap(t: float) -> float:
     """Corte na GRADE DE FRAMES (regra 2): múltiplo de 1/FPS — senão cada
     corte deriva ~33ms e acumula ~0,5s em 15 cortes (bug real do estúdio)."""
@@ -178,6 +185,15 @@ def _render_segment(scene: Path, seg: dict, out: Path) -> None:
     menos frames e o vídeo encurtaria/atrasaria em relação ao áudio)."""
     dur = seg["t1"] - seg["t0"]
     force, cap = seg["zoom"]
+    # Slide em PNG/JPG (§2.9): imagem vira plano ESTÁTICO (-loop 1, sem zoom).
+    if _is_image(scene):
+        vf = (f"fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,"
+              f"crop={W}:{H},setsar=1")
+        _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1",
+              "-t", f"{dur:.3f}", "-i", str(scene), "-vf", vf, "-an",
+              "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+              "-pix_fmt", "yuv420p", str(out)])
+        return
     scene_dur = _duration(scene)
     if seg.get("face"):
         offset = min(seg["src_offset"], max(0.0, scene_dur - 0.1))
@@ -203,8 +219,11 @@ def _render_segment(scene: Path, seg: dict, out: Path) -> None:
 def _render_cover(scene: Path, out: Path, dur: float = COVER_S) -> None:
     """H1: capa = frame de contexto (2 frames, vira a thumbnail do feed)."""
     frame = out.with_suffix(".png")
-    _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "1.0", "-i", str(scene),
-          "-frames:v", "1", str(frame)])
+    if _is_image(scene):
+        frame = scene
+    else:
+        _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "1.0", "-i", str(scene),
+              "-frames:v", "1", str(frame)])
     _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-t", f"{dur:.4f}",
           "-i", str(frame),
           "-vf", f"fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,"

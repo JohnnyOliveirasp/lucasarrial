@@ -834,9 +834,21 @@ def handler(event: dict) -> dict:
             # Vídeo Estúdio F1: áudio limpo + cenas -> vídeo 9:16 montado
             from montage import handle_montage
             return handle_montage(inp, log=_log)
+        if job_type == "tts_prepare":
+            # Máquina E2: TTS único -> encolher pausas + words + QA fidelidade
+            from tts_prepare import handle_tts_prepare
+            return handle_tts_prepare(inp, log=_log)
+        if job_type == "caption_variants":
+            # Máquina E4: 1 vídeo -> N variações trocando a legenda de hook
+            from variants import handle_caption_variants
+            return handle_caption_variants(inp, log=_log)
+        if job_type == "slides":
+            # Máquina E4: artes de slide (PIL, estáticas, estados progressivos)
+            from variants import handle_slides
+            return handle_slides(inp, log=_log)
         if job_type == "health":
             return {"ok": True, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
-        return {"error": f"unknown type '{job_type}' (use train/inference/transcribe/audio_edit/health)"}
+        return {"error": f"unknown type '{job_type}' (use train/inference/transcribe/audio_edit/montage/tts_prepare/caption_variants/slides/health)"}
     except Exception as exc:
         _log("error", "job.failed", error=str(exc), type=job_type, tb=traceback.format_exc()[:2000])
         return {"error": str(exc), "type": job_type, "traceback": traceback.format_exc()[:2000]}
