@@ -35,6 +35,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import time
 import traceback
 from pathlib import Path
@@ -551,6 +552,51 @@ def _trim_silence(
     return wav[start:end]
 
 
+def _start_word_ok(
+    seg: np.ndarray, sample_rate: int, expected_text: str,
+    whisper_model: str, language: str,
+) -> "bool | None":
+    """QA do INÍCIO da geração (caso "hoje" engolido 2026-07-17): transcreve os
+    primeiros ~4s do chunk e confere se a 1a palavra esperada está lá. O modo
+    continuation do VoxCPM engole/atropela a 1a palavra quando a cauda da ref
+    vaza (issue #272). True = ok; False = 1a palavra sumiu (regerar);
+    None = Whisper inconclusivo (não bloqueia — QA é rede de segurança).
+    """
+    import difflib
+    import tempfile
+    import unicodedata
+
+    def norm_words(s: str) -> list[str]:
+        s = unicodedata.normalize("NFD", (s or "").lower())
+        s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+        return [w for w in re.sub(r"[^a-z0-9\s]", " ", s).split() if w]
+
+    expected = norm_words(expected_text)
+    if not expected:
+        return True
+    head = seg[: int(sample_rate * 4)]
+    if head.size < int(sample_rate * 0.2):
+        return None
+    try:
+        from voice_pipeline import transcribe_file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        sf.write(str(tmp_path), head, sample_rate)
+        try:
+            got = norm_words(transcribe_file(tmp_path, model_name=whisper_model, language=language))
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    except Exception as exc:
+        _log("error", "inference.start_qa.error", error=str(exc))
+        return None
+    if not got:
+        return None
+    first = expected[0]
+    return any(
+        difflib.SequenceMatcher(None, first, w).ratio() >= 0.8 for w in got[:3]
+    )
+
+
 def _crossfade_concat(wavs: list[np.ndarray], fade_samples: int) -> np.ndarray:
     """Concatena com fade linear no overlap de `fade_samples` entre wavs.
 
@@ -641,6 +687,26 @@ def _handle_inference(inp: dict) -> dict:
     if prompt_wav_url:
         ref_dir = WORKSPACE / "refs"
         ref_path = _ensure_local_from_url(prompt_wav_url, ref_dir, "ref")
+        # CAUDA DE SILÊNCIO na ref (caso "hoje" engolido 2026-07-17): o VoxCPM
+        # continua ACUSTICAMENTE a cauda da referência — ref que termina no meio
+        # de fala faz a 1a palavra da geração sair fundida/engolida. 0.5-1.0s de
+        # silêncio no fim da ref foi o único workaround com relato de eliminação
+        # completa no issue #272. Aplicado na hora (cache local) — cura TODAS as
+        # vozes existentes sem retreinar nem tocar no R2.
+        pad_ms = int(os.environ.get("TTS_REF_TAIL_SILENCE_MS", "600"))
+        if pad_ms > 0:
+            padded = ref_path.with_name(f"{ref_path.stem}_tail{pad_ms}.wav")
+            if not (padded.exists() and padded.stat().st_size > 0):
+                r = subprocess.run(
+                    ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                     "-i", str(ref_path), "-af", f"apad=pad_dur={pad_ms / 1000}",
+                     str(padded)],
+                    capture_output=True, text=True,
+                )
+                if r.returncode != 0 or not padded.exists():
+                    _log("error", "inference.ref_pad.failed", detail=(r.stderr or "")[:300])
+                    padded = ref_path
+            ref_path = padded
         prompt_wav_local = str(ref_path)
 
     if prompt_wav_local and not prompt_text:
@@ -654,6 +720,13 @@ def _handle_inference(inp: dict) -> dict:
             log=lambda m: _log("info", "whisper", detail=m),
         )
         _log("info", "inference.transcribe.done", text_len=len(prompt_text or ""))
+
+    # Pontuacao terminal no prompt_text: a ref auto de 30s costuma terminar no
+    # meio de frase e o transcript vem sem ponto final — o modelo entende que a
+    # fala continua e atropela a 1a palavra do texto novo. O ponto final avisa
+    # "a fala anterior acabou" (par do silencio acolchoado na cauda da ref).
+    if prompt_text:
+        prompt_text = _ensure_terminal(prompt_text)
 
     # 3. Carrega modelo (com ou sem LoRA)
     # Por simplicidade, NÃO usamos cache do modelo VoxCPM com LoRA (cada call carrega).
@@ -729,12 +802,18 @@ def _handle_inference(inp: dict) -> dict:
     )
     t0 = time.monotonic()
 
-    pieces: list[np.ndarray] = []
-    for idx, chunk in enumerate(chunks):
-        ct0 = time.monotonic()
+    # QA do início (1o chunk): o continuation engole a 1a palavra quando a
+    # cauda da ref vaza (issue #272). Transcreve o começo do 1o chunk e regera
+    # se a 1a palavra esperada sumiu. Só roda em clonagem (com ref).
+    start_qa_enabled = os.environ.get("TTS_START_QA", "1") not in ("0", "false", "False", "")
+    start_qa_retries = int(os.environ.get("TTS_START_QA_RETRIES", "2"))
+    start_qa_model = os.environ.get("TTS_START_QA_WHISPER", "small")
+    qa_language = inp.get("language", "pt")
+
+    def _gen_chunk(chunk_text: str) -> np.ndarray:
         # Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853).
         seg = model.generate(
-            text=chunk,
+            text=chunk_text,
             prompt_wav_path=prompt_wav_local,
             prompt_text=prompt_text,
             cfg_value=cfg_value,
@@ -746,10 +825,30 @@ def _handle_inference(inp: dict) -> dict:
             retry_badcase_max_times=retry_max,
             retry_badcase_ratio_threshold=retry_ratio,
         )
-        seg = np.asarray(seg, dtype=np.float32)
+        return np.asarray(seg, dtype=np.float32)
+
+    pieces: list[np.ndarray] = []
+    for idx, chunk in enumerate(chunks):
+        ct0 = time.monotonic()
+        seg = _gen_chunk(chunk)
         raw_samples = int(seg.size)
         if trim_enabled:
-            seg = _trim_silence(seg, threshold=trim_threshold, pad_samples=trim_pad_samples)
+            # 1o chunk ganha pad maior na borda pra não comer consoante fraca
+            # de abertura (o "h" de "hoje" fica abaixo do threshold de -46dB).
+            pad = max(trim_pad_samples, int(sample_rate * 0.06)) if idx == 0 else trim_pad_samples
+            seg = _trim_silence(seg, threshold=trim_threshold, pad_samples=pad)
+        if idx == 0 and start_qa_enabled and prompt_wav_local:
+            attempt = 0
+            while attempt < start_qa_retries:
+                ok = _start_word_ok(seg, sample_rate, chunk, start_qa_model, qa_language)
+                _log("info", "inference.start_qa", attempt=attempt, ok=ok)
+                if ok is not False:
+                    break
+                attempt += 1
+                seg = _gen_chunk(chunk)
+                if trim_enabled:
+                    pad = max(trim_pad_samples, int(sample_rate * 0.06))
+                    seg = _trim_silence(seg, threshold=trim_threshold, pad_samples=pad)
         _log(
             "info", "inference.chunk", idx=idx, total=len(chunks),
             chars=len(chunk), samples_raw=raw_samples, samples_trim=int(seg.size),
@@ -766,6 +865,13 @@ def _handle_inference(inp: dict) -> dict:
         wav = _crossfade_concat(pieces, crossfade_samples)
     else:
         wav = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.float32)
+    # Micro fade-in: mata o chirp/click residual do 1o patch do VoxCPM (issue
+    # #272) sem comer fonema — 8ms é inaudível como fade.
+    fade_ms = int(os.environ.get("TTS_START_FADE_MS", "8"))
+    fade_n = int(sample_rate * fade_ms / 1000)
+    if fade_n > 0 and wav.size > fade_n:
+        wav = wav.copy()
+        wav[:fade_n] *= np.linspace(0.0, 1.0, fade_n, dtype=np.float32)
     elapsed = time.monotonic() - t0
     _log("info", "inference.done", elapsed_s=round(elapsed, 2), samples=len(wav), chunks=len(chunks))
 

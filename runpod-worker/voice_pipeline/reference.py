@@ -39,6 +39,15 @@ def score_reference_transcript(transcript: str, language: str = "pt") -> float:
     if not words:
         return 9999.0
     score = 0.0
+    # FRONTEIRA DE FRASE (caso "hoje" engolido 2026-07-17): ref que termina no
+    # meio de frase faz o continuation emendar o texto novo como se fosse a
+    # mesma fala — a 1a palavra da geracao sai atropelada/engolida (VoxCPM
+    # issue #272: a cauda da ref vaza no inicio da saida). Pune forte a janela
+    # sem pontuacao terminal no fim; leve a que comeca no meio de frase.
+    if not re.search(r"[.!?…]\s*$", text):
+        score += 30
+    if text and text[0].islower():
+        score += 8
     if language.startswith("pt"):
         first = words[0]
         last = re.sub(r"[.,!?;:]+$", "", words[-1])
