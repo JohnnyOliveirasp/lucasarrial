@@ -32,7 +32,11 @@ export function ForgotPasswordForm() {
 
     if (authError) {
       const code = authError.message.toLowerCase();
-      if (code.includes("rate")) setError(t("errors.rateLimited"));
+      // "For security purposes, you can only request this after N seconds" =
+      // cooldown de 60s do Supabase entre pedidos pro MESMO e-mail (visto em
+      // prod 21/07: usuário reenviava e caía no "Algo deu errado" genérico).
+      if (code.includes("rate") || code.includes("security purposes"))
+        setError(t("errors.rateLimited"));
       else setError(t("errors.generic"));
       setSubmitting(false);
       return;
