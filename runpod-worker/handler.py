@@ -134,6 +134,22 @@ def _load_model():
     return _MODEL
 
 
+def _free_cuda() -> None:
+    """Solta a VRAM de modelos carregados por chamada (inferência/amostra).
+
+    O worker é QUENTE e serve treino + inferência no mesmo processo: sem esta
+    limpeza, os modelos acumulam na GPU e o treino que cair num worker saturado
+    morre de OOM (visto em prod 21/07: GPU de 95GB com 18MiB livres)."""
+    import gc
+    gc.collect()
+    try:
+        import torch
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+    except Exception:
+        pass
+
+
 def _wav_to_base64(wav, sample_rate: int) -> str:
     buf = io.BytesIO()
     sf.write(buf, wav, sample_rate, format="WAV")
@@ -187,6 +203,7 @@ def _handle_train(inp: dict) -> dict:
     job_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.monotonic()
+    _free_cuda()  # worker quente pode ter VRAM presa de inferências anteriores
     _ensure_model_downloaded()
 
     _log("info", "train.download.start", count=len(audio_urls))
@@ -242,6 +259,27 @@ def _handle_train(inp: dict) -> dict:
             "min_required_seconds": min_useful,
             "dataset_chunks": next_idx,
         }
+
+    # ── Idioma REAL do áudio ───────────────────────────────────────────────
+    # Caso Joana 2026-07-21: voz em ESPANHOL era transcrita como pt no pipeline
+    # inteiro (ref em portunhol c/ palavra inventada, textos de treino errados,
+    # QA no idioma errado). Detecta no 1º chunk limpo do dataset; confiança
+    # baixa cai no idioma do request (default pt). Vozes pt seguem idênticas.
+    if os.environ.get("TRAIN_LANG_AUTODETECT", "1") not in ("0", "false", "False", ""):
+        first_chunk = next(iter(sorted(dataset_dir.glob("*.wav"))), None)
+        if first_chunk is not None:
+            try:
+                from voice_pipeline import detect_language
+                detected, lang_prob = detect_language(first_chunk, model_name=whisper_model)
+                _log(
+                    "info", "train.language.detected",
+                    language=detected, probability=round(lang_prob, 3),
+                    request_language=language,
+                )
+                if detected and lang_prob >= float(os.environ.get("TRAIN_LANG_MIN_PROB", "0.6")):
+                    language = detected
+            except Exception as exc:
+                _log("error", "train.language.detect_failed", error=str(exc))
 
     # ── Referência automática ──────────────────────────────────────────────
     # Pega 1 áudio (aleatório) já LIMPO pelo Demucs, corta REFERENCE_SECONDS e
@@ -367,8 +405,8 @@ def _handle_train(inp: dict) -> dict:
     sample_upload_url = inp.get("sample_upload_url")
     if sample_upload_url:
         try:
-            from sample_gen import generate_training_sample, DEFAULT_SAMPLE_TEXT
-            sample_text = str(inp.get("sample_text") or DEFAULT_SAMPLE_TEXT)
+            from sample_gen import generate_training_sample, sample_text_for
+            sample_text = str(inp.get("sample_text") or sample_text_for(language))
             candidates = (
                 ref_candidates[:SAMPLE_QA_MAX_ATTEMPTS]
                 if ref_candidates
@@ -405,6 +443,7 @@ def _handle_train(inp: dict) -> dict:
                     sample_info["sample_qa"] = "passed" if attempt == 0 else "retried_passed"
                     break
                 sample_info["sample_qa"] = "failed"  # segue pro próximo candidato
+            sample_info["sample_text"] = sample_text  # backend grava a linha do histórico com o texto REAL
         except Exception as exc:  # amostra é mimo: NUNCA pode derrubar um treino que já deu certo
             _log("error", "train.sample.crashed", error=str(exc))
             sample_info["sample_error"] = str(exc)[:300]
@@ -421,6 +460,7 @@ def _handle_train(inp: dict) -> dict:
         "reference_uploaded": reference_uploaded,
         "reference_transcript": reference_transcript,
         "reference_error": reference_error,
+        "language": language,
         "lora_alpha": TRAIN_LORA_ALPHA,
         "lora_rank": LORA_RANK,
         **sample_info,
@@ -492,7 +532,7 @@ def _ensure_terminal(s: str) -> str:
     return s + "."
 
 
-def _split_text_for_tts(text: str, max_chars: int = 160) -> list[str]:
+def _split_text_for_tts(text: str, max_chars: int = 160) -> "list[tuple[str, bool]]":
     """Quebra texto em chunks <= max_chars respeitando fim de frase.
 
     VoxCPM gera 1 utterance por chamada e drifta/acelera em texto longo (issue
@@ -503,32 +543,42 @@ def _split_text_for_tts(text: str, max_chars: int = 160) -> list[str]:
 
     Cada chunk passa por _ensure_terminal: termina sempre com . ! ? — sem isso o
     modelo inventa filler ("entao nao") pra "completar" a fala.
+
+    Retorna (chunk, fim_de_paragrafo): quebras de paragrafo (\n\n) do texto do
+    usuario viram pausa REAL na montagem (caso Joana 21/07: roteiro com
+    paragrafos dramaticos saiu emendado sem respiro, 16%% mais rapido que o
+    mesmo texto no concorrente).
     """
     text = (text or "").strip()
     if not text:
         return []
-    # Separa em frases por fim de pontuacao. Inclui ':' e ';' como fronteira
-    # (linhas tipo 'Ela falou:' viram seu proprio trecho, depois normalizadas
-    # pra terminar em '.'). O lookbehind mantem o sinal preso na frase anterior.
-    # \n+ tambem corta (paragrafos).
-    sentences = re.split(r"(?<=[.!?…:;])\s+|\n+", text)
-    chunks: list[str] = []
-    cur = ""
-    for s in sentences:
-        s = s.strip()
-        if not s:
-            continue
-        # Se grudar a proxima frase passa do limite, fecha o chunk atual.
-        # Se a frase sozinha ja estoura, deixa estourar (nao corta meio-palavra).
-        if cur and len(cur) + 1 + len(s) > max_chars:
+    out: "list[tuple[str, bool]]" = []
+    paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
+    for para in paragraphs:
+        # Separa em frases por fim de pontuacao. Inclui ':' e ';' como
+        # fronteira (linhas 'Ela falou:' viram seu proprio trecho, depois
+        # normalizadas pra terminar em '.'). \n simples tambem corta.
+        sentences = re.split(r"(?<=[.!?…:;])\s+|\n+", para)
+        chunks: list[str] = []
+        cur = ""
+        for s in sentences:
+            s = s.strip()
+            if not s:
+                continue
+            # Se grudar a proxima frase passa do limite, fecha o chunk atual.
+            # Se a frase sozinha estoura, deixa estourar (nao corta meio-palavra).
+            if cur and len(cur) + 1 + len(s) > max_chars:
+                chunks.append(cur)
+                cur = s
+            else:
+                cur = (cur + " " + s) if cur else s
+        if cur:
             chunks.append(cur)
-            cur = s
-        else:
-            cur = (cur + " " + s) if cur else s
-    if cur:
-        chunks.append(cur)
-    # Borda limpa em todo trecho (anti-filler). Remove vazios resultantes.
-    return [c for c in (_ensure_terminal(c) for c in chunks) if c]
+        # Borda limpa em todo trecho (anti-filler). Remove vazios resultantes.
+        cleaned = [c for c in (_ensure_terminal(c) for c in chunks) if c]
+        for i, c in enumerate(cleaned):
+            out.append((c, i == len(cleaned) - 1))
+    return out
 
 
 def _trim_silence(
@@ -753,6 +803,7 @@ def _handle_inference(inp: dict) -> dict:
         )
         _log("info", "inference.lora_cfg", r=lora_rank, alpha=lora_alpha)
 
+    _free_cuda()  # worker quente pode ter VRAM presa de jobs anteriores
     _ensure_model_downloaded()
     _log("info", "model.load.start", lora=bool(lora_path))
     model = VoxCPM.from_pretrained(
@@ -788,10 +839,15 @@ def _handle_inference(inp: dict) -> dict:
     # `pad_ms` mantem alguns ms de cada lado pra nao cortar consoante final.
     trim_pad_ms = int(os.environ.get("TTS_CHUNK_TRIM_PAD_MS", "20"))
 
-    chunks = _split_text_for_tts(text, max_chars=chunk_max) or [text]
+    chunks = _split_text_for_tts(text, max_chars=chunk_max) or [(text, False)]
     silence_samples = max(0, int(sample_rate * silence_ms / 1000))
     crossfade_samples = max(0, int(sample_rate * crossfade_ms / 1000))
     trim_pad_samples = max(0, int(sample_rate * trim_pad_ms / 1000))
+    # Pausa REAL entre paragrafos do texto (\n\n) — silencio digital anexado ao
+    # fim do chunk que fecha o paragrafo (o crossfade desliza pra dentro do
+    # silencio, sem clique). Env-tunavel sem rebuild; 0 desliga.
+    par_pause_ms = int(os.environ.get("TTS_PARAGRAPH_PAUSE_MS", "300"))
+    par_pause_samples = max(0, int(sample_rate * par_pause_ms / 1000))
 
     _log(
         "info", "inference.start", text_len=len(text), chunks=len(chunks),
@@ -828,7 +884,7 @@ def _handle_inference(inp: dict) -> dict:
         return np.asarray(seg, dtype=np.float32)
 
     pieces: list[np.ndarray] = []
-    for idx, chunk in enumerate(chunks):
+    for idx, (chunk, ends_paragraph) in enumerate(chunks):
         ct0 = time.monotonic()
         seg = _gen_chunk(chunk)
         raw_samples = int(seg.size)
@@ -854,6 +910,10 @@ def _handle_inference(inp: dict) -> dict:
             chars=len(chunk), samples_raw=raw_samples, samples_trim=int(seg.size),
             elapsed_s=round(time.monotonic() - ct0, 2),
         )
+        # Pausa de paragrafo: silencio anexado ao proprio segmento (sobrevive
+        # ao crossfade — o fade desliza pra dentro do silencio).
+        if ends_paragraph and par_pause_samples > 0 and idx < len(chunks) - 1:
+            seg = np.concatenate([seg, np.zeros(par_pause_samples, dtype=np.float32)])
         pieces.append(seg)
         # Silencio entre chunks (default 0). Aplicado SOMENTE quando crossfade
         # esta desligado — senao o silencio dentro do overlap se autodestrui.
@@ -874,6 +934,11 @@ def _handle_inference(inp: dict) -> dict:
         wav[:fade_n] *= np.linspace(0.0, 1.0, fade_n, dtype=np.float32)
     elapsed = time.monotonic() - t0
     _log("info", "inference.done", elapsed_s=round(elapsed, 2), samples=len(wav), chunks=len(chunks))
+
+    # Modelo não é mais necessário (wav pronto) — solta a VRAM ANTES do upload
+    # pra o próximo job deste worker (inclusive um treino) nascer com GPU limpa.
+    del model
+    _free_cuda()
 
     # 4. Upload ou base64
     if output_upload_url:
@@ -957,6 +1022,7 @@ def handler(event: dict) -> dict:
         return {"error": f"unknown type '{job_type}' (use train/inference/transcribe/audio_edit/montage/tts_prepare/caption_variants/slides/health)"}
     except Exception as exc:
         _log("error", "job.failed", error=str(exc), type=job_type, tb=traceback.format_exc()[:2000])
+        _free_cuda()  # não deixa VRAM presa pro próximo job após crash
         return {"error": str(exc), "type": job_type, "traceback": traceback.format_exc()[:2000]}
 
 

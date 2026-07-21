@@ -90,7 +90,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   // aluno (uso interno/suporte).
   let voiceQuery = admin
     .from("voices")
-    .select("id, user_id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms")
+    .select("id, user_id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language")
     .eq("id", voiceId);
   if (!auth.is_admin) {
     voiceQuery = voiceQuery.or(`user_id.eq.${auth.user_id},is_stock.eq.true`);
@@ -172,6 +172,10 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     // e estrutural (VoxCPM Issue #302). Match com worker default.
     inference_timesteps:
       typeof body.inference_timesteps === "number" ? body.inference_timesteps : 15,
+    // Idioma da voz (detectado no treino): QA de 1ª palavra e fallback de
+    // transcrição do worker rodam no idioma CERTO (caso Joana: voz es com QA
+    // em pt reprovava sempre e virava loteria de retries).
+    language: voice.language || "pt",
   };
 
   // Pacing entre frases: precedência body > config da voz. Sem nenhum, o worker

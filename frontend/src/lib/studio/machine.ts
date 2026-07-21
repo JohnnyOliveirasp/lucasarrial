@@ -70,7 +70,7 @@ export async function startMachineTts(p: MachineProject): Promise<string> {
   const admin = getAdmin();
   const { data: voice } = await admin
     .from("voices")
-    .select("id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms")
+    .select("id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language")
     .eq("id", p.machine_voice_id ?? "")
     .maybeSingle();
   if (!voice || voice.status !== "ready" || !voice.lora_path) {
@@ -88,6 +88,7 @@ export async function startMachineTts(p: MachineProject): Promise<string> {
     lora_alpha: typeof voice.lora_alpha === "number" ? voice.lora_alpha : 16,
     cfg_value: 1.6,
     inference_timesteps: 15,
+    language: voice.language || "pt",
   };
   if (voice.reference_audio_path) {
     input.prompt_wav_url = await createPresignedGet(

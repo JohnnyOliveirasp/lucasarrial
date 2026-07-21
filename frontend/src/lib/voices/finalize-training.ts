@@ -34,6 +34,10 @@ export type TrainOutput = {
   /** QA anti-eco da amostra (worker): passed | retried_passed | failed. */
   sample_qa?: string | null;
   sample_qa_similarity?: number | null;
+  /** Texto realmente falado na amostra (idioma da voz) — worker e3ea664+. */
+  sample_text?: string | null;
+  /** Idioma detectado no áudio de treino (ISO: pt/es/en...) — worker e3ea664+. */
+  language?: string | null;
   error?: string;
   stdout_tail?: string;
   stderr_tail?: string;
@@ -43,18 +47,31 @@ export type TrainOutput = {
 const SAMPLE_TEXT =
   "Oi! Esta é a minha voz clonada. Se você está me ouvindo com clareza, o treinamento funcionou muito bem.";
 
-/** Erros de dataset inútil → o usuário não recebeu nada; devolvemos os créditos. */
-function isDatasetError(error: string | undefined): boolean {
-  return error === "insufficient_audio" || error === "no usable speech segments after VAD/chunk";
+/** Erros de dataset inútil → o usuário não recebeu nada; devolvemos os créditos.
+ * Checa também o erro CRU: quando o worker devolve {"error": ...}, o RunPod
+ * marca o job FAILED e o texto chega via runpodError (out.error vazio) — sem
+ * isso o usuário via "problema técnico, tente de novo" e re-tentava o MESMO
+ * arquivo ruim em loop (visto 3× em prod 21/07). */
+function isDatasetError(error: string | null | undefined): boolean {
+  if (!error) return false;
+  return (
+    error.includes("insufficient_audio") ||
+    error.includes("no usable speech segments")
+  );
 }
 
 function friendlyTrainError(out: TrainOutput, rawError: string): string {
-  if (isDatasetError(out.error)) {
+  if (isDatasetError(out.error) || isDatasetError(rawError)) {
     const useful = Math.round((out.useful_seconds ?? 0) / 60);
     const min = Math.round((out.min_required_seconds ?? 600) / 60);
+    const numbers =
+      typeof out.useful_seconds === "number"
+        ? `apenas ~${useful}min serviram para o treino (mínimo: ${min}min de fala limpa)`
+        : `não sobrou fala limpa suficiente para o treino`;
     return (
-      `Do áudio enviado, apenas ~${useful}min serviram para o treino (mínimo: ${min}min de fala limpa). ` +
-      `Seus créditos foram devolvidos. Grave num ambiente silencioso, falando continuamente, e tente de novo.`
+      `Do áudio enviado, ${numbers}. ` +
+      `Seus créditos foram devolvidos. Grave num ambiente silencioso, falando continuamente ` +
+      `e próximo ao microfone, e tente de novo com essa gravação nova.`
     );
   }
   // Falha técnica: culpa NOSSA, não do usuário — o estorno é automático.
@@ -141,6 +158,10 @@ export async function finalizeTraining(args: {
   if (success && typeof out.lora_alpha === "number") {
     update.lora_alpha = out.lora_alpha;
   }
+  if (success && typeof out.language === "string" && out.language) {
+    // Idioma detectado no treino — a geração/QA passam a rodar no idioma certo.
+    (update as Record<string, unknown>).language = out.language;
+  }
   await admin.from("voices").update(update).eq("id", voiceId);
 
   // ── Estorno em QUALQUER falha (dataset OU técnica): usuário não recebeu ──
@@ -167,7 +188,7 @@ export async function finalizeTraining(args: {
     }
 
     // Falha técnica → alerta imediato pro suporte (best-effort).
-    if (!isDatasetError(out.error)) {
+    if (!isDatasetError(out.error) && !isDatasetError(rawError)) {
       await alertSupportTrainFailure({
         userId,
         userEmail,
@@ -217,7 +238,7 @@ export async function finalizeTraining(args: {
       user_id: userId,
       voice_id: voiceId,
       name: "Amostra automática",
-      text_raw: SAMPLE_TEXT,
+      text_raw: out.sample_text || SAMPLE_TEXT,
       audio_path: sampleKey,
       duration_seconds: out.sample_seconds ?? null,
       status: "ready",

@@ -19,6 +19,13 @@ const ALLOWED_AUDIO_MIME = new Set([
   "audio/x-flac",
   "audio/ogg",
   "audio/webm",
+  // Gravadores de celular salvam AAC em container MP4 e o browser reporta
+  // video/mp4 (caso Joana 21/07). O worker extrai o áudio via ffmpeg.
+  "video/mp4",
+  "audio/aac",
+  "audio/x-aac",
+  "audio/aacp",
+  "audio/opus",
 ]);
 
 export type UploadSlot = {

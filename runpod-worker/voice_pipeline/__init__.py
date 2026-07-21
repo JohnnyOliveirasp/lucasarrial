@@ -14,6 +14,7 @@ from .preprocess import (
     cut_audio_by_segments,
 )
 from .training import (
+    detect_language,
     transcribe_audio_folder,
     transcribe_file,
     build_train_manifest,
@@ -34,6 +35,7 @@ __all__ = [
     "vad_segments_silero",
     "chunk_vad_segments",
     "cut_audio_by_segments",
+    "detect_language",
     "transcribe_audio_folder",
     "transcribe_file",
     "build_train_manifest",

@@ -122,7 +122,7 @@
       },
       "dropzone": {
         "title": "Drag files or an entire folder",
-        "hint": "MP3, WAV, M4A, FLAC, OGG · up to 20 files · non-audio is ignored",
+        "hint": "MP3, WAV, M4A, MP4, AAC, FLAC, OGG · up to 20 files · non-audio is ignored",
         "pickFiles": "Pick files",
         "pickFolder": "Pick folder"
       },
@@ -140,6 +140,7 @@
       "errors": {
         "tooMany": "Max {max} files per voice",
         "invalidType": "Unsupported file type",
+        "overMax": "Maximum of {max} minutes of audio per training — remove some files (the excess does not improve the voice).",
         "allDuplicates": "All selected files are already in the list",
         "partialOver": "Limit of {max} files — {ignored} were ignored",
         "partialDup": "{duplicates} file(s) were already in the list and ignored",

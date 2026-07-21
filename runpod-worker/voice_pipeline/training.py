@@ -25,6 +25,23 @@ def _get_whisper(model_name: str, device: str, compute_type: str):
     return _WHISPER_CACHE[key]
 
 
+def detect_language(
+    audio_path: Path | str,
+    model_name: str = "large-v3",
+    device: str = "cuda",
+    compute_type: str = "float16",
+) -> "tuple[str, float]":
+    """Detecta o idioma FALADO no áudio (código ISO: 'pt'/'es'/'en'...) e a
+    confiança 0..1. Caso Joana 2026-07-21: voz em espanhol era transcrita como
+    pt em TODO o pipeline (ref em portunhol, dataset errado, QA no idioma
+    errado). O chamador decide o fallback quando a confiança é baixa."""
+    model = _get_whisper(model_name, device, compute_type)
+    _segments, info = model.transcribe(
+        str(audio_path), language=None, vad_filter=True, beam_size=1
+    )
+    return (info.language or "pt", float(info.language_probability or 0.0))
+
+
 def transcribe_file(
     audio_path: Path | str,
     model_name: str = "large-v3",

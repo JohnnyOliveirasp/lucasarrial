@@ -12,6 +12,25 @@ DEFAULT_SAMPLE_TEXT = (
     "o treinamento funcionou muito bem."
 )
 
+# Amostra no IDIOMA da voz (caso Joana 2026-07-21: voz espanhola recebia a
+# amostra falada em português). Fallback = inglês pra idiomas sem tradução.
+SAMPLE_TEXTS = {
+    "pt": DEFAULT_SAMPLE_TEXT,
+    "es": (
+        "¡Hola! Esta es mi voz clonada. Si me escuchas con claridad, "
+        "el entrenamiento funcionó muy bien."
+    ),
+    "en": (
+        "Hi! This is my cloned voice. If you can hear me clearly, "
+        "the training worked very well."
+    ),
+}
+
+
+def sample_text_for(language: str | None) -> str:
+    key = (language or "pt").lower().split("-")[0]
+    return SAMPLE_TEXTS.get(key, SAMPLE_TEXTS["en"])
+
 
 def generate_training_sample(
     *,
@@ -77,3 +96,17 @@ def generate_training_sample(
     except Exception as exc:  # best-effort: treino já foi um sucesso
         log(level="error", event="sample.failed", error=str(exc))
         return {"sample_uploaded": False, "sample_seconds": None, "sample_error": str(exc)[:300]}
+    finally:
+        # Solta a VRAM do modelo da amostra: o worker é quente e serve treino
+        # e inferência — modelo esquecido na GPU = OOM pro próximo job.
+        import gc
+        try:
+            del model
+        except NameError:
+            pass
+        gc.collect()
+        try:
+            import torch
+            torch.cuda.empty_cache()
+        except Exception:
+            pass

@@ -9,9 +9,12 @@ import { filterAudioFiles, gatherAudioFromDataTransfer } from "@/lib/audio/colle
 import { listClips, deleteClip } from "@/lib/audio/clip-store";
 
 const MIN_DURATION_SECONDS = 20 * 60; // 20 minutos
+// Teto: treino com áudio demais estoura o tempo máximo de execução do worker
+// (visto em prod 21/07: 79min → executionTimeout). 60min treina com folga.
+const MAX_DURATION_SECONDS = 60 * 60;
 const REC_DURATION_SECONDS = 30 * 60; // 30 minutos
 const MAX_FILES = 20;
-const ACCEPT = ".mp3,.wav,.m4a,.flac,.ogg,.webm,audio/*";
+const ACCEPT = ".mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4,.aac,.opus,audio/*";
 
 type LocalFile = {
   id: string;
@@ -95,7 +98,8 @@ export function VoiceCreator() {
     () => files.reduce((acc, f) => acc + (f.duration ?? 0), 0),
     [files],
   );
-  const meetsMinimum = totalDuration >= MIN_DURATION_SECONDS;
+  const overMaximum = totalDuration > MAX_DURATION_SECONDS;
+  const meetsMinimum = totalDuration >= MIN_DURATION_SECONDS && !overMaximum;
   const missing = Math.max(0, MIN_DURATION_SECONDS - totalDuration);
 
   const addFiles = useCallback(async (incoming: File[]) => {
@@ -358,6 +362,15 @@ export function VoiceCreator() {
         meets={meetsMinimum}
         t={t}
       />
+
+      {overMaximum && (
+        <p
+          role="alert"
+          className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]"
+        >
+          {t("errors.overMax", { max: Math.round(MAX_DURATION_SECONDS / 60) })}
+        </p>
+      )}
 
       {error && (
         <p

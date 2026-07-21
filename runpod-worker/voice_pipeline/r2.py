@@ -58,19 +58,32 @@ def upload_file_to_presigned_url(
     presigned_url: str,
     content_type: str = "application/octet-stream",
     timeout: int = 120,
+    attempts: int = 3,
 ) -> None:
-    """PUT em URL presigned. Stream do arquivo direto da disk."""
+    """PUT em URL presigned. Stream do arquivo direto da disk.
+
+    Retry com backoff em 5xx/timeout (janela de instabilidade da Cloudflare
+    21/07 derrubou treino/gerações com 502 e read timeout transitórios)."""
     file_path = Path(file_path)
     if not file_path.exists():
         raise FileNotFoundError(file_path)
-    with file_path.open("rb") as f:
-        resp = requests.put(
-            presigned_url,
-            data=f,
-            headers={"Content-Type": content_type},
-            timeout=timeout,
-        )
-    if resp.status_code >= 300:
-        raise RuntimeError(
-            f"R2 upload failed ({resp.status_code}): {resp.text[:200]}"
-        )
+    last_error: str = ""
+    for i in range(attempts):
+        try:
+            with file_path.open("rb") as f:
+                resp = requests.put(
+                    presigned_url,
+                    data=f,
+                    headers={"Content-Type": content_type},
+                    timeout=timeout,
+                )
+            if resp.status_code < 300:
+                return
+            last_error = f"R2 upload failed ({resp.status_code}): {resp.text[:200]}"
+            if resp.status_code < 500:
+                raise RuntimeError(last_error)  # 4xx não é transitório
+        except requests.RequestException as exc:
+            last_error = f"R2 upload request error: {exc}"
+        if i < attempts - 1:
+            time.sleep(2 * (i + 1))
+    raise RuntimeError(f"{last_error} (after {attempts} attempts)")

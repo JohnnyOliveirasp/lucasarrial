@@ -5,7 +5,10 @@
  *   - Aceita DataTransferItemList de drag&drop (incluindo pastas via webkitGetAsEntry)
  */
 
-const AUDIO_EXT_RE = /\.(mp3|wav|m4a|flac|ogg|webm|aac|wma)$/i;
+// mp4/opus: gravadores de celular salvam AAC em container MP4 (caso Joana
+// 21/07: "Tipo de archivo no soportado" num .m4a.mp4 de 30min). O worker
+// converte qualquer formato via ffmpeg — aqui é só deixar entrar.
+const AUDIO_EXT_RE = /\.(mp3|wav|m4a|flac|ogg|webm|aac|wma|mp4|opus)$/i;
 
 export function isAudioFile(file: File): boolean {
   if (file.type && file.type.toLowerCase().startsWith("audio/")) return true;

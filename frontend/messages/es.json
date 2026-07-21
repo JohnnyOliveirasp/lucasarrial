@@ -122,7 +122,7 @@
       },
       "dropzone": {
         "title": "Arrastra archivos o una carpeta entera",
-        "hint": "MP3, WAV, M4A, FLAC, OGG · hasta 20 archivos · no-audio se ignora",
+        "hint": "MP3, WAV, M4A, MP4, AAC, FLAC, OGG · hasta 20 archivos · no-audio se ignora",
         "pickFiles": "Elegir archivos",
         "pickFolder": "Elegir carpeta"
       },
@@ -140,6 +140,7 @@
       "errors": {
         "tooMany": "Máximo {max} archivos por voz",
         "invalidType": "Tipo de archivo no soportado",
+        "overMax": "Máximo de {max} minutos de audio por entrenamiento — quita algunos archivos (el excedente no mejora la voz).",
         "allDuplicates": "Todos los archivos ya están en la lista",
         "partialOver": "Límite de {max} archivos — {ignored} fueron ignorados",
         "partialDup": "{duplicates} archivo(s) ya estaban en la lista y fueron ignorados",
