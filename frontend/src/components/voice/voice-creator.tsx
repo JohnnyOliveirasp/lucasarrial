@@ -62,19 +62,25 @@ export function VoiceCreator() {
         const kept = sorted.slice(0, MAX_FILES);
         const additions: LocalFile[] = kept
           .sort((a, b) => a.createdAt - b.createdAt)
-          .map((c, i) => ({
-            id: `rec-${c.id}`,
-            // Normaliza o mime ("audio/webm;codecs=opus" → "audio/webm"):
-            // o backend valida por igualdade exata.
-            file: new File([c.blob], `gravacao-${String(i + 1).padStart(2, "0")}.webm`, {
-              type: "audio/webm",
-            }),
-            // Duração medida pelo próprio gravador (blobs do MediaRecorder
-            // reportam Infinity no <audio> — não dá pra re-medir).
-            duration: c.seconds,
-            progress: 0,
-            state: "idle",
-          }));
+          .map((c, i): LocalFile => {
+            // O Gravador atual salva WAV (encodeWav); clipes antigos podem ser
+            // webm/opus do MediaRecorder. Nomeia pelo tipo REAL do blob — o
+            // rótulo errado (.webm em bytes WAV) já atrapalhou diagnóstico de
+            // treino falho (caso VOZ MAE 2, 21/07). Mime normalizado sem
+            // ";codecs=..." porque o backend valida por igualdade exata.
+            const isWav = (c.blob.type || "").toLowerCase().includes("wav");
+            return {
+              id: `rec-${c.id}`,
+              file: new File([c.blob], `gravacao-${String(i + 1).padStart(2, "0")}.${isWav ? "wav" : "webm"}`, {
+                type: isWav ? "audio/wav" : "audio/webm",
+              }),
+              // Duração medida pelo próprio gravador (blobs do MediaRecorder
+              // reportam Infinity no <audio> — não dá pra re-medir).
+              duration: c.seconds,
+              progress: 0,
+              state: "idle",
+            };
+          });
         recorderClipIds.current = kept.map((c) => c.id);
         setFiles((prev) => [...additions, ...prev]);
         setRecorderImport({ count: kept.length, skipped: clips.length - kept.length });

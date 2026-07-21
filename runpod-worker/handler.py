@@ -210,8 +210,13 @@ def _handle_train(inp: dict) -> dict:
     downloaded = download_to_dir(audio_urls, raw_dir)
     _log("info", "train.download.done", count=len(downloaded))
 
-    # Pipeline por arquivo
+    # Pipeline por arquivo. Guardamos stats por arquivo (duração decodificada,
+    # fala achada pelo VAD, chunks aproveitados): quando o treino zera, o output
+    # diz EXATAMENTE onde o áudio morreu (decode? silêncio? clipes curtos?) —
+    # no caso VOZ MAE 2 (21/07) os arquivos já tinham sido apagados e ficamos
+    # sem como diagnosticar.
     next_idx = 0
+    preprocess_stats = []
     for src in downloaded:
         _log("info", "train.preprocess", file=src.name)
         # Demucs precisa de WAV stereo 44.1k; nosso extract gera mono 16k.
@@ -230,10 +235,26 @@ def _handle_train(inp: dict) -> dict:
         chunks = chunk_vad_segments(vad, min_seconds=5.0, max_seconds=30.0)
         cut = cut_audio_by_segments(normalized, chunks, dataset_dir, start_index=next_idx)
         next_idx += len(cut)
-        _log("info", "train.preprocess.done", file=src.name, chunks=len(cut))
+        import soundfile as _sf_stat
+        try:
+            _ninfo = _sf_stat.info(str(normalized))
+            decoded_s = round(float(_ninfo.frames) / float(_ninfo.samplerate or 1), 1)
+        except Exception:
+            decoded_s = None
+        stat = {
+            "file": src.name,
+            "decoded_s": decoded_s,
+            "vad_speech_s": round(sum(e - s for s, e in vad), 1),
+            "chunks": len(cut),
+        }
+        preprocess_stats.append(stat)
+        _log("info", "train.preprocess.done", **stat)
 
     if next_idx == 0:
-        return {"error": "no usable speech segments after VAD/chunk"}
+        return {
+            "error": "no usable speech segments after VAD/chunk",
+            "preprocess_stats": preprocess_stats,
+        }
 
     # ── Áudio ÚTIL pós-limpeza (anti-churn) ────────────────────────────────
     # O usuário manda 20min BRUTOS; Demucs+VAD podem descartar quase tudo
