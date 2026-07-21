@@ -7,6 +7,7 @@ import { Link, usePathname } from "@/i18n/navigation";
 const NAV = [
   { href: "/admin", label: "Visão geral", exact: true },
   { href: "/admin/usuarios", label: "Usuários", exact: false },
+  { href: "/admin/falhas", label: "Falhas", exact: false },
   { href: "/admin/campanhas", label: "Campanhas", exact: false },
   { href: "/admin/agente", label: "Agente", exact: false },
   { href: "/admin/historico", label: "Históricos", exact: false },
