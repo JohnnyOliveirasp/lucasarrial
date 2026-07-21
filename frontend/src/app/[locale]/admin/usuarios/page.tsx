@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, ChevronDown } from "lucide-react";
+import { Search, ChevronDown, KeyRound, Check, Copy } from "lucide-react";
 import type { AdminUser } from "@/lib/admin/queries";
 
 const num = (n: number) => n.toLocaleString("pt-BR");
@@ -141,6 +141,7 @@ export default function UsuariosPage() {
                           <Detail label="Origem" value={u.access_source || "—"} />
                           <Detail label="Último login" value={rel(u.last_sign_in_at)} />
                         </div>
+                        <RecoveryLink email={u.email} />
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -150,6 +151,72 @@ export default function UsuariosPage() {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Gera link de recuperação de senha pro suporte mandar por WhatsApp — casos
+ * em que o e-mail do aluno não chega (webmail corporativo). Link vale ~1h. */
+function RecoveryLink({ email }: { email: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [link, setLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function generate() {
+    setState("loading");
+    const res = await fetch("/api/v1/admin/users/recovery-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.link) {
+      setLink(json.link);
+      setState("done");
+    } else {
+      setState("error");
+    }
+  }
+
+  async function copy() {
+    if (!link) return;
+    await navigator.clipboard.writeText(link).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="border-t border-[var(--hairline)] px-4 py-3">
+      {state === "done" && link ? (
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--body)]">{link}</span>
+          <button
+            type="button"
+            onClick={copy}
+            className="inline-flex h-8 flex-none items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] px-3 font-mono text-[11px] text-[var(--ink)] transition-colors hover:bg-[var(--surface-elevated)]"
+          >
+            {copied ? <Check className="size-3.5 text-[var(--status-online)]" /> : <Copy className="size-3.5" />}
+            {copied ? "copiado" : "copiar"}
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={generate}
+            disabled={state === "loading"}
+            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] px-3 font-mono text-[11px] text-[var(--ink)] transition-colors hover:bg-[var(--surface-elevated)] disabled:opacity-60"
+          >
+            <KeyRound className="size-3.5" />
+            {state === "loading" ? "gerando…" : "Gerar link de acesso"}
+          </button>
+          <span className="text-[11px] text-[var(--ash)]">
+            {state === "error"
+              ? "falhou — tente de novo"
+              : "cria senha nova sem depender de e-mail · vale 1h"}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
