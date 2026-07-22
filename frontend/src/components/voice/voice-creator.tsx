@@ -40,6 +40,10 @@ export function VoiceCreator() {
   const router = useRouter();
 
   const [step, setStep] = useState<Step>("form");
+  // 🐛 BUGFIX 2026-07-22: o step volta pra "upload" enquanto os arquivos sobem
+  // pro R2, reativando o botão "Treinar" — segundo clique criava voz duplicada
+  // (2 treinos de 10k cr). `busy` cobre do clique até a navegação final.
+  const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
   const [consent, setConsent] = useState(false);
   const [files, setFiles] = useState<LocalFile[]>([]);
@@ -209,9 +213,11 @@ export function VoiceCreator() {
   }
 
   async function startUpload() {
+    if (busy) return;
     if (!meetsMinimum) return;
     if (files.length === 0) return;
 
+    setBusy(true);
     setStep("submitting");
     setError(null);
 
@@ -232,12 +238,14 @@ export function VoiceCreator() {
       });
     } catch {
       setStep("upload");
+      setBusy(false);
       setError(t("errors.network"));
       return;
     }
 
     if (!response.ok) {
       setStep("upload");
+      setBusy(false);
       const body = await response.json().catch(() => ({}));
       setError(body?.error?.message || t("errors.generic"));
       return;
@@ -261,6 +269,7 @@ export function VoiceCreator() {
 
     const failed = results.filter((r) => r.status === "rejected").length;
     if (failed > 0) {
+      setBusy(false);
       setError(t("errors.uploadFailed", { count: failed }));
       return;
     }
@@ -281,6 +290,7 @@ export function VoiceCreator() {
     );
 
     if (!completeResp.ok) {
+      setBusy(false);
       const body = await completeResp.json().catch(() => ({}));
       setError(body?.error?.message || t("errors.generic"));
       return;
@@ -402,10 +412,10 @@ export function VoiceCreator() {
         <button
           type="button"
           onClick={startUpload}
-          disabled={!meetsMinimum || step === "submitting" || files.length === 0}
+          disabled={!meetsMinimum || busy || step === "submitting" || files.length === 0}
           className={PILL}
         >
-          {step === "submitting"
+          {busy || step === "submitting"
             ? t("submitting")
             : t("train", { duration: formatDuration(totalDuration) })}
         </button>

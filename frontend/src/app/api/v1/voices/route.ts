@@ -10,6 +10,7 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import {
   badRequest,
+  jsonError,
   jsonOk,
   serverError,
   unauthorized,
@@ -54,6 +55,26 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = getAdmin();
+
+  // 🐛 BUGFIX 2026-07-22: com o botão "Treinar" ativo durante o upload, o
+  // segundo clique criava uma voz gêmea (2 treinos de 10k cr pro mesmo áudio;
+  // 5 alunos afetados em 24h). Mesma voz ainda ativa = 409.
+  const { data: dup } = await admin
+    .from("voices")
+    .select("id")
+    .eq("user_id", auth.user_id)
+    .eq("name", name)
+    .in("status", ["uploading", "validating", "awaiting_training", "training"])
+    .gte("created_at", new Date(Date.now() - 60 * 60 * 1000).toISOString())
+    .limit(1)
+    .maybeSingle();
+  if (dup) {
+    return jsonError(
+      "duplicate_voice",
+      "Você já tem um treino desta voz em andamento. Aguarde ele terminar antes de criar outra.",
+      409,
+    );
+  }
 
   const { data: voice, error: insertError } = await admin
     .from("voices")
