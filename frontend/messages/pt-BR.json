@@ -1160,6 +1160,7 @@
       "accumulated": "Fala acumulada",
       "clipping": "Áudio estourando — afaste o microfone ou fale mais baixo",
       "noisy": "Ambiente barulhento — a qualidade do clone cai. Procure um lugar silencioso (sem TV, rua ou ar-condicionado).",
+      "deadMic": "Não estou te ouvindo — o microfone parece mudo. Verifique se é o microfone certo nas configurações do navegador/sistema e se ele não está desligado.",
       "recordingAuto": "Gravando… para sozinho após {seconds}s de silêncio",
       "activateMic": "Ativar microfone",
       "requesting": "Pedindo permissão…",
@@ -1173,7 +1174,8 @@
       "keepRecording": "Pode continuar gravando se quiser melhorar — quanto mais limpo, melhor a voz clonada.",
       "errors": {
         "micDenied": "Permissão de microfone negada — libere o mic no navegador e tente de novo.",
-        "micGeneric": "Não consegui acessar o microfone."
+        "micGeneric": "Não consegui acessar o microfone.",
+        "muteClip": "A gravação saiu muda (nenhuma voz captada) e foi descartada. Verifique o microfone e grave de novo."
       }
     },
     "script": {

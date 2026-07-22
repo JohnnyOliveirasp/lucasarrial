@@ -1160,6 +1160,7 @@
       "accumulated": "Speech recorded",
       "clipping": "Audio is clipping — move the mic away or speak more softly",
       "noisy": "Noisy environment — clone quality drops. Find a quiet spot (no TV, street noise or AC).",
+      "deadMic": "I can't hear you — the microphone seems muted. Check that the right mic is selected in your browser/system settings and that it isn't turned off.",
       "recordingAuto": "Recording… stops on its own after {seconds}s of silence",
       "activateMic": "Enable microphone",
       "requesting": "Requesting permission…",
@@ -1173,7 +1174,8 @@
       "keepRecording": "You can keep recording to improve it — the cleaner the audio, the better the cloned voice.",
       "errors": {
         "micDenied": "Microphone permission denied — allow the mic in your browser and try again.",
-        "micGeneric": "Couldn't access the microphone."
+        "micGeneric": "Couldn't access the microphone.",
+        "muteClip": "The recording came out silent (no voice captured) and was discarded. Check your microphone and record again."
       }
     },
     "script": {

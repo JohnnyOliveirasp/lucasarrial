@@ -16,6 +16,13 @@ const CLIP_PEAK = 0.99; // saturação (clipping)
 // barulhento (ar-condicionado, rua, TV) — o Demucs/VAD vai descartar áudio e
 // o clone sai pior. Aviso em tempo real (anti-churn).
 const NOISE_FLOOR_WARN = 0.008;
+// 🐛 CASO VOZ 1 MAE (22/07): mic mudo (dispositivo errado/stream morto) grava
+// silêncio digital absoluto (-91dB) — todo mic REAL num ambiente real fica
+// acima disso. Abaixo do piso por DEAD_MIC_MS contínuos = "não estou te
+// ouvindo"; clipe inteiro sem fala nunca é salvo (a aluna gravou 20min de
+// nada, treinou 4x e falhou 4x sem entender o porquê).
+const DEAD_MIC_RMS = 0.0003;
+const DEAD_MIC_MS = 4000;
 const TARGET_SECONDS = 20 * 60; // meta de fala pro treino
 
 type Status = "idle" | "requesting" | "ready" | "recording" | "denied";
@@ -34,7 +41,9 @@ export function VoiceRecorder() {
   const [error, setError] = useState<string | null>(null);
   const [clipping, setClipping] = useState(false);
   const [noisy, setNoisy] = useState(false);
+  const [deadMic, setDeadMic] = useState(false);
   const noiseEmaRef = useRef<number | null>(null);
+  const lastSoundRef = useRef(0);
   const [clips, setClips] = useState<ClipView[]>([]);
 
   const ctxRef = useRef<AudioContext | null>(null);
@@ -108,8 +117,14 @@ export function VoiceRecorder() {
     if (!ctx || samples.length === 0) return;
     const dur = samples.length / ctx.sampleRate;
     if (dur < 0.4) return; // descarta clique acidental
+    // Clipe onde NUNCA houve fala não vira dataset — mic mudo salvo em
+    // IndexedDB seguia até o treino e falhava lá (caso VOZ 1 MAE).
+    if (!hasSpokenRef.current) {
+      setError(t("errors.muteClip"));
+      return;
+    }
     finalizeClip(encodeWav(samples, ctx.sampleRate), dur);
-  }, [finalizeClip]);
+  }, [finalizeClip, t]);
 
   const tick = useCallback(() => {
     const an = analyserRef.current;
@@ -123,6 +138,11 @@ export function VoiceRecorder() {
       }
       const r = rms(buf);
       setLevel(Math.min(1, r * 6));
+      // Mic mudo: silêncio DIGITAL contínuo (≠ ambiente silencioso, que tem
+      // piso de ruído). Vale com o mic aberto mesmo antes de gravar.
+      const nowMs = performance.now();
+      if (r > DEAD_MIC_RMS) lastSoundRef.current = nowMs;
+      setDeadMic(nowMs - lastSoundRef.current > DEAD_MIC_MS);
       // Piso de ruído (frames SEM fala): média móvel exponencial. Vale com o
       // mic aberto mesmo antes de gravar — a pessoa arruma o ambiente ANTES.
       if (r <= SPEECH_RMS) {
@@ -186,6 +206,7 @@ export function VoiceRecorder() {
       worklet.connect(mute);
       mute.connect(ctx.destination);
 
+      lastSoundRef.current = performance.now(); // zera o relógio do mic mudo
       setStatus("ready");
       rafRef.current = requestAnimationFrame(tick);
     } catch (e) {
@@ -199,6 +220,7 @@ export function VoiceRecorder() {
   }
 
   function startRecording() {
+    setError(null);
     chunksRef.current = [];
     hasSpokenRef.current = false;
     startedRef.current = performance.now();
@@ -310,7 +332,13 @@ export function VoiceRecorder() {
         </p>
       )}
 
-      {noisy && !clipping && (status === "ready" || status === "recording") && (
+      {deadMic && (status === "ready" || status === "recording") && (
+        <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[10px] tracking-wide text-[var(--status-error)]">
+          <AlertCircle className="h-4 w-4" /> {t("deadMic")}
+        </p>
+      )}
+
+      {noisy && !clipping && !deadMic && (status === "ready" || status === "recording") && (
         <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-deep)] px-3 py-2 font-mono text-[10px] tracking-wide text-[var(--status-warn)]">
           <AlertTriangle className="h-4 w-4" /> {t("noisy")}
         </p>
