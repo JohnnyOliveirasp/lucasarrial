@@ -70,24 +70,30 @@ async function getJson<T>(url: string): Promise<T> {
 
 type SubmitOpts = {
   webhook?: string;
+  /** policy.executionTimeout do job — SEM isso vale o default do endpoint
+   *  (20min desde 22/07; era 10min e matava treino em GPU lenta/worker frio). */
+  executionTimeoutMs?: number;
 };
+
+function submitBody(input: unknown, opts: SubmitOpts): Record<string, unknown> {
+  const body: Record<string, unknown> = { input };
+  if (opts.webhook) body.webhook = opts.webhook;
+  if (opts.executionTimeoutMs) body.policy = { executionTimeout: opts.executionTimeoutMs };
+  return body;
+}
 
 export async function runpodSubmitTrain(
   input: unknown,
   opts: SubmitOpts = {},
 ): Promise<RunpodRunResponse> {
-  const body: Record<string, unknown> = { input };
-  if (opts.webhook) body.webhook = opts.webhook;
-  return postJson<RunpodRunResponse>(`${BASE}/${trainEndpoint()}/run`, body);
+  return postJson<RunpodRunResponse>(`${BASE}/${trainEndpoint()}/run`, submitBody(input, opts));
 }
 
 export async function runpodSubmitInference(
   input: unknown,
   opts: SubmitOpts = {},
 ): Promise<RunpodRunResponse> {
-  const body: Record<string, unknown> = { input };
-  if (opts.webhook) body.webhook = opts.webhook;
-  return postJson<RunpodRunResponse>(`${BASE}/${inferenceEndpoint()}/run`, body);
+  return postJson<RunpodRunResponse>(`${BASE}/${inferenceEndpoint()}/run`, submitBody(input, opts));
 }
 
 export async function runpodGetStatus(jobId: string, endpoint?: string): Promise<RunpodStatusResponse> {

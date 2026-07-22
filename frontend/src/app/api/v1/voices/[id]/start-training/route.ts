@@ -45,6 +45,19 @@ const DEFAULT_MAX_STEPS = 500;
 // comportamento inalterado pro app; es/en usados pelas Vozes Prontas.
 const TRAIN_LANGUAGES = new Set(["pt", "es", "en"]);
 
+/**
+ * Teto de execução do job (policy.executionTimeout), como nos clones
+ * (video-clone/config.ts). Medido em prod 21-22/07: treino de dataset
+ * 20-80min roda 6-8min em GPU rápida, mas worker frio + GPU lenta passou de
+ * 10min (default antigo do endpoint → "executionTimeout exceeded"). Base
+ * 20min pro cold start + 0,3s de GPU por segundo de áudio: 60min de áudio →
+ * teto 38min. Rede de segurança, não meta.
+ */
+function trainExecutionTimeoutMs(durationSeconds: number | null): number {
+  const dur = Math.ceil(durationSeconds || 3600); // sem duração conhecida = pior caso
+  return (20 * 60 + Math.ceil(dur * 0.3)) * 1000;
+}
+
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
@@ -64,7 +77,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   const { data: voice, error: loadErr } = await admin
     .from("voices")
-    .select("id, user_id, status, raw_audio_paths")
+    .select("id, user_id, status, raw_audio_paths, duration_seconds")
     .eq("id", id)
     .eq("user_id", auth.user_id)
     .maybeSingle();
@@ -157,7 +170,10 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         max_steps: DEFAULT_MAX_STEPS,
         language,
       },
-      { webhook: webhookUrlFor("training") },
+      {
+        webhook: webhookUrlFor("training"),
+        executionTimeoutMs: trainExecutionTimeoutMs(voice.duration_seconds),
+      },
     );
   } catch (e) {
     return serverError(
