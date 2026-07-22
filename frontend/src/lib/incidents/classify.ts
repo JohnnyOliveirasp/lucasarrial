@@ -33,7 +33,15 @@ export const KIND_LABELS: Record<string, string> = {
 export function classifyCause(error: string): IncidentCause {
   const e = (error || "").toLowerCase();
   if (!e) return "unknown";
-  if (e.includes("insufficient_audio") || e.includes("no usable speech")) {
+  if (
+    e.includes("insufficient_audio") ||
+    e.includes("no usable speech") ||
+    // Desde fdcc75c o voices.error_message guarda a MENSAGEM AMIGÁVEL pro
+    // usuário, não o código do worker — sem estes padrões o incidente caía em
+    // "unknown" (gap achado pelo Vigia na 1ª execução, incidente 4eed0e0d).
+    e.includes("fala limpa") ||
+    e.includes("serviram para o treino")
+  ) {
     return "user_dataset";
   }
   if (e.includes("out of memory") || e.includes("outofmemoryerror") || e.includes("cuda")) {
