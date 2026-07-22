@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { useRouter } from "@/i18n/navigation";
 import {
   Users,
   BadgeDollarSign,
@@ -12,7 +12,7 @@ import {
   AlertTriangle,
   Wifi,
 } from "lucide-react";
-import type { AdminData, LiveCloning, Failure } from "@/lib/admin/queries";
+import type { AdminData, LiveCloning } from "@/lib/admin/queries";
 import type { RunpodHealth } from "@/lib/admin/runpod";
 import { PeriodFilter, currentKey, labelFor, type Gran } from "@/components/admin/period-filter";
 import { FinanceSection } from "@/components/admin/finance-section";
@@ -33,8 +33,7 @@ export function DashboardClient() {
   const [periodKey, setPeriodKey] = useState<string>(() => currentKey("month"));
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [failuresOpen, setFailuresOpen] = useState(false);
-  const [failures, setFailures] = useState<Failure[] | null>(null);
+  const router = useRouter();
 
   const fetchData = useCallback(async (g: Gran, k: string) => {
     try {
@@ -59,16 +58,6 @@ export function DashboardClient() {
     setPeriodKey(k);
   };
   const periodLabel = `em ${labelFor(gran, periodKey)}`;
-
-  const toggleFailures = async () => {
-    const next = !failuresOpen;
-    setFailuresOpen(next);
-    if (next && failures === null) {
-      const res = await fetch("/api/v1/admin/failures", { cache: "no-store" });
-      const json = await res.json().catch(() => ({}));
-      setFailures(res.ok ? json.failures ?? [] : []);
-    }
-  };
 
   if (!data) {
     return (
@@ -146,29 +135,16 @@ export function DashboardClient() {
           <KpiCard label="Clonando agora" value={num(m.voices_training)} icon={Activity} hint="ao vivo" />
           <KpiCard label="Treinos OK" value={num(m.trainings_done)} icon={Mic2} hint={`+${num(m.trainings_period)} ${periodLabel}`} />
           <KpiCard label="Créditos gastos" value={num(m.credits_consumed)} icon={TrendingUp} hint={periodLabel} />
+          {/* O detalhe das falhas mora na aba /admin/falhas (incidentes com
+              status + notas do agente) — aqui só o número; clique navega. */}
           <KpiCard
             label="Falhas"
             value={num(failuresTotal)}
             tone={failuresTotal > 0 ? "bad" : "good"}
-            onClick={toggleFailures}
-            active={failuresOpen}
+            onClick={() => router.push("/admin/falhas")}
             hint={`${num(m.trainings_failed)} treino · ${num(m.gens_failed)} geração · ${num(m.voices_failed)} voz`}
           />
         </div>
-
-        <AnimatePresence initial={false}>
-          {failuresOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.25, ease: "easeOut" }}
-              className="overflow-hidden"
-            >
-              <FailuresList failures={failures} />
-            </motion.div>
-          )}
-        </AnimatePresence>
       </section>
     </div>
   );
@@ -189,37 +165,3 @@ function Header({ gran, periodKey, onPeriod }: { gran: Gran; periodKey: string; 
   );
 }
 
-const KIND_LABEL: Record<Failure["kind"], string> = {
-  training: "Treino",
-  voice: "Voz",
-  generation: "Geração",
-};
-
-function FailuresList({ failures }: { failures: Failure[] | null }) {
-  if (failures === null) {
-    return <div className="px-1 py-3 font-mono text-[12px] text-[var(--ash)]">carregando falhas…</div>;
-  }
-  if (failures.length === 0) {
-    return <div className="px-1 py-3 font-mono text-[12px] text-[var(--ash)]">nenhuma falha registrada 🎉</div>;
-  }
-  return (
-    <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
-      <ul>
-        {failures.map((f, i) => (
-          <li key={`${f.kind}-${f.id}`} className={`flex items-start gap-3 bg-[var(--surface-card)] px-4 py-3 ${i > 0 ? "border-t border-[var(--hairline)]" : ""}`}>
-            <span className="mt-0.5 inline-flex flex-none items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--status-error)]/40 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[var(--status-error)]">
-              <AlertTriangle className="size-3" />
-              {KIND_LABEL[f.kind]}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] text-[var(--body)]">{f.error || "sem mensagem de erro"}</div>
-              <div className="mt-0.5 font-mono text-[10px] text-[var(--ash)]">
-                {f.email || "—"} · {new Date(f.at).toLocaleString("pt-BR")}
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
