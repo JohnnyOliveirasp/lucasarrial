@@ -68,6 +68,13 @@ export function classifyCause(error: string): IncidentCause {
 /** Assinatura estável da causa raiz: tira uuids, urls, números e paths. */
 export function errorSignature(kind: string, error: string): string {
   const cause = classifyCause(error);
+  // "voice" e "training" são a MESMA falha vista de duas tabelas — unifica.
+  const k = kind === "voice" ? "training" : kind;
+  // user_dataset: a CAUSA já é a raiz — o texto varia (erro cru do worker ×
+  // mensagem amigável do voices.error_message desde fdcc75c) e duplicava o
+  // incidente (acf8acd6 × 014bb108, gap achado pelo Vigia 23/07). Demais
+  // causas mantêm o head: dentro de infra/bug o texto distingue problemas.
+  if (cause === "user_dataset") return `${k}:${cause}`;
   const head = (error || "")
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, "<url>")
@@ -77,8 +84,6 @@ export function errorSignature(kind: string, error: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 120);
-  // "voice" e "training" são a MESMA falha vista de duas tabelas — unifica.
-  const k = kind === "voice" ? "training" : kind;
   return `${k}:${cause}:${head}`;
 }
 
