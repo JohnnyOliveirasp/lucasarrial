@@ -96,14 +96,15 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const sentences = sentencesFromWords(words);
   if (sentences.length === 0) return badRequest("Este projeto não tem transcrição.");
 
-  // Banco pessoal (cenas prontas mais recentes) pro planejador reusar.
+  // Banco pro planejador reusar: cenas do PRÓPRIO aluno + acervo
+  // COMPARTILHADO (F3, mig 49: b-roll curado pelo admin — custo zero).
   const { data: bankRows } = await admin
     .from("studio_scenes")
     .select("id, concept")
-    .eq("user_id", auth.user_id)
+    .or(`user_id.eq.${auth.user_id},shared.eq.true`)
     .eq("status", "ready")
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(80);
   const bank = (bankRows ?? []) as BankScene[];
 
   let plan;

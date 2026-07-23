@@ -617,6 +617,8 @@ export type StudioSceneRow = {
   qa_retried: boolean;
   /** Referência do débito da tentativa paga (chave do estorno automático). */
   debit_ref: string | null;
+  /** F3 (mig 49): b-roll curado pelo admin — entra no reuso de TODOS. */
+  shared: boolean;
   image_path: string | null;
   video_path: string | null;
   error_message: string | null;

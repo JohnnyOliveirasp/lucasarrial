@@ -133,14 +133,15 @@ async function dispatchScenes(p: MachineProject, email: string): Promise<void> {
   if (sentences.length === 0) throw new Error("Máquina sem transcrição pra planejar cenas.");
 
   // Banco: só b-roll entra no reuso (cena de produto é específica — §2.7).
+  // F3 (mig 49): inclui o acervo COMPARTILHADO curado — reuso a custo zero.
   const { data: bankRows } = await admin
     .from("studio_scenes")
     .select("id, concept")
-    .eq("user_id", p.user_id)
+    .or(`user_id.eq.${p.user_id},shared.eq.true`)
     .eq("status", "ready")
     .eq("kind", "broll")
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(80);
   const bank = (bankRows ?? []) as BankScene[];
   const plan = await planScenes(sentences, bank);
 
