@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY handler.py .
 COPY sample_gen.py .
 COPY audio_edit.py .
+COPY video_edit.py .
 COPY montage.py .
 COPY finish.py .
 COPY tts_prepare.py .
