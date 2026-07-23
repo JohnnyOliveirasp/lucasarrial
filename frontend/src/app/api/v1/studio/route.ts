@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const admin = getAdmin();
 
-  let body: { audio_key?: unknown; name?: unknown } = {};
+  let body: { audio_key?: unknown; name?: unknown; edit_profile?: unknown } = {};
   try {
     body = await request.json();
   } catch {
@@ -54,6 +54,8 @@ export async function POST(request: NextRequest) {
   }
   const audioKey = typeof body.audio_key === "string" ? body.audio_key.trim() : "";
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 120) : "";
+  // F1: perfil de corte do Cérebro 2 — Dinâmico (default) ou Natural.
+  const editProfile = body.edit_profile === "natural" ? "natural" : "dinamico";
   if (!audioKey.startsWith(`${auth.user_id}/studio/uploads/`)) {
     return badRequest("Áudio inválido.");
   }
@@ -117,6 +119,7 @@ export async function POST(request: NextRequest) {
         audio_url: audioUrl,
         output_upload_url: cleanUploadUrl,
         language: "pt",
+        edit_profile: editProfile,
       },
       { webhook: webhookUrlFor("generation") },
     );
