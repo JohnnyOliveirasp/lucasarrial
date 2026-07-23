@@ -93,10 +93,10 @@ export async function POST(request: NextRequest) {
     return jsonOk({ handled: "generation" });
   }
 
-  // 3. Tenta achar em studio_projects (Vídeo Estúdio: audio_edit)
+  // 3. Tenta achar em studio_projects (Estúdio: audio_edit OU video_edit F2)
   const { data: studio } = await admin
     .from("studio_projects")
-    .select("id, user_id")
+    .select("id, user_id, kind")
     .eq("runpod_job_id", payload.id as never)
     .maybeSingle();
 
@@ -104,6 +104,7 @@ export async function POST(request: NextRequest) {
     await finalizeStudioAudio({
       projectId: (studio as { id: string }).id,
       userId: (studio as { user_id: string }).user_id,
+      kind: (studio as { kind?: string }).kind === "video" ? "video" : "audio",
       runpodJobId: payload.id,
       runpodStatus: payload.status,
       output: (payload.output ?? {}) as AudioEditOutput,

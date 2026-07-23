@@ -534,7 +534,9 @@ export type VideoCloneInsert = {
 export type VideoCloneUpdate = Partial<VideoCloneRow>;
 
 // ───────── studio_projects (Vídeo Estúdio F0, migration 33) ─────────
-export type StudioProjectStatus = "processing" | "audio_ready" | "failed";
+export type StudioProjectStatus = "processing" | "audio_ready" | "video_ready" | "failed";
+/** F2 (mig 48): 'audio' = limpeza F0 · 'video' = CapCut automático. */
+export type StudioProjectKind = "audio" | "video";
 export type StudioMontageStatus = "idle" | "processing" | "ready" | "failed";
 export type StudioTranscriptWord = { start: number; end: number; word: string };
 export type StudioProjectRow = {
@@ -542,7 +544,10 @@ export type StudioProjectRow = {
   user_id: string;
   name: string | null;
   status: StudioProjectStatus;
-  raw_audio_path: string;
+  kind: StudioProjectKind;
+  raw_audio_path: string | null;
+  raw_video_path: string | null;
+  edited_video_path: string | null;
   clean_audio_path: string | null;
   duration_raw_seconds: number | null;
   duration_clean_seconds: number | null;
@@ -632,7 +637,10 @@ export type StudioProjectInsert = {
   user_id: string;
   name?: string | null;
   status?: StudioProjectStatus;
-  raw_audio_path: string;
+  kind?: StudioProjectKind;
+  raw_audio_path?: string | null;
+  raw_video_path?: string | null;
+  edited_video_path?: string | null;
   clean_audio_path?: string | null;
   runpod_job_id?: string | null;
 };

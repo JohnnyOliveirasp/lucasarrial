@@ -26,7 +26,7 @@ import type { StudioFaceSegment, StudioScenePlanItem, StudioSceneRow } from "@/l
 type Ctx = { params: Promise<{ id: string }> };
 
 const SELECT =
-  "id, user_id, name, status, raw_audio_path, clean_audio_path, duration_raw_seconds, duration_clean_seconds, kept_takes, removed_takes, transcript_words, edit_report, runpod_job_id, error_message, montage_status, montage_job_id, video_path, montage_error, montage_report, scenes_status, scene_plan, face_status, face_image_path, face_segments, created_at, auto_pilot, machine_step, machine_job_id, machine_voice_id, machine_music_key, script_text";
+  "id, user_id, name, status, kind, raw_audio_path, raw_video_path, edited_video_path, clean_audio_path, duration_raw_seconds, duration_clean_seconds, kept_takes, removed_takes, transcript_words, edit_report, runpod_job_id, error_message, montage_status, montage_job_id, video_path, montage_error, montage_report, scenes_status, scene_plan, face_status, face_image_path, face_segments, created_at, auto_pilot, machine_step, machine_job_id, machine_voice_id, machine_music_key, script_text";
 
 export async function GET(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -53,6 +53,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
         await finalizeStudioAudio({
           projectId: id,
           userId: auth.user_id,
+          kind: current.kind === "video" ? "video" : "audio",
           runpodJobId: current.runpod_job_id,
           runpodStatus: resp.status,
           output: (resp.output ?? {}) as AudioEditOutput,
@@ -190,6 +191,20 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     }
   }
 
+  // F2: vídeo editado (CapCut automático) pronto pra tocar/baixar
+  let edited_video_url: string | null = null;
+  if (current.status === "video_ready" && current.edited_video_path) {
+    try {
+      edited_video_url = await createPresignedGet(
+        R2_BUCKETS.generations,
+        current.edited_video_path,
+        3600,
+      );
+    } catch {
+      edited_video_url = null;
+    }
+  }
+
   return jsonOk({
     project: {
       id: current.id,
@@ -203,7 +218,9 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       edit_report: current.edit_report,
       error_message: current.error_message,
       created_at: current.created_at,
+      kind: current.kind,
       clean_audio_url,
+      edited_video_url,
       montage_status: current.montage_status,
       montage_error: current.montage_error,
       montage_report: current.montage_report,

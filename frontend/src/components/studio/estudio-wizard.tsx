@@ -39,6 +39,9 @@ const SHOW_PRODUTO = false;
 function destino(origem: Origem, formato: Formato): string {
   if (origem === "produto") return "/app/videos/vendas/new";
   if (origem === "texto") return "/app/videos/studio";
+  // F2: gravação crua -> CapCut automático (eu+cenas intercalado vem depois,
+  // por ora tudo cai na edição da gravação)
+  if (origem === "video") return "/app/videos/estudio/gravacao";
   // áudio:
   if (formato === "cenas") return "/app/videos/new";
   if (formato === "eu") return "/app/videos/clone";
@@ -58,7 +61,7 @@ export function EstudioWizard() {
   }> = [
     { id: "texto", icon: PenLine },
     { id: "audio", icon: Mic },
-    { id: "video", icon: Video, disabled: true }, // entrada de vídeo = F2
+    { id: "video", icon: Video }, // F2 no ar: CapCut automático
     ...(SHOW_PRODUTO
       ? [{ id: "produto" as const, icon: ShoppingBag }]
       : []),

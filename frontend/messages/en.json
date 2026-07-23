@@ -829,6 +829,35 @@
     }
   },
   "studio": {
+    "videoEdit": {
+      "eyebrow": "Videos",
+      "title": "Automatic recording edit",
+      "subtitle": "Upload your raw recording — feel free to stumble, repeat and pause. The platform cuts mistakes and silences and returns the finished video, captioned.",
+      "profiles": { "dinamico": "Dynamic pace", "natural": "Natural pace" },
+      "pick": {
+        "title": "Upload recording",
+        "hint": "MP4, MOV or WEBM · up to 15 minutes · up to 1GB"
+      },
+      "uploading": "Uploading… {pct}%",
+      "processing": {
+        "title": "Editing your recording…",
+        "hint": "Cutting mistakes, retakes and silences. This takes a few minutes — you can leave and come back."
+      },
+      "done": {
+        "title": "Edited video ready",
+        "raw": "raw",
+        "clean": "edited",
+        "removed": "{n} segment(s) removed",
+        "download": "Download video",
+        "report": "View edit report",
+        "again": "Edit another recording"
+      },
+      "errors": {
+        "upload": "Video upload failed. Try again.",
+        "start": "Couldn't start the edit. Try again.",
+        "failed": "The edit failed. Your credits were refunded — try again."
+      }
+    },
     "unified": {
       "eyebrow": "Videos",
       "title": "Video Studio",

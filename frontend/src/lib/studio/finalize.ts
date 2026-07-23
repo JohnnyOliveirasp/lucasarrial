@@ -9,6 +9,7 @@ import { handleTechFailure } from "@/lib/support/failure-alert";
 
 export type AudioEditOutput = {
   edited?: boolean;
+  video_edited?: boolean;
   uploaded?: boolean;
   duration_raw?: number;
   duration_clean?: number;
@@ -25,24 +26,34 @@ function friendlyStudioError(out: AudioEditOutput, raw: string): string {
     const max = Math.round((out.max_seconds ?? 600) / 60);
     return `O áudio passa do limite de ${max} minutos. Grave em partes menores.`;
   }
+  if (out.error === "video_too_long") {
+    const max = Math.round((out.max_seconds ?? 900) / 60);
+    return `O vídeo passa do limite de ${max} minutos. Envie em partes menores.`;
+  }
   if (out.error === "no_speech") {
-    return "Não encontramos fala nesse áudio. Confira o arquivo e tente de novo.";
+    return "Não encontramos fala nesse arquivo. Confira e tente de novo.";
+  }
+  if (out.error === "video_sem_audio") {
+    return "O vídeo enviado não tem áudio. Confira o arquivo e tente de novo.";
   }
   if (raw === "audio_too_long" || raw === "no_speech") return raw;
   return (
-    "Tivemos um problema técnico ao processar seu áudio — não foi culpa sua. " +
+    "Tivemos um problema técnico ao processar seu arquivo — não foi culpa sua. " +
     "Seus créditos foram devolvidos automaticamente. Tente novamente."
   );
 }
 
-/** Erros causados pelo próprio áudio (não são falha técnica nossa). */
+/** Erros causados pelo próprio arquivo (não são falha técnica nossa). */
 function isInputError(out: AudioEditOutput): boolean {
-  return out.error === "audio_too_long" || out.error === "no_speech";
+  return out.error === "audio_too_long" || out.error === "video_too_long" ||
+    out.error === "no_speech" || out.error === "video_sem_audio";
 }
 
 export async function finalizeStudioAudio(args: {
   projectId: string;
   userId: string;
+  /** 'video' = F2 (video_edit); default 'audio' (F0 audio_edit). */
+  kind?: "audio" | "video";
   runpodJobId: string;
   runpodStatus: string;
   output: AudioEditOutput;
@@ -50,6 +61,7 @@ export async function finalizeStudioAudio(args: {
 }): Promise<{ applied: boolean }> {
   const { projectId, userId, runpodJobId, runpodStatus, output: out } = args;
   const admin = getAdmin();
+  const isVideo = args.kind === "video";
 
   const success = runpodStatus === "COMPLETED" && !out.error && out.uploaded === true;
   const rawError = out.error || args.runpodError || `RunPod ${runpodStatus}`;
@@ -58,7 +70,7 @@ export async function finalizeStudioAudio(args: {
   const { data: claimed } = await admin
     .from("studio_projects")
     .update({
-      status: success ? "audio_ready" : "failed",
+      status: success ? (isVideo ? "video_ready" : "audio_ready") : "failed",
       duration_raw_seconds: out.duration_raw ?? null,
       duration_clean_seconds: out.duration_clean ?? null,
       kept_takes: out.kept_takes ?? null,

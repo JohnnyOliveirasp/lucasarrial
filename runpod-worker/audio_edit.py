@@ -331,28 +331,18 @@ def _diff_missing_block(expected: list[str], actual: list[str]) -> str | None:
     return None
 
 
-def handle_audio_edit(inp: dict, log) -> dict:
-    audio_url = inp.get("audio_url")
-    output_upload_url = inp.get("output_upload_url")
-    if not audio_url or not output_upload_url:
-        return {"error": "missing 'audio_url' or 'output_upload_url'"}
-    language = inp.get("language", "pt")
-    model_name = inp.get("whisper_model", "large-v3-turbo")
-    profile_name = inp.get("edit_profile", "dinamico")
+def edit_pipeline(wav: Path, job_dir: Path, language: str, model_name: str,
+                  profile_name: str, log,
+                  max_seconds: float = MAX_AUDIO_SECONDS) -> dict:
+    """Motor completo do Cérebro 2 sobre um WAV: detecção -> takes -> corte
+    alta-confiança -> EDL -> render -> DIFF (com fallback conservador).
+    Retorna {"error"} ou {segs, clean, words, report_lines, diff_status,
+    total, takes} — a F2 (vídeo) aplica os MESMOS segs no stream de vídeo."""
     prof = PROFILES.get(profile_name, PROFILES["dinamico"])
-
-    job_dir = Path(tempfile.mkdtemp(prefix="audio_edit_"))
-    raw = download_to_dir([audio_url], job_dir / "raw")[0]
-    wav = job_dir / "source.wav"
-    r = _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw),
-              "-vn", "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", str(wav)])
-    if r.returncode != 0:
-        return {"error": f"audio inválido: {r.stderr.strip()[:200]}"}
-
     total = _duration(wav)
-    if total > MAX_AUDIO_SECONDS:
+    if total > max_seconds:
         return {"error": "audio_too_long", "duration_raw": round(total, 2),
-                "max_seconds": MAX_AUDIO_SECONDS}
+                "max_seconds": max_seconds}
 
     fine = _detect_speeches(wav, prof["piso"])
     takes = _group_takes(fine)
@@ -421,20 +411,51 @@ def handle_audio_edit(inp: dict, log) -> dict:
         report_lines.append(f"⚠ diff detectou bloco sumido: \"{missing[:90]}\" "
                             f"-> entregue render conservador ({diff_status})")
 
-    upload_file_to_presigned_url(clean, output_upload_url, content_type="audio/wav")
-    log("info", "audio_edit.done", duration_raw=round(total, 2),
-        duration_clean=round(clean_dur, 2), diff=diff_status,
+    return {
+        "segs": segs, "clean": clean, "words": words,
+        "report_lines": report_lines, "diff_status": diff_status,
+        "total": total, "clean_dur": clean_dur, "takes": takes,
+        "profile": profile_name,
+    }
+
+
+def handle_audio_edit(inp: dict, log) -> dict:
+    audio_url = inp.get("audio_url")
+    output_upload_url = inp.get("output_upload_url")
+    if not audio_url or not output_upload_url:
+        return {"error": "missing 'audio_url' or 'output_upload_url'"}
+    language = inp.get("language", "pt")
+    model_name = inp.get("whisper_model", "large-v3-turbo")
+    profile_name = inp.get("edit_profile", "dinamico")
+
+    job_dir = Path(tempfile.mkdtemp(prefix="audio_edit_"))
+    raw = download_to_dir([audio_url], job_dir / "raw")[0]
+    wav = job_dir / "source.wav"
+    r = _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw),
+              "-vn", "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", str(wav)])
+    if r.returncode != 0:
+        return {"error": f"audio inválido: {r.stderr.strip()[:200]}"}
+
+    res = edit_pipeline(wav, job_dir, language, model_name, profile_name, log)
+    if res.get("error"):
+        return res
+    takes = res["takes"]
+
+    upload_file_to_presigned_url(res["clean"], output_upload_url,
+                                 content_type="audio/wav")
+    log("info", "audio_edit.done", duration_raw=round(res["total"], 2),
+        duration_clean=round(res["clean_dur"], 2), diff=res["diff_status"],
         removed=sum(1 for t in takes if not t["manter"]))
 
     return {
         "edited": True,
         "uploaded": True,
-        "duration_raw": round(total, 2),
-        "duration_clean": round(clean_dur, 2),
+        "duration_raw": round(res["total"], 2),
+        "duration_clean": round(res["clean_dur"], 2),
         "kept_takes": sum(1 for t in takes if t["manter"]),
         "removed_takes": sum(1 for t in takes if not t["manter"]),
-        "words": words,
-        "report": "\n".join(report_lines),
-        "profile": profile_name,
-        "diff_status": diff_status,
+        "words": res["words"],
+        "report": "\n".join(res["report_lines"]),
+        "profile": res["profile"],
+        "diff_status": res["diff_status"],
     }

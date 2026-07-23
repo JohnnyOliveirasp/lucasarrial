@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   const { data: rows, error } = await getAdmin()
     .from("studio_projects")
     .select(
-      "id, name, status, duration_raw_seconds, duration_clean_seconds, removed_takes, error_message, created_at",
+      "id, name, kind, status, duration_raw_seconds, duration_clean_seconds, removed_takes, error_message, created_at",
     )
     .eq("user_id", auth.user_id)
     .order("created_at", { ascending: false })
@@ -46,18 +46,22 @@ export async function POST(request: NextRequest) {
   if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const admin = getAdmin();
 
-  let body: { audio_key?: unknown; name?: unknown; edit_profile?: unknown } = {};
+  let body: { audio_key?: unknown; video_key?: unknown; name?: unknown; edit_profile?: unknown } = {};
   try {
     body = await request.json();
   } catch {
     return badRequest("Corpo inválido");
   }
   const audioKey = typeof body.audio_key === "string" ? body.audio_key.trim() : "";
+  // F2: entrada de VÍDEO (CapCut automático) — mesmo projeto, kind='video'.
+  const videoKey = typeof body.video_key === "string" ? body.video_key.trim() : "";
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 120) : "";
   // F1: perfil de corte do Cérebro 2 — Dinâmico (default) ou Natural.
   const editProfile = body.edit_profile === "natural" ? "natural" : "dinamico";
-  if (!audioKey.startsWith(`${auth.user_id}/studio/uploads/`)) {
-    return badRequest("Áudio inválido.");
+  const isVideo = videoKey.length > 0;
+  const inputKey = isVideo ? videoKey : audioKey;
+  if (!inputKey.startsWith(`${auth.user_id}/studio/uploads/`)) {
+    return badRequest(isVideo ? "Vídeo inválido." : "Áudio inválido.");
   }
 
   // Gate: crédito é o ÚNICO gate (equipe/admin não paga).
@@ -86,41 +90,53 @@ export async function POST(request: NextRequest) {
     .insert({
       user_id: auth.user_id,
       name: name || null,
-      raw_audio_path: audioKey,
+      kind: isVideo ? "video" : "audio",
+      raw_audio_path: isVideo ? null : audioKey,
+      raw_video_path: isVideo ? videoKey : null,
     } as never)
     .select("id")
     .single();
   if (insertErr || !created) return serverError("Failed to create studio project");
   const projectId = (created as { id: string }).id;
 
-  // 2. Presigned GET (áudio bruto) + PUT (áudio limpo, saída determinística)
-  const cleanKey = `${auth.user_id}/studio/${projectId}/clean.wav`;
-  let audioUrl: string;
+  // 2. Presigned GET (bruto) + PUT (saída determinística)
+  const cleanKey = isVideo
+    ? `${auth.user_id}/studio/${projectId}/edited.mp4`
+    : `${auth.user_id}/studio/${projectId}/clean.wav`;
+  let inputUrl: string;
   let cleanUploadUrl: string;
   try {
-    audioUrl = await createPresignedGet(R2_BUCKETS.generations, audioKey, JOB_EXPIRES_SECONDS);
+    inputUrl = await createPresignedGet(R2_BUCKETS.generations, inputKey, JOB_EXPIRES_SECONDS);
     cleanUploadUrl = await createPresignedPut(
       R2_BUCKETS.generations,
       cleanKey,
-      "audio/wav",
+      isVideo ? "video/mp4" : "audio/wav",
       JOB_EXPIRES_SECONDS,
     );
   } catch {
     await admin.from("studio_projects").delete().eq("id", projectId);
-    return serverError("Não consegui ler o áudio enviado.");
+    return serverError("Não consegui ler o arquivo enviado.");
   }
 
   // 3. Dispara no RunPod (endpoint de voz — é o que a CI mantém atualizado)
   let jobId: string;
   try {
     const job = await runpodSubmitTrain(
-      {
-        type: "audio_edit",
-        audio_url: audioUrl,
-        output_upload_url: cleanUploadUrl,
-        language: "pt",
-        edit_profile: editProfile,
-      },
+      isVideo
+        ? {
+            type: "video_edit",
+            video_url: inputUrl,
+            output_upload_url: cleanUploadUrl,
+            language: "pt",
+            edit_profile: editProfile,
+          }
+        : {
+            type: "audio_edit",
+            audio_url: inputUrl,
+            output_upload_url: cleanUploadUrl,
+            language: "pt",
+            edit_profile: editProfile,
+          },
       { webhook: webhookUrlFor("generation") },
     );
     jobId = job.id;
@@ -141,10 +157,16 @@ export async function POST(request: NextRequest) {
 
   await admin
     .from("studio_projects")
-    .update({ runpod_job_id: jobId, clean_audio_path: cleanKey } as never)
+    .update(
+      (isVideo
+        ? { runpod_job_id: jobId, edited_video_path: cleanKey }
+        : { runpod_job_id: jobId, clean_audio_path: cleanKey }) as never,
+    )
     .eq("id", projectId);
 
-  // 4. Debita depois do job disparado (padrão da casa; estorno automático em falha)
+  // 4. Debita depois do job disparado (padrão da casa; estorno automático em
+  // falha). ⚠️ F2 usa o MESMO preço da limpeza por enquanto (pré-produção,
+  // admin-only) — rever tabela com o Lucas antes de liberar.
   if (billed) {
     await debitCredits({
       userId: auth.user_id,
@@ -152,7 +174,7 @@ export async function POST(request: NextRequest) {
       kind: "video",
       refType: "studio_audio",
       refId: projectId,
-      note: "Vídeo Estúdio — preparação do áudio",
+      note: isVideo ? "Estúdio — edição de gravação (vídeo)" : "Vídeo Estúdio — preparação do áudio",
     });
   }
 

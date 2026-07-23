@@ -829,6 +829,35 @@
     }
   },
   "studio": {
+    "videoEdit": {
+      "eyebrow": "Videos",
+      "title": "Edición automática de la grabación",
+      "subtitle": "Sube tu grabación cruda — puedes equivocarte, repetir y pausar. La plataforma corta los errores y silencios y devuelve el video listo, con subtítulos.",
+      "profiles": { "dinamico": "Ritmo dinámico", "natural": "Ritmo natural" },
+      "pick": {
+        "title": "Subir grabación",
+        "hint": "MP4, MOV o WEBM · hasta 15 minutos · hasta 1GB"
+      },
+      "uploading": "Subiendo… {pct}%",
+      "processing": {
+        "title": "Editando tu grabación…",
+        "hint": "Cortando errores, repeticiones y silencios. Toma unos minutos — puedes salir y volver."
+      },
+      "done": {
+        "title": "Video editado listo",
+        "raw": "crudo",
+        "clean": "editado",
+        "removed": "{n} tramo(s) eliminado(s)",
+        "download": "Descargar video",
+        "report": "Ver informe de edición",
+        "again": "Editar otra grabación"
+      },
+      "errors": {
+        "upload": "Falló la subida del video. Inténtalo de nuevo.",
+        "start": "No se pudo iniciar la edición. Inténtalo de nuevo.",
+        "failed": "La edición falló. Tus créditos fueron devueltos — inténtalo de nuevo."
+      }
+    },
     "unified": {
       "eyebrow": "Videos",
       "title": "Estudio de Video",

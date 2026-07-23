@@ -1022,6 +1022,10 @@ def handler(event: dict) -> dict:
             # Vídeo Estúdio F0: limpeza de gravação (repetições/pausas) + words
             from audio_edit import handle_audio_edit
             return handle_audio_edit(inp, log=_log)
+        if job_type == "video_edit":
+            # Estúdio F2: gravação crua -> Cérebro 2 corta A/V + legenda
+            from video_edit import handle_video_edit
+            return handle_video_edit(inp, log=_log)
         if job_type == "montage":
             # Vídeo Estúdio F1: áudio limpo + cenas -> vídeo 9:16 montado
             from montage import handle_montage
@@ -1040,7 +1044,7 @@ def handler(event: dict) -> dict:
             return handle_slides(inp, log=_log)
         if job_type == "health":
             return {"ok": True, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
-        return {"error": f"unknown type '{job_type}' (use train/inference/transcribe/audio_edit/montage/tts_prepare/caption_variants/slides/health)"}
+        return {"error": f"unknown type '{job_type}' (use train/inference/transcribe/audio_edit/video_edit/montage/tts_prepare/caption_variants/slides/health)"}
     except Exception as exc:
         _log("error", "job.failed", error=str(exc), type=job_type, tb=traceback.format_exc()[:2000])
         _free_cuda()  # não deixa VRAM presa pro próximo job após crash

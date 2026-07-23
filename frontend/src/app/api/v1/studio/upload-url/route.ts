@@ -13,6 +13,9 @@ import { createPresignedPut, isAllowedAudioMime, isAllowedImageMime } from "@/li
 
 const MAX_AUDIO_BYTES = 80 * 1024 * 1024; // 80MB cobre 10min até em WAV
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+// F2: gravação crua de celular ~1GB cobre 15min em 1080p60
+const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
+const VIDEO_MIMES = new Set(["video/mp4", "video/quicktime", "video/webm", "video/x-matroska"]);
 
 function safeExt(filename: string, fallback: string): string {
   const m = filename.toLowerCase().match(/\.([a-z0-9]{1,5})$/);
@@ -31,7 +34,7 @@ export async function POST(request: NextRequest) {
   } catch {
     /* sem body */
   }
-  const kind = body.kind === "image" ? "image" : "audio";
+  const kind = body.kind === "image" ? "image" : body.kind === "video" ? "video" : "audio";
   const filename = typeof body.filename === "string" ? body.filename.trim() : "";
   const contentType = typeof body.content_type === "string" ? body.content_type.trim() : "";
   const size = typeof body.size === "number" ? body.size : 0;
@@ -42,6 +45,11 @@ export async function POST(request: NextRequest) {
       return badRequest("Formato não suportado. Envie MP3, WAV, M4A, OGG ou WEBM.");
     }
     if (size <= 0 || size > MAX_AUDIO_BYTES) return badRequest("Áudio muito grande (máx. 80MB).");
+  } else if (kind === "video") {
+    if (!VIDEO_MIMES.has(contentType.toLowerCase())) {
+      return badRequest("Formato não suportado. Envie MP4, MOV ou WEBM.");
+    }
+    if (size <= 0 || size > MAX_VIDEO_BYTES) return badRequest("Vídeo muito grande (máx. 1GB).");
   } else {
     if (!isAllowedImageMime(contentType)) {
       return badRequest("Formato não suportado. Envie PNG, JPG ou WEBP.");
@@ -50,7 +58,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const key = `${auth.user_id}/studio/uploads/${randomUUID()}.${safeExt(filename, kind === "audio" ? "webm" : "png")}`;
+    const key = `${auth.user_id}/studio/uploads/${randomUUID()}.${safeExt(filename, kind === "audio" ? "webm" : kind === "video" ? "mp4" : "png")}`;
     const upload_url = await createPresignedPut(R2_BUCKETS.generations, key, contentType, 1800);
     return jsonOk({ key, upload_url, expires_in_seconds: 1800 });
   } catch {

@@ -829,6 +829,35 @@
     }
   },
   "studio": {
+    "videoEdit": {
+      "eyebrow": "Vídeos",
+      "title": "Edição automática da gravação",
+      "subtitle": "Suba sua gravação crua — pode errar, repetir e pausar à vontade. A plataforma corta os erros e silêncios e devolve o vídeo pronto, com legenda.",
+      "profiles": { "dinamico": "Ritmo dinâmico", "natural": "Ritmo natural" },
+      "pick": {
+        "title": "Enviar gravação",
+        "hint": "MP4, MOV ou WEBM · até 15 minutos · até 1GB"
+      },
+      "uploading": "Enviando… {pct}%",
+      "processing": {
+        "title": "Editando sua gravação…",
+        "hint": "Cortando erros, repetições e silêncios. Isso leva alguns minutos — pode sair da página e voltar depois."
+      },
+      "done": {
+        "title": "Vídeo editado pronto",
+        "raw": "bruto",
+        "clean": "editado",
+        "removed": "{n} trecho(s) removido(s)",
+        "download": "Baixar vídeo",
+        "report": "Ver relatório da edição",
+        "again": "Editar outra gravação"
+      },
+      "errors": {
+        "upload": "Falha no envio do vídeo. Tente de novo.",
+        "start": "Falha ao iniciar a edição. Tente de novo.",
+        "failed": "A edição falhou. Seus créditos foram devolvidos — tente novamente."
+      }
+    },
     "unified": {
       "eyebrow": "Vídeos",
       "title": "Estúdio de Vídeo",
