@@ -256,11 +256,17 @@ export function Sidebar({
                 {tShell("preProduction")}
               </span>
               <ul className="flex flex-col gap-1">
+                {/* F0 unificação: a ENTRADA é o wizard de 2 perguntas
+                    (/app/videos/estudio); o workspace antigo (/studio) segue
+                    acessível como destino interno do wizard. */}
                 <NavLeaf
-                  href="/app/videos/studio"
+                  href="/app/videos/estudio"
                   icon={Wand2}
                   label={t("nav.videoStudio")}
-                  active={pathname.endsWith("/app/videos/studio")}
+                  active={
+                    pathname.endsWith("/app/videos/estudio") ||
+                    pathname.endsWith("/app/videos/studio")
+                  }
                 />
               </ul>
               <div className="mt-2 border-t border-[var(--hairline)] pt-2">

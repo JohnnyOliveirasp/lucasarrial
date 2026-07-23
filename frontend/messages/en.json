@@ -829,6 +829,65 @@
     }
   },
   "studio": {
+    "unified": {
+      "eyebrow": "Videos",
+      "title": "Video Studio",
+      "subtitle": "Two questions and the platform builds your video: script, cloned voice, scenes and captions — the way you choose.",
+      "soon": "coming soon",
+      "start": "Start",
+      "back": "← Change source ({origem})",
+      "q1": {
+        "title": "What are you starting with?",
+        "hint": "Every path ends in a finished video. Pick what you have in hand right now.",
+        "texto": {
+          "title": "I have a text",
+          "body": "A ready script or just an idea — AI writes it, your cloned voice narrates."
+        },
+        "audio": {
+          "title": "I have an audio",
+          "body": "Recorded by you or generated here — it becomes the video's narration."
+        },
+        "video": {
+          "title": "I have a video of me",
+          "body": "Your raw recording: the platform cuts silences and mistakes on its own."
+        },
+        "produto": {
+          "title": "I have a product",
+          "body": "Product photos become a sales script in your voice."
+        }
+      },
+      "q2": {
+        "title": "How should the video look?",
+        "hint": "Voice, scenes and captions come with smart defaults — you can change everything later.",
+        "eu": {
+          "title": "Just me",
+          "body": {
+            "texto": "Your clone avatar speaks the script — no need to record anything.",
+            "audio": "Your clone avatar appears speaking your audio.",
+            "video": "Your own recording, edited automatically.",
+            "produto": "Your clone avatar presents the product."
+          }
+        },
+        "cenas": {
+          "title": "Scenes only",
+          "body": {
+            "texto": "Faceless video: AI-generated scenes illustrate the narration.",
+            "audio": "Faceless video: AI-generated scenes illustrate your audio.",
+            "video": "AI-generated scenes instead of your image.",
+            "produto": "Product scenes without your face."
+          }
+        },
+        "mix": {
+          "title": "Me + scenes",
+          "body": {
+            "texto": "Your avatar intercut with scenes — the format that holds attention best.",
+            "audio": "Your avatar intercut with AI-generated scenes.",
+            "video": "Your edited recording, intercut with scenes.",
+            "produto": "You and the product intercut."
+          }
+        }
+      }
+    },
     "page": {
       "eyebrow": "Videos",
       "title": "Video Studio",

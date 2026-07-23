@@ -829,6 +829,65 @@
     }
   },
   "studio": {
+    "unified": {
+      "eyebrow": "Vídeos",
+      "title": "Estúdio de Vídeo",
+      "subtitle": "Duas perguntas e a plataforma monta seu vídeo: roteiro, voz clonada, cenas e legenda — do jeito que você escolher.",
+      "soon": "em breve",
+      "start": "Começar",
+      "back": "← Trocar origem ({origem})",
+      "q1": {
+        "title": "Com o que você está começando?",
+        "hint": "Qualquer um dos caminhos termina num vídeo pronto. Escolha o que você tem em mãos agora.",
+        "texto": {
+          "title": "Tenho um texto",
+          "body": "Um roteiro pronto ou só uma ideia — a IA escreve, sua voz clonada narra."
+        },
+        "audio": {
+          "title": "Tenho um áudio",
+          "body": "Gravado por você ou gerado aqui — vira a narração do vídeo."
+        },
+        "video": {
+          "title": "Tenho um vídeo meu",
+          "body": "Sua gravação crua: a plataforma corta silêncios e erros sozinha."
+        },
+        "produto": {
+          "title": "Tenho um produto",
+          "body": "Fotos do produto viram roteiro de venda com a sua voz."
+        }
+      },
+      "q2": {
+        "title": "Como o vídeo vai ser visualmente?",
+        "hint": "Voz, cenas e legenda já vêm com padrões inteligentes — dá pra mudar tudo depois.",
+        "eu": {
+          "title": "Só eu",
+          "body": {
+            "texto": "Seu avatar clone aparece falando o roteiro — sem precisar gravar nada.",
+            "audio": "Seu avatar clone aparece falando o seu áudio.",
+            "video": "Sua própria gravação, editada automaticamente.",
+            "produto": "Seu avatar clone apresenta o produto."
+          }
+        },
+        "cenas": {
+          "title": "Só cenas",
+          "body": {
+            "texto": "Vídeo sem rosto: cenas geradas por IA ilustram a narração.",
+            "audio": "Vídeo sem rosto: cenas geradas por IA ilustram o seu áudio.",
+            "video": "Cenas geradas por IA no lugar da sua imagem.",
+            "produto": "Cenas do produto sem o seu rosto."
+          }
+        },
+        "mix": {
+          "title": "Eu + cenas",
+          "body": {
+            "texto": "Seu avatar intercalado com cenas — o formato que mais segura atenção.",
+            "audio": "Seu avatar intercalado com cenas geradas por IA.",
+            "video": "Sua gravação editada, intercalada com cenas.",
+            "produto": "Você e o produto intercalados."
+          }
+        }
+      }
+    },
     "page": {
       "eyebrow": "Vídeos",
       "title": "Vídeo Estúdio",

@@ -829,6 +829,65 @@
     }
   },
   "studio": {
+    "unified": {
+      "eyebrow": "Videos",
+      "title": "Estudio de Video",
+      "subtitle": "Dos preguntas y la plataforma arma tu video: guion, voz clonada, escenas y subtítulos — como tú elijas.",
+      "soon": "muy pronto",
+      "start": "Empezar",
+      "back": "← Cambiar origen ({origem})",
+      "q1": {
+        "title": "¿Con qué estás empezando?",
+        "hint": "Todos los caminos terminan en un video listo. Elige lo que tienes a mano ahora.",
+        "texto": {
+          "title": "Tengo un texto",
+          "body": "Un guion listo o solo una idea — la IA escribe, tu voz clonada narra."
+        },
+        "audio": {
+          "title": "Tengo un audio",
+          "body": "Grabado por ti o generado aquí — se convierte en la narración del video."
+        },
+        "video": {
+          "title": "Tengo un video mío",
+          "body": "Tu grabación cruda: la plataforma corta silencios y errores sola."
+        },
+        "produto": {
+          "title": "Tengo un producto",
+          "body": "Las fotos del producto se convierten en guion de venta con tu voz."
+        }
+      },
+      "q2": {
+        "title": "¿Cómo va a verse el video?",
+        "hint": "Voz, escenas y subtítulos vienen con valores inteligentes — puedes cambiar todo después.",
+        "eu": {
+          "title": "Solo yo",
+          "body": {
+            "texto": "Tu avatar clon aparece hablando el guion — sin grabar nada.",
+            "audio": "Tu avatar clon aparece hablando tu audio.",
+            "video": "Tu propia grabación, editada automáticamente.",
+            "produto": "Tu avatar clon presenta el producto."
+          }
+        },
+        "cenas": {
+          "title": "Solo escenas",
+          "body": {
+            "texto": "Video sin rostro: escenas generadas por IA ilustran la narración.",
+            "audio": "Video sin rostro: escenas generadas por IA ilustran tu audio.",
+            "video": "Escenas generadas por IA en lugar de tu imagen.",
+            "produto": "Escenas del producto sin tu rostro."
+          }
+        },
+        "mix": {
+          "title": "Yo + escenas",
+          "body": {
+            "texto": "Tu avatar intercalado con escenas — el formato que más retiene la atención.",
+            "audio": "Tu avatar intercalado con escenas generadas por IA.",
+            "video": "Tu grabación editada, intercalada con escenas.",
+            "produto": "Tú y el producto intercalados."
+          }
+        }
+      }
+    },
     "page": {
       "eyebrow": "Videos",
       "title": "Estudio de Video",
