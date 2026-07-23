@@ -1015,6 +1015,23 @@
       "failedFallback": "Processing failed. Try again.",
       "tryAgain": "Try again"
     },
+    "variants": {
+      "label": "Video variations (A/B test — only the opening caption changes)",
+      "hint": "The same video becomes up to 6 versions, each with a different hook caption burned on screen — at zero cost. Post them all and see which hook performs best.",
+      "placeholder": "Hook for variation {n} (e.g. “Nobody told you this…”)",
+      "posAria": "Caption position",
+      "posTop": "Top",
+      "posMiddle": "Middle",
+      "removeAria": "Remove variation",
+      "addRow": "One more variation",
+      "cta": "Generate {n, plural, one {# variation} other {# variations}} · free",
+      "errStart": "Failed to start the variations.",
+      "processing": "Generating the variations… (~1 min per variation)",
+      "readyCount": "{n, plural, one {# variation ready} other {# variations ready}} — download and post them to test your hooks.",
+      "failed": "Variation generation failed. Try again.",
+      "download": "Download variation {n}",
+      "regen": "Generate other variations"
+    },
     "history": {
       "loading": "Loading…",
       "empty": "No audio prepared yet — record your first one above.",

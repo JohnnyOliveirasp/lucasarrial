@@ -10,6 +10,7 @@ import { useTranslations } from "next-intl";
 import { Clapperboard, Download, Loader2, RefreshCw, UserSquare2 } from "lucide-react";
 import { downloadFromUrl } from "@/components/image/download-file";
 import { STUDIO_MONTAGE_COST, STUDIO_SCENE_COST, studioFaceCost } from "@/lib/studio/pricing";
+import { StudioVariants } from "./studio-variants";
 
 const fmtCr = (n: number) => n.toLocaleString("pt-BR");
 
@@ -325,6 +326,9 @@ export function StudioResult({
                 </div>
               </div>
             )}
+
+            {/* ───── F4: multiplicação de variações (troca só a legenda de hook) ───── */}
+            {project.montage_status === "ready" && <StudioVariants projectId={project.id} />}
 
             {project.montage_status === "failed" && (
               <div className="flex flex-col gap-2">

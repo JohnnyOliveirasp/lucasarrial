@@ -1015,6 +1015,23 @@
       "failedFallback": "O processamento falhou. Tente novamente.",
       "tryAgain": "Tentar de novo"
     },
+    "variants": {
+      "label": "Variações do vídeo (teste A/B — troca só a legenda de abertura)",
+      "hint": "O mesmo vídeo vira até 6 versões, cada uma com uma legenda de gancho diferente queimada na tela — custo zero. Poste todas e veja qual gancho performa melhor.",
+      "placeholder": "Gancho da variação {n} (ex.: “Ninguém te contou isso…”)",
+      "posAria": "Posição da legenda",
+      "posTop": "Topo",
+      "posMiddle": "Meio",
+      "removeAria": "Remover variação",
+      "addRow": "Mais uma variação",
+      "cta": "Gerar {n, plural, one {# variação} other {# variações}} · grátis",
+      "errStart": "Falha ao iniciar as variações.",
+      "processing": "Gerando as variações… (~1 min por variação)",
+      "readyCount": "{n, plural, one {# variação pronta} other {# variações prontas}} — baixe e poste pra testar os ganchos.",
+      "failed": "A geração das variações falhou. Tente novamente.",
+      "download": "Baixar variação {n}",
+      "regen": "Gerar outras variações"
+    },
     "history": {
       "loading": "Carregando…",
       "empty": "Nenhum áudio preparado ainda — grave o primeiro acima.",

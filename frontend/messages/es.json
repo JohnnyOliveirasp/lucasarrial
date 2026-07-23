@@ -1015,6 +1015,23 @@
       "failedFallback": "El procesamiento falló. Inténtalo de nuevo.",
       "tryAgain": "Intentar de nuevo"
     },
+    "variants": {
+      "label": "Variaciones del video (test A/B — solo cambia el subtítulo de apertura)",
+      "hint": "El mismo video se convierte en hasta 6 versiones, cada una con un gancho diferente quemado en pantalla — a costo cero. Publícalas todas y mira qué gancho rinde mejor.",
+      "placeholder": "Gancho de la variación {n} (ej.: “Nadie te contó esto…”)",
+      "posAria": "Posición del subtítulo",
+      "posTop": "Arriba",
+      "posMiddle": "Centro",
+      "removeAria": "Quitar variación",
+      "addRow": "Una variación más",
+      "cta": "Generar {n, plural, one {# variación} other {# variaciones}} · gratis",
+      "errStart": "No se pudieron iniciar las variaciones.",
+      "processing": "Generando las variaciones… (~1 min por variación)",
+      "readyCount": "{n, plural, one {# variación lista} other {# variaciones listas}} — descárgalas y publícalas para probar tus ganchos.",
+      "failed": "La generación de variaciones falló. Inténtalo de nuevo.",
+      "download": "Descargar variación {n}",
+      "regen": "Generar otras variaciones"
+    },
     "history": {
       "loading": "Cargando…",
       "empty": "Aún no hay audios preparados — graba el primero arriba.",
