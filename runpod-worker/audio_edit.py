@@ -187,8 +187,12 @@ def _mark_high_confidence(takes: list[dict]) -> None:
                 takes[i]["manter"] = False
                 takes[i]["motivo"] = f"duplicata exata do take {j}"
                 break
-            # Reinício abortado: o take INTEIRO é prefixo do take bom.
-            if 2 <= len(words) < len(ow) and ow[:len(words)] == words:
+            # Reinício abortado: o take INTEIRO é prefixo do take bom. A
+            # ÚLTIMA palavra pode ser fragmento ("...como a plata" ->
+            # "...como a plataforma...") — aborto real para no meio da palavra.
+            if 2 <= len(words) < len(ow) and \
+                    ow[:len(words) - 1] == words[:-1] and \
+                    ow[len(words) - 1].startswith(words[-1]):
                 takes[i]["manter"] = False
                 takes[i]["motivo"] = f"reinício abortado (prefixo do take {j})"
                 break
