@@ -103,6 +103,22 @@ export async function POST(request: NextRequest) {
   const admin0 = getAdmin();
   const prefix = `${auth.user_id}/video-clone/uploads/`;
 
+  // Trava anti clique-repetido (mesmo padrão do guard de treino 4848826):
+  // 1 clone em andamento por vez. Sem isso, fila lenta + botão apertado de
+  // novo = vários jobs caros duplicados (caso samuel 23/07: 4 em 4h).
+  const { count: inFlight } = await admin0
+    .from("video_clones")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", auth.user_id)
+    .in("status", ["pending", "generating"]);
+  if ((inFlight ?? 0) > 0) {
+    return jsonError(
+      "clone_in_progress",
+      "Você já tem um vídeo sendo gerado. Aguarde ele terminar antes de iniciar outro — se falhar, os créditos voltam automaticamente.",
+      409,
+    );
+  }
+
   // ── Foto: do histórico do Gerador de Imagem OU upload próprio ──
   let imagePath = "";
   let imageBucket = R2_BUCKETS.generations;
