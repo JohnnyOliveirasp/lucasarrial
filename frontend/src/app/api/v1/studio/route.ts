@@ -96,7 +96,10 @@ export async function POST(request: NextRequest) {
     } as never)
     .select("id")
     .single();
-  if (insertErr || !created) return serverError("Failed to create studio project");
+  if (insertErr || !created) {
+    console.error("[studio] insert studio_projects falhou:", insertErr?.message ?? "sem linha criada");
+    return serverError("Failed to create studio project");
+  }
   const projectId = (created as { id: string }).id;
 
   // 2. Presigned GET (bruto) + PUT (saída determinística)
