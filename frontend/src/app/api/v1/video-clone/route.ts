@@ -275,11 +275,22 @@ export async function DELETE(request: NextRequest) {
   const admin = getAdmin();
   const { data: rows, error } = await admin
     .from("video_clones")
-    .select("id, image_path, audio_path, video_path")
+    .select("id, status, image_path, audio_path, video_path")
     .eq("user_id", auth.user_id)
     .in("id", ids);
   if (error) return serverError("Failed to load video clones");
-  const found = rows ?? [];
+  // Clone em andamento NÃO pode ser excluído: o estorno automático de falha
+  // roda no poll/webhook em cima desta linha — apagar a linha perdia os
+  // créditos pra sempre (caso samuel 23/07: 3 clones apagados na espera,
+  // 100k cr sem estorno). Exclui só os finalizados; os demais ficam.
+  const all = rows ?? [];
+  const inFlight = all.filter((r) => r.status === "pending" || r.status === "generating");
+  const found = all.filter((r) => r.status !== "pending" && r.status !== "generating");
+  if (found.length === 0 && inFlight.length > 0) {
+    return badRequest(
+      "Esse vídeo ainda está sendo gerado — aguarde terminar. Se falhar, os créditos voltam automaticamente.",
+    );
+  }
   if (found.length === 0) return jsonOk({ deleted: 0 });
 
   try {
@@ -303,5 +314,5 @@ export async function DELETE(request: NextRequest) {
     .in("id", foundIds);
   if (dErr) return serverError("Failed to delete video clones");
 
-  return jsonOk({ deleted: foundIds.length });
+  return jsonOk({ deleted: foundIds.length, skipped_in_progress: inFlight.length });
 }
