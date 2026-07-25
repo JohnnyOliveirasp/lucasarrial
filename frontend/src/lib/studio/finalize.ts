@@ -67,7 +67,7 @@ export async function finalizeStudioAudio(args: {
   const rawError = out.error || args.runpodError || `RunPod ${runpodStatus}`;
 
   // Gate idempotente: só UM caminho (webhook OU poll) finaliza.
-  const { data: claimed } = await admin
+  const { data: claimed, error: claimErr } = await admin
     .from("studio_projects")
     .update({
       status: success ? (isVideo ? "video_ready" : "audio_ready") : "failed",
@@ -83,6 +83,12 @@ export async function finalizeStudioAudio(args: {
     .eq("runpod_job_id", runpodJobId)
     .eq("status", "processing")
     .select("id");
+  // Erro de BANCO ≠ "outro caminho ganhou o gate": engolir isso deixou 2
+  // projetos do Lucas girando 7h (CHECK sem 'video_ready', mig 51).
+  if (claimErr) {
+    console.error("[studio.finalize] update falhou:", claimErr.message, { projectId, runpodJobId });
+    return { applied: false };
+  }
   if (!claimed || claimed.length === 0) return { applied: false };
 
   // Estorno + alerta: qualquer falha devolve os créditos (o aluno não recebeu
