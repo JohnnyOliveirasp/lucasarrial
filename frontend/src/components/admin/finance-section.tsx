@@ -76,7 +76,12 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
   const promoValue = fin.offerValuePeriod;
   const tableValue = money.revenuePeriod + promoValue; // valor de tabela do período
   const promoPct = tableValue > 0 ? (promoValue / tableValue) * 100 : 0;
-  const toolsCost = fin.slices.reduce((s, x) => s + x.brl, 0);
+  // costPeriod já é "real-aware": usa a queda de saldo REAL do RunPod quando o
+  // período tem leituras (mig 52); as fatias do donut seguem sendo estimativas
+  // por ferramenta (atribuição), com nota quando divergirem do real.
+  const toolsCost = money.costPeriod;
+  const gpuReal = money.gpuRealPeriod;
+  const usd2 = (n: number) => `US$${n.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}`;
   const isLoss = money.profitPeriod < 0;
   // Opção B: caixa e "com promoção" sempre lado a lado.
   const combined = money.profitPeriod - promoValue;
@@ -130,6 +135,23 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
                 : `sem receita no período · taxa ${brl2(money.feePeriod)}`
           }
         />
+      </div>
+
+      {/* GPU RunPod — dinheiro REAL da conta (pedido Johnny 25/07: as recargas
+          do cartão do Lucas não apareciam em lugar nenhum) */}
+      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-5 py-3">
+        <span className="font-mono text-[11px] uppercase tracking-wider text-[var(--ash)]">GPU RunPod (real)</span>
+        {money.runpodBalanceUsd !== null && (
+          <span className="font-mono text-[13px] tabular-nums text-[var(--ink)]">
+            saldo {usd2(money.runpodBalanceUsd)}
+            {money.runpodSpendPerHrUsd ? ` · queimando ${usd2(money.runpodSpendPerHrUsd)}/h agora` : ""}
+          </span>
+        )}
+        <span className="font-mono text-[12px] tabular-nums text-[var(--body)]">
+          {gpuReal !== null
+            ? `gasto REAL no período: ${brl2(gpuReal)} (estimativa por job: ${brl2(money.gpuEstimatePeriod)}) — o real é o usado no lucro`
+            : `sem leituras de saldo neste período — lucro usa a estimativa por job (${brl2(money.gpuEstimatePeriod)})`}
+        </span>
       </div>
 
       {/* 1) Compra × Promoção */}

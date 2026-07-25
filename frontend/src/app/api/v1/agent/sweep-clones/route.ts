@@ -15,6 +15,7 @@ import { agentTokenOk } from "@/lib/incidents/agent-auth";
 import { getAdmin } from "@/lib/db/admin";
 import { getInfiniteTalkStatus } from "@/lib/video-clone/runpod";
 import { finalizeVideoClone } from "@/lib/video-clone/finalize";
+import { getRunpodBilling } from "@/lib/admin/runpod";
 
 const STUCK_AFTER_MS = 10 * 60 * 1000; // só olha o que está preso há 10min+
 const NO_JOB_FAIL_MS = 60 * 60 * 1000; // sem job id há 1h = órfão de verdade
@@ -79,6 +80,30 @@ export async function POST(request: NextRequest) {
         errors += 1; // rede/instabilidade: próximo sweep tenta de novo
       }
     }
+  }
+
+  // Leitura horária do saldo REAL do RunPod (mig 52) — o /admin usa a queda
+  // de saldo entre leituras como custo de GPU real no lucro. Aproveita este
+  // cron de 5min: só grava se a última leitura tem 55min+.
+  try {
+    const { data: last } = await admin
+      .from("runpod_spend_log")
+      .select("at")
+      .order("at", { ascending: false })
+      .limit(1);
+    const lastRows = (last ?? []) as unknown as { at: string }[];
+    const lastAt = lastRows[0]?.at ? new Date(lastRows[0].at).getTime() : 0;
+    if (Date.now() - lastAt > 55 * 60 * 1000) {
+      const billing = await getRunpodBilling();
+      if (billing) {
+        await admin.from("runpod_spend_log").insert({
+          balance_usd: billing.balanceUsd,
+          spend_per_hr_usd: billing.spendPerHrUsd,
+        } as never);
+      }
+    }
+  } catch (e) {
+    console.error("[sweep-clones] leitura de saldo falhou:", e instanceof Error ? e.message : e);
   }
 
   const summary = { checked: (stuck ?? []).length, ready, failed_refunded: failed, still_running: running, errors };

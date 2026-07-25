@@ -6,6 +6,7 @@
 import { getAdmin } from "@/lib/db/admin";
 import {
   PLAN_PRICE_BRL,
+  USD_BRL,
   genCostBrl,
   trainCostBrl,
   hotmartFeeBrl,
@@ -14,6 +15,7 @@ import {
   kieCreditsCostBrl,
   videoClonesCostBrl,
 } from "./cost";
+import { getRunpodBilling } from "./runpod";
 import { VIDEO_TIERS } from "@/lib/video/tiers";
 
 /** Janela calendário [since, until) em ISO — construída na rota a partir de dia/mês/ano. */
@@ -48,6 +50,14 @@ export type Money = {
   feePeriod: number;
   profitPeriod: number;
   marginPct: number;
+  /** GPU RunPod: estimativa por job (TTS+treino+clone) no período, em R$. */
+  gpuEstimatePeriod: number;
+  /** GPU RunPod REAL (queda de saldo entre leituras, mig 52), em R$ — null
+   *  sem 2+ leituras no período. Quando existe, é ELE que entra no lucro. */
+  gpuRealPeriod: number | null;
+  /** Snapshot ao vivo da conta RunPod (null se a API falhar). */
+  runpodBalanceUsd: number | null;
+  runpodSpendPerHrUsd: number | null;
 };
 
 /** Fatia da pizza de custos (R$ reais gastos por ferramenta). */
@@ -96,10 +106,17 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
   const admin = getAdmin();
   const { since, until } = range;
 
-  const [mRes, fRes, cRes] = await Promise.all([
+  const [mRes, fRes, cRes, spendRes, billing] = await Promise.all([
     admin.rpc("admin_metrics", { p_since: since, p_until: until }),
     admin.rpc("admin_finance", { p_since: since, p_until: until }),
     admin.rpc("admin_video_clones", { p_since: since, p_until: until }),
+    admin
+      .from("runpod_spend_log")
+      .select("at, balance_usd")
+      .gte("at", since)
+      .lt("at", until)
+      .order("at", { ascending: true }),
+    getRunpodBilling(),
   ]);
 
   const metrics = (mRes.data ?? {}) as unknown as AdminMetrics;
@@ -141,11 +158,23 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
     { key: "clone", label: "Vídeo Clone (GPU)", brl: cloneCost, detail: `${cloneCount} vídeos · ${cloneMinutes.toFixed(1)}min` },
   ];
 
+  // ---- GPU RunPod REAL (mig 52): queda de saldo entre leituras no período.
+  // Recarga faz o saldo SUBIR → o par fica negativo → ignorado (max 0).
+  const readings = ((spendRes.data ?? []) as unknown as { at: string; balance_usd: number }[]);
+  let gpuRealUsd = 0;
+  for (let i = 1; i < readings.length; i++) {
+    gpuRealUsd += Math.max(0, readings[i - 1].balance_usd - readings[i].balance_usd);
+  }
+  const gpuEstimatePeriod = voiceCost + trainCost + cloneCost;
+  const gpuRealPeriod = readings.length >= 2 ? gpuRealUsd * USD_BRL : null;
+
   // ---- dinheiro REAL (Hotmart, produto da plataforma, sem testes) ----
   const revenuePeriod = fin.paid_total_period ?? 0;
-  // TODAS as fatias da pizza entram no gasto — cloneCost (GPU) ficava de fora
-  // e o lucro saía superestimado.
-  const costPeriod = voiceCost + trainCost + imageCost + videoCost + cloneCost;
+  // TODAS as fatias da pizza entram no gasto — e a parte RunPod usa o gasto
+  // REAL medido quando o período tem leituras (decisão Johnny 25/07: as
+  // cobranças do cartão têm que refletir no lucro); sem leituras (períodos
+  // antigos), cai na estimativa por job.
+  const costPeriod = (gpuRealPeriod ?? gpuEstimatePeriod) + imageCost + videoCost;
   const feePeriod = hotmartFeeBrl(revenuePeriod, fin.paid_count_period ?? 0);
   const refunds = fin.refund_total ?? 0;
   // Decisão Johnny 2026-07-06 (opção B): lucro/prejuízo = CAIXA REAL; a promoção
@@ -165,7 +194,12 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
 
   return {
     metrics,
-    money: { mrr, revenuePeriod, costPeriod, infraPeriod, feePeriod, profitPeriod, marginPct },
+    money: {
+      mrr, revenuePeriod, costPeriod, infraPeriod, feePeriod, profitPeriod, marginPct,
+      gpuEstimatePeriod, gpuRealPeriod,
+      runpodBalanceUsd: billing?.balanceUsd ?? null,
+      runpodSpendPerHrUsd: billing?.spendPerHrUsd ?? null,
+    },
     finance: {
       paidCount: fin.paid_count ?? 0,
       paidTotal: fin.paid_total ?? 0,

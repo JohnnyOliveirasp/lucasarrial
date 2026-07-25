@@ -69,6 +69,32 @@ async function fetchHealth(label: string, endpoint: string): Promise<RunpodHealt
   }
 }
 
+/** Saldo e gasto REAIS da conta RunPod (GraphQL). Null se a API falhar. */
+export type RunpodBilling = { balanceUsd: number; spendPerHrUsd: number | null };
+
+export async function getRunpodBilling(): Promise<RunpodBilling | null> {
+  const key = process.env.RUNPOD_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch("https://api.runpod.io/graphql", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "query { myself { clientBalance currentSpendPerHr } }" }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      data?: { myself?: { clientBalance?: number; currentSpendPerHr?: number } };
+    };
+    const me = json.data?.myself;
+    if (typeof me?.clientBalance !== "number") return null;
+    return { balanceUsd: me.clientBalance, spendPerHrUsd: me.currentSpendPerHr ?? null };
+  } catch {
+    return null;
+  }
+}
+
 /** Saúde de todos os endpoints únicos (treino + inferência, deduplicados). */
 export async function getRunpodHealth(): Promise<RunpodHealth[]> {
   const train = process.env.RUNPOD_ENDPOINT_TRAIN_ID || "";
