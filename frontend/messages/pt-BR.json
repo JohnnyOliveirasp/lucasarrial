@@ -762,7 +762,7 @@
       "generateWithCost": "Gerar Vídeo Clone · {cost} cr",
       "generatingLabel": "Gerando vídeo",
       "generatingTitle": "Gerando seu Vídeo Clone",
-      "generatingHint": "Leva alguns minutos. Pode sair e voltar — fica salvo no histórico.",
+      "generatingHint": "Demora alguns minutos — pode ir fazer outra coisa enquanto isso. Vídeos maiores levam até 15 minutos; quando terminar aparece aqui e no Histórico.",
       "download": "Baixar vídeo",
       "again": "Gerar outro",
       "retry": "Tentar de novo",

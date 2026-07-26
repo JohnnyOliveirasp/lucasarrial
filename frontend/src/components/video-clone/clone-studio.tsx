@@ -71,6 +71,8 @@ export function CloneStudio({
   const [tierId, setTierId] = useState<CloneTierId>("480p");
   const [submitting, setSubmitting] = useState(false);
   const [job, setJob] = useState<{ id: string; status: string; video_url: string | null; error: string | null } | null>(null);
+  // Foto que vira o "palco" da geração (borrada enquanto gera; poster do vídeo pronto).
+  const [poster, setPoster] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paywall, setPaywall] = useState<{ subscribed: boolean } | null>(null);
   const imgInput = useRef<HTMLInputElement>(null);
@@ -159,6 +161,7 @@ export function CloneStudio({
         return;
       }
       if (!res.ok) throw new Error(j?.error?.message || t("errors.start"));
+      setPoster(image.preview);
       setJob({ id: j.clone.id, status: "pending", video_url: null, error: null });
       onChanged();
     } catch (e) {
@@ -167,6 +170,31 @@ export function CloneStudio({
       setSubmitting(false);
     }
   }
+
+  // Retoma o job em andamento ao abrir a tela (ex.: a pessoa recarregou a
+  // página no meio) — sem isso o formulário voltava sem nenhuma animação.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/video-clone", { cache: "no-store" });
+        if (!res.ok) return;
+        const j = await res.json();
+        const running = ((j.clones ?? []) as { id: string; status: string; image_url: string | null }[]).find(
+          (c) => c.status === "pending" || c.status === "generating",
+        );
+        if (running && !cancelled) {
+          setPoster(running.image_url);
+          setJob((prev) => prev ?? { id: running.id, status: running.status, video_url: null, error: null });
+        }
+      } catch {
+        /* segue no formulário */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Poll do job em andamento (o GET sincroniza com o RunPod).
   useEffect(() => {
@@ -188,6 +216,7 @@ export function CloneStudio({
 
   function reset() {
     setJob(null);
+    setPoster(null);
     setImage(null);
     setAudio(null);
     setError(null);
@@ -199,43 +228,42 @@ export function CloneStudio({
       <section className="flex flex-col gap-5">
         <style>{CLONE_ANIM_CSS}</style>
         {inflight && (
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            {/* Poster = a foto escolhida, com shimmer + spinner por cima */}
-            <div className="relative h-64 w-48 shrink-0 overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
-              {image?.preview && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={image.preview} alt="" className="h-full w-full object-cover opacity-60" />
-              )}
-              <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[var(--canvas)]/45">
-                <span className="vc-shimmer absolute inset-0" aria-hidden />
-                <Loader2 className="relative h-7 w-7 animate-spin text-white" />
-                <span className="relative font-mono text-[10px] uppercase tracking-wide text-white">
-                  {t("generatingLabel")}
-                </span>
+          /* Estilo HeyGen: a PRÓPRIA foto vira o palco — borrada, com anel
+             animado e recado de que dá pra ir fazer outra coisa. */
+          <div className="relative w-full max-w-[420px] overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
+            {(poster ?? image?.preview) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={(poster ?? image?.preview)!}
+                alt=""
+                className="w-full scale-105 object-cover opacity-60 blur-md"
+              />
+            ) : (
+              <div className="aspect-[3/4] w-full" />
+            )}
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[var(--canvas)]/45 p-6 text-center">
+              <span className="vc-shimmer absolute inset-0" aria-hidden />
+              <span className="vc-ring relative" aria-hidden />
+              <span className="relative text-[15px] font-semibold tracking-[-0.01em] text-white">
+                {t("generatingTitle")}<span className="vc-dots" />
               </span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="vc-reel flex items-center gap-2 text-sm text-[var(--ink)]">
-                <Film className="h-5 w-5 text-[var(--silver)]" />
-                <span>
-                  {t("generatingTitle")}<span className="vc-dots" />
-                </span>
-              </span>
-              <span className="flex items-center gap-1 font-mono text-[10px] tracking-wide text-[var(--ash)]">
-                <Clock className="h-3 w-3" /> {t("generatingHint")}
+              <span className="relative flex max-w-[300px] items-start justify-center gap-1.5 font-mono text-[11px] leading-relaxed tracking-wide text-white/80">
+                <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {t("generatingHint")}
               </span>
             </div>
           </div>
         )}
         {job.status === "ready" && job.video_url && (
+          /* Vídeo pronto toca NO MESMO quadro onde estava a foto (poster = ela). */
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
             <video
               src={job.video_url}
+              poster={poster ?? image?.preview ?? undefined}
               controls
               loop
               playsInline
               preload="metadata"
-              className="max-h-[480px] w-auto max-w-full rounded-[var(--radius)] border border-[var(--hairline-strong)]"
+              className="w-full max-w-[420px] rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-black"
             />
             <div className="flex flex-col gap-2">
               <button type="button" onClick={() => downloadFromUrl(job.video_url!, "video-clone", "mp4")} className={PILL}>

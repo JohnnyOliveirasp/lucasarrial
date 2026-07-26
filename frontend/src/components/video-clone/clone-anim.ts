@@ -10,4 +10,6 @@ export const CLONE_ANIM_CSS = `
 .vc-reel svg { animation: vc-reel 3s linear infinite; }
 @keyframes vc-dots { 0%,20%{content:'';} 40%{content:'.';} 60%{content:'..';} 80%,100%{content:'...';} }
 .vc-dots::after { content:''; animation: vc-dots 1.6s steps(1) infinite; }
+@keyframes vc-ring { to { transform: rotate(360deg); } }
+.vc-ring { width:56px; height:56px; border-radius:9999px; border:3px solid rgba(255,255,255,.22); border-top-color:#fff; animation: vc-ring 1s linear infinite; }
 `;
