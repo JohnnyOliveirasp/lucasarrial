@@ -16,6 +16,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { getInfiniteTalkStatus } from "@/lib/video-clone/runpod";
 import { finalizeVideoClone } from "@/lib/video-clone/finalize";
 import { getRunpodBilling } from "@/lib/admin/runpod";
+import { processCourtesyCampaigns } from "@/lib/courtesy/service";
 
 const STUCK_AFTER_MS = 10 * 60 * 1000; // só olha o que está preso há 10min+
 const NO_JOB_FAIL_MS = 60 * 60 * 1000; // sem job id há 1h = órfão de verdade
@@ -106,7 +107,19 @@ export async function POST(request: NextRequest) {
     console.error("[sweep-clones] leitura de saldo falhou:", e instanceof Error ? e.message : e);
   }
 
+  // Cortesias (mig 53): concede nas janelas abertas + expira o restante das
+  // campanhas vencidas. Best-effort — nunca derruba o sweep de clones.
+  let courtesy = null;
+  try {
+    courtesy = await processCourtesyCampaigns();
+    if (courtesy.granted > 0 || courtesy.expired > 0 || courtesy.errors > 0) {
+      console.log("[sweep-clones] cortesias", JSON.stringify(courtesy));
+    }
+  } catch (e) {
+    console.error("[sweep-clones] cortesias falhou:", e instanceof Error ? e.message : e);
+  }
+
   const summary = { checked: (stuck ?? []).length, ready, failed_refunded: failed, still_running: running, errors };
   if (summary.checked > 0) console.log("[sweep-clones]", JSON.stringify(summary));
-  return jsonOk({ sweep: summary });
+  return jsonOk({ sweep: summary, courtesy });
 }

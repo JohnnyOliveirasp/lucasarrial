@@ -17,9 +17,13 @@ import { getAdmin } from "@/lib/db/admin";
 import { reconcileUserEntitlements } from "@/lib/payments/entitlements";
 import { grantSubscriptionCredits } from "@/lib/credits/service";
 import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
+import { claimCourtesyOnLogin } from "@/lib/courtesy/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
 
 export async function claimPurchasesOnLogin(userId: string, email: string): Promise<void> {
+  // Cortesias (mig 53): e-mail que entrou numa campanha antes de ter conta
+  // recebe na primeira entrada. Best-effort dentro da própria função.
+  await claimCourtesyOnLogin(userId, email);
   try {
     const admin = getAdmin();
     // 1. Religa órfãos deste e-mail + recalcula o cache de acesso (idempotente).

@@ -17,6 +17,7 @@ import {
 } from "./cost";
 import { getRunpodBilling } from "./runpod";
 import { VIDEO_TIERS } from "@/lib/video/tiers";
+import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
 
 /** Janela calendário [since, until) em ISO — construída na rota a partir de dia/mês/ano. */
 export type DateRange = { since: string; until: string };
@@ -106,7 +107,7 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
   const admin = getAdmin();
   const { since, until } = range;
 
-  const [mRes, fRes, cRes, spendRes, billing] = await Promise.all([
+  const [mRes, fRes, cRes, spendRes, billing, courtesyRes] = await Promise.all([
     admin.rpc("admin_metrics", { p_since: since, p_until: until }),
     admin.rpc("admin_finance", { p_since: since, p_until: until }),
     admin.rpc("admin_video_clones", { p_since: since, p_until: until }),
@@ -117,6 +118,12 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
       .lt("at", until)
       .order("at", { ascending: true }),
     getRunpodBilling(),
+    // Cortesias (mig 53) concedidas no período — entram no KPI "Promoção (dado)"
+    admin
+      .from("courtesy_grants")
+      .select("amount")
+      .gte("granted_at", since)
+      .lt("granted_at", until),
   ]);
 
   const metrics = (mRes.data ?? {}) as unknown as AdminMetrics;
@@ -180,7 +187,13 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
   // Decisão Johnny 2026-07-06 (opção B): lucro/prejuízo = CAIXA REAL; a promoção
   // (assinaturas R$0 valorizadas a preço de tabela) aparece SEPARADA ao lado,
   // com o "total c/ promoção" escrito — os dois números sempre visíveis.
-  const offerValuePeriod = (fin.offer_count_period ?? 0) * PLAN_PRICE_BRL;
+  // Cortesias valorizadas na régua do plano (180k cr = R$97) somam à promoção.
+  const courtesyCredits = ((courtesyRes.data ?? []) as { amount: number }[]).reduce(
+    (s, g) => s + g.amount,
+    0,
+  );
+  const courtesyValuePeriod = (courtesyCredits / PLAN_MONTHLY_CREDITS) * PLAN_PRICE_BRL;
+  const offerValuePeriod = (fin.offer_count_period ?? 0) * PLAN_PRICE_BRL + courtesyValuePeriod;
   // Infra fixa (Hetzner + RunPod HD) pró-rateada pela janela vista, LIMITADA ao
   // tempo realmente operado: do lançamento (jun/2026) até agora — senão o "ano"
   // cobraria 12 meses e o mês corrente cobraria dias que ainda não existiram.

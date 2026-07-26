@@ -500,6 +500,46 @@ export type CreditCampaignGrantInsert = {
 };
 export type CreditCampaignGrantUpdate = Partial<CreditCampaignGrantRow>;
 
+// ───────── courtesy_campaigns (Cortesias sem Hotmart, migration 53) ─────────
+export type CourtesyCampaignRow = {
+  id: string;
+  name: string;
+  credits_per_person: number;
+  starts_at: Timestamp;
+  ends_at: Timestamp;
+  active: boolean;
+  created_by: string | null;
+  created_at: Timestamp;
+};
+export type CourtesyCampaignInsert = {
+  name: string;
+  credits_per_person: number;
+  starts_at?: Timestamp;
+  ends_at: Timestamp;
+  active?: boolean;
+  created_by?: string | null;
+};
+export type CourtesyCampaignUpdate = Partial<CourtesyCampaignRow>;
+
+// ───────── courtesy_grants (1 linha por e-mail da campanha) ─────────
+export type CourtesyGrantRow = {
+  campaign_id: string;
+  email: string;
+  user_id: string | null;
+  amount: number;
+  granted_at: Timestamp | null;
+  expired_at: Timestamp | null;
+  remaining_expired: number | null;
+};
+export type CourtesyGrantInsert = {
+  campaign_id: string;
+  email: string;
+  user_id?: string | null;
+  amount: number;
+  granted_at?: Timestamp | null;
+};
+export type CourtesyGrantUpdate = Partial<CourtesyGrantRow>;
+
 // ───────── video_clones (Vídeo Clone / InfiniteTalk, migration 29) ─────────
 export type VideoCloneStatus = "pending" | "generating" | "ready" | "failed";
 export type VideoCloneRow = {
@@ -742,6 +782,8 @@ export type Database = {
       subscription_cancellations: { Row: SubscriptionCancellationRow; Insert: SubscriptionCancellationInsert; Update: SubscriptionCancellationUpdate; Relationships: Rel };
       credit_campaigns: { Row: CreditCampaignRow; Insert: CreditCampaignInsert; Update: CreditCampaignUpdate; Relationships: Rel };
       credit_campaign_grants: { Row: CreditCampaignGrantRow; Insert: CreditCampaignGrantInsert; Update: CreditCampaignGrantUpdate; Relationships: Rel };
+      courtesy_campaigns: { Row: CourtesyCampaignRow; Insert: CourtesyCampaignInsert; Update: CourtesyCampaignUpdate; Relationships: Rel };
+      courtesy_grants: { Row: CourtesyGrantRow; Insert: CourtesyGrantInsert; Update: CourtesyGrantUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: {
@@ -787,6 +829,10 @@ export type Database = {
         Returns: Json;
       };
       admin_list_campaigns: { Args: Record<string, never>; Returns: Json };
+      expire_courtesy_credits: {
+        Args: { p_user_id: string; p_max_amount: number; p_ref_id?: string | null };
+        Returns: Json;
+      };
       claim_alert: { Args: { p_key: string; p_cooldown_seconds: number }; Returns: boolean };
       claim_render_job: { Args: Record<string, never>; Returns: RenderJobRow | null };
     };
