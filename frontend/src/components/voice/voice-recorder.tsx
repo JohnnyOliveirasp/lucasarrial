@@ -246,11 +246,13 @@ export function VoiceRecorder() {
 
   return (
     <>
-      {/* Pill flutuante (fixed bottom-right): Mic + Stop + Timer + mini meter.
-          Aparece quando o mic está pronto/gravando pra acompanhar a leitura
-          do roteiro sem precisar scrollar pro fim da página. */}
+      {/* Pill flutuante (fixed, CENTRO inferior): Mic + Stop + Timer + mini
+          meter. Aparece quando o mic está pronto/gravando pra acompanhar a
+          leitura sem scrollar. ⚠️ NÃO usar canto inferior direito: o balão da
+          Mary (help-widget, bottom-5 right-5 z-50) fica na frente e esconde a
+          pill — caso Johnny 28/07. */}
       {showPill && (
-        <div className="fixed bottom-4 right-4 z-40 flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)]/95 px-3 py-2 backdrop-blur-sm">
+        <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)]/95 px-3 py-2 shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur-sm">
           {/* Mini medidor (5 barras verticais) — saída de áudio: canal ativo violeta */}
           <div className="flex h-6 items-end gap-0.5" aria-hidden>
             {[0, 1, 2, 3, 4].map((i) => {
