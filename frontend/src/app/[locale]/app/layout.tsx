@@ -10,6 +10,7 @@ import { HelpWidget } from "@/components/app/help-widget";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { isAdmin } from "@/lib/admin/guard";
+import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 
 export default async function AppLayout({
   children,
@@ -25,11 +26,27 @@ export default async function AppLayout({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect(`/${locale}/login`);
 
-  const { data: profile } = await supabase
+  let { data: profile } = await supabase
     .from("profiles")
     .select("id, email, display_name, avatar_url, plan, access_until, credits_subscription, credits_extra, pending_payment_at")
     .eq("id", user.id)
     .single();
+
+  // Compra/cortesia feita ANTES da conta existir só era resgatada no
+  // /auth/callback (OAuth) — quem entra por e-mail/senha nunca passava lá e
+  // ficava pago sem acesso (caso dreduardosilva 22/07, 6 dias travado). Aqui
+  // cobre TODOS os fluxos; roda só pra quem está sem plano (best-effort,
+  // nunca quebra a página) e recarrega o profile se destravou algo.
+  const claimEmail = profile?.email ?? user.email ?? null;
+  if (claimEmail && (!profile || !profile.plan || profile.plan === "free")) {
+    await claimPurchasesOnLogin(user.id, claimEmail);
+    const { data: refreshed } = await supabase
+      .from("profiles")
+      .select("id, email, display_name, avatar_url, plan, access_until, credits_subscription, credits_extra, pending_payment_at")
+      .eq("id", user.id)
+      .single();
+    if (refreshed) profile = refreshed;
+  }
 
   // Entrada LIVRE: todo usuário logado entra na plataforma e vê os menus.
   // O paywall não bloqueia mais o acesso — ele aparece como popup na AÇÃO
