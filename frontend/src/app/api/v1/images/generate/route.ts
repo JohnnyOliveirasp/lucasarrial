@@ -44,7 +44,10 @@ import {
   CONTENT_BLOCKED_MESSAGE,
 } from "@/lib/llm/moderate-image-prompt";
 
-const PRESIGN_EXPIRES = 60 * 60; // 1h — o Kie busca a referência logo no início
+// 24h: a premissa antiga ("o Kie busca a referência logo no início") quebrou
+// em 28/07 — com o Kie sobrecarregado a fila passou de 1h, o link expirava e
+// a geração morria com "Image fetch failed" JÁ COBRADA. R2 aceita até 7 dias.
+const PRESIGN_EXPIRES = 24 * 60 * 60;
 const PROMPT_MAX = 20_000; // limite do gpt-image-2
 const MAX_REFERENCE_IMAGES = 6; // gpt-image-2 aceita até 16; 6 cobre bem o caso de uso
 
@@ -87,6 +90,36 @@ export async function POST(request: NextRequest) {
   }
   if (inputKeys.some((k) => !k.startsWith(`${auth.user_id}/images/`))) {
     return badRequest("Imagem de referência inválida");
+  }
+
+  // ── Disjuntor (caso 28/07): gerador upstream falhando em série → NÃO deixa
+  // o aluno gastar crédito numa roleta. 3+ falhas nos últimos 15min com
+  // falhas ≥ sucessos = provedor degradado; pausa com aviso claro. O poll das
+  // gerações em andamento fecha o disjuntor sozinho quando o Kie volta.
+  {
+    const admin0 = getAdmin();
+    const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const [failedQ, readyQ] = await Promise.all([
+      admin0
+        .from("image_generations")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "failed")
+        .gte("created_at", since),
+      admin0
+        .from("image_generations")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "ready")
+        .gte("created_at", since),
+    ]);
+    const nFailed = failedQ.count ?? 0;
+    const nReady = readyQ.count ?? 0;
+    if (nFailed >= 3 && nFailed >= nReady) {
+      return jsonError(
+        "provider_degraded",
+        "O gerador de imagens está sobrecarregado neste momento. Aguarde alguns minutos e tente de novo — você não foi cobrado por esta tentativa.",
+        503,
+      );
+    }
   }
 
   // Proporção + resolução (faz o clamp das restrições do modelo).

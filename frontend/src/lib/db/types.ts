@@ -181,6 +181,8 @@ export type ImageGenerationRow = {
   status: ImageGenerationStatus;
   kie_task_id: string | null;
   error_message: string | null;
+  /** Resubmits automáticos por erro transiente do Kie (mig 54; máx 1). */
+  retry_count: number;
   created_at: Timestamp;
   // Vídeo animado a partir da imagem (migration 28) — espelha video_scenes.
   video_path: string | null;

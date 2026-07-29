@@ -10,6 +10,7 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { r2, imagesBucket } from "@/lib/r2/client";
 import { buildImageResultKey } from "@/lib/r2/presigned";
 import { getAdmin } from "@/lib/db/admin";
+import { handleTechFailure } from "@/lib/support/failure-alert";
 
 const CONTENT_TYPE_BY_EXT: Record<string, string> = {
   png: "image/png",
@@ -59,10 +60,36 @@ export async function finalizeImageSuccess(
     .eq("id", id);
 }
 
-/** Marca a geração como falha com a mensagem dada. */
+/** Mensagem amigável pro Histórico do aluno (o erro cru vai pro suporte). */
+function friendlyImageError(raw: string): string {
+  const base = /fetch failed|internal error|timeout|try again|temporar/i.test(raw)
+    ? "O gerador de imagens ficou sobrecarregado e esta geração falhou."
+    : "Não foi possível gerar esta imagem.";
+  return `${base} Os créditos cobrados foram devolvidos automaticamente. Tente de novo em alguns minutos.`;
+}
+
+/**
+ * Marca a geração como falha + ESTORNO AUTOMÁTICO (caso 28/07: 24 falhas
+ * cobradas sem devolução desde 01/07 — o TODO desta função finalmente pago).
+ * Transição idempotente: só quem tira a row de pending/generating dispara a
+ * contingência (não duplica na corrida webhook × poll).
+ */
 export async function failImageGeneration(id: string, message: string): Promise<void> {
-  await getAdmin()
+  const { data: claimed } = await getAdmin()
     .from("image_generations")
-    .update({ status: "failed", error_message: message.slice(0, 500) })
-    .eq("id", id);
+    .update({ status: "failed", error_message: friendlyImageError(message).slice(0, 500) })
+    .eq("id", id)
+    .in("status", ["pending", "generating"])
+    .select("id, user_id");
+  const row = (claimed ?? [])[0] as { id: string; user_id: string } | undefined;
+  if (!row) return; // já finalizada por outra via
+
+  await handleTechFailure({
+    feature: "Gerador de Imagem (Kie)",
+    userId: row.user_id,
+    refId: id,
+    rawError: message,
+    debitRefType: "image_generation",
+    refundRefType: "image_refund",
+  });
 }
