@@ -10,7 +10,13 @@
  *
  * Usa fetch direto (sem SDK) — sem dependência nova.
  */
-import { KIE_IMAGE_MODEL } from "./config";
+import {
+  KIE_IMAGE_MODEL,
+  KIE_FALLBACK_IMAGE_MODEL,
+  type KieImageModel,
+  seedreamAspect,
+  seedreamQuality,
+} from "./config";
 
 const BASE = "https://api.kie.ai/api/v1/jobs";
 
@@ -56,14 +62,34 @@ export type KieCreateInput = {
   resolution: string;
 };
 
+// Limite do prompt no Seedream (3-5000 chars; gpt-image-2 aceita 20k).
+const SEEDREAM_PROMPT_MAX = 5000;
+
+/**
+ * Traduz o input canônico (shape do gpt-image-2) pro shape do modelo alvo.
+ * Seedream: `image_urls` (máx 10) + `quality` em vez de `input_urls` + `resolution`.
+ */
+function buildImageInput(model: KieImageModel, v: KieCreateInput): Record<string, unknown> {
+  if (model === KIE_FALLBACK_IMAGE_MODEL) {
+    return {
+      prompt: v.prompt.slice(0, SEEDREAM_PROMPT_MAX),
+      image_urls: v.input_urls.slice(0, 10),
+      aspect_ratio: seedreamAspect(v.aspect_ratio),
+      quality: seedreamQuality(v.resolution),
+    };
+  }
+  return { ...v };
+}
+
 /** Cria uma task de geração e retorna o taskId. */
 export async function kieCreateImageTask(
   input: KieCreateInput,
-  opts: { callBackUrl?: string } = {},
+  opts: { callBackUrl?: string; model?: KieImageModel } = {},
 ): Promise<{ taskId: string }> {
+  const model = opts.model ?? KIE_IMAGE_MODEL;
   const body: Record<string, unknown> = {
-    model: KIE_IMAGE_MODEL,
-    input,
+    model,
+    input: buildImageInput(model, input),
   };
   if (opts.callBackUrl) body.callBackUrl = opts.callBackUrl;
 

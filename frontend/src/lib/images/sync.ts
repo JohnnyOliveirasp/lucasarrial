@@ -10,6 +10,12 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { kieGetTask, kieCreateImageTask, kieCallbackUrl } from "@/lib/kie/client";
+import {
+  KIE_IMAGE_MODEL,
+  KIE_FALLBACK_IMAGE_MODEL,
+  kieFallbackEnabled,
+  type KieImageModel,
+} from "@/lib/kie/config";
 import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { finalizeImageSuccess, failImageGeneration } from "@/lib/images/finalize";
@@ -20,6 +26,17 @@ const RETRY_PRESIGN_EXPIRES = 24 * 60 * 60;
 /** Erros do Kie que valem UMA nova tentativa antes de falhar de vez. */
 function isTransientKieError(raw: string): boolean {
   return /internal error|try again|timeout|temporar|fetch failed/i.test(raw);
+}
+
+/**
+ * Retry CRUZADO (spec Seedream 29/07): com o fallback ligado, a retentativa
+ * vai pro OUTRO modelo — GPT falhou → Seedream (o aluno do probe nem vê a
+ * falha, e a row seedream+retry_count=1 reabre o disjuntor); Seedream falhou →
+ * GPT (funciona como probe de volta). Fallback desligado = mesmo modelo.
+ */
+function retryModelFor(current: string): KieImageModel {
+  if (!kieFallbackEnabled()) return KIE_IMAGE_MODEL;
+  return current === KIE_IMAGE_MODEL ? KIE_FALLBACK_IMAGE_MODEL : KIE_IMAGE_MODEL;
 }
 
 /**
@@ -35,7 +52,9 @@ async function tryImageRetry(id: string): Promise<boolean> {
     .eq("id", id)
     .eq("retry_count", 0)
     .in("status", ["pending", "generating"])
-    .select("id, prompt, input_image_path, input_image_paths, aspect_ratio, resolution");
+    .select(
+      "id, prompt, input_image_path, input_image_paths, aspect_ratio, resolution, kie_model",
+    );
   const row = (claimed ?? [])[0] as
     | {
         id: string;
@@ -44,6 +63,7 @@ async function tryImageRetry(id: string): Promise<boolean> {
         input_image_paths: string[] | null;
         aspect_ratio: string;
         resolution: string;
+        kie_model: string;
       }
     | undefined;
   if (!row) return false; // já tentou 1x ou já finalizou
@@ -56,6 +76,7 @@ async function tryImageRetry(id: string): Promise<boolean> {
     const inputUrls = await Promise.all(
       keys.map((k) => createPresignedGet(imagesBucket(), k, RETRY_PRESIGN_EXPIRES)),
     );
+    const model = retryModelFor(row.kie_model);
     const { taskId } = await kieCreateImageTask(
       {
         prompt: row.prompt,
@@ -63,13 +84,15 @@ async function tryImageRetry(id: string): Promise<boolean> {
         aspect_ratio: row.aspect_ratio,
         resolution: row.resolution,
       },
-      { callBackUrl: kieCallbackUrl() },
+      { callBackUrl: kieCallbackUrl(), model },
     );
     await admin
       .from("image_generations")
-      .update({ kie_task_id: taskId, status: "pending" })
+      .update({ kie_task_id: taskId, status: "pending", kie_model: model })
       .eq("id", id);
-    console.log(`[images/sync] retry automático: gen ${id} → nova task ${taskId}`);
+    console.log(
+      `[images/sync] retry automático: gen ${id} → nova task ${taskId} (${model})`,
+    );
     return true;
   } catch (e) {
     // resubmit falhou (Kie ainda fora?) — deixa o fluxo normal marcar failed.

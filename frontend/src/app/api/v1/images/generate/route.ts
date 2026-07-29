@@ -38,6 +38,7 @@ import {
   resolveResolutionForAspect,
 } from "@/lib/kie/config";
 import { kieCreateImageTask, kieCallbackUrl } from "@/lib/kie/client";
+import { pickImageRoute } from "@/lib/kie/failover";
 import { generateImagePrompt } from "@/lib/llm/generate-image-prompt";
 import {
   moderateImagePrompt,
@@ -92,34 +93,17 @@ export async function POST(request: NextRequest) {
     return badRequest("Imagem de referência inválida");
   }
 
-  // ── Disjuntor (caso 28/07): gerador upstream falhando em série → NÃO deixa
-  // o aluno gastar crédito numa roleta. 3+ falhas nos últimos 15min com
-  // falhas ≥ sucessos = provedor degradado; pausa com aviso claro. O poll das
-  // gerações em andamento fecha o disjuntor sozinho quando o Kie volta.
-  {
-    const admin0 = getAdmin();
-    const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    const [failedQ, readyQ] = await Promise.all([
-      admin0
-        .from("image_generations")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "failed")
-        .gte("created_at", since),
-      admin0
-        .from("image_generations")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "ready")
-        .gte("created_at", since),
-    ]);
-    const nFailed = failedQ.count ?? 0;
-    const nReady = readyQ.count ?? 0;
-    if (nFailed >= 3 && nFailed >= nReady) {
-      return jsonError(
-        "provider_degraded",
-        "O gerador de imagens está sobrecarregado neste momento. Aguarde alguns minutos e tente de novo — você não foi cobrado por esta tentativa.",
-        503,
-      );
-    }
+  // ── Disjuntor (caso 28/07) + contingência Seedream (spec 29/07): titular
+  // (GPT) falhando em série → roteia as novas tasks pro fallback SOZINHO (e
+  // volta sozinho quando o GPT sara). Com KIE_FALLBACK_ENABLED desligado, cai
+  // no comportamento antigo: pausa com aviso claro, sem cobrar.
+  const route = await pickImageRoute();
+  if (route.blocked) {
+    return jsonError(
+      "provider_degraded",
+      "O gerador de imagens está sobrecarregado neste momento. Aguarde alguns minutos e tente de novo — você não foi cobrado por esta tentativa.",
+      503,
+    );
   }
 
   // Proporção + resolução (faz o clamp das restrições do modelo).
@@ -192,7 +176,7 @@ export async function POST(request: NextRequest) {
         aspect_ratio: aspect,
         resolution,
       },
-      { callBackUrl: kieCallbackUrl() },
+      { callBackUrl: kieCallbackUrl(), model: route.model },
     );
     taskId = created.taskId;
   } catch (e) {
@@ -227,6 +211,7 @@ export async function POST(request: NextRequest) {
     credits_cost: billed ? creditCost : 0,
     status: "pending",
     kie_task_id: taskId,
+    kie_model: route.model,
   });
   if (insertErr) return serverError("Failed to create image generation row");
 

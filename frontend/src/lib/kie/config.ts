@@ -7,6 +7,36 @@
 export const KIE_IMAGE_MODEL = "gpt-image-2-image-to-image";
 
 /**
+ * Fallback de CONTINGÊNCIA (regra do Johnny): NUNCA é escolha do aluno.
+ * GPT degradado → disjuntor roteia pra cá sozinho → GPT voltou → volta sozinho.
+ * Ligado só com KIE_FALLBACK_ENABLED=true no env.
+ */
+export const KIE_FALLBACK_IMAGE_MODEL = "seedream/5-pro-image-to-image";
+
+export type KieImageModel = typeof KIE_IMAGE_MODEL | typeof KIE_FALLBACK_IMAGE_MODEL;
+
+/** Fallback Seedream habilitado no ambiente? (desligado = disjuntor só pausa). */
+export function kieFallbackEnabled(): boolean {
+  return process.env.KIE_FALLBACK_ENABLED === "true";
+}
+
+/**
+ * Traduções pro shape do Seedream (que não tem `auto`, `4:5` nem 4K):
+ * auto→1:1 · 4:5→3:4 (retrato mais próximo) · 4K→high (2K, teto do modelo).
+ * Degradação silenciosa aceitável: é contingência, o aluno já pagou e o
+ * importante é ENTREGAR a imagem.
+ */
+export function seedreamAspect(aspect: string): string {
+  if (aspect === "auto") return "1:1";
+  if (aspect === "4:5") return "3:4";
+  return aspect; // 1:1, 9:16, 16:9, 3:2, 2:3 existem lá com o mesmo nome
+}
+
+export function seedreamQuality(resolution: string): string {
+  return resolution === "1K" ? "basic" : "high";
+}
+
+/**
  * Proporções expostas ao usuário (subconjunto curado do que o Kie aceita).
  * `value` vai cru pro Kie; `label` é o que a pessoa lê.
  */

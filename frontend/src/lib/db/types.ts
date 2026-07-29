@@ -183,6 +183,8 @@ export type ImageGenerationRow = {
   error_message: string | null;
   /** Resubmits automáticos por erro transiente do Kie (mig 54; máx 1). */
   retry_count: number;
+  /** Modelo que atendeu a geração (mig 55): gpt titular; seedream = contingência. */
+  kie_model: string;
   created_at: Timestamp;
   // Vídeo animado a partir da imagem (migration 28) — espelha video_scenes.
   video_path: string | null;
@@ -207,6 +209,7 @@ export type ImageGenerationInsert = {
   credits_cost: number;
   status?: ImageGenerationStatus;
   kie_task_id?: string | null;
+  kie_model?: string;
 };
 export type ImageGenerationUpdate = Partial<ImageGenerationRow>;
 
