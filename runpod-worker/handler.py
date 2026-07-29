@@ -925,8 +925,11 @@ def _handle_inference(inp: dict) -> dict:
     qa_language = inp.get("language", "pt")
     # QA anti-eco (caso Carlos 29/07): frases da ref vazando no meio/fim de
     # QUALQUER chunk. Transcreve o chunk inteiro; eco -> regera o chunk.
+    # Modelo próprio: o "small" do start_qa NÃO OUVIU 4/7 ecos no E2E (recall
+    # baixo) — o turbo já está na imagem (audio_edit) e é rápido em GPU.
     echo_qa_enabled = os.environ.get("TTS_ECHO_QA", "1") not in ("0", "false", "False", "")
-    echo_qa_retries = int(os.environ.get("TTS_ECHO_QA_RETRIES", "2"))
+    echo_qa_retries = int(os.environ.get("TTS_ECHO_QA_RETRIES", "3"))
+    echo_qa_model = os.environ.get("TTS_ECHO_QA_WHISPER", "large-v3-turbo")
 
     def _gen_chunk(chunk_text: str) -> np.ndarray:
         # Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853).
@@ -973,7 +976,7 @@ def _handle_inference(inp: dict) -> dict:
                     if ok is False:
                         score += 100
                 if echo_qa_enabled and attempt < echo_qa_retries:
-                    leak = _ref_echo_leak(seg, sample_rate, chunk, prompt_text, start_qa_model, qa_language)
+                    leak = _ref_echo_leak(seg, sample_rate, chunk, prompt_text, echo_qa_model, qa_language)
                     qa_stats["echo_checked"] += 1
                     if leak is None:
                         qa_stats["echo_none"] += 1
