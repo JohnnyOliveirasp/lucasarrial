@@ -680,7 +680,7 @@ def _ref_echo_leak(seg, sample_rate, chunk_text, prompt_text, whisper_model, lan
     VoxCPM vaza frases da REF no meio/fim dos chunks — o QA de 1a palavra não
     vê. Transcreve o chunk INTEIRO e procura bigramas que existem na ref mas
     NÃO no texto pedido (palavras ≥3 letras — filtra "e a"/"de um").
-    True = eco detectado (regerar); False = limpo; None = inconclusivo/QA não
+    Retorna o Nº de bigramas vazados (0 = limpo); None = inconclusivo/QA não
     aplicável (não bloqueia — rede de segurança, não gate).
     """
     if not prompt_text:
@@ -702,7 +702,7 @@ def _ref_echo_leak(seg, sample_rate, chunk_text, prompt_text, whisper_model, lan
     got = _qa_transcribe_seg(seg, sample_rate, whisper_model, language, "echo_qa")
     if not got:
         return None
-    return bool(grams(got) & suspect)
+    return len(grams(got) & suspect)
 
 
 def _crossfade_concat(wavs: list[np.ndarray], fade_samples: int) -> np.ndarray:
@@ -956,26 +956,36 @@ def _handle_inference(inp: dict) -> dict:
             pad = max(trim_pad_samples, int(sample_rate * 0.06)) if idx == 0 else trim_pad_samples
             seg = _trim_silence(seg, threshold=trim_threshold, pad_samples=pad)
         if prompt_wav_local and (start_qa_enabled or echo_qa_enabled):
+            # Reprovou -> regera; esgotou as tentativas -> fica com a MELHOR
+            # (menos eco; 1a palavra errada pesa mais), não com a última.
             attempt = 0
             max_attempts = max(start_qa_retries, echo_qa_retries)
+            best_seg, best_score = seg, None
             while attempt < max_attempts:
-                bad = False
+                score = 0
                 if idx == 0 and start_qa_enabled and attempt < start_qa_retries:
                     ok = _start_word_ok(seg, sample_rate, chunk, start_qa_model, qa_language)
                     _log("info", "inference.start_qa", attempt=attempt, ok=ok)
-                    bad = ok is False
-                if not bad and echo_qa_enabled and attempt < echo_qa_retries:
+                    if ok is False:
+                        score += 100
+                if echo_qa_enabled and attempt < echo_qa_retries:
                     leak = _ref_echo_leak(seg, sample_rate, chunk, prompt_text, start_qa_model, qa_language)
                     if leak is not None:
                         _log("info", "inference.echo_qa", idx=idx, attempt=attempt, leak=leak)
-                    bad = bad or leak is True
-                if not bad:
+                        score += leak
+                if best_score is None or score < best_score:
+                    best_seg, best_score = seg, score
+                if score == 0:
                     break
                 attempt += 1
+                if attempt >= max_attempts:
+                    _log("error", "inference.qa.exhausted", idx=idx, best_score=best_score)
+                    break
                 seg = _gen_chunk(chunk)
                 if trim_enabled:
                     pad = max(trim_pad_samples, int(sample_rate * 0.06)) if idx == 0 else trim_pad_samples
                     seg = _trim_silence(seg, threshold=trim_threshold, pad_samples=pad)
+            seg = best_seg
         _log(
             "info", "inference.chunk", idx=idx, total=len(chunks),
             chars=len(chunk), samples_raw=raw_samples, samples_trim=int(seg.size),
