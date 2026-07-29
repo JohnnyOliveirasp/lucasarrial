@@ -634,38 +634,75 @@ def _start_word_ok(
     None = Whisper inconclusivo (não bloqueia — QA é rede de segurança).
     """
     import difflib
-    import tempfile
-    import unicodedata
 
-    def norm_words(s: str) -> list[str]:
-        s = unicodedata.normalize("NFD", (s or "").lower())
-        s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-        return [w for w in re.sub(r"[^a-z0-9\s]", " ", s).split() if w]
-
-    expected = norm_words(expected_text)
+    expected = _qa_norm_words(expected_text)
     if not expected:
         return True
     head = seg[: int(sample_rate * 4)]
     if head.size < int(sample_rate * 0.2):
         return None
-    try:
-        from voice_pipeline import transcribe_file
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp_path = Path(tmp.name)
-        sf.write(str(tmp_path), head, sample_rate)
-        try:
-            got = norm_words(transcribe_file(tmp_path, model_name=whisper_model, language=language))
-        finally:
-            tmp_path.unlink(missing_ok=True)
-    except Exception as exc:
-        _log("error", "inference.start_qa.error", error=str(exc))
-        return None
+    got = _qa_transcribe_seg(head, sample_rate, whisper_model, language, "start_qa")
     if not got:
         return None
     first = expected[0]
     return any(
         difflib.SequenceMatcher(None, first, w).ratio() >= 0.8 for w in got[:3]
     )
+
+
+def _qa_norm_words(s: str) -> list[str]:
+    """Palavras minúsculas sem acento/pontuação (comparação de QA)."""
+    import unicodedata
+    s = unicodedata.normalize("NFD", (s or "").lower())
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return [w for w in re.sub(r"[^a-z0-9\s]", " ", s).split() if w]
+
+
+def _qa_transcribe_seg(seg, sample_rate, whisper_model, language, label):
+    """Transcreve um trecho de áudio pra QA. [] = falhou (não bloqueia)."""
+    import tempfile
+    try:
+        from voice_pipeline import transcribe_file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        sf.write(str(tmp_path), seg, sample_rate)
+        try:
+            return _qa_norm_words(transcribe_file(tmp_path, model_name=whisper_model, language=language))
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    except Exception as exc:
+        _log("error", f"inference.{label}.error", error=str(exc))
+        return []
+
+
+def _ref_echo_leak(seg, sample_rate, chunk_text, prompt_text, whisper_model, language):
+    """QA anti-eco (caso Carlos "mesma coisa" 2026-07-29): o continuation do
+    VoxCPM vaza frases da REF no meio/fim dos chunks — o QA de 1a palavra não
+    vê. Transcreve o chunk INTEIRO e procura bigramas que existem na ref mas
+    NÃO no texto pedido (palavras ≥3 letras — filtra "e a"/"de um").
+    True = eco detectado (regerar); False = limpo; None = inconclusivo/QA não
+    aplicável (não bloqueia — rede de segurança, não gate).
+    """
+    if not prompt_text:
+        return None
+    ref_words = _qa_norm_words(prompt_text)
+    text_words = _qa_norm_words(chunk_text)
+
+    def grams(words: list[str]) -> set[tuple[str, str]]:
+        return {
+            (a, b) for a, b in zip(words, words[1:])
+            if len(a) >= 3 and len(b) >= 3
+        }
+
+    suspect = grams(ref_words) - grams(text_words)
+    if not suspect:
+        return None
+    if seg.size < int(sample_rate * 0.2):
+        return None
+    got = _qa_transcribe_seg(seg, sample_rate, whisper_model, language, "echo_qa")
+    if not got:
+        return None
+    return bool(grams(got) & suspect)
 
 
 def _crossfade_concat(wavs: list[np.ndarray], fade_samples: int) -> np.ndarray:
@@ -886,6 +923,10 @@ def _handle_inference(inp: dict) -> dict:
     start_qa_retries = int(os.environ.get("TTS_START_QA_RETRIES", "2"))
     start_qa_model = os.environ.get("TTS_START_QA_WHISPER", "small")
     qa_language = inp.get("language", "pt")
+    # QA anti-eco (caso Carlos 29/07): frases da ref vazando no meio/fim de
+    # QUALQUER chunk. Transcreve o chunk inteiro; eco -> regera o chunk.
+    echo_qa_enabled = os.environ.get("TTS_ECHO_QA", "1") not in ("0", "false", "False", "")
+    echo_qa_retries = int(os.environ.get("TTS_ECHO_QA_RETRIES", "2"))
 
     def _gen_chunk(chunk_text: str) -> np.ndarray:
         # Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853).
@@ -914,17 +955,26 @@ def _handle_inference(inp: dict) -> dict:
             # de abertura (o "h" de "hoje" fica abaixo do threshold de -46dB).
             pad = max(trim_pad_samples, int(sample_rate * 0.06)) if idx == 0 else trim_pad_samples
             seg = _trim_silence(seg, threshold=trim_threshold, pad_samples=pad)
-        if idx == 0 and start_qa_enabled and prompt_wav_local:
+        if prompt_wav_local and (start_qa_enabled or echo_qa_enabled):
             attempt = 0
-            while attempt < start_qa_retries:
-                ok = _start_word_ok(seg, sample_rate, chunk, start_qa_model, qa_language)
-                _log("info", "inference.start_qa", attempt=attempt, ok=ok)
-                if ok is not False:
+            max_attempts = max(start_qa_retries, echo_qa_retries)
+            while attempt < max_attempts:
+                bad = False
+                if idx == 0 and start_qa_enabled and attempt < start_qa_retries:
+                    ok = _start_word_ok(seg, sample_rate, chunk, start_qa_model, qa_language)
+                    _log("info", "inference.start_qa", attempt=attempt, ok=ok)
+                    bad = ok is False
+                if not bad and echo_qa_enabled and attempt < echo_qa_retries:
+                    leak = _ref_echo_leak(seg, sample_rate, chunk, prompt_text, start_qa_model, qa_language)
+                    if leak is not None:
+                        _log("info", "inference.echo_qa", idx=idx, attempt=attempt, leak=leak)
+                    bad = bad or leak is True
+                if not bad:
                     break
                 attempt += 1
                 seg = _gen_chunk(chunk)
                 if trim_enabled:
-                    pad = max(trim_pad_samples, int(sample_rate * 0.06))
+                    pad = max(trim_pad_samples, int(sample_rate * 0.06)) if idx == 0 else trim_pad_samples
                     seg = _trim_silence(seg, threshold=trim_threshold, pad_samples=pad)
         _log(
             "info", "inference.chunk", idx=idx, total=len(chunks),
