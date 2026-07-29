@@ -57,6 +57,8 @@ export async function GET(request: NextRequest) {
         error_message: g.error_message,
         created_at: g.created_at,
         image_url,
+        // Chave R2 do resultado — "usar como referência" no estúdio (29/07).
+        image_path: g.status === "ready" ? g.image_path : null,
         video_status: g.video_status,
         video_tier: g.video_tier,
         video_prompt_pt: g.video_prompt_pt,

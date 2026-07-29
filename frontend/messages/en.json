@@ -432,7 +432,12 @@
         "dropzone": "Click or drag your photos here",
         "formats": "JPG, PNG or WEBP · up to {max} photos",
         "remove": "Remove photo",
-        "addMore": "Add more photos"
+        "addMore": "Add more photos",
+        "fixedLabel": "Reference image",
+        "fixedBadge": "Fixed reference",
+        "replace": "Change photo",
+        "extrasLabel": "Extra photos (optional)",
+        "historyTip": "Tip: on any image in your history, click “Use as reference” to bring it here."
       },
       "idea": {
         "label": "2. Your idea (optional)",
@@ -517,7 +522,8 @@
       "delete": "Delete",
       "deleteTitle": "Delete image?",
       "deleteWarning": "This action is <strong>irreversible</strong>. It removes the image from storage and from the history.",
-      "deleting": "Deleting…"
+      "deleting": "Deleting…",
+      "useAsRef": "Use as reference"
     },
     "animate": {
       "errors": {
@@ -833,7 +839,10 @@
       "eyebrow": "Videos",
       "title": "Automatic recording edit",
       "subtitle": "Upload your raw recording — feel free to stumble, repeat and pause. The platform cuts mistakes and silences and returns the finished video, captioned.",
-      "profiles": { "dinamico": "Dynamic pace", "natural": "Natural pace" },
+      "profiles": {
+        "dinamico": "Dynamic pace",
+        "natural": "Natural pace"
+      },
       "pick": {
         "title": "Upload recording",
         "hint": "MP4, MOV or WEBM · up to 15 minutes · up to 1GB"

@@ -57,7 +57,7 @@ export default async function ImagesPage({
       </header>
 
       {canGenerate ? (
-        <ImageWorkspace creditsTotal={creditsTotal} unlimited={team} />
+        <ImageWorkspace creditsTotal={creditsTotal} unlimited={team} userId={user.id} />
       ) : (
         <div className="flex flex-col gap-12">
           <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">

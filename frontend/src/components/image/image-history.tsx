@@ -13,6 +13,7 @@ import {
   ImageIcon,
   Film,
   Loader2,
+  Pin,
 } from "lucide-react";
 
 import { ImageAnimatePanel } from "./image-animate";
@@ -29,6 +30,8 @@ type Img = {
   error_message: string | null;
   created_at: string;
   image_url: string | null;
+  /** Chave R2 do resultado (ready) — vira referência fixa no estúdio. */
+  image_path: string | null;
   video_status: "pending" | "generating" | "ready" | "failed" | null;
   video_tier: string | null;
   video_prompt_pt: string | null;
@@ -39,10 +42,13 @@ type Img = {
 export function ImageHistory({
   reloadKey = 0,
   openAnimateId = null,
+  onUseAsRef,
 }: {
   reloadKey?: number;
   /** Abre o painel "Animar" desta imagem (vindo do botão na tela de resultado). */
   openAnimateId?: string | null;
+  /** "Usar como referência": manda a imagem pro quadro fixo do estúdio (29/07). */
+  onUseAsRef?: (key: string, url: string) => void;
 }) {
   const t = useTranslations("images.history");
   const [items, setItems] = useState<Img[]>([]);
@@ -262,6 +268,19 @@ export function ImageHistory({
 
             {/* Ações */}
             <div className="flex items-center gap-3 sm:justify-end">
+              {onUseAsRef && (
+                <button
+                  type="button"
+                  disabled={g.status !== "ready" || !g.image_url || !g.image_path}
+                  onClick={() =>
+                    g.image_path && g.image_url && onUseAsRef(g.image_path, g.image_url)
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline)] px-2.5 py-1.5 font-mono text-[10px] tracking-wide text-[var(--silver)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--ink)] disabled:opacity-40"
+                >
+                  <Pin className="h-3.5 w-3.5" />
+                  {t("useAsRef")}
+                </button>
+              )}
               <button
                 type="button"
                 disabled={g.status !== "ready" || !g.image_url}
@@ -327,14 +346,29 @@ export function ImageHistory({
             />
             <div className="flex items-center justify-between gap-3">
               <span className="truncate text-sm text-[var(--mute)]">{fallbackName(lightbox)}</span>
-              <button
-                type="button"
-                onClick={() => downloadFromUrl(lightbox.image_url!, fallbackName(lightbox))}
-                className="inline-flex h-9 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-4 text-[13px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
-              >
-                <Download className="h-4 w-4" />
-                {t("download")}
-              </button>
+              <div className="flex items-center gap-2">
+                {onUseAsRef && lightbox.image_path && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUseAsRef(lightbox.image_path!, lightbox.image_url!);
+                      setLightbox(null);
+                    }}
+                    className="inline-flex h-9 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-4 text-[13px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
+                  >
+                    <Pin className="h-4 w-4" />
+                    {t("useAsRef")}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => downloadFromUrl(lightbox.image_url!, fallbackName(lightbox))}
+                  className="inline-flex h-9 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-4 text-[13px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
+                >
+                  <Download className="h-4 w-4" />
+                  {t("download")}
+                </button>
+              </div>
             </div>
           </div>
         </div>

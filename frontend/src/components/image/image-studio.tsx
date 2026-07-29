@@ -26,6 +26,11 @@ const LABEL = "flex items-center gap-1.5 font-mono text-[11px] tracking-wide tex
 const PROMPT_MAX = 2000;
 const IDEA_MAX = 600;
 const MAX_IMAGES = 6; // gpt-image-2 aceita até 16; 6 cobra bem o caso de uso
+const MAX_EXTRAS = MAX_IMAGES - 1; // 1 fixa + 5 extras
+
+/** Referência FIXA (29/07): persiste entre gerações e sessões (localStorage). */
+export type FixedRef = { key: string; url: string };
+const fixedRefStorageKey = (userId: string) => `fc:image-ref:${userId}`;
 
 type RefImage = { id: string; preview: string; key: string | null; uploading: boolean };
 type Step = "form" | "submitting" | "polling" | "done" | "error";
@@ -39,11 +44,17 @@ type ImageDto = {
 export function ImageStudio({
   creditsTotal,
   unlimited,
+  userId,
+  refRequest,
   onGenerated,
   onAnimate,
 }: {
   creditsTotal: number;
   unlimited: boolean;
+  /** Escopo do localStorage da referência fixa (multi-conta no mesmo browser). */
+  userId: string;
+  /** "Usar como referência" do histórico: troca a referência fixa. */
+  refRequest?: (FixedRef & { seq: number }) | null;
   onGenerated?: () => void;
   /** Abre o painel "Animar" desta imagem no histórico (feature Vídeo). */
   onAnimate?: (imageId: string) => void;
@@ -53,9 +64,62 @@ export function ImageStudio({
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
 
-  // referências (1 ou mais fotos da mesma pessoa)
+  // Referência FIXA (sempre 1) + fotos extras (até 5, como antes).
+  const [fixedRef, setFixedRef] = useState<FixedRef | null>(null);
+  const [fixedUploading, setFixedUploading] = useState(false);
   const [refs, setRefs] = useState<RefImage[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null); // extras (multiple)
+  const replaceInputRef = useRef<HTMLInputElement>(null); // troca a fixa (single)
+
+  function persistFixedRef(next: FixedRef | null) {
+    setFixedRef(next);
+    try {
+      if (next) localStorage.setItem(fixedRefStorageKey(userId), next.key);
+      else localStorage.removeItem(fixedRefStorageKey(userId));
+    } catch {
+      /* storage indisponível — segue só em memória */
+    }
+  }
+
+  // Reidrata a referência fixa da sessão anterior (chave → URL fresca).
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(fixedRefStorageKey(userId));
+    } catch {
+      stored = null;
+    }
+    if (!stored) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/v1/images/ref-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: stored }),
+        });
+        if (!r.ok) throw new Error("ref-url");
+        const { url } = await r.json();
+        if (!cancelled) setFixedRef({ key: stored!, url });
+      } catch {
+        // chave morta (imagem apagada) — limpa em silêncio
+        try {
+          localStorage.removeItem(fixedRefStorageKey(userId));
+        } catch {
+          /* noop */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  // "Usar como referência" vindo do histórico.
+  useEffect(() => {
+    if (refRequest) persistFixedRef({ key: refRequest.key, url: refRequest.url });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refRequest?.seq]);
 
   // prompt
   const [idea, setIdea] = useState("");
@@ -81,10 +145,14 @@ export function ImageStudio({
   const canAfford = unlimited || creditsTotal >= cost;
   const affordableResolution = (v: string) =>
     unlimited || creditsTotal >= imageCreditCost(v);
-  const readyKeys = refs.filter((r) => r.key).map((r) => r.key as string);
-  const anyUploading = refs.some((r) => r.uploading);
+  // A fixa vai SEMPRE primeiro (é a âncora da semelhança); extras completam.
+  const readyKeys = [
+    ...(fixedRef ? [fixedRef.key] : []),
+    ...refs.filter((r) => r.key).map((r) => r.key as string),
+  ];
+  const anyUploading = fixedUploading || refs.some((r) => r.uploading);
   const canSubmit =
-    readyKeys.length > 0 && !anyUploading && prompt.trim().length > 0 && canAfford;
+    Boolean(fixedRef) && !anyUploading && prompt.trim().length > 0 && canAfford;
 
   useEffect(() => {
     return () => {
@@ -135,6 +203,43 @@ export function ImageStudio({
     }
   }
 
+  /** Sobe 1 arquivo e o torna a referência FIXA (substitui a atual). */
+  async function uploadFixed(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setError(t("errors.invalidFiles"));
+      return;
+    }
+    setError(null);
+    setFixedUploading(true);
+    const preview = URL.createObjectURL(file);
+    try {
+      const r = await fetch("/api/v1/images/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, content_type: file.type }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error?.message || t("errors.prepareUpload"));
+      }
+      const { key, upload_url } = await r.json();
+      const put = await fetch(upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!put.ok) throw new Error(t("errors.sendImage"));
+      persistFixedRef({ key, url: preview });
+    } catch (e) {
+      URL.revokeObjectURL(preview);
+      setError(e instanceof Error ? e.message : t("errors.upload"));
+    } finally {
+      setFixedUploading(false);
+      if (replaceInputRef.current) replaceInputRef.current.value = "";
+    }
+  }
+
+  /** Arquivos novos: sem fixa → o 1º vira a fixa; o resto vira extra. */
   function handleFiles(files: FileList | File[]) {
     setError(null);
     const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
@@ -142,13 +247,22 @@ export function ImageStudio({
       setError(t("errors.invalidFiles"));
       return;
     }
-    const room = MAX_IMAGES - refs.length;
+    let queue = imgs;
+    if (!fixedRef) {
+      void uploadFixed(queue[0]);
+      queue = queue.slice(1);
+    }
+    if (queue.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    const room = MAX_EXTRAS - refs.length;
     if (room <= 0) {
       setError(t("errors.maxPhotos", { max: MAX_IMAGES }));
       return;
     }
-    const take = imgs.slice(0, room);
-    if (take.length < imgs.length) {
+    const take = queue.slice(0, room);
+    if (take.length < queue.length) {
       setError(t("errors.maxPhotosIgnored", { max: MAX_IMAGES }));
     }
     const created = take.map((file) => ({
@@ -294,6 +408,7 @@ export function ImageStudio({
   }
 
   function reset() {
+    // A referência FIXA fica (é o ponto do fluxo novo) — limpa só o resto.
     setStep("form");
     setResult(null);
     setError(null);
@@ -346,12 +461,24 @@ export function ImageStudio({
   // ───── formulário ─────
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      {/* Coluna 1 — referências (1 ou mais fotos) */}
+      {/* Coluna 1 — referência FIXA (quadro principal) + fotos extras */}
       <div className="flex flex-col gap-2">
         <span className={LABEL}>
-          {t("refs.label")}
+          {t("refs.fixedLabel")}
           <FieldHint text={t("refs.hint")} />
         </span>
+        {/* input da FIXA (single) — troca a referência */}
+        <input
+          ref={replaceInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void uploadFixed(f);
+          }}
+        />
+        {/* input das EXTRAS (multiple) */}
         <input
           ref={fileInputRef}
           type="file"
@@ -362,7 +489,43 @@ export function ImageStudio({
             if (e.target.files?.length) handleFiles(e.target.files);
           }}
         />
-        {refs.length === 0 ? (
+
+        {/* Quadro principal: a referência fixa mora aqui */}
+        {fixedRef ? (
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const f = e.dataTransfer.files?.[0];
+              if (f) void uploadFixed(f);
+            }}
+            className="relative flex min-h-[280px] items-center justify-center overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)]"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={fixedRef.url}
+              alt={t("refs.fixedBadge")}
+              className="max-h-[360px] w-auto"
+              onError={() => persistFixedRef(null)}
+            />
+            {fixedUploading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-[var(--canvas)]/60 backdrop-blur-sm">
+                <Loader2 className="h-6 w-6 animate-spin text-[var(--silver)]" />
+              </div>
+            )}
+            <span className="absolute left-2 top-2 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]/90 px-2 py-1 font-mono text-[10px] tracking-wide text-[var(--silver)]">
+              {t("refs.fixedBadge")}
+            </span>
+            <button
+              type="button"
+              onClick={() => replaceInputRef.current?.click()}
+              className="absolute bottom-2 right-2 inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]/90 px-3 font-mono text-[11px] tracking-wide text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)]"
+            >
+              <ImagePlus className="h-3.5 w-3.5" />
+              {t("refs.replace")}
+            </button>
+          </div>
+        ) : (
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -373,7 +536,11 @@ export function ImageStudio({
             }}
             className="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-8 text-center transition-colors hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-elevated)]"
           >
-            <ImagePlus className="h-10 w-10 text-[var(--ash)]" />
+            {fixedUploading ? (
+              <Loader2 className="h-10 w-10 animate-spin text-[var(--silver)]" />
+            ) : (
+              <ImagePlus className="h-10 w-10 text-[var(--ash)]" />
+            )}
             <span className="text-sm text-[var(--mute)]">
               {t("refs.dropzone")}
             </span>
@@ -381,52 +548,58 @@ export function ImageStudio({
               {t("refs.formats", { max: MAX_IMAGES })}
             </span>
           </button>
-        ) : (
-          <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
-            }}
-            className="grid grid-cols-3 gap-2 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-3 sm:grid-cols-4"
-          >
-            {refs.map((r) => (
-              <div
-                key={r.id}
-                className="relative aspect-square overflow-hidden rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)]"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={r.preview} alt="" className="h-full w-full object-cover" />
-                {r.uploading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-[var(--canvas)]/60 backdrop-blur-sm">
-                    <Loader2 className="h-5 w-5 animate-spin text-[var(--silver)]" />
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => removeRef(r.id)}
-                  aria-label={t("refs.remove")}
-                  className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]/90 text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-            {refs.length < MAX_IMAGES && (
+        )}
+
+        <p className="text-[12px] leading-snug text-[var(--ash)]">
+          {t("refs.historyTip")}
+        </p>
+
+        {/* Fotos extras (opcionais — melhoram a semelhança) */}
+        <span className={`${LABEL} mt-2`}>{t("refs.extrasLabel")}</span>
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
+          }}
+          className="grid grid-cols-3 gap-2 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-3 sm:grid-cols-4"
+        >
+          {refs.map((r) => (
+            <div
+              key={r.id}
+              className="relative aspect-square overflow-hidden rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)]"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={r.preview} alt="" className="h-full w-full object-cover" />
+              {r.uploading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[var(--canvas)]/60 backdrop-blur-sm">
+                  <Loader2 className="h-5 w-5 animate-spin text-[var(--silver)]" />
+                </div>
+              )}
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                aria-label={t("refs.addMore")}
-                className="flex aspect-square flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] text-[var(--ash)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--silver)]"
+                onClick={() => removeRef(r.id)}
+                aria-label={t("refs.remove")}
+                className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]/90 text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
               >
-                <ImagePlus className="h-5 w-5" />
-                <span className="font-mono text-[9px]">
-                  {refs.length}/{MAX_IMAGES}
-                </span>
+                <X className="h-3.5 w-3.5" />
               </button>
-            )}
-          </div>
-        )}
+            </div>
+          ))}
+          {refs.length < MAX_EXTRAS && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              aria-label={t("refs.addMore")}
+              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] text-[var(--ash)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--silver)]"
+            >
+              <ImagePlus className="h-5 w-5" />
+              <span className="font-mono text-[9px]">
+                {refs.length + (fixedRef ? 1 : 0)}/{MAX_IMAGES}
+              </span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Coluna 2 — prompt + opções */}

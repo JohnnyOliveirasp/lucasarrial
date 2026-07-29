@@ -432,7 +432,12 @@
         "dropzone": "Clique ou arraste suas fotos aqui",
         "formats": "JPG, PNG ou WEBP · até {max} fotos",
         "remove": "Remover foto",
-        "addMore": "Adicionar mais fotos"
+        "addMore": "Adicionar mais fotos",
+        "fixedLabel": "Imagem de referência",
+        "fixedBadge": "Referência fixa",
+        "replace": "Trocar foto",
+        "extrasLabel": "Fotos extras (opcional)",
+        "historyTip": "Dica: em qualquer imagem do seu histórico, clique em “Usar como referência” para trazê-la para cá."
       },
       "idea": {
         "label": "2. Sua ideia (opcional)",
@@ -517,7 +522,8 @@
       "delete": "Apagar",
       "deleteTitle": "Apagar imagem?",
       "deleteWarning": "Ação <strong>irreversível</strong>. Remove a imagem do armazenamento e do histórico.",
-      "deleting": "Apagando…"
+      "deleting": "Apagando…",
+      "useAsRef": "Usar como referência"
     },
     "animate": {
       "errors": {
@@ -833,7 +839,10 @@
       "eyebrow": "Vídeos",
       "title": "Edição automática da gravação",
       "subtitle": "Suba sua gravação crua — pode errar, repetir e pausar à vontade. A plataforma corta os erros e silêncios e devolve o vídeo pronto, com legenda.",
-      "profiles": { "dinamico": "Ritmo dinâmico", "natural": "Ritmo natural" },
+      "profiles": {
+        "dinamico": "Ritmo dinâmico",
+        "natural": "Ritmo natural"
+      },
       "pick": {
         "title": "Enviar gravação",
         "hint": "MP4, MOV ou WEBM · até 15 minutos · até 1GB"
