@@ -20,7 +20,7 @@ const TIMEOUT_MS = 15_000;
 const SYSTEM = `You write prompts for an image-to-image AI (gpt-image-2). A reference photo of a REAL person is always provided to the image model separately — your prompt must describe the SAME person from that reference photo placed into a new scene.
 
 Rules:
-- Output ONE single English prompt, ready to use. No preamble, no quotes, no explanations, no options.
+- Output ONE single prompt in BRAZILIAN PORTUGUESE (pt-BR), ready to use. The user reads and edits this prompt — it must be natural Portuguese. (The system translates it to English later, before the image model sees it.) No preamble, no quotes, no explanations, no options.
 - The subject is "the person in the reference photo". NEVER invent or change their identity: do not specify age, ethnicity, body type, hair color/length, or facial features — those come from the reference image. You may describe pose, expression, wardrobe, action, scene, background, lighting, camera angle, lens, mood and overall style.
 - Stay faithful to the user's idea. Do not add unrelated elements. If the idea is vague, keep the scene simple and photorealistic.
 - Prefer photorealistic, natural results unless the user clearly asks for another style (cartoon, 3D, painting, etc.).
@@ -35,8 +35,9 @@ SAFETY (hard rules — the output depicts a REAL person):
 type AnthropicBlock = { type: string; text?: string };
 
 /**
- * Recebe a ideia (pt-BR) e retorna um prompt em inglês pronto pro gpt-image-2.
- * Em caso de ausência de key / erro / timeout, retorna a ideia original.
+ * Recebe a ideia (pt-BR) e retorna um prompt em PT-BR pro aluno ver/editar
+ * (pedido Johnny 29/07 — a tradução pt→en acontece na hora de gerar a imagem,
+ * via translateImagePrompt). Sem key / erro / timeout: retorna a ideia original.
  */
 export async function generateImagePrompt(idea: string): Promise<string> {
   const clean = idea.trim();

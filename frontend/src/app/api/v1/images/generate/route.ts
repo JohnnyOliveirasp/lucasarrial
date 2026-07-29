@@ -40,6 +40,7 @@ import {
 import { kieCreateImageTask, kieCallbackUrl } from "@/lib/kie/client";
 import { pickImageRoute } from "@/lib/kie/failover";
 import { generateImagePrompt } from "@/lib/llm/generate-image-prompt";
+import { translateImagePrompt } from "@/lib/llm/translate-image-prompt";
 import {
   moderateImagePrompt,
   CONTENT_BLOCKED_MESSAGE,
@@ -132,6 +133,11 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // O aluno escreve/edita em pt-BR; o modelo de imagem rende melhor em inglês.
+  // Tradução invisível (Haiku, fallback = texto original). O prompt pt fica na
+  // row pro aluno; o prompt_en vai pro Kie (inclusive no retry).
+  const promptEn = await translateImagePrompt(prompt);
+
   // Custo fixo por resolução. Equipe/admin não é cobrada. Pré-checa saldo.
   const creditCost = imageCreditCost(resolution);
   const billed = !bypassesBilling(auth.email);
@@ -171,7 +177,7 @@ export async function POST(request: NextRequest) {
   try {
     const created = await kieCreateImageTask(
       {
-        prompt,
+        prompt: promptEn,
         input_urls: inputUrls,
         aspect_ratio: aspect,
         resolution,
@@ -203,6 +209,7 @@ export async function POST(request: NextRequest) {
     user_id: auth.user_id,
     name,
     prompt,
+    prompt_en: promptEn,
     idea,
     input_image_path: inputKeys[0],
     input_image_paths: inputKeys,

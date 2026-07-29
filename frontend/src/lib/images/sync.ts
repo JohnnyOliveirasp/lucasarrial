@@ -53,12 +53,13 @@ async function tryImageRetry(id: string): Promise<boolean> {
     .eq("retry_count", 0)
     .in("status", ["pending", "generating"])
     .select(
-      "id, prompt, input_image_path, input_image_paths, aspect_ratio, resolution, kie_model",
+      "id, prompt, prompt_en, input_image_path, input_image_paths, aspect_ratio, resolution, kie_model",
     );
   const row = (claimed ?? [])[0] as
     | {
         id: string;
         prompt: string;
+        prompt_en: string | null;
         input_image_path: string;
         input_image_paths: string[] | null;
         aspect_ratio: string;
@@ -79,7 +80,9 @@ async function tryImageRetry(id: string): Promise<boolean> {
     const model = retryModelFor(row.kie_model);
     const { taskId } = await kieCreateImageTask(
       {
-        prompt: row.prompt,
+        // prompt_en (mig 56) é o que o modelo entende; rows antigas (null) já
+        // tinham o prompt em inglês.
+        prompt: row.prompt_en || row.prompt,
         input_urls: inputUrls,
         aspect_ratio: row.aspect_ratio,
         resolution: row.resolution,

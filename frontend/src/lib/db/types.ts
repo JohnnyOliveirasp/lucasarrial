@@ -171,6 +171,8 @@ export type ImageGenerationRow = {
   user_id: string;
   name: string | null;
   prompt: string;
+  /** Tradução do prompt pro modelo (mig 56); null nas rows antigas (prompt já era en). */
+  prompt_en: string | null;
   idea: string | null;
   input_image_path: string;
   input_image_paths: string[] | null;
@@ -210,6 +212,7 @@ export type ImageGenerationInsert = {
   status?: ImageGenerationStatus;
   kie_task_id?: string | null;
   kie_model?: string;
+  prompt_en?: string | null;
 };
 export type ImageGenerationUpdate = Partial<ImageGenerationRow>;
 
