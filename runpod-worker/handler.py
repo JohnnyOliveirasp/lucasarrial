@@ -945,6 +945,10 @@ def _handle_inference(inp: dict) -> dict:
         )
         return np.asarray(seg, dtype=np.float32)
 
+    # Observabilidade do QA (29/07): devolvida no output do job — tira a
+    # adivinhação por timing na hora de validar se o QA está mesmo agindo.
+    qa_stats = {"echo_checked": 0, "echo_flagged": 0, "echo_none": 0, "regens": 0, "exhausted": 0}
+
     pieces: list[np.ndarray] = []
     for idx, (chunk, ends_paragraph) in enumerate(chunks):
         ct0 = time.monotonic()
@@ -970,8 +974,13 @@ def _handle_inference(inp: dict) -> dict:
                         score += 100
                 if echo_qa_enabled and attempt < echo_qa_retries:
                     leak = _ref_echo_leak(seg, sample_rate, chunk, prompt_text, start_qa_model, qa_language)
-                    if leak is not None:
+                    qa_stats["echo_checked"] += 1
+                    if leak is None:
+                        qa_stats["echo_none"] += 1
+                    else:
                         _log("info", "inference.echo_qa", idx=idx, attempt=attempt, leak=leak)
+                        if leak > 0:
+                            qa_stats["echo_flagged"] += 1
                         score += leak
                 if best_score is None or score < best_score:
                     best_seg, best_score = seg, score
@@ -980,7 +989,9 @@ def _handle_inference(inp: dict) -> dict:
                 attempt += 1
                 if attempt >= max_attempts:
                     _log("error", "inference.qa.exhausted", idx=idx, best_score=best_score)
+                    qa_stats["exhausted"] += 1
                     break
+                qa_stats["regens"] += 1
                 seg = _gen_chunk(chunk)
                 if trim_enabled:
                     pad = max(trim_pad_samples, int(sample_rate * 0.06)) if idx == 0 else trim_pad_samples
@@ -1032,6 +1043,7 @@ def _handle_inference(inp: dict) -> dict:
             "sample_rate": sample_rate,
             "duration_s": round(len(wav) / sample_rate, 3),
             "elapsed_s": round(elapsed, 2),
+            "qa": qa_stats,
         }
 
     return {
@@ -1039,6 +1051,7 @@ def _handle_inference(inp: dict) -> dict:
         "sample_rate": sample_rate,
         "duration_s": round(len(wav) / sample_rate, 3),
         "elapsed_s": round(elapsed, 2),
+        "qa": qa_stats,
     }
 
 
