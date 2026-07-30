@@ -150,7 +150,7 @@ export default function FalhasPage() {
           <ul>
             {shown.map((inc, i) => {
               const isOpen = open === inc.id;
-              const meta = STATUS_META[inc.status];
+              const meta = STATUS_META[inc.status] ?? { label: inc.status, cls: "text-[var(--ash)]" };
               return (
                 <li key={inc.id} className={i > 0 ? "border-t border-[var(--hairline)]" : ""}>
                   <button
