@@ -60,7 +60,27 @@ function isDatasetError(error: string | null | undefined): boolean {
   );
 }
 
+/** Arquivo enviado corrompido/incompleto (caso Carla 29/07: MP4 sem moov atom
+ * = upload interrompido). Problema do ARQUIVO do usuário, não nosso: mensagem
+ * acionável ("reenvie") em vez de "problema técnico" + sem pager pro suporte. */
+function isCorruptFileError(error: string | null | undefined): boolean {
+  if (!error) return false;
+  const e = error.toLowerCase();
+  return (
+    e.includes("moov atom not found") ||
+    e.includes("invalid data found when processing input") ||
+    e.includes("could not find codec parameters")
+  );
+}
+
 function friendlyTrainError(out: TrainOutput, rawError: string): string {
+  if (isCorruptFileError(out.error) || isCorruptFileError(rawError)) {
+    return (
+      "Um dos arquivos enviados chegou corrompido ou incompleto — o envio pode ter sido " +
+      "interrompido no meio. Seus créditos foram devolvidos. Envie o arquivo de novo " +
+      "(ou grave novamente) e tente outra vez."
+    );
+  }
   if (isDatasetError(out.error) || isDatasetError(rawError)) {
     const useful = Math.round((out.useful_seconds ?? 0) / 60);
     const min = Math.round((out.min_required_seconds ?? 600) / 60);
@@ -187,8 +207,14 @@ export async function finalizeTraining(args: {
       refunded = r.ok;
     }
 
-    // Falha técnica → alerta imediato pro suporte (best-effort).
-    if (!isDatasetError(out.error) && !isDatasetError(rawError)) {
+    // Falha técnica → alerta imediato pro suporte (best-effort). Erro de
+    // dataset/arquivo do usuário não é pager — o incidente da aba Falhas cobre.
+    const userSideError =
+      isDatasetError(out.error) ||
+      isDatasetError(rawError) ||
+      isCorruptFileError(out.error) ||
+      isCorruptFileError(rawError);
+    if (!userSideError) {
       await alertSupportTrainFailure({
         userId,
         userEmail,

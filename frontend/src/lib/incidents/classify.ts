@@ -30,6 +30,18 @@ export const KIND_LABELS: Record<string, string> = {
   reported: "Reportado",
 };
 
+/** Arquivo do usuário corrompido/incompleto (caso Carla 29/07: moov atom).
+ * Cobre o erro CRU do ffmpeg e a mensagem amigável do finalize-training. */
+export function isCorruptFile(error: string): boolean {
+  const e = (error || "").toLowerCase();
+  return (
+    e.includes("moov atom") ||
+    e.includes("invalid data found when processing input") ||
+    e.includes("could not find codec parameters") ||
+    e.includes("corrompido ou incompleto")
+  );
+}
+
 export function classifyCause(error: string): IncidentCause {
   const e = (error || "").toLowerCase();
   if (!e) return "unknown";
@@ -40,7 +52,10 @@ export function classifyCause(error: string): IncidentCause {
     // usuário, não o código do worker — sem estes padrões o incidente caía em
     // "unknown" (gap achado pelo Vigia na 1ª execução, incidente 4eed0e0d).
     e.includes("fala limpa") ||
-    e.includes("serviram para o treino")
+    e.includes("serviram para o treino") ||
+    // Arquivo corrompido = problema do INPUT do usuário (caía em unknown e
+    // engordava o guarda-chuva genérico — caso Carla 29/07, inc. 49df7b4a).
+    isCorruptFile(error)
   ) {
     return "user_dataset";
   }
@@ -74,7 +89,11 @@ export function errorSignature(kind: string, error: string): string {
   // mensagem amigável do voices.error_message desde fdcc75c) e duplicava o
   // incidente (acf8acd6 × 014bb108, gap achado pelo Vigia 23/07). Demais
   // causas mantêm o head: dentro de infra/bug o texto distingue problemas.
-  if (cause === "user_dataset") return `${k}:${cause}`;
+  // Arquivo corrompido é raiz DIFERENTE de "gravação sem fala limpa" — não
+  // mistura no incidente canônico de dataset.
+  if (cause === "user_dataset") {
+    return isCorruptFile(error) ? `${k}:${cause}:corrupt` : `${k}:${cause}`;
+  }
   const head = (error || "")
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, "<url>")
@@ -91,7 +110,11 @@ export function incidentTitle(kind: string, error: string): string {
   const cause = classifyCause(error);
   const k = KIND_LABELS[kind] ?? kind;
   const detail = (error || "").split("\n")[0].slice(0, 80);
-  if (cause === "user_dataset") return `${k}: áudio insuficiente/sem fala limpa`;
+  if (cause === "user_dataset") {
+    return isCorruptFile(error)
+      ? `${k}: arquivo enviado corrompido/incompleto`
+      : `${k}: áudio insuficiente/sem fala limpa`;
+  }
   if (cause === "infra_gpu") return `${k}: GPU sem memória (OOM)`;
   if (cause === "infra_storage") return `${k}: falha de armazenamento (R2)`;
   if (cause === "capacity") return `${k}: tempo de execução estourado`;

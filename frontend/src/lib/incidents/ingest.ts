@@ -48,6 +48,13 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
   // Ordem cronológica: first_seen/last_seen ficam corretos no replay
   const pending = failures
     .filter((f) => f.id && !seenSet.has(`${f.kind}|${f.id}`))
+    // Ruído conhecido (guarda-chuva f830fd4e): a falha vista pela tabela
+    // `voices` traz a mensagem AMIGÁVEL genérica, sem diagnóstico — e a MESMA
+    // falha sempre existe CRUA em training_jobs (kind training). Agrupar pela
+    // amigável fundia causas diferentes num incidente eterno. Pula a duplicata.
+    .filter(
+      (f) => !(f.error ?? "").startsWith("Tivemos um problema técnico durante o treinamento"),
+    )
     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
   for (const f of pending) {
