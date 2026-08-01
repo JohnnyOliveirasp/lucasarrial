@@ -25,10 +25,11 @@ import { KpiCard } from "@/components/admin/kpi-card";
 
 type Payload = AdminData & { totals: TotalSummary; live: LiveCloning[]; runpod: RunpodHealth[] };
 
+// Pedido Johnny 01/08: sem "R$" — só "$" (menos ruído visual nos cards).
 const brl0 = (n: number) =>
-  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).replace("R$", "$");
 const brl2 = (n: number) =>
-  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 });
+  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 }).replace("R$", "$");
 const num = (n: number) => n.toLocaleString("pt-BR");
 
 export function DashboardClient() {
@@ -135,7 +136,7 @@ export function DashboardClient() {
             label="Dado (promoção)"
             value={brl2(data.totals.given)}
             icon={Gift}
-            hint="ofertas R$0 + cortesias a preço de tabela"
+            hint="ofertas $0 + cortesias a preço de tabela"
           />
           <KpiCard
             label="Despesas"
@@ -149,7 +150,7 @@ export function DashboardClient() {
             value={brl2(data.totals.profit)}
             tone={data.totals.profit >= 0 ? "profit" : "bad"}
             icon={TrendingUp}
-            hint={`margem ${data.totals.marginPct.toFixed(0)}% · gatilho retirada R$15k: ${Math.max(0, Math.min(100, (data.totals.profit / 15000) * 100)).toFixed(0)}%`}
+            hint={`margem ${data.totals.marginPct.toFixed(0)}% · gatilho retirada $15k: ${Math.max(0, Math.min(100, (data.totals.profit / 15000) * 100)).toFixed(0)}%`}
           />
         </div>
       </section>
@@ -158,7 +159,7 @@ export function DashboardClient() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard label="Pagaram (total)" value={num(fin.paidCount)} tone="good" icon={BadgeDollarSign} hint={`${brl2(fin.paidTotal)} desde o início`} />
         <KpiCard label="Oferta (total)" value={num(fin.offerCount)} tone={fin.offerCount > fin.paidCount ? "bad" : "default"} icon={Users} hint="assinatura ativa sem pagar (trial/cupom)" />
-        <KpiCard label="MRR projetado" value={brl0(money.mrr)} icon={TrendingUp} hint={`${num(m.subs_active)} acessos ativos × R$97`} />
+        <KpiCard label="MRR projetado" value={brl0(money.mrr)} icon={TrendingUp} hint={`${num(m.subs_active)} acessos ativos × $97`} />
         <KpiCard label="Testes (fora)" value={num(fin.testCount)} icon={AlertTriangle} hint="compras de teste excluídas das contas" />
       </div>
 

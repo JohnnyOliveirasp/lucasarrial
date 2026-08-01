@@ -14,8 +14,9 @@ import { PLAN_PRICE_BRL } from "@/lib/admin/cost";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { Donut, type DonutSlice } from "@/components/admin/donut";
 
+// Pedido Johnny 01/08: sem "R$" — só "$" (menos ruído visual nos cards).
 const brl2 = (n: number) =>
-  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 });
+  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 }).replace("R$", "$");
 const num = (n: number) => n.toLocaleString("pt-BR");
 
 /** Paleta categórica das ferramentas — validada (dataviz) contra #0a0a0c. */
@@ -113,7 +114,7 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
           value={brl2(promoValue)}
           tone={promoValue > money.revenuePeriod ? "bad" : "default"}
           icon={Gift}
-          hint={`${num(fin.offerCountPeriod)} oferta(s) R$0 · ${promoPct.toFixed(0)}% do valor de tabela`}
+          hint={`${num(fin.offerCountPeriod)} oferta(s) $0 · ${promoPct.toFixed(0)}% do valor de tabela`}
         />
         <KpiCard
           label="Saiu (gastos)"
@@ -167,7 +168,7 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
             },
             {
               key: "promo",
-              label: "Promoção (R$0)",
+              label: "Promoção ($0)",
               brl: promoValue,
               detail: `${num(fin.offerCountPeriod)} assinatura(s) × ${brl2(PLAN_PRICE_BRL)}`,
               color: "var(--status-warn)",
@@ -177,7 +178,7 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
       </ChartCard>
 
       {/* 2) Resumo geral em R$ — entrou, promoção, ferramentas, taxa; resultado no centro */}
-      <ChartCard title="Resumo do período em R$ — resultado no centro">
+      <ChartCard title="Resumo do período em $ — resultado no centro">
         <Donut
           slices={[
             {
@@ -191,12 +192,12 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
               key: "promo",
               label: "Promoção (dado)",
               brl: promoValue,
-              detail: `${num(fin.offerCountPeriod)} oferta(s) R$0`,
+              detail: `${num(fin.offerCountPeriod)} oferta(s) $0`,
               color: "var(--status-warn)",
             },
             { key: "tools", label: "Ferramentas", brl: toolsCost, detail: "custo Kie/RunPod", color: "var(--status-error)" },
             { key: "infra", label: "Infraestrutura", brl: money.infraPeriod, detail: "Hetzner US$25 + RunPod HD US$15/mês", color: "#94a3b8" },
-            { key: "fee", label: "Taxa Hotmart", brl: money.feePeriod, detail: "9,9% + R$1/venda", color: "var(--ash)" },
+            { key: "fee", label: "Taxa Hotmart", brl: money.feePeriod, detail: "9,9% + $1/venda", color: "var(--ash)" },
           ]}
           centerLabel={isLoss ? "Prejuízo (caixa)" : "Lucro (caixa)"}
           centerValue={Math.abs(money.profitPeriod)}
@@ -226,7 +227,7 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
           slices={[
             ...toolSlices,
             { key: "infra", label: "Infraestrutura", brl: money.infraPeriod, detail: "Hetzner US$25 + RunPod HD US$15/mês", color: "#94a3b8" },
-            { key: "fee", label: "Taxa Hotmart", brl: money.feePeriod, detail: "9,9% + R$1/venda", color: "var(--ash)" },
+            { key: "fee", label: "Taxa Hotmart", brl: money.feePeriod, detail: "9,9% + $1/venda", color: "var(--ash)" },
           ]}
           centerLabel="Saiu no total"
           centerSub={periodLabel}
