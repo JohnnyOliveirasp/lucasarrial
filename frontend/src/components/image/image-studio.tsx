@@ -8,6 +8,7 @@ import { SupportError } from "@/components/ui/support-error";
 import { PaywallModal } from "@/components/app/paywall-modal";
 import { AudioGeneratingIndicator } from "@/components/voice/audio-generating-indicator";
 import { FieldHint } from "@/components/image/field-hint";
+import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC, isHeicFile } from "@/lib/images/heic";
 import {
   ASPECT_RATIOS,
   RESOLUTIONS,
@@ -204,7 +205,8 @@ export function ImageStudio({
   }
 
   /** Sobe 1 arquivo e o torna a referência FIXA (substitui a atual). */
-  async function uploadFixed(file: File) {
+  async function uploadFixed(rawFile: File) {
+    const file = await ensureUploadableImage(rawFile); // iPhone .heic -> jpeg
     if (!file.type.startsWith("image/")) {
       setError(t("errors.invalidFiles"));
       return;
@@ -240,13 +242,15 @@ export function ImageStudio({
   }
 
   /** Arquivos novos: sem fixa → o 1º vira a fixa; o resto vira extra. */
-  function handleFiles(files: FileList | File[]) {
+  async function handleFiles(files: FileList | File[]) {
     setError(null);
-    const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    if (imgs.length === 0) {
+    // HEIC do iPhone pode vir com MIME vazio — a extensao vale como imagem.
+    const raw = Array.from(files).filter((f) => f.type.startsWith("image/") || isHeicFile(f));
+    if (raw.length === 0) {
       setError(t("errors.invalidFiles"));
       return;
     }
+    const imgs = await Promise.all(raw.map(ensureUploadableImage));
     let queue = imgs;
     if (!fixedRef) {
       void uploadFixed(queue[0]);
@@ -471,7 +475,7 @@ export function ImageStudio({
         <input
           ref={replaceInputRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept={IMAGE_ACCEPT_WITH_HEIC}
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -482,7 +486,7 @@ export function ImageStudio({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept={IMAGE_ACCEPT_WITH_HEIC}
           multiple
           className="hidden"
           onChange={(e) => {

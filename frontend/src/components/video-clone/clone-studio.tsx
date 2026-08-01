@@ -20,6 +20,7 @@ import { PaywallModal } from "@/components/app/paywall-modal";
 import { downloadFromUrl } from "@/components/image/download-file";
 import { AudioChoice, AudioPicker, ImageChoice, ImagePicker } from "./clone-pickers";
 import { CLONE_ANIM_CSS } from "./clone-anim";
+import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
 
 const PILL =
   "inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-6 font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98] disabled:opacity-50";
@@ -87,6 +88,7 @@ export function CloneStudio({
     setError(null);
     setUploading("image");
     try {
+      file = await ensureUploadableImage(file); // iPhone .heic -> jpeg
       const key = await presignAndPut("image", file);
       setImage({ kind: "upload", key, preview: URL.createObjectURL(file) });
     } catch (e) {
@@ -295,7 +297,7 @@ export function CloneStudio({
       <input
         ref={imgInput}
         type="file"
-        accept="image/png,image/jpeg,image/webp"
+        accept={IMAGE_ACCEPT_WITH_HEIC}
         className="hidden"
         onChange={(e) => e.target.files?.[0] && pickImageFile(e.target.files[0])}
       />

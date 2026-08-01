@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { SALES_AI_COST } from "@/lib/video/config";
 import { SalesVoice } from "@/components/video/sales-voice";
+import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
 
 type LocalPhoto = { key: string; previewUrl: string };
 
@@ -125,7 +126,8 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
       setBusy("upload");
       try {
         const room = 4 - productPhotos.length;
-        for (const file of Array.from(files).slice(0, room)) {
+        for (const raw of Array.from(files).slice(0, room)) {
+          const file = await ensureUploadableImage(raw); // iPhone .heic -> jpeg
           const key = await uploadImage(file);
           setProductPhotos((prev) => [...prev, { key, previewUrl: URL.createObjectURL(file) }]);
         }
@@ -144,7 +146,8 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
       setBusy("upload");
       try {
         const room = 6 - personPhotos.length;
-        for (const file of Array.from(files).slice(0, room)) {
+        for (const raw of Array.from(files).slice(0, room)) {
+          const file = await ensureUploadableImage(raw); // iPhone .heic -> jpeg
           const key = await uploadImage(file);
           setPersonPhotos((prev) => [...prev, { key, previewUrl: URL.createObjectURL(file) }]);
         }
@@ -327,7 +330,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
               {t("addPhoto", { n: productPhotos.length, max: 4 })}
               <input
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept={IMAGE_ACCEPT_WITH_HEIC}
                 multiple
                 className="hidden"
                 onChange={(e) => {
@@ -382,7 +385,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
               {t("addPhoto", { n: personPhotos.length, max: 6 })}
               <input
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept={IMAGE_ACCEPT_WITH_HEIC}
                 multiple
                 className="hidden"
                 onChange={(e) => {

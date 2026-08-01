@@ -11,6 +11,7 @@ import { Clapperboard, Download, Loader2, RefreshCw, UserSquare2 } from "lucide-
 import { downloadFromUrl } from "@/components/image/download-file";
 import { STUDIO_MONTAGE_COST, STUDIO_SCENE_COST, studioFaceCost } from "@/lib/studio/pricing";
 import { StudioVariants } from "./studio-variants";
+import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
 
 const fmtCr = (n: number) => n.toLocaleString("pt-BR");
 
@@ -211,9 +212,12 @@ export function StudioResult({
             <input
               ref={faceInput}
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept={IMAGE_ACCEPT_WITH_HEIC}
               className="hidden"
-              onChange={(e) => e.target.files?.[0] && onFace(e.target.files[0])}
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (f) onFace(await ensureUploadableImage(f)); // iPhone .heic -> jpeg
+              }}
             />
             {(!project.face_status || project.face_status === "idle" || project.face_status === "failed") && (
               <div className="flex flex-col gap-2">

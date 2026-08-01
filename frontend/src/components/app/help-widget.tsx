@@ -12,6 +12,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { usePathname } from "@/i18n/navigation";
 import { MessageCircle, X, Send, ImagePlus, Camera, Loader2, Mic, Trash2 } from "lucide-react";
 import { useVoiceRecorder } from "@/components/app/use-voice-recorder";
+import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
 
 type Msg = {
   id: string;
@@ -355,11 +356,11 @@ export function HelpWidget() {
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept={IMAGE_ACCEPT_WITH_HEIC}
                   className="hidden"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const f = e.target.files?.[0];
-                    if (f) void attachBlob(f);
+                    if (f) void attachBlob(await ensureUploadableImage(f)); // iPhone .heic -> jpeg
                     e.target.value = "";
                   }}
                 />

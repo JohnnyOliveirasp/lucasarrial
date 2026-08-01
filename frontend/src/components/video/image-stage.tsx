@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
+import { ensureUploadableImage, isHeicFile } from "@/lib/images/heic";
 import {
   ImageIcon,
   Upload,
@@ -86,7 +87,10 @@ export function ImageStage({
     if (!files?.length) return;
     setError(null);
     const room = MAX_REFS - refs.length;
-    const pick = Array.from(files).filter((f) => f.type.startsWith("image/")).slice(0, room);
+    const picked = Array.from(files)
+      .filter((f) => f.type.startsWith("image/") || isHeicFile(f))
+      .slice(0, room);
+    const pick = await Promise.all(picked.map(ensureUploadableImage)); // iPhone .heic -> jpeg
     for (const file of pick) {
       const id = `${file.name}-${file.size}-${refs.length}-${file.lastModified}`;
       const preview = URL.createObjectURL(file);
