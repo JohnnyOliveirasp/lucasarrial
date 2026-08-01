@@ -119,7 +119,10 @@ export function DashboardClient() {
       <FinanceSection money={money} fin={fin} periodLabel={periodLabel} />
 
       {/* Acumulado da operação inteira — não depende do filtro de período.
-          Lucro acumulado é a régua do gatilho de retirada dos sócios (R$15k). */}
+          Lucro acumulado é a régua do gatilho de retirada dos sócios (R$15k).
+          Guard: durante um deploy a aba aberta pode receber payload SEM totals
+          (client novo × server velho) — a seção some em vez de derrubar a página. */}
+      {data.totals && (
       <section className="flex flex-col gap-4">
         <h2 className="font-mono text-[11px] uppercase tracking-wider text-[var(--ash)]">
           Desde o início · tudo somado
@@ -154,6 +157,7 @@ export function DashboardClient() {
           />
         </div>
       </section>
+      )}
 
       {/* Contexto de assinaturas (projeção + testes fora da conta) */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
