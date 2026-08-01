@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { gateAdmin } from "@/lib/admin/api";
 import { jsonOk, serverError } from "@/lib/api/responses";
 import { getAdminData, getLiveCloning, type DateRange } from "@/lib/admin/queries";
+import { getTotalSummary } from "@/lib/admin/totals";
 import { getRunpodHealth } from "@/lib/admin/runpod";
 
 export const dynamic = "force-dynamic";
@@ -53,12 +54,13 @@ export async function GET(request: NextRequest) {
   const range = rangeFor(gran, key) ?? rangeFor("month", currentMonthKey())!;
 
   try {
-    const [data, live, runpod] = await Promise.all([
+    const [data, totals, live, runpod] = await Promise.all([
       getAdminData(range),
+      getTotalSummary(),
       getLiveCloning(),
       getRunpodHealth(),
     ]);
-    return jsonOk({ ...data, live, runpod });
+    return jsonOk({ ...data, totals, live, runpod });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Failed to load dashboard");
   }

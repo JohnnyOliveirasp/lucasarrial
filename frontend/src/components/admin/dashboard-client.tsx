@@ -6,6 +6,8 @@ import {
   Users,
   BadgeDollarSign,
   TrendingUp,
+  TrendingDown,
+  Gift,
   AudioLines,
   Mic2,
   Activity,
@@ -13,6 +15,7 @@ import {
   Wifi,
 } from "lucide-react";
 import type { AdminData, LiveCloning } from "@/lib/admin/queries";
+import type { TotalSummary } from "@/lib/admin/totals";
 import type { RunpodHealth } from "@/lib/admin/runpod";
 import { PeriodFilter, currentKey, labelFor, type Gran } from "@/components/admin/period-filter";
 import { FinanceSection } from "@/components/admin/finance-section";
@@ -20,7 +23,7 @@ import { RunpodStatus } from "@/components/admin/runpod-status";
 import { LiveCloningPanel } from "@/components/admin/live-cloning";
 import { KpiCard } from "@/components/admin/kpi-card";
 
-type Payload = AdminData & { live: LiveCloning[]; runpod: RunpodHealth[] };
+type Payload = AdminData & { totals: TotalSummary; live: LiveCloning[]; runpod: RunpodHealth[] };
 
 const brl0 = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -113,6 +116,43 @@ export function DashboardClient() {
 
       {/* Financeiro (KPIs + compra×promoção + destino do bruto + gasto por ferramenta) */}
       <FinanceSection money={money} fin={fin} periodLabel={periodLabel} />
+
+      {/* Acumulado da operação inteira — não depende do filtro de período.
+          Lucro acumulado é a régua do gatilho de retirada dos sócios (R$15k). */}
+      <section className="flex flex-col gap-4">
+        <h2 className="font-mono text-[11px] uppercase tracking-wider text-[var(--ash)]">
+          Desde o início · tudo somado
+        </h2>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <KpiCard
+            label="Entrou"
+            value={brl2(data.totals.revenue)}
+            tone="revenue"
+            icon={BadgeDollarSign}
+            hint={`${num(data.totals.paidCount)} vendas pagas (Hotmart)`}
+          />
+          <KpiCard
+            label="Dado (promoção)"
+            value={brl2(data.totals.given)}
+            icon={Gift}
+            hint="ofertas R$0 + cortesias a preço de tabela"
+          />
+          <KpiCard
+            label="Despesas"
+            value={brl2(data.totals.expenses)}
+            tone="cost"
+            icon={TrendingDown}
+            hint="taxas + GPU/Kie + infra + estornos"
+          />
+          <KpiCard
+            label="Lucro acumulado"
+            value={brl2(data.totals.profit)}
+            tone={data.totals.profit >= 0 ? "profit" : "bad"}
+            icon={TrendingUp}
+            hint={`margem ${data.totals.marginPct.toFixed(0)}% · gatilho retirada R$15k: ${Math.max(0, Math.min(100, (data.totals.profit / 15000) * 100)).toFixed(0)}%`}
+          />
+        </div>
+      </section>
 
       {/* Contexto de assinaturas (projeção + testes fora da conta) */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
