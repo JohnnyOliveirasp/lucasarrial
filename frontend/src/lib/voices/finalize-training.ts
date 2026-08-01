@@ -69,7 +69,10 @@ function isCorruptFileError(error: string | null | undefined): boolean {
   return (
     e.includes("moov atom not found") ||
     e.includes("invalid data found when processing input") ||
-    e.includes("could not find codec parameters")
+    e.includes("could not find codec parameters") ||
+    // Caso Erica 31/07 (inc. 57d360e4): arquivo SEM trilha de áudio nenhuma
+    // (vídeo mudo ou upload quebrado) — ffmpeg não tem o que converter.
+    e.includes("does not contain any stream")
   );
 }
 
