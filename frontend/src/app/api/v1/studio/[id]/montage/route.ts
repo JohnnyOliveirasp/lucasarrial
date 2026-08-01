@@ -35,12 +35,15 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   let musicKey: string | null = null;
   // Legenda opcional (pedido de aluno 01/08) — padrão: com legenda.
   let captions = true;
+  // Estilo de edição: "dynamic" (zoom+sub-planos, padrão) ou "sober" (parado).
+  let editStyle: "dynamic" | "sober" = "dynamic";
   try {
-    const body = (await request.json()) as { music_key?: unknown; captions?: unknown };
+    const body = (await request.json()) as { music_key?: unknown; captions?: unknown; edit_style?: unknown };
     if (typeof body.music_key === "string" && body.music_key.startsWith("studio-music/")) {
       musicKey = body.music_key;
     }
     if (typeof body.captions === "boolean") captions = body.captions;
+    if (body.edit_style === "sober") editStyle = "sober";
   } catch {
     /* sem body = sem música */
   }
@@ -149,6 +152,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         face_sentences: faceSentences.length > 0 ? faceSentences : null,
         output_upload_url: videoPutUrl,
         captions,
+        edit_style: editStyle,
         music_url: musicUrl,
       },
       { webhook: webhookUrlFor("generation") },

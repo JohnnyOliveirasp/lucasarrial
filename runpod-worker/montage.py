@@ -102,7 +102,8 @@ def _voice_end_before(words: list[dict], t: float) -> float:
 
 def build_plan(words: list[dict], n_scenes: int, total: float,
                sentence_scene: list[int] | None = None,
-               face_sentences: list[dict] | None = None) -> list[dict]:
+               face_sentences: list[dict] | None = None,
+               sober: bool = False) -> list[dict]:
     """Uma cena por frase (mapa frase→cena do planejador F3, ou ciclando o
     banco de teste) → janelas encadeadas sem gap → fatiadas em sub-planos
     ≤2,5s com offset/zoom alternados.
@@ -149,10 +150,12 @@ def build_plan(words: list[dict], n_scenes: int, total: float,
             merged.append(win)
 
     # 2. C1: fatia janelas longas em sub-planos (mesma cena, offset+zoom novos)
+    # Estilo SÓBRIO (opção do aluno 01/08): sem fatiamento e sem zoom — um
+    # plano parado por frase; o J-cut (B1) fica, é sutil e segura o ritmo.
     plan, zi = [], 0
     for win in merged:
         length = win["t1"] - win["t0"]
-        n_sub = max(1, round(length / SUB_PLAN_S + 0.25))
+        n_sub = 1 if sober else max(1, round(length / SUB_PLAN_S + 0.25))
         step = length / n_sub
         is_face = "face_start" in win
         for k in range(n_sub):
@@ -170,7 +173,7 @@ def build_plan(words: list[dict], n_scenes: int, total: float,
                 "t0": _snap(a),
                 "t1": _snap(b),
                 "src_offset": max(0.0, src_offset),
-                "zoom": ZOOMS[zi % len(ZOOMS)],
+                "zoom": (0.0, 1.0) if sober else ZOOMS[zi % len(ZOOMS)],
                 "face": is_face,
             })
             zi += 1
@@ -202,7 +205,8 @@ def _render_segment(scene: Path, seg: dict, out: Path) -> None:
         offset = seg["src_offset"] % max(scene_dur - 0.5, 0.5)
         if offset + dur > scene_dur:
             offset = max(0.0, scene_dur - dur - 0.1)
-    if seg.get("static"):
+    if seg.get("static") or force <= 0.0:
+        # Estático explícito OU estilo sóbrio (zoom zerado): quadro parado.
         vf = (f"fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,"
               f"crop={W}:{H},setsar=1")
     else:
@@ -257,7 +261,8 @@ def handle_montage(inp: dict, log) -> dict:
 
     plan = build_plan(words, len(scenes), total,
                       sentence_scene=inp.get("sentence_scene"),
-                      face_sentences=inp.get("face_sentences"))
+                      face_sentences=inp.get("face_sentences"),
+                      sober=inp.get("edit_style") == "sober")
     # Slides/artes: cenas marcadas como estáticas NUNCA levam zoom (regra do
     # Lucas: "slide é estático e só vai passando").
     static = {int(i) for i in (inp.get("static_scenes") or [])}
