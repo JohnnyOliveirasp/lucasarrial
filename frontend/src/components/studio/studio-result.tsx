@@ -59,7 +59,7 @@ export function StudioResult({
   project: StudioProjectDetail;
   busy: boolean;
   /** Dispara a montagem com a trilha escolhida (null = sem música). */
-  onMontage: (musicKey: string | null) => void;
+  onMontage: (musicKey: string | null, captions: boolean) => void;
   /** Gera (ou re-tenta) as cenas do roteiro falado. */
   onScenes: () => void;
   /** Gera a presença (rosto) com a foto escolhida. */
@@ -72,6 +72,8 @@ export function StudioResult({
   const faceCost = studioFaceCost(project.transcript_words ?? []);
   const [tracks, setTracks] = useState<{ key: string; label: string }[]>([]);
   const [musicKey, setMusicKey] = useState<string>("");
+  // Pedido de aluno 01/08: legenda opcional na montagem (padrão: com).
+  const [captions, setCaptions] = useState(true);
 
   // Banco de trilhas (R2 studio-music/) — o usuário escolhe, ou "Sem música".
   useEffect(() => {
@@ -261,8 +263,17 @@ export function StudioResult({
                       🎵 {t.label}
                     </option>
                   ))}
+</select>
+                <select
+                  value={captions ? "on" : "off"}
+                  onChange={(e) => setCaptions(e.target.value === "on")}
+                  aria-label="Legenda"
+                  className="h-11 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 font-sans text-sm text-[var(--ink)] focus:border-[var(--hairline-bright)] focus:outline-none"
+                >
+                  <option value="on">💬 Com legenda</option>
+                  <option value="off">🚫 Sem legenda</option>
                 </select>
-                <button type="button" onClick={() => onMontage(musicKey || null)} disabled={busy} className={PILL}>
+                <button type="button" onClick={() => onMontage(musicKey || null, captions)} disabled={busy} className={PILL}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
                   {project.scenes_status === "ready" ? "Montar vídeo" : "Montar vídeo de teste"} · {fmtCr(STUDIO_MONTAGE_COST)} cr
                 </button>
@@ -306,8 +317,17 @@ export function StudioResult({
                         🎵 {t.label}
                       </option>
                     ))}
-                  </select>
-                  <button type="button" onClick={() => onMontage(musicKey || null)} disabled={busy} className={GHOST}>
+  </select>
+                <select
+                  value={captions ? "on" : "off"}
+                  onChange={(e) => setCaptions(e.target.value === "on")}
+                  aria-label="Legenda"
+                  className="h-11 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 font-sans text-sm text-[var(--ink)] focus:border-[var(--hairline-bright)] focus:outline-none"
+                >
+                  <option value="on">💬 Com legenda</option>
+                  <option value="off">🚫 Sem legenda</option>
+                </select>
+                  <button type="button" onClick={() => onMontage(musicKey || null, captions)} disabled={busy} className={GHOST}>
                     <RefreshCw className="h-4 w-4" /> Montar de novo · {fmtCr(STUDIO_MONTAGE_COST)} cr
                   </button>
                   <span className="max-w-md font-mono text-[10px] leading-relaxed tracking-wide text-[var(--ash)]">
@@ -335,7 +355,7 @@ export function StudioResult({
                 <p className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]">
                   {project.montage_error || "A montagem falhou. Tente novamente."}
                 </p>
-                <button type="button" onClick={() => onMontage(musicKey || null)} disabled={busy} className={`${GHOST} w-fit`}>
+                <button type="button" onClick={() => onMontage(musicKey || null, captions)} disabled={busy} className={`${GHOST} w-fit`}>
                   <RefreshCw className="h-4 w-4" /> Tentar montar de novo
                 </button>
               </div>

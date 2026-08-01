@@ -173,7 +173,7 @@ export function StudioWorkspace({
   }
 
   // ───── F1/F2: montagem do vídeo de teste (trilha escolhida ou sem música) ─────
-  async function startMontage(musicKey: string | null) {
+  async function startMontage(musicKey: string | null, captions: boolean) {
     if (!project) return;
     setBusy("submit");
     setError(null);
@@ -181,7 +181,7 @@ export function StudioWorkspace({
       const res = await fetch(`/api/v1/studio/${project.id}/montage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ music_key: musicKey }),
+        body: JSON.stringify({ music_key: musicKey, captions }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error?.message || t("workspace.errStartMontage"));

@@ -1221,7 +1221,8 @@
       "retry": "Intentar montar de nuevo",
       "intro": "Une todos los clips en el orden de las escenas con tu audio, agrega el subtítulo sincronizado y corta a la duración de la narración.",
       "approve": "Aprobar videos y montar el final",
-      "waitClips": "Espera a que todos los clips estén listos."
+      "waitClips": "Espera a que todos los clips estén listos.",
+      "noneCaption": "sin texto en el video"
     },
     "audioPick": {
       "loadFailed": "No se pudieron cargar tus audios",

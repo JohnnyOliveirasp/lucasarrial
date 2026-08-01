@@ -1221,7 +1221,8 @@
       "retry": "Tentar montar de novo",
       "intro": "Junta todos os clipes na ordem das cenas com o seu áudio, adiciona a legenda sincronizada e corta no tamanho da narração.",
       "approve": "Aprovar vídeos e montar o final",
-      "waitClips": "Aguarde todos os clipes ficarem prontos."
+      "waitClips": "Aguarde todos os clipes ficarem prontos.",
+      "noneCaption": "sem texto no vídeo"
     },
     "audioPick": {
       "loadFailed": "Falha ao carregar seus áudios",

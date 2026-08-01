@@ -31,6 +31,15 @@ export type SubtitlePreset = {
 
 export const SUBTITLE_PRESETS: readonly SubtitlePreset[] = [
   {
+    // Pedido de aluno 01/08: vídeo SEM legenda queimada. O worker devolve
+    // ass=null pra este id e o render segue limpo (buildAss espelha).
+    id: "none",
+    label: "🚫 Sem legenda",
+    desc: "Vídeo limpo, sem texto na tela",
+    css: { fontFamily: "'Poppins SemiBold', sans-serif", color: "transparent" },
+    defaultPosition: "bottom",
+  },
+  {
     id: "hormozi",
     label: "🔥 Hormozi",
     desc: "Extra-bold, palavra ativa amarela com pop",
@@ -158,5 +167,8 @@ export const SUBTITLE_POSITIONS: readonly SubtitlePosition[] = ["bottom", "cente
 export const SUBTITLE_SIZES: readonly SubtitleSize[] = ["normal", "large"];
 
 export function getSubtitlePreset(id: string | null | undefined): SubtitlePreset {
-  return SUBTITLE_PRESETS.find((p) => p.id === id) ?? SUBTITLE_PRESETS[4]; // karaoke
+  return (
+    SUBTITLE_PRESETS.find((p) => p.id === id) ??
+    SUBTITLE_PRESETS.find((p) => p.id === "karaoke")!
+  );
 }

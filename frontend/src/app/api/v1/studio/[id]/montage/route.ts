@@ -33,11 +33,14 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   // Trilha escolhida pelo usuário — ou nenhuma ("Sem música").
   let musicKey: string | null = null;
+  // Legenda opcional (pedido de aluno 01/08) — padrão: com legenda.
+  let captions = true;
   try {
-    const body = (await request.json()) as { music_key?: unknown };
+    const body = (await request.json()) as { music_key?: unknown; captions?: unknown };
     if (typeof body.music_key === "string" && body.music_key.startsWith("studio-music/")) {
       musicKey = body.music_key;
     }
+    if (typeof body.captions === "boolean") captions = body.captions;
   } catch {
     /* sem body = sem música */
   }
@@ -145,7 +148,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         sentence_scene: sentenceScene,
         face_sentences: faceSentences.length > 0 ? faceSentences : null,
         output_upload_url: videoPutUrl,
-        captions: true,
+        captions,
         music_url: musicUrl,
       },
       { webhook: webhookUrlFor("generation") },

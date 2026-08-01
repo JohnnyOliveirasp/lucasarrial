@@ -1221,7 +1221,8 @@
       "retry": "Try assembling again",
       "intro": "Joins all clips in scene order with your audio, adds synced captions, and trims to the length of the narration.",
       "approve": "Approve videos and assemble the final cut",
-      "waitClips": "Wait for all clips to be ready."
+      "waitClips": "Wait for all clips to be ready.",
+      "noneCaption": "no on-screen text"
     },
     "audioPick": {
       "loadFailed": "Couldn't load your audios",

@@ -89,28 +89,36 @@ function StylePicker({
                   className="flex h-14 items-center justify-center gap-1 overflow-hidden rounded-[var(--radius-sm)] px-1 text-[13px] leading-none"
                   style={{ background: "#141414" }}
                 >
-                  <span
-                    style={{
-                      fontFamily: s.css.fontFamily,
-                      color: s.css.activeColor ?? s.css.color,
-                      textShadow: s.css.textShadow,
-                      background: s.css.background,
-                      padding: s.css.background ? "2px 4px" : undefined,
-                    }}
-                  >
-                    {words[0]}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: s.css.fontFamily,
-                      color: s.css.color,
-                      textShadow: s.css.textShadow,
-                      background: s.css.background,
-                      padding: s.css.background ? "2px 4px" : undefined,
-                    }}
-                  >
-                    {words[1]}
-                  </span>
+                  {s.id === "none" ? (
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--ash)]">
+                      {t("noneCaption")}
+                    </span>
+                  ) : (
+                    <>
+                      <span
+                        style={{
+                          fontFamily: s.css.fontFamily,
+                          color: s.css.activeColor ?? s.css.color,
+                          textShadow: s.css.textShadow,
+                          background: s.css.background,
+                          padding: s.css.background ? "2px 4px" : undefined,
+                        }}
+                      >
+                        {words[0]}
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: s.css.fontFamily,
+                          color: s.css.color,
+                          textShadow: s.css.textShadow,
+                          background: s.css.background,
+                          padding: s.css.background ? "2px 4px" : undefined,
+                        }}
+                      >
+                        {words[1]}
+                      </span>
+                    </>
+                  )}
                 </span>
                 <span className="font-sans text-[12px] font-medium leading-tight text-[var(--ink)]">{s.label}</span>
                 <span className="text-[10px] leading-snug text-[var(--mute)]">{s.desc}</span>
@@ -120,6 +128,8 @@ function StylePicker({
         </div>
       </div>
 
+      {/* Posição/tamanho não fazem sentido sem legenda — some junto. */}
+      {value !== "none" && (
       <div className="flex flex-wrap gap-6">
         <div className="flex flex-col gap-2">
           <span className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wide text-[var(--ash)]">
@@ -170,6 +180,7 @@ function StylePicker({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

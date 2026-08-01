@@ -254,6 +254,8 @@ const POP = "\\fscx135\\fscy135\\t(0,90,\\fscx100\\fscy100)";
  * WrapStyle 0 = quebra automática (nunca corta na horizontal).
  */
 export function buildAss(words, styleId, opts = {}) {
+  // "none" = aluno escolheu vídeo SEM legenda (espelha subtitle-presets.ts).
+  if (styleId === "none") return null;
   if (!words || words.length === 0) return null;
   const s = resolveStyle(styleId);
   const pos = POSITIONS[opts.position] || POSITIONS[s.defaultPosition] || POSITIONS.bottom;
