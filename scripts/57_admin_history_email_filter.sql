@@ -2,6 +2,10 @@
 -- admin_history ganha p_email (opcional): filtra treinos/gerações/pagamentos
 -- pelo e-mail do aluno (ilike parcial) — achar a voz de uma pessoa sem rolar
 -- os "últimos 40".
+-- ⚠️ assinatura NOVA = o replace cria um OVERLOAD e o PostgREST fica ambíguo
+-- (histórico voltou VAZIO em prod até dropar a antiga — lição 02/08).
+drop function if exists public.admin_history(integer);
+
 create or replace function public.admin_history(p_limit integer default 40, p_email text default null)
  returns json
  language sql
