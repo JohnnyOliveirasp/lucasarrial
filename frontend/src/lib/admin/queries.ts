@@ -4,6 +4,8 @@
  * em cima do modelo de custo travado.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { R2_BUCKETS } from "@/lib/r2/client";
+import { createPresignedGet } from "@/lib/r2/presigned";
 import {
   PLAN_PRICE_BRL,
   USD_BRL,
@@ -292,6 +294,8 @@ export type HistoryGeneration = {
   voice: string | null;
   email: string | null;
   chars: number;
+  /** Presigned GET (1h) do mp3 — player direto no Histórico (pedido 02/08). */
+  audio_url?: string | null;
 };
 export type HistoryPayment = {
   id: string;
@@ -309,10 +313,32 @@ export type AdminHistory = {
 };
 
 export async function getHistory(limit = 40, email?: string): Promise<AdminHistory> {
+  const admin = getAdmin();
   // p_email (mig 57): filtra os 3 blocos pelo e-mail do aluno (ilike parcial).
-  const { data } = await getAdmin().rpc("admin_history", {
+  const { data } = await admin.rpc("admin_history", {
     p_limit: limit,
     p_email: email?.trim() || undefined,
   });
-  return (data ?? { trainings: [], generations: [], payments: [] }) as unknown as AdminHistory;
+  const hist = (data ?? { trainings: [], generations: [], payments: [] }) as unknown as AdminHistory;
+
+  // Player no Histórico: presign do mp3 de cada geração ready (1h).
+  const ids = hist.generations.filter((g) => g.status === "ready").map((g) => g.id);
+  if (ids.length > 0) {
+    const { data: rows } = await admin.from("generations").select("id, audio_path").in("id", ids);
+    const paths = new Map(
+      ((rows ?? []) as unknown as { id: string; audio_path: string | null }[]).map((r) => [r.id, r.audio_path]),
+    );
+    await Promise.all(
+      hist.generations.map(async (g) => {
+        const p = paths.get(g.id);
+        if (!p) return;
+        try {
+          g.audio_url = await createPresignedGet(R2_BUCKETS.generations, p, 3600);
+        } catch {
+          /* sem player nessa linha */
+        }
+      }),
+    );
+  }
+  return hist;
 }

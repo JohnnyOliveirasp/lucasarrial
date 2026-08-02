@@ -110,6 +110,9 @@ export function HistoryTabs({ data }: { data: AdminHistory }) {
                     <span className="block truncate font-mono text-[10px] text-[var(--ash)]">{g.email || "—"} · {dt(g.at)}</span>
                   </span>
                   <span className="flex items-center gap-4">
+                    {g.audio_url && (
+                      <audio controls preload="none" src={g.audio_url} className="h-8 w-52 max-w-[40vw]" />
+                    )}
                     <span className="font-mono text-[11px] text-[var(--ash)]">{num(g.chars)} car.</span>
                     <Badge status={g.status} />
                   </span>
