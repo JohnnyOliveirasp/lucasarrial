@@ -308,7 +308,11 @@ export type AdminHistory = {
   payments: HistoryPayment[];
 };
 
-export async function getHistory(limit = 40): Promise<AdminHistory> {
-  const { data } = await getAdmin().rpc("admin_history", { p_limit: limit });
+export async function getHistory(limit = 40, email?: string): Promise<AdminHistory> {
+  // p_email (mig 57): filtra os 3 blocos pelo e-mail do aluno (ilike parcial).
+  const { data } = await getAdmin().rpc("admin_history", {
+    p_limit: limit,
+    p_email: email?.trim() || undefined,
+  });
   return (data ?? { trainings: [], generations: [], payments: [] }) as unknown as AdminHistory;
 }

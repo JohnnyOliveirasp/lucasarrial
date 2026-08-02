@@ -802,7 +802,7 @@ export type Database = {
       admin_video_clones: { Args: { p_since: string; p_until?: string }; Returns: Json };
       admin_users:        { Args: Record<string, never>; Returns: Json };
       admin_failures:     { Args: { p_limit?: number }; Returns: Json };
-      admin_history:      { Args: { p_limit?: number }; Returns: Json };
+      admin_history:      { Args: { p_limit?: number; p_email?: string }; Returns: Json };
       debit_credits: {
         Args: {
           p_user_id: string;
