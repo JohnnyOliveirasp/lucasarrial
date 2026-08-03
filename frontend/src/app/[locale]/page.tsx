@@ -7,6 +7,7 @@ import { Stats } from "@/components/sections/stats";
 import { Pricing } from "@/components/sections/pricing";
 import { CTA } from "@/components/sections/cta";
 import { Footer } from "@/components/sections/footer";
+import { LandingHelpWidget } from "@/components/landing/landing-help-widget";
 
 export default async function Home({
   params,
@@ -28,6 +29,8 @@ export default async function Home({
         <CTA />
       </main>
       <Footer />
+      {/* Mary pré-venda (03/08): responde dúvidas do visitante sem login. */}
+      <LandingHelpWidget locale={locale} />
     </>
   );
 }

@@ -5,6 +5,7 @@ import { Link } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buildHotmartCheckoutUrl } from "@/lib/payments/hotmart-checkout";
 import { Card, Badge, Eyebrow } from "@/components/ui";
+import { LandingHelpWidget } from "@/components/landing/landing-help-widget";
 
 /**
  * Página de planos / checkout.
@@ -134,6 +135,8 @@ export default async function PlanosPage({
           )}
         </div>
       </Card>
+      {/* Mary pré-venda (03/08): dúvida na hora de assinar. */}
+      <LandingHelpWidget locale={locale} />
     </main>
   );
 }
