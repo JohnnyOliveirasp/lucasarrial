@@ -157,11 +157,11 @@ export function DashboardClient() {
             hint={`margem ${data.totals.marginPct.toFixed(0)}% · gatilho retirada $15k: ${Math.max(0, Math.min(100, (data.totals.profit / 15000) * 100)).toFixed(0)}%`}
           />
           <KpiCard
-            label="Cancelaram"
-            value={num(data.totals.canceledCount)}
-            tone={data.totals.churnPct > 20 ? "bad" : "default"}
+            label="Cancelaram (pagantes)"
+            value={num(data.totals.canceledPaid)}
+            tone={data.totals.churnPaidPct > 7 ? "bad" : "good"}
             icon={UserMinus}
-            hint={`taxa de cancelamento: ${data.totals.churnPct.toFixed(1)}% dos assinantes`}
+            hint={`${data.totals.churnPaidPct.toFixed(1)}% dos pagantes · gratuidade: ${num(data.totals.canceledFree)} (${data.totals.churnFreePct.toFixed(0)}%)`}
           />
         </div>
       </section>

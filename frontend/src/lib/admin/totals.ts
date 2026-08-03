@@ -38,10 +38,12 @@ export type TotalSummary = {
   /** Lucro = caixa real acumulado (entrou − despesas). */
   profit: number;
   marginPct: number;
-  /** Pessoas distintas que cancelaram a assinatura (Hotmart, sem testes). */
-  canceledCount: number;
-  /** % de cancelamento sobre o total de assinantes distintos aprovados. */
-  churnPct: number;
+  /** Cancelamentos de quem PAGOU de verdade (>R$0) e taxa sobre pagantes. */
+  canceledPaid: number;
+  churnPaidPct: number;
+  /** Cancelamentos de quem estava na gratuidade (oferta R$0) e taxa. */
+  canceledFree: number;
+  churnFreePct: number;
 };
 
 /** Produto da plataforma na Hotmart (mesmo id usado nas análises de venda). */
@@ -53,17 +55,36 @@ type CancelPayload = {
     buyer?: { email?: string };
     product?: { id?: number | string };
     subscription?: { product?: { id?: number | string } };
+    purchase?: { price?: { value?: number } };
   };
 };
 
 const isTestEmail = (e: string) => !e || e.includes("@example.com") || e === "test@hotmart.com";
 
-/** Churn de assinatura: cancelamentos distintos ÷ assinantes distintos. */
+/**
+ * Churn de assinatura SEPARADO por quem paga de verdade × gratuidade (oferta
+ * R$0): misturar os dois inflava a taxa (03/08: 20,6% misto vs 3,8% pagantes).
+ */
 async function getChurn(admin: ReturnType<typeof getAdmin>) {
   const [cancelRes, approvedRes] = await Promise.all([
     admin.from("payment_events").select("payload").eq("event_type", "SUBSCRIPTION_CANCELLATION"),
     admin.from("payment_events").select("buyer_email, payload").eq("event_type", "PURCHASE_APPROVED"),
   ]);
+
+  // Assinante é PAGANTE se alguma compra aprovada teve valor > 0.
+  const paid = new Set<string>();
+  const freeOnly = new Set<string>();
+  for (const row of (approvedRes.data ?? []) as { buyer_email: string | null; payload: CancelPayload }[]) {
+    const email = (row.buyer_email ?? "").toLowerCase();
+    const d = row.payload?.data;
+    if (isTestEmail(email) || String(d?.product?.id ?? "") !== HOTMART_PRODUCT_ID) continue;
+    if (Number(d?.purchase?.price?.value ?? 0) > 0) {
+      paid.add(email);
+      freeOnly.delete(email);
+    } else if (!paid.has(email)) {
+      freeOnly.add(email);
+    }
+  }
 
   const canceled = new Set<string>();
   for (const row of (cancelRes.data ?? []) as { payload: CancelPayload }[]) {
@@ -73,16 +94,13 @@ async function getChurn(admin: ReturnType<typeof getAdmin>) {
     if (!isTestEmail(email) && product === HOTMART_PRODUCT_ID) canceled.add(email);
   }
 
-  const subscribers = new Set<string>();
-  for (const row of (approvedRes.data ?? []) as { buyer_email: string | null; payload: CancelPayload }[]) {
-    const email = (row.buyer_email ?? "").toLowerCase();
-    const product = String(row.payload?.data?.product?.id ?? "");
-    if (!isTestEmail(email) && product === HOTMART_PRODUCT_ID) subscribers.add(email);
-  }
-
+  const canceledPaid = [...canceled].filter((e) => paid.has(e)).length;
+  const canceledFree = [...canceled].filter((e) => freeOnly.has(e)).length;
   return {
-    canceledCount: canceled.size,
-    churnPct: subscribers.size > 0 ? (canceled.size / subscribers.size) * 100 : 0,
+    canceledPaid,
+    churnPaidPct: paid.size > 0 ? (canceledPaid / paid.size) * 100 : 0,
+    canceledFree,
+    churnFreePct: freeOnly.size > 0 ? (canceledFree / freeOnly.size) * 100 : 0,
   };
 }
 
@@ -170,7 +188,9 @@ export async function getTotalSummary(): Promise<TotalSummary> {
     expenses,
     profit,
     marginPct: revenue > 0 ? (profit / revenue) * 100 : 0,
-    canceledCount: churn.canceledCount,
-    churnPct: churn.churnPct,
+    canceledPaid: churn.canceledPaid,
+    churnPaidPct: churn.churnPaidPct,
+    canceledFree: churn.canceledFree,
+    churnFreePct: churn.churnFreePct,
   };
 }
