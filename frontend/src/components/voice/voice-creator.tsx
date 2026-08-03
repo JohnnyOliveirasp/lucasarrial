@@ -51,6 +51,10 @@ export function VoiceCreator() {
   const [overallProgress, setOverallProgress] = useState(0);
   const [recorderImport, setRecorderImport] = useState<{ count: number; skipped: number } | null>(null);
   const recorderClipIds = useRef<string[]>([]);
+  // Takes do "gravar pelo celular" (R2) importados pro treino — apagados
+  // do R2 depois do envio, igual à limpeza do IndexedDB.
+  const phoneTakeKeys = useRef<string[]>([]);
+  const phoneToken = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -91,6 +95,47 @@ export function VoiceCreator() {
       })
       .catch(() => {});
     // roda 1x no mount — os clipes vêm da página do Gravador
+  }, []);
+
+  // 📱 Graduação 03/08: takes do "gravar pelo celular" (R2) também entram
+  // automaticamente como arquivos do treino — a pessoa pode misturar takes
+  // do navegador e do celular na mesma voz.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const s = await fetch("/api/v1/recorder-test/session", { cache: "no-store" }).then((r) => r.json());
+        if (!alive || !s?.token) return;
+        phoneToken.current = s.token as string;
+        const j = await fetch("/api/v1/recorder-test/takes", {
+          headers: { "x-recorder-token": s.token as string },
+        }).then((r) => r.json());
+        const takes = (j?.takes ?? []) as { key: string; name: string; url: string }[];
+        if (!alive || takes.length === 0) return;
+        const additions: LocalFile[] = [];
+        for (const t of takes) {
+          try {
+            const blob = await fetch(t.url).then((r) => r.blob());
+            const file = new File([blob], t.name, { type: "audio/mpeg" });
+            // MP3 do servidor tem cabeçalho — duração dá pra medir no <audio>.
+            const duration = await new Promise<number>((resolve) => {
+              const a = document.createElement("audio");
+              const u = URL.createObjectURL(file);
+              const done = (n: number) => { URL.revokeObjectURL(u); resolve(n); };
+              a.preload = "metadata";
+              a.onloadedmetadata = () => done(Number.isFinite(a.duration) ? a.duration : 0);
+              a.onerror = () => done(0);
+              setTimeout(() => done(0), 5000);
+              a.src = u;
+            });
+            additions.push({ id: `cel-${t.key}`, file, duration, progress: 0, state: "idle" });
+            phoneTakeKeys.current.push(t.key);
+          } catch { /* take individual falhou — segue os outros */ }
+        }
+        if (alive && additions.length > 0) setFiles((prev) => [...additions, ...prev]);
+      } catch { /* sem takes do celular — segue normal */ }
+    })();
+    return () => { alive = false; };
   }, []);
 
   // Callback ref: aplica webkitdirectory ASSIM QUE o input monta no DOM.
@@ -300,6 +345,13 @@ export function VoiceCreator() {
     // (best-effort; se falhar, só reapareceriam pré-carregadas).
     for (const clipId of recorderClipIds.current) {
       deleteClip(clipId).catch(() => {});
+    }
+    // Takes do celular enviados → apaga do R2 (mesma lógica, best-effort).
+    for (const key of phoneTakeKeys.current) {
+      void fetch(`/api/v1/recorder-test/takes?key=${encodeURIComponent(key)}`, {
+        method: "DELETE",
+        headers: { "x-recorder-token": phoneToken.current ?? "" },
+      }).catch(() => {});
     }
 
     setStep("done");

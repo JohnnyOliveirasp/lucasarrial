@@ -3,6 +3,7 @@ import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { ScriptReader } from "@/components/voice/script-reader";
 import { VoiceRecorder } from "@/components/voice/voice-recorder";
+import { PhoneRecorderSection } from "@/components/voice/phone-recorder-section";
 import { Eyebrow } from "@/components/ui";
 
 export default async function ScriptPage({
@@ -33,6 +34,9 @@ export default async function ScriptPage({
 
       <ScriptReader />
       <VoiceRecorder />
+      {/* Graduação do Lab 03/08: gravar pelo celular (lapela) — as duas
+          opções convivem; os takes entram no MESMO treino. */}
+      <PhoneRecorderSection />
     </div>
   );
 }
