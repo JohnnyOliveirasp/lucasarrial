@@ -20,6 +20,7 @@ import {
   ShoppingBag,
   UserSquare2,
   Wand2,
+  Smartphone,
   type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
@@ -267,6 +268,14 @@ export function Sidebar({
                     pathname.endsWith("/app/videos/estudio") ||
                     pathname.endsWith("/app/videos/studio")
                   }
+                />
+                {/* 🧪 Gravador pelo Celular (teste 03/08): lapela no celular,
+                    roteiro no desktop. Aprovou → integra no Gravador oficial. */}
+                <NavLeaf
+                  href="/app/lab/gravador-celular"
+                  icon={Smartphone}
+                  label="Gravador Celular"
+                  active={pathname.endsWith("/app/lab/gravador-celular")}
                 />
               </ul>
               <div className="mt-2 border-t border-[var(--hairline)] pt-2">
