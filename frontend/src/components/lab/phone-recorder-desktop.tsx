@@ -5,7 +5,7 @@
  * área de roteiro (fica na tela grande enquanto você grava no celular)
  * e os takes chegando com player (poll 4s).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, Check, Smartphone, RefreshCw } from "lucide-react";
 import { ScriptReader } from "@/components/voice/script-reader";
 
@@ -14,6 +14,22 @@ type Take = { key: string; name: string; size: number; at: string | null; url: s
 export function PhoneRecorderDesktop({ token, phoneUrl }: { token: string; phoneUrl: string }) {
   const [takes, setTakes] = useState<Take[]>([]);
   const [copied, setCopied] = useState(false);
+  const qrRef = useRef<HTMLCanvasElement>(null);
+
+  // QR do link (qrcode@1.5.4, desenha local no canvas — zero rede).
+  useEffect(() => {
+    let alive = true;
+    void import("qrcode").then(({ toCanvas }) => {
+      if (alive && qrRef.current) {
+        void toCanvas(qrRef.current, phoneUrl, {
+          width: 190,
+          margin: 1,
+          color: { dark: "#ffffff", light: "#0a0a0c" },
+        });
+      }
+    });
+    return () => { alive = false; };
+  }, [phoneUrl]);
 
   useEffect(() => {
     let alive = true;
@@ -50,9 +66,12 @@ export function PhoneRecorderDesktop({ token, phoneUrl }: { token: string; phone
             <Smartphone className="size-4 text-[var(--ash)]" /> Abrir no celular
           </span>
           <p className="text-[13px] leading-relaxed text-[var(--body)]">
-            Copie o link e abra no navegador do celular (manda pra você mesmo no WhatsApp).
-            Vale por 2h — recarregar esta página gera sessão nova.
+            Aponte a câmera do celular pro QR (ou copie o link). Vale por 2h —
+            recarregar esta página gera sessão nova.
           </p>
+          <div className="flex justify-center rounded-[var(--radius)] border border-[var(--hairline)] bg-[#0a0a0c] p-3">
+            <canvas ref={qrRef} className="rounded-[4px]" />
+          </div>
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-elevated)] px-3 py-2 font-mono text-[11px] text-[var(--silver)]">
               {phoneUrl}
