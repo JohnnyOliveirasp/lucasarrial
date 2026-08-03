@@ -437,6 +437,7 @@
         "fixedBadge": "Fixed reference",
         "replace": "Change photo",
         "extrasLabel": "Extra photos (optional)",
+        "promote": "Use as reference",
         "historyTip": "Tip: on any image in your history, click “Use as reference” to bring it here."
       },
       "idea": {

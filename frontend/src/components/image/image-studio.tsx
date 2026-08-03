@@ -282,6 +282,21 @@ export function ImageStudio({
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  /** Promove uma foto extra a referência FIXA; a fixa atual desce pras extras
+   *  (troca de lugar — as duas já estão no R2, nenhum upload novo). */
+  function promoteRef(id: string) {
+    const chosen = refs.find((x) => x.id === id);
+    if (!chosen?.key || chosen.uploading || fixedUploading) return;
+    const oldFixed = fixedRef;
+    setRefs((prev) => {
+      const rest = prev.filter((x) => x.id !== id);
+      return oldFixed
+        ? [...rest, { id: crypto.randomUUID(), preview: oldFixed.url, key: oldFixed.key, uploading: false }]
+        : rest;
+    });
+    persistFixedRef({ key: chosen.key, url: chosen.preview });
+  }
+
   function removeRef(id: string) {
     setRefs((prev) => {
       const found = prev.find((x) => x.id === id);
@@ -588,6 +603,15 @@ export function ImageStudio({
               >
                 <X className="h-3.5 w-3.5" />
               </button>
+              {r.key && !r.uploading && (
+                <button
+                  type="button"
+                  onClick={() => promoteRef(r.id)}
+                  className="absolute inset-x-0 bottom-0 bg-[var(--canvas)]/85 px-1 py-1 text-center font-mono text-[9px] tracking-wide text-[var(--silver)] backdrop-blur-sm transition-colors hover:text-[var(--ink)]"
+                >
+                  {t("refs.promote")}
+                </button>
+              )}
             </div>
           ))}
           {refs.length < MAX_EXTRAS && (
