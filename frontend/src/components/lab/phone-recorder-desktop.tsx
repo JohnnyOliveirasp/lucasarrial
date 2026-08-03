@@ -7,13 +7,13 @@
  */
 import { useEffect, useState } from "react";
 import { Copy, Check, Smartphone, RefreshCw } from "lucide-react";
+import { ScriptReader } from "@/components/voice/script-reader";
 
 type Take = { key: string; name: string; size: number; at: string | null; url: string };
 
 export function PhoneRecorderDesktop({ token, phoneUrl }: { token: string; phoneUrl: string }) {
   const [takes, setTakes] = useState<Take[]>([]);
   const [copied, setCopied] = useState(false);
-  const [script, setScript] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -37,17 +37,10 @@ export function PhoneRecorderDesktop({ token, phoneUrl }: { token: string; phone
 
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
-      {/* Roteiro gigante — a tela que fica na tua frente enquanto grava */}
-      <div className="flex flex-col gap-2 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5">
-        <span className="font-mono text-[11px] uppercase tracking-wider text-[var(--mute)]">
-          Roteiro (fica aqui na tela enquanto você grava no celular)
-        </span>
-        <textarea
-          value={script}
-          onChange={(e) => setScript(e.target.value)}
-          placeholder="Cole aqui o texto que você vai ler…"
-          className="min-h-[420px] w-full resize-y rounded-[var(--radius)] border border-[var(--hairline)] bg-transparent p-4 font-sans text-[19px] leading-[1.8] text-[var(--ink)] placeholder:text-[var(--ash)] focus:border-[var(--hairline-bright)] focus:outline-none"
-        />
+      {/* Roteiro OFICIAL do Gravador (tema → IA gera o texto em blocos com
+          direção emocional) — fica nesta tela enquanto você grava no celular. */}
+      <div className="min-w-0">
+        <ScriptReader />
       </div>
 
       <div className="flex flex-col gap-5">
