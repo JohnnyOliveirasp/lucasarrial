@@ -46,9 +46,11 @@ export async function POST(request: NextRequest) {
     if (!title) return badRequest("Missing 'title'");
 
     let attachmentPath: string | null = null;
-    if (file instanceof File && file.size > 0) {
+    // Node 18 do servidor não tem o global File — Blob cobre (File herda dele).
+    if (file instanceof Blob && file.size > 0) {
       if (file.size > MAX_ATTACHMENT_BYTES) return badRequest("Anexo acima de 8MB");
-      const safe = (file.name || "anexo").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-60);
+      const rawName = (file as Blob & { name?: string }).name || "anexo";
+      const safe = rawName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-60);
       attachmentPath = `_incidents/${randomUUID()}_${safe}`;
       await r2.send(
         new PutObjectCommand({

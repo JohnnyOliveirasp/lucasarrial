@@ -25,8 +25,9 @@ export async function POST(request: NextRequest) {
   } catch {
     return badRequest("Envio inválido.");
   }
+  // Node 18 do servidor NÃO tem o global File (só 20+) — checa por Blob.
   const file = form.get("file");
-  if (!(file instanceof File)) return badRequest("Arquivo ausente.");
+  if (!(file instanceof Blob)) return badRequest("Arquivo ausente.");
   if (file.size === 0 || file.size > MAX_BYTES) return badRequest("Áudio vazio ou grande demais.");
   const mime = (file.type || "audio/webm").split(";")[0].toLowerCase();
   if (!OK_TYPES.includes(mime)) return badRequest(`Formato não suportado (${mime}).`);
