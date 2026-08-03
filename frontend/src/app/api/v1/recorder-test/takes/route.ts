@@ -7,7 +7,7 @@ import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { jsonError, jsonOk, serverError } from "@/lib/api/responses";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
-import { recorderPrefix, verifyRecorderToken } from "@/lib/recorder-test/token";
+import { verifyRecorderToken } from "@/lib/recorder-test/token";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +17,12 @@ export async function GET(request: NextRequest) {
   if (!userId) return jsonError("unauthorized", "Sessão expirada — gere um novo link no computador.", 401);
 
   try {
+    // TODOS os takes do usuário (qualquer sessão) — "precisa aparecer lá",
+    // ponto (Johnny 03/08). A sessão só organiza a PASTA do upload.
     const out = await r2.send(new ListObjectsV2Command({
       Bucket: R2_BUCKETS.voices,
-      Prefix: recorderPrefix(userId, token),
-      MaxKeys: 100,
+      Prefix: `${userId}/recorder-test/`,
+      MaxKeys: 200,
     }));
     const objects = (out.Contents ?? []).sort(
       (a, b) => (a.LastModified?.getTime() ?? 0) - (b.LastModified?.getTime() ?? 0),
