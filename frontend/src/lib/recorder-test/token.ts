@@ -24,12 +24,14 @@ const b64u = {
 
 export function signRecorderToken(userId: string): string {
   const payload = `${userId}.${Date.now() + TTL_MS}`;
-  return `${b64u.enc(payload)}.${sig(payload)}`;
+  // Separador "~" (NUNCA "."): o matcher do middleware ignora URL com ponto
+  // (trata como arquivo estático) e a página /gravar/[token] dava 404.
+  return `${b64u.enc(payload)}~${sig(payload)}`;
 }
 
 /** userId se o token é válido e não expirou; null caso contrário. */
 export function verifyRecorderToken(token: string): string | null {
-  const dot = token.lastIndexOf(".");
+  const dot = token.lastIndexOf("~");
   if (dot < 1) return null;
   let payload: string;
   try {
