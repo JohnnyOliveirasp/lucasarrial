@@ -28,8 +28,8 @@ export function kieFallbackEnabled(): boolean {
  */
 export function seedreamAspect(aspect: string): string {
   if (aspect === "auto") return "1:1";
-  if (aspect === "4:5") return "3:4";
-  return aspect; // 1:1, 9:16, 16:9, 3:2, 2:3 existem lá com o mesmo nome
+  if (aspect === "4:5") return "3:4"; // legado (rows antigas; opção saiu da UI 03/08)
+  return aspect; // 1:1, 3:4, 9:16, 16:9, 3:2, 2:3 existem lá com o mesmo nome
 }
 
 export function seedreamQuality(resolution: string): string {
@@ -43,8 +43,10 @@ export function seedreamQuality(resolution: string): string {
 export const ASPECT_RATIOS = [
   { value: "auto", label: "Automático", hint: "O modelo escolhe a melhor proporção (sai em 1K)." },
   { value: "1:1", label: "Quadrado (1:1)", hint: "Feed, perfil, avatar." },
-  // 4:5 REMOVIDO 03/08: o Kie liga/desliga essa proporção sem aviso (422
-  // "temporarily unavailable" — caso Rayanne). Recolocar só se estabilizar.
+  // Retrato era 4:5, virou 3:4 em 03/08: o Kie liga/desliga o 4:5 sem aviso
+  // (422 "temporarily unavailable" — caso Rayanne); 3:4 é nativo no
+  // gpt-image-2 E no Seedream (fallback cobre sem tradução).
+  { value: "3:4", label: "Retrato (3:4)", hint: "Post vertical de feed (Instagram)." },
   { value: "9:16", label: "Vertical (9:16)", hint: "Stories, Reels, TikTok." },
   { value: "16:9", label: "Horizontal (16:9)", hint: "Capa, YouTube, apresentação." },
   { value: "3:2", label: "Paisagem (3:2)", hint: "Foto clássica deitada." },
