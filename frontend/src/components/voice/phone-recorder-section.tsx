@@ -89,9 +89,11 @@ export function PhoneRecorderSection() {
         </h2>
       </div>
       <p className="text-[13px] leading-relaxed text-[var(--mute)]">
-        Microfone de lapela no celular grava melhor que o notebook (sem barulho de ventilador).
-        Aponte a câmera pro QR, deixe o roteiro nesta tela e grave — cada take aparece aqui
-        e <strong className="text-[var(--body)]">entra automaticamente no treino</strong> quando você criar a voz.
+        Aponte a câmera do celular para o QR e grave por lá — com o microfone do aparelho
+        ou um de lapela, que costuma captar a voz com mais qualidade. Deixe o roteiro nesta
+        tela pra ler enquanto grava: cada take aparece aqui e{" "}
+        <strong className="text-[var(--body)]">entra automaticamente no treino</strong> quando
+        você criar a voz.
       </p>
 
       <div className="flex flex-wrap items-start gap-5">
