@@ -37,7 +37,15 @@ export function PhoneRecorderDesktop({ token, phoneUrl }: { token: string; phone
       try {
         const res = await fetch("/api/v1/recorder-test/takes", { headers: { "x-recorder-token": token } });
         const j = await res.json();
-        if (alive && res.ok) setTakes(j.takes ?? []);
+        if (alive && res.ok) {
+          // Cada poll assina URLs NOVAS — trocar o src no meio da reprodução
+          // resetava o <audio> a cada 4s ("toca 2s e para", Johnny 03/08).
+          // Take que já está na lista PRESERVA o objeto/URL antigo (vale 1h).
+          setTakes((prev) => {
+            const seen = new Map(prev.map((t) => [t.key, t]));
+            return ((j.takes ?? []) as Take[]).map((t) => seen.get(t.key) ?? t);
+          });
+        }
       } catch { /* próxima volta */ }
     }
     void poll();
