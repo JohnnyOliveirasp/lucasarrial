@@ -12,6 +12,7 @@ import {
   Mic2,
   Activity,
   AlertTriangle,
+  UserMinus,
   Wifi,
 } from "lucide-react";
 import type { AdminData, LiveCloning } from "@/lib/admin/queries";
@@ -127,7 +128,7 @@ export function DashboardClient() {
         <h2 className="font-mono text-[11px] uppercase tracking-wider text-[var(--ash)]">
           Desde o início · tudo somado
         </h2>
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <KpiCard
             label="Entrou"
             value={brl2(data.totals.revenue)}
@@ -154,6 +155,13 @@ export function DashboardClient() {
             tone={data.totals.profit >= 0 ? "profit" : "bad"}
             icon={TrendingUp}
             hint={`margem ${data.totals.marginPct.toFixed(0)}% · gatilho retirada $15k: ${Math.max(0, Math.min(100, (data.totals.profit / 15000) * 100)).toFixed(0)}%`}
+          />
+          <KpiCard
+            label="Cancelaram"
+            value={num(data.totals.canceledCount)}
+            tone={data.totals.churnPct > 20 ? "bad" : "default"}
+            icon={UserMinus}
+            hint={`taxa de cancelamento: ${data.totals.churnPct.toFixed(1)}% dos assinantes`}
           />
         </div>
       </section>

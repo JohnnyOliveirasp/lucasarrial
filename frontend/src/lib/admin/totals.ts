@@ -38,7 +38,53 @@ export type TotalSummary = {
   /** Lucro = caixa real acumulado (entrou − despesas). */
   profit: number;
   marginPct: number;
+  /** Pessoas distintas que cancelaram a assinatura (Hotmart, sem testes). */
+  canceledCount: number;
+  /** % de cancelamento sobre o total de assinantes distintos aprovados. */
+  churnPct: number;
 };
+
+/** Produto da plataforma na Hotmart (mesmo id usado nas análises de venda). */
+const HOTMART_PRODUCT_ID = "7851642";
+
+type CancelPayload = {
+  data?: {
+    subscriber?: { email?: string };
+    buyer?: { email?: string };
+    product?: { id?: number | string };
+    subscription?: { product?: { id?: number | string } };
+  };
+};
+
+const isTestEmail = (e: string) => !e || e.includes("@example.com") || e === "test@hotmart.com";
+
+/** Churn de assinatura: cancelamentos distintos ÷ assinantes distintos. */
+async function getChurn(admin: ReturnType<typeof getAdmin>) {
+  const [cancelRes, approvedRes] = await Promise.all([
+    admin.from("payment_events").select("payload").eq("event_type", "SUBSCRIPTION_CANCELLATION"),
+    admin.from("payment_events").select("buyer_email, payload").eq("event_type", "PURCHASE_APPROVED"),
+  ]);
+
+  const canceled = new Set<string>();
+  for (const row of (cancelRes.data ?? []) as { payload: CancelPayload }[]) {
+    const d = row.payload?.data;
+    const email = (d?.subscriber?.email || d?.buyer?.email || "").toLowerCase();
+    const product = String(d?.product?.id ?? d?.subscription?.product?.id ?? "");
+    if (!isTestEmail(email) && product === HOTMART_PRODUCT_ID) canceled.add(email);
+  }
+
+  const subscribers = new Set<string>();
+  for (const row of (approvedRes.data ?? []) as { buyer_email: string | null; payload: CancelPayload }[]) {
+    const email = (row.buyer_email ?? "").toLowerCase();
+    const product = String(row.payload?.data?.product?.id ?? "");
+    if (!isTestEmail(email) && product === HOTMART_PRODUCT_ID) subscribers.add(email);
+  }
+
+  return {
+    canceledCount: canceled.size,
+    churnPct: subscribers.size > 0 ? (canceled.size / subscribers.size) * 100 : 0,
+  };
+}
 
 type ByRes = Array<{ resolution: string; n: number }>;
 type ByTier = Array<{ tier: string; n: number; seconds: number }>;
@@ -57,13 +103,14 @@ export async function getTotalSummary(): Promise<TotalSummary> {
   const firstReadAt = ((firstRead.data ?? []) as unknown as { at: string }[])[0]?.at;
   const preUntil = firstReadAt ?? until;
 
-  const [fRes, preMetrics, preClones, spendRes, courtesyRes] = await Promise.all([
+  const [fRes, preMetrics, preClones, spendRes, courtesyRes, churn] = await Promise.all([
     admin.rpc("admin_finance", { p_since: since, p_until: until }),
     // Jobs ANTES da 1ª leitura → estimativa (mesma régua de queries.ts)
     admin.rpc("admin_metrics", { p_since: since, p_until: preUntil }),
     admin.rpc("admin_video_clones", { p_since: since, p_until: preUntil }),
     admin.from("runpod_spend_log").select("balance_usd").order("at", { ascending: true }),
     admin.from("courtesy_grants").select("amount"),
+    getChurn(admin),
   ]);
 
   const fin = (fRes.data ?? {}) as {
@@ -123,5 +170,7 @@ export async function getTotalSummary(): Promise<TotalSummary> {
     expenses,
     profit,
     marginPct: revenue > 0 ? (profit / revenue) * 100 : 0,
+    canceledCount: churn.canceledCount,
+    churnPct: churn.churnPct,
   };
 }
