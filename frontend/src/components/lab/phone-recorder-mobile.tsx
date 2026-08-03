@@ -49,9 +49,10 @@ export function PhoneRecorderMobile({ token }: { token: string }) {
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        // Pro TESTE de qualidade: captura CRUA — sem NR/AGC do navegador,
-        // pra ouvir o que o mic de lapela entrega de verdade.
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        // Sem NR/eco (mudam o TIMBRE — queremos o som real da lapela), mas
+        // COM ganho automático: sem ele a lapela gravou a -43dB (quase mudo,
+        // caso Johnny 03/08). AGC só nivela o volume, não colore o som.
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true },
       });
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"

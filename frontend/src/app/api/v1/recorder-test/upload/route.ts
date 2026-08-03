@@ -48,7 +48,10 @@ export async function POST(request: NextRequest) {
     const out = join(dir, "out.mp3");
     await writeFile(src, body);
     await new Promise<void>((resolve, reject) => {
-      const p = spawn("ffmpeg", ["-y", "-loglevel", "error", "-i", src, "-vn", "-codec:a", "libmp3lame", "-b:a", "128k", out]);
+      // loudnorm: nivela o volume (lapela com AGC fraco gravava a -43dB).
+      const p = spawn("ffmpeg", ["-y", "-loglevel", "error", "-i", src, "-vn",
+        "-af", "loudnorm=I=-18:TP=-2:LRA=11",
+        "-codec:a", "libmp3lame", "-b:a", "128k", out]);
       p.on("error", reject);
       p.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exit ${code}`))));
     });
