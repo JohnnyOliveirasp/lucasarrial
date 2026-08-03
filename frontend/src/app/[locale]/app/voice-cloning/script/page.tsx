@@ -2,8 +2,7 @@ import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { ScriptReader } from "@/components/voice/script-reader";
-import { VoiceRecorder } from "@/components/voice/voice-recorder";
-import { PhoneRecorderSection } from "@/components/voice/phone-recorder-section";
+import { RecorderWithPhone } from "@/components/voice/recorder-with-phone";
 import { Eyebrow } from "@/components/ui";
 
 export default async function ScriptPage({
@@ -33,10 +32,10 @@ export default async function ScriptPage({
       </header>
 
       <ScriptReader />
-      <VoiceRecorder />
-      {/* Graduação do Lab 03/08: gravar pelo celular (lapela) — as duas
-          opções convivem; os takes entram no MESMO treino. */}
-      <PhoneRecorderSection />
+      {/* Gravador do navegador + "gravar pelo celular" (graduação 03/08):
+          as duas opções convivem e os takes do celular SOMAM na barra de
+          fala acumulada — tudo alimenta o mesmo treino. */}
+      <RecorderWithPhone />
     </div>
   );
 }

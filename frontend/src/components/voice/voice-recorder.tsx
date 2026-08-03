@@ -33,7 +33,7 @@ type ClipView = { id: string; seconds: number; createdAt: number; url: string };
  * silêncio). Cada clipe é persistido em IndexedDB (anti-perda) e listado. Slice
  * 2 vai subir os clipes do IndexedDB pro R2.
  */
-export function VoiceRecorder() {
+export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = {}) {
   const t = useTranslations("voiceCreate.recorder");
   const [status, setStatus] = useState<Status>("idle");
   const [level, setLevel] = useState(0);
@@ -238,7 +238,9 @@ export function VoiceRecorder() {
     await deleteClip(id).catch(() => {});
   }
 
-  const totalSeconds = clips.reduce((s, c) => s + c.seconds, 0);
+  // extraSeconds = fala gravada PELO CELULAR (takes no R2) — soma na barra,
+  // porque tudo entra no mesmo treino (pedido Johnny 03/08).
+  const totalSeconds = clips.reduce((s, c) => s + c.seconds, 0) + extraSeconds;
   const pct = Math.min(100, Math.round((totalSeconds / TARGET_SECONDS) * 100));
   const meterPct = Math.round(level * 100);
   const showPill = status === "ready" || status === "recording";

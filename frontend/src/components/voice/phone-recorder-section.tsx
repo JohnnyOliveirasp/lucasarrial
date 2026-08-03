@@ -11,12 +11,38 @@ import { Copy, Check, Smartphone, Trash2 } from "lucide-react";
 
 type Take = { key: string; name: string; size: number; at: string | null; url: string };
 
-export function PhoneRecorderSection() {
+export function PhoneRecorderSection({ onSeconds }: { onSeconds?: (total: number) => void } = {}) {
   const [token, setToken] = useState<string | null>(null);
   const [phoneUrl, setPhoneUrl] = useState<string | null>(null);
   const [takes, setTakes] = useState<Take[]>([]);
   const [copied, setCopied] = useState(false);
   const qrRef = useRef<HTMLCanvasElement>(null);
+  // Duração medida de cada take (metadata do MP3) → soma na barra de fala
+  // acumulada do gravador (via onSeconds).
+  const durationsRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (!onSeconds) return;
+    let cancelled = false;
+    const pending = takes.filter((t) => !durationsRef.current.has(t.key));
+    const report = () => {
+      if (cancelled) return;
+      const total = takes.reduce((s, t) => s + (durationsRef.current.get(t.key) ?? 0), 0);
+      onSeconds(Math.round(total));
+    };
+    if (pending.length === 0) { report(); return; }
+    for (const t of pending) {
+      const a = document.createElement("audio");
+      a.preload = "metadata";
+      a.onloadedmetadata = () => {
+        durationsRef.current.set(t.key, Number.isFinite(a.duration) ? a.duration : 0);
+        report();
+      };
+      a.onerror = () => { durationsRef.current.set(t.key, 0); report(); };
+      a.src = t.url;
+    }
+    return () => { cancelled = true; };
+  }, [takes, onSeconds]);
 
   useEffect(() => {
     let alive = true;
