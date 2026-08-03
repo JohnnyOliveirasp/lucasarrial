@@ -66,8 +66,7 @@ export function PhoneRecorderDesktop({ token, phoneUrl }: { token: string; phone
             <Smartphone className="size-4 text-[var(--ash)]" /> Abrir no celular
           </span>
           <p className="text-[13px] leading-relaxed text-[var(--body)]">
-            Aponte a câmera do celular pro QR (ou copie o link). Vale por 2h —
-            recarregar esta página gera sessão nova.
+            Aponte a câmera do celular pro QR (ou copie o link). A sessão vale o dia todo — pode recarregar a página à vontade.
           </p>
           <div className="flex justify-center rounded-[var(--radius)] border border-[var(--hairline)] bg-[#0a0a0c] p-3">
             <canvas ref={qrRef} className="rounded-[4px]" />

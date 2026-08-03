@@ -5,7 +5,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const TTL_MS = 2 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function key(): string {
   const base = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -23,7 +23,11 @@ const b64u = {
 };
 
 export function signRecorderToken(userId: string): string {
-  const payload = `${userId}.${Date.now() + TTL_MS}`;
+  // Expiração DETERMINÍSTICA (fim do dia UTC + 12h de folga): o token é o
+  // MESMO o dia todo → F5 no desktop não cria sessão nova e os takes do
+  // celular continuam aparecendo (pegadinha real do 1º teste do Johnny).
+  const exp = (Math.floor(Date.now() / DAY_MS) + 1) * DAY_MS + 12 * 60 * 60 * 1000;
+  const payload = `${userId}.${exp}`;
   // Separador "~" (NUNCA "."): o matcher do middleware ignora URL com ponto
   // (trata como arquivo estático) e a página /gravar/[token] dava 404.
   return `${b64u.enc(payload)}~${sig(payload)}`;
