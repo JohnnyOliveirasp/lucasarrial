@@ -43,7 +43,8 @@ export function seedreamQuality(resolution: string): string {
 export const ASPECT_RATIOS = [
   { value: "auto", label: "Automático", hint: "O modelo escolhe a melhor proporção (sai em 1K)." },
   { value: "1:1", label: "Quadrado (1:1)", hint: "Feed, perfil, avatar." },
-  { value: "4:5", label: "Retrato (4:5)", hint: "Post vertical de feed (Instagram)." },
+  // 4:5 REMOVIDO 03/08: o Kie liga/desliga essa proporção sem aviso (422
+  // "temporarily unavailable" — caso Rayanne). Recolocar só se estabilizar.
   { value: "9:16", label: "Vertical (9:16)", hint: "Stories, Reels, TikTok." },
   { value: "16:9", label: "Horizontal (16:9)", hint: "Capa, YouTube, apresentação." },
   { value: "3:2", label: "Paisagem (3:2)", hint: "Foto clássica deitada." },
