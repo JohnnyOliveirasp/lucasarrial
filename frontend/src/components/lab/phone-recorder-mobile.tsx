@@ -21,6 +21,9 @@ export function PhoneRecorderMobile({ token }: { token: string }) {
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Tela apagada mata o mic no Android (caso Johnny 03/08: take cortado em
+  // 15s) — Wake Lock segura a tela acesa enquanto grava.
+  const wakeRef = useRef<{ release: () => Promise<void> } | null>(null);
 
   async function refresh() {
     try {
@@ -36,6 +39,8 @@ export function PhoneRecorderMobile({ token }: { token: string }) {
     timerRef.current = null;
     recRef.current?.stream.getTracks().forEach((t) => t.stop());
     recRef.current = null;
+    void wakeRef.current?.release().catch(() => {});
+    wakeRef.current = null;
     setRecording(false);
     setSeconds(0);
   }
@@ -60,8 +65,21 @@ export function PhoneRecorderMobile({ token }: { token: string }) {
         cleanup();
         if (blob.size > 0) void upload(blob, type);
       };
+      // Mic morreu por fora (tela apagou/ligação)? Para e SALVA o que tem.
+      stream.getAudioTracks()[0]?.addEventListener("ended", () => {
+        if (recRef.current?.state === "recording") {
+          setError("O sistema interrompeu o microfone — salvei o que foi gravado até aqui.");
+          recRef.current.stop();
+        }
+      });
+      // Wake Lock: tela acesa enquanto grava (best-effort; iOS antigo ignora).
+      try {
+        const nav = navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<{ release: () => Promise<void> }> } };
+        wakeRef.current = (await nav.wakeLock?.request("screen")) ?? null;
+      } catch { /* sem wake lock — segue */ }
       recRef.current = rec;
-      rec.start();
+      // timeslice 1s: flush contínuo — queda no meio não perde o já falado.
+      rec.start(1000);
       setRecording(true);
       setSeconds(0);
       timerRef.current = setInterval(() => {

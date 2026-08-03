@@ -3,8 +3,8 @@
  * e conferência no celular). Auth = mesmo token stateless da sessão.
  */
 import type { NextRequest } from "next/server";
-import { ListObjectsV2Command } from "@aws-sdk/client-s3";
-import { jsonError, jsonOk, serverError } from "@/lib/api/responses";
+import { DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { verifyRecorderToken } from "@/lib/recorder-test/token";
@@ -38,4 +38,23 @@ export async function GET(request: NextRequest) {
   } catch {
     return serverError("Falha ao listar os takes.");
   }
+}
+
+/** DELETE ?key= — apaga UM take (só dentro da pasta recorder-test do dono). */
+export async function DELETE(request: NextRequest) {
+  const token = request.headers.get("x-recorder-token") ?? "";
+  const userId = verifyRecorderToken(token);
+  if (!userId) return jsonError("unauthorized", "Sessão expirada — gere um novo link no computador.", 401);
+
+  const key = new URL(request.url).searchParams.get("key") ?? "";
+  // Autorização: a chave TEM que morar na pasta de teste do próprio usuário.
+  if (!key.startsWith(`${userId}/recorder-test/`) || key.includes("..")) {
+    return badRequest("Chave inválida.");
+  }
+  try {
+    await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKETS.voices, Key: key }));
+  } catch {
+    return serverError("Falha ao apagar o take.");
+  }
+  return jsonOk({ deleted: key });
 }

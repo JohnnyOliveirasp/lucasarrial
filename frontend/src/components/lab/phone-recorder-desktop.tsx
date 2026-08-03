@@ -6,7 +6,7 @@
  * e os takes chegando com player (poll 4s).
  */
 import { useEffect, useRef, useState } from "react";
-import { Copy, Check, Smartphone, RefreshCw } from "lucide-react";
+import { Copy, Check, Smartphone, RefreshCw, Trash2 } from "lucide-react";
 import { ScriptReader } from "@/components/voice/script-reader";
 
 type Take = { key: string; name: string; size: number; at: string | null; url: string };
@@ -49,6 +49,16 @@ export function PhoneRecorderDesktop({ token, phoneUrl }: { token: string; phone
     await navigator.clipboard.writeText(phoneUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function removeTake(key: string) {
+    setTakes((ts) => ts.filter((t) => t.key !== key)); // otimista
+    try {
+      await fetch(`/api/v1/recorder-test/takes?key=${encodeURIComponent(key)}`, {
+        method: "DELETE",
+        headers: { "x-recorder-token": token },
+      });
+    } catch { /* o poll seguinte ressincroniza */ }
   }
 
   return (
@@ -99,9 +109,18 @@ export function PhoneRecorderDesktop({ token, phoneUrl }: { token: string; phone
                   <span className="flex-none">{Math.round(t.size / 1024)}KB{t.at ? ` · ${new Date(t.at).toLocaleTimeString("pt-BR")}` : ""}</span>
                 </span>
                 <audio controls preload="none" src={t.url} className="h-9 w-full" />
-                <a href={t.url} download={t.name} className="self-start font-mono text-[10px] uppercase tracking-wide text-[var(--mute)] hover:text-[var(--ink)]">
-                  baixar
-                </a>
+                <span className="flex items-center gap-4">
+                  <a href={t.url} download={t.name} className="font-mono text-[10px] uppercase tracking-wide text-[var(--mute)] hover:text-[var(--ink)]">
+                    baixar
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => void removeTake(t.key)}
+                    className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-[var(--mute)] transition-colors hover:text-[var(--status-error)]"
+                  >
+                    <Trash2 className="size-3" /> apagar
+                  </button>
+                </span>
               </li>
             ))}
             {takes.length === 0 && (
