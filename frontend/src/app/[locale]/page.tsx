@@ -29,7 +29,7 @@ export default async function Home({
         <CTA />
       </main>
       <Footer />
-      {/* Mary pré-venda (03/08): responde dúvidas do visitante sem login. */}
+      {/* Fast pré-venda (03/08): responde dúvidas do visitante sem login. */}
       <LandingHelpWidget locale={locale} />
     </>
   );

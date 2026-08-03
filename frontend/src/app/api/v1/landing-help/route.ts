@@ -1,11 +1,11 @@
 /**
- * Mary na LANDING (pedido Johnny 03/08) — visitante NÃO logado, pré-venda.
- * POST { text, history?, locale? } → resposta da Mary.
+ * Fast na LANDING (pedido Johnny 03/08) — visitante NÃO logado, pré-venda.
+ * POST { text, history?, locale? } → resposta da Fast.
  *
  * Sem conta e sem banco: o histórico vem do navegador (sessionStorage) e
  * volta na requisição — API stateless. Anti-abuso: rate-limit em memória
  * por IP (janela de minuto + teto diário). Escalação vira e-mail marcado
- * como "visitante da landing" (a Mary pede o e-mail da pessoa na conversa).
+ * como "visitante da landing" (a Fast pede o e-mail da pessoa na conversa).
  */
 import type { NextRequest } from "next/server";
 import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
       systemExtra: landingSystemExtra(locale),
     });
   } catch (e) {
-    console.error("[landing-help] Mary falhou:", e instanceof Error ? e.message : e);
+    console.error("[landing-help] Fast falhou:", e instanceof Error ? e.message : e);
     return serverError("Assistente indisponível agora — tente de novo em instantes.");
   }
 
@@ -113,13 +113,13 @@ export async function POST(request: NextRequest) {
     try {
       await sendEmail({
         to: [SUPPORT_EMAIL],
-        subject: `🌐 Visitante da LANDING pedindo contato — Mary`,
+        subject: `🌐 Visitante da LANDING pedindo contato — Fast`,
         html:
-          `<p>Escalação da Mary no <strong>chat da landing</strong> (visitante não logado).</p><ul>` +
+          `<p>Escalação da Fast no <strong>chat da landing</strong> (visitante não logado).</p><ul>` +
           `<li><strong>Situação:</strong> ${escapeHtml(reason)}</li>` +
           `<li><strong>Última mensagem:</strong> "${escapeHtml(text.slice(0, 300))}"</li>` +
           `<li><strong>Técnico?</strong> ${technical ? "sim" : "não"}</li>` +
-          `</ul><p>O e-mail do visitante (se ele deu) está na conversa acima — a Mary pede antes de escalar.</p>`,
+          `</ul><p>O e-mail do visitante (se ele deu) está na conversa acima — a Fast pede antes de escalar.</p>`,
       });
     } catch {
       /* best-effort */

@@ -10,7 +10,7 @@
  *   checkout_phone que a Hotmart manda no webhook (payment_events.payload).
  *   Telefone é evidência forte (ninguém "chuta" o telefone de outro aluno);
  *   NUNCA vincular por e-mail dito na conversa (qualquer um alegaria).
- * - Best-effort: qualquer falha aqui devolve null e a Mary responde sem
+ * - Best-effort: qualquer falha aqui devolve null e a Fast responde sem
  *   contexto (nunca derruba o pipeline).
  */
 import { getAdmin } from "@/lib/db/admin";
@@ -113,7 +113,7 @@ function jobLines(lines: JobLine[]): string {
 }
 
 /**
- * Snapshot compacto da conta pro system prompt da Mary (SÓ leitura).
+ * Snapshot compacto da conta pro system prompt da Fast (SÓ leitura).
  * Últimos jobs de cada produto + saldo + transações recentes de crédito.
  */
 export async function buildAccountContext(profileId: string): Promise<string | null> {

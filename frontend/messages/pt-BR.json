@@ -613,12 +613,12 @@
     }
   },
   "help": {
-    "title": "Mary",
+    "title": "Fast",
     "subtitle": "Assistente da FastCloner",
     "badge": "Ajuda",
     "open": "Abrir chat de ajuda",
     "close": "Fechar chat de ajuda",
-    "greeting": "Oi! Eu sou a Mary, assistente da FastCloner. 😊 Me conta sua dúvida — e se quiser, cola um print da tela que eu vejo exatamente onde você está.",
+    "greeting": "Oi! Eu sou a Fast, assistente da FastCloner. 😊 Me conta sua dúvida — e se quiser, cola um print da tela que eu vejo exatamente onde você está.",
     "placeholder": "Escreva sua dúvida…",
     "send": "Enviar",
     "attach": "Anexar print",
@@ -626,7 +626,7 @@
     "attached": "Print anexado",
     "removeImage": "Remover imagem",
     "imageOnly": "[print da tela]",
-    "typing": "Mary está digitando…",
+    "typing": "Fast está digitando…",
     "imageError": "Não consegui ler essa imagem — tenta um PNG ou JPG.",
     "errorGeneric": "Não consegui enviar agora. Tenta de novo em instantes.",
     "record": "Gravar áudio",

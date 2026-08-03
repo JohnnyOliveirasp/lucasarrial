@@ -1,7 +1,7 @@
 /**
- * Mary no app — balão de ajuda da plataforma.
+ * Fast no app — balão de ajuda da plataforma.
  *   GET  → histórico do chat do usuário logado (últimas 50)
- *   POST → { text, pathname?, image?: { data(base64), media_type } } → resposta da Mary
+ *   POST → { text, pathname?, image?: { data(base64), media_type } } → resposta da Fast
  *
  * Mesmo cérebro do WhatsApp (manual + Sonnet + visão), mas identidade vem do
  * LOGIN (sem telefone): o contexto da conta é sempre o do próprio usuário.
@@ -30,8 +30,8 @@ const IMAGE_MAX_B64 = 6_000_000; // ~4,5MB de imagem (limite da API com folga)
 const AUDIO_TYPES = new Set(["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"]);
 const AUDIO_MAX_B64 = 8_000_000; // ~6MB (~1min de opus sobra muito)
 
-/** Mary fala (TTS OpenAI): resposta em áudio quando o aluno mandou áudio. */
-async function maryTts(text: string): Promise<string | null> {
+/** Fast fala (TTS OpenAI): resposta em áudio quando o aluno mandou áudio. */
+async function fastTts(text: string): Promise<string | null> {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return null;
@@ -90,7 +90,7 @@ function webSystemExtra(pathname: string | null, locale: string): string {
     .join("\n");
 }
 
-/** Escalação no canal web: e-mail pra equipe (zap da Mary está pausado). */
+/** Escalação no canal web: e-mail pra equipe (zap da Fast está pausado). */
 async function emailEscalation(args: {
   email: string;
   reason: string;
@@ -111,7 +111,7 @@ async function emailEscalation(args: {
       to: [...to],
       subject: `${args.technical ? "⚙️ ERRO TÉCNICO" : "🙋 Aluno pedindo humano"} — help do app — ${args.email}`,
       html:
-        `<p>Escalação da Mary no <strong>chat de ajuda do app</strong>.</p><ul>` +
+        `<p>Escalação da Fast no <strong>chat de ajuda do app</strong>.</p><ul>` +
         `<li><strong>Aluno:</strong> ${escapeHtml(args.email)}</li>` +
         `<li><strong>Situação:</strong> ${escapeHtml(args.reason)}</li>` +
         (args.pathname ? `<li><strong>Página:</strong> ${escapeHtml(args.pathname)}</li>` : "") +
@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
 
   const admin = getAdmin();
 
-  // Rate-limit: respostas da Mary pra este usuário nas últimas 24h.
+  // Rate-limit: respostas da Fast pra este usuário nas últimas 24h.
   const since = new Date(Date.now() - 24 * 3600e3).toISOString();
   const { count } = await admin
     .from("help_messages")
@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
       systemExtra: webSystemExtra(pathname, locale),
     });
   } catch (e) {
-    console.error("[help] Mary falhou:", e instanceof Error ? e.message : e);
+    console.error("[help] Fast falhou:", e instanceof Error ? e.message : e);
     return serverError("Assistente indisponível agora — tente de novo em instantes.");
   }
 
@@ -259,8 +259,8 @@ export async function POST(request: NextRequest) {
     .single();
   if (repErr) return serverError("Failed to save reply");
 
-  // Aluno mandou voz → Mary responde falando também (best-effort).
-  const replyAudio = voiceNote ? await maryTts(finalReply) : null;
+  // Aluno mandou voz → Fast responde falando também (best-effort).
+  const replyAudio = voiceNote ? await fastTts(finalReply) : null;
 
   return jsonOk({
     message: saved,

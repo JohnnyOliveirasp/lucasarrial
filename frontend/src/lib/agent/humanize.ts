@@ -1,6 +1,6 @@
 /**
  * Agente de suporte — simulação de digitação humana. Server-only.
- * Resposta instantânea de parágrafo único "cheira a robô": aqui a Mary marca
+ * Resposta instantânea de parágrafo único "cheira a robô": aqui a Fast marca
  * como lida, mostra "digitando…" por um tempo proporcional ao texto e, no
  * privado, quebra respostas longas em até 3 mensagens (como gente faz).
  * Best-effort: typing é cosmético; falha nele nunca impede o envio.

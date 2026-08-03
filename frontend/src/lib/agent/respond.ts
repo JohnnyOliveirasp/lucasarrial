@@ -9,13 +9,13 @@
  *   - GRUPO sem menção (F6): classificador Haiku conservador decide se é
  *     dúvida clara da plataforma (ex.: pergunta pro Lucas/equipe); antes de
  *     responder espera AGENT_GROUP_GRACE_MS dando preferência ao humano —
- *     se a equipe (fromMe) falar no meio, a Mary desiste
+ *     se a equipe (fromMe) falar no meio, a Fast desiste
  *   - só chats em mode 'auto' (etiqueta humano cala a IA — F2)
  *   - DEBOUNCE: espera a pessoa terminar de "picotar" as mensagens e responde
  *     UMA vez (a mensagem mais nova responde; as anteriores desistem)
  *   - RATE-LIMIT: máximo de respostas da IA por chat/24h (anti-flood/custo)
  * Áudio: baixa do provedor → Whisper → responde a transcrição.
- * Imagem: baixa e a Mary VÊ (print de erro, comprovante) — multimodal.
+ * Imagem: baixa e a Fast VÊ (print de erro, comprovante) — multimodal.
  * Escalação: marcador [ESCALAR: ...] na resposta → pausa a IA no chat e
  * avisa a equipe (WhatsApp + e-mail) — ver lib/agent/escalate.ts.
  * Best-effort: nunca lança (o webhook não pode falhar por causa da IA).
@@ -31,11 +31,11 @@ import type { IngestedMessage } from "@/lib/agent/ingest";
 import { transcribeAudioBuffer } from "@/lib/video/transcribe";
 import type { AgentMessageRow } from "@/lib/db/types";
 
-const HISTORY_LIMIT = 50; // memória da conversa: a Mary relê as últimas 50
+const HISTORY_LIMIT = 50; // memória da conversa: a Fast relê as últimas 50
 const DEBOUNCE_MS = Number(process.env.AGENT_DEBOUNCE_MS ?? 6_000);
 const RATE_LIMIT_PER_DAY = Number(process.env.AGENT_RATE_LIMIT_PER_DAY ?? 40);
 // F6 — grupo sem menção: AGENT_GROUP_PROACTIVE=0 desliga; a espera dá
-// preferência ao humano (equipe respondeu no meio → Mary desiste).
+// preferência ao humano (equipe respondeu no meio → Fast desiste).
 const GROUP_PROACTIVE = (process.env.AGENT_GROUP_PROACTIVE ?? "1") !== "0";
 const GROUP_GRACE_MS = Number(process.env.AGENT_GROUP_GRACE_MS ?? 45_000);
 const IMAGE_MAX_BYTES = 4_500_000; // limite da API (5MB) com folga
@@ -84,7 +84,7 @@ async function supersededAfterDebounce(msg: IngestedMessage): Promise<boolean> {
 
 /**
  * F6 (grupo sem menção): depois da espera de cortesia, desiste se
- *   - a equipe/Mary (fromMe) falou no chat depois da mensagem avaliada, ou
+ *   - a equipe/Fast (fromMe) falou no chat depois da mensagem avaliada, ou
  *   - o MESMO aluno mandou mensagem mais nova (a mais nova avalia o lote).
  * Mensagens de OUTROS alunos não cancelam (grupo movimentado é normal) —
  * "alguém já respondeu a dúvida?" fica a cargo do classificador.
@@ -142,7 +142,7 @@ async function saveAgentParts(
 /**
  * Anti-flood: nº de respostas da IA neste chat nas últimas 24h. No exato
  * momento em que estoura o limite, avisa a pessoa UMA vez; depois, silêncio
- * (a janela desliza — no dia seguinte a Mary volta sozinha).
+ * (a janela desliza — no dia seguinte a Fast volta sozinha).
  */
 async function overRateLimit(msg: IngestedMessage): Promise<boolean> {
   if (RATE_LIMIT_PER_DAY <= 0) return false;
@@ -220,7 +220,7 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
 
     // Mensagens picotadas: a mais nova responde pelo lote; esta desiste.
     // F6: sem menção a espera é MAIOR (cortesia) e só fromMe/mesmo-aluno
-    // cancelam — o burburinho normal do grupo não pode calar a Mary.
+    // cancelam — o burburinho normal do grupo não pode calar a Fast.
     if (unprompted) {
       await sleep(GROUP_GRACE_MS);
       if (await groupHandledMeanwhile(msg)) return;
@@ -250,14 +250,14 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     if (unprompted && !(await shouldAnswerUnprompted(history, msg.messageId))) return;
 
     // F4: no privado, resolve quem é o aluno (LID→telefone→perfil) e entrega
-    // o snapshot da conta pra Mary responder com dados reais (só leitura).
+    // o snapshot da conta pra Fast responder com dados reais (só leitura).
     let account: string | null = null;
     if (msg.chat.kind === "private") {
       const profileId = await ensureChatIdentity(msg.chat);
       if (profileId) account = await buildAccountContext(profileId);
     }
 
-    // Print/comprovante: a Mary vê a imagem da mensagem que disparou a resposta.
+    // Print/comprovante: a Fast vê a imagem da mensagem que disparou a resposta.
     const image = msg.kind === "image" ? await prepareImage(msg) : null;
 
     const reply = await buildAgentReply(history, {
@@ -271,7 +271,7 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     const { clean, reason, technical } = extractEscalation(reply);
     if (!clean) return;
     // F6: entrada espontânea com contexto incerto (outra ferramenta? HeyGen/
-    // ElevenLabs?) → a Mary responde "PULAR" e a gente descarta em silêncio.
+    // ElevenLabs?) → a Fast responde "PULAR" e a gente descarta em silêncio.
     if (unprompted && /^\[?PULAR\]?\.?$/i.test(clean.trim())) return;
 
     // Envio humanizado: visto + digitando… + (no privado) até 3 mensagens.

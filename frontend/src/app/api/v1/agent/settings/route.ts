@@ -1,5 +1,5 @@
 /**
- * /api/v1/agent/settings — interruptor GERAL da Mary (F2). Admin-only.
+ * /api/v1/agent/settings — interruptor GERAL da Fast (F2). Admin-only.
  *   GET   → { enabled }
  *   PATCH → { enabled: boolean } (desligada = admins atendem na mão)
  */

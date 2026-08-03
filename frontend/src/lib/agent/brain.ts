@@ -42,7 +42,7 @@ export async function buildAgentReply(
   history: AgentMessageRow[],
   opts?: {
     group?: boolean;
-    /** F6: grupo SEM menção — a Mary entra por conta própria (tom humilde). */
+    /** F6: grupo SEM menção — a Fast entra por conta própria (tom humilde). */
     unprompted?: boolean;
     account?: string | null;
     image?: AgentImage | null;

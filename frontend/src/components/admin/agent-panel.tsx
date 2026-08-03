@@ -2,7 +2,7 @@
 
 /**
  * Painel do Agente (F0+F2): status da conexão (QR quando desconectado),
- * interruptor GERAL da Mary, conversas em tempo real, Assumir/Devolver por
+ * interruptor GERAL da Fast, conversas em tempo real, Assumir/Devolver por
  * conversa e resposta manual pelo painel (sai pelo número do suporte).
  */
 import { useCallback, useEffect, useState } from "react";
@@ -174,7 +174,7 @@ export function AgentPanel() {
             }`}
           >
             <Power className="h-3.5 w-3.5" />
-            {enabled === null ? "…" : enabled ? "Mary LIGADA" : "Mary DESLIGADA"}
+            {enabled === null ? "…" : enabled ? "Fast LIGADA" : "Fast DESLIGADA"}
           </button>
           <button
             type="button"
@@ -254,7 +254,7 @@ export function AgentPanel() {
               <div key={m.id} className={`max-w-[75%] rounded-[var(--radius)] border px-3 py-2 ${m.from_me ? "self-end border-[var(--hairline-bright)] bg-[var(--surface-elevated)]" : "self-start border-[var(--hairline)] bg-[var(--surface-card)]"}`}>
                 <div className="flex items-baseline gap-2">
                   <span className="text-[11px] font-medium text-[var(--silver)]">
-                    {m.from_me ? (m.role === "agent" ? "🤖 Mary" : "👤 Equipe") : (m.sender_name || "Aluno")}
+                    {m.from_me ? (m.role === "agent" ? "🤖 Fast" : "👤 Equipe") : (m.sender_name || "Aluno")}
                   </span>
                   <span className="font-mono text-[9px] text-[var(--ash)]">{fmtTime(m.created_at)}</span>
                 </div>

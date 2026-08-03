@@ -135,7 +135,7 @@ export default async function PlanosPage({
           )}
         </div>
       </Card>
-      {/* Mary pré-venda (03/08): dúvida na hora de assinar. */}
+      {/* Fast pré-venda (03/08): dúvida na hora de assinar. */}
       <LandingHelpWidget locale={locale} />
     </main>
   );

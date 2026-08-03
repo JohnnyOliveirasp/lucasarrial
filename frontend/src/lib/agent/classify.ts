@@ -1,8 +1,8 @@
 /**
  * Agente de suporte — classificador de grupo (F6). Server-only.
- * Decide se uma mensagem de grupo SEM menção à Mary é uma dúvida clara sobre
+ * Decide se uma mensagem de grupo SEM menção à Fast é uma dúvida clara sobre
  * a plataforma que merece resposta do suporte (dúvida jogada no grupo ou
- * dirigida ao Lucas/equipe). CONSERVADOR: na dúvida, NÃO — melhor a Mary
+ * dirigida ao Lucas/equipe). CONSERVADOR: na dúvida, NÃO — melhor a Fast
  * ficar quieta do que virar "a chata do grupo".
  * Haiku (barato, 1 chamada por candidata). Erro/timeout → false (fail-closed).
  */
@@ -13,7 +13,7 @@ const MODEL = process.env.AGENT_CLASSIFIER_MODEL || "claude-haiku-4-5";
 const TIMEOUT_MS = 10_000;
 const CONTEXT_LIMIT = 12; // mensagens recentes do grupo que o filtro enxerga
 
-const SYSTEM = `Você filtra mensagens de um grupo de WhatsApp de alunos da FastCloner (plataforma de clonagem de voz e criação de vídeos/imagens com IA). A assistente de suporte Mary só deve entrar na conversa SEM ser chamada quando a mensagem avaliada é CLARAMENTE uma dúvida ou problema sobre a plataforma (voz, vídeo, imagem, créditos, pagamento, acesso, erro) que ainda NÃO foi respondida — inclui dúvidas dirigidas ao Lucas ou à equipe/suporte.
+const SYSTEM = `Você filtra mensagens de um grupo de WhatsApp de alunos da FastCloner (plataforma de clonagem de voz e criação de vídeos/imagens com IA). A assistente de suporte Fast só deve entrar na conversa SEM ser chamada quando a mensagem avaliada é CLARAMENTE uma dúvida ou problema sobre a plataforma (voz, vídeo, imagem, créditos, pagamento, acesso, erro) que ainda NÃO foi respondida — inclui dúvidas dirigidas ao Lucas ou à equipe/suporte.
 
 Responda APENAS "SIM" ou "NAO". Na dúvida, "NAO".
 
@@ -22,7 +22,7 @@ Responda APENAS "SIM" ou "NAO". Na dúvida, "NAO".
 OUTRAS FERRAMENTAS: os alunos também usam ferramentas de terceiros no curso (HeyGen, ElevenLabs e similares). Dúvida sobre essas ferramentas → "NAO" (não é a plataforma FastCloner). Dúvida ambígua que não diz a ferramenta (ex.: "meu vídeo não gerou", "a voz ficou ruim"): use as mensagens anteriores da conversa pra identificar o contexto; se não der pra ter CERTEZA de que é sobre o FastCloner → "NAO".`;
 
 /**
- * A Mary deve responder esta mensagem de grupo mesmo sem ter sido marcada?
+ * A Fast deve responder esta mensagem de grupo mesmo sem ter sido marcada?
  * `history` = últimas mensagens do chat (asc); `targetId` marca a candidata
  * (as linhas DEPOIS dela chegaram durante a espera — servem pra detectar
  * "alguém já respondeu").
@@ -41,7 +41,7 @@ export async function shouldAnswerUnprompted(
       .map((m) => {
         const text = (m.content ?? "").trim();
         if (!text) return null;
-        const who = m.from_me ? "Mary (suporte)" : m.sender_name || "Aluno";
+        const who = m.from_me ? "Fast (suporte)" : m.sender_name || "Aluno";
         const line = `${who}: ${text}`;
         return m.id === targetId ? `>>> ${line}` : line;
       })
@@ -62,7 +62,7 @@ export async function shouldAnswerUnprompted(
         messages: [
           {
             role: "user",
-            content: `CONVERSA RECENTE DO GRUPO (avalie SÓ a linha marcada com ">>>"; as linhas seguintes chegaram depois dela):\n${lines}\n\nA Mary deve responder a mensagem marcada?`,
+            content: `CONVERSA RECENTE DO GRUPO (avalie SÓ a linha marcada com ">>>"; as linhas seguintes chegaram depois dela):\n${lines}\n\nA Fast deve responder a mensagem marcada?`,
           },
         ],
       }),
@@ -79,6 +79,6 @@ export async function shouldAnswerUnprompted(
       .toUpperCase();
     return verdict.startsWith("SIM");
   } catch {
-    return false; // classificador indisponível = Mary fica quieta
+    return false; // classificador indisponível = Fast fica quieta
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Mary na LANDING — balão flutuante pra visitante NÃO logado (pré-venda).
+ * Fast na LANDING — balão flutuante pra visitante NÃO logado (pré-venda).
  * Versão enxuta do help-widget do app: só texto, histórico no sessionStorage
  * (API é stateless), sem prints/áudio. Estilo casado com o DS dark do site.
  */
@@ -12,22 +12,25 @@ type Msg = { from_me: boolean; content: string };
 
 const STORE = "fc-landing-help-v1";
 
-const I18N: Record<string, { title: string; hello: string; placeholder: string; error: string }> = {
+const I18N: Record<string, { title: string; bubble: string; hello: string; placeholder: string; error: string }> = {
   pt: {
-    title: "Mary · FastCloner",
-    hello: "Oi! 👋 Eu sou a Mary. Posso te explicar como funciona a clonagem de voz, os vídeos, o preço… o que você quiser saber!",
+    title: "Fast · FastCloner",
+    bubble: "Ajuda",
+    hello: "Oi! 👋 Eu sou a Fast. Posso te explicar como funciona a clonagem de voz, os vídeos, o preço… o que você quiser saber!",
     placeholder: "Escreva sua dúvida…",
     error: "Não consegui responder agora — tente de novo em instantes.",
   },
   es: {
-    title: "Mary · FastCloner",
-    hello: "¡Hola! 👋 Soy Mary. Puedo explicarte cómo funciona la clonación de voz, los videos, el precio… ¡lo que quieras saber!",
+    title: "Fast · FastCloner",
+    bubble: "Ayuda",
+    hello: "¡Hola! 👋 Soy Fast. Puedo explicarte cómo funciona la clonación de voz, los videos, el precio… ¡lo que quieras saber!",
     placeholder: "Escribe tu duda…",
     error: "No pude responder ahora — inténtalo de nuevo en unos instantes.",
   },
   en: {
-    title: "Mary · FastCloner",
-    hello: "Hi! 👋 I'm Mary. I can explain how voice cloning works, the videos, pricing… whatever you'd like to know!",
+    title: "Fast · FastCloner",
+    bubble: "Help",
+    hello: "Hi! 👋 I'm Fast. I can explain how voice cloning works, the videos, pricing… whatever you'd like to know!",
     placeholder: "Type your question…",
     error: "I couldn't reply right now — please try again in a moment.",
   },
@@ -79,14 +82,19 @@ export function LandingHelpWidget({ locale }: { locale: string }) {
 
   return (
     <>
-      {/* Balão flutuante */}
+      {/* Balão flutuante — laranja com rótulo "Ajuda" pra destacar na landing */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label={t.title}
-        className="fixed bottom-5 right-5 z-50 flex size-14 items-center justify-center rounded-full border border-white/15 bg-[#111114] shadow-[0_8px_30px_rgba(0,0,0,.5)] transition-transform hover:scale-105 active:scale-95"
+        className="fixed bottom-5 right-5 z-50 flex h-14 items-center justify-center gap-2 rounded-full bg-[#ff6a00] px-5 font-sans text-[14px] font-bold text-black shadow-[0_8px_30px_rgba(255,106,0,.35)] transition-transform hover:scale-105 active:scale-95"
       >
-        {open ? <X className="size-6 text-white" /> : <MessageCircle className="size-6 text-white" />}
+        {open ? <X className="size-6" /> : (
+          <>
+            <MessageCircle className="size-6" />
+            {t.bubble}
+          </>
+        )}
       </button>
 
       {open && (
@@ -97,10 +105,10 @@ export function LandingHelpWidget({ locale }: { locale: string }) {
           </div>
 
           <div className="flex-1 overflow-y-auto px-3 py-3">
-            <Bubble mary text={t.hello} />
+            <Bubble fast text={t.hello} />
             {msgs.map((m, i) => (
               // convenção do app: from_me = mensagem DA MARY
-              <Bubble key={i} mary={m.from_me} text={m.content} />
+              <Bubble key={i} fast={m.from_me} text={m.content} />
             ))}
             {busy && (
               <div className="mb-2 flex justify-start">
@@ -139,14 +147,14 @@ export function LandingHelpWidget({ locale }: { locale: string }) {
   );
 }
 
-function Bubble({ mary = false, text }: { mary?: boolean; text: string }) {
-  // Mary à esquerda (cinza); visitante à direita (branco).
+function Bubble({ fast = false, text }: { fast?: boolean; text: string }) {
+  // Fast à esquerda (cinza); visitante à direita (branco).
   return (
-    <div className={`mb-2 flex ${mary ? "justify-start" : "justify-end"}`}>
+    <div className={`mb-2 flex ${fast ? "justify-start" : "justify-end"}`}>
       <span
         className={[
           "max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 font-sans text-[13px] leading-relaxed",
-          mary ? "bg-white/[0.06] text-neutral-100" : "bg-white text-black",
+          fast ? "bg-white/[0.06] text-neutral-100" : "bg-white text-black",
         ].join(" ")}
       >
         {text}

@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * Mary no app — balão de ajuda flutuante (estilo "Lu" do Magalu).
- * Presente em todas as telas do /app (montado no layout). A Mary responde via
+ * Fast no app — balão de ajuda flutuante (estilo "Lu" do Magalu).
+ * Presente em todas as telas do /app (montado no layout). A Fast responde via
  * POST /api/v1/help com o cérebro do agente (manual + conta + visão).
  * O aluno pode COLAR/ANEXAR um print — e há botão de capturar a tela
- * (getDisplayMedia) pra Mary "ver" onde a pessoa está.
+ * (getDisplayMedia) pra Fast "ver" onde a pessoa está.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -16,10 +16,10 @@ import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic
 
 type Msg = {
   id: string;
-  from_me: boolean; // true = Mary
+  from_me: boolean; // true = Fast
   content: string;
   created_at: string;
-  /** Resposta falada da Mary (data URL, só em memória — histórico é texto). */
+  /** Resposta falada da Fast (data URL, só em memória — histórico é texto). */
   audioUrl?: string;
 };
 
@@ -188,7 +188,7 @@ export function HelpWidget() {
     }
   }
 
-  /** Voz do aluno (estilo WhatsApp): transcreve no servidor; Mary responde falando. */
+  /** Voz do aluno (estilo WhatsApp): transcreve no servidor; Fast responde falando. */
   async function sendVoice(blob: Blob, mimeType: string) {
     if (sending) return;
     setSending(true);
@@ -442,7 +442,7 @@ function Bubble({ fromMe, content, audioUrl }: { fromMe: boolean; content: strin
         ].join(" ")}
       >
         {audioUrl && (
-          /* Mary respondendo em voz (quando o aluno mandou áudio). */
+          /* Fast respondendo em voz (quando o aluno mandou áudio). */
           <audio src={audioUrl} controls preload="metadata" className="mb-2 h-9 w-full min-w-[220px]" />
         )}
         {content}

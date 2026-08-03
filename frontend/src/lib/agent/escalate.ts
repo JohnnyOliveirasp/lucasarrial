@@ -1,7 +1,7 @@
 /**
  * Agente de suporte — escalação REAL pra humano. Server-only.
  *
- * A Mary sinaliza a escalação com um marcador interno na última linha da
+ * A Fast sinaliza a escalação com um marcador interno na última linha da
  * resposta: "[ESCALAR: resumo do que o aluno precisa]" (instrução no manual).
  * Aqui a gente: extrai/remove o marcador, pausa a IA no chat (mode=human) e
  * avisa a equipe — primeiro por WhatsApp (números em AGENT_TEAM_WHATSAPP),
@@ -94,7 +94,7 @@ export async function notifyTeamEscalation(args: {
       `*Situação:* ${args.reason}`,
       excerpt ? `*Última mensagem:* "${excerpt}"` : "",
       ``,
-      `A Mary já pausou nessa conversa — responda pelo painel: ${PANEL_URL}`,
+      `A Fast já pausou nessa conversa — responda pelo painel: ${PANEL_URL}`,
     ]
       .filter(Boolean)
       .join("\n");
@@ -115,10 +115,10 @@ export async function notifyTeamEscalation(args: {
         `<p>Um aluno pediu (ou precisa de) atendimento humano no WhatsApp do suporte.</p>` +
         `<ul>` +
         `<li><strong>Quem:</strong> ${escapeHtml(student)} (${escapeHtml(phone)})</li>` +
-        `<li><strong>Situação (resumo da Mary):</strong> ${escapeHtml(args.reason)}</li>` +
+        `<li><strong>Situação (resumo da Fast):</strong> ${escapeHtml(args.reason)}</li>` +
         (excerpt ? `<li><strong>Última mensagem:</strong> ${escapeHtml(excerpt)}</li>` : "") +
         `</ul>` +
-        `<p>A Mary foi pausada nessa conversa — assuma pelo painel: <a href="${PANEL_URL}">${PANEL_URL}</a></p>`,
+        `<p>A Fast foi pausada nessa conversa — assuma pelo painel: <a href="${PANEL_URL}">${PANEL_URL}</a></p>`,
     });
   } catch {
     /* best-effort */
