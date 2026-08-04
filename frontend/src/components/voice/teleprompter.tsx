@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { AArrowDown, AArrowUp, GripHorizontal, Minus, Pause, Play, Plus, RotateCcw, X } from "lucide-react";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-const BASE_PX_PER_S = 40; // 1x — ritmo de leitura calmo
+const BASE_PX_PER_S = 28; // 1x — ritmo de leitura calmo (calibrado pelo Johnny 04/08: -30%)
 const FONT_SIZES = [20, 24, 28, 34, 40];
 const MIN_H = 240;
 
