@@ -112,6 +112,12 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
   const now = Date.now();
   const sent: string[] = [];
 
+  // Pedido Johnny 03/08: admins recebem CÓPIA OCULTA de cada convite.
+  const { data: adminRows } = await admin.from("admin_emails").select("email");
+  const bcc = ((adminRows ?? []) as { email: string }[])
+    .map((r) => r.email.toLowerCase())
+    .filter((e) => e && e !== "suporte@fastcloner.com");
+
   for (const [email, info] of buyers) {
     if (hasAccount.has(email)) continue; // criou conta — claim do login resolve
     if (now - new Date(info.at).getTime() < MIN_AGE_MS) continue;
@@ -121,13 +127,13 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     try {
       if (!record) {
         const { subject, text } = inviteText(info.name, email, false);
-        await sendSupportMail({ to: email, subject, text });
+        await sendSupportMail({ to: email, subject, text, bcc });
         state[email] = { first: new Date().toISOString(), reminder: null };
         summary.invited += 1;
         sent.push(`convite → ${email}`);
       } else if (!record.reminder && now - new Date(record.first).getTime() > REMINDER_AFTER_MS) {
         const { subject, text } = inviteText(info.name, email, true);
-        await sendSupportMail({ to: email, subject, text });
+        await sendSupportMail({ to: email, subject, text, bcc });
         record.reminder = new Date().toISOString();
         summary.reminded += 1;
         sent.push(`lembrete → ${email}`);
