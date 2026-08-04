@@ -1,9 +1,10 @@
 /**
- * Envio SMTP mínimo (TLS 465, zero dependências) pela caixa suporte@ do
- * Private Email — assim a resposta da Fast sai DO MESMO endereço que o aluno
- * escreveu (SPF/DKIM do domínio já apontam pra lá; Resend fica só pros
- * transacionais internos).
+ * Envio SMTP mínimo (porta 587 + STARTTLS, zero dependências) pela caixa
+ * suporte@ do Private Email — a resposta da Fast sai DO MESMO endereço que o
+ * aluno escreveu. ⚠️ Hetzner BLOQUEIA a 465 (implicit TLS); a 587 é aberta —
+ * por isso o fluxo é: conexão plana → EHLO → STARTTLS → TLS → AUTH.
  */
+import net from "node:net";
 import tls from "node:tls";
 
 const HOST = () => process.env.SUPPORT_MAIL_HOST || "mail.privateemail.com";
@@ -19,38 +20,47 @@ function encodeHeader(s: string): string {
   return /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${b64(s)}?=`;
 }
 
-type SmtpReply = { code: number; text: string };
-
 class SmtpSession {
-  private socket: tls.TLSSocket | null = null;
+  private socket: net.Socket | tls.TLSSocket | null = null;
   private pending = "";
+
+  private attach(socket: net.Socket | tls.TLSSocket): void {
+    this.socket = socket;
+    socket.setTimeout(30_000, () => socket.destroy(new Error("SMTP timeout")));
+    socket.on("data", (chunk: Buffer) => {
+      this.pending += chunk.toString("utf8");
+    });
+  }
 
   async connect(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const s = tls.connect({ host: HOST(), port: 465, servername: HOST() }, () => resolve());
+      const s = net.connect({ host: HOST(), port: 587 }, () => resolve());
       s.on("error", reject);
-      s.setTimeout(30_000, () => {
-        s.destroy();
-        reject(new Error("SMTP timeout"));
-      });
-      s.on("data", (chunk: Buffer) => {
-        this.pending += chunk.toString("utf8");
-      });
-      this.socket = s;
+      this.attach(s);
     });
-    await this.read(); // greeting 220
+    await this.expect(220); // greeting
   }
 
-  /** Lê até a última linha de resposta (código sem hífen de continuação). */
-  private read(timeoutMs = 30_000): Promise<SmtpReply> {
+  /** Sobe a conexão pra TLS depois do STARTTLS (mesmo socket, novo canal). */
+  async upgradeTls(): Promise<void> {
+    const plain = this.socket as net.Socket;
+    plain.removeAllListeners("data");
+    await new Promise<void>((resolve, reject) => {
+      const secure = tls.connect({ socket: plain, servername: HOST() }, () => resolve());
+      secure.on("error", reject);
+      this.attach(secure);
+    });
+  }
+
+  /** Lê até a última linha da resposta (código sem hífen de continuação). */
+  private read(timeoutMs = 30_000): Promise<number> {
     return new Promise((resolve, reject) => {
       const started = Date.now();
       const tick = () => {
         const m = this.pending.match(/^(\d{3}) [^\r\n]*\r?\n?$/m);
         if (m) {
-          const reply = { code: Number(m[1]), text: this.pending };
           this.pending = "";
-          return resolve(reply);
+          return resolve(Number(m[1]));
         }
         if (Date.now() - started > timeoutMs) return reject(new Error("SMTP resposta demorou"));
         setTimeout(tick, 50);
@@ -59,12 +69,17 @@ class SmtpSession {
     });
   }
 
+  private async expect(code: number): Promise<void> {
+    const got = await this.read();
+    if (got !== code) throw new Error(`SMTP esperava ${code}, veio ${got}`);
+  }
+
   async send(line: string, expect: number): Promise<void> {
     if (!this.socket) throw new Error("SMTP sem conexão");
     this.socket.write(`${line}\r\n`);
-    const reply = await this.read();
-    if (reply.code !== expect) {
-      throw new Error(`SMTP "${line.split(" ")[0]}" → ${reply.code} (esperava ${expect})`);
+    const got = await this.read();
+    if (got !== expect) {
+      throw new Error(`SMTP "${line.split(" ")[0]}" → ${got} (esperava ${expect})`);
     }
   }
 
@@ -72,12 +87,12 @@ class SmtpSession {
     if (!this.socket) throw new Error("SMTP sem conexão");
     this.socket.write("DATA\r\n");
     const go = await this.read();
-    if (go.code !== 354) throw new Error(`SMTP DATA → ${go.code}`);
+    if (go !== 354) throw new Error(`SMTP DATA → ${go}`);
     // Dot-stuffing + terminador.
     const body = message.replace(/\r?\n/g, "\r\n").replace(/\r\n\./g, "\r\n..");
     this.socket.write(`${body}\r\n.\r\n`);
     const done = await this.read(60_000);
-    if (done.code !== 250) throw new Error(`SMTP envio → ${done.code}`);
+    if (done !== 250) throw new Error(`SMTP envio → ${done}`);
   }
 
   close(): void {
@@ -106,7 +121,10 @@ export async function sendSupportMail(args: SupportMailArgs): Promise<void> {
   const session = new SmtpSession();
   await session.connect();
   try {
-    await session.send(`EHLO fastcloner.com`, 250);
+    await session.send("EHLO fastcloner.com", 250);
+    await session.send("STARTTLS", 220);
+    await session.upgradeTls();
+    await session.send("EHLO fastcloner.com", 250);
     await session.send("AUTH LOGIN", 334);
     await session.send(b64(USER()), 334);
     await session.send(b64(PASS()), 235);
