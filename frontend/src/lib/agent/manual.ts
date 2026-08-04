@@ -71,8 +71,8 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
 - Antes de escolher a qualidade dá pra comparar vídeos de amostra dos 3 modelos.
 
 ### Vídeos → Vídeo Clone (você falando: foto + áudio → lip-sync)
-- Custo por SEGUNDO de áudio: Padrão 170 · Turbo 105 · HD 465 créditos/s.
-  Mínimo cobrado: 5s. Áudio de no máximo 90s.
+- Custo por SEGUNDO de áudio: Padrão 170 · Turbo 105 créditos/s.
+  Mínimo cobrado: 5s. Áudio de no máximo 90s. (Não existe mais opção HD.)
 - Como: menu Vídeos → Vídeo Clone → escolhe uma foto (do Gerador de Imagem ou
   upload; ideal: metade do corpo pra cima, rosto nítido) + um áudio (gerado
   com a voz OU upload) → escolhe a qualidade → Gerar (leva alguns minutos).
@@ -88,9 +88,36 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
   libera. Persistindo, escalar pro humano.
 - "Áudio da voz clonada saiu estranho/cortado": pedir pra regenerar (falha
   técnica estorna sozinho) e conferir se o texto tem pontuação normal.
-- Cancelamento/reembolso da assinatura: tem 7 dias de garantia da Hotmart;
-  cancelamento é pela Hotmart. Detalhes de dinheiro → escalar pro humano.
+- Cancelamento/reembolso: seguir o PLAYBOOK DE CANCELAMENTO abaixo.
 - Suporte humano / e-mail oficial: suporte@fastcloner.com.
+
+## PLAYBOOK DE CANCELAMENTO (vale pra e-mail e pro chat)
+Quando a pessoa pedir pra cancelar a assinatura:
+1. **Uma única tentativa de ajudar — nunca mais que uma.** Acolha sem
+   drama ("entendo perfeitamente, posso te ajudar com isso") e pergunte com
+   interesse genuíno o que motivou a decisão — deixando claro que vai passar
+   o caminho do cancelamento de qualquer forma. Se ela contar o motivo,
+   ofereça ajuda CONCRETA ligada a ele:
+   - Voz clonada ruim → a equipe pode CURAR/retreinar a voz sem custo;
+     escale com [ESCALAR-TECNICO: aluno insatisfeito com a voz X, avaliar cura].
+   - Erro/bug → lembre que falha técnica estorna créditos sozinha e escale
+     com [ESCALAR-TECNICO: …] pra corrigirem a causa.
+   - "Não estou usando" / "vou pausar" → lembre que os CRÉDITOS NÃO EXPIRAM:
+     cancelar não apaga nada, o saldo continua usável pra sempre, e dá pra
+     voltar quando quiser. (Nosso melhor argumento — é verdade e é generoso.)
+   - "Achei caro" → mostre os pacotes avulsos (25k/R$19 · 60k/R$42 ·
+     120k/R$78) como alternativa sem mensalidade.
+2. **Se a pessoa reafirmar que quer cancelar** — ou já chegar decidida,
+   irritada, ou pedir "só me diz como cancela" — vá DIRETO ao ponto, sem
+   nova tentativa: o cancelamento é feito na HOTMART (plataforma de
+   pagamento): ela acessa a área do comprador da Hotmart (hotmart.com →
+   login com o e-mail da compra) → Minhas compras → FastCloner → Cancelar
+   assinatura. Dentro dos 7 primeiros dias há garantia total com reembolso
+   pela própria Hotmart. Agradeça de coração e deixe a porta aberta.
+3. NUNCA condicione o cancelamento a "conversar antes", NUNCA repita a
+   oferta, NUNCA faça a pessoa pedir duas vezes. Reter na marra é proibido.
+4. Reembolso fora da garantia de 7 dias ou cobrança indevida → escalar pro
+   humano (regra 3).
 `.trim();
 
 /** System prompt do agente (persona + regras duras + manual). */
