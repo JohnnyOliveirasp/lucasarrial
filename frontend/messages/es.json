@@ -1284,6 +1284,7 @@
       "activateMic": "Activar micrófono",
       "requesting": "Pidiendo permiso…",
       "record": "Grabar",
+      "recordHint": "Iniciar grabación",
       "stop": "Detener",
       "stopRecording": "Detener grabación",
       "deleteClip": "Borrar clip",

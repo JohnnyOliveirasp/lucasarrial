@@ -25,6 +25,10 @@ const DEAD_MIC_RMS = 0.0003;
 const DEAD_MIC_MS = 4000;
 const TARGET_SECONDS = 20 * 60; // meta de fala pro treino
 
+/** Tooltip do pill flutuante: aparece acima do botão no hover. */
+const PILL_TOOLTIP =
+  "pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-2 py-1 font-sans text-[11px] font-medium text-[var(--ink)] opacity-0 shadow-[var(--elevation-popover)] transition-opacity duration-[var(--dur-base)] group-hover:opacity-100";
+
 type Status = "idle" | "requesting" | "ready" | "recording" | "denied";
 type ClipView = { id: string; seconds: number; createdAt: number; url: string };
 
@@ -273,24 +277,27 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
           <span className="w-10 text-center font-mono text-[11px] tabular-nums text-[var(--ink)]">
             {formatDuration(seconds)}
           </span>
-          {/* Botão único Mic/Stop */}
+          {/* Botão único Mic/Stop — tooltip no hover (pill flutuante não tem
+              texto; sem isso ninguém sabe o que o botão faz) */}
           {status === "ready" ? (
             <button
               type="button"
               onClick={startRecording}
-              aria-label={t("record")}
-              className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-full)] bg-[var(--pill-bg)] text-[var(--pill-ink)] transition-transform hover:scale-110 active:scale-95"
+              aria-label={t("recordHint")}
+              className="group relative flex h-9 w-9 items-center justify-center rounded-[var(--radius-full)] bg-[var(--pill-bg)] text-[var(--pill-ink)] transition-transform hover:scale-110 active:scale-95"
             >
               <Mic className="h-4 w-4" />
+              <span className={PILL_TOOLTIP}>{t("recordHint")}</span>
             </button>
           ) : (
             <button
               type="button"
               onClick={stopRecording}
               aria-label={t("stopRecording")}
-              className="flex h-9 w-9 animate-pulse items-center justify-center rounded-[var(--radius-full)] border-2 border-[var(--status-error)] text-[var(--status-error)]"
+              className="group relative flex h-9 w-9 animate-pulse items-center justify-center rounded-[var(--radius-full)] border-2 border-[var(--status-error)] text-[var(--status-error)]"
             >
               <Square className="h-4 w-4 fill-current" />
+              <span className={PILL_TOOLTIP}>{t("stopRecording")}</span>
             </button>
           )}
         </div>
