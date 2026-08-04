@@ -125,6 +125,60 @@ export type MailSweepSummary = {
   errors: number;
 };
 
+/**
+ * Erro técnico que a Fast NÃO resolve → vira INCIDENTE (aba Falhas do /admin),
+ * que é exatamente a fila que o Sentinela varre na ronda dele (pedido Johnny
+ * 03/08). Dedupe por aluno: reclamação repetida soma ocorrência no mesmo
+ * incidente em vez de abrir outro.
+ */
+async function openIncidentForSentinela(fromEmail: string, reason: string, excerpt: string): Promise<void> {
+  const admin = getAdmin();
+  const signature = `fast-email:${fromEmail}`;
+  const now = new Date().toISOString();
+  const { data: existingRaw } = await admin
+    .from("incidents" as never)
+    .select("id, status, occurrences, affected_emails")
+    .eq("signature", signature)
+    .order("last_seen_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const existing = existingRaw as unknown as {
+    id: string;
+    status: string;
+    occurrences: number;
+    affected_emails: string[];
+  } | null;
+
+  if (existing) {
+    const reopened = existing.status === "fixed" || existing.status === "ignored";
+    await admin
+      .from("incidents" as never)
+      .update({
+        status: reopened ? "open" : existing.status,
+        occurrences: (existing.occurrences ?? 1) + 1,
+        last_seen_at: now,
+        sample_error: excerpt.slice(0, 1000),
+        description: reason,
+      } as never)
+      .eq("id", existing.id);
+    return;
+  }
+  await admin.from("incidents" as never).insert({
+    kind: "reported",
+    cause: "reported",
+    status: "open",
+    signature,
+    title: `Fast (e-mail): ${reason.slice(0, 90)}`,
+    occurrences: 1,
+    affected_emails: [fromEmail],
+    sample_error: excerpt.slice(0, 1000),
+    description: `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`,
+    reported_by: "fast",
+    first_seen_at: now,
+    last_seen_at: now,
+  } as never);
+}
+
 async function adminBccList(): Promise<string[]> {
   const { data } = await getAdmin().from("admin_emails").select("email");
   return ((data ?? []) as { email: string }[])
@@ -168,7 +222,7 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     return "skipped";
   }
 
-  const { clean: visible, reason } = extractEscalation(replyRaw);
+  const { clean: visible, reason, technical } = extractEscalation(replyRaw);
   const replySubject = /^re:/i.test(subject) ? subject : `Re: ${subject}`;
 
   await sendSupportMail({
@@ -178,9 +232,17 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     inReplyTo: messageId,
     bcc,
   });
+  // Erro técnico sem solução na hora → incidente aberto pro Sentinela resolver.
+  if (reason && technical) {
+    try {
+      await openIncidentForSentinela(fromEmail, reason, text);
+    } catch (e) {
+      console.error("[agent/mail] falha ao abrir incidente:", e instanceof Error ? e.message : e);
+    }
+  }
   await markSeen(mail.uid);
   console.log(
-    `[agent/mail] respondido uid=${mail.uid} para=${fromEmail}${reason ? " (ESCALADO)" : ""}`,
+    `[agent/mail] respondido uid=${mail.uid} para=${fromEmail}${reason ? (technical ? " (INCIDENTE→Sentinela)" : " (ESCALADO)") : ""}`,
   );
   return reason ? "escalated" : "replied";
 }
