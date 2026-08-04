@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { RefreshCw, Printer, FileText, X, Sparkles, Wand2 } from "lucide-react";
+import { RefreshCw, Printer, FileText, MonitorPlay, X, Sparkles } from "lucide-react";
 import { AudioGeneratingIndicator } from "@/components/voice/audio-generating-indicator";
+import { Teleprompter } from "@/components/voice/teleprompter";
 import { SCRIPT_THEMES } from "@/lib/llm/script-themes";
 
 type ScriptBlock = { emotion: string; text: string };
@@ -17,16 +18,26 @@ const SECONDARY =
   "inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--ink)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-bright)] hover:bg-[var(--surface-raised)]";
 
 /**
- * Roteiro de leitura para gravação de voz. Ao abrir, o usuário escolhe um TEMA
- * (popup) — história infantil, jornalístico, piadas… — e o Haiku gera um texto
- * naquele estilo, em blocos com direção emocional. A pessoa lê variando o tom.
+ * Roteiro de leitura para gravação de voz. Quem já tem o próprio texto cola
+ * na tela (fica formatado grande pra leitura); quem quiser, clica em "Gerar
+ * roteiro" e escolhe um TEMA (popup) — história infantil, jornalístico,
+ * piadas… — e o Haiku gera um texto naquele estilo, em blocos com direção
+ * emocional. A pessoa lê variando o tom.
  */
 export function ScriptReader() {
   const t = useTranslations("voiceCreate.script");
   const [status, setStatus] = useState<Status>("idle");
   const [script, setScript] = useState<VoiceScript | null>(null);
   const [themeId, setThemeId] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(true); // abre o popup ao entrar
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [own, setOwn] = useState<string | null>(null); // roteiro colado pelo usuário
+  const [prompterOpen, setPrompterOpen] = useState(false);
+
+  const ownParagraphs = own ? own.split(/\n+/).filter((p) => p.trim()) : [];
+  // o teleprompter lê o que estiver na tela: roteiro da IA ou texto colado
+  const prompterParagraphs =
+    status === "ready" && script ? script.blocks.map((b) => b.text) : ownParagraphs;
 
   const fetchScript = useCallback(async (id: string) => {
     setThemeId(id);
@@ -48,15 +59,26 @@ export function ScriptReader() {
   }, []);
 
   function printScript() {
-    if (!script) return;
-    const blocksHtml = script.blocks
-      .map(
-        (b) =>
-          `<section><h2>${escapeHtml(b.emotion)}</h2><p>${escapeHtml(b.text)}</p></section>`,
-      )
-      .join("");
+    if (script) {
+      const blocksHtml = script.blocks
+        .map(
+          (b) =>
+            `<section><h2>${escapeHtml(b.emotion)}</h2><p>${escapeHtml(b.text)}</p></section>`,
+        )
+        .join("");
+      openPrint(script.title, script.style, blocksHtml);
+    } else if (own) {
+      const blocksHtml = own
+        .split(/\n+/)
+        .map((p) => `<section><p>${escapeHtml(p)}</p></section>`)
+        .join("");
+      openPrint(t("ownTitle"), "", blocksHtml);
+    }
+  }
+
+  function openPrint(title: string, style: string, blocksHtml: string) {
     const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-<title>${escapeHtml(script.title)}</title>
+<title>${escapeHtml(title)}</title>
 <style>
   @page { margin: 2cm; }
   body { font-family: Georgia, 'Times New Roman', serif; color: #111; line-height: 1.7; max-width: 720px; margin: 0 auto; padding: 24px; }
@@ -66,8 +88,8 @@ export function ScriptReader() {
   h2 { font: 700 11px/1 ui-monospace, monospace; letter-spacing: .16em; text-transform: uppercase; color: #555; margin: 0 0 6px; }
   p { margin: 0; font-size: 18px; }
 </style></head><body>
-<p class="style">${escapeHtml(script.style)}</p>
-<h1>${escapeHtml(script.title)}</h1>
+${style ? `<p class="style">${escapeHtml(style)}</p>` : ""}
+<h1>${escapeHtml(title)}</h1>
 ${blocksHtml}
 <script>window.onload=function(){window.print();}</script>
 </body></html>`;
@@ -80,18 +102,84 @@ ${blocksHtml}
   return (
     <>
       {pickerOpen && (
-        <ThemePicker onPick={fetchScript} onClose={() => setPickerOpen(false)} closable={status !== "idle"} />
+        <ThemePicker onPick={fetchScript} onClose={() => setPickerOpen(false)} />
       )}
 
-      {status === "idle" && !pickerOpen && (
-        <section className="flex flex-col items-center gap-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
-          <Wand2 className="h-7 w-7 text-[var(--silver)]" />
+      {status === "idle" && !own && !pickerOpen && (
+        <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
           <p className="text-sm text-[var(--mute)]">{t("pickPrompt")}</p>
-          <button type="button" onClick={() => setPickerOpen(true)} className={PILL}>
-            <Sparkles className="h-4 w-4" />
-            {t("pickTheme")}
-          </button>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={7}
+            placeholder={t("ownPlaceholder")}
+            className="w-full resize-y rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-4 text-[15px] leading-relaxed text-[var(--ink)] placeholder:text-[var(--ash)] focus:border-[var(--hairline-bright)] focus:outline-none"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={!draft.trim()}
+              onClick={() => setOwn(draft.trim())}
+              className={`${PILL} disabled:pointer-events-none disabled:opacity-40`}
+            >
+              <FileText className="h-4 w-4" />
+              {t("ownUse")}
+            </button>
+            <span className="text-[12px] uppercase tracking-wide text-[var(--ash)]">{t("or")}</span>
+            <button type="button" onClick={() => setPickerOpen(true)} className={SECONDARY}>
+              <Sparkles className="h-4 w-4" />
+              {t("pickTheme")}
+            </button>
+          </div>
         </section>
+      )}
+
+      {status === "idle" && own && prompterOpen && (
+        <Teleprompter paragraphs={prompterParagraphs} onClose={() => setPrompterOpen(false)} />
+      )}
+
+      {status === "idle" && own && !prompterOpen && (
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-wrap gap-3">
+            <button type="button" onClick={() => setPrompterOpen(true)} className={PILL}>
+              <MonitorPlay className="h-4 w-4" />
+              {t("prompter.open")}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(own);
+                setOwn(null);
+              }}
+              className={SECONDARY}
+            >
+              <FileText className="h-4 w-4" />
+              {t("ownEdit")}
+            </button>
+            <button type="button" onClick={() => setPickerOpen(true)} className={SECONDARY}>
+              <Sparkles className="h-4 w-4" />
+              {t("pickTheme")}
+            </button>
+            <button type="button" onClick={printScript} className={SECONDARY}>
+              <Printer className="h-4 w-4" />
+              {t("print")}
+            </button>
+          </div>
+
+          <article className="flex flex-col gap-6 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6 md:p-8">
+            <header className="flex items-center gap-2 border-b border-[var(--hairline)] pb-5">
+              <FileText className="h-4 w-4 text-[var(--silver)]" />
+              <span className="font-mono text-[12px] tracking-wide text-[var(--silver)]">
+                {t("ownTitle")}
+              </span>
+            </header>
+            {ownParagraphs.map((p, i) => (
+              <p key={i} className="text-lg leading-relaxed text-[var(--body)]">
+                {p}
+              </p>
+            ))}
+          </article>
+        </div>
       )}
 
       {status === "loading" && (
@@ -114,10 +202,18 @@ ${blocksHtml}
         </section>
       )}
 
-      {status === "ready" && script && (
+      {status === "ready" && script && prompterOpen && (
+        <Teleprompter paragraphs={prompterParagraphs} onClose={() => setPrompterOpen(false)} />
+      )}
+
+      {status === "ready" && script && !prompterOpen && (
         <div className="flex flex-col gap-6">
           <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={() => themeId && fetchScript(themeId)} className={PILL}>
+            <button type="button" onClick={() => setPrompterOpen(true)} className={PILL}>
+              <MonitorPlay className="h-4 w-4" />
+              {t("prompter.open")}
+            </button>
+            <button type="button" onClick={() => themeId && fetchScript(themeId)} className={SECONDARY}>
               <RefreshCw className="h-4 w-4" />
               {t("generateAnother")}
             </button>
@@ -159,16 +255,14 @@ ${blocksHtml}
   );
 }
 
-/** Popup de seleção de tema. `closable` libera o X (só faz sentido quando já há
- * um roteiro atrás — na primeira escolha não há pra onde fechar). */
+/** Popup de seleção de tema. Sempre fechável — só abre quando o usuário pede
+ * um roteiro gerado, então fechar volta pro estado anterior sem perder nada. */
 function ThemePicker({
   onPick,
   onClose,
-  closable,
 }: {
   onPick: (id: string) => void;
   onClose: () => void;
-  closable: boolean;
 }) {
   const t = useTranslations("voiceCreate.script.picker");
   // trava o scroll do body enquanto o popup está aberto
@@ -184,7 +278,7 @@ function ThemePicker({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={closable ? onClose : undefined}
+        onClick={onClose}
         aria-hidden
       />
       <div
@@ -201,16 +295,14 @@ function ThemePicker({
               {t("subtitle")}
             </p>
           </div>
-          {closable && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={t("close")}
-              className="flex-none text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
-            >
-              <X className="size-5" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t("close")}
+            className="flex-none text-[var(--mute)] transition-colors hover:text-[var(--ink)]"
+          >
+            <X className="size-5" />
+          </button>
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

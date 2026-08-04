@@ -25,9 +25,9 @@ export default async function ScriptPage({
           Roteiro
         </h1>
         <p className="text-sm text-[var(--mute)]">
-          Leia este roteiro em voz alta enquanto grava, variando o tom em cada
-          bloco — é assim que o modelo aprende o alcance da sua voz. Não gostou?
-          Gere outro. Quer ler no papel? Baixe ou imprima.
+          Grave lendo em voz alta e variando o tom — é assim que o modelo
+          aprende o alcance da sua voz. Pode ler um texto seu ou, se preferir,
+          gerar um roteiro de leitura com a IA.
         </p>
       </header>
 
