@@ -9,7 +9,7 @@ import { formatDuration } from "@/lib/audio/duration";
 import { saveClip, listClips, deleteClip, type StoredClip } from "@/lib/audio/clip-store";
 
 const SPEECH_RMS = 0.015; // acima disso considera fala
-const SILENCE_MS = 10000; // silêncio após falar → para automaticamente (10s, Johnny 04/08: 2s cortava pausas de leitura)
+const SILENCE_MS = 20000; // silêncio após falar → para automaticamente (20s, Johnny 04/08: 2s cortava pausas de leitura)
 const MAX_SECONDS = 300; // trava por clipe (limita RAM a ~57MB/clipe)
 const CLIP_PEAK = 0.99; // saturação (clipping)
 // Piso de ruído: RMS médio dos frames SEM fala. Acima disso o ambiente está
