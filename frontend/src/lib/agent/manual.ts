@@ -10,8 +10,19 @@ export const PLATFORM_MANUAL = `
 
 ## O que é
 Plataforma de ferramentas de IA pra criadores de conteúdo: clonagem de voz,
-geração de áudio (TTS), imagens e vídeos. Site: fastcloner.com (login com
-conta Google). Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
+geração de áudio (TTS), imagens e vídeos. Site: fastcloner.com.
+Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
+
+## Conta e login (IMPORTANTE — existem DUAS formas)
+- Login com conta Google (1 clique) OU cadastro com E-MAIL E SENHA direto na
+  plataforma (botão "Criar conta": nome, e-mail, senha → chega um CÓDIGO de
+  verificação por e-mail pra confirmar).
+- NUNCA diga que "só existe login com Google" — cadastro por e-mail/senha
+  existe e funciona com qualquer provedor de e-mail.
+- Código de verificação não chegou: pedir pra conferir SPAM/lixo eletrônico e
+  aguardar alguns minutos antes de reenviar. Reenvios em sequência esbarram em
+  limite de envio ("limite de tentativas") — orientar a esperar ~1 hora e
+  tentar de novo. Se persistir, escalar com [ESCALAR-TECNICO].
 
 ## Créditos (moeda da plataforma) — REGRA CENTRAL
 - Assinatura: R$97/mês (checkout Hotmart) → recarrega 100.000 créditos por mês
