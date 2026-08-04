@@ -763,6 +763,7 @@
       "stepAudio": "2. Audio with the speech (up to {max}s)",
       "stepQuality": "3. Quality",
       "perSecond": "{n} credits/second of audio",
+      "tierNote": "Which one? Standard uses the classic engine and delivers richer expressions and motion — best when the performance matters. Turbo uses the newer engine: nearly 2× faster, cheaper, and with more stable colors and framing. Both render at 480p.",
       "cost": "Cost: {seconds}s × {rate} = {cost} credits",
       "costBalance": "(you have {have})",
       "pickToSeeCost": "Pick the photo and the audio to see the cost",

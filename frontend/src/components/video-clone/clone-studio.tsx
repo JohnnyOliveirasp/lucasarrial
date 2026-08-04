@@ -2,13 +2,13 @@
 
 /**
  * Estúdio do Vídeo Clone: foto (histórico do Gerador de Imagem OU upload) +
- * áudio (TTS gerado OU upload) → qualidade (Padrão/HD, preço por segundo) →
+ * áudio (TTS gerado OU upload) → qualidade (Padrão/Turbo, preço por segundo) →
  * custo SEMPRE visível → Gerar → poll até ficar pronto.
  * Quem não tem foto/áudio cria nas telas próprias (links nos seletores).
  */
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Check, Clock, Download, Film, Loader2, RefreshCw } from "lucide-react";
+import { Check, Clock, Download, Film, Info, Loader2, RefreshCw } from "lucide-react";
 import {
   CLONE_MAX_AUDIO_SECONDS,
   CLONE_TIERS,
@@ -335,7 +335,7 @@ export function CloneStudio({
       {/* Qualidade */}
       <div className="flex flex-col gap-2">
         <span className={LABEL}>{t("stepQuality")}</span>
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {CLONE_TIERS.map((opt) => {
             const active = tierId === opt.id;
             return (
@@ -355,7 +355,7 @@ export function CloneStudio({
                     <span className="font-sans text-[14px] font-semibold text-[var(--ink)]">
                       {opt.label}{" "}
                       <span className="font-mono text-[10px] font-normal text-[var(--ash)]">
-                        {opt.id.startsWith("720") ? "720p" : "480p"}
+                        480p
                       </span>
                     </span>
                     {active && <Check className="h-4 w-4 text-[var(--silver)]" />}
@@ -369,6 +369,10 @@ export function CloneStudio({
             );
           })}
         </ul>
+        <p className="flex items-start gap-2 text-[12px] leading-snug text-[var(--mute)]">
+          <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-[var(--ash)]" />
+          <span>{t("tierNote")}</span>
+        </p>
       </div>
 
       {error && (

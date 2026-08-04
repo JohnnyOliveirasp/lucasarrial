@@ -763,6 +763,7 @@
       "stepAudio": "2. Audio con el habla (hasta {max}s)",
       "stepQuality": "3. Calidad",
       "perSecond": "{n} créditos/segundo de audio",
+      "tierNote": "¿Cuál elegir? Estándar usa el motor clásico y entrega expresiones y movimiento más ricos — ideal cuando la actuación importa. Turbo usa el motor más nuevo: casi 2× más rápido, más barato y con colores y encuadre más estables. Ambos generan en 480p.",
       "cost": "Costo: {seconds}s × {rate} = {cost} créditos",
       "costBalance": "(tienes {have})",
       "pickToSeeCost": "Elige la foto y el audio para ver el costo",

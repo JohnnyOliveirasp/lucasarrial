@@ -763,6 +763,7 @@
       "stepAudio": "2. Áudio com a fala (até {max}s)",
       "stepQuality": "3. Qualidade",
       "perSecond": "{n} créditos/segundo de áudio",
+      "tierNote": "Qual escolher? O Padrão usa o motor clássico e entrega expressões e movimento mais ricos — bom quando a atuação importa. O Turbo usa o motor mais novo: sai quase 2× mais rápido, custa menos e mantém cores e enquadramento mais estáveis. Os dois geram em 480p.",
       "cost": "Custo: {seconds}s × {rate} = {cost} créditos",
       "costBalance": "(você tem {have})",
       "pickToSeeCost": "Escolha a foto e o áudio pra ver o custo",

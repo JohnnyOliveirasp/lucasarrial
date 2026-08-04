@@ -3,11 +3,14 @@
  * Preço por SEGUNDO de áudio. REPRECIFICADO 2026-07-09 (Johnny): margem alvo
  * ~100% (2× o custo de GPU) pra ficar competitivo com HeyGen-likes.
  * Custos medidos (L40S US$0,99/h, ~1,05s GPU/frame no V1; V2 = 4 steps ≈ 0,6×):
- * V1 480p ≈ R$0,045/s áudio · V2 ≈ R$0,0275/s · 720p ≈ R$0,125/s (estimado).
+ * V1 480p ≈ R$0,045/s áudio · V2 ≈ R$0,0275/s.
  * Crédito da plataforma = R$97/180.000 = R$0,000539.
  */
 
-export type CloneTierId = "480p" | "720p" | "480p-v2";
+/** HD (720p) REMOVIDO 04/08 (decisão Johnny): preço ao aluno (465 cr/s)
+ *  empatava com o varejo do HeyGen e o fluxo nunca rodou estável (3 falhas
+ *  >45min com áudio longo). Jobs antigos no histórico mostram o id cru. */
+export type CloneTierId = "480p" | "480p-v2";
 
 export type CloneTier = {
   id: CloneTierId;
@@ -30,7 +33,7 @@ export const CLONE_TIERS: readonly CloneTier[] = [
   {
     id: "480p",
     label: "Padrão",
-    blurb: "Equilíbrio entre qualidade e custo. Ótimo pra redes sociais.",
+    blurb: "Motor clássico: expressões e movimento mais ricos. Geração mais demorada.",
     flow: "v1",
     creditsPerSecond: 170,
     width: 640,
@@ -41,7 +44,7 @@ export const CLONE_TIERS: readonly CloneTier[] = [
   {
     id: "480p-v2",
     label: "Turbo",
-    blurb: "Motor novo: gera mais rápido, com cores e movimento mais consistentes.",
+    blurb: "Motor novo: quase 2× mais rápido e mais barato, com cores e enquadramento mais estáveis.",
     flow: "v2",
     creditsPerSecond: 105,
     width: 480,
@@ -49,17 +52,6 @@ export const CLONE_TIERS: readonly CloneTier[] = [
     // Modelos fixos no template V2 (fp8 + rank128) — campos não usados.
     ggufModel: "",
     lora: "",
-  },
-  {
-    id: "720p",
-    label: "HD",
-    blurb: "Mais nitidez e detalhe. Ideal pra anúncios.",
-    flow: "v1",
-    creditsPerSecond: 465,
-    width: 960,
-    height: 1280,
-    ggufModel: "wan2.1-i2v-14b-720p-Q5_K_M.gguf",
-    lora: "lightx2v_I2V_14B_720p_cfg_step_distill_rank64.safetensors",
   },
 ] as const;
 
@@ -88,13 +80,12 @@ export function cloneCreditsCost(tier: CloneTier, seconds: number): number {
  * pro PIOR caso medido nos logs de 2026-07-12: worker L40S frio ≈ 10min só
  * carregando modelos + V1 480p ≈ 2,5min por janela de ~72 frames (7 steps ×
  * ~19,5s/step). O default do endpoint (15min) matava QUALQUER áudio >20s no
- * V1 — e até jobs de 11s quando caíam num L40S frio. HD nunca foi medido:
- * folga maior. O teto é rede de segurança, não meta — job saudável termina
- * bem antes.
+ * V1 — e até jobs de 11s quando caíam num L40S frio. O teto é rede de
+ * segurança, não meta — job saudável termina bem antes.
  */
 export function cloneExecutionTimeoutMs(tier: CloneTier, seconds: number): number {
   const billed = Math.max(CLONE_MIN_BILLED_SECONDS, Math.ceil(seconds));
   // Segundos de GPU por segundo de áudio, com folga pra GPU mais lenta da fila.
-  const perAudioSecond = tier.flow === "v2" ? 30 : tier.id === "720p" ? 180 : 60;
+  const perAudioSecond = tier.flow === "v2" ? 30 : 60;
   return (20 * 60 + billed * perAudioSecond) * 1000;
 }
