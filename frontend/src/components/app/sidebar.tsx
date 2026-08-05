@@ -21,6 +21,7 @@ import {
   UserSquare2,
   Wand2,
   Smartphone,
+  MonitorPlay,
   type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
@@ -276,6 +277,14 @@ export function Sidebar({
                   icon={Smartphone}
                   label="Gravador Celular"
                   active={pathname.endsWith("/app/lab/gravador-celular")}
+                />
+                {/* 🧪 Vídeo HeyGen BYOK (teste 05/08): aluno conecta a própria
+                    API key; Lucas valida → gradua pro grupo Vídeos. */}
+                <NavLeaf
+                  href="/app/lab/video-heygen"
+                  icon={MonitorPlay}
+                  label="Vídeo HeyGen"
+                  active={pathname.endsWith("/app/lab/video-heygen")}
                 />
               </ul>
               <div className="mt-2 border-t border-[var(--hairline)] pt-2">

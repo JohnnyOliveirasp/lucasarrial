@@ -390,6 +390,7 @@ export type HeygenAccountInsert = {
   status?: HeygenAccountRow["status"];
   remaining_credits?: number | null;
   last_validated_at?: Timestamp | null;
+  updated_at?: Timestamp;
 };
 export type HeygenAccountUpdate = Partial<Omit<HeygenAccountRow, "id" | "user_id">>;
 
