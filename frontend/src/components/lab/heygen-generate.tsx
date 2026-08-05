@@ -82,11 +82,8 @@ export function HeygenGenerate() {
     (imageMode === "platform_image" ? Boolean(imageId) : Boolean(uploadDataUrl));
 
   async function generate() {
-    const audio = audios.find((a) => a.id === audioId);
-    const mins = audio?.duration_seconds ? Math.max(1, Math.ceil(audio.duration_seconds / 60)) : 1;
     const ok = window.confirm(
-      `Gerar este vídeo vai consumir créditos de API da SUA conta HeyGen ` +
-        `(Avatar IV custa ~US$4 por minuto de vídeo — este áudio ≈ ${mins} min). Continuar?`,
+      "Gerar este vídeo vai consumir créditos de API da SUA conta HeyGen. Continuar?",
     );
     if (!ok) return;
     setBusy(true);
@@ -220,8 +217,8 @@ export function HeygenGenerate() {
         </button>
       </div>
       <p className="text-[12px] text-[var(--ash)]">
-        ⚠️ A geração consome créditos de API da <strong>sua conta HeyGen</strong> (~US$4/min de
-        vídeo), não os créditos FastCloner.
+        ⚠️ A geração consome créditos de API da <strong>sua conta HeyGen</strong>, não os
+        créditos FastCloner. O valor por vídeo é definido pelo HeyGen conforme o seu plano.
       </p>
       {error && <p className="text-[13px] text-[var(--danger,#e5484d)]">{error}</p>}
 
