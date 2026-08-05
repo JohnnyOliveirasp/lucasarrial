@@ -18,14 +18,15 @@ export default async function GeneratePage({
 
   const { data: voice } = await supabase
     .from("voices")
-    .select("id, name, status, lora_path")
+    .select("id, name, status, is_stock, lora_path, reference_audio_path")
     .eq("id", id)
     // Dono OU voz do catálogo (is_stock — RLS libera a leitura).
     .or(`user_id.eq.${user.id},is_stock.eq.true`)
     .maybeSingle();
 
   if (!voice) notFound();
-  if (voice.status !== "ready" || !voice.lora_path) {
+  const canGenerate = Boolean(voice.lora_path) || Boolean(voice.is_stock && voice.reference_audio_path);
+  if (voice.status !== "ready" || !canGenerate) {
     redirect(`/${locale}/app/voice-cloning/${voice.id}`);
   }
 

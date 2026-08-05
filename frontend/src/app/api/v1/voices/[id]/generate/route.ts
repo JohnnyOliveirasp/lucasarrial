@@ -90,7 +90,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   // aluno (uso interno/suporte).
   let voiceQuery = admin
     .from("voices")
-    .select("id, user_id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language")
+    .select("id, user_id, status, is_stock, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language")
     .eq("id", voiceId);
   if (!auth.is_admin) {
     voiceQuery = voiceQuery.or(`user_id.eq.${auth.user_id},is_stock.eq.true`);
@@ -99,7 +99,9 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   if (vErr) return serverError("Failed to load voice");
   if (!voice) return notFound("Voice");
-  if (voice.status !== "ready" || !voice.lora_path) {
+  // O catalogo tambem aceita voz generica zero-shot: referencia curada sem LoRA.
+  const canGenerate = Boolean(voice.lora_path) || Boolean(voice.is_stock && voice.reference_audio_path);
+  if (voice.status !== "ready" || !canGenerate) {
     return badRequest(`Voice not ready (status=${voice.status})`);
   }
 
@@ -138,14 +140,19 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const generationId = randomUUID();
   const outputKey = buildGenerationKey(auth.user_id, generationId);
 
-  let loraUrl: string;
+  let loraUrl: string | undefined;
   let outputUploadUrl: string;
   let refUrl: string | undefined;
   try {
-    [loraUrl, outputUploadUrl] = await Promise.all([
-      createPresignedGet(R2_BUCKETS.voices, voice.lora_path, PRESIGN_EXPIRES),
-      createPresignedPut(R2_BUCKETS.generations, outputKey, "audio/wav", PRESIGN_EXPIRES),
-    ]);
+    outputUploadUrl = await createPresignedPut(
+      R2_BUCKETS.generations,
+      outputKey,
+      "audio/wav",
+      PRESIGN_EXPIRES,
+    );
+    if (voice.lora_path) {
+      loraUrl = await createPresignedGet(R2_BUCKETS.voices, voice.lora_path, PRESIGN_EXPIRES);
+    }
     if (refKey) {
       refUrl = await createPresignedGet(R2_BUCKETS.voices, refKey, PRESIGN_EXPIRES);
     }
@@ -158,7 +165,6 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const inferenceInput: Record<string, unknown> = {
     type: "inference",
     text: normalizedText,
-    lora_url: loraUrl,
     output_upload_url: outputUploadUrl,
     // Alpha gravado no treino daquela voz (16 p/ antigas, 32 p/ novas). O worker
     // infere com esse alpha — casa com a LoRA. Sem valor, o worker usa 16.
@@ -177,6 +183,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     // em pt reprovava sempre e virava loteria de retries).
     language: voice.language || "pt",
   };
+  if (loraUrl) inferenceInput.lora_url = loraUrl;
 
   // Pacing entre frases: precedência body > config da voz. Sem nenhum, o worker
   // usa o default global (env) — comportamento inalterado pras vozes sem config.
