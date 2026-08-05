@@ -1,12 +1,14 @@
 import type { LegalDoc } from "./types";
 
-/** Política de Privacidade (pt-BR, rascunho). Foco LGPD + processamento de voz. */
+/** Política de Privacidade (pt-BR). Foco LGPD + voz/imagem + Instagram API.
+ * Publicada 05/08/2026 pro App Review da Meta (URL exigida); advogado revisa
+ * depois sem quebrar a URL. */
 export const PRIVACY: LegalDoc = {
   slug: "privacidade",
   title: "Política de Privacidade",
-  updatedAt: "Junho de 2026 (rascunho)",
+  updatedAt: "Agosto de 2026",
   intro: [
-    "Esta Política de Privacidade descreve como a AI Clone Verse coleta, usa e " +
+    "Esta Política de Privacidade descreve como o FastCloner coleta, usa e " +
       "protege seus dados pessoais, incluindo sua voz, em conformidade com a Lei " +
       "Geral de Proteção de Dados (Lei nº 13.709/2018 — LGPD).",
   ],
@@ -14,7 +16,7 @@ export const PRIVACY: LegalDoc = {
     {
       heading: "1. Quem somos (Controlador)",
       body: [
-        "A AI Clone Verse atua como controladora dos dados tratados na Plataforma. " +
+        "O FastCloner atua como controlador dos dados tratados na Plataforma. " +
           "Contato do encarregado: suporte@fastcloner.com.",
       ],
     },
@@ -24,6 +26,12 @@ export const PRIVACY: LegalDoc = {
         "Dados de cadastro: nome, e-mail e foto de perfil (ex.: via login Google).",
         "Dados de voz: amostras de áudio que você envia ou grava para treinar seu " +
           "clone de voz, e os áudios gerados.",
+        "Conteúdos que você cria na Plataforma: imagens, vídeos e áudios gerados " +
+          "a partir dos seus envios e comandos.",
+        "Dados de redes sociais conectadas (opcional): se você conectar sua conta " +
+          "do Instagram para publicar pela Plataforma, recebemos da Meta o " +
+          "identificador e o nome de usuário da conta e um token de acesso de " +
+          "publicação. Não coletamos sua senha do Instagram.",
         "Dados de uso: registros de acesso, ações na plataforma e informações " +
           "técnicas (navegador, dispositivo, endereço IP).",
       ],
@@ -63,6 +71,22 @@ export const PRIVACY: LegalDoc = {
           "o Serviço, como infraestrutura de autenticação e banco de dados, " +
           "armazenamento de arquivos e processamento em GPU, sob obrigações de " +
           "confidencialidade.",
+      ],
+    },
+    {
+      heading: "6a. Conta do Instagram conectada (publicação)",
+      body: [
+        "Conectar o Instagram é opcional e serve exclusivamente para publicar ou " +
+          "agendar, em seu nome e sob seu comando, os conteúdos que você criar na " +
+          "Plataforma. Usamos a API oficial da Meta (Instagram API) e recebemos " +
+          "apenas o identificador da conta, o nome de usuário e um token de acesso.",
+        "O token fica armazenado criptografado e nunca é exibido nem compartilhado. " +
+          "Não lemos suas mensagens, seguidores ou outros dados do seu perfil.",
+        "Você pode desconectar a conta a qualquer momento na própria Plataforma — " +
+          "isso apaga o token e as publicações pendentes — ou revogar o acesso do " +
+          "aplicativo diretamente no Instagram (Configurações → Site e apps). Para " +
+          "solicitar a exclusão de todos os dados associados à sua conta do " +
+          "Instagram, escreva para suporte@fastcloner.com.",
       ],
     },
     {
