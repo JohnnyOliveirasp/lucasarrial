@@ -187,6 +187,8 @@ export type ImageGenerationRow = {
   retry_count: number;
   /** Modelo que atendeu a geração (mig 55): gpt titular; seedream = contingência. */
   kie_model: string;
+  /** Erro CRU do Kie (mig 58) — error_message é a versão amigável pro aluno. */
+  kie_raw_error: string | null;
   created_at: Timestamp;
   // Vídeo animado a partir da imagem (migration 28) — espelha video_scenes.
   video_path: string | null;
@@ -212,6 +214,7 @@ export type ImageGenerationInsert = {
   status?: ImageGenerationStatus;
   kie_task_id?: string | null;
   kie_model?: string;
+  kie_raw_error?: string | null;
   prompt_en?: string | null;
 };
 export type ImageGenerationUpdate = Partial<ImageGenerationRow>;

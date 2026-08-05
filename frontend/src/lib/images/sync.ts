@@ -133,7 +133,17 @@ export async function syncImageTask(
 
   if (info.state === "fail") {
     const raw = info.failMsg || info.failCode || "geração falhou";
-    if (isTransientKieError(raw) && (await tryImageRetry(id))) return;
+    // Retry cruzado vale pra: erro transiente (qualquer modelo) OU QUALQUER erro
+    // no fallback — o titular pode aceitar o que o Seedream recusou (caso 05/08:
+    // 4 alunos morreram no Seedream sem 2ª chance com o GPT saudável).
+    const { data: cur } = await getAdmin()
+      .from("image_generations")
+      .select("kie_model")
+      .eq("id", id)
+      .maybeSingle();
+    const onFallback =
+      (cur as { kie_model?: string } | null)?.kie_model === KIE_FALLBACK_IMAGE_MODEL;
+    if ((isTransientKieError(raw) || onFallback) && (await tryImageRetry(id))) return;
     await failImageGeneration(id, raw);
     return;
   }

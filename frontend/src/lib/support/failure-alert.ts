@@ -75,6 +75,71 @@ async function refundOriginalDebit(args: {
     : "ESTORNO FALHOU — aplicar manualmente!";
 }
 
+/** Rajada = 3+ falhas (estornos) do MESMO aluno na MESMA ferramenta em 15min. */
+const BURST_WINDOW_MS = 15 * 60 * 1000;
+const BURST_THRESHOLD = 3;
+
+/**
+ * Regra do Sentinela (caso 05/08: 7 falhas Seedream com estorno automático e
+ * NENHUM incidente — "tratada" ≠ "saudável"): rajada de falhas do mesmo aluno
+ * abre/reaquece incidente na aba Falhas do /admin, que é a fila que o
+ * Sentinela varre. Dedupe por assinatura, mesmo padrão da Fast (mail-respond).
+ */
+async function openBurstIncident(a: {
+  refundRefType: string;
+  feature: string;
+  userEmail: string;
+  count: number;
+  rawError: string;
+}): Promise<void> {
+  const admin = getAdmin();
+  const signature = `fail-burst:${a.refundRefType}:${a.userEmail}`;
+  const now = new Date().toISOString();
+  const { data: existingRaw } = await admin
+    .from("incidents" as never)
+    .select("id, status, occurrences")
+    .eq("signature", signature)
+    .order("last_seen_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const existing = existingRaw as unknown as {
+    id: string;
+    status: string;
+    occurrences: number;
+  } | null;
+
+  if (existing) {
+    const reopened = existing.status === "fixed" || existing.status === "ignored";
+    await admin
+      .from("incidents" as never)
+      .update({
+        status: reopened ? "open" : existing.status,
+        occurrences: (existing.occurrences ?? 1) + 1,
+        last_seen_at: now,
+        sample_error: a.rawError.slice(0, 1000),
+      } as never)
+      .eq("id", existing.id);
+    return;
+  }
+  await admin.from("incidents" as never).insert({
+    kind: "reported",
+    cause: "reported",
+    status: "open",
+    signature,
+    title: `Rajada de falhas: ${a.feature} — ${a.userEmail} (${a.count} em 15min)`,
+    occurrences: 1,
+    affected_emails: [a.userEmail],
+    sample_error: a.rawError.slice(0, 1000),
+    description:
+      `${a.count} falhas com estorno automático do mesmo aluno em 15 minutos na ` +
+      `ferramenta "${a.feature}". Estorno em dia não significa experiência ok — ` +
+      `investigar a causa raiz (erro cru na sample e, para imagens, na coluna kie_raw_error).`,
+    reported_by: "burst-rule",
+    first_seen_at: now,
+    last_seen_at: now,
+  } as never);
+}
+
 /**
  * Chamar SEMPRE que uma operação falhar por motivo técnico, logo após a
  * transição idempotente da row pra "failed" (pra não duplicar em corrida
@@ -98,6 +163,25 @@ export async function handleTechFailure(a: TechFailureArgs): Promise<void> {
         debitRefType: a.debitRefType,
         refundRefType: a.refundRefType,
       });
+
+      // Regra de rajada: conta os estornos desta ferramenta na janela (1 estorno
+      // idempotente por falha → contagem fiel) e abre incidente no limiar.
+      const since = new Date(Date.now() - BURST_WINDOW_MS).toISOString();
+      const { count } = await admin
+        .from("credit_transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", a.userId)
+        .eq("ref_type", a.refundRefType)
+        .gte("created_at", since);
+      if ((count ?? 0) >= BURST_THRESHOLD) {
+        await openBurstIncident({
+          refundRefType: a.refundRefType,
+          feature: a.feature,
+          userEmail,
+          count: count ?? 0,
+          rawError: a.rawError,
+        });
+      }
     }
     if (a.alertSupport === false) return;
 

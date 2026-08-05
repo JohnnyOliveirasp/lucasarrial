@@ -77,7 +77,13 @@ function friendlyImageError(raw: string): string {
 export async function failImageGeneration(id: string, message: string): Promise<void> {
   const { data: claimed } = await getAdmin()
     .from("image_generations")
-    .update({ status: "failed", error_message: friendlyImageError(message).slice(0, 500) })
+    .update({
+      status: "failed",
+      error_message: friendlyImageError(message).slice(0, 500),
+      // erro CRU (mig 58): o log do pm2 gira em minutos — sem isso o diagnóstico
+      // de falha do Kie fica cego (caso Seedream 05/08).
+      kie_raw_error: message.slice(0, 1000),
+    })
     .eq("id", id)
     .in("status", ["pending", "generating"])
     .select("id, user_id");
