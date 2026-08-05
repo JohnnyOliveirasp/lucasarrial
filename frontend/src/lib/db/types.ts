@@ -370,6 +370,29 @@ export type AdminEmailInsert = {
 };
 export type AdminEmailUpdate = Partial<AdminEmailRow>;
 
+// ───────── heygen_accounts (mig 59 — BYOK "HeyGen dentro do FastCloner") ─────────
+export type HeygenAccountRow = {
+  id: string;
+  user_id: string;
+  /** AES-256-GCM (lib/heygen/crypto) — NUNCA devolver ao client. */
+  api_key_encrypted: string;
+  label: string | null;
+  status: "active" | "invalid" | "revoked";
+  remaining_credits: number | null;
+  last_validated_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+};
+export type HeygenAccountInsert = {
+  user_id: string;
+  api_key_encrypted: string;
+  label?: string | null;
+  status?: HeygenAccountRow["status"];
+  remaining_credits?: number | null;
+  last_validated_at?: Timestamp | null;
+};
+export type HeygenAccountUpdate = Partial<Omit<HeygenAccountRow, "id" | "user_id">>;
+
 // ───────── user_consents ─────────
 export type UserConsentRow = {
   id: string;
@@ -795,6 +818,7 @@ export type Database = {
       credit_campaign_grants: { Row: CreditCampaignGrantRow; Insert: CreditCampaignGrantInsert; Update: CreditCampaignGrantUpdate; Relationships: Rel };
       courtesy_campaigns: { Row: CourtesyCampaignRow; Insert: CourtesyCampaignInsert; Update: CourtesyCampaignUpdate; Relationships: Rel };
       courtesy_grants: { Row: CourtesyGrantRow; Insert: CourtesyGrantInsert; Update: CourtesyGrantUpdate; Relationships: Rel };
+      heygen_accounts: { Row: HeygenAccountRow; Insert: HeygenAccountInsert; Update: HeygenAccountUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: {
