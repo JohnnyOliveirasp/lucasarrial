@@ -7,6 +7,7 @@
  *   + desconectar. A key NUNCA volta do servidor (nem mascarada).
  */
 import { useCallback, useEffect, useState } from "react";
+import { HeygenGenerate } from "./heygen-generate";
 
 type Account = {
   status: string;
@@ -179,10 +180,7 @@ export function HeygenConnect() {
         )}
       </div>
 
-      <p className="text-[12px] text-[var(--ash)]">
-        Próximo passo (em construção): escolher um look + um áudio da sua voz clonada e gerar o
-        vídeo Avatar IV daqui — a geração consome os créditos da sua conta HeyGen.
-      </p>
+      <HeygenGenerate />
     </div>
   );
 }

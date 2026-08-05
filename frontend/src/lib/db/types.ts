@@ -394,6 +394,31 @@ export type HeygenAccountInsert = {
 };
 export type HeygenAccountUpdate = Partial<Omit<HeygenAccountRow, "id" | "user_id">>;
 
+// ───────── heygen_videos (mig 60 — vídeos Avatar IV via conta do aluno) ─────────
+export type HeygenVideoRow = {
+  id: string;
+  user_id: string;
+  heygen_video_id: string | null;
+  image_source: "platform_image" | "upload" | "heygen_look";
+  audio_generation_id: string | null;
+  title: string | null;
+  status: "processing" | "ready" | "failed";
+  video_path: string | null;
+  duration_seconds: number | null;
+  error_message: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+};
+export type HeygenVideoInsert = {
+  user_id: string;
+  heygen_video_id?: string | null;
+  image_source: HeygenVideoRow["image_source"];
+  audio_generation_id?: string | null;
+  title?: string | null;
+  status?: HeygenVideoRow["status"];
+};
+export type HeygenVideoUpdate = Partial<Omit<HeygenVideoRow, "id" | "user_id" | "created_at">>;
+
 // ───────── user_consents ─────────
 export type UserConsentRow = {
   id: string;
@@ -820,6 +845,7 @@ export type Database = {
       courtesy_campaigns: { Row: CourtesyCampaignRow; Insert: CourtesyCampaignInsert; Update: CourtesyCampaignUpdate; Relationships: Rel };
       courtesy_grants: { Row: CourtesyGrantRow; Insert: CourtesyGrantInsert; Update: CourtesyGrantUpdate; Relationships: Rel };
       heygen_accounts: { Row: HeygenAccountRow; Insert: HeygenAccountInsert; Update: HeygenAccountUpdate; Relationships: Rel };
+      heygen_videos: { Row: HeygenVideoRow; Insert: HeygenVideoInsert; Update: HeygenVideoUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: {
