@@ -31,8 +31,18 @@ export function HeygenGenerate() {
         fetch("/api/v1/generations").then((r) => r.json()).catch(() => null),
         fetch("/api/v1/heygen/videos").then((r) => r.json()).catch(() => null),
       ]);
-      const imgItems = (imgs?.data?.items ?? imgs?.items ?? []) as (PlatformImage & { url?: string })[];
-      setImages(imgItems.filter((i) => i.status === "ready" && i.url));
+      // GET /api/v1/images → jsonOk({ images: [{ id, name, status, image_url, ... }] })
+      const imgItems = (imgs?.data?.images ?? imgs?.images ?? []) as {
+        id: string;
+        name: string | null;
+        status: string;
+        image_url: string | null;
+      }[];
+      setImages(
+        imgItems
+          .filter((i) => i.status === "ready" && i.image_url)
+          .map((i) => ({ id: i.id, name: i.name, status: i.status, url: i.image_url })),
+      );
       const genItems = (gens?.data?.generations ?? gens?.generations ?? gens?.data?.items ?? []) as AudioGen[];
       setAudios(genItems.filter((g) => g.status === "ready"));
       setVideos((vids?.data?.videos ?? vids?.videos ?? []) as HgVideo[]);
