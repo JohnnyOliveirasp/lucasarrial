@@ -99,13 +99,10 @@ async function emailEscalation(args: {
   technical: boolean;
 }): Promise<void> {
   try {
-    const admin = getAdmin();
+    // Pedido Johnny 05/08: escalações da Fast só pra ele + suporte@ (era admin_emails inteira).
     const to = new Set<string>([SUPPORT_EMAIL]);
     if (!args.technical) {
-      const { data } = await admin.from("admin_emails").select("email");
-      for (const r of (data ?? []) as { email: string | null }[]) {
-        if (r.email) to.add(r.email.toLowerCase());
-      }
+      to.add("johnny.oliveirasp@gmail.com");
     }
     await sendEmail({
       to: [...to],

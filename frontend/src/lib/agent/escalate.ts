@@ -11,7 +11,6 @@
  * Johnny 2026-07-13: falha de sistema não aciona o resto da equipe.
  * Best-effort: aviso falhar nunca derruba a resposta ao aluno.
  */
-import { getAdmin } from "@/lib/db/admin";
 import { sendAgentText } from "@/lib/agent/provider";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
@@ -32,18 +31,9 @@ export function extractEscalation(reply: string): {
   return { clean: reply.replace(MARKER, "").trim(), reason: m[2].trim(), technical: Boolean(m[1]) };
 }
 
-/** E-mails da equipe: allowlist admin_emails + caixa oficial do suporte. */
+/** Pedido Johnny 05/08: escalações da Fast só pra ele + caixa oficial do suporte. */
 async function teamEmails(): Promise<string[]> {
-  const out = new Set<string>([SUPPORT_EMAIL]);
-  try {
-    const { data } = await getAdmin().from("admin_emails").select("email");
-    for (const r of (data ?? []) as { email: string | null }[]) {
-      if (r.email) out.add(r.email.toLowerCase());
-    }
-  } catch {
-    /* segue só com o suporte@ */
-  }
-  return [...out];
+  return [SUPPORT_EMAIL, "johnny.oliveirasp@gmail.com"];
 }
 
 /** Números (dígitos com país, separados por vírgula) → JIDs. */

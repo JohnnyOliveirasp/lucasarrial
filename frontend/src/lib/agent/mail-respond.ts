@@ -179,11 +179,10 @@ async function openIncidentForSentinela(fromEmail: string, reason: string, excer
   } as never);
 }
 
+// Pedido Johnny 05/08: cópia oculta SÓ pra ele (antes ia pra admin_emails inteira).
+// admin_emails segue intacta — ela também controla o acesso ao /admin.
 async function adminBccList(): Promise<string[]> {
-  const { data } = await getAdmin().from("admin_emails").select("email");
-  return ((data ?? []) as { email: string }[])
-    .map((r) => r.email.toLowerCase())
-    .filter((e) => e && e !== "suporte@fastcloner.com");
+  return ["johnny.oliveirasp@gmail.com"];
 }
 
 async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "skipped" | "escalated"> {
