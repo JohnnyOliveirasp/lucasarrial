@@ -27,7 +27,9 @@ Payload de `avatar`:
     "steps": 30,               (opcional)
     "audio_guidance": 2.5,     (opcional)
     "ref_img_index": 5,        (opcional)
-    "max_seconds": 120         (opcional, teto de duração do áudio)
+    "max_seconds": 120,        (opcional, teto de duração do áudio)
+    "upscale": false           (opcional; teste Q1 05/08: upscale da foto PIOROU
+                                — pele plastificada. Padrão = foto original.)
   }
 
 Resposta: { video_uploaded, duration_seconds, num_segments, gpu_count,
@@ -172,13 +174,17 @@ def _run_avatar(inp: dict) -> dict:
             return {"error": f"audio too long: {audio_seconds:.1f}s > {max_seconds:.0f}s"}
         segments = _num_segments(audio_seconds)
 
-        # FOTO: upscale 4x Real-ESRGAN (spandrel, dentro do venv do volume)
-        r = subprocess.run(
-            [str(VENV_BIN / "python"), "/app/upscale.py", str(raw_img), str(up_img)],
-            capture_output=True, text=True, timeout=600,
-        )
-        if r.returncode != 0:
-            _log("warn", "upscale.failed_using_original", stderr=r.stderr[-500:])
+        # FOTO: padrão = ORIGINAL (teste Q1 05/08: upscale plastificou a pele e
+        # piorou a geração — o "ruído" da foto carrega textura que o modelo usa).
+        if inp.get("upscale"):
+            r = subprocess.run(
+                [str(VENV_BIN / "python"), "/app/upscale.py", str(raw_img), str(up_img)],
+                capture_output=True, text=True, timeout=600,
+            )
+            if r.returncode != 0:
+                _log("warn", "upscale.failed_using_original", stderr=r.stderr[-500:])
+                shutil.copy(raw_img, up_img)
+        else:
             shutil.copy(raw_img, up_img)
 
         input_json = job_dir / "input.json"
