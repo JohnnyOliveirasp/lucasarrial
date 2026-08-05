@@ -5,13 +5,15 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { jsonOk, serverError, unauthorized } from "@/lib/api/responses";
+import { forbidden, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
+import { socialPublisherEnabled } from "@/lib/social/access";
 import { makeOauthState } from "@/lib/social/crypto";
 import { authorizeUrl } from "@/lib/social/instagram";
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
+  if (!(await socialPublisherEnabled(auth.user_id))) return forbidden();
   try {
     return jsonOk({ url: authorizeUrl(makeOauthState(auth.user_id)) });
   } catch {

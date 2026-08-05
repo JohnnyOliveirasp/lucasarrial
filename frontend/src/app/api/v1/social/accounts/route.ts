@@ -7,16 +7,22 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { socialPublisherEnabled } from "@/lib/social/access";
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
+  // `enabled` controla a visibilidade dos botões "Publicar no Instagram" na UI
+  // (admin-only até o App Review da Meta liberar pros alunos).
+  if (!(await socialPublisherEnabled(auth.user_id))) {
+    return jsonOk({ enabled: false, accounts: [] });
+  }
   const { data } = await getAdmin()
     .from("social_accounts")
     .select("id, platform, username, account_ref, status, token_expires_at, connected_at")
     .eq("user_id", auth.user_id)
     .order("connected_at", { ascending: false });
-  return jsonOk({ accounts: data ?? [] });
+  return jsonOk({ enabled: true, accounts: data ?? [] });
 }
 
 export async function DELETE(request: NextRequest) {

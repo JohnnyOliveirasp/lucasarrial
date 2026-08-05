@@ -10,8 +10,10 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
+import { badRequest, forbidden, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { socialPublisherEnabled } from "@/lib/social/access";
+import { resolvePublishSource } from "@/lib/social/media-sources";
 import { startPublication } from "@/lib/social/publisher";
 import type { PublicationRow } from "@/lib/db/types";
 
@@ -21,10 +23,12 @@ const KINDS = new Set(["reel", "image", "story"]);
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
+  if (!(await socialPublisherEnabled(auth.user_id))) return forbidden();
 
   let body: {
     account_id?: string;
     media_url?: string;
+    source?: { kind: string; id: string };
     caption?: string;
     media_type?: string;
     scheduled_at?: string;
@@ -36,11 +40,29 @@ export async function POST(request: NextRequest) {
   }
 
   const accountId = (body.account_id ?? "").trim();
-  const mediaUrl = (body.media_url ?? "").trim();
-  const mediaType = (body.media_type ?? "reel").trim();
-  const caption = (body.caption ?? "").trim() || null;
   if (!accountId) return badRequest("Escolha a conta do Instagram");
-  if (!/^https:\/\//.test(mediaUrl)) return badRequest("media_url precisa ser uma URL https pública");
+
+  // Mídia da PLATAFORMA (botão "Publicar no Instagram"): o client manda só
+  // {kind, id}; o servidor valida a posse e resolve o r2://… (assinado na
+  // hora de publicar). media_url https crua fica pro uso via API/debug.
+  let mediaUrl: string;
+  let mediaType = (body.media_type ?? "reel").trim();
+  if (body.source) {
+    if (body.source.kind !== "image") return badRequest("source.kind não suportado");
+    const resolved = await resolvePublishSource(auth.user_id, {
+      kind: "image",
+      id: String(body.source.id ?? ""),
+    });
+    if ("error" in resolved) return badRequest(resolved.error);
+    mediaUrl = resolved.mediaUrl;
+    if (!body.media_type) mediaType = resolved.mediaType;
+  } else {
+    mediaUrl = (body.media_url ?? "").trim();
+    if (!/^https:\/\//.test(mediaUrl)) {
+      return badRequest("media_url precisa ser uma URL https pública");
+    }
+  }
+  const caption = (body.caption ?? "").trim() || null;
   if (!KINDS.has(mediaType)) return badRequest("media_type deve ser reel, image ou story");
   if (caption && caption.length > CAPTION_MAX) {
     return badRequest(`A legenda passou de ${CAPTION_MAX} caracteres (limite do Instagram)`);

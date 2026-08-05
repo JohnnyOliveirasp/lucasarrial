@@ -7,6 +7,7 @@
  * uma publicação imediata, pra dar resposta rápida na tela.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { createPresignedGet } from "@/lib/r2/presigned";
 import { decryptToken, encryptToken } from "@/lib/social/crypto";
 import {
   containerStatus,
@@ -19,6 +20,17 @@ import {
 import type { PublicationRow, SocialAccountRow } from "@/lib/db/types";
 
 const MAX_ATTEMPTS = 3;
+
+/**
+ * media_url aceita URL https direta OU referência interna "r2://<bucket>/<key>"
+ * (mídia gerada NA plataforma). A interna vira presigned GET na hora de criar
+ * o container — assim post agendado nunca publica com assinatura vencida.
+ */
+export async function resolveMediaUrl(mediaUrl: string): Promise<string> {
+  const m = mediaUrl.match(/^r2:\/\/([^/]+)\/(.+)$/);
+  if (!m) return mediaUrl;
+  return createPresignedGet(m[1], m[2], 3600);
+}
 
 async function loadAccount(accountId: string): Promise<SocialAccountRow | null> {
   const { data } = await getAdmin()
@@ -56,7 +68,7 @@ export async function startPublication(pub: PublicationRow): Promise<void> {
     const token = decryptToken(account.access_token_encrypted);
     const containerId = await createContainer(token, account.account_ref, {
       kind: pub.media_type,
-      mediaUrl: pub.media_url,
+      mediaUrl: await resolveMediaUrl(pub.media_url),
       caption: pub.caption,
     });
     await patch(pub.id, { status: "processing", container_id: containerId, attempts: pub.attempts + 1 });

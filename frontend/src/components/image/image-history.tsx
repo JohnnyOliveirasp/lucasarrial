@@ -18,6 +18,7 @@ import {
 
 import { ImageAnimatePanel } from "./image-animate";
 import { downloadFromUrl } from "./download-file";
+import { PublishButton } from "@/components/social/publish-button";
 
 type Img = {
   id: string;
@@ -300,6 +301,15 @@ export function ImageHistory({
                 )}
                 {g.video_status === "ready" ? t("video") : t("animate")}
               </button>
+              {/* 📤 Publicador (admin-only até o App Review — o botão se
+                  esconde sozinho pra quem não tem o Publicador liberado) */}
+              {g.status === "ready" && g.image_path && (
+                <PublishButton
+                  source={{ kind: "image", id: g.id }}
+                  context={g.prompt}
+                  thumbnailUrl={g.image_url}
+                />
+              )}
               <button
                 type="button"
                 disabled={!g.image_url}

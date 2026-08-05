@@ -20,7 +20,6 @@ import {
   ShoppingBag,
   UserSquare2,
   Wand2,
-  Smartphone,
   MonitorPlay,
   Send,
   type LucideIcon,
@@ -271,14 +270,10 @@ export function Sidebar({
                     pathname.endsWith("/app/videos/studio")
                   }
                 />
-                {/* 🧪 Gravador pelo Celular (teste 03/08): lapela no celular,
-                    roteiro no desktop. Aprovou → integra no Gravador oficial. */}
-                <NavLeaf
-                  href="/app/lab/gravador-celular"
-                  icon={Smartphone}
-                  label="Gravador Celular"
-                  active={pathname.endsWith("/app/lab/gravador-celular")}
-                />
+                {/* Gravador Celular GRADUOU (03/08): virou a seção "Ou grave
+                    pelo celular" do Gravador oficial — saiu do menu 05/08
+                    (pedido Johnny). A página /app/lab/gravador-celular segue
+                    acessível por URL se precisar depurar. */}
                 {/* 🧪 Vídeo HeyGen BYOK (teste 05/08): aluno conecta a própria
                     API key; Lucas valida → gradua pro grupo Vídeos. */}
                 <NavLeaf
