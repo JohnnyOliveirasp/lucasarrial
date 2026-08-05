@@ -419,6 +419,65 @@ export type HeygenVideoInsert = {
 };
 export type HeygenVideoUpdate = Partial<Omit<HeygenVideoRow, "id" | "user_id" | "created_at">>;
 
+// ───────── social_accounts (mig 61 — publicador próprio, IG primeiro) ─────────
+export type SocialAccountRow = {
+  id: string;
+  user_id: string;
+  platform: "instagram";
+  /** id do usuário NA plataforma (IG user id). */
+  account_ref: string;
+  username: string | null;
+  auth_kind: "instagram_login";
+  /** AES-256-GCM (lib/social/crypto) — NUNCA devolver ao client. */
+  access_token_encrypted: string;
+  token_expires_at: Timestamp | null;
+  status: "active" | "expired" | "revoked";
+  connected_at: Timestamp;
+  updated_at: Timestamp;
+};
+export type SocialAccountInsert = {
+  user_id: string;
+  platform?: SocialAccountRow["platform"];
+  account_ref: string;
+  username?: string | null;
+  auth_kind?: SocialAccountRow["auth_kind"];
+  access_token_encrypted: string;
+  token_expires_at?: Timestamp | null;
+  status?: SocialAccountRow["status"];
+  updated_at?: Timestamp;
+};
+export type SocialAccountUpdate = Partial<Omit<SocialAccountRow, "id" | "user_id">>;
+
+// ───────── publications (mig 61 — fila/histórico de posts) ─────────
+export type PublicationRow = {
+  id: string;
+  user_id: string;
+  account_id: string;
+  platform: "instagram";
+  media_type: "reel" | "image" | "story";
+  media_url: string;
+  caption: string | null;
+  scheduled_at: Timestamp | null;
+  status: "ready" | "processing" | "published" | "failed";
+  container_id: string | null;
+  platform_post_id: string | null;
+  attempts: number;
+  error: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+};
+export type PublicationInsert = {
+  user_id: string;
+  account_id: string;
+  platform?: PublicationRow["platform"];
+  media_type?: PublicationRow["media_type"];
+  media_url: string;
+  caption?: string | null;
+  scheduled_at?: Timestamp | null;
+  status?: PublicationRow["status"];
+};
+export type PublicationUpdate = Partial<Omit<PublicationRow, "id" | "user_id" | "created_at">>;
+
 // ───────── user_consents ─────────
 export type UserConsentRow = {
   id: string;
@@ -846,6 +905,8 @@ export type Database = {
       courtesy_grants: { Row: CourtesyGrantRow; Insert: CourtesyGrantInsert; Update: CourtesyGrantUpdate; Relationships: Rel };
       heygen_accounts: { Row: HeygenAccountRow; Insert: HeygenAccountInsert; Update: HeygenAccountUpdate; Relationships: Rel };
       heygen_videos: { Row: HeygenVideoRow; Insert: HeygenVideoInsert; Update: HeygenVideoUpdate; Relationships: Rel };
+      social_accounts: { Row: SocialAccountRow; Insert: SocialAccountInsert; Update: SocialAccountUpdate; Relationships: Rel };
+      publications: { Row: PublicationRow; Insert: PublicationInsert; Update: PublicationUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: {

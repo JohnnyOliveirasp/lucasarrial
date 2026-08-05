@@ -22,6 +22,7 @@ import {
   Wand2,
   Smartphone,
   MonitorPlay,
+  Send,
   type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
@@ -285,6 +286,14 @@ export function Sidebar({
                   icon={MonitorPlay}
                   label="Vídeo HeyGen"
                   active={pathname.endsWith("/app/lab/video-heygen")}
+                />
+                {/* 🧪 Publicador ("nosso Blotato", 05/08): Instagram primeiro.
+                    App Review da Meta aprova → gradua pros alunos. */}
+                <NavLeaf
+                  href="/app/lab/publicador"
+                  icon={Send}
+                  label="Publicador"
+                  active={pathname.endsWith("/app/lab/publicador")}
                 />
               </ul>
               <div className="mt-2 border-t border-[var(--hairline)] pt-2">
