@@ -138,6 +138,20 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
         />
       </div>
 
+      {/* Trial 7 dias (pedido Lucas 06/08): eficácia do trial → assinante.
+          Números globais (o funil não depende do filtro de período). */}
+      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-5 py-3">
+        <span className="font-mono text-[11px] uppercase tracking-wider text-[var(--ash)]">Trial 7 dias</span>
+        <span className="font-mono text-[13px] tabular-nums text-[var(--ink)]">
+          conversão {fin.trial.ratePct.toFixed(1)}%
+        </span>
+        <span className="font-mono text-[12px] tabular-nums text-[var(--body)]">
+          {num(fin.trial.converted)} viraram assinante de {num(fin.trial.matured)} que completaram o trial
+          · {num(fin.trial.inTrial)} no trial agora · {num(fin.trial.started)} iniciados no total
+          ({num(fin.trial.started30d)} nos últimos 30d)
+        </span>
+      </div>
+
       {/* GPU RunPod — dinheiro REAL da conta (pedido Johnny 25/07: as recargas
           do cartão do Lucas não apareciam em lugar nenhum) */}
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-5 py-3">

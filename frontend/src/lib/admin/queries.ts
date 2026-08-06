@@ -80,6 +80,17 @@ export type Finance = {
   refundTotal: number;
   refundCount: number;
   slices: CostSlice[];
+  /** Funil do trial de 7 dias (pedido Lucas 06/08) — números GLOBAIS. */
+  trial: TrialStats;
+};
+
+export type TrialStats = {
+  started: number;
+  matured: number;
+  converted: number;
+  inTrial: number;
+  started30d: number;
+  ratePct: number;
 };
 
 export type AdminData = {
@@ -109,7 +120,7 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
   const admin = getAdmin();
   const { since, until } = range;
 
-  const [mRes, fRes, cRes, spendRes, billing, courtesyRes] = await Promise.all([
+  const [mRes, fRes, cRes, spendRes, billing, courtesyRes, trialRes] = await Promise.all([
     admin.rpc("admin_metrics", { p_since: since, p_until: until }),
     admin.rpc("admin_finance", { p_since: since, p_until: until }),
     admin.rpc("admin_video_clones", { p_since: since, p_until: until }),
@@ -126,9 +137,21 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
       .select("amount")
       .gte("granted_at", since)
       .lt("granted_at", until),
+    admin.rpc("admin_trial_stats"),
   ]);
 
   const metrics = (mRes.data ?? {}) as unknown as AdminMetrics;
+  const trialRaw = (trialRes.data ?? {}) as unknown as {
+    started?: number; matured?: number; converted?: number; in_trial?: number; started_30d?: number;
+  };
+  const trial: TrialStats = {
+    started: trialRaw.started ?? 0,
+    matured: trialRaw.matured ?? 0,
+    converted: trialRaw.converted ?? 0,
+    inTrial: trialRaw.in_trial ?? 0,
+    started30d: trialRaw.started_30d ?? 0,
+    ratePct: (trialRaw.matured ?? 0) > 0 ? ((trialRaw.converted ?? 0) / (trialRaw.matured ?? 1)) * 100 : 0,
+  };
   const fin = (fRes.data ?? {}) as unknown as FinanceRaw;
   const clonesByTier = (cRes.data ?? []) as unknown as Array<{
     tier: string;
@@ -227,6 +250,7 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
       refundTotal: refunds,
       refundCount: fin.refund_count ?? 0,
       slices,
+      trial,
     },
   };
 }

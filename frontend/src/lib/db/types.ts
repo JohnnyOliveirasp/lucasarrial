@@ -915,6 +915,7 @@ export type Database = {
       admin_metrics:      { Args: { p_since: string }; Returns: Json };
       admin_timeseries:   { Args: { p_since: string }; Returns: Json };
       admin_finance:      { Args: { p_since: string; p_product_id?: string }; Returns: Json };
+      admin_trial_stats:  { Args: Record<string, never>; Returns: Json };
       admin_live_cloning: { Args: Record<string, never>; Returns: Json };
       admin_video_clones: { Args: { p_since: string; p_until?: string }; Returns: Json };
       admin_users:        { Args: Record<string, never>; Returns: Json };
