@@ -7,6 +7,7 @@
  * uma publicação imediata, pra dar resposta rápida na tela.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { deleteKeys } from "@/lib/r2/delete";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { decryptToken, encryptToken } from "@/lib/social/crypto";
 import {
@@ -155,7 +156,29 @@ export async function sweepPublications(): Promise<{ started: number; advanced: 
     summary.advanced++;
   }
 
-  // 3. tokens ativos vencendo em <10 dias → refresh
+  // 3. uploads do computador (social-uploads/) com desfecho final há 7+ dias →
+  //    apaga do R2 e marca (r2-cleaned://) pra não reprocessar.
+  const cleanupCutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+  const { data: stale } = await admin
+    .from("publications")
+    .select("id, media_url")
+    .in("status", ["published", "failed"])
+    .like("media_url", "r2://%/social-uploads/%")
+    .lt("updated_at", cleanupCutoff)
+    .limit(20);
+  for (const pub of (stale ?? []) as Array<{ id: string; media_url: string }>) {
+    const m = pub.media_url.match(/^r2:\/\/([^/]+)\/(.+)$/);
+    if (m) {
+      try {
+        await deleteKeys(m[1], [m[2]]);
+      } catch {
+        continue; // R2 fora do ar → tenta no próximo sweep
+      }
+    }
+    await patch(pub.id, { media_url: pub.media_url.replace("r2://", "r2-cleaned://") });
+  }
+
+  // 4. tokens ativos vencendo em <10 dias → refresh
   const soon = new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString();
   const { data: expiring } = await admin
     .from("social_accounts")

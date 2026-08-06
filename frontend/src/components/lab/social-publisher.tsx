@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { SocialMediaPicker, type PickedMedia } from "./social-media-picker";
 
 type Account = {
   id: string;
@@ -41,9 +42,9 @@ export function SocialPublisher() {
   const [busy, setBusy] = useState(false);
 
   const [accountId, setAccountId] = useState("");
-  const [mediaUrl, setMediaUrl] = useState("");
-  const [mediaType, setMediaType] = useState("reel");
+  const [picked, setPicked] = useState<PickedMedia | null>(null);
   const [caption, setCaption] = useState("");
+  const [captionBusy, setCaptionBusy] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -122,7 +123,25 @@ export function SocialPublisher() {
     await load();
   }
 
+  async function generateCaption() {
+    setCaptionBusy(true);
+    try {
+      const res = await fetch("/api/v1/social/caption", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ context: picked?.context ?? "" }),
+      });
+      const j = await res.json();
+      const text = j?.data?.caption ?? j?.caption ?? "";
+      if (text) setCaption(text);
+      else setError(t("modal.captionFail"));
+    } finally {
+      setCaptionBusy(false);
+    }
+  }
+
   async function publish() {
+    if (!picked) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -132,8 +151,7 @@ export function SocialPublisher() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           account_id: accountId,
-          media_url: mediaUrl.trim(),
-          media_type: mediaType,
+          source: picked.source,
           caption: caption.trim() || undefined,
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
         }),
@@ -143,7 +161,7 @@ export function SocialPublisher() {
         setError(json?.error?.message ?? json?.message ?? t("errors.publish"));
         return;
       }
-      setMediaUrl("");
+      setPicked(null);
       setCaption("");
       setScheduledAt("");
       setNotice(scheduledAt ? t("notice.scheduled") : t("notice.sent"));
@@ -208,11 +226,11 @@ export function SocialPublisher() {
         <div className="rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-5">
           <h2 className="font-sans text-[16px] font-semibold text-[var(--ink)]">{t("publish.title")}</h2>
           <div className="mt-3 flex flex-col gap-3">
-            <div className="flex flex-wrap gap-2">
+            {activeAccounts.length > 1 && (
               <select
                 value={accountId}
                 onChange={(e) => setAccountId(e.target.value)}
-                className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
+                className="self-start rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
               >
                 {activeAccounts.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -220,31 +238,26 @@ export function SocialPublisher() {
                   </option>
                 ))}
               </select>
-              <select
-                value={mediaType}
-                onChange={(e) => setMediaType(e.target.value)}
-                className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
+            )}
+            <SocialMediaPicker value={picked} onChange={setPicked} />
+            <div className="flex flex-col gap-1">
+              <textarea
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                placeholder={t("publish.captionPlaceholder")}
+                rows={3}
+                maxLength={2200}
+                className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)] placeholder:text-[var(--ash)]"
+              />
+              <button
+                type="button"
+                onClick={() => void generateCaption()}
+                disabled={captionBusy || !picked}
+                className="self-start text-[12.5px] text-[var(--ink)] underline-offset-2 hover:underline disabled:opacity-40"
               >
-                <option value="reel">{t("publish.reel")}</option>
-                <option value="image">{t("publish.image")}</option>
-                <option value="story">{t("publish.story")}</option>
-              </select>
+                {captionBusy ? t("modal.generating") : t("modal.generateCaption")}
+              </button>
             </div>
-            <input
-              type="url"
-              value={mediaUrl}
-              onChange={(e) => setMediaUrl(e.target.value)}
-              placeholder={t("publish.mediaUrlPlaceholder")}
-              className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 font-mono text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ash)]"
-            />
-            <textarea
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              placeholder={t("publish.captionPlaceholder")}
-              rows={3}
-              maxLength={2200}
-              className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)] placeholder:text-[var(--ash)]"
-            />
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
                 {t("publish.scheduleLabel")}
@@ -258,7 +271,7 @@ export function SocialPublisher() {
               <button
                 type="button"
                 onClick={() => void publish()}
-                disabled={busy || !mediaUrl.trim() || !accountId}
+                disabled={busy || !picked || !accountId}
                 className="ml-auto rounded-[var(--radius-sm)] bg-[var(--ink)] px-5 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
               >
                 {busy ? t("publish.sending") : scheduledAt ? t("publish.submitSchedule") : t("publish.submitNow")}

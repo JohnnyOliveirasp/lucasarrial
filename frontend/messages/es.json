@@ -1669,6 +1669,18 @@
       "doneSent": "¡Enviado a Instagram! ⚙️ Síguelo en el Publicador.",
       "doneScheduled": "¡Programado! 📅 Síguelo en el Publicador.",
       "close": "Cerrar"
+    },
+    "picker": {
+      "fromPlatform": "Mis creaciones",
+      "fromComputer": "Subir del ordenador",
+      "loading": "Cargando…",
+      "noImages": "Ninguna imagen lista todavía — genera una en el Generador de Imagen.",
+      "uploadHint": "📁 Haz clic para elegir una foto (JPG/PNG/WebP) o video MP4",
+      "uploading": "Subiendo archivo…",
+      "uploadError": "No fue posible subir el archivo. Inténtalo de nuevo.",
+      "selectedImage": "Foto seleccionada",
+      "selectedVideo": "Video seleccionado (Reel)",
+      "change": "cambiar"
     }
   }
 }

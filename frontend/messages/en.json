@@ -1669,6 +1669,18 @@
       "doneSent": "Sent to Instagram! ⚙️ Track it in the Publisher.",
       "doneScheduled": "Scheduled! 📅 Track it in the Publisher.",
       "close": "Close"
+    },
+    "picker": {
+      "fromPlatform": "My creations",
+      "fromComputer": "Upload from computer",
+      "loading": "Loading…",
+      "noImages": "No ready images yet — generate one in the Image Generator.",
+      "uploadHint": "📁 Click to choose a photo (JPG/PNG/WebP) or MP4 video",
+      "uploading": "Uploading file…",
+      "uploadError": "Could not upload the file. Please try again.",
+      "selectedImage": "Photo selected",
+      "selectedVideo": "Video selected (Reel)",
+      "change": "change"
     }
   }
 }

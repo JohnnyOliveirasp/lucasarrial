@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
   let body: {
     account_id?: string;
     media_url?: string;
-    source?: { kind: string; id: string };
+    source?: { kind: string; id?: string; key?: string; media_type?: string };
     caption?: string;
     media_type?: string;
     scheduled_at?: string;
@@ -42,17 +42,27 @@ export async function POST(request: NextRequest) {
   const accountId = (body.account_id ?? "").trim();
   if (!accountId) return badRequest("Escolha a conta do Instagram");
 
-  // Mídia da PLATAFORMA (botão "Publicar no Instagram"): o client manda só
-  // {kind, id}; o servidor valida a posse e resolve o r2://… (assinado na
-  // hora de publicar). media_url https crua fica pro uso via API/debug.
+  // Mídia da PLATAFORMA (imagem gerada) ou UPLOAD do computador: o client manda
+  // a referência; o servidor valida a posse e resolve o r2://… (assinado na
+  // hora de publicar). media_url https crua fica pra API interna/Máquina.
   let mediaUrl: string;
   let mediaType = (body.media_type ?? "reel").trim();
   if (body.source) {
-    if (body.source.kind !== "image") return badRequest("source.kind não suportado");
-    const resolved = await resolvePublishSource(auth.user_id, {
-      kind: "image",
-      id: String(body.source.id ?? ""),
-    });
+    const src = body.source;
+    const parsed =
+      src.kind === "image"
+        ? ({ kind: "image", id: String(src.id ?? "") } as const)
+        : src.kind === "upload"
+          ? ({
+              kind: "upload",
+              key: String(src.key ?? ""),
+              media_type: KINDS.has(String(src.media_type))
+                ? (String(src.media_type) as "image" | "reel" | "story")
+                : undefined,
+            } as const)
+          : null;
+    if (!parsed) return badRequest("source.kind não suportado");
+    const resolved = await resolvePublishSource(auth.user_id, parsed);
     if ("error" in resolved) return badRequest(resolved.error);
     mediaUrl = resolved.mediaUrl;
     if (!body.media_type) mediaType = resolved.mediaType;
