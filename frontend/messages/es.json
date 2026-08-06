@@ -1501,7 +1501,8 @@
       "lockGenerateAudio": "Entrena una voz primero para generar audio.",
       "lockApi": "Suscríbete para desbloquear la API.",
       "preProduction": "Prueba de preproducción",
-      "admin": "Admin"
+      "admin": "Admin",
+      "publisher": "Publicador"
     },
     "apiDocs": {
       "copied": "Copiado",
@@ -1603,6 +1604,69 @@
       "back": "Volver",
       "deleting": "Eliminando…",
       "confirm": "Eliminar permanentemente"
+    }
+  },
+  "social": {
+    "labBadge": "🧪 Lab · prueba interna",
+    "title": "Publicador",
+    "subtitle": "Conecta tu Instagram profesional y publica o programa Reels, fotos e historias sin salir de FastCloner. Pronto los videos generados aquí irán directo a tu perfil.",
+    "loading": "Cargando…",
+    "accounts": {
+      "title": "Cuentas conectadas",
+      "connect": "Conectar Instagram",
+      "empty": "Ninguna cuenta todavía. Conecta un Instagram Profesional (Creador o Comercial — el cambio es gratis en la configuración de la app de Instagram).",
+      "connected": "· conectada",
+      "reconnect": "· ⚠️ reconectar",
+      "disconnect": "desconectar",
+      "confirmDisconnect": "¿Desconectar esta cuenta de Instagram?"
+    },
+    "notice": {
+      "connected": "¡Cuenta @{username} conectada! 🎉",
+      "denied": "Cancelaste la autorización en Instagram.",
+      "error": "No fue posible conectar. Inténtalo de nuevo.",
+      "sent": "Enviado a Instagram — procesando… ⚙️",
+      "scheduled": "¡Publicación programada! 📅"
+    },
+    "errors": {
+      "load": "No fue posible cargar el publicador.",
+      "connectStart": "No fue posible iniciar la conexión con Instagram.",
+      "publish": "No fue posible publicar."
+    },
+    "publish": {
+      "title": "Publicar",
+      "reel": "Reel (video)",
+      "image": "Foto (feed)",
+      "story": "Story (video)",
+      "mediaUrlPlaceholder": "URL https pública del video/imagen (MP4 con +faststart)",
+      "captionPlaceholder": "Descripción (opcional, hasta 2.200 caracteres)",
+      "scheduleLabel": "Programar para:",
+      "submitNow": "Publicar ahora",
+      "submitSchedule": "Programar",
+      "sending": "Enviando…"
+    },
+    "history": {
+      "title": "Publicaciones",
+      "ready": "⏳ programada",
+      "processing": "⚙️ procesando en Instagram",
+      "published": "✅ publicada",
+      "failed": "❌ falló"
+    },
+    "button": {
+      "publish": "📤 Publicar",
+      "tooltip": "Publicar en Instagram"
+    },
+    "modal": {
+      "title": "Publicar en Instagram",
+      "noAccountPrefix": "Ninguna cuenta conectada. Conecta tu Instagram en la pestaña",
+      "noAccountLink": "Publicador",
+      "noAccountSuffix": "primero.",
+      "generateCaption": "✨ Generar descripción",
+      "generating": "Generando…",
+      "captionPlaceholder": "Descripción + hashtags (opcional)",
+      "captionFail": "No pude generar la descripción ahora — escribe la tuya.",
+      "doneSent": "¡Enviado a Instagram! ⚙️ Síguelo en el Publicador.",
+      "doneScheduled": "¡Programado! 📅 Síguelo en el Publicador.",
+      "close": "Cerrar"
     }
   }
 }

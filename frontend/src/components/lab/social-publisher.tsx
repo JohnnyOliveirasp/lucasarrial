@@ -8,6 +8,7 @@
  *   lista de publicações com poll enquanto houver processing.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 
 type Account = {
   id: string;
@@ -29,14 +30,8 @@ type Publication = {
   created_at: string;
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  ready: "⏳ agendada",
-  processing: "⚙️ processando no Instagram",
-  published: "✅ publicada",
-  failed: "❌ falhou",
-};
-
 export function SocialPublisher() {
+  const t = useTranslations("social");
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [pubs, setPubs] = useState<Publication[]>([]);
@@ -64,7 +59,7 @@ export function SocialPublisher() {
       setPubs(pub?.data?.publications ?? pub?.publications ?? []);
       setAccountId((cur) => cur || accList.find((a) => a.status === "active")?.id || "");
     } catch {
-      setError("Não foi possível carregar o publicador.");
+      setError(t("errors.load"));
     } finally {
       setLoading(false);
     }
@@ -74,13 +69,10 @@ export function SocialPublisher() {
     void load();
     // feedback do callback do OAuth
     const q = new URLSearchParams(window.location.search);
-    if (q.get("connected")) setNotice(`Conta @${q.get("username") ?? ""} conectada! 🎉`);
+    if (q.get("connected")) setNotice(t("notice.connected", { username: q.get("username") ?? "" }));
     if (q.get("error")) {
       setError(
-        q.get("detail") ||
-          (q.get("error") === "denied"
-            ? "Você cancelou a autorização no Instagram."
-            : "Não foi possível conectar. Tente de novo."),
+        q.get("detail") || (q.get("error") === "denied" ? t("notice.denied") : t("notice.error")),
       );
     }
     if (q.get("connected") || q.get("error")) {
@@ -114,7 +106,7 @@ export function SocialPublisher() {
       const json = await res.json();
       const url = json?.data?.url ?? json?.url;
       if (!res.ok || !url) {
-        setError("Não foi possível iniciar a conexão com o Instagram.");
+        setError(t("errors.connectStart"));
         return;
       }
       window.location.href = url;
@@ -124,7 +116,7 @@ export function SocialPublisher() {
   }
 
   async function disconnect(id: string) {
-    if (!window.confirm("Desconectar esta conta do Instagram?")) return;
+    if (!window.confirm(t("accounts.confirmDisconnect"))) return;
     await fetch(`/api/v1/social/accounts?id=${id}`, { method: "DELETE" });
     await load();
   }
@@ -147,20 +139,20 @@ export function SocialPublisher() {
       });
       const json = await res.json();
       if (!res.ok) {
-        setError(json?.error?.message ?? json?.message ?? "Não foi possível publicar.");
+        setError(json?.error?.message ?? json?.message ?? t("errors.publish"));
         return;
       }
       setMediaUrl("");
       setCaption("");
       setScheduledAt("");
-      setNotice(scheduledAt ? "Publicação agendada! 📅" : "Enviado pro Instagram — processando… ⚙️");
+      setNotice(scheduledAt ? t("notice.scheduled") : t("notice.sent"));
       await load();
     } finally {
       setBusy(false);
     }
   }
 
-  if (loading) return <p className="text-[14px] text-[var(--mute)]">Carregando…</p>;
+  if (loading) return <p className="text-[14px] text-[var(--mute)]">{t("loading")}</p>;
 
   const activeAccounts = accounts.filter((a) => a.status === "active");
 
@@ -172,21 +164,18 @@ export function SocialPublisher() {
       {/* contas */}
       <div className="rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-5">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="font-sans text-[16px] font-semibold text-[var(--ink)]">Contas conectadas</h2>
+          <h2 className="font-sans text-[16px] font-semibold text-[var(--ink)]">{t("accounts.title")}</h2>
           <button
             type="button"
             onClick={() => void connect()}
             disabled={busy}
             className="rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
           >
-            Conectar Instagram
+            {t("accounts.connect")}
           </button>
         </div>
         {accounts.length === 0 ? (
-          <p className="mt-3 text-[13.5px] text-[var(--mute)]">
-            Nenhuma conta ainda. Conecte um Instagram <strong>Profissional</strong> (Criador ou
-            Comercial — a troca é grátis nas configurações do app do Instagram).
-          </p>
+          <p className="mt-3 text-[13.5px] text-[var(--mute)]">{t("accounts.empty")}</p>
         ) : (
           <ul className="mt-3 flex flex-col gap-2">
             {accounts.map((a) => (
@@ -197,7 +186,7 @@ export function SocialPublisher() {
                 <span className="text-[13.5px] text-[var(--ink)]">
                   @{a.username ?? a.id}{" "}
                   <span className="text-[12px] text-[var(--ash)]">
-                    {a.status === "active" ? "· conectada" : "· ⚠️ reconectar"}
+                    {a.status === "active" ? t("accounts.connected") : t("accounts.reconnect")}
                   </span>
                 </span>
                 <button
@@ -205,7 +194,7 @@ export function SocialPublisher() {
                   onClick={() => void disconnect(a.id)}
                   className="text-[12px] text-[var(--ash)] underline-offset-2 hover:underline"
                 >
-                  desconectar
+                  {t("accounts.disconnect")}
                 </button>
               </li>
             ))}
@@ -216,7 +205,7 @@ export function SocialPublisher() {
       {/* publicar */}
       {activeAccounts.length > 0 && (
         <div className="rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-5">
-          <h2 className="font-sans text-[16px] font-semibold text-[var(--ink)]">Publicar</h2>
+          <h2 className="font-sans text-[16px] font-semibold text-[var(--ink)]">{t("publish.title")}</h2>
           <div className="mt-3 flex flex-col gap-3">
             <div className="flex flex-wrap gap-2">
               <select
@@ -235,29 +224,29 @@ export function SocialPublisher() {
                 onChange={(e) => setMediaType(e.target.value)}
                 className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
               >
-                <option value="reel">Reel (vídeo)</option>
-                <option value="image">Foto (feed)</option>
-                <option value="story">Story (vídeo)</option>
+                <option value="reel">{t("publish.reel")}</option>
+                <option value="image">{t("publish.image")}</option>
+                <option value="story">{t("publish.story")}</option>
               </select>
             </div>
             <input
               type="url"
               value={mediaUrl}
               onChange={(e) => setMediaUrl(e.target.value)}
-              placeholder="URL https pública do vídeo/imagem (MP4 com +faststart)"
+              placeholder={t("publish.mediaUrlPlaceholder")}
               className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 font-mono text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ash)]"
             />
             <textarea
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
-              placeholder="Legenda (opcional, até 2.200 caracteres)"
+              placeholder={t("publish.captionPlaceholder")}
               rows={3}
               maxLength={2200}
               className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)] placeholder:text-[var(--ash)]"
             />
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
-                Agendar pra:
+                {t("publish.scheduleLabel")}
                 <input
                   type="datetime-local"
                   value={scheduledAt}
@@ -271,7 +260,7 @@ export function SocialPublisher() {
                 disabled={busy || !mediaUrl.trim() || !accountId}
                 className="ml-auto rounded-[var(--radius-sm)] bg-[var(--ink)] px-5 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
               >
-                {busy ? "Enviando…" : scheduledAt ? "Agendar" : "Publicar agora"}
+                {busy ? t("publish.sending") : scheduledAt ? t("publish.submitSchedule") : t("publish.submitNow")}
               </button>
             </div>
           </div>
@@ -281,7 +270,7 @@ export function SocialPublisher() {
       {/* histórico */}
       {pubs.length > 0 && (
         <div className="rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-5">
-          <h2 className="font-sans text-[16px] font-semibold text-[var(--ink)]">Publicações</h2>
+          <h2 className="font-sans text-[16px] font-semibold text-[var(--ink)]">{t("history.title")}</h2>
           <ul className="mt-3 flex flex-col gap-2">
             {pubs.map((p) => (
               <li
@@ -290,7 +279,7 @@ export function SocialPublisher() {
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[var(--ink)]">
-                    {STATUS_LABEL[p.status] ?? p.status} · {p.media_type}
+                    {(["ready","processing","published","failed"].includes(p.status) ? t(`history.${p.status}`) : p.status)} · {p.media_type}
                     {p.scheduled_at && p.status === "ready" && (
                       <span className="text-[var(--ash)]">
                         {" "}

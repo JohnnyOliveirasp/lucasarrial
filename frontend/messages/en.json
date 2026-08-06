@@ -1501,7 +1501,8 @@
       "lockGenerateAudio": "Train a voice first to generate audio.",
       "lockApi": "Subscribe to unlock the API.",
       "preProduction": "Pre-production testing",
-      "admin": "Admin"
+      "admin": "Admin",
+      "publisher": "Publisher"
     },
     "apiDocs": {
       "copied": "Copied",
@@ -1603,6 +1604,69 @@
       "back": "Back",
       "deleting": "Deleting…",
       "confirm": "Delete permanently"
+    }
+  },
+  "social": {
+    "labBadge": "🧪 Lab · internal test",
+    "title": "Publisher",
+    "subtitle": "Connect your professional Instagram account and publish or schedule Reels, photos and stories without leaving FastCloner. Soon the videos you generate here will go straight to your profile.",
+    "loading": "Loading…",
+    "accounts": {
+      "title": "Connected accounts",
+      "connect": "Connect Instagram",
+      "empty": "No account yet. Connect a Professional Instagram account (Creator or Business — switching is free in the Instagram app settings).",
+      "connected": "· connected",
+      "reconnect": "· ⚠️ reconnect",
+      "disconnect": "disconnect",
+      "confirmDisconnect": "Disconnect this Instagram account?"
+    },
+    "notice": {
+      "connected": "Account @{username} connected! 🎉",
+      "denied": "You canceled the authorization on Instagram.",
+      "error": "Could not connect. Please try again.",
+      "sent": "Sent to Instagram — processing… ⚙️",
+      "scheduled": "Post scheduled! 📅"
+    },
+    "errors": {
+      "load": "Could not load the publisher.",
+      "connectStart": "Could not start the Instagram connection.",
+      "publish": "Could not publish."
+    },
+    "publish": {
+      "title": "Publish",
+      "reel": "Reel (video)",
+      "image": "Photo (feed)",
+      "story": "Story (video)",
+      "mediaUrlPlaceholder": "Public https URL of the video/image (MP4 with +faststart)",
+      "captionPlaceholder": "Caption (optional, up to 2,200 characters)",
+      "scheduleLabel": "Schedule for:",
+      "submitNow": "Publish now",
+      "submitSchedule": "Schedule",
+      "sending": "Sending…"
+    },
+    "history": {
+      "title": "Publications",
+      "ready": "⏳ scheduled",
+      "processing": "⚙️ processing on Instagram",
+      "published": "✅ published",
+      "failed": "❌ failed"
+    },
+    "button": {
+      "publish": "📤 Publish",
+      "tooltip": "Publish to Instagram"
+    },
+    "modal": {
+      "title": "Publish to Instagram",
+      "noAccountPrefix": "No account connected. Connect your Instagram in the",
+      "noAccountLink": "Publisher",
+      "noAccountSuffix": "tab first.",
+      "generateCaption": "✨ Generate caption",
+      "generating": "Generating…",
+      "captionPlaceholder": "Caption + hashtags (optional)",
+      "captionFail": "Could not generate a caption right now — write your own.",
+      "doneSent": "Sent to Instagram! ⚙️ Track it in the Publisher.",
+      "doneScheduled": "Scheduled! 📅 Track it in the Publisher.",
+      "close": "Close"
     }
   }
 }

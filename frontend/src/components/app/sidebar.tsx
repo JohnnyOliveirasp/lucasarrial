@@ -287,7 +287,7 @@ export function Sidebar({
                 <NavLeaf
                   href="/app/lab/publicador"
                   icon={Send}
-                  label="Publicador"
+                  label={tShell("publisher")}
                   active={pathname.endsWith("/app/lab/publicador")}
                 />
               </ul>

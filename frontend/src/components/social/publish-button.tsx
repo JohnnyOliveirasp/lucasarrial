@@ -8,6 +8,7 @@
  * não por botão).
  */
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 
 type Account = { id: string; username: string | null; status: string };
@@ -40,6 +41,7 @@ export function PublishButton({
   thumbnailUrl?: string | null;
   className?: string;
 }) {
+  const t = useTranslations("social");
   const [state, setState] = useState<PublisherState | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -62,9 +64,9 @@ export function PublishButton({
           className ??
           "rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-2.5 py-1.5 text-[12px] text-[var(--ink)] hover:bg-[var(--surface-deep)]"
         }
-        title="Publicar no Instagram"
+        title={t("button.tooltip")}
       >
-        📤 Publicar
+        {t("button.publish")}
       </button>
       {open && (
         <PublishModal
@@ -99,6 +101,7 @@ function PublishModal({
   const [captionBusy, setCaptionBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const t = useTranslations("social");
 
   async function generateCaption() {
     setCaptionBusy(true);
@@ -111,7 +114,7 @@ function PublishModal({
       const j = await res.json();
       const text = j?.data?.caption ?? j?.caption ?? "";
       if (text) setCaption(text);
-      else setError("Não consegui gerar a legenda agora — escreva a sua.");
+      else setError(t("modal.captionFail"));
     } finally {
       setCaptionBusy(false);
     }
@@ -133,10 +136,10 @@ function PublishModal({
       });
       const j = await res.json();
       if (!res.ok) {
-        setError(j?.error?.message ?? j?.message ?? "Não foi possível publicar.");
+        setError(j?.error?.message ?? j?.message ?? t("errors.publish"));
         return;
       }
-      setDone(scheduledAt ? "Agendado! 📅 Acompanhe no Publicador." : "Enviado pro Instagram! ⚙️ Acompanhe no Publicador.");
+      setDone(scheduledAt ? t("modal.doneScheduled") : t("modal.doneSent"));
     } finally {
       setBusy(false);
     }
@@ -153,7 +156,7 @@ function PublishModal({
       >
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-sans text-[16px] font-semibold text-[var(--ink)]">
-            Publicar no Instagram
+            {t("modal.title")}
           </h3>
           <button type="button" onClick={onClose} className="text-[var(--ash)]">✕</button>
         </div>
@@ -166,7 +169,7 @@ function PublishModal({
               onClick={onClose}
               className="self-end rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)]"
             >
-              Fechar
+              {t("modal.close")}
             </button>
           </div>
         ) : (
@@ -181,8 +184,9 @@ function PublishModal({
             )}
             {accounts.length === 0 ? (
               <p className="text-[13.5px] text-[var(--mute)]">
-                Nenhuma conta conectada. Conecte seu Instagram na aba{" "}
-                <Link href="/app/lab/publicador" className="underline">Publicador</Link> primeiro.
+                {t("modal.noAccountPrefix")}{" "}
+                <Link href="/app/lab/publicador" className="underline">{t("modal.noAccountLink")}</Link>{" "}
+                {t("modal.noAccountSuffix")}
               </p>
             ) : (
               <>
@@ -199,7 +203,7 @@ function PublishModal({
                   <textarea
                     value={caption}
                     onChange={(e) => setCaption(e.target.value)}
-                    placeholder="Legenda + hashtags (opcional)"
+                    placeholder={t("modal.captionPlaceholder")}
                     rows={5}
                     maxLength={2200}
                     className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)] placeholder:text-[var(--ash)]"
@@ -210,11 +214,11 @@ function PublishModal({
                     disabled={captionBusy}
                     className="self-start text-[12.5px] text-[var(--ink)] underline-offset-2 hover:underline disabled:opacity-40"
                   >
-                    {captionBusy ? "Gerando…" : "✨ Gerar legenda"}
+                    {captionBusy ? t("modal.generating") : t("modal.generateCaption")}
                   </button>
                 </div>
                 <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
-                  Agendar pra:
+                  {t("publish.scheduleLabel")}
                   <input
                     type="datetime-local"
                     value={scheduledAt}
@@ -229,7 +233,7 @@ function PublishModal({
                   disabled={busy || !accountId}
                   className="self-end rounded-[var(--radius-sm)] bg-[var(--ink)] px-5 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
                 >
-                  {busy ? "Enviando…" : scheduledAt ? "Agendar" : "Publicar agora"}
+                  {busy ? t("publish.sending") : scheduledAt ? t("publish.submitSchedule") : t("publish.submitNow")}
                 </button>
               </>
             )}

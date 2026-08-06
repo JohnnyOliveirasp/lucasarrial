@@ -1,4 +1,4 @@
-import { setRequestLocale } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
 import { redirect } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin/guard";
@@ -12,6 +12,7 @@ import { SocialPublisher } from "@/components/lab/social-publisher";
  *
  * 🚧 PRÉ-PRODUÇÃO: só admin até o App Review da Meta liberar pros alunos
  * (em In development publica só pra contas com papel de tester no app).
+ * i18n completo (06/08): o screencast do review vai em inglês.
  */
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export default async function PublicadorPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const t = await getTranslations("social");
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -32,14 +34,11 @@ export default async function PublicadorPage({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ash)]">🧪 Lab · teste interno</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ash)]">{t("labBadge")}</span>
         <h1 className="mt-1 font-sans text-[26px] font-semibold tracking-[-0.03em] text-[var(--ink)]">
-          Publicador
+          {t("title")}
         </h1>
-        <p className="mt-1 max-w-2xl text-[14px] text-[var(--mute)]">
-          Conecte seu Instagram profissional e publique ou agende Reels, fotos e stories sem sair
-          do FastCloner. Em breve os vídeos gerados aqui dentro vão direto pro seu perfil.
-        </p>
+        <p className="mt-1 max-w-2xl text-[14px] text-[var(--mute)]">{t("subtitle")}</p>
       </div>
       <SocialPublisher />
     </div>
