@@ -1665,6 +1665,7 @@
       "generateCaption": "✨ Generate caption",
       "generating": "Generating…",
       "captionPlaceholder": "Caption + hashtags (optional)",
+      "captionIdeaPlaceholder": "💡 Caption idea (optional) — theme, tone, message…",
       "captionFail": "Could not generate a caption right now — write your own.",
       "doneSent": "Sent to Instagram! ⚙️ Track it in the Publisher.",
       "doneScheduled": "Scheduled! 📅 Track it in the Publisher.",

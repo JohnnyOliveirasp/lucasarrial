@@ -8,7 +8,7 @@
  * não por botão).
  */
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 
 type Account = { id: string; username: string | null; status: string };
@@ -96,12 +96,14 @@ function PublishModal({
 }) {
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [caption, setCaption] = useState("");
+  const [captionIdea, setCaptionIdea] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [captionBusy, setCaptionBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const t = useTranslations("social");
+  const locale = useLocale();
 
   async function generateCaption() {
     setCaptionBusy(true);
@@ -109,7 +111,7 @@ function PublishModal({
       const res = await fetch("/api/v1/social/caption", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ context: context ?? "" }),
+        body: JSON.stringify({ context: context ?? "", locale, idea: captionIdea }),
       });
       const j = await res.json();
       const text = j?.data?.caption ?? j?.caption ?? "";
@@ -207,6 +209,14 @@ function PublishModal({
                     rows={5}
                     maxLength={2200}
                     className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)] placeholder:text-[var(--ash)]"
+                  />
+                  <input
+                    type="text"
+                    value={captionIdea}
+                    onChange={(e) => setCaptionIdea(e.target.value)}
+                    placeholder={t("modal.captionIdeaPlaceholder")}
+                    maxLength={500}
+                    className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-1.5 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ash)]"
                   />
                   <button
                     type="button"

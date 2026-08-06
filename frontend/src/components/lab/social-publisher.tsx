@@ -44,6 +44,7 @@ export function SocialPublisher() {
   const [accountId, setAccountId] = useState("");
   const [picked, setPicked] = useState<PickedMedia | null>(null);
   const [caption, setCaption] = useState("");
+  const [captionIdea, setCaptionIdea] = useState("");
   const [captionBusy, setCaptionBusy] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -129,7 +130,7 @@ export function SocialPublisher() {
       const res = await fetch("/api/v1/social/caption", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ context: picked?.context ?? "" }),
+        body: JSON.stringify({ context: picked?.context ?? "", locale, idea: captionIdea }),
       });
       const j = await res.json();
       const text = j?.data?.caption ?? j?.caption ?? "";
@@ -163,6 +164,7 @@ export function SocialPublisher() {
       }
       setPicked(null);
       setCaption("");
+      setCaptionIdea("");
       setScheduledAt("");
       setNotice(scheduledAt ? t("notice.scheduled") : t("notice.sent"));
       await load();
@@ -248,6 +250,14 @@ export function SocialPublisher() {
                 rows={3}
                 maxLength={2200}
                 className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)] placeholder:text-[var(--ash)]"
+              />
+              <input
+                type="text"
+                value={captionIdea}
+                onChange={(e) => setCaptionIdea(e.target.value)}
+                placeholder={t("modal.captionIdeaPlaceholder")}
+                maxLength={500}
+                className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-1.5 text-[12.5px] text-[var(--ink)] placeholder:text-[var(--ash)]"
               />
               <button
                 type="button"
