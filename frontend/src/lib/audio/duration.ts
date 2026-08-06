@@ -1,10 +1,20 @@
 /**
- * Mede duração de arquivo de áudio no browser via Web Audio API.
- * Roda só no client. Falha graciosamente — retorna null em vez de throw.
+ * Mede duração de arquivo de áudio no browser. Roda só no client.
+ * Falha graciosamente — retorna null em vez de throw.
+ *
+ * Ordem (caso duoclinicsalto 06/08): 1º metadados via <audio> — lê só o
+ * cabeçalho, instantâneo e sem custo de memória. decodeAudioData ficava com
+ * o arquivo INTEIRO decodificado em PCM na RAM (~300-600MB pra 30min de
+ * m4a) e falhava/travava → total 00:00 e botão Treinar nunca habilitava.
+ * O decode completo fica só de fallback (webm/opus do MediaRecorder não
+ * informa duração no cabeçalho e reporta Infinity no <audio>).
  */
 
 export async function measureAudioDuration(file: File): Promise<number | null> {
   if (typeof window === "undefined") return null;
+
+  const viaMetadata = await metadataDuration(file);
+  if (viaMetadata != null) return viaMetadata;
 
   try {
     const buffer = await file.arrayBuffer();
@@ -28,6 +38,28 @@ export async function measureAudioDuration(file: File): Promise<number | null> {
   } catch {
     return null;
   }
+}
+
+/** Duração pelos metadados (preload="metadata"): null se o formato não disser. */
+function metadataDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const audio = document.createElement("audio");
+    const url = URL.createObjectURL(file);
+    let settled = false;
+    const done = (n: number | null) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      audio.removeAttribute("src");
+      resolve(n);
+    };
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () =>
+      done(Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : null);
+    audio.onerror = () => done(null);
+    setTimeout(() => done(null), 8000);
+    audio.src = url;
+  });
 }
 
 export function formatDuration(seconds: number): string {
