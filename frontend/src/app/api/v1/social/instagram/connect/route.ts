@@ -14,8 +14,9 @@ export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
   if (!(await socialPublisherEnabled(auth.user_id))) return forbidden();
+  const locale = request.nextUrl.searchParams.get("locale") ?? "pt-BR";
   try {
-    return jsonOk({ url: authorizeUrl(makeOauthState(auth.user_id)) });
+    return jsonOk({ url: authorizeUrl(makeOauthState(auth.user_id, locale)) });
   } catch {
     return serverError("Publicador sem credenciais do Instagram no servidor");
   }

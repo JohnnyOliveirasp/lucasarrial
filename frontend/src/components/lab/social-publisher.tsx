@@ -8,7 +8,7 @@
  *   lista de publicações com poll enquanto houver processing.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 type Account = {
   id: string;
@@ -32,6 +32,7 @@ type Publication = {
 
 export function SocialPublisher() {
   const t = useTranslations("social");
+  const locale = useLocale();
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [pubs, setPubs] = useState<Publication[]>([]);
@@ -102,7 +103,7 @@ export function SocialPublisher() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/v1/social/instagram/connect");
+      const res = await fetch(`/api/v1/social/instagram/connect?locale=${locale}`);
       const json = await res.json();
       const url = json?.data?.url ?? json?.url;
       if (!res.ok || !url) {

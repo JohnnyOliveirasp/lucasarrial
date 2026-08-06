@@ -44,20 +44,23 @@ function stateHmac(payload: string): string {
   return createHmac("sha256", secret).update(`social-state:${payload}`).digest("base64url");
 }
 
-/** state = "<user_id>~<expEpoch>~<hmac>", válido por 15min. */
-export function makeOauthState(userId: string): string {
+/** state = "<user_id>~<locale>~<expEpoch>~<hmac>", válido por 15min.
+ *  O locale volta no callback pro redirect não perder o /en|/es da página
+ *  (bug do vídeo do review 06/08 — voltava sempre em pt). */
+export function makeOauthState(userId: string, locale = "pt-BR"): string {
   const exp = Math.floor(Date.now() / 1000) + 15 * 60;
-  const payload = `${userId}~${exp}`;
+  const safeLocale = /^[a-zA-Z-]{2,10}$/.test(locale) ? locale : "pt-BR";
+  const payload = `${userId}~${safeLocale}~${exp}`;
   return `${payload}~${stateHmac(payload)}`;
 }
 
-/** Devolve o user_id se o state for válido e não expirado; senão null. */
-export function verifyOauthState(state: string): string | null {
+/** Devolve {userId, locale} se o state for válido e não expirado; senão null. */
+export function verifyOauthState(state: string): { userId: string; locale: string } | null {
   const parts = state.split("~");
-  if (parts.length !== 3) return null;
-  const [userId, expStr, sig] = parts;
-  const payload = `${userId}~${expStr}`;
+  if (parts.length !== 4) return null;
+  const [userId, locale, expStr, sig] = parts;
+  const payload = `${userId}~${locale}~${expStr}`;
   if (sig !== stateHmac(payload)) return null;
   if (Number(expStr) < Math.floor(Date.now() / 1000)) return null;
-  return userId;
+  return { userId, locale };
 }
