@@ -23,6 +23,7 @@ import { FinanceSection } from "@/components/admin/finance-section";
 import { RunpodStatus } from "@/components/admin/runpod-status";
 import { LiveCloningPanel } from "@/components/admin/live-cloning";
 import { KpiCard } from "@/components/admin/kpi-card";
+import { ChurnChart } from "@/components/admin/churn-chart";
 
 type Payload = AdminData & { totals: TotalSummary; live: LiveCloning[]; runpod: RunpodHealth[] };
 
@@ -164,6 +165,9 @@ export function DashboardClient() {
             hint={`${data.totals.churnPaidPct.toFixed(1)}% dos pagantes · gratuidade: ${num(data.totals.canceledFree)} (${data.totals.churnFreePct.toFixed(0)}%)`}
           />
         </div>
+        {/* Torres de cancelamento por dia (pedido Johnny 06/08). Guard igual
+            ao de totals: deploy skew pode entregar payload sem churnDaily. */}
+        {data.totals.churnDaily && <ChurnChart daily={data.totals.churnDaily} />}
       </section>
       )}
 

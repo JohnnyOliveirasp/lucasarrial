@@ -44,7 +44,11 @@ export type TotalSummary = {
   /** Cancelamentos de quem estava na gratuidade (oferta R$0) e taxa. */
   canceledFree: number;
   churnFreePct: number;
+  /** Cancelamentos por dia (últimos 30d), separados pagantes × trial. */
+  churnDaily: ChurnDay[];
 };
+
+export type ChurnDay = { day: string; paid: number; trial: number };
 
 /** Produto da plataforma na Hotmart (mesmo id usado nas análises de venda). */
 const HOTMART_PRODUCT_ID = "7851642";
@@ -67,7 +71,10 @@ const isTestEmail = (e: string) => !e || e.includes("@example.com") || e === "te
  */
 async function getChurn(admin: ReturnType<typeof getAdmin>) {
   const [cancelRes, approvedRes] = await Promise.all([
-    admin.from("payment_events").select("payload").eq("event_type", "SUBSCRIPTION_CANCELLATION"),
+    admin
+      .from("payment_events")
+      .select("payload, received_at")
+      .eq("event_type", "SUBSCRIPTION_CANCELLATION"),
     admin.from("payment_events").select("buyer_email, payload").eq("event_type", "PURCHASE_APPROVED"),
   ]);
 
@@ -86,21 +93,41 @@ async function getChurn(admin: ReturnType<typeof getAdmin>) {
     }
   }
 
-  const canceled = new Set<string>();
-  for (const row of (cancelRes.data ?? []) as { payload: CancelPayload }[]) {
+  // 1º cancelamento de cada e-mail (o mesmo assinante pode gerar 2+ eventos)
+  const canceledAt = new Map<string, string>();
+  for (const row of (cancelRes.data ?? []) as { payload: CancelPayload; received_at: string }[]) {
     const d = row.payload?.data;
     const email = (d?.subscriber?.email || d?.buyer?.email || "").toLowerCase();
     const product = String(d?.product?.id ?? d?.subscription?.product?.id ?? "");
-    if (!isTestEmail(email) && product === HOTMART_PRODUCT_ID) canceled.add(email);
+    if (isTestEmail(email) || product !== HOTMART_PRODUCT_ID) continue;
+    const prev = canceledAt.get(email);
+    if (!prev || row.received_at < prev) canceledAt.set(email, row.received_at);
   }
+  const canceled = [...canceledAt.keys()];
 
-  const canceledPaid = [...canceled].filter((e) => paid.has(e)).length;
-  const canceledFree = [...canceled].filter((e) => freeOnly.has(e)).length;
+  // Série diária (últimos 30 dias, fuso BRT), separada pagantes × trial (R$0)
+  const dayKey = (iso: string) =>
+    new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const byDay = new Map<string, { paid: number; trial: number }>();
+  for (let i = 29; i >= 0; i--) {
+    byDay.set(dayKey(new Date(Date.now() - i * 86_400_000).toISOString()), { paid: 0, trial: 0 });
+  }
+  for (const [email, at] of canceledAt) {
+    const bucket = byDay.get(dayKey(at));
+    if (!bucket) continue; // fora da janela de 30 dias
+    if (paid.has(email)) bucket.paid++;
+    else if (freeOnly.has(email)) bucket.trial++;
+  }
+  const churnDaily = [...byDay.entries()].map(([day, c]) => ({ day, ...c }));
+
+  const canceledPaid = canceled.filter((e) => paid.has(e)).length;
+  const canceledFree = canceled.filter((e) => freeOnly.has(e)).length;
   return {
     canceledPaid,
     churnPaidPct: paid.size > 0 ? (canceledPaid / paid.size) * 100 : 0,
     canceledFree,
     churnFreePct: freeOnly.size > 0 ? (canceledFree / freeOnly.size) * 100 : 0,
+    churnDaily,
   };
 }
 
@@ -192,5 +219,6 @@ export async function getTotalSummary(): Promise<TotalSummary> {
     churnPaidPct: churn.churnPaidPct,
     canceledFree: churn.canceledFree,
     churnFreePct: churn.churnFreePct,
+    churnDaily: churn.churnDaily,
   };
 }
