@@ -34,3 +34,7 @@ as $$
   from trials;
 $$;
 revoke all on function public.admin_trial_stats() from public, anon, authenticated;
+
+-- 63b (06/08): + coortes semanais (últimas 10 semanas) pro gráfico do painel.
+-- Ver função final aplicada via MCP (admin_trial_stats_weekly) — inclui campo
+-- 'weekly': [{week, started, converted, still_open}].

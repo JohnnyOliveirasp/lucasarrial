@@ -84,6 +84,7 @@ export type Finance = {
   trial: TrialStats;
 };
 
+export type TrialWeek = { week: string; started: number; converted: number; stillOpen: number };
 export type TrialStats = {
   started: number;
   matured: number;
@@ -91,6 +92,7 @@ export type TrialStats = {
   inTrial: number;
   started30d: number;
   ratePct: number;
+  weekly: TrialWeek[];
 };
 
 export type AdminData = {
@@ -143,6 +145,7 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
   const metrics = (mRes.data ?? {}) as unknown as AdminMetrics;
   const trialRaw = (trialRes.data ?? {}) as unknown as {
     started?: number; matured?: number; converted?: number; in_trial?: number; started_30d?: number;
+    weekly?: Array<{ week: string; started: number; converted: number; still_open: number }>;
   };
   const trial: TrialStats = {
     started: trialRaw.started ?? 0,
@@ -151,6 +154,9 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
     inTrial: trialRaw.in_trial ?? 0,
     started30d: trialRaw.started_30d ?? 0,
     ratePct: (trialRaw.matured ?? 0) > 0 ? ((trialRaw.converted ?? 0) / (trialRaw.matured ?? 1)) * 100 : 0,
+    weekly: (trialRaw.weekly ?? []).map((w) => ({
+      week: w.week, started: w.started, converted: w.converted, stillOpen: w.still_open,
+    })),
   };
   const fin = (fRes.data ?? {}) as unknown as FinanceRaw;
   const clonesByTier = (cRes.data ?? []) as unknown as Array<{
