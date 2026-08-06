@@ -44,7 +44,8 @@ export type TotalSummary = {
   /** Cancelamentos de quem estava na gratuidade (oferta R$0) e taxa. */
   canceledFree: number;
   churnFreePct: number;
-  /** Cancelamentos por dia (últimos 30d), separados pagantes × trial. */
+  /** Cancelamentos por dia (todos, esparso), separados pagantes × trial.
+   *  O client monta o mês selecionado com os dias fixos (1..31). */
   churnDaily: ChurnDay[];
 };
 
@@ -105,20 +106,22 @@ async function getChurn(admin: ReturnType<typeof getAdmin>) {
   }
   const canceled = [...canceledAt.keys()];
 
-  // Série diária (últimos 30 dias, fuso BRT), separada pagantes × trial (R$0)
+  // Série diária COMPLETA (fuso BRT), esparsa — só dias com cancelamento.
+  // O gráfico do /admin escolhe o mês e desenha os dias fixos 1..31.
   const dayKey = (iso: string) =>
     new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
   const byDay = new Map<string, { paid: number; trial: number }>();
-  for (let i = 29; i >= 0; i--) {
-    byDay.set(dayKey(new Date(Date.now() - i * 86_400_000).toISOString()), { paid: 0, trial: 0 });
-  }
   for (const [email, at] of canceledAt) {
-    const bucket = byDay.get(dayKey(at));
-    if (!bucket) continue; // fora da janela de 30 dias
+    const key = dayKey(at);
+    const bucket = byDay.get(key) ?? { paid: 0, trial: 0 };
     if (paid.has(email)) bucket.paid++;
     else if (freeOnly.has(email)) bucket.trial++;
+    else continue; // fora do produto/paid-free — não entra no gráfico
+    byDay.set(key, bucket);
   }
-  const churnDaily = [...byDay.entries()].map(([day, c]) => ({ day, ...c }));
+  const churnDaily = [...byDay.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([day, c]) => ({ day, ...c }));
 
   const canceledPaid = canceled.filter((e) => paid.has(e)).length;
   const canceledFree = canceled.filter((e) => freeOnly.has(e)).length;
