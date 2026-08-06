@@ -14,6 +14,7 @@ import {
   containerStatus,
   createContainer,
   friendlyInstagramError,
+  mediaPermalink,
   publishContainer,
   refreshLongLived,
   InstagramError,
@@ -104,7 +105,9 @@ export async function advancePublication(pub: PublicationRow): Promise<void> {
     if (status === "IN_PROGRESS") return; // ainda processando — próximo sweep pega
     if (status === "FINISHED") {
       const postId = await publishContainer(token, account.account_ref, pub.container_id);
-      await patch(pub.id, { status: "published", platform_post_id: postId, error: null });
+      // Permalink é cosmético (link no histórico) — falhou, publica sem ele.
+      const permalink = await mediaPermalink(token, postId).catch(() => null);
+      await patch(pub.id, { status: "published", platform_post_id: postId, permalink, error: null });
       return;
     }
     if (status === "PUBLISHED") {

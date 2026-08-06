@@ -182,6 +182,13 @@ export async function containerStatus(
   return { status: data.status_code, detail: data.status };
 }
 
+/** Link público do post publicado (mostrado no histórico do Publicador). */
+export async function mediaPermalink(token: string, mediaId: string): Promise<string | null> {
+  const params = new URLSearchParams({ fields: "permalink", access_token: token });
+  const data = await graphCall<{ permalink?: string }>(`/${GRAPH_VERSION}/${mediaId}?${params}`);
+  return data.permalink ?? null;
+}
+
 /** Publica o container FINISHED. Devolve o id do post no Instagram. */
 export async function publishContainer(
   token: string,

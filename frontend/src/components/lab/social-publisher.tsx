@@ -27,8 +27,10 @@ type Publication = {
   scheduled_at: string | null;
   status: string;
   platform_post_id: string | null;
+  permalink: string | null;
   error: string | null;
   created_at: string;
+  thumb_url: string | null;
 };
 
 export function SocialPublisher() {
@@ -299,32 +301,69 @@ export function SocialPublisher() {
             {pubs.map((p) => (
               <li
                 key={p.id}
-                className="rounded-[var(--radius-sm)] border border-[var(--hairline)] px-3 py-2 text-[13px]"
+                className="flex gap-3 rounded-[var(--radius-sm)] border border-[var(--hairline)] px-3 py-2 text-[13px]"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[var(--ink)]">
-                    {(["ready","processing","published","failed"].includes(p.status) ? t(`history.${p.status}`) : p.status)} · {p.media_type}
-                    {p.scheduled_at && p.status === "ready" && (
-                      <span className="text-[var(--ash)]">
-                        {" "}
-                        → {new Date(p.scheduled_at).toLocaleString("pt-BR")}
-                      </span>
-                    )}
-                  </span>
-                  <span className="shrink-0 font-mono text-[11px] text-[var(--ash)]">
-                    {new Date(p.created_at).toLocaleString("pt-BR")}
-                  </span>
+                <PubThumb pub={p} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[var(--ink)]">
+                      {(["ready","processing","published","failed"].includes(p.status) ? t(`history.${p.status}`) : p.status)} · {p.media_type}
+                      {p.scheduled_at && p.status === "ready" && (
+                        <span className="text-[var(--ash)]">
+                          {" "}
+                          → {new Date(p.scheduled_at).toLocaleString("pt-BR")}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 font-mono text-[11px] text-[var(--ash)]">
+                      {new Date(p.created_at).toLocaleString("pt-BR")}
+                    </span>
+                  </div>
+                  {p.caption && (
+                    <p className="mt-1 truncate text-[12.5px] text-[var(--mute)]">{p.caption}</p>
+                  )}
+                  {p.error && (
+                    <p className="mt-1 text-[12.5px] text-[var(--danger,#e5484d)]">{p.error}</p>
+                  )}
+                  {p.permalink && p.status === "published" && (
+                    <a
+                      href={p.permalink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-block text-[12.5px] text-[var(--ink)] underline underline-offset-2"
+                    >
+                      {t("history.viewOnInstagram")} ↗
+                    </a>
+                  )}
                 </div>
-                {p.caption && (
-                  <p className="mt-1 truncate text-[12.5px] text-[var(--mute)]">{p.caption}</p>
-                )}
-                {p.error && (
-                  <p className="mt-1 text-[12.5px] text-[var(--danger,#e5484d)]">{p.error}</p>
-                )}
               </li>
             ))}
           </ul>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Miniatura do item do histórico. O poll de 5s devolve um presigned NOVO a
+ * cada rodada — trocar o src faria a imagem re-baixar e piscar; guardamos o
+ * primeiro thumb que chegou por publicação e usamos sempre ele.
+ */
+const thumbCache = new Map<string, string>();
+function PubThumb({ pub }: { pub: Publication }) {
+  let src = thumbCache.get(pub.id) ?? null;
+  if (!src && pub.thumb_url) {
+    thumbCache.set(pub.id, pub.thumb_url);
+    src = pub.thumb_url;
+  }
+  return (
+    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[var(--radius-sm)] border border-[var(--hairline)] bg-[var(--surface-deep)]">
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <span className="text-[18px]">{pub.media_type === "image" ? "🖼️" : "🎬"}</span>
       )}
     </div>
   );

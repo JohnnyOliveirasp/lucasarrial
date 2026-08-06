@@ -1647,11 +1647,12 @@
       "sending": "Enviando…"
     },
     "history": {
-      "title": "Publicaciones",
+      "title": "Historial de publicaciones",
       "ready": "⏳ programada",
       "processing": "⚙️ procesando en Instagram",
       "published": "✅ publicada",
-      "failed": "❌ falló"
+      "failed": "❌ falló",
+      "viewOnInstagram": "Ver en Instagram"
     },
     "button": {
       "publish": "📤 Publicar",

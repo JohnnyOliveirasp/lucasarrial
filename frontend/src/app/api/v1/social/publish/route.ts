@@ -14,7 +14,7 @@ import { badRequest, forbidden, jsonOk, serverError, unauthorized } from "@/lib/
 import { getAdmin } from "@/lib/db/admin";
 import { socialPublisherEnabled } from "@/lib/social/access";
 import { resolvePublishSource } from "@/lib/social/media-sources";
-import { startPublication } from "@/lib/social/publisher";
+import { resolveMediaUrl, startPublication } from "@/lib/social/publisher";
 import type { PublicationRow } from "@/lib/db/types";
 
 const CAPTION_MAX = 2200; // limite do Instagram (erro 2207010)
@@ -130,10 +130,21 @@ export async function GET(request: NextRequest) {
   const { data } = await getAdmin()
     .from("publications")
     .select(
-      "id, account_id, platform, media_type, media_url, caption, scheduled_at, status, platform_post_id, error, created_at",
+      "id, account_id, platform, media_type, media_url, caption, scheduled_at, status, platform_post_id, permalink, error, created_at",
     )
     .eq("user_id", auth.user_id)
     .order("created_at", { ascending: false })
     .limit(30);
-  return jsonOk({ publications: data ?? [] });
+  // Miniatura do histórico: imagem r2://… vira presigned GET (1h); https direto
+  // passa como está; vídeo e mídia já limpa (r2-cleaned://) ficam sem thumb.
+  const rows = await Promise.all(
+    ((data ?? []) as Array<{ media_type: string; media_url: string }>).map(async (p) => ({
+      ...p,
+      thumb_url:
+        p.media_type === "image" && !p.media_url.startsWith("r2-cleaned://")
+          ? await resolveMediaUrl(p.media_url).catch(() => null)
+          : null,
+    })),
+  );
+  return jsonOk({ publications: rows });
 }

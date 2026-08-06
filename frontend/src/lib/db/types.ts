@@ -463,6 +463,7 @@ export type PublicationRow = {
   status: "ready" | "processing" | "published" | "failed";
   container_id: string | null;
   platform_post_id: string | null;
+  permalink: string | null;
   attempts: number;
   error: string | null;
   created_at: Timestamp;
