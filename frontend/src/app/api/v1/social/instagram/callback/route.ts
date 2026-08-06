@@ -17,7 +17,10 @@ import {
 const LAB_PATH = "/app/lab/publicador";
 
 function labRedirect(request: NextRequest, params: Record<string, string>): NextResponse {
-  const url = new URL(LAB_PATH, request.nextUrl.origin);
+  // ⚠️ atrás do nginx, request.nextUrl.origin vira http://localhost:3002 —
+  // sempre montar o redirect com a URL PÚBLICA (caso Johnny 06/08).
+  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? request.nextUrl.origin;
+  const url = new URL(LAB_PATH, origin);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return NextResponse.redirect(url);
 }
