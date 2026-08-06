@@ -1,7 +1,7 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { redirect } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isAdmin } from "@/lib/admin/guard";
+import { socialPublisherAllowedEmail } from "@/lib/social/access";
 import { SocialPublisher } from "@/components/lab/social-publisher";
 
 /**
@@ -29,7 +29,9 @@ export default async function PublicadorPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return redirect({ href: "/login", locale });
   const { data: profile } = await supabase.from("profiles").select("email").eq("id", user.id).single();
-  if (!(await isAdmin(profile?.email ?? user.email ?? null))) redirect({ href: "/app/dashboard", locale });
+  if (!(await socialPublisherAllowedEmail(profile?.email ?? user.email ?? null))) {
+    redirect({ href: "/app/dashboard", locale });
+  }
 
   return (
     <div className="flex flex-col gap-6">
