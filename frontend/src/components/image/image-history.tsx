@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Eye,
   Download,
@@ -14,6 +14,7 @@ import {
   Film,
   Loader2,
   Pin,
+  Copy,
 } from "lucide-react";
 
 import { ImageAnimatePanel } from "./image-animate";
@@ -24,6 +25,8 @@ type Img = {
   id: string;
   name: string | null;
   prompt: string;
+  /** Prompt no idioma da página (copiável pra regerar) — cai pro pt se faltar. */
+  prompt_display: string | null;
   aspect_ratio: string;
   resolution: string;
   credits_cost: number;
@@ -52,6 +55,7 @@ export function ImageHistory({
   onUseAsRef?: (key: string, url: string) => void;
 }) {
   const t = useTranslations("images.history");
+  const locale = useLocale();
   const [items, setItems] = useState<Img[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +66,7 @@ export function ImageHistory({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<Img | null>(null);
   const [animateId, setAnimateId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const editRef = useRef<HTMLInputElement>(null);
 
   const fallbackName = (g: Img): string =>
@@ -70,7 +75,8 @@ export function ImageHistory({
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/images", { cache: "no-store" });
+      const lang = locale.startsWith("en") ? "en" : locale.startsWith("es") ? "es" : "pt";
+      const res = await fetch(`/api/v1/images?lang=${lang}`, { cache: "no-store" });
       if (!res.ok) throw new Error(t("errors.load"));
       const json = await res.json();
       setItems((json.images ?? []) as Img[]);
@@ -79,7 +85,7 @@ export function ImageHistory({
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, locale]);
 
   useEffect(() => {
     load();
@@ -265,6 +271,28 @@ export function ImageHistory({
                   </span>
                 )}
               </div>
+              {/* Prompt de origem no idioma da página — copiável pra regerar (06/08) */}
+              {(g.prompt_display ?? g.prompt) && (
+                <div className="flex items-start gap-1.5">
+                  <p className="line-clamp-2 min-w-0 flex-1 text-[12px] leading-snug text-[var(--mute)]" title={g.prompt_display ?? g.prompt}>
+                    {g.prompt_display ?? g.prompt}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(g.prompt_display ?? g.prompt);
+                      setCopiedId(g.id);
+                      setTimeout(() => setCopiedId((c) => (c === g.id ? null : c)), 2000);
+                    }}
+                    aria-label={t("copyPrompt")}
+                    title={t("copyPrompt")}
+                    className="flex shrink-0 items-center gap-1 font-mono text-[10px] tracking-wide text-[var(--ash)] transition-colors hover:text-[var(--ink)]"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {copiedId === g.id ? t("copied") : null}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Ações */}

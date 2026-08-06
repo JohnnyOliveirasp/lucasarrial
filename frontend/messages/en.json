@@ -526,7 +526,9 @@
       "deleteTitle": "Delete image?",
       "deleteWarning": "This action is <strong>irreversible</strong>. It removes the image from storage and from the history.",
       "deleting": "Deleting…",
-      "useAsRef": "Use as reference"
+      "useAsRef": "Use as reference",
+      "copyPrompt": "Copy prompt",
+      "copied": "copied!"
     },
     "animate": {
       "errors": {

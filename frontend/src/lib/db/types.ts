@@ -173,6 +173,8 @@ export type ImageGenerationRow = {
   prompt: string;
   /** Tradução do prompt pro modelo (mig 56); null nas rows antigas (prompt já era en). */
   prompt_en: string | null;
+  /** Cache da tradução es pra exibição do histórico (mig 62, lazy). */
+  prompt_es: string | null;
   idea: string | null;
   input_image_path: string;
   input_image_paths: string[] | null;

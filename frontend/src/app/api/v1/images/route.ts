@@ -9,24 +9,56 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { translatePromptTo } from "@/lib/llm/translate-image-prompt";
 import { imagesBucket } from "@/lib/r2/client";
 import { deleteKeys } from "@/lib/r2/delete";
 import { createPresignedGet } from "@/lib/r2/presigned";
+
+/** Quantas traduções lazy por request (1x por imagem; o resto vem na próxima). */
+const TRANSLATE_CAP = 8;
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
 
+  // Idioma da página (?lang=pt|en|es): o prompt exibido acompanha (pedido
+  // Johnny 06/08 — a pessoa copia o prompt pra regerar no idioma dela).
+  const langParam = request.nextUrl.searchParams.get("lang") ?? "pt";
+  const lang: "pt" | "en" | "es" = langParam === "en" ? "en" : langParam === "es" ? "es" : "pt";
+
   const admin = getAdmin();
   const { data: rows, error } = await admin
     .from("image_generations")
     .select(
-      "id, name, prompt, aspect_ratio, resolution, credits_cost, image_path, status, error_message, created_at, video_status, video_path, video_tier, video_prompt_pt, video_error",
+      "id, name, prompt, prompt_en, prompt_es, aspect_ratio, resolution, credits_cost, image_path, status, error_message, created_at, video_status, video_path, video_tier, video_prompt_pt, video_error",
     )
     .eq("user_id", auth.user_id)
     .order("created_at", { ascending: false });
 
   if (error) return serverError("Failed to list images");
+
+  // Tradução preguiçosa com cache no banco: traduz UMA vez e reaproveita.
+  let translateBudget = TRANSLATE_CAP;
+  async function promptFor(g: {
+    id: string;
+    prompt: string;
+    prompt_en: string | null;
+    prompt_es: string | null;
+  }): Promise<string> {
+    if (lang === "pt") return g.prompt;
+    const cached = lang === "en" ? g.prompt_en : g.prompt_es;
+    if (cached) return cached;
+    if (translateBudget <= 0) return g.prompt;
+    translateBudget--;
+    const translated = await translatePromptTo(lang, g.prompt);
+    if (translated && translated !== g.prompt) {
+      await admin
+        .from("image_generations")
+        .update(lang === "en" ? { prompt_en: translated } : { prompt_es: translated })
+        .eq("id", g.id);
+    }
+    return translated;
+  }
 
   const items = await Promise.all(
     (rows ?? []).map(async (g) => {
@@ -50,6 +82,8 @@ export async function GET(request: NextRequest) {
         id: g.id,
         name: g.name,
         prompt: g.prompt,
+        // Prompt no idioma da página (copiável pra regerar).
+        prompt_display: await promptFor(g),
         aspect_ratio: g.aspect_ratio,
         resolution: g.resolution,
         credits_cost: g.credits_cost,

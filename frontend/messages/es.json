@@ -526,7 +526,9 @@
       "deleteTitle": "¿Eliminar imagen?",
       "deleteWarning": "Acción <strong>irreversible</strong>. Elimina la imagen del almacenamiento y del historial.",
       "deleting": "Eliminando…",
-      "useAsRef": "Usar como referencia"
+      "useAsRef": "Usar como referencia",
+      "copyPrompt": "Copiar prompt",
+      "copied": "¡copiado!"
     },
     "animate": {
       "errors": {
