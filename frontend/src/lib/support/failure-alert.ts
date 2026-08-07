@@ -30,9 +30,12 @@ export type TechFailureArgs = {
 };
 
 /**
- * Estorna o débito original 1x. Idempotente: se já existe transação com
- * (refundRefType, refId), não devolve de novo. Quem não foi cobrado
- * (equipe/admin) não tem débito no extrato → nada a devolver.
+ * Estorna o débito original 1x por falha. Idempotente POR CONTAGEM: devolve
+ * enquanto houver mais débitos que estornos em (refId) — fluxos com refId
+ * único por tentativa se comportam como antes, e fluxos que reusam o refId
+ * entre tentativas (Animar Imagem: a row é a imagem) estornam cada tentativa
+ * falha, não só a primeira. Quem não foi cobrado (equipe/admin) não tem
+ * débito no extrato → nada a devolver.
  */
 async function refundOriginalDebit(args: {
   userId: string;
@@ -42,9 +45,9 @@ async function refundOriginalDebit(args: {
 }): Promise<string> {
   const admin = getAdmin();
 
-  const { data: debits } = await admin
+  const { data: debits, count: debitCount } = await admin
     .from("credit_transactions")
-    .select("amount")
+    .select("amount", { count: "exact" })
     .eq("user_id", args.userId)
     .eq("ref_type", args.debitRefType)
     .eq("ref_id", args.refId)
@@ -54,14 +57,13 @@ async function refundOriginalDebit(args: {
   const debit = (debits as { amount: number }[] | null)?.[0];
   if (!debit) return "nada cobrado (sem débito no extrato)";
 
-  const { data: prior } = await admin
+  const { count: refundCount } = await admin
     .from("credit_transactions")
-    .select("id")
+    .select("id", { count: "exact", head: true })
     .eq("user_id", args.userId)
     .eq("ref_type", args.refundRefType)
-    .eq("ref_id", args.refId)
-    .limit(1);
-  if (prior && prior.length > 0) return "estorno já aplicado anteriormente";
+    .eq("ref_id", args.refId);
+  if ((refundCount ?? 0) >= (debitCount ?? 1)) return "estorno já aplicado anteriormente";
 
   const amount = Math.abs(debit.amount);
   const r = await addExtraCredits({

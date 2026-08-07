@@ -9,6 +9,7 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { r2, imagesBucket } from "@/lib/r2/client";
 import { getAdmin } from "@/lib/db/admin";
 import { kieGetTask, friendlyKieError } from "@/lib/kie/client";
+import { handleTechFailure } from "@/lib/support/failure-alert";
 
 function pickExt(url: string, contentType: string | null): string {
   if (contentType?.includes("webm")) return "webm";
@@ -59,12 +60,41 @@ export async function finalizeImageVideo(
     .eq("id", imageId);
 }
 
-/** Marca o vídeo da imagem como falha. */
+/**
+ * Marca o vídeo da imagem como falha + ESTORNO AUTOMÁTICO (caso 07/08: 37
+ * falhas cobradas sem devolução desde 11/07 — a imagem tinha estorno desde
+ * b45505a, a perna de vídeo não). Transição idempotente: só quem tira a row
+ * de pending/generating dispara a contingência — o débito só existe depois
+ * do despacho (que é o que põe a row em pending), então falha pré-despacho
+ * cai no fallback sem estorno (nada foi cobrado).
+ */
 export async function failImageVideo(imageId: string, message: string): Promise<void> {
-  await getAdmin()
+  const admin = getAdmin();
+  const friendly = message.slice(0, 500);
+
+  const { data: claimed } = await admin
     .from("image_generations")
-    .update({ video_status: "failed", video_error: message.slice(0, 500) })
-    .eq("id", imageId);
+    .update({ video_status: "failed", video_error: friendly })
+    .eq("id", imageId)
+    .in("video_status", ["pending", "generating"])
+    .select("id, user_id");
+  const row = (claimed ?? [])[0] as { id: string; user_id: string } | undefined;
+  if (!row) {
+    await admin
+      .from("image_generations")
+      .update({ video_status: "failed", video_error: friendly })
+      .eq("id", imageId);
+    return;
+  }
+
+  await handleTechFailure({
+    feature: "Animar Imagem (Kie)",
+    userId: row.user_id,
+    refId: imageId,
+    rawError: message,
+    debitRefType: "image_video",
+    refundRefType: "image_video_refund",
+  });
 }
 
 /** Consulta o Kie e atualiza o vídeo da imagem (poll/webhook). */
