@@ -59,10 +59,13 @@ function readAudioDuration(file: File): Promise<number> {
 export function CloneStudio({
   creditsTotal,
   unlimited,
+  isAdmin = false,
   onChanged,
 }: {
   creditsTotal: number;
   unlimited: boolean;
+  /** Admin vê os tiers de pré-produção (ex. Padrão 2.0). */
+  isAdmin?: boolean;
   onChanged: () => void;
 }) {
   const t = useTranslations("videoClone.studio");
@@ -336,7 +339,7 @@ export function CloneStudio({
       <div className="flex flex-col gap-2">
         <span className={LABEL}>{t("stepQuality")}</span>
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {CLONE_TIERS.map((opt) => {
+          {CLONE_TIERS.filter((opt) => !opt.adminOnly || isAdmin).map((opt) => {
             const active = tierId === opt.id;
             return (
               <li key={opt.id}>

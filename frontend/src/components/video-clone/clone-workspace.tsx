@@ -9,9 +9,11 @@ import { CloneHistory } from "./clone-history";
 export function CloneWorkspace({
   creditsTotal,
   unlimited,
+  isAdmin = false,
 }: {
   creditsTotal: number;
   unlimited: boolean;
+  isAdmin?: boolean;
 }) {
   const t = useTranslations("videoClone");
   const [reloadKey, setReloadKey] = useState(0);
@@ -22,6 +24,7 @@ export function CloneWorkspace({
         <CloneStudio
           creditsTotal={creditsTotal}
           unlimited={unlimited}
+          isAdmin={isAdmin}
           onChanged={() => setReloadKey((k) => k + 1)}
         />
       </section>

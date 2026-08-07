@@ -7,6 +7,7 @@
 import { CLONE_FPS, CloneTier } from "./config";
 import templateV1 from "./infinitetalk-template.json";
 import templateV2 from "./infinitetalk-v2-template.json";
+import templateV3 from "./infinitetalk-v3-template.json";
 
 type WorkflowNode = { class_type: string; inputs: Record<string, unknown> };
 type Workflow = Record<string, WorkflowNode>;
@@ -20,6 +21,21 @@ export function buildInfiniteTalkWorkflow(args: {
   seed?: number;
 }): { workflow: Workflow; numFrames: number } {
   const seed = args.seed ?? Math.floor(Math.random() * 2 ** 31);
+
+  if (args.tier.flow === "v3") {
+    // V3 = fluxo "InfiniteTalkV2" do Johnny (07/08), byte a byte como validado
+    // no ComfyUI dele — NÃO mexer nas configurações (ordem). Só I/O é nosso:
+    // imagem/áudio por URL presignada + MP4 pro R2. num_frames replica a
+    // fórmula dos nodes RH do fluxo original: floor(segundos)×25 + 25.
+    // Seed fica 1 (fixa no template, como no fluxo validado).
+    const wf = JSON.parse(JSON.stringify(templateV3)) as Workflow;
+    const numFrames = Math.floor(args.durationSeconds) * CLONE_FPS + CLONE_FPS;
+    wf["133"].inputs.url = args.imageUrl;
+    wf["125"].inputs.url = args.audioUrl;
+    wf["900"].inputs.s3_key = args.s3Key;
+    wf["194"].inputs.num_frames = numFrames;
+    return { workflow: wf, numFrames };
+  }
 
   if (args.tier.flow === "v2") {
     // V2 (fp8 + 4 steps flowmatch): modelos fixos no template; fórmula de

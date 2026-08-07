@@ -10,14 +10,17 @@
 /** HD (720p) REMOVIDO 04/08 (decisão Johnny): preço ao aluno (465 cr/s)
  *  empatava com o varejo do HeyGen e o fluxo nunca rodou estável (3 falhas
  *  >45min com áudio longo). Jobs antigos no histórico mostram o id cru. */
-export type CloneTierId = "480p" | "480p-v2";
+export type CloneTierId = "480p" | "480p-v2" | "480p-v3";
 
 export type CloneTier = {
   id: CloneTierId;
   label: string;
   blurb: string;
-  /** Qual template de workflow usar (V1 = GGUF/7 steps; V2 = fp8/4 steps). */
-  flow: "v1" | "v2";
+  /** Qual template de workflow usar (V1 = GGUF/7 steps; V2 = fp8/4 steps;
+   *  V3 = fluxo InfiniteTalkV2 do Johnny, candidato a novo Padrão). */
+  flow: "v1" | "v2" | "v3";
+  /** Pré-produção: só admins veem/usam (some da UI e a API recusa). */
+  adminOnly?: boolean;
   /** Créditos por segundo de áudio (arredondado pra cima). */
   creditsPerSecond: number;
   /** Resolução de saída (vertical, múltiplos que o fluxo aceita). */
@@ -53,6 +56,20 @@ export const CLONE_TIERS: readonly CloneTier[] = [
     ggufModel: "",
     lora: "",
   },
+  {
+    id: "480p-v3",
+    label: "Padrão 2.0",
+    blurb:
+      "🧪 Pré-produção: fluxo InfiniteTalkV2 validado no ComfyUI (07/08), candidato a substituir o Padrão. Só a equipe vê.",
+    flow: "v3",
+    creditsPerSecond: 105,
+    width: 480,
+    height: 832,
+    // Modelos fixos no template V3 — campos não usados.
+    ggufModel: "",
+    lora: "",
+    adminOnly: true,
+  },
 ] as const;
 
 /** Teto de duração do áudio (igual ao upload de voz do wizard). */
@@ -86,6 +103,6 @@ export function cloneCreditsCost(tier: CloneTier, seconds: number): number {
 export function cloneExecutionTimeoutMs(tier: CloneTier, seconds: number): number {
   const billed = Math.max(CLONE_MIN_BILLED_SECONDS, Math.ceil(seconds));
   // Segundos de GPU por segundo de áudio, com folga pra GPU mais lenta da fila.
-  const perAudioSecond = tier.flow === "v2" ? 30 : 60;
+  const perAudioSecond = tier.flow === "v1" ? 60 : 30;
   return (20 * 60 + billed * perAudioSecond) * 1000;
 }

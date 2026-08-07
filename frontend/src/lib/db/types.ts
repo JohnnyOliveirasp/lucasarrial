@@ -676,7 +676,7 @@ export type VideoCloneRow = {
   audio_path: string;
   duration_seconds: number;
   num_frames: number;
-  tier: "480p" | "720p" | "480p-v2";
+  tier: "480p" | "720p" | "480p-v2" | "480p-v3";
   credits_cost: number;
   status: VideoCloneStatus;
   runpod_job_id: string | null;
@@ -692,7 +692,7 @@ export type VideoCloneInsert = {
   audio_path: string;
   duration_seconds: number;
   num_frames: number;
-  tier: "480p" | "720p" | "480p-v2";
+  tier: "480p" | "720p" | "480p-v2" | "480p-v3";
   credits_cost?: number;
   status?: VideoCloneStatus;
   runpod_job_id?: string | null;

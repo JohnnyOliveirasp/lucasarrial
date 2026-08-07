@@ -274,6 +274,15 @@ export function Sidebar({
                     pelo celular" do Gravador oficial — saiu do menu 05/08
                     (pedido Johnny). A página /app/lab/gravador-celular segue
                     acessível por URL se precisar depurar. */}
+                {/* 🧪 Padrão 2.0 (07/08): fluxo InfiniteTalkV2 do Johnny como
+                    tier admin-only na tela do Vídeo Clone. Time valida →
+                    vira o Padrão (troca de flow no config). */}
+                <NavLeaf
+                  href="/app/videos/clone"
+                  icon={UserSquare2}
+                  label="Padrão 2.0 (Vídeo Clone)"
+                  active={false}
+                />
                 {/* 🧪 Vídeo HeyGen BYOK (teste 05/08): aluno conecta a própria
                     API key; Lucas valida → gradua pro grupo Vídeos. */}
                 <NavLeaf

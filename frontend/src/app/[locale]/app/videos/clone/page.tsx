@@ -4,6 +4,7 @@ import type { Locale } from "@/i18n/routing";
 import { Lock } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
+import { isAdmin } from "@/lib/admin/guard";
 import { CLONE_MIN_CREDITS } from "@/lib/video-clone/config";
 import { CloneWorkspace } from "@/components/video-clone/clone-workspace";
 import { CloneHistory } from "@/components/video-clone/clone-history";
@@ -39,6 +40,7 @@ export default async function VideoClonePage({
 
   const email = profile?.email ?? user.email ?? null;
   const team = bypassesBilling(email);
+  const admin = await isAdmin(email);
   const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
   const creditsTotal =
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
@@ -57,7 +59,7 @@ export default async function VideoClonePage({
       </header>
 
       {canGenerate ? (
-        <CloneWorkspace creditsTotal={creditsTotal} unlimited={team} />
+        <CloneWorkspace creditsTotal={creditsTotal} unlimited={team} isAdmin={admin} />
       ) : (
         <div className="flex flex-col gap-12">
           <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">

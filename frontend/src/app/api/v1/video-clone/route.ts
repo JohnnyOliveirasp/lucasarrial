@@ -10,6 +10,7 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonError, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { isAdmin } from "@/lib/admin/guard";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { getBalance, debitCredits } from "@/lib/credits/service";
 import { R2_BUCKETS, imagesBucket } from "@/lib/r2/client";
@@ -99,6 +100,10 @@ export async function POST(request: NextRequest) {
   const generationId = typeof body.generation_id === "string" ? body.generation_id.trim() : "";
   const tier = getCloneTier(typeof body.tier === "string" ? body.tier : null);
   if (!tier) return badRequest("Escolha a qualidade (Padrão ou HD).");
+  // Tier de pré-produção: some da UI pra não-admin; aqui é a trava de verdade.
+  if (tier.adminOnly && !(await isAdmin(auth.email))) {
+    return badRequest("Escolha a qualidade (Padrão ou Turbo).");
+  }
 
   const admin0 = getAdmin();
   const prefix = `${auth.user_id}/video-clone/uploads/`;
