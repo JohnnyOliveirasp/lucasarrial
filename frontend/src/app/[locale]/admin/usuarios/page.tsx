@@ -6,7 +6,8 @@ import { Search, ChevronDown, KeyRound, Check, Copy } from "lucide-react";
 import type { AdminUser } from "@/lib/admin/queries";
 
 const num = (n: number) => n.toLocaleString("pt-BR");
-const ONLINE_MS = 90_000;
+// 150s: ping do app passou de 30s→60s (Disk IO Budget 07/08); 2 pings + folga.
+const ONLINE_MS = 150_000;
 
 function isOnline(u: AdminUser) {
   return !!u.last_seen_at && Date.now() - new Date(u.last_seen_at).getTime() < ONLINE_MS;

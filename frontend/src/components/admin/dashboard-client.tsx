@@ -55,8 +55,20 @@ export function DashboardClient() {
 
   useEffect(() => {
     fetchData(gran, periodKey);
-    const id = setInterval(() => fetchData(gran, periodKey), 5000);
-    return () => clearInterval(id);
+    // 30s (era 5s): o poll batia nas RPCs de stats ~330k vezes e ajudou a
+    // estourar o Disk IO Budget do Supabase (aviso 07/08). Aba fora de foco
+    // não pinga — retoma na volta.
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") fetchData(gran, periodKey);
+    }, 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchData(gran, periodKey);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [gran, periodKey, fetchData]);
 
   const onPeriod = (g: Gran, k: string) => {
