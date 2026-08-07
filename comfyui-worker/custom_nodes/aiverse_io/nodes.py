@@ -92,9 +92,23 @@ class LoadAudioFromURL:
 
     def load(self, url):
         import folder_paths
+        import subprocess
         dest = os.path.join(folder_paths.get_input_directory(), "aiverse_input_audio")
         _download(url, dest)
-        waveform, sample_rate = _decode_audio_av(dest)
+        # Saneamento (caso leilapatricia 07/08): upload MP3 com pacotes
+        # corrompidos no meio ("Header missing") derrubava o decode frame a
+        # frame -> 8 jobs "Job processing failed". O ffmpeg re-encoda ignorando
+        # pacotes ruins; se ele proprio falhar, cai no decode direto (como era).
+        clean = dest + "_clean.wav"
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-v", "error", "-err_detect", "ignore_err",
+                 "-i", dest, "-vn", "-acodec", "pcm_s16le", clean],
+                check=True, capture_output=True, timeout=180,
+            )
+            waveform, sample_rate = _decode_audio_av(clean)
+        except Exception:
+            waveform, sample_rate = _decode_audio_av(dest)
         return ({"waveform": waveform.unsqueeze(0), "sample_rate": sample_rate},)
 
 

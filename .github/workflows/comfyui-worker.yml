@@ -94,7 +94,6 @@ jobs:
       RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
       TEMPLATE_ID: 810lqswobo
       ENDPOINT_ID: 9get7wv7trn3wg
-      WORKERS_MAX: "2"
     steps:
       - name: Set lowercase repo owner
         id: owner
@@ -110,6 +109,10 @@ jobs:
           curl -sf -X PATCH "https://rest.runpod.io/v1/templates/$TEMPLATE_ID" \
             -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \
             -d "{\"imageName\":\"$IMG\"}" -o /dev/null
+          # preserva o workersMax ATUAL (07/08: rebalance da quota deixou o IT
+          # com 3; o "2" fixo antigo rebaixaria prod a cada deploy do worker)
+          WORKERS_MAX=$(curl -sf "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID" \
+            -H "Authorization: Bearer $RUNPOD_API_KEY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("workersMax") or 2)')
           echo "reciclando workers (0 -> $WORKERS_MAX)"
           curl -sf -X PATCH "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID" \
             -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \
