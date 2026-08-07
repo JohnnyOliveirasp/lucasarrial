@@ -8,6 +8,7 @@
  * depois dela o real medido. Sem isso o lucro acumulado sairia inflado.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { computeChurn, type ChurnDay } from "./churn";
 import {
   PLAN_PRICE_BRL,
   USD_BRL,
@@ -49,90 +50,7 @@ export type TotalSummary = {
   churnDaily: ChurnDay[];
 };
 
-export type ChurnDay = { day: string; paid: number; trial: number };
-
-/** Produto da plataforma na Hotmart (mesmo id usado nas análises de venda). */
-const HOTMART_PRODUCT_ID = "7851642";
-
-type CancelPayload = {
-  data?: {
-    subscriber?: { email?: string };
-    buyer?: { email?: string };
-    product?: { id?: number | string };
-    subscription?: { product?: { id?: number | string } };
-    purchase?: { price?: { value?: number } };
-  };
-};
-
-const isTestEmail = (e: string) => !e || e.includes("@example.com") || e === "test@hotmart.com";
-
-/**
- * Churn de assinatura SEPARADO por quem paga de verdade × gratuidade (oferta
- * R$0): misturar os dois inflava a taxa (03/08: 20,6% misto vs 3,8% pagantes).
- */
-async function getChurn(admin: ReturnType<typeof getAdmin>) {
-  const [cancelRes, approvedRes] = await Promise.all([
-    admin
-      .from("payment_events")
-      .select("payload, received_at")
-      .eq("event_type", "SUBSCRIPTION_CANCELLATION"),
-    admin.from("payment_events").select("buyer_email, payload").eq("event_type", "PURCHASE_APPROVED"),
-  ]);
-
-  // Assinante é PAGANTE se alguma compra aprovada teve valor > 0.
-  const paid = new Set<string>();
-  const freeOnly = new Set<string>();
-  for (const row of (approvedRes.data ?? []) as { buyer_email: string | null; payload: CancelPayload }[]) {
-    const email = (row.buyer_email ?? "").toLowerCase();
-    const d = row.payload?.data;
-    if (isTestEmail(email) || String(d?.product?.id ?? "") !== HOTMART_PRODUCT_ID) continue;
-    if (Number(d?.purchase?.price?.value ?? 0) > 0) {
-      paid.add(email);
-      freeOnly.delete(email);
-    } else if (!paid.has(email)) {
-      freeOnly.add(email);
-    }
-  }
-
-  // 1º cancelamento de cada e-mail (o mesmo assinante pode gerar 2+ eventos)
-  const canceledAt = new Map<string, string>();
-  for (const row of (cancelRes.data ?? []) as { payload: CancelPayload; received_at: string }[]) {
-    const d = row.payload?.data;
-    const email = (d?.subscriber?.email || d?.buyer?.email || "").toLowerCase();
-    const product = String(d?.product?.id ?? d?.subscription?.product?.id ?? "");
-    if (isTestEmail(email) || product !== HOTMART_PRODUCT_ID) continue;
-    const prev = canceledAt.get(email);
-    if (!prev || row.received_at < prev) canceledAt.set(email, row.received_at);
-  }
-  const canceled = [...canceledAt.keys()];
-
-  // Série diária COMPLETA (fuso BRT), esparsa — só dias com cancelamento.
-  // O gráfico do /admin escolhe o mês e desenha os dias fixos 1..31.
-  const dayKey = (iso: string) =>
-    new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-  const byDay = new Map<string, { paid: number; trial: number }>();
-  for (const [email, at] of canceledAt) {
-    const key = dayKey(at);
-    const bucket = byDay.get(key) ?? { paid: 0, trial: 0 };
-    if (paid.has(email)) bucket.paid++;
-    else if (freeOnly.has(email)) bucket.trial++;
-    else continue; // fora do produto/paid-free — não entra no gráfico
-    byDay.set(key, bucket);
-  }
-  const churnDaily = [...byDay.entries()]
-    .sort(([a], [b]) => (a < b ? -1 : 1))
-    .map(([day, c]) => ({ day, ...c }));
-
-  const canceledPaid = canceled.filter((e) => paid.has(e)).length;
-  const canceledFree = canceled.filter((e) => freeOnly.has(e)).length;
-  return {
-    canceledPaid,
-    churnPaidPct: paid.size > 0 ? (canceledPaid / paid.size) * 100 : 0,
-    canceledFree,
-    churnFreePct: freeOnly.size > 0 ? (canceledFree / freeOnly.size) * 100 : 0,
-    churnDaily,
-  };
-}
+export type { ChurnDay };
 
 type ByRes = Array<{ resolution: string; n: number }>;
 type ByTier = Array<{ tier: string; n: number; seconds: number }>;
@@ -158,7 +76,7 @@ export async function getTotalSummary(): Promise<TotalSummary> {
     admin.rpc("admin_video_clones", { p_since: since, p_until: preUntil }),
     admin.from("runpod_spend_log").select("balance_usd").order("at", { ascending: true }),
     admin.from("courtesy_grants").select("amount"),
-    getChurn(admin),
+    computeChurn(admin),
   ]);
 
   const fin = (fRes.data ?? {}) as {
