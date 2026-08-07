@@ -7,9 +7,11 @@
  */
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { r2, imagesBucket } from "@/lib/r2/client";
+import { createPresignedGet } from "@/lib/r2/presigned";
 import { getAdmin } from "@/lib/db/admin";
-import { kieGetTask, friendlyKieError } from "@/lib/kie/client";
+import { kieGetTask, kieCreateVideoTask, kieCallbackUrl, friendlyKieError } from "@/lib/kie/client";
 import { handleTechFailure } from "@/lib/support/failure-alert";
+import { getVideoFallback, FALLBACK_MOVEMENT_PROMPT_EN } from "@/lib/video/tiers";
 
 function pickExt(url: string, contentType: string | null): string {
   if (contentType?.includes("webm")) return "webm";
@@ -97,6 +99,54 @@ export async function failImageVideo(imageId: string, message: string): Promise<
   });
 }
 
+/**
+ * CONTINGÊNCIA na falha assíncrona (ordem Johnny 07/08): o titular do tier
+ * falhou depois do despacho → redespacha 1x no modelo reserva, sem cobrar de
+ * novo e sem o aluno saber. Claim atômico em video_retry_count 0→1 garante
+ * que só uma via (webhook × poll) redespacha. Retorna true se assumiu.
+ */
+async function tryVideoFallback(imageId: string): Promise<boolean> {
+  const admin = getAdmin();
+  const { data: claimed } = await admin
+    .from("image_generations")
+    .update({ video_retry_count: 1 })
+    .eq("id", imageId)
+    .eq("video_retry_count", 0)
+    .in("video_status", ["pending", "generating"])
+    .select("id, image_path, video_tier, video_prompt_en");
+  const row = (claimed ?? [])[0] as
+    | { id: string; image_path: string | null; video_tier: string | null; video_prompt_en: string | null }
+    | undefined;
+  if (!row) return false; // já está no fallback (ou outra via ganhou a corrida)
+
+  const fb = getVideoFallback(row.video_tier);
+  if (!fb || !row.image_path) return false;
+
+  try {
+    const imageUrl = await createPresignedGet(imagesBucket(), row.image_path, 60 * 60);
+    const { taskId } = await kieCreateVideoTask(
+      {
+        model: fb.kieModel,
+        promptEn: row.video_prompt_en || FALLBACK_MOVEMENT_PROMPT_EN,
+        imageUrl,
+        aspectRatio: "9:16", // Hailuo ignora (herda o da foto)
+        resolution: fb.resolution,
+        durationSeconds: fb.durationSeconds,
+      },
+      { callBackUrl: kieCallbackUrl() },
+    );
+    await admin
+      .from("image_generations")
+      .update({ video_status: "pending", video_kie_task_id: taskId, video_kie_model: fb.kieModel })
+      .eq("id", imageId);
+    console.warn(`[image-video] fallback ${fb.kieModel} assumiu ${imageId}`);
+    return true;
+  } catch (e) {
+    console.error("[image-video] fallback também falhou:", e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
 /** Consulta o Kie e atualiza o vídeo da imagem (poll/webhook). */
 export async function syncImageVideo(
   imageId: string,
@@ -123,6 +173,7 @@ export async function syncImageVideo(
   }
 
   if (info.state === "fail") {
+    if (await tryVideoFallback(imageId)) return;
     await failImageVideo(imageId, friendlyKieError(info.failMsg || info.failCode || "geração falhou"));
     return;
   }

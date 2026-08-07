@@ -62,6 +62,31 @@ export const VIDEO_TIERS: readonly VideoTier[] = [
   },
 ] as const;
 
+/**
+ * Fallback de CONTINGÊNCIA do Animar Imagem (ordem Johnny 07/08): quando o
+ * modelo do tier falha, chaveia pro reserva SEM cobrar de novo e SEM o aluno
+ * saber — a diferença de custo é nossa. Hailuo 2.3 Standard = 30 cr Kie/clipe
+ * (Grok = 18): melhor custo próximo do Grok com consistência boa em pessoa
+ * realista. Hailuo não aceita aspect_ratio (herda o da foto) e o mínimo é 6s.
+ */
+export type VideoFallback = {
+  kieModel: string;
+  durationSeconds: number;
+  resolution: string;
+};
+
+export const VIDEO_FALLBACK_BY_TIER: Partial<Record<VideoTierId, VideoFallback>> = {
+  bronze: {
+    kieModel: "hailuo/2-3-image-to-video-standard",
+    durationSeconds: 6,
+    resolution: "768P",
+  },
+};
+
+export function getVideoFallback(tierId: string | null | undefined): VideoFallback | null {
+  return VIDEO_FALLBACK_BY_TIER[(tierId ?? "") as VideoTierId] ?? null;
+}
+
 /** Custo em créditos da varinha ✨ de vídeo: Sonnet COM VISÃO re-escreve o
  *  prompt olhando a imagem (mais caro que a de imagem). NÃO inclui o clipe. */
 export const VIDEO_PROMPT_WAND_COST = 15;

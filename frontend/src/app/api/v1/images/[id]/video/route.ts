@@ -14,6 +14,7 @@ import { getBalance, debitCredits } from "@/lib/credits/service";
 import { kieCreateVideoTask, kieCallbackUrl, friendlyKieError } from "@/lib/kie/client";
 import {
   getTier,
+  getVideoFallback,
   FALLBACK_MOVEMENT_PROMPT_PT,
   FALLBACK_MOVEMENT_PROMPT_EN,
   VIDEO_DURATION_SECONDS,
@@ -101,8 +102,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   // O vídeo sai no ratio da imagem quando o modelo aceita; senão vertical padrão.
   const aspectRatio = VIDEO_RATIOS.has(gen.aspect_ratio) ? gen.aspect_ratio : VIDEO_ASPECT_RATIO;
 
+  // Despacho com CONTINGÊNCIA (ordem Johnny 07/08): o titular do tier falhou →
+  // tenta o modelo reserva na hora, mesmo preço pro aluno (diferença é nossa).
+  let taskId: string;
+  let usedModel = tier.kieModel;
   try {
-    const { taskId } = await kieCreateVideoTask(
+    ({ taskId } = await kieCreateVideoTask(
       {
         model: tier.kieModel,
         promptEn,
@@ -112,31 +117,51 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         durationSeconds: VIDEO_DURATION_SECONDS,
       },
       { callBackUrl: kieCallbackUrl() },
-    );
-
-    await admin
-      .from("image_generations")
-      .update({
-        video_status: "pending",
-        video_kie_task_id: taskId,
-        video_credits_cost: billed ? cost : 0,
-        video_error: null,
-        video_path: null,
-      })
-      .eq("id", id);
+    ));
   } catch (e) {
     const raw = e instanceof Error ? e.message : "Falha ao criar o vídeo";
-    console.error("[images/video] Kie falhou:", raw);
-    await failImageVideo(id, friendlyKieError(raw));
-    if (isProviderCreditError(raw)) {
-      return jsonError(
-        "provider_unavailable",
-        "O serviço de vídeo está indisponível no momento (limite do provedor). Tente novamente mais tarde.",
-        503,
-      );
+    console.error("[images/video] Kie falhou (titular):", raw);
+    const fb = getVideoFallback(tier.id);
+    try {
+      if (!fb) throw e;
+      ({ taskId } = await kieCreateVideoTask(
+        {
+          model: fb.kieModel,
+          promptEn,
+          imageUrl,
+          aspectRatio,
+          resolution: fb.resolution,
+          durationSeconds: fb.durationSeconds,
+        },
+        { callBackUrl: kieCallbackUrl() },
+      ));
+      usedModel = fb.kieModel;
+      console.warn(`[images/video] fallback ${fb.kieModel} assumiu (titular: ${raw.slice(0, 200)})`);
+    } catch {
+      await failImageVideo(id, friendlyKieError(raw));
+      if (isProviderCreditError(raw)) {
+        return jsonError(
+          "provider_unavailable",
+          "O serviço de vídeo está indisponível no momento (limite do provedor). Tente novamente mais tarde.",
+          503,
+        );
+      }
+      return serverError("Falha ao iniciar a geração do vídeo.");
     }
-    return serverError("Falha ao iniciar a geração do vídeo.");
   }
+
+  await admin
+    .from("image_generations")
+    .update({
+      video_status: "pending",
+      video_kie_task_id: taskId,
+      video_kie_model: usedModel,
+      video_retry_count: usedModel === tier.kieModel ? 0 : 1,
+      video_credits_cost: billed ? cost : 0,
+      video_error: null,
+      video_path: null,
+    })
+    .eq("id", id);
 
   if (billed) {
     await debitCredits({

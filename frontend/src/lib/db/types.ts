@@ -201,6 +201,10 @@ export type ImageGenerationRow = {
   video_tier: string | null;
   video_credits_cost: number | null;
   video_error: string | null;
+  /** Modelo que atendeu o vídeo (mig 65): titular do tier ou o fallback. */
+  video_kie_model: string | null;
+  /** Retentativas de fallback do vídeo já usadas (mig 65; máx 1). */
+  video_retry_count: number;
 };
 export type ImageGenerationInsert = {
   id?: string;
