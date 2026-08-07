@@ -55,7 +55,9 @@ const TRAIN_LANGUAGES = new Set(["pt", "es", "en"]);
  */
 function trainExecutionTimeoutMs(durationSeconds: number | null): number {
   const dur = Math.ceil(durationSeconds || 3600); // sem duração conhecida = pior caso
-  return (20 * 60 + Math.ceil(dur * 0.3)) * 1000;
+  // Base 30min (07/08: 2 treinos morreram em workers FRIOS recém-criados no
+  // rebalance da quota — a carga inicial do modelo come o teto antigo de 20).
+  return (30 * 60 + Math.ceil(dur * 0.3)) * 1000;
 }
 
 export async function POST(request: NextRequest, ctx: Ctx) {

@@ -62,11 +62,12 @@ const TEXT_MAX = 2000;
  * 3 tentativas) não comporta texto longo em GPU fria/lenta — 5 alunos
  * estouraram em 06/08 (diagnóstico do Vigia, incidente "tempo de execução
  * estourado"). Chunk de 160 chars espelha TTS_CHUNK_MAX_CHARS do worker.
- * Texto curto mantém os 20min; 2000 chars ≈ 13 chunks → 41min.
+ * Piso de 30min (07/08: worker FRIO do endpoint B levou >20min só carregando
+ * o modelo e matou um texto de 59 chars); 2000 chars ≈ 13 chunks → 41min.
  */
 function inferenceExecutionTimeoutMs(textLen: number): number {
   const chunks = Math.max(1, Math.ceil(textLen / 160));
-  return Math.max(20 * 60, 15 * 60 + chunks * 2 * 60) * 1000;
+  return Math.max(30 * 60, 15 * 60 + chunks * 2 * 60) * 1000;
 }
 
 type Body = {
