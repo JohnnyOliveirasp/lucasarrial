@@ -147,12 +147,12 @@ function buildVideoInput(v: KieVideoInput): Record<string, unknown> {
       resolution: v.resolution,
     };
   }
-  // Hailuo: image_url SINGULAR, sem aspect_ratio (herda o da foto).
+  // Hailuo: image_url SINGULAR, duration STRING, sem aspect_ratio (herda o da foto).
   if (v.model.startsWith("hailuo/")) {
     return {
       prompt: v.promptEn,
       image_url: v.imageUrl,
-      duration: v.durationSeconds,
+      duration: String(v.durationSeconds),
       resolution: v.resolution,
     };
   }
