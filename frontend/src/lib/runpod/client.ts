@@ -38,37 +38,43 @@ type EndpointHealth = {
   workers?: { idle?: number; ready?: number; running?: number; throttled?: number };
 };
 
-// Cache curto do health (10s): o pico de gerações não martelar a API do RunPod.
-let healthCache: { at: number; health: EndpointHealth | null } = { at: 0, health: null };
+// Cache curto do health por endpoint (10s): o pico de gerações não martelar
+// a API do RunPod.
+const healthCache = new Map<string, { at: number; health: EndpointHealth | null }>();
 
-async function primaryHealth(): Promise<EndpointHealth | null> {
-  if (Date.now() - healthCache.at < 10_000) return healthCache.health;
+async function endpointHealth(ep: string): Promise<EndpointHealth | null> {
+  const cached = healthCache.get(ep);
+  if (cached && Date.now() - cached.at < 10_000) return cached.health;
+  let health: EndpointHealth | null = null;
   try {
-    const h = await getJson<EndpointHealth>(`${BASE}/${inferenceEndpoint()}/health`);
-    healthCache = { at: Date.now(), health: h };
-    return h;
+    health = await getJson<EndpointHealth>(`${BASE}/${ep}/health`);
   } catch {
-    healthCache = { at: Date.now(), health: null };
-    return null;
+    health = null;
   }
+  healthCache.set(ep, { at: Date.now(), health });
+  return health;
 }
 
 /**
- * Escolhe o endpoint da geração: principal por padrão; TRANSBORDA pro B
- * quando o principal está sem worker disponível (idle+ready+running = 0,
- * típico de throttle geral) OU já tem fila formada. Health indisponível →
- * principal (comportamento de sempre).
+ * BALANCEAMENTO (pedido Johnny 07/08): a geração vai pro endpoint de voz
+ * MENOS CARREGADO entre A (principal) e B. Carga = fila×2 + rodando −
+ * workers livres (fila pesa mais: é ela que vira espera pro aluno). Empate
+ * ou health indisponível → A. Sem env do B → comportamento antigo (só A).
  */
 async function pickInferenceEndpoint(): Promise<string> {
+  const a = inferenceEndpoint();
   const b = inferenceEndpointB();
-  if (!b) return inferenceEndpoint();
-  const h = await primaryHealth();
-  if (!h) return inferenceEndpoint();
-  const w = h.workers ?? {};
-  const available = (w.idle ?? 0) + (w.ready ?? 0) + (w.running ?? 0);
-  const queued = h.jobs?.inQueue ?? 0;
-  if (available === 0 || queued > 0) return b;
-  return inferenceEndpoint();
+  if (!b) return a;
+  const [ha, hb] = await Promise.all([endpointHealth(a), endpointHealth(b)]);
+  if (!ha && !hb) return a;
+  if (!ha) return b;
+  if (!hb) return a;
+  const load = (h: EndpointHealth) => {
+    const w = h.workers ?? {};
+    const free = (w.idle ?? 0) + (w.ready ?? 0);
+    return (h.jobs?.inQueue ?? 0) * 2 + (h.jobs?.inProgress ?? 0) - free;
+  };
+  return load(hb) < load(ha) ? b : a;
 }
 
 export type RunpodRunResponse = {
