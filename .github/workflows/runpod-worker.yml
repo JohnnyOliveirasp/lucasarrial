@@ -89,7 +89,6 @@ jobs:
       RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
       TEMPLATE_ID: 03vs3iiph6
       ENDPOINT_ID: 2jcta960kzc2m4
-      WORKERS_MAX: "3"
     steps:
       - name: Set lowercase repo owner
         id: owner
@@ -109,6 +108,10 @@ jobs:
             -H "Content-Type: application/json" \
             -d "$(python3 -c 'import json,sys;print(json.dumps({"query":sys.argv[1]}))' "$QUERY")")
           echo "$RESP" | grep -q "\"imageName\":\"$IMG\"" || { echo "::error::saveTemplate nao aplicou: $RESP"; exit 1; }
+          # preserva o workersMax ATUAL (07/08: subiu pra 7 no rebalance da
+          # quota; o 3 fixo antigo rebaixaria prod a cada deploy do worker)
+          WORKERS_MAX=$(curl -sf "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID" \
+            -H "Authorization: Bearer $RUNPOD_API_KEY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("workersMax") or 3)')
           echo "reciclando workers (0 -> $WORKERS_MAX)"
           curl -sf -X PATCH "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID" \
             -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \

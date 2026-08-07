@@ -26,6 +26,51 @@ export function inferenceEndpoint() {
   return process.env.RUNPOD_ENDPOINT_INFERENCE_ID || trainEndpoint();
 }
 
+/** Endpoint B (transbordo): clone do worker de voz criado 07/08 pro caso
+ *  de workers do principal THROTTLED/cheios (5 timeouts em 06/08). Vazio =
+ *  feature desligada. */
+function inferenceEndpointB(): string | null {
+  return process.env.RUNPOD_ENDPOINT_INFERENCE_B_ID || null;
+}
+
+type EndpointHealth = {
+  jobs?: { inQueue?: number; inProgress?: number };
+  workers?: { idle?: number; ready?: number; running?: number; throttled?: number };
+};
+
+// Cache curto do health (10s): o pico de gerações não martelar a API do RunPod.
+let healthCache: { at: number; health: EndpointHealth | null } = { at: 0, health: null };
+
+async function primaryHealth(): Promise<EndpointHealth | null> {
+  if (Date.now() - healthCache.at < 10_000) return healthCache.health;
+  try {
+    const h = await getJson<EndpointHealth>(`${BASE}/${inferenceEndpoint()}/health`);
+    healthCache = { at: Date.now(), health: h };
+    return h;
+  } catch {
+    healthCache = { at: Date.now(), health: null };
+    return null;
+  }
+}
+
+/**
+ * Escolhe o endpoint da geração: principal por padrão; TRANSBORDA pro B
+ * quando o principal está sem worker disponível (idle+ready+running = 0,
+ * típico de throttle geral) OU já tem fila formada. Health indisponível →
+ * principal (comportamento de sempre).
+ */
+async function pickInferenceEndpoint(): Promise<string> {
+  const b = inferenceEndpointB();
+  if (!b) return inferenceEndpoint();
+  const h = await primaryHealth();
+  if (!h) return inferenceEndpoint();
+  const w = h.workers ?? {};
+  const available = (w.idle ?? 0) + (w.ready ?? 0) + (w.running ?? 0);
+  const queued = h.jobs?.inQueue ?? 0;
+  if (available === 0 || queued > 0) return b;
+  return inferenceEndpoint();
+}
+
 export type RunpodRunResponse = {
   id: string;
   status: "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "CANCELLED" | "TIMED_OUT";
@@ -93,12 +138,30 @@ export async function runpodSubmitInference(
   input: unknown,
   opts: SubmitOpts = {},
 ): Promise<RunpodRunResponse> {
-  return postJson<RunpodRunResponse>(`${BASE}/${inferenceEndpoint()}/run`, submitBody(input, opts));
+  const ep = await pickInferenceEndpoint();
+  return postJson<RunpodRunResponse>(`${BASE}/${ep}/run`, submitBody(input, opts));
 }
 
+/**
+ * Status do job. Com o transbordo, o job pode morar no endpoint B — se o
+ * endpoint consultado não conhecer o id, tenta o B (e vice-versa) antes de
+ * propagar o erro. Sem B configurado, comportamento idêntico ao antigo.
+ */
 export async function runpodGetStatus(jobId: string, endpoint?: string): Promise<RunpodStatusResponse> {
   const ep = endpoint || trainEndpoint();
-  return getJson<RunpodStatusResponse>(`${BASE}/${ep}/status/${jobId}`);
+  try {
+    return await getJson<RunpodStatusResponse>(`${BASE}/${ep}/status/${jobId}`);
+  } catch (e) {
+    const b = inferenceEndpointB();
+    if (b && b !== ep) {
+      try {
+        return await getJson<RunpodStatusResponse>(`${BASE}/${b}/status/${jobId}`);
+      } catch {
+        /* propaga o erro original abaixo */
+      }
+    }
+    throw e;
+  }
 }
 
 export function webhookUrlFor(path: "training" | "generation"): string | undefined {
