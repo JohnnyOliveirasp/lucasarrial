@@ -5,6 +5,11 @@
  * visível e cada geração vira um "take" numa lista logo abaixo, na MESMA tela
  * (player + duração + baixar). O texto não some — regenerar é clicar de novo.
  * O Histórico continua existindo como acervo; aqui é a sessão de trabalho.
+ *
+ * Os últimos takes da voz são HIDRATADOS ao abrir (pedido Johnny 07/08): o
+ * último áudio fica sempre na tela — refresh não apaga a lista nem perde o
+ * spinner de uma geração em andamento. Barra fixa no rodapé com o take mais
+ * recente pronto (sem autoplay: a pessoa dá o play).
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -41,6 +46,9 @@ const ANIM_CSS = `
 .vg-dots::after { content:''; animation: vg-dots 1.6s steps(1) infinite; }
 `;
 
+/** Quantos takes recentes desta voz pré-carregar ao abrir a tela. */
+const HYDRATE_LIMIT = 5;
+
 export function VoiceGenerator({ voiceId }: Props) {
   const t = useTranslations("voice");
   const router = useRouter();
@@ -57,6 +65,55 @@ export function VoiceGenerator({ voiceId }: Props) {
 
   const inflight = takes.some((t) => t.status === "pending" || t.status === "generating");
   const canSubmit = text.trim().length > 0 && !submitting && !inflight;
+  const latestReady = takes.find((t) => t.status === "ready" && t.audio_url) ?? null;
+
+  // Hidrata os últimos takes DESTA voz ao abrir — o último áudio fica sempre
+  // na tela e gerações em andamento voltam com o spinner (o poll retoma).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(
+          `/api/v1/generations?voice_id=${voiceId}&limit=${HYDRATE_LIMIT}`,
+          { cache: "no-store" },
+        );
+        if (!r.ok) return;
+        const json = await r.json();
+        const rows = (json.generations ?? []) as Array<{
+          id: string;
+          status: Take["status"];
+          text_raw: string | null;
+          audio_url: string | null;
+          error_message: string | null;
+          duration_seconds: number | null;
+          elapsed_seconds: number | null;
+          created_at: string;
+        }>;
+        if (cancelled || rows.length === 0) return;
+        setTakes((prev) => {
+          const seen = new Set(prev.map((t) => t.id));
+          const hydrated: Take[] = rows
+            .filter((g) => !seen.has(g.id))
+            .map((g) => ({
+              id: g.id,
+              status: g.status,
+              text: g.text_raw ?? "",
+              audio_url: g.audio_url,
+              error_message: g.error_message,
+              duration_seconds: g.duration_seconds,
+              elapsed_seconds: g.elapsed_seconds,
+              startedAt: Date.parse(g.created_at) || Date.now(),
+            }));
+          return [...prev, ...hydrated];
+        });
+      } catch {
+        /* sem hidratação — a tela segue funcionando como antes */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [voiceId]);
 
   // Poll dos takes em andamento — atualiza a lista in place.
   useEffect(() => {
@@ -275,6 +332,32 @@ export function VoiceGenerator({ voiceId }: Props) {
             {t("generator.savedNote")}
           </p>
         </section>
+      )}
+
+      {/* Barra fixa: o último áudio pronto, sempre à mão (sem autoplay). */}
+      {latestReady && (
+        <div className="sticky bottom-0 z-10 -mx-1 border-t border-[var(--hairline-strong)] bg-[var(--surface-deep)]/95 px-1 py-3 backdrop-blur">
+          <div className="flex items-center gap-3">
+            <span className="hidden shrink-0 font-mono text-[10px] uppercase tracking-wide text-[var(--ash)] sm:inline">
+              {t("generator.latestBar")}
+            </span>
+            <audio
+              key={latestReady.id}
+              src={latestReady.audio_url!}
+              controls
+              preload="metadata"
+              className="h-9 w-full flex-1"
+            />
+            <button
+              type="button"
+              onClick={() => downloadAudio(latestReady.audio_url!)}
+              aria-label={t("generator.downloadAria")}
+              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-3 text-[13px] text-[var(--ink)] hover:border-[var(--hairline-bright)]"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       )}
 
       <PaywallModal

@@ -1397,13 +1397,14 @@
       "supportAction": "generate the audio",
       "generating": "Generating…",
       "generate": "Generate audio",
-      "sessionTitle": "Generations this session",
+      "sessionTitle": "Recent generations for this voice",
       "generatingWord": "Generating",
       "failed": "Generation failed",
       "downloadAria": "Download audio",
       "download": "Download",
       "generatedIn": "· generated in {s}s",
       "savedNote": "All audio is also saved to your History.",
+      "latestBar": "Latest audio",
       "paywallAction": "generate audio"
     },
     "panel": {

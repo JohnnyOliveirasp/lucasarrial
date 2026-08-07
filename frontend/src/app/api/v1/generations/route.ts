@@ -24,15 +24,26 @@ export async function GET(request: NextRequest) {
 
   const admin = getAdmin();
 
+  // Filtros opcionais (tela Gerar Áudio hidrata os últimos takes da voz):
+  //   ?voice_id=<uuid>  → só gerações desta voz
+  //   ?limit=<n>        → corta a lista (máx 50)
+  const voiceIdParam = request.nextUrl.searchParams.get("voice_id");
+  const limitParam = Number(request.nextUrl.searchParams.get("limit"));
+  const limit = Number.isFinite(limitParam) ? Math.min(Math.max(1, limitParam), 50) : null;
+
   // Admin (env ADMIN_EMAILS): pula filtro de user_id e ve TODAS as geracoes.
   // Usuario comum: filtro normal por user_id (vinha assim antes deste commit).
   let q = admin
     .from("generations")
-    .select("id, user_id, voice_id, name, text_raw, status, audio_path, duration_seconds, created_at")
+    .select(
+      "id, user_id, voice_id, name, text_raw, status, error_message, audio_path, duration_seconds, elapsed_seconds, created_at",
+    )
     .order("created_at", { ascending: false });
   if (!auth.is_admin) {
     q = q.eq("user_id", auth.user_id);
   }
+  if (voiceIdParam) q = q.eq("voice_id", voiceIdParam);
+  if (limit) q = q.limit(limit);
   const { data: gens, error } = await q;
 
   if (error) return serverError("Failed to list generations");
