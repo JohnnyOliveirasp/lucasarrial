@@ -9,8 +9,9 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
+import { badRequest, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { imagesBucket } from "@/lib/r2/client";
+import { objectExists } from "@/lib/r2/exists";
 import { createPresignedGet } from "@/lib/r2/presigned";
 
 export async function POST(request: NextRequest) {
@@ -31,6 +32,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Chave morta (imagem apagada do histórico) → 404: o estúdio limpa a
+    // referência fixa do localStorage em !ok (caso 06/08, rajadas do Kie).
+    if (!(await objectExists(imagesBucket(), key))) return notFound("Imagem de referência");
     const url = await createPresignedGet(imagesBucket(), key, 60 * 60);
     return jsonOk({ url });
   } catch (e) {

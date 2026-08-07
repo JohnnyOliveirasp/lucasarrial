@@ -55,6 +55,20 @@ const PRESIGN_EXPIRES = 60 * 60; // 1h
 // ficar instável em single-shot — se precisar mais, dividir por frase no worker.
 const TEXT_MAX = 2000;
 
+/**
+ * Teto de execução do job (policy.executionTimeout), como no treino e nos
+ * clones. Esta era a ÚNICA rota sem policy por job: valia o default de 20min
+ * do endpoint, que desde o QA anti-eco (777e405: todo chunk transcrito + até
+ * 3 tentativas) não comporta texto longo em GPU fria/lenta — 5 alunos
+ * estouraram em 06/08 (diagnóstico do Vigia, incidente "tempo de execução
+ * estourado"). Chunk de 160 chars espelha TTS_CHUNK_MAX_CHARS do worker.
+ * Texto curto mantém os 20min; 2000 chars ≈ 13 chunks → 41min.
+ */
+function inferenceExecutionTimeoutMs(textLen: number): number {
+  const chunks = Math.max(1, Math.ceil(textLen / 160));
+  return Math.max(20 * 60, 15 * 60 + chunks * 2 * 60) * 1000;
+}
+
 type Body = {
   text: string;
   cfg_value?: number;
@@ -218,6 +232,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   try {
     runpodJob = await runpodSubmitInference(inferenceInput, {
       webhook: webhookUrlFor("generation"),
+      executionTimeoutMs: inferenceExecutionTimeoutMs(normalizedText.length),
     });
   } catch (e) {
     return serverError(

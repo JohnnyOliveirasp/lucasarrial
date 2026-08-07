@@ -31,6 +31,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { getBalance, debitCredits } from "@/lib/credits/service";
 import { imagesBucket } from "@/lib/r2/client";
+import { objectExists } from "@/lib/r2/exists";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import {
   ASPECT_VALUES,
@@ -158,6 +159,18 @@ export async function POST(request: NextRequest) {
         { subscribed, balance: bal.total, cost: creditCost },
       );
     }
+  }
+
+  // Referência morta (foto apagada junto com uma geração antiga do histórico,
+  // caso 06/08): valida ANTES de criar a task no Kie — erro claro, sem cobrar,
+  // em vez de "Image fetch failed" já cobrado + estorno + rajada de retries.
+  const existence = await Promise.all(inputKeys.map((k) => objectExists(imagesBucket(), k)));
+  if (existence.some((ok) => !ok)) {
+    return jsonError(
+      "reference_missing",
+      "Uma das fotos de referência não existe mais (ela foi apagada junto com uma geração antiga do histórico). Remova essa referência e adicione a foto de novo — você não foi cobrado por esta tentativa.",
+      400,
+    );
   }
 
   // Presigned GET de TODAS as referências pro Kie baixar.
