@@ -72,7 +72,7 @@ export function CloneStudio({
   const [image, setImage] = useState<ImageChoice | null>(null);
   const [audio, setAudio] = useState<AudioChoice | null>(null);
   const [uploading, setUploading] = useState<"image" | "audio" | null>(null);
-  const [tierId, setTierId] = useState<CloneTierId>("480p");
+  const [tierId, setTierId] = useState<CloneTierId>("480p-v3");
   const [submitting, setSubmitting] = useState(false);
   const [job, setJob] = useState<{ id: string; status: string; video_url: string | null; error: string | null } | null>(null);
   // Foto que vira o "palco" da geração (borrada enquanto gera; poster do vídeo pronto).

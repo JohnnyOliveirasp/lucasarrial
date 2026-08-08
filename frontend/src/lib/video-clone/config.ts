@@ -2,9 +2,11 @@
  * Vídeo Clone (lip-sync InfiniteTalk no NOSSO RunPod serverless).
  * Preço por SEGUNDO de áudio. REPRECIFICADO 2026-07-09 (Johnny): margem alvo
  * ~100% (2× o custo de GPU) pra ficar competitivo com HeyGen-likes.
- * Custos medidos (L40S US$0,99/h, ~1,05s GPU/frame no V1; V2 = 4 steps ≈ 0,6×):
- * V1 480p ≈ R$0,045/s áudio · V2 ≈ R$0,0275/s.
+ * Custos medidos (L40S US$0,99/h, ~1,05s GPU/frame no V1; V2/V3 = 4 steps ≈ 0,6×):
+ * V1 480p ≈ R$0,045/s áudio · V2/V3 ≈ R$0,0275/s.
  * Crédito da plataforma = R$97/180.000 = R$0,000539.
+ * REPRECIFICADO 08/08 (Johnny): Padrão 2.0 = 105 cr/s · Turbo = 80 cr/s
+ * ("margem menor mas seguro o aluno").
  */
 
 /** HD (720p) REMOVIDO 04/08 (decisão Johnny): preço ao aluno (465 cr/s)
@@ -32,35 +34,15 @@ export type CloneTier = {
   lora: string;
 };
 
+/** Padrão V1 (GGUF/7 steps, 170 cr/s) APOSENTADO 08/08 (decisão Johnny):
+ *  substituído pelo Padrão 2.0 (fluxo InfiniteTalkV2 dele, validado em
+ *  pré-produção 07/08). Jobs antigos no histórico mostram o id cru "480p". */
 export const CLONE_TIERS: readonly CloneTier[] = [
-  {
-    id: "480p",
-    label: "Padrão",
-    blurb: "Motor clássico: expressões e movimento mais ricos. Geração mais demorada.",
-    flow: "v1",
-    creditsPerSecond: 170,
-    width: 640,
-    height: 850,
-    ggufModel: "wan2.1-i2v-14b-480p-Q5_K_M.gguf",
-    lora: "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
-  },
-  {
-    id: "480p-v2",
-    label: "Turbo",
-    blurb: "Motor novo: quase 2× mais rápido e mais barato, com cores e enquadramento mais estáveis.",
-    flow: "v2",
-    creditsPerSecond: 105,
-    width: 480,
-    height: 832,
-    // Modelos fixos no template V2 (fp8 + rank128) — campos não usados.
-    ggufModel: "",
-    lora: "",
-  },
   {
     id: "480p-v3",
     label: "Padrão 2.0",
     blurb:
-      "🧪 Pré-produção: fluxo InfiniteTalkV2 validado no ComfyUI (07/08), candidato a substituir o Padrão. Só a equipe vê.",
+      "Novo motor padrão: resultado consistente — a mesma foto com o mesmo áudio gera sempre o mesmo vídeo.",
     flow: "v3",
     creditsPerSecond: 105,
     width: 480,
@@ -68,7 +50,18 @@ export const CLONE_TIERS: readonly CloneTier[] = [
     // Modelos fixos no template V3 — campos não usados.
     ggufModel: "",
     lora: "",
-    adminOnly: true,
+  },
+  {
+    id: "480p-v2",
+    label: "Turbo",
+    blurb: "Opção econômica no mesmo motor: corta o vídeo exatamente no fim do áudio; cada geração varia um pouco.",
+    flow: "v2",
+    creditsPerSecond: 80,
+    width: 480,
+    height: 832,
+    // Modelos fixos no template V2 (fp8 + rank128) — campos não usados.
+    ggufModel: "",
+    lora: "",
   },
 ] as const;
 

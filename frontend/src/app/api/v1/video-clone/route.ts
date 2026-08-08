@@ -99,10 +99,10 @@ export async function POST(request: NextRequest) {
   const audioKey = typeof body.audio_key === "string" ? body.audio_key.trim() : "";
   const generationId = typeof body.generation_id === "string" ? body.generation_id.trim() : "";
   const tier = getCloneTier(typeof body.tier === "string" ? body.tier : null);
-  if (!tier) return badRequest("Escolha a qualidade (Padrão ou HD).");
+  if (!tier) return badRequest("Escolha a qualidade (Padrão 2.0 ou Turbo).");
   // Tier de pré-produção: some da UI pra não-admin; aqui é a trava de verdade.
   if (tier.adminOnly && !(await isAdmin(auth.email))) {
-    return badRequest("Escolha a qualidade (Padrão ou Turbo).");
+    return badRequest("Escolha a qualidade (Padrão 2.0 ou Turbo).");
   }
 
   const admin0 = getAdmin();

@@ -765,7 +765,7 @@
       "stepAudio": "2. Áudio com a fala (até {max}s)",
       "stepQuality": "3. Qualidade",
       "perSecond": "{n} créditos/segundo de áudio",
-      "tierNote": "Qual escolher? O Padrão usa o motor clássico e entrega expressões e movimento mais ricos — bom quando a atuação importa. O Turbo usa o motor mais novo: sai quase 2× mais rápido, custa menos e mantém cores e enquadramento mais estáveis. Os dois geram em 480p.",
+      "tierNote": "Qual escolher? Os dois usam o novo motor, em 480p. O Padrão 2.0 é o recomendado: resultado consistente — repetir a mesma foto e o mesmo áudio gera sempre o mesmo vídeo. O Turbo é a opção econômica: mesma qualidade, corta o vídeo exatamente no fim do áudio e cada geração pode variar um pouco.",
       "cost": "Custo: {seconds}s × {rate} = {cost} créditos",
       "costBalance": "(você tem {have})",
       "pickToSeeCost": "Escolha a foto e o áudio pra ver o custo",

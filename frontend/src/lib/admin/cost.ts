@@ -74,6 +74,7 @@ export function imagesCostBrl(byRes: Array<{ resolution: string; n: number }>): 
 export const CLONE_COST_BRL_PER_AUDIO_SECOND: Record<string, number> = {
   "480p": 0.045,
   "480p-v2": 0.0275,
+  "480p-v3": 0.0275,
   "720p": 0.125,
 };
 
