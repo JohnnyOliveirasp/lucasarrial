@@ -217,6 +217,8 @@ export type ImageGenerationInsert = {
   aspect_ratio: string;
   resolution: string;
   credits_cost: number;
+  /** Import de upload próprio nasce pronto (status ready + arquivo no bucket). */
+  image_path?: string | null;
   status?: ImageGenerationStatus;
   kie_task_id?: string | null;
   kie_model?: string;

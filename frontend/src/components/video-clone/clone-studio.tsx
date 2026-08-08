@@ -39,6 +39,23 @@ async function presignAndPut(kind: "image" | "audio", file: File): Promise<strin
   return j.key as string;
 }
 
+/** Dimensões reais da imagem (viram o rótulo proporção/resolução no acervo). */
+function readImageDims(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: 0, height: 0 });
+    };
+    img.src = url;
+  });
+}
+
 function readAudioDuration(file: File): Promise<number> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
@@ -77,6 +94,9 @@ export function CloneStudio({
   const [job, setJob] = useState<{ id: string; status: string; video_url: string | null; error: string | null } | null>(null);
   // Foto que vira o "palco" da geração (borrada enquanto gera; poster do vídeo pronto).
   const [poster, setPoster] = useState<string | null>(null);
+  // Bump → ImagePicker refaz o fetch do acervo e volta pra aba "Minhas fotos"
+  // (upload recém-importado aparece lá selecionado).
+  const [pickerRefresh, setPickerRefresh] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [paywall, setPaywall] = useState<{ subscribed: boolean } | null>(null);
   const imgInput = useRef<HTMLInputElement>(null);
@@ -93,7 +113,24 @@ export function CloneStudio({
     try {
       file = await ensureUploadableImage(file); // iPhone .heic -> jpeg
       const key = await presignAndPut("image", file);
-      setImage({ kind: "upload", key, preview: URL.createObjectURL(file) });
+      const preview = URL.createObjectURL(file);
+      // Upload entra no acervo "Minhas fotos" (bug 08/08: trocar pra uma foto
+      // do histórico descartava o upload e a pessoa tinha que subir de novo).
+      const dims = await readImageDims(file);
+      const imp = await fetch("/api/v1/images/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, width: dims.width, height: dims.height }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      if (imp?.image?.id) {
+        setImage({ kind: "history", id: imp.image.id, preview: imp.image.image_url ?? preview });
+        setPickerRefresh((k) => k + 1);
+      } else {
+        // Acervo indisponível → fluxo antigo (upload vale só nesta seleção).
+        setImage({ kind: "upload", key, preview });
+      }
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : t("errors.upload"));
     } finally {
@@ -320,6 +357,7 @@ export function CloneStudio({
             onSelect={setImage}
             onUploadClick={() => imgInput.current?.click()}
             uploading={uploading === "image"}
+            refreshKey={pickerRefresh}
           />
         </div>
 

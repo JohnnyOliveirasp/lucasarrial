@@ -40,15 +40,25 @@ export function ImagePicker({
   onSelect,
   onUploadClick,
   uploading,
+  refreshKey = 0,
 }: {
   selected: ImageChoice | null;
   onSelect: (c: ImageChoice) => void;
   onUploadClick: () => void;
   uploading: boolean;
+  /** Bump externo (ex.: upload importado pro acervo) → refetch + aba histórico. */
+  refreshKey?: number;
 }) {
   const t = useTranslations("videoClone.pickers");
   const [tab, setTab] = useState<"history" | "upload">("history");
   const [items, setItems] = useState<HistImage[] | null>(null);
+
+  useEffect(() => {
+    if (refreshKey > 0) {
+      setItems(null);
+      setTab("history");
+    }
+  }, [refreshKey]);
 
   useEffect(() => {
     if (tab !== "history" || items !== null) return;
