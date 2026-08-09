@@ -75,9 +75,25 @@ export function phoneFromHotmart(
   return null;
 }
 
-/** Assinatura ativa hoje? (quem voltou não é alvo de resgate) */
-function isActive(accessUntil: string | null): boolean {
-  return Boolean(accessUntil && new Date(accessUntil).getTime() > Date.now());
+/**
+ * A pessoa VOLTOU depois de cancelar?
+ *
+ * Cuidado que já custou caro: quem cancela na Hotmart continua com acesso até
+ * o fim do período pago. Tratar "acesso ativo" como "voltou" tirava da fila
+ * justamente quem acabou de cancelar — os mais recentes, que ainda lembram da
+ * plataforma e são os mais fáceis de trazer de volta.
+ *
+ * O sinal honesto é uma COMPRA NOVA depois do cancelamento (só APPROVED: o
+ * COMPLETE pode chegar atrasado, referente ao ciclo que já estava pago).
+ */
+async function voltouDepoisDeCancelar(email: string, canceledAt: string): Promise<boolean> {
+  const { count } = await getAdmin()
+    .from("payment_events")
+    .select("id", { count: "exact", head: true })
+    .eq("event_type", "PURCHASE_APPROVED")
+    .ilike("buyer_email", email)
+    .gt("received_at", canceledAt);
+  return (count ?? 0) > 0;
 }
 
 type Classified = {
@@ -106,6 +122,16 @@ async function classify(email: string, phone: string | null, canceledAt: string)
     survey_detail: null as string | null,
   };
 
+  if (await voltouDepoisDeCancelar(email, canceledAt)) {
+    const { data: p } = await admin.from("profiles").select("id").ilike("email", email).maybeSingle();
+    return {
+      ...base,
+      profile_id: (p as { id: string } | null)?.id ?? null,
+      segment: "usou_e_saiu",
+      skip: "voltou a assinar",
+    };
+  }
+
   const { data: prof } = await admin
     .from("profiles")
     .select("id, access_until")
@@ -115,9 +141,6 @@ async function classify(email: string, phone: string | null, canceledAt: string)
 
   if (!profile) {
     return { ...base, profile_id: null, segment: "sem_conta", skip: phone ? null : "sem telefone" };
-  }
-  if (isActive(profile.access_until)) {
-    return { ...base, profile_id: profile.id, segment: "usou_e_saiu", skip: "voltou a assinar" };
   }
 
   const [{ count: voices }, { data: survey }] = await Promise.all([
@@ -180,7 +203,9 @@ export async function syncWinbackTargets(): Promise<{ novos: number; total: numb
     // Já contatada (ou em qualquer estado que não seja fila) → não toca.
     // Exceção: quem ficou de fora por telefone volta a ser avaliado — a
     // leitura do número melhorou depois e recupera gente descartada à toa.
-    const reavaliar = statusAtual === "skipped" && atual?.note === "sem telefone";
+    const reavaliar =
+      statusAtual === "skipped" &&
+      (atual?.note === "sem telefone" || atual?.note === "voltou a assinar");
     if (statusAtual && statusAtual !== "pending" && !reavaliar) continue;
 
     const phone = phoneFromHotmart(ev.payload?.data?.subscriber?.phone);
