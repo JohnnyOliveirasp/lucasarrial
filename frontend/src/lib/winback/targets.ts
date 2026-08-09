@@ -27,24 +27,50 @@ type CancelEvent = {
 
 /**
  * Telefone da Hotmart → dígitos com país (5511987654321).
- * O payload traz DDD e número separados, e o campo "cell" às vezes vem vazio
- * com o celular no campo "phone" (caso real: leilapatricia). Só aceitamos o
- * que parece celular brasileiro (9 dígitos começando com 9) — fixo não tem
- * WhatsApp e disparar pra ele é sinal ruim de graça.
+ *
+ * O campo é digitado pela pessoa no checkout, então chega de tudo: com
+ * máscara "(75) 99152-2005", com o DDD repetido dentro do número
+ * (cell "12991477132" + dddCell "12"), já com o 55 na frente, ou sem o 9º
+ * dígito (cadastro antigo: "96763237"). Cada formato desses era uma pessoa
+ * que a gente perdia à toa.
+ *
+ * Devolve null só quando não sobra nada aproveitável. Número que existir de
+ * verdade é confirmado depois, na checagem do WhatsApp antes de falar.
  */
 export function phoneFromHotmart(
   phone: { cell?: string; dddCell?: string; phone?: string; dddPhone?: string } | undefined,
 ): string | null {
   if (!phone) return null;
-  const pairs: [string, string][] = [
-    [phone.dddCell ?? "", phone.cell ?? ""],
-    [phone.dddPhone ?? "", phone.phone ?? ""],
+  const d = (s: string | undefined) => (s ?? "").replace(/\D/g, "");
+  const dddValido = (x: string) => x.length === 2 && Number(x) >= 11 && Number(x) <= 99;
+
+  // Do mais confiável (celular) pro menos.
+  const candidatos: [string, string][] = [
+    [d(phone.dddCell), d(phone.cell)],
+    [d(phone.dddPhone), d(phone.phone)],
   ];
-  for (const [rawDdd, rawNum] of pairs) {
-    const ddd = rawDdd.replace(/\D/g, "");
-    const num = rawNum.replace(/\D/g, "");
-    if (ddd.length !== 2 || num.length !== 9 || !num.startsWith("9")) continue;
-    return `55${ddd}${num}`;
+
+  for (const [ddd, num] of candidatos) {
+    if (!num) continue;
+
+    // Já vem completo, com país
+    if (num.startsWith("55") && (num.length === 12 || num.length === 13)) {
+      const local = num.slice(2);
+      if (!dddValido(local.slice(0, 2))) continue;
+      return local.length === 10 ? `55${local.slice(0, 2)}9${local.slice(2)}` : num;
+    }
+    // Portugal — vários alunos moram fora e falam português
+    if (num.startsWith("351") && num.length === 12) return num;
+
+    // Com DDD embutido (o dddCell separado é redundante aqui)
+    if (num.length === 11 && dddValido(num.slice(0, 2)) && num[2] === "9") return `55${num}`;
+    if (num.length === 10 && dddValido(num.slice(0, 2))) return `55${num.slice(0, 2)}9${num.slice(2)}`;
+
+    // Só o número, DDD no campo separado
+    if (dddValido(ddd)) {
+      if (num.length === 9 && num.startsWith("9")) return `55${ddd}${num}`;
+      if (num.length === 8) return `55${ddd}9${num}`; // celular antigo, antes do 9º dígito
+    }
   }
   return null;
 }
@@ -138,17 +164,24 @@ export async function syncWinbackTargets(): Promise<{ novos: number; total: numb
     maisRecentePorEmail.set(email, ev);
   }
 
-  const { data: existentes } = await admin.from("winback_targets").select("email, status");
+  const { data: existentes } = await admin.from("winback_targets").select("email, status, note");
   const jaTem = new Map(
-    ((existentes ?? []) as { email: string; status: string }[]).map((r) => [r.email.toLowerCase(), r.status]),
+    ((existentes ?? []) as { email: string; status: string; note: string | null }[]).map((r) => [
+      r.email.toLowerCase(),
+      r,
+    ]),
   );
 
   let novos = 0;
   let pulados = 0;
   for (const [email, ev] of maisRecentePorEmail) {
-    const statusAtual = jaTem.get(email);
+    const atual = jaTem.get(email);
+    const statusAtual = atual?.status;
     // Já contatada (ou em qualquer estado que não seja fila) → não toca.
-    if (statusAtual && statusAtual !== "pending") continue;
+    // Exceção: quem ficou de fora por telefone volta a ser avaliado — a
+    // leitura do número melhorou depois e recupera gente descartada à toa.
+    const reavaliar = statusAtual === "skipped" && atual?.note === "sem telefone";
+    if (statusAtual && statusAtual !== "pending" && !reavaliar) continue;
 
     const phone = phoneFromHotmart(ev.payload?.data?.subscriber?.phone);
     const c = await classify(email, phone, ev.received_at);
@@ -167,7 +200,7 @@ export async function syncWinbackTargets(): Promise<{ novos: number; total: numb
       updated_at: new Date().toISOString(),
     };
 
-    if (statusAtual === "pending") {
+    if (statusAtual === "pending" || reavaliar) {
       await admin.from("winback_targets").update(row as never).eq("email", email);
     } else {
       const { error } = await admin.from("winback_targets").insert(row as never);
