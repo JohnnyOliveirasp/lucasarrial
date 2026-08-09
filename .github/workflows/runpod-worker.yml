@@ -89,6 +89,12 @@ jobs:
       RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
       TEMPLATE_ID: 03vs3iiph6
       ENDPOINT_ID: 2jcta960kzc2m4
+      # VOX B (criado à mão na madrugada 07/08 como plano B da fila) ficava
+      # FORA do deploy: a frota de geração rodava metade com código velho e
+      # ninguém via. Descoberto 09/08 ao deployar o fix do chunking.
+      TEMPLATE_ID_B: itkncnhn7y
+      ENDPOINT_ID_B: 0qd28qwo9ptcp4
+      TEMPLATE_NAME_B: fast_cloner_vox_b__template
     steps:
       - name: Set lowercase repo owner
         id: owner
@@ -121,3 +127,28 @@ jobs:
             -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \
             -d "{\"workersMax\":$WORKERS_MAX}" -o /dev/null
           echo "deploy RunPod ok: $IMG"
+
+          # ── VOX B (mesma imagem; só geração roda nele) ──────────────────
+          if [ -n "$TEMPLATE_ID_B" ] && [ -n "$ENDPOINT_ID_B" ]; then
+            QUERY_B=$(printf 'mutation { saveTemplate(input: { id: "%s", name: "%s", imageName: "%s", containerDiskInGb: 50, volumeInGb: 0, dockerArgs: "", env: [], isServerless: true }) { id imageName } }' "$TEMPLATE_ID_B" "$TEMPLATE_NAME_B" "$IMG")
+            RESP_B=$(curl -sf -X POST "https://api.runpod.io/graphql?api_key=$RUNPOD_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "$(python3 -c 'import json,sys;print(json.dumps({"query":sys.argv[1]}))' "$QUERY_B")") || true
+            if echo "$RESP_B" | grep -q "\"imageName\":\"$IMG\""; then
+              WMAX_B=$(curl -sf "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID_B" \
+                -H "Authorization: Bearer $RUNPOD_API_KEY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("workersMax") or 2)')
+              echo "VOX B: reciclando workers (0 -> $WMAX_B)"
+              curl -sf -X PATCH "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID_B" \
+                -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \
+                -d '{"workersMax":0}' -o /dev/null
+              sleep 30
+              curl -sf -X PATCH "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID_B" \
+                -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json" \
+                -d "{\"workersMax\":$WMAX_B}" -o /dev/null
+              echo "deploy VOX B ok: $IMG"
+            else
+              # Nome do template B é chute documentado; se o saveTemplate não
+              # aplicar, avisa em vez de derrubar o deploy do A (que já subiu).
+              echo "::warning::VOX B nao atualizado (conferir TEMPLATE_NAME_B): $RESP_B"
+            fi
+          fi
