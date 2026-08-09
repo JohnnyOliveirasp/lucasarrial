@@ -31,6 +31,7 @@ import {
 } from "@/lib/r2/presigned";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { runpodSubmitTrain, webhookUrlFor } from "@/lib/runpod/client";
+import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -40,6 +41,9 @@ const TRAIN_EXPIRES_SECONDS = 2 * 60 * 60; // 2h
 // LoRA -> EsposaLucas saiu embolada com 26s de mumble no meio. Dataset/setup
 // daqui responde melhor a 500 + alpha=16.
 const DEFAULT_MAX_STEPS = 500;
+
+/** Espelha TRAIN_MIN_USEFUL_SECONDS do runpod-worker/handler.py (10 min). */
+const MIN_USEFUL_SPEECH_SECONDS = 10 * 60;
 
 // Idiomas aceitos pro Whisper do treino (referência/amostra). Default pt —
 // comportamento inalterado pro app; es/en usados pelas Vozes Prontas.
@@ -156,6 +160,41 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     return serverError(
       e instanceof Error ? `R2 presigned: ${e.message}` : "R2 presigned failed",
     );
+  }
+
+  // 1b. Fala aproveitável ANTES de cobrar e despachar (bug 08/08: a pessoa
+  // mandava 20min brutos cheios de pausa, o worker achava <10min de fala e
+  // reprovava só depois da fila+GPU; 3 tentativas e desistência). A estimativa
+  // é por energia = TETO do que o VAD vai achar, então só bloqueia quando a
+  // reprovação é matemática. Medição falhou → segue o jogo (nunca travar).
+  try {
+    const est = await estimateSpeechSeconds(audioUrls);
+    if (est.reliable && est.speechSeconds < MIN_USEFUL_SPEECH_SECONDS) {
+      const haveMin = Math.max(1, Math.round(est.speechSeconds / 60));
+      const missingMin = Math.max(
+        1,
+        Math.ceil((MIN_USEFUL_SPEECH_SECONDS - est.speechSeconds) / 60),
+      );
+      await admin
+        .from("voices")
+        .update({
+          error_message:
+            `Seu áudio tem cerca de ${haveMin} min de fala (o resto é pausa ou silêncio) ` +
+            `e o treino precisa de pelo menos ${MIN_USEFUL_SPEECH_SECONDS / 60} min falando.`,
+        })
+        .eq("id", voice.id);
+      return jsonError(
+        "insufficient_speech",
+        `Seu áudio tem cerca de ${haveMin} min de fala — o resto é pausa ou silêncio. ` +
+          `Para clonar sua voz precisamos de pelo menos ${MIN_USEFUL_SPEECH_SECONDS / 60} min falando: ` +
+          `grave mais ${missingMin} min (pode adicionar outro arquivo) e tente de novo. ` +
+          `Nada foi cobrado.`,
+        400,
+        { speech_seconds: est.speechSeconds, min_required_seconds: MIN_USEFUL_SPEECH_SECONDS },
+      );
+    }
+  } catch (e) {
+    console.error("[start-training] estimativa de fala falhou:", e instanceof Error ? e.message : e);
   }
 
   // 2. Submete pra RunPod (com webhook se SITE_URL estiver definida)

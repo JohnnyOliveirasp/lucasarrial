@@ -144,15 +144,26 @@ def vad_segments_silero(
 
 def chunk_vad_segments(
     segments: list[tuple[float, float]],
-    min_seconds: float = 5.0,
+    min_seconds: float = 3.0,
     max_seconds: float = 30.0,
-    merge_gap_seconds: float = 0.6,
+    merge_gap_seconds: float = 1.5,
 ) -> list[tuple[float, float]]:
     """Agrupa segmentos VAD em chunks min..max segundos.
 
     - Subdivide segmentos > max_seconds em pedaços iguais
     - Une contíguos com gap <= merge_gap_seconds
     - Descarta resultado final < min_seconds
+
+    ⚠️ CALIBRAÇÃO 08/08 (bug do "áudio insuficiente"): o gap de 0,6s DESTRUÍA
+    o áudio de quem fala pausado — a pausa natural entre frases é ~0,7-1,5s,
+    então cada frase virava um segmento solto de ~1,3s e caía no descarte por
+    ser < 5s. Medido no áudio real do prof.pinheirofilho (reprovado 3× e
+    desistiu): 31,5min de arquivo · 17,6min de fala em 645 segmentos (mediana
+    1,3s; 637 deles < 5s) → política antiga deixava 3,2min ÚTEIS (worker
+    reportou ~4min = confere). Com gap 1,5s sobem pra 19,0min; com min 3s,
+    21,9min. O mínimo de 3s também alinha com a receita oficial do VoxCPM
+    ("3-30s é o ponto ideal por clipe"). max_seconds=30 segue limitando o
+    tamanho, então o merge não cria clipe gigante.
     """
     if not segments:
         return []

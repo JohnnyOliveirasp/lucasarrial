@@ -232,7 +232,13 @@ def _handle_train(inp: dict) -> dict:
         extract_to_wav(vocals_wav, normalized, sample_rate=16000)
 
         vad = vad_segments_silero(normalized)
-        chunks = chunk_vad_segments(vad, min_seconds=5.0, max_seconds=30.0)
+        # Calibração 08/08 (ver docstring de chunk_vad_segments): gap 0.6→1.5s
+        # e mínimo 5→3s. O gap curto picotava a fala pausada e o descarte por
+        # <5s comia ~80% do áudio de quem fala bem (caso prof.pinheirofilho:
+        # 17,6min de fala viravam 3,2min úteis → "áudio insuficiente" injusto).
+        chunks = chunk_vad_segments(
+            vad, min_seconds=3.0, max_seconds=30.0, merge_gap_seconds=1.5
+        )
         cut = cut_audio_by_segments(normalized, chunks, dataset_dir, start_index=next_idx)
         next_idx += len(cut)
         import soundfile as _sf_stat
