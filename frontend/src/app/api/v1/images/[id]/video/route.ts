@@ -20,14 +20,11 @@ import {
   VIDEO_DURATION_SECONDS,
   VIDEO_RESOLUTION,
 } from "@/lib/video/tiers";
-import { VIDEO_ASPECT_RATIO } from "@/lib/video/config";
+import { pickVideoAspectRatio } from "@/lib/video/config";
 import { translateMovementPromptToEn } from "@/lib/llm/generate-video-prompt";
 import { failImageVideo } from "@/lib/images/video-sync";
 import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
-
-/** Ratios que os modelos de vídeo do Kie aceitam; fora disso cai no vertical. */
-const VIDEO_RATIOS = new Set(["9:16", "16:9", "1:1", "4:3", "3:4"]);
 
 function isProviderCreditError(raw: string): boolean {
   return /402|insufficient|credit|balance|quota/i.test(raw);
@@ -100,7 +97,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     .eq("id", id);
 
   // O vídeo sai no ratio da imagem quando o modelo aceita; senão vertical padrão.
-  const aspectRatio = VIDEO_RATIOS.has(gen.aspect_ratio) ? gen.aspect_ratio : VIDEO_ASPECT_RATIO;
+  const aspectRatio = pickVideoAspectRatio(gen.aspect_ratio);
 
   // Despacho com CONTINGÊNCIA (ordem Johnny 07/08): o titular do tier falhou →
   // tenta o modelo reserva na hora, mesmo preço pro aluno (diferença é nossa).

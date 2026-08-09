@@ -13,6 +13,22 @@ export const SECONDS_PER_SCENE = 4;
 /** Tudo é vertical (Instagram/Reels/TikTok). */
 export const VIDEO_ASPECT_RATIO = "9:16";
 
+/** Ratios que os modelos de vídeo do Kie aceitam; fora disso cai no vertical. */
+const VIDEO_RATIOS = new Set(["9:16", "16:9", "1:1", "4:3", "3:4"]);
+
+/**
+ * Ratio do vídeo a partir do ratio da IMAGEM de origem (Animar Imagem): segue a
+ * foto quando o modelo aceita, senão vertical. Usado tanto no despacho quanto
+ * na contingência — antes o fallback mandava "9:16" fixo, o que passava batido
+ * com Hailuo (que ignora o campo) mas viraria vídeo torto agora que Prata/Gold
+ * caem em Kling/Seedance, que RESPEITAM o ratio.
+ */
+export function pickVideoAspectRatio(imageAspectRatio: string | null | undefined): string {
+  return imageAspectRatio && VIDEO_RATIOS.has(imageAspectRatio)
+    ? imageAspectRatio
+    : VIDEO_ASPECT_RATIO;
+}
+
 /** Custo de "Improve Prompt" (LLM reescreve o prompt de UMA cena). */
 export const IMPROVE_PROMPT_COST = 1;
 

@@ -12,6 +12,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { kieGetTask, kieCreateVideoTask, kieCallbackUrl, friendlyKieError } from "@/lib/kie/client";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import { getVideoFallback, FALLBACK_MOVEMENT_PROMPT_EN } from "@/lib/video/tiers";
+import { pickVideoAspectRatio } from "@/lib/video/config";
 
 function pickExt(url: string, contentType: string | null): string {
   if (contentType?.includes("webm")) return "webm";
@@ -113,9 +114,15 @@ async function tryVideoFallback(imageId: string): Promise<boolean> {
     .eq("id", imageId)
     .eq("video_retry_count", 0)
     .in("video_status", ["pending", "generating"])
-    .select("id, image_path, video_tier, video_prompt_en");
+    .select("id, image_path, aspect_ratio, video_tier, video_prompt_en");
   const row = (claimed ?? [])[0] as
-    | { id: string; image_path: string | null; video_tier: string | null; video_prompt_en: string | null }
+    | {
+        id: string;
+        image_path: string | null;
+        aspect_ratio: string | null;
+        video_tier: string | null;
+        video_prompt_en: string | null;
+      }
     | undefined;
   if (!row) return false; // já está no fallback (ou outra via ganhou a corrida)
 
@@ -129,7 +136,7 @@ async function tryVideoFallback(imageId: string): Promise<boolean> {
         model: fb.kieModel,
         promptEn: row.video_prompt_en || FALLBACK_MOVEMENT_PROMPT_EN,
         imageUrl,
-        aspectRatio: "9:16", // Hailuo ignora (herda o da foto)
+        aspectRatio: pickVideoAspectRatio(row.aspect_ratio),
         resolution: fb.resolution,
         durationSeconds: fb.durationSeconds,
       },

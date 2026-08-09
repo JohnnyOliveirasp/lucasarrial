@@ -62,12 +62,28 @@ export const VIDEO_TIERS: readonly VideoTier[] = [
   },
 ] as const;
 
+/** Todos os clipes têm 4s, 9:16, 720p (= SECONDS_PER_SCENE; 4s é o mínimo
+ *  comum aos 3 modelos — Seedance não desce de 4).
+ *  (Declarado aqui em cima porque VIDEO_FALLBACK_BY_TIER lê os dois na
+ *  inicialização do módulo — mais abaixo daria TDZ.) */
+export const VIDEO_DURATION_SECONDS = 4;
+export const VIDEO_RESOLUTION = "720p";
+
 /**
- * Fallback de CONTINGÊNCIA do Animar Imagem (ordem Johnny 07/08): quando o
- * modelo do tier falha, chaveia pro reserva SEM cobrar de novo e SEM o aluno
- * saber — a diferença de custo é nossa. Hailuo 2.3 Standard = 30 cr Kie/clipe
- * (Grok = 18): melhor custo próximo do Grok com consistência boa em pessoa
- * realista. Hailuo não aceita aspect_ratio (herda o da foto) e o mínimo é 6s.
+ * Fallback de CONTINGÊNCIA do Animar Imagem (ordem Johnny 07/08, estendido a
+ * Prata/Gold em 09/08): quando o modelo do tier falha, chaveia pro reserva SEM
+ * cobrar de novo e SEM o aluno saber — a diferença de custo é nossa.
+ *
+ * Escolha do reserva de cada tier:
+ * - bronze → Hailuo 2.3 Standard (30 cr Kie vs 18 do Grok): custo próximo com
+ *   consistência boa em pessoa realista. Não aceita aspect_ratio (herda o da
+ *   foto) e o mínimo é 6s.
+ * - prata → Seedance 2 mini, o titular do Gold (103 vs 90 cr Kie: paga-se 13
+ *   de Kie a mais e entrega-se ACIMA do contratado).
+ * - gold → Kling v3 turbo, o titular do Prata (90 vs 103: sai mais barato).
+ *   Prata e Gold caem um no outro de propósito: são os dois modelos já rodando
+ *   em produção como titulares, com os MESMOS parâmetros do despacho normal
+ *   (4s, 720p, ratio da imagem) — nada novo entra em cena no pior momento.
  */
 export type VideoFallback = {
   kieModel: string;
@@ -81,6 +97,16 @@ export const VIDEO_FALLBACK_BY_TIER: Partial<Record<VideoTierId, VideoFallback>>
     durationSeconds: 6,
     resolution: "768P",
   },
+  prata: {
+    kieModel: "bytedance/seedance-2-mini",
+    durationSeconds: VIDEO_DURATION_SECONDS,
+    resolution: VIDEO_RESOLUTION,
+  },
+  gold: {
+    kieModel: "kling/v3-turbo-image-to-video",
+    durationSeconds: VIDEO_DURATION_SECONDS,
+    resolution: VIDEO_RESOLUTION,
+  },
 };
 
 export function getVideoFallback(tierId: string | null | undefined): VideoFallback | null {
@@ -90,11 +116,6 @@ export function getVideoFallback(tierId: string | null | undefined): VideoFallba
 /** Custo em créditos da varinha ✨ de vídeo: Sonnet COM VISÃO re-escreve o
  *  prompt olhando a imagem (mais caro que a de imagem). NÃO inclui o clipe. */
 export const VIDEO_PROMPT_WAND_COST = 15;
-
-/** Todos os clipes têm 4s, 9:16, 720p (= SECONDS_PER_SCENE; 4s é o mínimo
- *  comum aos 3 modelos — Seedance não desce de 4). */
-export const VIDEO_DURATION_SECONDS = 4;
-export const VIDEO_RESOLUTION = "720p";
 
 /** Prompt de movimento padrão quando o Sonnet (visão) falha — mantém o fluxo. */
 export const FALLBACK_MOVEMENT_PROMPT_PT =
