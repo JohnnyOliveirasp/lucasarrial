@@ -37,6 +37,47 @@ function toTurns(history: AgentMessageRow[]): { role: "user" | "assistant"; cont
   return turns;
 }
 
+/**
+ * Uma pergunta, uma resposta — sem histórico de conversa. Usado quando a Fast
+ * precisa ESCREVER algo por conta própria (ex.: a primeira mensagem do
+ * Resgate, que nasce sem ninguém do outro lado ter falado ainda).
+ * Lança em erro, igual buildAgentReply.
+ */
+export async function agentComplete(
+  system: string,
+  user: string,
+  opts?: { maxTokens?: number },
+): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("LLM indisponível (sem chave)");
+
+  const res = await fetch(ANTHROPIC_API, {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: opts?.maxTokens ?? 400,
+      system: [{ type: "text", text: system }],
+      messages: [{ role: "user", content: user }],
+    }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 200)}`);
+
+  const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+  const text = (json.content ?? [])
+    .filter((b) => b.type === "text" && b.text)
+    .map((b) => b.text as string)
+    .join("\n")
+    .trim();
+  if (!text) throw new Error("LLM não retornou resposta");
+  return text.slice(0, 3000);
+}
+
 /** Gera a resposta do agente pro histórico dado (última mensagem = do aluno). */
 export async function buildAgentReply(
   history: AgentMessageRow[],

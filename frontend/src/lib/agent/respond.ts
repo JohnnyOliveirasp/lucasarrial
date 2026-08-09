@@ -27,6 +27,7 @@ import { fetchMediaBytes } from "@/lib/agent/provider";
 import { sendHumanized } from "@/lib/agent/humanize";
 import { extractEscalation, notifyTeamEscalation } from "@/lib/agent/escalate";
 import { shouldAnswerUnprompted } from "@/lib/agent/classify";
+import { winbackContext, applyWinbackMarkers } from "@/lib/winback/conversation";
 import type { IngestedMessage } from "@/lib/agent/ingest";
 import { transcribeAudioBuffer } from "@/lib/video/transcribe";
 import type { AgentMessageRow } from "@/lib/db/types";
@@ -260,16 +261,30 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     // Print/comprovante: a Fast vê a imagem da mensagem que disparou a resposta.
     const image = msg.kind === "image" ? await prepareImage(msg) : null;
 
+    // RESGATE: se fomos NÓS que abrimos esta conversa (pessoa que cancelou), a
+    // Fast troca de missão — escuta o motivo, argumenta e pode devolver
+    // créditos. O manual normal continua valendo por baixo.
+    const winback = msg.chat.kind === "private" ? await winbackContext(msg.chat.id) : null;
+
     const reply = await buildAgentReply(history, {
       group: msg.chat.kind === "group",
       unprompted,
       account,
       image,
+      systemExtra: winback?.systemExtra ?? null,
     });
     // Escalação real: o marcador interno sai da mensagem e vira aviso à
     // equipe (ou SÓ ao técnico, se [ESCALAR-TECNICO] — erro de sistema).
-    const { clean, reason, technical } = extractEscalation(reply);
-    if (!clean) return;
+    const { clean: semEscalacao, reason, technical } = extractEscalation(reply);
+    if (!semEscalacao) return;
+    // Resgate: tira os marcadores dela (motivo/crédito/opt-out) e EXECUTA —
+    // crédito prometido cai na conta na mesma hora.
+    let clean = semEscalacao;
+    if (winback) {
+      const aplicado = await applyWinbackMarkers(winback.target, semEscalacao);
+      if (!aplicado.clean) return;
+      clean = aplicado.clean;
+    }
     // F6: entrada espontânea com contexto incerto (outra ferramenta? HeyGen/
     // ElevenLabs?) → a Fast responde "PULAR" e a gente descarta em silêncio.
     if (unprompted && /^\[?PULAR\]?\.?$/i.test(clean.trim())) return;

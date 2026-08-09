@@ -872,6 +872,55 @@ export type AgentSettingsRow = { id: number; enabled: boolean; updated_at: Times
 export type AgentSettingsInsert = { id?: number; enabled?: boolean };
 export type AgentSettingsUpdate = Partial<AgentSettingsRow>;
 
+// ───────── Resgate da Fast (win-back por WhatsApp — mig 66) ─────────
+/** Como a pessoa saiu, deduzido do USO (não do que ela disse). */
+export type WinbackSegment = "nunca_ativou" | "usou_e_saiu" | "sem_conta";
+/** pending→sending→sent→replied→(recovered|lost|optout) · blocked | skipped
+ *  'sending' é o claim atômico: impede que duas rodadas do cron abram a mesma
+ *  conversa duas vezes. */
+export type WinbackStatus =
+  | "pending" | "sending" | "sent" | "replied" | "recovered" | "lost" | "optout" | "blocked" | "skipped";
+
+export type WinbackTargetRow = {
+  id: string;
+  email: string;
+  phone_digits: string | null;
+  profile_id: string | null;
+  canceled_at: Timestamp | null;
+  segment: WinbackSegment;
+  survey_reason: string | null;
+  survey_detail: string | null;
+  status: WinbackStatus;
+  chat_id: string | null;
+  wa_jid: string | null;
+  sent_at: Timestamp | null;
+  delivered_at: Timestamp | null;
+  replied_at: Timestamp | null;
+  outcome: string | null;
+  outcome_detail: string | null;
+  credits_granted: number;
+  note: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+};
+export type WinbackTargetInsert = Partial<WinbackTargetRow> & { email: string };
+export type WinbackTargetUpdate = Partial<WinbackTargetRow>;
+
+export type WinbackSettingsRow = {
+  id: number;
+  enabled: boolean;
+  day_index: number;
+  last_send_date: string | null;
+  sent_today: number;
+  next_send_at: Timestamp | null;
+  paused_until: Timestamp | null;
+  credits_cap: number;
+  last_note: string | null;
+  updated_at: Timestamp;
+};
+export type WinbackSettingsInsert = Partial<WinbackSettingsRow>;
+export type WinbackSettingsUpdate = Partial<WinbackSettingsRow>;
+
 // ───────── Database (composição) ─────────
 // Cada tabela precisa de `Relationships: []` pra satisfazer GenericTable do supabase-js v2.105+.
 type Relationship = {
@@ -899,6 +948,8 @@ export type Database = {
       agent_chats: { Row: AgentChatRow; Insert: AgentChatInsert; Update: AgentChatUpdate; Relationships: Rel };
       agent_messages: { Row: AgentMessageRow; Insert: AgentMessageInsert; Update: AgentMessageUpdate; Relationships: Rel };
       agent_settings: { Row: AgentSettingsRow; Insert: AgentSettingsInsert; Update: AgentSettingsUpdate; Relationships: Rel };
+      winback_targets: { Row: WinbackTargetRow; Insert: WinbackTargetInsert; Update: WinbackTargetUpdate; Relationships: Rel };
+      winback_settings: { Row: WinbackSettingsRow; Insert: WinbackSettingsInsert; Update: WinbackSettingsUpdate; Relationships: Rel };
       render_jobs: { Row: RenderJobRow; Insert: RenderJobInsert; Update: RenderJobUpdate; Relationships: Rel };
       usage_monthly: { Row: UsageMonthlyRow; Insert: UsageMonthlyInsert; Update: UsageMonthlyUpdate; Relationships: Rel };
       api_keys:      { Row: ApiKeyRow;       Insert: ApiKeyInsert;       Update: ApiKeyUpdate;       Relationships: Rel };

@@ -143,6 +143,25 @@ export async function wahaSetTyping(jid: string, on: boolean): Promise<void> {
   }
 }
 
+/**
+ * O número tem WhatsApp? (GET /api/contacts/check-exists)
+ * Usado ANTES de abrir conversa no Resgate: disparar pra número que não existe
+ * é sinal forte de spam pra Meta — e queima a reputação do nosso número à toa.
+ * Devolve null quando não deu pra saber (aí quem chama decide; nós pulamos).
+ */
+export async function wahaNumberExists(phoneDigits: string): Promise<boolean | null> {
+  try {
+    const res = await waha(
+      `/api/contacts/check-exists?phone=${encodeURIComponent(phoneDigits)}&session=${SESSION}`,
+    );
+    if (!res.ok) return null;
+    const json = (await res.json()) as { numberExists?: boolean };
+    return typeof json.numberExists === "boolean" ? json.numberExists : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Assunto (nome) de um grupo. */
 export async function wahaGroupSubject(groupJid: string): Promise<string | null> {
   try {
