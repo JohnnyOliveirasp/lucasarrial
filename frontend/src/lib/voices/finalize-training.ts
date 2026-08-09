@@ -12,6 +12,7 @@ import { addExtraCredits } from "@/lib/credits/service";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { bypassesBilling } from "@/lib/credits/access";
+import { escalateStuckUser } from "@/lib/support/failure-alert";
 import type { VoiceStatus, VoiceUpdate } from "@/lib/db/types";
 
 const SUPPORT_EMAIL = "suporte@fastcloner.com";
@@ -226,6 +227,17 @@ export async function finalizeTraining(args: {
         runpodStatus,
         rawError,
         refunded,
+      });
+    } else {
+      // Erro "do usuário" NÃO é pager na 1ª vez — mas quem repete e continua
+      // SEM VOZ está travado no funil, e aí vira problema nosso (foi o caso
+      // do bug do chunking 08/08: 8 alunos, 20 tentativas, ninguém avisado).
+      await escalateStuckUser({
+        userId,
+        userEmail,
+        feature: "Treino de voz",
+        refundRefType: "voice_train_refund",
+        rawError: rawError || out.error || "erro de dataset",
       });
     }
   }

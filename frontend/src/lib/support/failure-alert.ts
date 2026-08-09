@@ -82,17 +82,99 @@ const BURST_WINDOW_MS = 15 * 60 * 1000;
 const BURST_THRESHOLD = 3;
 
 /**
+ * ⚠️ CALIBRAÇÃO 08/08 — a janela de 15min nasceu pra falha RÁPIDA (imagem, 30s)
+ * e por isso NUNCA disparava nas lentas. Treino leva 10-20min: falhar 3× em
+ * 15min é fisicamente impossível, então o caso mais caro do produto (10.000 cr
+ * por tentativa) ficava mudo. Foi assim que o bug do chunking (08/08) passou
+ * batido: prof.pinheirofilho falhou 3× em 2h09 e ivanildezuca 2× — nenhum
+ * abriu incidente, e a classe "erro do usuário" silenciava o Vigia.
+ * Regra por ferramenta: operação lenta = janela em HORAS e limiar 2.
+ */
+const BURST_RULES: Record<string, { windowMs: number; threshold: number }> = {
+  // refundRefType usado no estorno de treino de voz.
+  training: { windowMs: 24 * 60 * 60 * 1000, threshold: 2 },
+  voice: { windowMs: 24 * 60 * 60 * 1000, threshold: 2 },
+  video_clone_refund: { windowMs: 6 * 60 * 60 * 1000, threshold: 2 },
+};
+
+function burstRuleFor(refundRefType: string): { windowMs: number; threshold: number } {
+  return BURST_RULES[refundRefType] ?? { windowMs: BURST_WINDOW_MS, threshold: BURST_THRESHOLD };
+}
+
+/**
  * Regra do Sentinela (caso 05/08: 7 falhas Seedream com estorno automático e
  * NENHUM incidente — "tratada" ≠ "saudável"): rajada de falhas do mesmo aluno
  * abre/reaquece incidente na aba Falhas do /admin, que é a fila que o
  * Sentinela varre. Dedupe por assinatura, mesmo padrão da Fast (mail-respond).
  */
+/**
+ * Escalação de falha classificada como "erro do usuário" que VIRA problema
+ * nosso por repetição. Chamada pelo finalize-training, que por design NÃO
+ * alerta o suporte nesses casos ("dataset do usuário não é pager").
+ *
+ * O furo que isso fecha (08/08): erro de dataset repetido não alertava
+ * ninguém, e a classe ficava "ignored" pro Vigia → o bug do chunking rodou
+ * 18 dias. Quem tenta 2×+ e NÃO TEM NENHUMA VOZ PRONTA não é "usuário
+ * errando": é aluno travado no funil, o churn mais caro que existe.
+ */
+export async function escalateStuckUser(a: {
+  userId: string;
+  userEmail: string | null;
+  feature: string;
+  refundRefType: string;
+  rawError: string;
+}): Promise<void> {
+  try {
+    const rule = burstRuleFor(a.refundRefType);
+    const since = new Date(Date.now() - rule.windowMs).toISOString();
+    const { count } = await getAdmin()
+      .from("credit_transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", a.userId)
+      .eq("ref_type", a.refundRefType)
+      .gte("created_at", since);
+    const fails = count ?? 0;
+    if (fails < rule.threshold) return;
+    if (!(await hasNoReadyVoice(a.userId))) return; // já tem voz → não travou
+    await openBurstIncident({
+      refundRefType: a.refundRefType,
+      feature: a.feature,
+      userEmail: a.userEmail ?? "(sem e-mail)",
+      count: fails,
+      rawError: a.rawError,
+      windowLabel:
+        rule.windowMs >= 60 * 60 * 1000
+          ? `${Math.round(rule.windowMs / 3_600_000)}h`
+          : `${Math.round(rule.windowMs / 60_000)}min`,
+      stuck: true,
+    });
+  } catch {
+    // best-effort: nunca quebra o fluxo de finalização
+  }
+}
+
+/** Aluno sem NENHUMA voz pronta = travado no funil (churn silencioso). */
+async function hasNoReadyVoice(userId: string): Promise<boolean> {
+  try {
+    const { count } = await getAdmin()
+      .from("voices")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "ready");
+    return (count ?? 0) === 0;
+  } catch {
+    return false;
+  }
+}
+
 async function openBurstIncident(a: {
   refundRefType: string;
   feature: string;
   userEmail: string;
   count: number;
   rawError: string;
+  windowLabel: string;
+  stuck: boolean;
 }): Promise<void> {
   const admin = getAdmin();
   const signature = `fail-burst:${a.refundRefType}:${a.userEmail}`;
@@ -128,14 +210,22 @@ async function openBurstIncident(a: {
     cause: "reported",
     status: "open",
     signature,
-    title: `Rajada de falhas: ${a.feature} — ${a.userEmail} (${a.count} em 15min)`,
+    title:
+      `${a.stuck ? "🚨 ALUNO TRAVADO" : "Rajada de falhas"}: ${a.feature} — ` +
+      `${a.userEmail} (${a.count} em ${a.windowLabel}${a.stuck ? ", sem nenhuma voz pronta" : ""})`,
     occurrences: 1,
     affected_emails: [a.userEmail],
     sample_error: a.rawError.slice(0, 1000),
     description:
-      `${a.count} falhas com estorno automático do mesmo aluno em 15 minutos na ` +
+      `${a.count} falhas com estorno automático do mesmo aluno em ${a.windowLabel} na ` +
       `ferramenta "${a.feature}". Estorno em dia não significa experiência ok — ` +
-      `investigar a causa raiz (erro cru na sample e, para imagens, na coluna kie_raw_error).`,
+      `investigar a causa raiz (erro cru na sample e, para imagens, na coluna kie_raw_error).` +
+      (a.stuck
+        ? ` 🚨 ESTE ALUNO NÃO TEM NENHUMA VOZ PRONTA: ele está travado no funil e ` +
+          `tende a cancelar sem reclamar. Escalar pro humano mesmo que a causa ` +
+          `pareça "erro do usuário" — foi assim que o bug do chunking (08/08) ` +
+          `passou 18 dias despercebido.`
+        : ""),
     reported_by: "burst-rule",
     first_seen_at: now,
     last_seen_at: now,
@@ -168,20 +258,28 @@ export async function handleTechFailure(a: TechFailureArgs): Promise<void> {
 
       // Regra de rajada: conta os estornos desta ferramenta na janela (1 estorno
       // idempotente por falha → contagem fiel) e abre incidente no limiar.
-      const since = new Date(Date.now() - BURST_WINDOW_MS).toISOString();
+      const rule = burstRuleFor(a.refundRefType);
+      const since = new Date(Date.now() - rule.windowMs).toISOString();
       const { count } = await admin
         .from("credit_transactions")
         .select("id", { count: "exact", head: true })
         .eq("user_id", a.userId)
         .eq("ref_type", a.refundRefType)
         .gte("created_at", since);
-      if ((count ?? 0) >= BURST_THRESHOLD) {
+      if ((count ?? 0) >= rule.threshold) {
         await openBurstIncident({
           refundRefType: a.refundRefType,
           feature: a.feature,
           userEmail,
           count: count ?? 0,
           rawError: a.rawError,
+          windowLabel:
+            rule.windowMs >= 60 * 60 * 1000
+              ? `${Math.round(rule.windowMs / 3_600_000)}h`
+              : `${Math.round(rule.windowMs / 60_000)}min`,
+          // Aluno TRAVADO (nenhuma voz pronta) é o sinal mais forte de churn:
+          // vai embora calado. Entra no título pro Sentinela priorizar.
+          stuck: await hasNoReadyVoice(a.userId),
         });
       }
     }
