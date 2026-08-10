@@ -185,12 +185,59 @@ async function adminBccList(): Promise<string[]> {
   return ["johnny.oliveirasp@gmail.com"];
 }
 
+/**
+ * Mensagem grande demais (anexo pesado): a gente NÃO baixa o conteúdo — só os
+ * cabeçalhos. Responde explicando que a caixa não recebe anexo e marca como
+ * lida, senão ela trava a fila pra sempre (foi o que aconteceu em 08/08: um
+ * e-mail de 33MB deixou a Fast 2 dias sem responder ninguém).
+ */
+async function responderAnexoGrande(
+  mail: RawMail,
+  fromEmail: string,
+  subject: string,
+  messageId: string | null,
+  bcc: string[],
+): Promise<"replied"> {
+  const mb = Math.round((mail.sizeBytes ?? 0) / 1_000_000);
+  const texto =
+    "Oi! Tudo bem?\n\n" +
+    `Recebi seu e-mail, mas ele veio com um anexo grande demais (${mb} MB) e o nosso ` +
+    "suporte por e-mail não consegue abrir arquivos desse tamanho — por isso não consegui " +
+    "ler o que você mandou.\n\n" +
+    "Me reenvia só o texto, por favor, explicando o que aconteceu? Se for um áudio, uma " +
+    "gravação ou um vídeo, o melhor caminho é fazer o upload direto na plataforma, ou me " +
+    "mandar um link (Google Drive, WeTransfer, YouTube não listado).\n\n" +
+    "Se for um print de erro, pode colar a imagem no corpo do e-mail mesmo, que costuma " +
+    "vir bem menor.\n\n" +
+    "Desculpe o transtorno e obrigada!\n\n" +
+    "Fast — FastCloner";
+
+  await sendSupportMail({
+    to: fromEmail,
+    subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
+    text: texto,
+    inReplyTo: messageId,
+    bcc,
+  });
+  await markSeen(mail.uid);
+  console.log(`[agent/mail] anexo grande (${mb}MB) uid=${mail.uid} de=${fromEmail} — respondido e liberado`);
+  return "replied";
+}
+
 async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "skipped" | "escalated"> {
   const raw = mail.raw;
   const fromHeader = header(raw, "From");
   const fromEmail = (fromHeader.match(/<([^>]+)>/)?.[1] ?? fromHeader).trim().toLowerCase();
   const subject = header(raw, "Subject") || "(sem assunto)";
   const messageId = header(raw, "Message-ID") || null;
+
+  if (mail.oversized) {
+    if (shouldSkip(raw, fromEmail) || !fromEmail.includes("@")) {
+      await markSeen(mail.uid); // robô/plataforma com anexo: só destrava a fila
+      return "skipped";
+    }
+    return responderAnexoGrande(mail, fromEmail, subject, messageId, bcc);
+  }
 
   const skip = shouldSkip(raw, fromEmail);
   const text = skip ? "" : mailText(raw);

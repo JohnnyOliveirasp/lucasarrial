@@ -40,13 +40,22 @@ class ImapSession {
     await this.waitFor(/^\* OK/m); // greeting
   }
 
-  /** Espera o buffer casar com o padrão (linha de conclusão do comando). */
+  /**
+   * Espera o buffer casar com o padrão (linha de conclusão do comando).
+   *
+   * ⚠️ Só olha o FIM do buffer. A versão antiga convertia o buffer inteiro em
+   * texto a cada 50ms: com uma mensagem de 33MB na caixa (aconteceu em 08/08),
+   * eram 33MB moídos 20 vezes por segundo — a checagem ficava mais lenta que a
+   * chegada dos dados e o timeout estourava SEMPRE. A Fast ficou 2 dias muda
+   * por causa disso, tentando a mesma mensagem de 5 em 5 minutos.
+   */
   private waitFor(pattern: RegExp, timeoutMs = 30_000): Promise<string> {
     return new Promise((resolve, reject) => {
       const started = Date.now();
       const tick = () => {
-        const text = this.buffer.toString("latin1");
-        if (pattern.test(text)) return resolve(text);
+        // A linha de conclusão está sempre no fim; 4KB cobrem com folga.
+        const cauda = this.buffer.subarray(Math.max(0, this.buffer.length - 4096)).toString("latin1");
+        if (pattern.test(cauda)) return resolve(this.buffer.toString("latin1"));
         if (Date.now() - started > timeoutMs) return reject(new Error("IMAP resposta demorou"));
         setTimeout(tick, 50);
       };
@@ -83,7 +92,25 @@ class ImapSession {
   }
 }
 
-export type RawMail = { uid: number; raw: string };
+export type RawMail = {
+  uid: number;
+  raw: string;
+  /** Mensagem grande demais: só os cabeçalhos foram baixados (ver MAIL_MAX_BYTES). */
+  oversized?: boolean;
+  /** Tamanho real da mensagem na caixa, em bytes. */
+  sizeBytes?: number;
+};
+
+/**
+ * Teto do que a gente aceita baixar de uma mensagem.
+ *
+ * A caixa do suporte não é canal de arquivo: um e-mail de 33MB (aluno mandando
+ * áudio anexado, 08/08) travou a Fast por 2 dias — ela tentava baixar o mesmo
+ * anexo a cada 5 minutos e nunca chegava nos e-mails seguintes da fila.
+ * Acima deste teto a gente lê só os cabeçalhos, responde explicando que a
+ * caixa não recebe anexo, e segue a vida.
+ */
+const MAIL_MAX_BYTES = Number(process.env.AGENT_MAIL_MAX_BYTES ?? 2_000_000);
 
 /**
  * Busca os e-mails NÃO LIDOS do INBOX (até `limit`), SEM marcar como lidos
@@ -110,21 +137,52 @@ export async function fetchUnseen(limit = 10): Promise<RawMail[]> {
       .map(Number)
       .slice(0, limit);
 
+    // PERGUNTA O TAMANHO ANTES de baixar qualquer coisa. Sem isso, uma única
+    // mensagem gigante trava a fila inteira (incidente de 08/08).
+    const tamanhos = new Map<number, number>();
+    if (uids.length) {
+      const info = await session.command(`UID FETCH ${uids.join(",")} (RFC822.SIZE)`);
+      for (const linha of info.split(/\r?\n/)) {
+        const m = linha.match(/UID (\d+).*RFC822\.SIZE (\d+)|RFC822\.SIZE (\d+).*UID (\d+)/);
+        if (!m) continue;
+        const uid = Number(m[1] ?? m[4]);
+        const size = Number(m[2] ?? m[3]);
+        if (uid && size) tamanhos.set(uid, size);
+      }
+    }
+
     const out: RawMail[] = [];
     for (const uid of uids) {
+      const tamanho = tamanhos.get(uid) ?? 0;
+
+      if (tamanho > MAIL_MAX_BYTES) {
+        // Só os cabeçalhos: dá pra saber quem escreveu e sobre o quê, sem
+        // arrastar o anexo. Quem responde decide o que fazer (ver mail-respond).
+        const bufH = await session.commandRaw(
+          `UID FETCH ${uid} BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID REPLY-TO)]`,
+        );
+        const raw = extrairLiteral(bufH);
+        out.push({ uid, raw, oversized: true, sizeBytes: tamanho });
+        continue;
+      }
+
       const buf = await session.commandRaw(`UID FETCH ${uid} BODY.PEEK[]`);
-      const text = buf.toString("latin1");
-      // Literal IMAP: ... BODY[] {N}\r\n<N bytes>
-      const m = text.match(/\{(\d+)\}\r\n/);
-      if (!m || m.index === undefined) continue;
-      const start = m.index + m[0].length;
-      const size = Number(m[1]);
-      out.push({ uid, raw: buf.subarray(start, start + size).toString("latin1") });
+      const raw = extrairLiteral(buf);
+      if (raw) out.push({ uid, raw, sizeBytes: tamanho });
     }
     return out;
   } finally {
     session.close();
   }
+}
+
+/** Conteúdo do literal IMAP da resposta: `... {N}\r\n<N bytes>`. */
+function extrairLiteral(buf: Buffer): string {
+  const cabeca = buf.subarray(0, 4096).toString("latin1");
+  const m = cabeca.match(/\{(\d+)\}\r\n/);
+  if (!m || m.index === undefined) return "";
+  const start = m.index + m[0].length;
+  return buf.subarray(start, start + Number(m[1])).toString("latin1");
 }
 
 /** Marca uma mensagem como lida (a Fast processou — não reprocessar). */
