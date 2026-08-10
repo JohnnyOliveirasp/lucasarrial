@@ -113,6 +113,12 @@ export type SupportMailArgs = {
   inReplyTo?: string | null;
   /** Cópias ocultas (admins acompanham cada resposta da Fast). */
   bcc?: string[];
+  /**
+   * Para onde vai a resposta de quem receber (Reply-To). Usado quando a Fast
+   * ENCAMINHA o caso de um aluno pro time: quem abrir responde direto pra ele,
+   * sem ter que copiar e colar endereço.
+   */
+  replyTo?: string | null;
 };
 
 /** Envia texto puro como suporte@fastcloner.com. Lança em falha (caller trata). */
@@ -139,6 +145,7 @@ export async function sendSupportMail(args: SupportMailArgs): Promise<void> {
       `Date: ${new Date().toUTCString()}`,
       `Message-ID: <fast-${Date.now()}-${Math.random().toString(36).slice(2)}@fastcloner.com>`,
       ...(args.inReplyTo ? [`In-Reply-To: ${args.inReplyTo}`, `References: ${args.inReplyTo}`] : []),
+      ...(args.replyTo ? [`Reply-To: ${args.replyTo}`] : []),
       "MIME-Version: 1.0",
       'Content-Type: text/plain; charset="utf-8"',
       "Content-Transfer-Encoding: base64",

@@ -186,6 +186,47 @@ async function adminBccList(): Promise<string[]> {
 }
 
 /**
+ * Quem recebe o material que a Fast NÃO consegue abrir (vídeo em link/anexo).
+ * Pedido do Johnny 10/08: em vez de só escalar por dentro, encaminhar o e-mail
+ * do aluno direto pra caixa de quem vai olhar. Env AGENT_VIDEO_REVIEW_EMAILS
+ * (separado por vírgula) permite somar/trocar sem deploy.
+ */
+function revisoresDeVideo(): string[] {
+  const env = (process.env.AGENT_VIDEO_REVIEW_EMAILS || "").trim();
+  const lista = env ? env.split(",").map((e) => e.trim()).filter(Boolean) : [];
+  return lista.length ? lista : ["johnny.oliveirasp@gmail.com"];
+}
+
+/**
+ * Encaminha pro time o e-mail que a Fast não consegue avaliar sozinha (vídeo
+ * anexado ou em link do Drive). O texto do aluno vai inteiro, com o e-mail
+ * dele no responder-para: quem abrir responde direto, sem intermediário.
+ */
+export async function encaminharParaRevisao(args: {
+  fromEmail: string;
+  subject: string;
+  corpo: string;
+  motivo: string;
+}): Promise<void> {
+  const texto =
+    `A Fast recebeu isto e não consegue avaliar sozinha (${args.motivo}).\n\n` +
+    `De: ${args.fromEmail}\nAssunto: ${args.subject}\n\n` +
+    `--- mensagem do aluno ---\n${args.corpo}\n--- fim ---\n\n` +
+    `Responda direto pro aluno (o responder-para já está apontando pra ele).`;
+  try {
+    await sendSupportMail({
+      to: revisoresDeVideo().join(", "),
+      subject: `[VER VÍDEO] ${args.fromEmail} — ${args.subject}`.slice(0, 180),
+      text: texto,
+      replyTo: args.fromEmail,
+    });
+    console.log(`[agent/mail] encaminhado pra revisão: ${args.fromEmail} (${args.motivo})`);
+  } catch (e) {
+    console.error("[agent/mail] falha ao encaminhar pra revisão:", e instanceof Error ? e.message : e);
+  }
+}
+
+/**
  * Mensagem grande demais (anexo pesado): a gente NÃO baixa o conteúdo — só os
  * cabeçalhos. Responde explicando que a caixa não recebe anexo e marca como
  * lida, senão ela trava a fila pra sempre (foi o que aconteceu em 08/08: um
@@ -219,6 +260,14 @@ async function responderAnexoGrande(
     inReplyTo: messageId,
     bcc,
   });
+  // O time precisa saber que existe material esperando — mesmo sem o anexo,
+  // o assunto e o remetente bastam pra ir atrás na caixa do suporte@.
+  await encaminharParaRevisao({
+    fromEmail,
+    subject,
+    corpo: `(anexo de ${mb} MB — grande demais pra Fast abrir; a mensagem original está na caixa do suporte@)`,
+    motivo: `anexo de ${mb} MB`,
+  });
   await markSeen(mail.uid);
   console.log(`[agent/mail] anexo grande (${mb}MB) uid=${mail.uid} de=${fromEmail} — respondido e liberado`);
   return "replied";
@@ -244,6 +293,21 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   if (skip || text.length < 5) {
     await markSeen(mail.uid);
     return "skipped";
+  }
+
+  // Link de arquivo (Drive & cia): a Fast não abre, o time abre. Encaminha o
+  // e-mail inteiro pra quem vai olhar — ela ainda responde o aluno dizendo que
+  // pediu análise (regra 6b do manual).
+  const linkArquivo = text.match(
+    /https?:\/\/(?:drive\.google\.com|docs\.google\.com|[\w.-]*wetransfer\.com|[\w.-]*dropbox\.com|1drv\.ms|[\w.-]*onedrive\.[\w.]+|youtu\.be|(?:www\.)?youtube\.com)\/\S+/i,
+  );
+  if (linkArquivo) {
+    await encaminharParaRevisao({
+      fromEmail,
+      subject,
+      corpo: text,
+      motivo: `link de arquivo: ${linkArquivo[0].slice(0, 200)}`,
+    });
   }
 
   // Conta do aluno pelo remetente (identidade forte: ele escreveu DESSE e-mail).
