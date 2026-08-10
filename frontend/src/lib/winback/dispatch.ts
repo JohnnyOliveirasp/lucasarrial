@@ -217,6 +217,10 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
   }
   // Rede de segurança: nenhum marcador escapa pra pessoa.
   texto = texto.replace(/\[(MOTIVO|CREDITAR|SAIR|ESCALAR[^\]]*)[^\]]*\]/gi, "").trim();
+  // A abertura sai numa mensagem SÓ. O envio humanizado quebra por parágrafo,
+  // e no teste isso jogou o "se preferir que eu não escreva mais" pra uma
+  // mensagem isolada — destacada assim, ela vira convite pra recusar.
+  texto = texto.replace(/\n{2,}/g, "\n").trim();
   if (!texto) {
     await devolver("LLM devolveu vazio");
     return { acao: "erro_llm", detalhe: "texto vazio", alvo: alvo.email };
