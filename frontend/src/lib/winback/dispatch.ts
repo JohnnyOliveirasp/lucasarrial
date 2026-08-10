@@ -136,9 +136,25 @@ async function primeiroNome(t: WinbackTargetRow): Promise<string | null> {
   return primeiro.length >= 2 ? primeiro : null;
 }
 
-function intervaloAleatorio(): string {
-  const ms = INTERVALO_MIN_MS + Math.random() * (INTERVALO_MAX_MS - INTERVALO_MIN_MS);
+function intervaloAleatorio(fator = 1): string {
+  const ms = (INTERVALO_MIN_MS + Math.random() * (INTERVALO_MAX_MS - INTERVALO_MIN_MS)) * fator;
   return new Date(Date.now() + ms).toISOString();
+}
+
+/**
+ * Agenda o próximo contato DEPOIS DE QUALQUER TENTATIVA — inclusive as que
+ * falharam.
+ *
+ * Foi o furo do dia 10/08: o intervalo só era agendado no sucesso, então cada
+ * erro liberava o cron pra tentar de novo no minuto seguinte, com OUTRA pessoa.
+ * Deu 12 abordagens a 12 desconhecidos em 12 minutos — exatamente a rajada que
+ * a proteção existia pra evitar. Depois disso o WhatsApp passou a recusar todo
+ * envio para contato novo (erro 463), enquanto o celular seguia funcionando
+ * normal: o problema não era o número, era o nosso ritmo.
+ * Em falha o intervalo é DOBRADO: se algo está errado, insistir rápido piora.
+ */
+async function agendarProximo(falhou: boolean): Promise<void> {
+  await saveSettings({ next_send_at: intervaloAleatorio(falhou ? 2 : 1) });
 }
 
 /**
@@ -196,6 +212,12 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
     .eq("status", "pending")
     .select("id");
   if (!(claimed ?? []).length) return { acao: "corrida_perdida", alvo: alvo.email };
+
+  // A PARTIR DAQUI a tentativa já conta: agenda o intervalo AGORA, antes de
+  // qualquer coisa poder falhar. Assim nenhum caminho de erro deixa o cron
+  // livre pra abordar outra pessoa no minuto seguinte (foi o que produziu a
+  // rajada de 12 desconhecidos em 12 minutos em 10/08).
+  await agendarProximo(false);
   /** Devolve pra fila quando o envio não chega a acontecer. */
   const devolver = async (motivo: string) => {
     await admin
@@ -255,7 +277,11 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
     // enviar) → devolve pra fila, a pessoa continua por contatar.
     // Qualquer outro erro fica em 'sending': o envio PODE ter saído, e receber
     // duas vezes é pior do que não receber. Revisão manual.
-    const sessaoFora = /Session status is not as expected|status.*FAILED|ECONNREFUSED/i.test(msg);
+    // 463 = o servidor do WhatsApp RECUSOU o envio (acontece quando ele
+    // desconfia do ritmo). Como a sessão caída, é certeza de que nada saiu.
+    const sessaoFora =
+      /Session status is not as expected|status.*FAILED|ECONNREFUSED|error 463/i.test(msg);
+    await agendarProximo(true); // erro dobra o intervalo: insistir rápido piora
     await admin
       .from("winback_targets")
       .update({
