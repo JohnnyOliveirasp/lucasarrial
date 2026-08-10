@@ -14,7 +14,7 @@
 import { getAdmin } from "@/lib/db/admin";
 import { addExtraCredits } from "@/lib/credits/service";
 import { winbackMission, WINBACK_CREDITS_HARD_CAP } from "@/lib/winback/script";
-import { winbackByChat } from "@/lib/winback/targets";
+import { winbackByChat, winbackByPhone } from "@/lib/winback/targets";
 import type { WinbackSettingsRow, WinbackTargetRow } from "@/lib/db/types";
 
 /** Categorias fechadas — é isso que vira estatística no /admin. */
@@ -31,8 +31,26 @@ export type WinbackContext = { target: WinbackTargetRow; systemExtra: string };
  * abordagem funcionou — e o que segura o freio do disparador).
  */
 export async function winbackContext(chatId: string): Promise<WinbackContext | null> {
-  const target = await winbackByChat(chatId);
-  if (!target) return null;
+  let target = await winbackByChat(chatId);
+
+  // Não achou pelo chat? Pode ser o MESMO humano com outro identificador: nós
+  // abrimos pelo número, o WhatsApp devolve a resposta por um id anônimo
+  // (@lid). Casa pelo telefone e gruda o resgate nesta conversa.
+  if (!target) {
+    const { data: chat } = await getAdmin()
+      .from("agent_chats")
+      .select("wa_phone, kind")
+      .eq("id", chatId)
+      .maybeSingle();
+    const phone = (chat as { wa_phone: string | null; kind: string } | null)?.wa_phone;
+    if (!phone) return null;
+    target = await winbackByPhone(phone);
+    if (!target) return null;
+    await getAdmin()
+      .from("winback_targets")
+      .update({ chat_id: chatId, updated_at: new Date().toISOString() } as never)
+      .eq("id", target.id);
+  }
 
   if (target.status === "sent") {
     const agora = new Date().toISOString();

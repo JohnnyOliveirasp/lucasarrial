@@ -224,10 +224,10 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
   }
   // Rede de segurança: nenhum marcador escapa pra pessoa.
   texto = texto.replace(/\[(MOTIVO|CREDITAR|SAIR|ESCALAR[^\]]*)[^\]]*\]/gi, "").trim();
-  // A abertura sai numa mensagem SÓ. O envio humanizado quebra por parágrafo,
-  // e no teste isso jogou o "se preferir que eu não escreva mais" pra uma
-  // mensagem isolada — destacada assim, ela vira convite pra recusar.
-  texto = texto.replace(/\n{2,}/g, "\n").trim();
+  // A abertura sai PICOTADA (ordem do Johnny 10/08): 2-3 mensagens curtas com
+  // "digitando…" entre elas, como gente escreve. O sendHumanized quebra nas
+  // linhas em branco, então elas são preservadas de propósito aqui — só a
+  // frase da saída fácil é que não pode ficar sozinha (isso o prompt garante).
   if (!texto) {
     await devolver("LLM devolveu vazio");
     return { acao: "erro_llm", detalhe: "texto vazio", alvo: alvo.email };

@@ -268,3 +268,37 @@ export async function winbackByChat(chatId: string): Promise<WinbackTargetRow | 
     .maybeSingle();
   return (data as WinbackTargetRow | null) ?? null;
 }
+
+/**
+ * Alvo pelo TELEFONE — a rede que pega a resposta.
+ *
+ * Nós abrimos a conversa pelo número (`5511...@s.whatsapp.net`), mas quando a
+ * pessoa responde o WhatsApp identifica ela por um id anônimo (`...@lid`). São
+ * dois chats para o MESMO humano: sem casar por telefone, a resposta cairia
+ * numa conversa sem contexto nenhum e a Carol atenderia como suporte comum,
+ * sem saber que aquela pessoa cancelou.
+ */
+export async function winbackByPhone(phoneDigits: string): Promise<WinbackTargetRow | null> {
+  const { data } = await getAdmin()
+    .from("winback_targets")
+    .select("*")
+    .in("phone_digits", phoneCandidatesForMatch(phoneDigits))
+    .not("status", "in", "(optout,skipped)")
+    .order("sent_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as WinbackTargetRow | null) ?? null;
+}
+
+/** Variantes do número BR (com/sem o 9º dígito) pro match não falhar por isso. */
+function phoneCandidatesForMatch(digits: string): string[] {
+  const out = new Set<string>([digits]);
+  if (digits.startsWith("55") && digits.length >= 12) {
+    const local = digits.slice(2);
+    const ddd = local.slice(0, 2);
+    const resto = local.slice(2);
+    if (resto.length === 8) out.add(`55${ddd}9${resto}`);
+    if (resto.length === 9 && resto.startsWith("9")) out.add(`55${ddd}${resto.slice(1)}`);
+  }
+  return [...out];
+}
