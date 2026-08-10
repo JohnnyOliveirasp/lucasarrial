@@ -139,8 +139,12 @@ async function classify(email: string, phone: string | null, canceledAt: string)
     .maybeSingle();
   const profile = prof as { id: string; access_until: string | null } | null;
 
+  // Sem telefone NÃO é motivo pra sair da fila desde que o canal e-mail
+  // existe (10/08): o dispatcher do WhatsApp já ignora quem não tem número, e
+  // o e-mail alcança todo mundo. Antes isso tirava 36 pessoas da campanha —
+  // várias delas com reclamação escrita, que é justamente quem interessa.
   if (!profile) {
-    return { ...base, profile_id: null, segment: "sem_conta", skip: phone ? null : "sem telefone" };
+    return { ...base, profile_id: null, segment: "sem_conta", skip: null };
   }
 
   const [{ count: voices }, { data: survey }] = await Promise.all([
@@ -161,7 +165,7 @@ async function classify(email: string, phone: string | null, canceledAt: string)
     segment: (voices ?? 0) === 0 ? "nunca_ativou" : "usou_e_saiu",
     survey_reason: s?.reason?.trim() || null,
     survey_detail: s?.detail?.trim() || null,
-    skip: phone ? null : "sem telefone",
+    skip: null, // ver comentário acima: e-mail alcança quem não tem telefone
   };
 }
 
