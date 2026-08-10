@@ -60,6 +60,95 @@ MODEL_DIR = Path(os.environ.get("VOXCPM_MODEL_DIR", "/workspace/models/VoxCPM2")
 VOXCPM_REPO = Path(os.environ.get("VOXCPM_REPO", "/app/VoxCPM"))
 WORKSPACE = Path(os.environ.get("WORKSPACE_DIR", "/workspace/jobs"))
 
+# ───────── Disco do worker (incidente 10/08) ─────────
+# O container tem 50GB efêmeros e volumeInGb=0: tudo que sobra vive aqui. Um
+# worker QUENTE atende jobs por horas sem reiniciar, e o cache do
+# torch.compile (/tmp/torchinductor_root) cresce a cada variação de job. Somado
+# aos áudios temporários, o disco enchia e TODO aluno que caísse naquele worker
+# falhava com "[Errno 28] No space left on device" — 3 alunos em 1h15 no dia
+# 10/08, no meio da geração E do treino.
+#
+# Duas medidas: cache do inductor em diretório NOSSO (pra podermos apagar) e
+# faxina automática no fim de cada job.
+INDUCTOR_CACHE = Path(os.environ.get("TORCHINDUCTOR_CACHE_DIR", "/workspace/tmp/inductor"))
+JOB_TMP = Path(os.environ.get("JOB_TMP_DIR", "/workspace/tmp/jobs"))
+# Acima disso a faxina é agressiva (limpa até o cache de compilação, que só
+# custa alguns segundos a mais no próximo job).
+DISK_ALERT_PERCENT = float(os.environ.get("DISK_ALERT_PERCENT", "75"))
+
+for _d in (INDUCTOR_CACHE, JOB_TMP):
+    try:
+        _d.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+os.environ.setdefault("TORCHINDUCTOR_CACHE_DIR", str(INDUCTOR_CACHE))
+os.environ.setdefault("TMPDIR", str(JOB_TMP))
+
+
+def _disk_percent(path: str = "/") -> float:
+    """Quanto do disco já foi usado (%)."""
+    try:
+        total, used, _free = shutil.disk_usage(path)
+        return (used / total) * 100 if total else 0.0
+    except Exception:
+        return 0.0
+
+
+def _purge_dir(path: Path, keep_dir: bool = True) -> int:
+    """Esvazia um diretório e devolve quantos bytes liberou (best-effort)."""
+    liberado = 0
+    try:
+        if not path.exists():
+            return 0
+        for item in path.iterdir():
+            try:
+                if item.is_dir():
+                    liberado += sum(f.stat().st_size for f in item.rglob("*") if f.is_file())
+                    shutil.rmtree(item, ignore_errors=True)
+                else:
+                    liberado += item.stat().st_size
+                    item.unlink(missing_ok=True)
+            except Exception:
+                continue
+        if not keep_dir:
+            shutil.rmtree(path, ignore_errors=True)
+    except Exception:
+        pass
+    return liberado
+
+
+def _faxina(job_type: str) -> None:
+    """
+    Roda no FIM de todo job, dê certo ou errado. Sempre apaga os temporários do
+    job; quando o disco passa do limite, apaga também o cache de compilação
+    (que se refaz sozinho, custando alguns segundos no próximo job — muito
+    melhor que derrubar o aluno seguinte).
+    """
+    try:
+        antes = _disk_percent()
+        liberado = _purge_dir(JOB_TMP)
+        # /tmp é onde caem os temporários de bibliotecas que ignoram TMPDIR.
+        for legado in (Path("/tmp/torchinductor_root"), Path("/tmp/gradio")):
+            if legado.exists() and antes >= DISK_ALERT_PERCENT:
+                liberado += _purge_dir(legado, keep_dir=False)
+        if antes >= DISK_ALERT_PERCENT:
+            liberado += _purge_dir(INDUCTOR_CACHE)
+        depois = _disk_percent()
+        if liberado > 0 or antes >= DISK_ALERT_PERCENT:
+            _log(
+                "info",
+                "disk.cleanup",
+                type=job_type,
+                freed_mb=round(liberado / 1_000_000, 1),
+                before_pct=round(antes, 1),
+                after_pct=round(depois, 1),
+            )
+    except Exception as exc:  # faxina NUNCA pode derrubar o job
+        try:
+            _log("warn", "disk.cleanup_failed", error=str(exc))
+        except Exception:
+            pass
+
 # Duração da referência AUTO-extraída no treino. 30s (era 120): referência curta
 # captura MENOS tique/bordão da fala e reduz o risco de o VoxCPM ecoar "filler"
 # no início (bug "então não" da voz Pri). 30s sobra p/ timbre e fica longe do
@@ -1092,7 +1181,7 @@ def _handle_transcribe(inp: dict) -> dict:
 def handler(event: dict) -> dict:
     inp = event.get("input") or {}
     job_type = inp.get("type", "inference")
-    _log("info", "job.start", type=job_type)
+    _log("info", "job.start", type=job_type, disk_pct=round(_disk_percent(), 1))
     try:
         if job_type == "train":
             return _handle_train(inp)
@@ -1131,6 +1220,11 @@ def handler(event: dict) -> dict:
         _log("error", "job.failed", error=str(exc), type=job_type, tb=traceback.format_exc()[:2000])
         _free_cuda()  # não deixa VRAM presa pro próximo job após crash
         return {"error": str(exc), "type": job_type, "traceback": traceback.format_exc()[:2000]}
+    finally:
+        # Disco: o worker quente atende jobs por horas e o lixo se acumula até
+        # derrubar o próximo aluno. Faxina no fim de TODO job, inclusive os que
+        # falharam (job que estourou é justamente o que mais deixa sujeira).
+        _faxina(job_type)
 
 
 if __name__ == "__main__":
