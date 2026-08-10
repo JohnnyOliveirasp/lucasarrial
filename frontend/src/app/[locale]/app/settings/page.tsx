@@ -8,9 +8,12 @@ import { Eyebrow } from "@/components/ui";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 
 /**
- * Configurações = API do usuário (chaves + docs). Faz parte do pacote pago,
- * então fica LIBERADA só pra assinante ativo (ou equipe). A gestão da
- * assinatura (cancelar) NÃO mora aqui — está em /app/account (Minha conta).
+ * Configurações = API do usuário (chaves + docs). Liberada por CRÉDITO, não por
+ * assinatura vigente (ordem do Johnny, 10/08: "não posso travar ele porque ele
+ * não tem assinatura"). Quem tem saldo pode usar o que comprou, aqui e em
+ * qualquer outra tela; cada chamada da API debita crédito como qualquer geração
+ * e devolve 402 quando o saldo acaba. A gestão da assinatura (cancelar) NÃO
+ * mora aqui — está em /app/account (Minha conta).
  */
 export default async function SettingsPage({
   params,
@@ -28,13 +31,14 @@ export default async function SettingsPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("email, access_until")
+    .select("email, credits_subscription, credits_extra")
     .eq("id", user.id)
     .single();
 
   const email = profile?.email ?? user.email ?? null;
-  const unlocked =
-    bypassesBilling(email) || hasActiveAccess(email, profile?.access_until ?? null);
+  const creditsTotal =
+    (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
+  const unlocked = bypassesBilling(email) || creditsTotal > 0;
 
   return (
     <div className="flex flex-col gap-12">

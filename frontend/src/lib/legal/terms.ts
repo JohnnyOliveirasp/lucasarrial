@@ -81,6 +81,23 @@ export const TERMS: LegalDoc = {
         "Determinados recursos podem exigir plano pago, créditos ou cobrança pelo " +
           "treinamento e geração de áudio. Os valores e condições serão informados " +
           "antes da contratação.",
+        "A assinatura dá direito a uma cota mensal de créditos, creditada a cada " +
+          "pagamento confirmado. Os créditos são a medida de uso do Serviço: não " +
+          "são moeda, não podem ser transferidos, vendidos ou convertidos em " +
+          "dinheiro.",
+        "Os créditos não vencem por tempo. Enquanto a sua conta existir, o saldo " +
+          "permanece disponível para uso, mesmo que você deixe de renovar a " +
+          "assinatura.",
+        "O saldo acumula de um mês para o outro até o limite de 300.000 créditos. " +
+          "Ao atingir esse limite, novas cotas mensais deixam de ser somadas " +
+          "enquanto o saldo não for consumido — a cota do mês não é adiada nem " +
+          "acumulada acima do limite. Avisaremos você por e-mail antes de o seu " +
+          "saldo se aproximar desse limite.",
+        "Créditos concedidos gratuitamente, em período de teste, cortesia ou " +
+          "campanha promocional podem ter regras próprias de uso e validade, " +
+          "informadas na ocasião.",
+        "Em caso de reembolso, estorno ou contestação do pagamento, os créditos " +
+          "correspondentes àquela cobrança poderão ser retirados da conta.",
         "Salvo disposição legal em contrário, valores pagos por serviços já " +
           "executados (como treinamento concluído) podem não ser reembolsáveis.",
       ],
