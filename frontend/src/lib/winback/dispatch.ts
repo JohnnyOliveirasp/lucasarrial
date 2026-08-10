@@ -31,10 +31,17 @@ import {
 } from "@/lib/winback/script";
 import type { AgentChatRow, WinbackSettingsRow, WinbackTargetRow } from "@/lib/db/types";
 
-/** Contatos por dia, degrau a degrau. Do 5º dia em diante, 15/dia. */
-const ESCADA = [5, 8, 10, 12, 15] as const;
-const INTERVALO_MIN_MS = 8 * 60 * 1000;
-const INTERVALO_MAX_MS = 35 * 60 * 1000;
+/**
+ * Contatos por dia, degrau a degrau. Do 6º dia em diante, 15/dia.
+ * Começa em 3 (era 5): em 10/08 a PRIMEIRA abordagem a desconhecido já rendeu
+ * uma tranca de 24h do WhatsApp. Enquanto não soubermos que o número aguenta,
+ * o primeiro dia é sonda, não campanha.
+ */
+const ESCADA = [3, 5, 8, 10, 12, 15] as const;
+/** Intervalo entre um contato e outro. Mínimo de 20min no começo pelo mesmo
+ *  motivo: 3 mensagens espalhadas no dia não parecem disparo. */
+const INTERVALO_MIN_MS = 20 * 60 * 1000;
+const INTERVALO_MAX_MS = 60 * 60 * 1000;
 const JANELA_INICIO = 9; // 9h BRT
 const JANELA_FIM = 19; // até 18h59 BRT
 const PAUSA_FREIO_HORAS = 48;
