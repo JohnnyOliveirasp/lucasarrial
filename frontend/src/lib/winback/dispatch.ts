@@ -31,17 +31,15 @@ import {
 } from "@/lib/winback/script";
 import type { AgentChatRow, WinbackSettingsRow, WinbackTargetRow } from "@/lib/db/types";
 
+/** Contatos por dia, degrau a degrau. Do 6º dia em diante, 15/dia. */
+const ESCADA = [5, 8, 10, 12, 15] as const;
 /**
- * Contatos por dia, degrau a degrau. Do 6º dia em diante, 15/dia.
- * Começa em 3 (era 5): em 10/08 a PRIMEIRA abordagem a desconhecido já rendeu
- * uma tranca de 24h do WhatsApp. Enquanto não soubermos que o número aguenta,
- * o primeiro dia é sonda, não campanha.
+ * Intervalo entre um contato e outro: ~1 HORA (ordem do Johnny 10/08), com
+ * variação pra não sair cadenciado. Cinco mensagens espalhadas em cinco horas
+ * não têm cara de campanha — e foi uma rajada que rendeu tranca de 24h.
  */
-const ESCADA = [3, 5, 8, 10, 12, 15] as const;
-/** Intervalo entre um contato e outro. Mínimo de 20min no começo pelo mesmo
- *  motivo: 3 mensagens espalhadas no dia não parecem disparo. */
-const INTERVALO_MIN_MS = 20 * 60 * 1000;
-const INTERVALO_MAX_MS = 60 * 60 * 1000;
+const INTERVALO_ALVO_MS = 60 * 60 * 1000;
+const INTERVALO_MIN_MS = 15 * 60 * 1000; // piso quando a cota do dia é grande
 const JANELA_INICIO = 9; // 9h BRT
 const JANELA_FIM = 19; // até 18h59 BRT
 const PAUSA_FREIO_HORAS = 48;
@@ -143,8 +141,20 @@ async function primeiroNome(t: WinbackTargetRow): Promise<string | null> {
   return primeiro.length >= 2 ? primeiro : null;
 }
 
-function intervaloAleatorio(fator = 1): string {
-  const ms = (INTERVALO_MIN_MS + Math.random() * (INTERVALO_MAX_MS - INTERVALO_MIN_MS)) * fator;
+/**
+ * Quando falar com a próxima pessoa.
+ *
+ * Alvo: ~1 hora entre contatos (ordem do Johnny). Com 5 no dia isso ocupa 5 das
+ * 10 horas da janela e fica bem espalhado. Quando a escada sobe (12, 15/dia),
+ * uma por hora não caberia — aí o intervalo encolhe só o necessário pra cota
+ * caber no que resta do dia, nunca abaixo de 15 min.
+ * O ±25% aleatório existe porque intervalo cravado é assinatura de robô.
+ */
+function intervaloAleatorio(fator = 1, faltamHoje = 1): string {
+  const horasRestantes = Math.max(0.5, JANELA_FIM - brtAgora().hora);
+  const couberNoDia = (horasRestantes * 3600_000) / Math.max(1, faltamHoje);
+  const base = Math.max(INTERVALO_MIN_MS, Math.min(INTERVALO_ALVO_MS, couberNoDia));
+  const ms = base * (0.75 + Math.random() * 0.5) * fator;
   return new Date(Date.now() + ms).toISOString();
 }
 
@@ -160,8 +170,8 @@ function intervaloAleatorio(fator = 1): string {
  * normal: o problema não era o número, era o nosso ritmo.
  * Em falha o intervalo é DOBRADO: se algo está errado, insistir rápido piora.
  */
-async function agendarProximo(falhou: boolean): Promise<void> {
-  await saveSettings({ next_send_at: intervaloAleatorio(falhou ? 2 : 1) });
+async function agendarProximo(falhou: boolean, faltamHoje = 1): Promise<void> {
+  await saveSettings({ next_send_at: intervaloAleatorio(falhou ? 2 : 1, faltamHoje) });
 }
 
 /**
@@ -236,7 +246,7 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
   // qualquer coisa poder falhar. Assim nenhum caminho de erro deixa o cron
   // livre pra abordar outra pessoa no minuto seguinte (foi o que produziu a
   // rajada de 12 desconhecidos em 12 minutos em 10/08).
-  await agendarProximo(false);
+  await agendarProximo(false, Math.max(1, cota - enviadosHoje));
   /** Devolve pra fila quando o envio não chega a acontecer. */
   const devolver = async (motivo: string) => {
     await admin
@@ -300,7 +310,8 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
     // desconfia do ritmo). Como a sessão caída, é certeza de que nada saiu.
     const sessaoFora =
       /Session status is not as expected|status.*FAILED|ECONNREFUSED|error 463/i.test(msg);
-    await agendarProximo(true); // erro dobra o intervalo: insistir rápido piora
+    // erro dobra o intervalo: insistir rápido piora
+    await agendarProximo(true, Math.max(1, cota - enviadosHoje));
     await admin
       .from("winback_targets")
       .update({
@@ -332,7 +343,7 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
     sent_today: enviadosHoje + 1,
     last_send_date: hoje,
     day_index: degrau,
-    next_send_at: intervaloAleatorio(),
+    next_send_at: intervaloAleatorio(1, Math.max(1, cota - enviadosHoje - 1)),
   });
 
   return { acao: "contatada", alvo: alvo.email, detalhe: `${enviadosHoje + 1}/${cota} hoje` };
