@@ -427,6 +427,50 @@ export type HeygenVideoInsert = {
 };
 export type HeygenVideoUpdate = Partial<Omit<HeygenVideoRow, "id" | "user_id" | "created_at">>;
 
+// ───────── scripts (mig 68 — Gerador de Roteiro) ─────────
+export type ScriptRow = {
+  id: string;
+  user_id: string;
+  idea: string;
+  seconds: number;
+  script: string;
+  /** Modelo que escreveu (ROTEIRO_MODEL do dia) — o modelo é trocável sem deploy. */
+  model: string | null;
+  credits_charged: number;
+  created_at: Timestamp;
+};
+export type ScriptInsert = {
+  user_id: string;
+  idea: string;
+  seconds: number;
+  script: string;
+  model?: string | null;
+  credits_charged?: number;
+};
+export type ScriptUpdate = Partial<Omit<ScriptRow, "id" | "user_id" | "created_at">>;
+
+// ───────── script_messages (mig 69 — chat de ajuste do roteiro) ─────────
+export type ScriptMessageRow = {
+  id: string;
+  script_id: string;
+  user_id: string;
+  role: "user" | "assistant";
+  content: string;
+  /** Roteiro que ESTA resposta produziu (null = a resposta não mexeu no texto). */
+  script_after: string | null;
+  credits_charged: number;
+  created_at: Timestamp;
+};
+export type ScriptMessageInsert = {
+  script_id: string;
+  user_id: string;
+  role: ScriptMessageRow["role"];
+  content: string;
+  script_after?: string | null;
+  credits_charged?: number;
+};
+export type ScriptMessageUpdate = Partial<Omit<ScriptMessageRow, "id" | "script_id" | "user_id" | "created_at">>;
+
 // ───────── social_accounts (mig 61 — publicador próprio, IG primeiro) ─────────
 export type SocialAccountRow = {
   id: string;
@@ -973,6 +1017,8 @@ export type Database = {
       heygen_videos: { Row: HeygenVideoRow; Insert: HeygenVideoInsert; Update: HeygenVideoUpdate; Relationships: Rel };
       social_accounts: { Row: SocialAccountRow; Insert: SocialAccountInsert; Update: SocialAccountUpdate; Relationships: Rel };
       publications: { Row: PublicationRow; Insert: PublicationInsert; Update: PublicationUpdate; Relationships: Rel };
+      scripts: { Row: ScriptRow; Insert: ScriptInsert; Update: ScriptUpdate; Relationships: Rel };
+      script_messages: { Row: ScriptMessageRow; Insert: ScriptMessageInsert; Update: ScriptMessageUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: {

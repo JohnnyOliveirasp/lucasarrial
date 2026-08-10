@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   ChevronDown,
   Images,
+  PenLine,
   Video,
   Clapperboard,
   ShoppingBag,
@@ -283,6 +284,15 @@ export function Sidebar({
                   icon={MonitorPlay}
                   label="Vídeo HeyGen"
                   active={pathname.endsWith("/app/lab/video-heygen")}
+                />
+                {/* 🧪 Gerador de Roteiro (10/08): porta de entrada do funil
+                    (roteiro 100 cr → áudio → vídeo). Só admin até o Lucas ler
+                    roteiro e aprovar a qualidade do texto em pt-BR. */}
+                <NavLeaf
+                  href="/app/roteiro"
+                  icon={PenLine}
+                  label={t("nav.script")}
+                  active={pathname.endsWith("/app/roteiro")}
                 />
                 {/* 🧪 Publicador ("nosso Blotato", 05/08): Instagram primeiro.
                     App Review da Meta aprova → gradua pros alunos. */}
