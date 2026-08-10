@@ -13,7 +13,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { addExtraCredits } from "@/lib/credits/service";
-import { winbackMission, WINBACK_CREDITS_HARD_CAP } from "@/lib/winback/script";
+import { winbackMission, WINBACK_CREDITS_HARD_CAP, tirarCaraDeRobo } from "@/lib/winback/script";
 import { winbackByChat, winbackByPhone } from "@/lib/winback/targets";
 import type { WinbackSettingsRow, WinbackTargetRow } from "@/lib/db/types";
 
@@ -135,5 +135,5 @@ export async function applyWinbackMarkers(
   if (Object.keys(patch).length > 1) {
     await admin.from("winback_targets").update(patch as never).eq("id", target.id);
   }
-  return { clean: texto.trim(), creditou, encerrou };
+  return { clean: tirarCaraDeRobo(texto), creditou, encerrou };
 }

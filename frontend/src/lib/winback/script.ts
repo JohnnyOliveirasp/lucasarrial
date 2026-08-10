@@ -21,6 +21,22 @@ export const WINBACK_CREDITS_HARD_CAP = 50_000;
 /** Quantas mensagens a Carol pode picotar por vez (o suporte usa 3). */
 export const WINBACK_MAX_PARTS = 5;
 
+/**
+ * Tira do texto o que denuncia máquina antes de mandar (o prompt já pede, isto
+ * é a rede embaixo). Hoje: travessão. Johnny reparou nele lendo as conversas
+ * ao vivo — ninguém digita "—" no WhatsApp, e a pessoa nota mesmo sem saber
+ * por quê.
+ */
+export function tirarCaraDeRobo(texto: string): string {
+  return texto
+    .replace(/\s+[—–]\s+/g, ", ") // "cancelou — queria entender" → "cancelou, queria entender"
+    .replace(/^[—–]\s*/gm, "") // travessão abrindo linha
+    .replace(/[—–]/g, "-") // sobrou algum: vira hífen comum
+    .replace(/,\s*,/g, ",") // vírgula dobrada pela troca acima
+    .replace(/\s+([,.!?])/g, "$1")
+    .trim();
+}
+
 /** Marcadores que a Carol usa e o sistema executa (saem da mensagem). */
 export const WINBACK_MARKERS = `
 MARCADORES (linhas soltas no FIM da sua mensagem; o sistema remove antes de enviar — a pessoa NUNCA vê):
@@ -66,6 +82,9 @@ TOM (isto é uma conversa de WhatsApp, não um e-mail de marketing):
   Nunca despeje tudo num bloco só: no WhatsApp, bloco grande = ninguém lê.
 - Mensagens CURTAS. Duas ou três linhas. Ninguém lê parágrafo no WhatsApp.
 - Zero emoji em excesso (no máximo um, e nem sempre).
+- PROIBIDO usar travessão (— ou –). Ninguém digita isso no WhatsApp; é a marca
+  mais óbvia de texto escrito por máquina. Use vírgula, ponto, ou quebre em
+  outra mensagem.
 - Nada de "prezado", "venho por meio desta", "sua satisfação é importante".
 - Nunca dispare os benefícios todos de uma vez: use SÓ o que responde o que a
   pessoa acabou de falar.

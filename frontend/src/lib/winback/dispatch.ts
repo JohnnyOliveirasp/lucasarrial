@@ -23,7 +23,12 @@ import { sendHumanized } from "@/lib/agent/humanize";
 import { wahaNumberExists } from "@/lib/agent/waha";
 import { connectionState } from "@/lib/agent/provider";
 import { nextWinbackTarget } from "@/lib/winback/targets";
-import { openingInstruction, winbackMission, WINBACK_MAX_PARTS } from "@/lib/winback/script";
+import {
+  openingInstruction,
+  winbackMission,
+  WINBACK_MAX_PARTS,
+  tirarCaraDeRobo,
+} from "@/lib/winback/script";
 import type { AgentChatRow, WinbackSettingsRow, WinbackTargetRow } from "@/lib/db/types";
 
 /** Contatos por dia, degrau a degrau. Do 5º dia em diante, 15/dia. */
@@ -223,7 +228,9 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
     return { acao: "erro_llm", detalhe: e instanceof Error ? e.message : "?", alvo: alvo.email };
   }
   // Rede de segurança: nenhum marcador escapa pra pessoa.
-  texto = texto.replace(/\[(MOTIVO|CREDITAR|SAIR|ESCALAR[^\]]*)[^\]]*\]/gi, "").trim();
+  texto = tirarCaraDeRobo(
+    texto.replace(/\[(MOTIVO|CREDITAR|SAIR|ESCALAR[^\]]*)[^\]]*\]/gi, "").trim(),
+  );
   // A abertura sai PICOTADA (ordem do Johnny 10/08): 2-3 mensagens curtas com
   // "digitando…" entre elas, como gente escreve. O sendHumanized quebra nas
   // linhas em branco, então elas são preservadas de propósito aqui — só a
