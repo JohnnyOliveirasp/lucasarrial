@@ -21,6 +21,7 @@ import { agentComplete } from "@/lib/agent/brain";
 import { buildAgentSystem } from "@/lib/agent/manual";
 import { sendHumanized } from "@/lib/agent/humanize";
 import { wahaNumberExists } from "@/lib/agent/waha";
+import { connectionState } from "@/lib/agent/provider";
 import { nextWinbackTarget } from "@/lib/winback/targets";
 import { openingInstruction, winbackMission } from "@/lib/winback/script";
 import type { AgentChatRow, WinbackSettingsRow, WinbackTargetRow } from "@/lib/db/types";
@@ -169,6 +170,12 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
     return { acao: "aguardando_intervalo", detalhe: s.next_send_at };
   }
 
+  // A SESSÃO ESTÁ DE PÉ? (10/08: o WhatsApp derrubou a sessão 3s depois da 1ª
+  // mensagem; o cron seguiu consumindo a fila e queimou 60 pessoas em 1h sem
+  // enviar nada a ninguém.) Checar ANTES de tocar na fila.
+  const conexao = await connectionState();
+  if (conexao !== "open") return { acao: "whatsapp_fora_do_ar", detalhe: conexao };
+
   const alvo = await nextWinbackTarget();
   if (!alvo) return { acao: "fila_vazia" };
   if (!alvo.phone_digits) return { acao: "sem_telefone", alvo: alvo.email };
@@ -236,13 +243,21 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
   try {
     enviado = await sendHumanized(jid, texto, { group: false });
   } catch (e) {
-    // NÃO devolve pra fila: o envio pode ter saído antes do erro. Fica em
-    // 'sending' pra ninguém receber duas vezes — a revisão é manual.
+    const msg = e instanceof Error ? e.message : "?";
+    // Erro de SESSÃO = a mensagem com certeza não saiu (a WAHA recusa antes de
+    // enviar) → devolve pra fila, a pessoa continua por contatar.
+    // Qualquer outro erro fica em 'sending': o envio PODE ter saído, e receber
+    // duas vezes é pior do que não receber. Revisão manual.
+    const sessaoFora = /Session status is not as expected|status.*FAILED|ECONNREFUSED/i.test(msg);
     await admin
       .from("winback_targets")
-      .update({ note: `falha no envio: ${e instanceof Error ? e.message : "?"}` } as never)
+      .update({
+        ...(sessaoFora ? { status: "pending" as const } : {}),
+        note: `falha no envio: ${msg.slice(0, 200)}`,
+        updated_at: new Date().toISOString(),
+      } as never)
       .eq("id", alvo.id);
-    return { acao: "erro_envio", detalhe: e instanceof Error ? e.message : "?", alvo: alvo.email };
+    return { acao: sessaoFora ? "erro_sessao" : "erro_envio", detalhe: msg, alvo: alvo.email };
   }
 
   const agora = new Date().toISOString();
