@@ -28,6 +28,7 @@ import { sendHumanized } from "@/lib/agent/humanize";
 import { extractEscalation, notifyTeamEscalation } from "@/lib/agent/escalate";
 import { shouldAnswerUnprompted } from "@/lib/agent/classify";
 import { winbackContext, applyWinbackMarkers } from "@/lib/winback/conversation";
+import { WINBACK_MAX_PARTS } from "@/lib/winback/script";
 import type { IngestedMessage } from "@/lib/agent/ingest";
 import { transcribeAudioBuffer } from "@/lib/video/transcribe";
 import type { AgentMessageRow } from "@/lib/db/types";
@@ -294,6 +295,8 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
     const sent = await sendHumanized(msg.chat.wa_jid, clean, {
       group: msg.chat.kind === "group",
       replyTo: msg.chat.kind === "group" ? msg.replyToId : null,
+      // Resgate: conversa fria pede mais picote que o suporte.
+      maxParts: winback ? WINBACK_MAX_PARTS : undefined,
     });
     await saveAgentParts(msg.chat.id, sent);
     await admin

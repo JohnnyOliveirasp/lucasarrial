@@ -23,7 +23,7 @@ import { sendHumanized } from "@/lib/agent/humanize";
 import { wahaNumberExists } from "@/lib/agent/waha";
 import { connectionState } from "@/lib/agent/provider";
 import { nextWinbackTarget } from "@/lib/winback/targets";
-import { openingInstruction, winbackMission } from "@/lib/winback/script";
+import { openingInstruction, winbackMission, WINBACK_MAX_PARTS } from "@/lib/winback/script";
 import type { AgentChatRow, WinbackSettingsRow, WinbackTargetRow } from "@/lib/db/types";
 
 /** Contatos por dia, degrau a degrau. Do 5º dia em diante, 15/dia. */
@@ -241,7 +241,7 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
 
   let enviado;
   try {
-    enviado = await sendHumanized(jid, texto, { group: false });
+    enviado = await sendHumanized(jid, texto, { group: false, maxParts: WINBACK_MAX_PARTS });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "?";
     // Erro de SESSÃO = a mensagem com certeza não saiu (a WAHA recusa antes de

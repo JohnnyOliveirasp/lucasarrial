@@ -23,13 +23,13 @@ function typingMs(text: string): number {
  * (linha em branco), no máximo MAX_PARTS — o excedente gruda na última.
  * Grupo fica em mensagem ÚNICA (a resposta sai citando quem marcou).
  */
-export function splitReply(text: string, group: boolean): string[] {
+export function splitReply(text: string, group: boolean, maxParts = MAX_PARTS): string[] {
   const clean = text.trim();
   if (group || !clean) return clean ? [clean] : [];
   const paras = clean.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   if (paras.length <= 1) return [clean];
-  const parts = paras.slice(0, MAX_PARTS - 1);
-  const rest = paras.slice(MAX_PARTS - 1).join("\n\n");
+  const parts = paras.slice(0, maxParts - 1);
+  const rest = paras.slice(maxParts - 1).join("\n\n");
   if (rest) parts.push(rest);
   return parts;
 }
@@ -44,9 +44,11 @@ export type SentPart = { waMessageId: string | null; text: string };
 export async function sendHumanized(
   jid: string,
   reply: string,
-  opts: { group: boolean; replyTo?: string | null },
+  opts: { group: boolean; replyTo?: string | null; maxParts?: number },
 ): Promise<SentPart[]> {
-  const parts = splitReply(reply, opts.group);
+  // O Resgate pede mais picote que o suporte (ordem do Johnny 10/08): lá a
+  // conversa é fria e mensagem longa afasta; aqui vale parecer gente digitando.
+  const parts = splitReply(reply, opts.group, opts.maxParts ?? MAX_PARTS);
   const sent: SentPart[] = [];
   await sendSeen(jid);
   for (let i = 0; i < parts.length; i++) {

@@ -18,6 +18,9 @@ import type { WinbackTargetRow } from "@/lib/db/types";
 /** Teto de segurança do código — o valor real vem de winback_settings. */
 export const WINBACK_CREDITS_HARD_CAP = 50_000;
 
+/** Quantas mensagens a Carol pode picotar por vez (o suporte usa 3). */
+export const WINBACK_MAX_PARTS = 5;
+
 /** Marcadores que a Carol usa e o sistema executa (saem da mensagem). */
 export const WINBACK_MARKERS = `
 MARCADORES (linhas soltas no FIM da sua mensagem; o sistema remove antes de enviar — a pessoa NUNCA vê):
@@ -57,6 +60,10 @@ data, NUNCA diga que resolve o problema específico da pessoa):
 
 const TOM = `
 TOM (isto é uma conversa de WhatsApp, não um e-mail de marketing):
+- PICOTE SUAS RESPOSTAS. Uma ideia por mensagem, separadas por LINHA EM BRANCO
+  — o sistema manda uma de cada vez, com "digitando…" no meio, do jeito que uma
+  pessoa manda. Use de 2 a 5 mensagens, cada uma com 1 ou 2 frases no máximo.
+  Nunca despeje tudo num bloco só: no WhatsApp, bloco grande = ninguém lê.
 - Mensagens CURTAS. Duas ou três linhas. Ninguém lê parágrafo no WhatsApp.
 - Zero emoji em excesso (no máximo um, e nem sempre).
 - Nada de "prezado", "venho por meio desta", "sua satisfação é importante".
@@ -135,11 +142,13 @@ export function openingInstruction(t: WinbackTargetRow, nome: string | null): st
     "     algo que não funcionou, ou não era bem o que você esperava? Se",
     "     preferir que eu não escreva mais, é só falar.",
     "- A primeira mensagem é um cumprimento CURTO (3-5 palavras).",
+    "- Cada mensagem tem UMA ideia e no máximo 1 ou 2 frases. Prefira 4",
+    "  mensagens curtinhas a 2 compridas.",
     "- A frase da saída fácil vai COLADA no fim da ÚLTIMA mensagem, nunca",
     "  sozinha: destacada, ela vira convite pra pessoa recusar. Ela existe pra",
     "  quem se incomodar ter saída educada em vez de bloquear — não pra chamar",
     "  atenção.",
-    "- No máximo 3 mensagens no total.",
+    "- De 3 a 5 mensagens no total.",
     "- Escreva do seu jeito, com suas palavras. NÃO copie modelo pronto — cada pessoa recebe uma mensagem diferente.",
     "- Não use marcador nenhum nesta primeira mensagem.",
     "",
