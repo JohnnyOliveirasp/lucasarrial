@@ -299,6 +299,20 @@ export async function sweepSupportMail(): Promise<MailSweepSummary> {
   if (!supportMailConfigured() || process.env.AGENT_MAIL_ENABLED !== "1") return summary;
   if (!(await agentEnabled())) return summary; // interruptor geral da Fast vale aqui
 
+  // TRAVA contra duas varreduras ao mesmo tempo (10/08: o cron de 5min e uma
+  // chamada manual rodaram juntos e alguns alunos receberam a resposta DUAS
+  // vezes — a marcação como lida só acontece depois de responder, então as
+  // duas leram a mesma caixa). Uma rodada com fila cheia passa de 5 minutos,
+  // então isso aconteceria sozinho mais cedo ou mais tarde.
+  const { data: peguei } = await getAdmin().rpc("claim_alert", {
+    p_key: "mail_sweep",
+    p_cooldown_seconds: 240,
+  });
+  if (peguei === false) {
+    console.log("[agent/mail-sweep] outra varredura em andamento — esta rodada sai");
+    return summary;
+  }
+
   const unseen = await fetchUnseen(BATCH);
   summary.scanned = unseen.length;
   if (unseen.length === 0) return summary;
