@@ -14,8 +14,18 @@ const MAX_TYPING_MS = 7_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Tempo de "digitando…" para um trecho. O ±30% aleatório existe porque pausa
+ * proporcional ao texto, sempre exata, soa mecânica: gente digita irregular.
+ */
 function typingMs(text: string): number {
-  return Math.min(Math.max(text.length * MS_PER_CHAR, MIN_TYPING_MS), MAX_TYPING_MS);
+  const base = Math.min(Math.max(text.length * MS_PER_CHAR, MIN_TYPING_MS), MAX_TYPING_MS);
+  return Math.round(base * (0.7 + Math.random() * 0.6));
+}
+
+/** Respiro entre uma mensagem e a próxima (o tempo de "pensar" na seguinte). */
+function pausaEntreMensagens(): number {
+  return 400 + Math.floor(Math.random() * 900);
 }
 
 /**
@@ -52,6 +62,7 @@ export async function sendHumanized(
   const sent: SentPart[] = [];
   await sendSeen(jid);
   for (let i = 0; i < parts.length; i++) {
+    if (i > 0) await sleep(pausaEntreMensagens()); // respiro antes de voltar a digitar
     await setTyping(jid, true);
     await sleep(typingMs(parts[i]));
     await setTyping(jid, false);
