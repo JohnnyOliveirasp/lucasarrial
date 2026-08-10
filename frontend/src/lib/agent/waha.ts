@@ -144,6 +144,33 @@ export async function wahaSetTyping(jid: string, on: boolean): Promise<void> {
 }
 
 /**
+ * O WhatsApp está com a nossa conta TRANCADA para abordar desconhecido?
+ *
+ * Descoberto em 10/08 (visível a partir do WAHA 2026.7.2): quando o número
+ * abre conversa com quem nunca falou com ele, a Meta aplica um
+ * `reachoutTimelock` de 24h com enforcement RESTRICT_ALL_COMPANIONS — o
+ * CELULAR continua mandando normal, mas todo aparelho vinculado (nosso
+ * servidor) leva erro 463 em qualquer contato frio. Não é ban: expira sozinho.
+ *
+ * Devolve quando a tranca termina (ms epoch) ou null se está liberado.
+ */
+export async function wahaReachoutLockUntil(): Promise<number | null> {
+  try {
+    const res = await waha(`/api/sessions/${SESSION}`);
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      me?: { reachoutTimelock?: { isActive?: boolean; timeEnforcementEnds?: number } };
+    };
+    const lock = json.me?.reachoutTimelock;
+    if (!lock?.isActive || !lock.timeEnforcementEnds) return null;
+    const fim = lock.timeEnforcementEnds * 1000;
+    return fim > Date.now() ? fim : null;
+  } catch {
+    return null; // não deu pra saber: quem chama segue e o envio dirá
+  }
+}
+
+/**
  * O número tem WhatsApp? (GET /api/contacts/check-exists)
  * Usado ANTES de abrir conversa no Resgate: disparar pra número que não existe
  * é sinal forte de spam pra Meta — e queima a reputação do nosso número à toa.

@@ -20,7 +20,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { agentComplete } from "@/lib/agent/brain";
 import { buildAgentSystem } from "@/lib/agent/manual";
 import { sendHumanized } from "@/lib/agent/humanize";
-import { wahaNumberExists } from "@/lib/agent/waha";
+import { wahaNumberExists, wahaReachoutLockUntil } from "@/lib/agent/waha";
 import { connectionState } from "@/lib/agent/provider";
 import { nextWinbackTarget } from "@/lib/winback/targets";
 import {
@@ -196,6 +196,18 @@ export async function runWinbackSweep(opts?: { force?: boolean }): Promise<Sweep
   // enviar nada a ninguém.) Checar ANTES de tocar na fila.
   const conexao = await connectionState();
   if (conexao !== "open") return { acao: "whatsapp_fora_do_ar", detalhe: conexao };
+
+  // O WhatsApp trancou a conta pra abordar desconhecido? (reachoutTimelock,
+  // 24h). Enquanto durar, TODA tentativa volta com 463 — então nem tira
+  // ninguém da fila, e já agenda a volta pra depois que a tranca cair.
+  const trancadoAte = await wahaReachoutLockUntil();
+  if (trancadoAte) {
+    await saveSettings({
+      next_send_at: new Date(trancadoAte + 5 * 60 * 1000).toISOString(),
+      last_note: `WhatsApp trancado para contato novo até ${new Date(trancadoAte).toISOString()}`,
+    });
+    return { acao: "trancado_pelo_whatsapp", detalhe: new Date(trancadoAte).toISOString() };
+  }
 
   const alvo = await nextWinbackTarget();
   if (!alvo) return { acao: "fila_vazia" };
