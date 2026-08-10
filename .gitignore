@@ -81,6 +81,11 @@ test-results/
 **/_scrape_build.mjs
 frontend/runpod-build.*
 
+# REGRA (10/08): nada que não seja o produto fica solto na árvore. Scripts
+# operacionais, investigações, smokes, prints e sobras vão para _Bugs/ (na raiz
+# ou dentro de frontend/), organizados por finalidade. Ver _Bugs/README.md.
+_Bugs/
+
 # Reference materials — heavy folder, will live in separate git branch
 _backup_apenasReferencia/
 
