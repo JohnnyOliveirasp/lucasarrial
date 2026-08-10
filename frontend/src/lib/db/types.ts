@@ -896,6 +896,9 @@ export type WinbackTargetRow = {
   sent_at: Timestamp | null;
   delivered_at: Timestamp | null;
   replied_at: Timestamp | null;
+  /** Canal e-mail (mig winback_email_channel): quando saiu e quando respondeu. */
+  email_sent_at: Timestamp | null;
+  email_replied_at: Timestamp | null;
   outcome: string | null;
   outcome_detail: string | null;
   credits_granted: number;

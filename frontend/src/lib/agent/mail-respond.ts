@@ -19,6 +19,7 @@ import { extractEscalation } from "./escalate";
 import { agentEnabled } from "./respond";
 import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
 import { sendSupportMail } from "./mail-smtp";
+import { winbackContextByEmail, applyWinbackMarkers } from "@/lib/winback/conversation";
 
 const BODY_MAX = 4000; // o que vai pro modelo (e-mails têm assinatura/quote longos)
 const BATCH = 8; // por varredura (cron 5min) — o resto fica pra próxima
@@ -323,16 +324,31 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     { content: `Assunto: ${subject}\n\n${text}`, from_me: false, sender_name: fromHeader.split("<")[0].trim() || null },
   ] as unknown as AgentMessageRow[];
 
+  // RESGATE: se fomos NÓS que escrevemos primeiro (pessoa que cancelou), a
+  // Fast troca de missão — escuta o motivo, argumenta e pode devolver crédito.
+  // Sem isto ela atenderia como suporte comum, sem saber do cancelamento.
+  const winback = await winbackContextByEmail(fromEmail);
+
   const replyRaw = await buildAgentReply(history, {
     account,
-    systemExtra: mailSystemExtra(Boolean(account)),
+    systemExtra: [mailSystemExtra(Boolean(account)), winback?.systemExtra].filter(Boolean).join("\n\n"),
   });
   if (replyRaw.trim().toUpperCase() === "PULAR") {
     await markSeen(mail.uid);
     return "skipped";
   }
 
-  const { clean: visible, reason, technical } = extractEscalation(replyRaw);
+  const { clean: semEscalacao, reason, technical } = extractEscalation(replyRaw);
+  // Executa o que ela decidiu no resgate (motivo, crédito, opt-out) e tira os
+  // marcadores antes de enviar.
+  let visible = semEscalacao;
+  if (winback) {
+    const aplicado = await applyWinbackMarkers(winback.target, semEscalacao);
+    if (aplicado.clean) visible = aplicado.clean;
+    if (aplicado.creditou > 0) {
+      console.log(`[winback/email] creditou ${aplicado.creditou} para ${fromEmail}`);
+    }
+  }
   const replySubject = /^re:/i.test(subject) ? subject : `Re: ${subject}`;
 
   await sendSupportMail({

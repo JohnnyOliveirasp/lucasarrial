@@ -65,6 +65,41 @@ export async function winbackContext(chatId: string): Promise<WinbackContext | n
   return { target, systemExtra: winbackMission(target, cap) };
 }
 
+/**
+ * Contexto de resgate a partir do E-MAIL de quem respondeu.
+ *
+ * A pessoa responde do mesmo endereço para onde escrevemos, então casar por
+ * e-mail é direto — e sem isso a Fast atenderia como suporte comum, sem saber
+ * que aquela pessoa cancelou e sem poder devolver crédito.
+ */
+export async function winbackContextByEmail(email: string): Promise<WinbackContext | null> {
+  const { data } = await getAdmin()
+    .from("winback_targets")
+    .select("*")
+    .ilike("email", email.trim())
+    .not("status", "in", "(optout,skipped)")
+    .maybeSingle();
+  const target = (data as WinbackTargetRow | null) ?? null;
+  if (!target) return null;
+
+  const agora = new Date().toISOString();
+  if (!target.email_replied_at) {
+    await getAdmin()
+      .from("winback_targets")
+      .update({
+        email_replied_at: agora,
+        replied_at: target.replied_at ?? agora,
+        status: target.status === "sent" ? "replied" : target.status,
+        updated_at: agora,
+      } as never)
+      .eq("id", target.id);
+  }
+
+  const { data: cfg } = await getAdmin().from("winback_settings").select("*").eq("id", 1).maybeSingle();
+  const cap = (cfg as WinbackSettingsRow | null)?.credits_cap ?? WINBACK_CREDITS_HARD_CAP;
+  return { target, systemExtra: winbackMission(target, cap) };
+}
+
 function extrair(texto: string, marcador: string): { valor: string | null; limpo: string } {
   const re = new RegExp(`\\[${marcador}:?([^\\]]*)\\]`, "i");
   const m = texto.match(re);
