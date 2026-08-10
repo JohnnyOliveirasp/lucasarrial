@@ -23,7 +23,11 @@ export async function POST(request: NextRequest) {
   const sync = request.nextUrl.searchParams.get("sync") === "1";
   const fila = sync ? await syncWinbackTargets() : null;
 
-  const resultado = await runWinbackSweep();
+  // ?force=1 — dispara AGORA o próximo da fila, ignorando interruptor, janela,
+  // cota e intervalo. É o gatilho manual do teste (mandar pro WhatsApp do
+  // Johnny antes de soltar pros alunos). Nunca é usado pelo cron.
+  const force = request.nextUrl.searchParams.get("force") === "1";
+  const resultado = await runWinbackSweep({ force });
   // Só loga o que interessa (o "ainda não é hora" roda o dia inteiro).
   if (resultado.acao !== "aguardando_intervalo" && resultado.acao !== "desligado") {
     console.log("[winback]", JSON.stringify({ ...resultado, fila }));
