@@ -20,6 +20,15 @@ import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { claimCourtesyOnLogin } from "@/lib/courtesy/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
 
+/** Número da cobrança guardado no raw_event do entitlement (ex.: HP3248282838). */
+function transactionOf(rawEvent: unknown): string | null {
+  if (!rawEvent || typeof rawEvent !== "object") return null;
+  const purchase = (rawEvent as { purchase?: unknown }).purchase;
+  if (!purchase || typeof purchase !== "object") return null;
+  const trx = (purchase as { transaction?: unknown }).transaction;
+  return typeof trx === "string" && trx ? trx : null;
+}
+
 export async function claimPurchasesOnLogin(userId: string, email: string): Promise<void> {
   // Cortesias (mig 53): e-mail que entrou numa campanha antes de ter conta
   // recebe na primeira entrada. Best-effort dentro da própria função.
@@ -32,18 +41,31 @@ export async function claimPurchasesOnLogin(userId: string, email: string): Prom
     // 2. Assinatura ativa cujo ciclo nunca foi creditado → concede agora.
     const { data: ents } = await admin
       .from("entitlements")
-      .select("external_id, status, access_until")
+      .select("external_id, status, access_until, raw_event")
       .eq("user_id", userId)
       .eq("status", "active");
     const nowIso = new Date().toISOString();
-    for (const e of (ents ?? []) as { external_id: string; access_until: string | null }[]) {
+    for (const e of (ents ?? []) as {
+      external_id: string;
+      access_until: string | null;
+      raw_event: unknown;
+    }[]) {
       if (e.access_until && e.access_until <= nowIso) continue; // período já venceu
+
+      // O webhook passou a usar a TRANSAÇÃO como chave do crédito (10/08),
+      // porque o external_id da assinatura é o código do assinante e repete em
+      // toda renovação. Aqui a gente olha as DUAS chaves: se qualquer uma já
+      // creditou, não credita de novo. Sem isso, uma compra creditada pelo
+      // webhook (chave=transação) seria creditada outra vez no login
+      // (chave=assinante) — crédito em dobro.
+      const trx = transactionOf(e.raw_event);
+      const chaves = [...new Set([trx, e.external_id].filter(Boolean))] as string[];
       const { data: tx } = await admin
         .from("credit_transactions")
         .select("id")
         .eq("user_id", userId)
         .eq("kind", "subscription_grant")
-        .eq("ref_id", e.external_id)
+        .in("ref_id", chaves)
         .limit(1)
         .maybeSingle();
       if (tx) continue; // este ciclo/assinatura já foi creditado (fluxo normal)
@@ -51,7 +73,7 @@ export async function claimPurchasesOnLogin(userId: string, email: string): Prom
         userId,
         amount: PLAN_MONTHLY_CREDITS,
         refType: "payment_event",
-        refId: e.external_id,
+        refId: trx ?? e.external_id,
       });
       await applyPurchaseCampaignBonus(userId, e.external_id);
     }

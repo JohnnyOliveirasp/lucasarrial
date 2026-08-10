@@ -42,8 +42,17 @@ export default async function VoiceCloningPage({
 
   const list = (voices ?? []) as VoiceRow[];
 
-  // Treinar (clonar) uma voz exige plano vigente E saldo >= 10.000 créditos.
-  // Geração de áudio com vozes prontas continua liberada (a lista abaixo).
+  // Treinar (clonar) uma voz exige SÓ saldo >= 10.000 créditos — crédito é o
+  // único gate (ordem do Johnny, 10/08). Quem pagou R$97 e tem crédito na conta
+  // usa o que comprou até acabar; acabou, renova. Esta tela era a última que
+  // ainda exigia assinatura vigente por cima do saldo, e barrava gente que
+  // tinha pago (caso erwintst@: 58.089 créditos e o botão travado). Imagens,
+  // Vídeo Clone e Estúdio já cobravam só o crédito. A API de start-training
+  // também nunca exigiu assinatura — o bloqueio existia apenas aqui, no botão.
+  //
+  // `subscribed` continua em uso abaixo, mas só para escolher o texto e o CTA
+  // do card de bloqueio: sem assinatura o caminho é /planos (o avulso exige
+  // assinatura ativa), com assinatura é /app/credits.
   const { data: profile } = await supabase
     .from("profiles")
     .select("email, credits_subscription, credits_extra, access_until")
@@ -54,7 +63,7 @@ export default async function VoiceCloningPage({
   const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
   const creditsTotal =
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
-  const canTrain = team || (subscribed && creditsTotal >= TRAINING_CREDIT_COST);
+  const canTrain = team || creditsTotal >= TRAINING_CREDIT_COST;
 
   return (
     <div className="flex flex-col gap-10">

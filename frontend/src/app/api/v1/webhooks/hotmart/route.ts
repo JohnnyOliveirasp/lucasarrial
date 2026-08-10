@@ -162,7 +162,7 @@ async function processEvent(
       return `pending:${purchaseStatus}`;
     }
 
-    // Assinatura: libera o acesso + recarrega o bolsão mensal (reset).
+    // Assinatura: libera o acesso + credita o bolsão do ciclo (acumula).
     await grantAccess({
       provider: PROVIDER,
       buyerEmail,
@@ -174,12 +174,25 @@ async function processEvent(
     });
     const userId = await resolveUserIdByEmail(buyerEmail);
     if (userId) {
-      await grantSubscriptionCredits({
-        userId,
-        amount: PLAN_MONTHLY_CREDITS,
-        refType: "payment_event",
-        refId: externalId,
-      });
+      // CRÉDITO SÓ NO APPROVED (10/08). A Hotmart avisa a MESMA cobrança duas
+      // vezes: APPROVED quando o dinheiro entra e COMPLETE ~7,8 dias depois,
+      // quando vence a garantia. Creditar nos dois dava 2 lotes por pagamento —
+      // inofensivo enquanto a recarga era um reset, mas agora ela SOMA, e
+      // seriam 200.000 por R$97 (medido: 484 cobranças com crédito em dobro).
+      // O COMPLETE segue passando pelo grantAccess acima, porque é ele que
+      // traz a data de renovação atualizada; só não gera crédito novo.
+      if (eventType === "PURCHASE_APPROVED") {
+        await grantSubscriptionCredits({
+          userId,
+          amount: PLAN_MONTHLY_CREDITS,
+          refType: "payment_event",
+          // A chave é a TRANSAÇÃO, não o externalId: na assinatura o externalId
+          // é o código do assinante e é o MESMO em toda renovação — usá-lo como
+          // trava faria a cobrança de setembro parecer repetição da de julho e
+          // o aluno pagaria sem receber nada.
+          refId: extractTransactionId(data) ?? externalId,
+        });
+      }
       // Bônus de campanha de lançamento (feature À PARTE): se a compra cair na
       // janela de uma campanha ativa, credita o bônus no saldo extra. No-op se
       // não houver campanha; idempotente (não dá bônus 2x na renovação).
@@ -269,6 +282,18 @@ function asRecord(v: unknown): Record<string, unknown> {
 function extractBuyerEmail(data: Record<string, unknown>): string | null {
   const email = asRecord(data.buyer).email;
   return typeof email === "string" ? email.trim().toLowerCase() : null;
+}
+
+/**
+ * Identificador do PAGAMENTO (uma cobrança específica), ao contrário do
+ * externalId, que na assinatura é o código do assinante e não muda nunca.
+ * É a chave de idempotência do crédito: um pagamento credita uma vez.
+ * Sem transação no payload devolve null — aí o grant segue sem trava, que é o
+ * comportamento antigo (melhor creditar do que deixar alguém sem o que pagou).
+ */
+function extractTransactionId(data: Record<string, unknown>): string | null {
+  const trx = asRecord(data.purchase).transaction;
+  return typeof trx === "string" && trx ? trx : null;
 }
 
 /** Assinatura usa o código do assinante (estável entre renovações); compra usa a transação. */
