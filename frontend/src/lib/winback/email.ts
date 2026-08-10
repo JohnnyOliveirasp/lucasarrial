@@ -112,17 +112,18 @@ export async function enviarResgatePorEmail(limite = 200): Promise<{
       );
       if (!corpo) throw new Error("texto vazio");
 
-      await sendSupportMail({
-        to: alvo.email,
-        subject: assuntoPara(alvo, nome),
-        text: corpo,
-      });
+      const assunto = assuntoPara(alvo, nome);
+      await sendSupportMail({ to: alvo.email, subject: assunto, text: corpo });
 
       const agora = new Date().toISOString();
       await admin
         .from("winback_targets")
         .update({
           email_sent_at: agora,
+          // Guarda o texto EXATO: cada e-mail sai diferente, e sem isso não dá
+          // pra auditar o que foi dito a quem.
+          email_subject: assunto,
+          email_body: corpo,
           status: alvo.status === "pending" ? "sent" : alvo.status,
           sent_at: alvo.sent_at ?? agora,
           updated_at: agora,
