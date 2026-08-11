@@ -19,7 +19,7 @@ import { wahaLidToPhone } from "@/lib/agent/waha";
 import type { AgentChatRow, ProfileRow } from "@/lib/db/types";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
-async function phoneFromJid(jid: string): Promise<string | null> {
+export async function phoneFromJid(jid: string): Promise<string | null> {
   if (jid.endsWith("@s.whatsapp.net") || jid.endsWith("@c.us")) {
     const digits = jid.split("@")[0].replace(/\D/g, "");
     return digits || null;

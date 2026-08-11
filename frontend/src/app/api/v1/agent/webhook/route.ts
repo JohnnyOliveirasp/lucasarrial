@@ -10,6 +10,8 @@ import type { NextRequest } from "next/server";
 import { jsonError, jsonOk } from "@/lib/api/responses";
 import { ingestMessage, type EvolutionMessage } from "@/lib/agent/ingest";
 import { maybeRespond, pauseChatForHuman } from "@/lib/agent/respond";
+import { phoneFromJid } from "@/lib/agent/account";
+import { winbackByPhone } from "@/lib/winback/targets";
 
 type EvolutionWebhook = {
   event?: string;
@@ -119,7 +121,14 @@ export async function POST(request: NextRequest) {
     });
     if (ingested?.fromMe) {
       // Humano respondeu pelo CELULAR/web → auto-pausa a IA nessa conversa.
-      await pauseChatForHuman(ingested.chat.id);
+      // EXCEÇÃO (11/08): abertura do RESGATE enviada pelo CELULAR (a tranca
+      // da Meta proíbe o SERVIDOR de iniciar contato até 18/08; o celular
+      // pode). Se o número é alvo do winback, a Carol continua DONA da
+      // conversa — pausar aqui silenciava ela pra sempre (caso Gustavo).
+      const phone =
+        ingested.chat.wa_phone ?? (await phoneFromJid(ingested.chat.wa_jid).catch(() => null));
+      const target = phone ? await winbackByPhone(phone) : null;
+      if (!target) await pauseChatForHuman(ingested.chat.id);
     } else if (ingested) {
       await maybeRespond(ingested);
     }
