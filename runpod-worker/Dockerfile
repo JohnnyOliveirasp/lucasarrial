@@ -32,10 +32,35 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ⚠️ Fica ANTES do COPY do código de propósito: assim editar o handler não
 # invalida esta camada de 5GB no cache de build.
 # ⚠️ Não usar /workspace — é ponto de montagem e some/é sombreado em runtime.
-ENV VOXCPM_MODEL_DIR=/opt/models/VoxCPM2
-RUN python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download('openbmb/VoxCPM2', local_dir='/opt/models/VoxCPM2')" \
-    && du -sh /opt/models/VoxCPM2
+#
+# A MESMA receita serve dois modelos (blue/green da migração VoxBR):
+#   default            → VoxCPM2 do HuggingFace (imagem de produção atual)
+#   MODEL_SOURCE=r2    → VoxBR v1 (BF16) baixado do NOSSO R2 por URLs
+#                        pré-assinadas que o workflow gera e passa como
+#                        build secrets (runpod-worker-voxbr.yml)
+ARG MODEL_SOURCE=hf
+ARG MODEL_NAME=VoxCPM2
+ENV VOXCPM_MODEL_DIR=/opt/models/${MODEL_NAME}
+RUN --mount=type=secret,id=url_model \
+    --mount=type=secret,id=url_audiovae \
+    --mount=type=secret,id=url_config \
+    --mount=type=secret,id=url_tokenizer \
+    --mount=type=secret,id=url_tokenizer_config \
+    --mount=type=secret,id=url_special_tokens \
+    set -e; \
+    if [ "$MODEL_SOURCE" = "r2" ]; then \
+      mkdir -p "$VOXCPM_MODEL_DIR"; cd "$VOXCPM_MODEL_DIR"; \
+      curl -fSL --retry 3 -o model.safetensors        "$(cat /run/secrets/url_model)"; \
+      curl -fSL --retry 3 -o audiovae.pth             "$(cat /run/secrets/url_audiovae)"; \
+      curl -fSL --retry 3 -o config.json              "$(cat /run/secrets/url_config)"; \
+      curl -fSL --retry 3 -o tokenizer.json           "$(cat /run/secrets/url_tokenizer)"; \
+      curl -fSL --retry 3 -o tokenizer_config.json    "$(cat /run/secrets/url_tokenizer_config)"; \
+      curl -fSL --retry 3 -o special_tokens_map.json  "$(cat /run/secrets/url_special_tokens)"; \
+    else \
+      python -c "from huggingface_hub import snapshot_download; \
+        snapshot_download('openbmb/VoxCPM2', local_dir='$VOXCPM_MODEL_DIR')"; \
+    fi; \
+    du -sh "$VOXCPM_MODEL_DIR"
 
 # Handler + pipeline
 COPY handler.py .

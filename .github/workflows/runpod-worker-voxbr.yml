@@ -1,0 +1,96 @@
+name: Build RunPod Worker (VoxBR)
+
+# Imagem CANDIDATA da migração VoxBR (blue/green): mesmo Dockerfile do worker,
+# mas com o VoxBR v1 (BF16, treinado por nós, R2 `voxbr/ckpt_v1_bf16/`) assado
+# no lugar do VoxCPM2 do HuggingFace.
+#
+# SÓ MANUAL (workflow_dispatch) e NÃO TOCA em endpoint nenhum: o produto é a
+# imagem `lucasarrial-runpod-voxbr:<sha>` no GHCR. O endpoint novo é criado à
+# parte, e os endpoints de produção continuam na imagem `lucasarrial-runpod`.
+#
+# O modelo sai do R2 por URLs pré-assinadas (2h), geradas aqui com as secrets
+# R2_* e passadas ao build como Docker secrets — nunca aparecem no log
+# (::add-mask::) nem ficam em camada da imagem.
+
+concurrency:
+  group: runpod-worker-voxbr-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+
+env:
+  R2_BUCKET: voices-clone-ai-verse
+  R2_PREFIX: voxbr/ckpt_v1_bf16
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space (root)
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/PyPy \
+            /usr/local/share/boost /usr/local/share/powershell \
+            /usr/local/.ghcup /usr/lib/jvm /opt/microsoft /opt/google
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Set lowercase repo owner
+        id: owner
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Presign R2 URLs (2h)
+        id: presign
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        run: |
+          presign() {
+            local url
+            url=$(aws --endpoint-url "$R2_ENDPOINT" s3 presign "s3://$R2_BUCKET/$R2_PREFIX/$2" --expires-in 7200)
+            echo "::add-mask::$url"
+            echo "$1=$url" >> "$GITHUB_OUTPUT"
+          }
+          presign url_model            model.safetensors
+          presign url_audiovae         audiovae.pth
+          presign url_config           config.json
+          presign url_tokenizer        tokenizer.json
+          presign url_tokenizer_config tokenizer_config.json
+          presign url_special_tokens   special_tokens_map.json
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./runpod-worker
+          file: ./runpod-worker/Dockerfile
+          push: true
+          build-args: |
+            MODEL_SOURCE=r2
+            MODEL_NAME=VoxBR
+          secrets: |
+            url_model=${{ steps.presign.outputs.url_model }}
+            url_audiovae=${{ steps.presign.outputs.url_audiovae }}
+            url_config=${{ steps.presign.outputs.url_config }}
+            url_tokenizer=${{ steps.presign.outputs.url_tokenizer }}
+            url_tokenizer_config=${{ steps.presign.outputs.url_tokenizer_config }}
+            url_special_tokens=${{ steps.presign.outputs.url_special_tokens }}
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.owner }}/lucasarrial-runpod-voxbr:${{ github.sha }}
+            ghcr.io/${{ steps.owner.outputs.owner }}/lucasarrial-runpod-voxbr:latest
