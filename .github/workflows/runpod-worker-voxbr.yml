@@ -18,10 +18,15 @@ concurrency:
 
 on:
   workflow_dispatch:
+    inputs:
+      r2_prefix:
+        description: "Prefixo R2 do checkpoint BF16 a assar na imagem"
+        required: false
+        default: "voxbr/ckpt_valida_bf16"
 
 env:
   R2_BUCKET: voices-clone-ai-verse
-  R2_PREFIX: voxbr/ckpt_v1_bf16
+  R2_PREFIX: ${{ inputs.r2_prefix || 'voxbr/ckpt_valida_bf16' }}
 
 jobs:
   build:
