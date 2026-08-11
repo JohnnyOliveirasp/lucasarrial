@@ -10,19 +10,26 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { PassoRoteiro } from "./passo-roteiro";
+import { PassoAudio } from "./passo-audio";
 
 const DRAFT_KEY = "fc-edicao-draft-v1";
 const PASSOS = ["roteiro", "audio", "video", "editar", "saida"] as const;
 export type PassoId = (typeof PASSOS)[number];
+
+/** Áudio escolhido na E2: geração TTS pronta OU take gravado no mic. */
+export type AudioSel =
+  | { kind: "generation"; id: string; label: string }
+  | { kind: "take"; key: string; label: string };
 
 export type EdicaoDraft = {
   passo: number;
   roteiro: string;
   roteiroId: string | null;
   seconds: number;
+  audio: AudioSel | null;
 };
 
-const VAZIO: EdicaoDraft = { passo: 0, roteiro: "", roteiroId: null, seconds: 60 };
+const VAZIO: EdicaoDraft = { passo: 0, roteiro: "", roteiroId: null, seconds: 60, audio: null };
 
 export function EdicaoWizard() {
   const t = useTranslations("edicao");
@@ -53,9 +60,14 @@ export function EdicaoWizard() {
 
   if (!loaded) return null;
 
-  // Até onde dá pra avançar HOJE: roteiro pronto libera a E2 (que por ora é
-  // placeholder — as fases W2+ vão destravando as estações de verdade).
-  const podeAvancar = draft.passo === 0 ? draft.roteiro.trim().length > 0 : draft.passo < PASSOS.length - 1;
+  // Gate de avanço por estação: E1 exige roteiro; E2 exige áudio escolhido.
+  // As estações seguintes destravan conforme as fases W3+ chegarem.
+  const podeAvancar =
+    draft.passo === 0
+      ? draft.roteiro.trim().length > 0
+      : draft.passo === 1
+        ? draft.audio !== null
+        : draft.passo < PASSOS.length - 1;
 
   return (
     <div className="flex flex-col gap-5">
@@ -95,6 +107,8 @@ export function EdicaoWizard() {
       {/* Estação atual */}
       {draft.passo === 0 ? (
         <PassoRoteiro draft={draft} onChange={update} />
+      ) : draft.passo === 1 ? (
+        <PassoAudio draft={draft} onChange={update} />
       ) : (
         <EmConstrucao id={PASSOS[draft.passo]} />
       )}

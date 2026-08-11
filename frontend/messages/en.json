@@ -1707,6 +1707,40 @@
       "editar": "Captions, extra scenes and transitions — or skip straight to publishing. Under construction (phase W5).",
       "saida": "Download the final video or schedule publishing. Under construction (phase W6)."
     },
+    "audio": {
+      "caminhos": {
+        "ia": {
+          "titulo": "Generate with my cloned voice",
+          "corpo": "The AI narrates the script with your trained voice. The text comes pre-filled."
+        },
+        "gravar": {
+          "titulo": "Record myself",
+          "corpo": "You read the script on the teleprompter and record with the mic. The take is saved."
+        }
+      },
+      "escolhido": "Audio chosen: {label} — you can proceed, or switch below.",
+      "carregando": "Loading your voices…",
+      "semVoz": "You don't have a trained voice yet.",
+      "semVozCta": "Clone my voice",
+      "voz": "Voice",
+      "escolhaVoz": "Pick a voice…",
+      "custoTts": "{chars} characters · cost {custo} credits (min 400)",
+      "gerarAudio": "Generate audio",
+      "gerandoAudio": "Generating… (~1 min)",
+      "erroGerar": "Could not generate the audio",
+      "labelGeracao": "voice {voz} · {s}s",
+      "abrirPrompter": "Open teleprompter",
+      "fecharPrompter": "Close teleprompter",
+      "gravar": "Record",
+      "parar": "Stop",
+      "dicaGravar": "Click to record while reading the script (max 5min)",
+      "salvando": "saving the recording…",
+      "erroMic": "Could not access the microphone — check browser permission.",
+      "erroSessao": "Could not open the recording session — reload the page.",
+      "erroEnvio": "Upload failed — record again.",
+      "labelTake": "your recording (take)",
+      "takeFicaSalvo": "The recording is saved to your takes and can later be used to train your voice."
+    },
     "roteiro": {
       "modos": {
         "gerar": "Generate with AI",

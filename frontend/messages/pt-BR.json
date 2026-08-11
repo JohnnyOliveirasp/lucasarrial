@@ -1707,6 +1707,40 @@
       "editar": "Legendas, cenas extras e transições — ou pule direto pra publicação. Em construção (fase W5).",
       "saida": "Baixar o vídeo final ou agendar a publicação. Em construção (fase W6)."
     },
+    "audio": {
+      "caminhos": {
+        "ia": {
+          "titulo": "Gerar com minha voz clonada",
+          "corpo": "A IA narra o roteiro com a sua voz treinada. O texto já vem preenchido."
+        },
+        "gravar": {
+          "titulo": "Gravar eu mesmo",
+          "corpo": "Você lê o roteiro no teleprompter e grava com o microfone. O take fica salvo."
+        }
+      },
+      "escolhido": "Áudio escolhido: {label} — pode avançar, ou trocar abaixo.",
+      "carregando": "Carregando suas vozes…",
+      "semVoz": "Você ainda não tem uma voz clonada pronta.",
+      "semVozCta": "Clonar minha voz",
+      "voz": "Voz",
+      "escolhaVoz": "Escolha a voz…",
+      "custoTts": "{chars} caracteres · custo {custo} créditos (mínimo 400)",
+      "gerarAudio": "Gerar áudio",
+      "gerandoAudio": "Gerando… (fica pronto em ~1 min)",
+      "erroGerar": "Não foi possível gerar o áudio",
+      "labelGeracao": "voz {voz} · {s}s",
+      "abrirPrompter": "Abrir teleprompter",
+      "fecharPrompter": "Fechar teleprompter",
+      "gravar": "Gravar",
+      "parar": "Parar",
+      "dicaGravar": "Clique pra gravar lendo o roteiro (máx 5min)",
+      "salvando": "salvando a gravação…",
+      "erroMic": "Não consegui acessar o microfone — verifique a permissão do navegador.",
+      "erroSessao": "Não consegui abrir a sessão de gravação — recarregue a página.",
+      "erroEnvio": "Falha no envio — grave de novo.",
+      "labelTake": "gravação sua (take)",
+      "takeFicaSalvo": "A gravação fica salva nos seus takes e pode ser usada depois no treino da sua voz."
+    },
     "roteiro": {
       "modos": {
         "gerar": "Gerar com IA",
