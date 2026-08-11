@@ -15,6 +15,7 @@
       "videoSales": "Video Ventas TikTok",
       "videoClone": "Video Clon",
       "videoStudio": "Video Estudio",
+      "videoEdicao": "Video Edición 2.0",
       "settings": "Configuración"
     },
     "comingSoon": "Próximamente",
@@ -1685,6 +1686,44 @@
       "selectedImage": "Foto seleccionada",
       "selectedVideo": "Video seleccionado (Reel)",
       "change": "cambiar"
+    }
+  },
+  "edicao": {
+    "eyebrow": "Preproducción",
+    "title": "Video Edición 2.0",
+    "subtitle": "Del guion al video final en un solo camino: guion, audio, video base, edición y publicación.",
+    "voltar": "Volver",
+    "avancar": "Siguiente",
+    "passos": {
+      "roteiro": "Guion",
+      "audio": "Audio",
+      "video": "Video base",
+      "editar": "Edición",
+      "saida": "Publicar"
+    },
+    "emBreve": {
+      "audio": "Aquí generarás el audio con tu voz clonada o grabarás leyendo el teleprompter. En construcción (fase W2).",
+      "video": "Aquí el audio se convierte en video: escenas generadas o tu clon (HeyGen o nuestro Estándar 2.0). En construcción (fase W3-W4).",
+      "editar": "Subtítulos, escenas extra y transiciones — o salta directo a publicar. En construcción (fase W5).",
+      "saida": "Descarga el video final o programa la publicación. En construcción (fase W6)."
+    },
+    "roteiro": {
+      "modos": {
+        "gerar": "Generar con IA",
+        "escrever": "Escribir o pegar",
+        "historico": "Mis guiones"
+      },
+      "ideaPlaceholder": "¿Cuál es la idea del video? Descríbela en una o dos frases…",
+      "linkPlaceholder": "…o pega un enlace de referencia (TikTok, Instagram, YouTube)",
+      "duracao": "Duración",
+      "gerarBtn": "Generar guion ({custo} cr)",
+      "gerando": "Generando…",
+      "erroGerar": "No se pudo generar el guion",
+      "carregando": "Cargando…",
+      "historicoVazio": "Aún no tienes guiones generados.",
+      "seuRoteiro": "Tu guion",
+      "roteiroPlaceholder": "El guion final va aquí — genera con IA, elige del historial o escribe el tuyo.",
+      "contagem": "{chars} caracteres"
     }
   },
   "roteiro": {

@@ -19,6 +19,7 @@
       "videoSales": "Vídeo Vendas TikTok",
       "videoClone": "Vídeo Clone",
       "videoStudio": "Vídeo Estúdio",
+      "videoEdicao": "Vídeo Edição 2.0",
       "settings": "Configurações"
     },
     "comingSoon": "Em breve",
@@ -1685,6 +1686,44 @@
       "selectedImage": "Foto selecionada",
       "selectedVideo": "Vídeo selecionado (Reel)",
       "change": "trocar"
+    }
+  },
+  "edicao": {
+    "eyebrow": "Pré-produção",
+    "title": "Vídeo Edição 2.0",
+    "subtitle": "Do roteiro ao vídeo final, num caminho só: roteiro, áudio, vídeo base, edição e publicação.",
+    "voltar": "Voltar",
+    "avancar": "Avançar",
+    "passos": {
+      "roteiro": "Roteiro",
+      "audio": "Áudio",
+      "video": "Vídeo base",
+      "editar": "Edição",
+      "saida": "Publicar"
+    },
+    "emBreve": {
+      "audio": "Aqui você vai gerar o áudio com a sua voz clonada ou gravar lendo o roteiro no teleprompter. Em construção (fase W2).",
+      "video": "Aqui o áudio vira vídeo: cenas geradas ou o seu clone (HeyGen ou Padrão 2.0). Em construção (fase W3-W4).",
+      "editar": "Legendas, cenas extras e transições — ou pule direto pra publicação. Em construção (fase W5).",
+      "saida": "Baixar o vídeo final ou agendar a publicação. Em construção (fase W6)."
+    },
+    "roteiro": {
+      "modos": {
+        "gerar": "Gerar com IA",
+        "escrever": "Escrever ou colar",
+        "historico": "Meus roteiros"
+      },
+      "ideaPlaceholder": "Qual é a ideia do vídeo? Descreva em uma ou duas frases…",
+      "linkPlaceholder": "…ou cole um link de referência (TikTok, Instagram, YouTube)",
+      "duracao": "Duração",
+      "gerarBtn": "Gerar roteiro ({custo} cr)",
+      "gerando": "Gerando…",
+      "erroGerar": "Não foi possível gerar o roteiro",
+      "carregando": "Carregando…",
+      "historicoVazio": "Você ainda não tem roteiros gerados.",
+      "seuRoteiro": "Seu roteiro",
+      "roteiroPlaceholder": "O roteiro final aparece aqui — gere com IA, escolha do histórico ou escreva do seu jeito.",
+      "contagem": "{chars} caracteres"
     }
   },
   "roteiro": {

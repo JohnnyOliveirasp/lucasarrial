@@ -259,6 +259,15 @@ export function Sidebar({
                 {tShell("preProduction")}
               </span>
               <ul className="flex flex-col gap-1">
+                {/* 🚧 Vídeo Edição 2.0 — wizard central (spec 11/08): roteiro →
+                    áudio → vídeo base → edição → publicar. Fases W0-W6; Lucas
+                    valida → vira O produto e reorganiza o menu de vídeos. */}
+                <NavLeaf
+                  href="/app/videos/edicao"
+                  icon={Clapperboard}
+                  label={t("nav.videoEdicao")}
+                  active={pathname.endsWith("/app/videos/edicao")}
+                />
                 {/* F0 unificação: a ENTRADA é o wizard de 2 perguntas
                     (/app/videos/estudio); o workspace antigo (/studio) segue
                     acessível como destino interno do wizard. */}

@@ -15,6 +15,7 @@
       "videoSales": "TikTok Sales Video",
       "videoClone": "Clone Video",
       "videoStudio": "Video Studio",
+      "videoEdicao": "Video Edit 2.0",
       "settings": "Settings"
     },
     "comingSoon": "Coming soon",
@@ -1685,6 +1686,44 @@
       "selectedImage": "Photo selected",
       "selectedVideo": "Video selected (Reel)",
       "change": "change"
+    }
+  },
+  "edicao": {
+    "eyebrow": "Pre-production",
+    "title": "Video Edit 2.0",
+    "subtitle": "From script to final video in one flow: script, audio, base video, editing and publishing.",
+    "voltar": "Back",
+    "avancar": "Next",
+    "passos": {
+      "roteiro": "Script",
+      "audio": "Audio",
+      "video": "Base video",
+      "editar": "Editing",
+      "saida": "Publish"
+    },
+    "emBreve": {
+      "audio": "Here you'll generate audio with your cloned voice or record while reading the teleprompter. Under construction (phase W2).",
+      "video": "Here the audio becomes video: generated scenes or your clone (HeyGen or our Standard 2.0). Under construction (phase W3-W4).",
+      "editar": "Captions, extra scenes and transitions — or skip straight to publishing. Under construction (phase W5).",
+      "saida": "Download the final video or schedule publishing. Under construction (phase W6)."
+    },
+    "roteiro": {
+      "modos": {
+        "gerar": "Generate with AI",
+        "escrever": "Write or paste",
+        "historico": "My scripts"
+      },
+      "ideaPlaceholder": "What's the video idea? Describe it in a sentence or two…",
+      "linkPlaceholder": "…or paste a reference link (TikTok, Instagram, YouTube)",
+      "duracao": "Duration",
+      "gerarBtn": "Generate script ({custo} cr)",
+      "gerando": "Generating…",
+      "erroGerar": "Could not generate the script",
+      "carregando": "Loading…",
+      "historicoVazio": "You have no generated scripts yet.",
+      "seuRoteiro": "Your script",
+      "roteiroPlaceholder": "The final script goes here — generate with AI, pick from history or write your own.",
+      "contagem": "{chars} characters"
     }
   },
   "roteiro": {
