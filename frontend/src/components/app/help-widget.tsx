@@ -241,18 +241,25 @@ export function HelpWidget() {
 
   return (
     <>
-      {/* Balão flutuante */}
+      {/* Balão flutuante — pílula laranja em evidência, igual à da landing */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? t("close") : t("open")}
-        className="fixed bottom-5 right-5 z-50 inline-flex h-14 w-14 items-center justify-center rounded-full border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] text-[var(--ink)] shadow-[0_8px_30px_rgba(0,0,0,0.45)] transition-transform duration-[var(--dur-base)] ease-[var(--ease-out)] hover:scale-105"
+        className={[
+          "fixed bottom-5 right-5 z-50 inline-flex h-14 items-center justify-center gap-2 rounded-full font-sans font-bold transition-transform duration-[var(--dur-base)] ease-[var(--ease-out)] hover:scale-105 active:scale-95",
+          open
+            ? "w-14 border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] text-[var(--ink)] shadow-[0_8px_30px_rgba(0,0,0,0.45)]"
+            : "px-5 bg-[#ff6a00] text-black shadow-[0_8px_30px_rgba(255,106,0,.35)]",
+        ].join(" ")}
       >
-        {open ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
-        {!open && (
-          <span className="absolute -top-1 -right-1 inline-flex h-4 items-center rounded-full bg-[var(--accent,#f97316)] px-1.5 text-[9px] font-bold uppercase tracking-wide text-black">
-            {t("badge")}
-          </span>
+        {open ? (
+          <X className="h-6 w-6" />
+        ) : (
+          <>
+            <MessageCircle className="h-6 w-6" />
+            <span className="text-[14px]">{t("badge")}</span>
+          </>
         )}
       </button>
 
@@ -260,8 +267,8 @@ export function HelpWidget() {
       {open && (
         <div className="fixed bottom-24 right-5 z-50 flex h-[min(560px,calc(100svh-8rem))] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] shadow-[0_16px_60px_rgba(0,0,0,0.6)]">
           <header className="flex items-center gap-3 border-b border-[var(--hairline)] px-4 py-3">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--surface-elevated)] font-sans text-sm font-bold text-[var(--ink)]">
-              M
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#ff6a00] font-sans text-sm font-bold text-black">
+              F
             </span>
             <div className="min-w-0">
               <p className="truncate font-sans text-sm font-semibold text-[var(--ink)]">{t("title")}</p>
