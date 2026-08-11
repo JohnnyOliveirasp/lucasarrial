@@ -18,7 +18,8 @@ import {
   generateAvatarIV,
   friendlyHeygenError,
 } from "@/lib/heygen/client";
-import { imagesBucket, R2_BUCKETS } from "@/lib/r2/client";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import type { HeygenAccountRow, HeygenVideoRow } from "@/lib/db/types";
 
@@ -35,6 +36,8 @@ type PostBody = {
     look_url?: string;
   };
   audio_generation_id?: string;
+  /** take gravado na hora (rotina do Gravador) — fica salvo pro treino depois */
+  audio_take_key?: string;
   title?: string;
 };
 
@@ -118,27 +121,45 @@ export async function POST(request: NextRequest) {
   ) {
     return badRequest("Escolha a imagem do avatar");
   }
-  if (!body.audio_generation_id) return badRequest("Escolha um áudio da sua voz");
+  if (!body.audio_generation_id && !body.audio_take_key) {
+    return badRequest("Escolha um áudio da sua voz ou grave um agora");
+  }
 
   const apiKey = await loadApiKey(auth.user_id);
   if (!apiKey) return badRequest("Conecte sua conta HeyGen primeiro");
 
-  // Áudio: geração PRONTA do próprio usuário → URL presignada pro HeyGen baixar.
-  const { data: genData } = await getAdmin()
-    .from("generations")
-    .select("audio_path, status, user_id, duration_seconds")
-    .eq("id", body.audio_generation_id)
-    .maybeSingle();
-  const gen = genData as {
-    audio_path: string | null;
-    status: string;
-    user_id: string;
-    duration_seconds: number | null;
-  } | null;
-  if (!gen || gen.user_id !== auth.user_id || gen.status !== "ready" || !gen.audio_path) {
-    return badRequest("Áudio não encontrado (a geração precisa estar pronta)");
+  // Áudio: geração PRONTA do usuário OU take gravado (pasta recorder-test
+  // dele no R2 — a mesma que o treino de voz importa) → URL presignada.
+  let audioUrl: string;
+  if (body.audio_take_key) {
+    const key = body.audio_take_key;
+    if (!key.startsWith(`${auth.user_id}/recorder-test/`) || key.includes("..")) {
+      return badRequest("Gravação inválida");
+    }
+    try {
+      await r2.send(new HeadObjectCommand({ Bucket: R2_BUCKETS.voices, Key: key }));
+    } catch {
+      return badRequest("Gravação não encontrada — grave de novo");
+    }
+    audioUrl = await createPresignedGet(R2_BUCKETS.voices, key, AUDIO_URL_TTL);
+  } else {
+    const genId = body.audio_generation_id as string;
+    const { data: genData } = await getAdmin()
+      .from("generations")
+      .select("audio_path, status, user_id, duration_seconds")
+      .eq("id", genId)
+      .maybeSingle();
+    const gen = genData as {
+      audio_path: string | null;
+      status: string;
+      user_id: string;
+      duration_seconds: number | null;
+    } | null;
+    if (!gen || gen.user_id !== auth.user_id || gen.status !== "ready" || !gen.audio_path) {
+      return badRequest("Áudio não encontrado (a geração precisa estar pronta)");
+    }
+    audioUrl = await createPresignedGet(R2_BUCKETS.generations, gen.audio_path, AUDIO_URL_TTL);
   }
-  const audioUrl = await createPresignedGet(R2_BUCKETS.generations, gen.audio_path, AUDIO_URL_TTL);
 
   const img = await imageBytesFromBody(auth.user_id, image);
   if (typeof img === "string") return badRequest(img);
@@ -156,7 +177,7 @@ export async function POST(request: NextRequest) {
         user_id: auth.user_id,
         heygen_video_id: video_id,
         image_source: image.kind,
-        audio_generation_id: body.audio_generation_id,
+        audio_generation_id: body.audio_generation_id ?? null,
         title: body.title ?? null,
         status: "processing",
       })
