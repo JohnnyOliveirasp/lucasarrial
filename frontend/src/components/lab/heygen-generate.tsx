@@ -10,12 +10,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type PlatformImage = { id: string; name: string | null; url: string | null; status: string };
 type AudioGen = { id: string; name: string | null; text_raw: string; duration_seconds: number | null; status: string };
 type HgVideo = { id: string; status: string; title: string | null; error_message: string | null; video_url?: string | null; created_at: string };
+type Look = { id: string; name: string; image_url: string | null };
 
-export function HeygenGenerate() {
+type Props = {
+  /** Look clicado na galeria de avatares HeyGen (feedback Lucas 11/08) */
+  selectedLook?: Look | null;
+  onClearLook?: () => void;
+  /** Criou um clone novo no HeyGen → o pai recarrega a galeria */
+  onGroupsChanged?: () => void;
+};
+
+export function HeygenGenerate({ selectedLook, onClearLook, onGroupsChanged }: Props) {
   const [images, setImages] = useState<PlatformImage[]>([]);
   const [audios, setAudios] = useState<AudioGen[]>([]);
   const [videos, setVideos] = useState<HgVideo[]>([]);
-  const [imageMode, setImageMode] = useState<"platform_image" | "upload">("platform_image");
+  const [imageMode, setImageMode] = useState<"platform_image" | "upload" | "heygen_look">("platform_image");
   const [imageId, setImageId] = useState<string | null>(null);
   const [uploadDataUrl, setUploadDataUrl] = useState<string | null>(null);
   const [audioId, setAudioId] = useState<string | null>(null);
@@ -70,6 +79,37 @@ export function HeygenGenerate() {
     };
   }, [videos, refreshVideo]);
 
+  const [cloneBusy, setCloneBusy] = useState<string | null>(null);
+  const [cloneMsg, setCloneMsg] = useState<string | null>(null);
+
+  // Clicou num look da galeria acima → a foto do vídeo passa a ser ele
+  useEffect(() => {
+    if (selectedLook) setImageMode("heygen_look");
+  }, [selectedLook]);
+
+  // Cria um foto-avatar (clone) na conta HeyGen do aluno a partir de uma
+  // imagem da plataforma (pedido Lucas 11/08).
+  async function createClone(imageGenerationId: string, name: string | null) {
+    setCloneBusy(imageGenerationId);
+    setCloneMsg(null);
+    try {
+      const res = await fetch("/api/v1/heygen/avatars", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_generation_id: imageGenerationId, name: name ?? undefined }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setCloneMsg(json?.error?.message ?? json?.message ?? "Não foi possível criar o clone");
+        return;
+      }
+      setCloneMsg("Clone criado na sua conta HeyGen — já aparece na galeria acima.");
+      onGroupsChanged?.();
+    } finally {
+      setCloneBusy(null);
+    }
+  }
+
   function onFile(file: File | null) {
     if (!file) return setUploadDataUrl(null);
     const reader = new FileReader();
@@ -79,7 +119,11 @@ export function HeygenGenerate() {
 
   const canGenerate =
     Boolean(audioId) &&
-    (imageMode === "platform_image" ? Boolean(imageId) : Boolean(uploadDataUrl));
+    (imageMode === "platform_image"
+      ? Boolean(imageId)
+      : imageMode === "heygen_look"
+        ? Boolean(selectedLook?.image_url)
+        : Boolean(uploadDataUrl));
 
   async function generate() {
     const ok = window.confirm(
@@ -89,14 +133,17 @@ export function HeygenGenerate() {
     setBusy(true);
     setError(null);
     try {
+      const imagePayload =
+        imageMode === "platform_image"
+          ? { kind: "platform_image", image_generation_id: imageId }
+          : imageMode === "heygen_look"
+            ? { kind: "heygen_look", look_url: selectedLook?.image_url }
+            : { kind: "upload", data_url: uploadDataUrl };
       const res = await fetch("/api/v1/heygen/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          image:
-            imageMode === "platform_image"
-              ? { kind: "platform_image", image_generation_id: imageId }
-              : { kind: "upload", data_url: uploadDataUrl },
+          image: imagePayload,
           audio_generation_id: audioId,
           title: title.trim() || undefined,
         }),
@@ -128,8 +175,8 @@ export function HeygenGenerate() {
 
       {/* Foto */}
       <div>
-        <div className="flex gap-2 text-[13px]">
-          {(["platform_image", "upload"] as const).map((m) => (
+        <div className="flex flex-wrap gap-2 text-[13px]">
+          {(["platform_image", "heygen_look", "upload"] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -141,34 +188,79 @@ export function HeygenGenerate() {
                   : "border-[var(--hairline)] text-[var(--mute)]",
               ].join(" ")}
             >
-              {m === "platform_image" ? "Minhas imagens da plataforma" : "Enviar foto"}
+              {m === "platform_image"
+                ? "Minhas imagens da plataforma"
+                : m === "heygen_look"
+                  ? "Avatar do HeyGen"
+                  : "Enviar foto"}
             </button>
           ))}
         </div>
-        {imageMode === "platform_image" ? (
+        {imageMode === "heygen_look" ? (
+          selectedLook?.image_url ? (
+            <div className="mt-3 flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element -- preview externo do HeyGen */}
+              <img src={selectedLook.image_url} alt={selectedLook.name} className="size-20 rounded-[var(--radius-sm)] border border-[var(--ink)] object-cover" />
+              <div className="text-[13px]">
+                <p className="font-medium text-[var(--ink)]">{selectedLook.name}</p>
+                <button
+                  type="button"
+                  onClick={() => onClearLook?.()}
+                  className="text-[12px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)]"
+                >
+                  trocar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-2 text-[13px] text-[var(--mute)]">
+              Clique numa foto na galeria de avatares acima pra escolher.
+            </p>
+          )
+        ) : imageMode === "platform_image" ? (
           images.length === 0 ? (
             <p className="mt-2 text-[13px] text-[var(--mute)]">
               Você ainda não tem imagens prontas no Gerador de Imagens.
             </p>
           ) : (
-            <ul className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-              {images.slice(0, 18).map((img) => (
-                <li key={img.id}>
-                  <button
-                    type="button"
-                    onClick={() => setImageId(img.id)}
-                    className={[
-                      "block w-full overflow-hidden rounded-[var(--radius-sm)] border-2",
-                      imageId === img.id ? "border-[var(--ink)]" : "border-transparent",
-                    ].join(" ")}
-                    title={img.name ?? undefined}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 */}
-                    <img src={img.url ?? ""} alt={img.name ?? "imagem"} className="aspect-square w-full object-cover" />
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+                {images.slice(0, 18).map((img) => (
+                  <li key={img.id}>
+                    <button
+                      type="button"
+                      onClick={() => setImageId(img.id)}
+                      className={[
+                        "block w-full overflow-hidden rounded-[var(--radius-sm)] border-2",
+                        imageId === img.id ? "border-[var(--ink)]" : "border-transparent",
+                      ].join(" ")}
+                      title={img.name ?? undefined}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 */}
+                      <img src={img.url ?? ""} alt={img.name ?? "imagem"} className="aspect-square w-full object-cover" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {imageId && (
+                <button
+                  type="button"
+                  disabled={cloneBusy !== null}
+                  onClick={() => {
+                    const img = images.find((i) => i.id === imageId);
+                    const nome = window.prompt(
+                      "Nome do avatar que será criado na sua conta HeyGen:",
+                      img?.name ?? "Meu avatar FastCloner",
+                    );
+                    if (nome !== null) void createClone(imageId, nome);
+                  }}
+                  className="mt-2 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3 py-1.5 text-[12.5px] text-[var(--ink)] hover:bg-[var(--surface-raised)] disabled:opacity-40"
+                >
+                  {cloneBusy ? "Criando clone…" : "Criar clone no HeyGen com esta imagem"}
+                </button>
+              )}
+              {cloneMsg && <p className="mt-1 text-[12.5px] text-[var(--mute)]">{cloneMsg}</p>}
+            </>
           )
         ) : (
           <div className="mt-3">

@@ -16,7 +16,8 @@ type Account = {
   created_at: string;
 } | null;
 
-type Group = { id: string; name: string; preview_url: string | null; num_looks: number };
+type Look = { id: string; name: string; image_url: string | null };
+type Group = { id: string; name: string; preview_url: string | null; num_looks: number; looks?: Look[] };
 
 export function HeygenConnect() {
   const [loading, setLoading] = useState(true);
@@ -26,6 +27,9 @@ export function HeygenConnect() {
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Look escolhido na galeria → vira a foto do vídeo (feedback Lucas 11/08:
+  // "nada é clicável"). O estado mora aqui pra galeria e o gerador conversarem.
+  const [selectedLook, setSelectedLook] = useState<Look | null>(null);
 
   const loadState = useCallback(async () => {
     setLoading(true);
@@ -132,7 +136,7 @@ export function HeygenConnect() {
         </span>
         {typeof account?.remaining_credits === "number" && (
           <span className="font-mono text-[12px] text-[var(--mute)]">
-            saldo de API: {account.remaining_credits.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} créditos
+            saldo do HeyGen: {account.remaining_credits.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} créditos
           </span>
         )}
         <button
@@ -148,7 +152,7 @@ export function HeygenConnect() {
       <div>
         <h2 className="font-sans text-[16px] font-semibold text-[var(--ink)]">Seus avatares de foto</h2>
         <p className="mt-0.5 text-[13px] text-[var(--mute)]">
-          Importados da sua conta — cada grupo é uma pessoa, com os looks que você criou lá.
+          Importados da sua conta HeyGen. <strong>Clique numa foto</strong> pra usá-la no vídeo.
         </p>
         {error && <p className="mt-2 text-[13px] text-[var(--danger,#e5484d)]">{error}</p>}
         {groups.length === 0 ? (
@@ -156,31 +160,65 @@ export function HeygenConnect() {
             Nenhum foto-avatar próprio encontrado nesta conta HeyGen.
           </p>
         ) : (
-          <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {groups.map((g) => (
-              <li
-                key={g.id}
-                className="overflow-hidden rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)]"
-              >
-                {g.preview_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- preview externo do HeyGen
-                  <img src={g.preview_url} alt={g.name} className="aspect-square w-full object-cover" />
-                ) : (
-                  <div className="flex aspect-square w-full items-center justify-center bg-[var(--surface-deep)] text-[var(--ash)]">
-                    sem prévia
-                  </div>
-                )}
-                <div className="px-3 py-2">
-                  <p className="truncate text-[13.5px] font-medium text-[var(--ink)]">{g.name}</p>
-                  <p className="text-[12px] text-[var(--mute)]">{g.num_looks} looks</p>
-                </div>
-              </li>
-            ))}
+          <ul className="mt-3 flex flex-col gap-3">
+            {groups.map((g) => {
+              // grupo sem looks listáveis: a capa vira o look clicável
+              const looks: Look[] =
+                g.looks && g.looks.length > 0
+                  ? g.looks
+                  : g.preview_url
+                    ? [{ id: g.id, name: g.name, image_url: g.preview_url }]
+                    : [];
+              return (
+                <li
+                  key={g.id}
+                  className="rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-3"
+                >
+                  <p className="text-[13.5px] font-medium text-[var(--ink)]">
+                    {g.name} <span className="text-[12px] font-normal text-[var(--mute)]">· {looks.length} foto{looks.length === 1 ? "" : "s"}</span>
+                  </p>
+                  {looks.length === 0 ? (
+                    <p className="mt-1 text-[12.5px] text-[var(--ash)]">sem fotos neste grupo</p>
+                  ) : (
+                    <ul className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-8">
+                      {looks.map((l) => (
+                        <li key={l.id}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLook(l)}
+                            title={`Usar "${l.name}" no vídeo`}
+                            className={[
+                              "block w-full overflow-hidden rounded-[var(--radius-sm)] border-2 transition-colors",
+                              selectedLook?.id === l.id
+                                ? "border-[var(--ink)]"
+                                : "border-transparent hover:border-[var(--hairline-bright)]",
+                            ].join(" ")}
+                          >
+                            {l.image_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element -- preview externo do HeyGen
+                              <img src={l.image_url} alt={l.name} className="aspect-square w-full object-cover" />
+                            ) : (
+                              <div className="flex aspect-square w-full items-center justify-center bg-[var(--surface-deep)] text-[11px] text-[var(--ash)]">
+                                sem prévia
+                              </div>
+                            )}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
 
-      <HeygenGenerate />
+      <HeygenGenerate
+        selectedLook={selectedLook}
+        onClearLook={() => setSelectedLook(null)}
+        onGroupsChanged={() => void loadState()}
+      />
     </div>
   );
 }

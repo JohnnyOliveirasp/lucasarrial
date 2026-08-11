@@ -128,6 +128,30 @@ export async function listAvatarGroups(apiKey: string): Promise<HeygenAvatarGrou
   }));
 }
 
+export type HeygenLook = { id: string; name: string; image_url: string | null };
+
+/**
+ * Looks (fotos) DENTRO de um grupo de foto-avatar. Feedback do Lucas (11/08):
+ * a tela mostrava só a capa de cada grupo e nada era clicável — pra gerar o
+ * Avatar IV com uma foto do HeyGen é preciso listar os looks um a um.
+ */
+export async function listGroupLooks(apiKey: string, groupId: string): Promise<HeygenLook[]> {
+  const data = await call<{
+    avatar_list?: {
+      id: string;
+      name?: string;
+      image_url?: string;
+      preview_image_url?: string;
+      motion_preview_url?: string;
+    }[];
+  }>(apiKey, `/v2/avatar_group/${encodeURIComponent(groupId)}/avatars`);
+  return (data.avatar_list ?? []).map((l) => ({
+    id: l.id,
+    name: l.name || l.id,
+    image_url: l.image_url ?? l.preview_image_url ?? null,
+  }));
+}
+
 // ───────── escrita (conta do ALUNO; consome créditos DELE) ─────────
 
 /** Sobe uma imagem e devolve o image_key exigido pelo av4/generate. */
@@ -145,6 +169,28 @@ export async function uploadImageAsset(
   });
   if (!data.image_key) throw new HeygenError("upload sem image_key", 500);
   return { image_key: data.image_key };
+}
+
+/**
+ * Cria um GRUPO de foto-avatar (o "clone" do HeyGen) a partir de uma imagem já
+ * subida como asset. Pedido do Lucas (11/08): criar o clone HeyGen com a imagem
+ * gerada na plataforma, sem sair da tela.
+ */
+export async function createPhotoAvatarGroup(
+  apiKey: string,
+  args: { name: string; image_key: string },
+): Promise<{ group_id: string }> {
+  const data = await call<{ id?: string; group_id?: string }>(
+    apiKey,
+    "/v2/photo_avatar/avatar_group/create",
+    {
+      method: "POST",
+      body: JSON.stringify({ name: args.name, image_key: args.image_key }),
+    },
+  );
+  const id = data.group_id ?? data.id;
+  if (!id) throw new HeygenError("create avatar_group sem id", 500);
+  return { group_id: id };
 }
 
 /** Gera vídeo Avatar IV a partir de foto + áudio (URL pública/presigned). */

@@ -27,10 +27,12 @@ const AUDIO_URL_TTL = 2 * 60 * 60; // HeyGen baixa o áudio na hora; 2h de folga
 
 type PostBody = {
   image?: {
-    kind?: "platform_image" | "upload";
+    kind?: "platform_image" | "upload" | "heygen_look";
     image_generation_id?: string;
     /** upload direto: data URL (jpeg/png, ≤8MB) */
     data_url?: string;
+    /** look de foto-avatar da PRÓPRIA conta HeyGen (feedback Lucas 11/08) */
+    look_url?: string;
   };
   audio_generation_id?: string;
   title?: string;
@@ -69,6 +71,28 @@ async function imageBytesFromBody(
     return { bytes: new Uint8Array(await res.arrayBuffer()), contentType: ct };
   }
 
+  if (image.kind === "heygen_look") {
+    // Look da conta HeyGen do aluno. A URL veio da NOSSA rota /avatars, mas o
+    // client pode mandar qualquer coisa — valida esquema e domínio antes do
+    // fetch server-side (anti-SSRF): só hosts do HeyGen/CDN deles.
+    let u: URL;
+    try {
+      u = new URL(image.look_url ?? "");
+    } catch {
+      return "Look inválido";
+    }
+    const hostOk =
+      u.protocol === "https:" &&
+      (/(^|\.)heygen\.(com|ai)$/.test(u.hostname) || /(^|\.)amazonaws\.com$/.test(u.hostname));
+    if (!hostOk) return "Look inválido";
+    const res = await fetch(u.toString(), { cache: "no-store" });
+    if (!res.ok) return "Não foi possível ler a foto do avatar no HeyGen";
+    const ct = res.headers.get("content-type")?.includes("png") ? "image/png" : "image/jpeg";
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.length > MAX_UPLOAD_BYTES * 2) return "Foto do avatar muito grande";
+    return { bytes: buf, contentType: ct };
+  }
+
   // upload direto (data URL)
   const m = image.data_url?.match(/^data:(image\/(?:jpeg|png));base64,(.+)$/);
   if (!m) return "Envie uma foto JPG ou PNG";
@@ -88,7 +112,10 @@ export async function POST(request: NextRequest) {
     return badRequest("Invalid JSON body");
   }
   const image = body.image;
-  if (!image || (image.kind !== "platform_image" && image.kind !== "upload")) {
+  if (
+    !image ||
+    (image.kind !== "platform_image" && image.kind !== "upload" && image.kind !== "heygen_look")
+  ) {
     return badRequest("Escolha a imagem do avatar");
   }
   if (!body.audio_generation_id) return badRequest("Escolha um áudio da sua voz");
