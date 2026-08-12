@@ -13,7 +13,7 @@ import { authenticate } from "@/lib/api/auth";
 import { badRequest, forbidden, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { socialPublisherEnabled } from "@/lib/social/access";
-import { resolvePublishSource } from "@/lib/social/media-sources";
+import { resolvePublishSource, type PublishSource } from "@/lib/social/media-sources";
 import { resolveMediaUrl, startPublication } from "@/lib/social/publisher";
 import type { PublicationRow } from "@/lib/db/types";
 
@@ -32,6 +32,12 @@ export async function POST(request: NextRequest) {
     caption?: string;
     media_type?: string;
     scheduled_at?: string;
+    platform_options?: {
+      privacy_level?: string;
+      disable_comment?: boolean;
+      brand_content?: boolean;
+      brand_organic?: boolean;
+    };
   };
   try {
     body = await request.json();
@@ -49,17 +55,20 @@ export async function POST(request: NextRequest) {
   let mediaType = (body.media_type ?? "reel").trim();
   if (body.source) {
     const src = body.source;
-    const parsed =
-      src.kind === "image"
-        ? ({ kind: "image", id: String(src.id ?? "") } as const)
+    // Kinds referenciados por id (o resolvedor valida a posse na tabela).
+    const ID_KINDS = new Set(["image", "clone-padrao", "clone-heygen", "cenas"]);
+    const parsed: PublishSource | null = ID_KINDS.has(src.kind)
+      ? { kind: src.kind as "image" | "clone-padrao" | "clone-heygen" | "cenas", id: String(src.id ?? "") }
+      : src.kind === "edicao"
+        ? { kind: "edicao", key: String(src.key ?? "") }
         : src.kind === "upload"
-          ? ({
+          ? {
               kind: "upload",
               key: String(src.key ?? ""),
               media_type: KINDS.has(String(src.media_type))
                 ? (String(src.media_type) as "image" | "reel" | "story")
                 : undefined,
-            } as const)
+            }
           : null;
     if (!parsed) return badRequest("source.kind não suportado");
     const resolved = await resolvePublishSource(auth.user_id, parsed);
@@ -87,26 +96,38 @@ export async function POST(request: NextRequest) {
   const admin = getAdmin();
   const { data: account } = await admin
     .from("social_accounts")
-    .select("id, status")
+    .select("id, status, platform")
     .eq("id", accountId)
     .eq("user_id", auth.user_id)
     .maybeSingle();
-  if (!account) return badRequest("Conta do Instagram não encontrada");
+  if (!account) return badRequest("Conta da rede social não encontrada");
   if (account.status !== "active") {
-    return badRequest("A conexão com o Instagram expirou. Reconecte a conta.");
+    return badRequest("A conexão com a rede social expirou. Reconecte a conta.");
   }
+
+  // TikTok: opções de compliance vindas do popup (privacidade + publi).
+  const platformOptions =
+    account.platform === "tiktok" && body.platform_options
+      ? {
+          privacy_level: String(body.platform_options.privacy_level ?? "SELF_ONLY"),
+          disable_comment: Boolean(body.platform_options.disable_comment),
+          brand_content: Boolean(body.platform_options.brand_content),
+          brand_organic: Boolean(body.platform_options.brand_organic),
+        }
+      : null;
 
   const { data: created, error } = await admin
     .from("publications")
     .insert({
       user_id: auth.user_id,
       account_id: accountId,
-      platform: "instagram",
+      platform: account.platform as PublicationRow["platform"],
       media_type: mediaType as PublicationRow["media_type"],
       media_url: mediaUrl,
       caption,
       scheduled_at: scheduledAt,
       status: "ready",
+      platform_options: platformOptions,
     })
     .select("*")
     .single();
@@ -122,6 +143,31 @@ export async function POST(request: NextRequest) {
     .eq("id", pub.id)
     .single();
   return jsonOk({ publication: fresh ?? { id: pub.id, status: pub.status } }, 201);
+}
+
+/**
+ * DELETE ?id= — cancela uma publicação AGENDADA que ainda não foi enviada
+ * (status ready + scheduled_at marcado). Publicação imediata não cancela:
+ * o container no Instagram já foi criado.
+ */
+export async function DELETE(request: NextRequest) {
+  const auth = await authenticate(request);
+  if (!auth) return unauthorized();
+  const id = (request.nextUrl.searchParams.get("id") ?? "").trim();
+  if (!id) return badRequest("id ausente");
+  const { data, error } = await getAdmin()
+    .from("publications")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", auth.user_id)
+    .eq("status", "ready")
+    .not("scheduled_at", "is", null)
+    .select("id");
+  if (error) return serverError("Não foi possível cancelar a publicação");
+  if ((data ?? []).length === 0) {
+    return badRequest("Só publicações agendadas (ainda não enviadas) podem ser canceladas");
+  }
+  return jsonOk({ canceled: id });
 }
 
 export async function GET(request: NextRequest) {

@@ -1616,9 +1616,23 @@
     "title": "Publicador",
     "subtitle": "Conecte seu Instagram profissional e publique ou agende Reels, fotos e stories sem sair do FastCloner. Em breve os vídeos gerados aqui dentro vão direto pro seu perfil.",
     "loading": "Carregando…",
+    "tiktok": {
+      "privacy": "Quem pode ver:",
+      "privacyLevels": {
+        "PUBLIC_TO_EVERYONE": "Todo mundo",
+        "MUTUALLY_FOLLOWED_FRIENDS": "Amigos (seguem um ao outro)",
+        "FOLLOWER_OF_CREATOR": "Seguidores",
+        "SELF_ONLY": "Só eu (privado)"
+      },
+      "disableComment": "Desativar comentários",
+      "brandOrganic": "Promovendo meu próprio negócio",
+      "brandContent": "Publicidade paga (parceria com marca)",
+      "musicConsent": "Ao publicar, você confirma que tem os direitos do conteúdo e aceita a Confirmação de Uso de Música do TikTok."
+    },
     "accounts": {
       "title": "Contas conectadas",
       "connect": "Conectar Instagram",
+      "connectTiktok": "Conectar TikTok",
       "empty": "Nenhuma conta ainda. Conecte um Instagram Profissional (Criador ou Comercial — a troca é grátis nas configurações do app do Instagram).",
       "connected": "· conectada",
       "reconnect": "· ⚠️ reconectar",
@@ -1701,11 +1715,17 @@
       "editar": "Edição",
       "saida": "Publicar"
     },
-    "emBreve": {
-      "audio": "Aqui você vai gerar o áudio com a sua voz clonada ou gravar lendo o roteiro no teleprompter. Em construção (fase W2).",
-      "video": "Aqui o áudio vira vídeo: cenas geradas ou o seu clone (HeyGen ou Padrão 2.0). Em construção (fase W3-W4).",
-      "editar": "Legendas, cenas extras e transições — ou pule direto pra publicação. Em construção (fase W5).",
-      "saida": "Baixar o vídeo final ou agendar a publicação. Em construção (fase W6)."
+    "saida": {
+      "semVideo": "Volte à estação Vídeo base: o vídeo ainda não foi criado.",
+      "pronto": "Seu vídeo está pronto!",
+      "prontoEditado": "Seu vídeo está pronto, com as edições aplicadas.",
+      "carregando": "Preparando o vídeo final…",
+      "erro": "Não deu pra carregar o vídeo agora.",
+      "tentarDeNovo": "Tentar de novo",
+      "baixar": "Baixar vídeo",
+      "agendadas": "Publicações agendadas",
+      "cancelar": "Cancelar",
+      "novo": "Começar um novo vídeo"
     },
     "audio": {
       "caminhos": {
@@ -1740,6 +1760,132 @@
       "erroEnvio": "Falha no envio — grave de novo.",
       "labelTake": "gravação sua (take)",
       "takeFicaSalvo": "A gravação fica salva nos seus takes e pode ser usada depois no treino da sua voz."
+    },
+    "video": {
+      "semAudio": "Volte à estação de Áudio e escolha um áudio primeiro — o vídeo nasce dele.",
+      "caminhos": {
+        "cenas": {
+          "titulo": "Cenas geradas",
+          "corpo": "A IA cria as cenas do vídeo a partir do roteiro, sem mostrar rosto."
+        },
+        "clone": {
+          "titulo": "Meu clone falando",
+          "corpo": "Uma foto sua vira vídeo falando o áudio da estação anterior."
+        }
+      },
+      "cenas": {
+        "intro": "A IA transforma o seu áudio num vídeo de cenas: uma cena por frase, sem rosto, com reuso grátis do seu banco e do acervo compartilhado.",
+        "custos": "Custos: preparar o áudio {limpeza} cr · cena nova {cena} cr (reuso é grátis) · montagem {montagem} cr.",
+        "iniciar": "Preparar áudio ({custo} cr)",
+        "carregando": "Carregando o projeto…",
+        "preparandoAudio": "Preparando o áudio (limpeza + transcrição)… leva 1-2 minutos.",
+        "gerarCenas": "Gerar cenas ({custo} cr por cena nova)",
+        "gerandoCenas": "Gerando cenas… {prontas}/{total} prontas",
+        "cenasProntas": "{total} cenas prontas",
+        "banco": "banco",
+        "cenasFalharam": "Algumas cenas falharam (o valor delas foi estornado). Tente de novo — só as que falharam são refeitas.",
+        "tentarCenasDeNovo": "Refazer cenas que falharam",
+        "montar": "Montar vídeo ({custo} cr)",
+        "montando": "Montando o vídeo… alguns minutos.",
+        "tentarMontarDeNovo": "Tentar montar de novo",
+        "pronto": "Vídeo pronto!",
+        "labelVideo": "Cenas do Estúdio · {n} cenas",
+        "recomecar": "Recomeçar",
+        "semCreditos": "Créditos insuficientes.",
+        "erroIniciar": "Não consegui preparar o áudio. Tente de novo.",
+        "erroCenas": "Não consegui gerar as cenas. Tente de novo.",
+        "erroMontar": "Não consegui montar o vídeo. Tente de novo."
+      },
+      "cloneOpcoes": {
+        "padrao": {
+          "titulo": "Padrão 2.0",
+          "corpo": "Nosso motor de lip-sync — 105 créditos por segundo de áudio."
+        },
+        "heygen": {
+          "titulo": "HeyGen (minha conta)",
+          "corpo": "Usa a API key da sua conta HeyGen — consome os créditos de lá."
+        }
+      },
+      "escolhido": "Vídeo base pronto: {label} — pode avançar, ou gerar outro abaixo.",
+      "padrao": {
+        "carregandoAudio": "Preparando o áudio da estação anterior…",
+        "audioPronto": "Áudio: {label} · {s}s · custo do vídeo: {custo} créditos",
+        "audioLongo": "Esse áudio tem {s}s — o Vídeo Clone aceita no máximo {max}s. Volte à estação de Áudio e faça uma versão mais curta, ou use o HeyGen.",
+        "erroAudio": "Não consegui preparar o áudio — volte à estação de Áudio e tente de novo.",
+        "erroUpload": "Falha no envio da foto — tente de novo.",
+        "foto": "Foto de quem fala",
+        "gerar": "Gerar vídeo ({custo} cr)",
+        "gerando": "Gerando o vídeo… leva alguns minutos (pode navegar, o progresso continua).",
+        "erroGerar": "Não foi possível iniciar a geração.",
+        "semCreditos": "Créditos insuficientes pra esse vídeo.",
+        "emAndamento": "Você já tem um vídeo clone em andamento — aguarde ele terminar.",
+        "falhou": "A geração falhou e os créditos foram estornados. Tente de novo.",
+        "pronto": "Vídeo pronto!",
+        "labelVideo": "Clone Padrão 2.0 · {s}s",
+        "refazer": "Gerar outro"
+      },
+      "heygen": {
+        "audioTravado": "O áudio do vídeo será o da estação anterior: {label}",
+        "labelVideo": "Clone HeyGen"
+      }
+    },
+    "editar": {
+      "semVideo": "Volte à estação de Vídeo e gere o vídeo base primeiro.",
+      "nao": {
+        "titulo": "Não, tá pronto",
+        "corpo": "Seguir direto pra publicação com o vídeo como está."
+      },
+      "sim": {
+        "titulo": "Sim, quero editar",
+        "corpo": "Legendas, trilha sonora e estilo de corte antes de publicar."
+      },
+      "podeAvancar": "Beleza — pode avançar pra publicação.",
+      "clone": {
+        "intro": "Queima legendas karaokê no seu vídeo clone, sincronizadas com a fala. O vídeo e o áudio ficam intocados.",
+        "legendar": "Legendar vídeo ({custo} cr)",
+        "legendarDeNovo": "Legendar de novo ({custo} cr)",
+        "legendando": "Legendando o vídeo… 1-2 minutos.",
+        "pronto": "Vídeo legendado pronto — segue pra publicação.",
+        "brollEmBreve": "Cenas extras por cima do clone (b-roll) e transições chegam na próxima etapa desta fase.",
+        "semCreditos": "Créditos insuficientes.",
+        "erro": "Não consegui legendar o vídeo. Tente de novo."
+      },
+      "cenas": {
+        "legendas": "Legendas (karaokê, 2 palavras por vez)",
+        "semMusica": "Sem música",
+        "estiloDinamico": "Corte dinâmico (zoom + sub-planos)",
+        "estiloSobrio": "Corte sóbrio (parado)",
+        "aplicar": "Aplicar edição ({custo} cr)",
+        "aplicarDeNovo": "Re-aplicar com outras opções ({custo} cr)",
+        "nota": "A edição re-monta o vídeo do zero com as mesmas cenas — cada aplicação custa o valor da montagem.",
+        "montando": "Montando o vídeo editado… alguns minutos.",
+        "pronto": "Vídeo editado pronto!",
+        "semCreditos": "Créditos insuficientes.",
+        "erro": "Não consegui montar o vídeo editado. Tente de novo.",
+        "transicaoCorte": "Corte seco",
+        "transicaoFade": "Fade escuro",
+        "transicaoFadeBranco": "Fade claro"
+      },
+      "broll": {
+        "titulo": "Cenas por cima (b-roll)",
+        "intro": "A IA sugere quais frases do seu vídeo ganham cenas por cima — você escolhe quais entram. O rosto volta a aparecer entre as cenas.",
+        "iniciar": "Preparar b-roll ({custo} cr)",
+        "preparando": "Preparando o áudio (transcrição)… 1-2 minutos.",
+        "planejando": "A IA está sugerindo as cenas…",
+        "sugestao": "Sugestão da IA — desmarque as frases que devem ficar SÓ com o seu rosto:",
+        "gratis": "· reuso do banco (grátis)",
+        "gerarCenas": "Gerar {n} cena(s) — {custo} cr",
+        "gerandoCenas": "Gerando cenas… {prontas}/{total} prontas",
+        "cenasFalharam": "Algumas cenas falharam (valor estornado).",
+        "tentarDeNovo": "Refazer cenas que falharam",
+        "aplicar": "Aplicar b-roll no vídeo ({custo} cr)",
+        "aplicando": "Aplicando as cenas por cima do vídeo… 1-2 minutos.",
+        "semCreditos": "Créditos insuficientes.",
+        "erroIniciar": "Não consegui preparar o áudio. Tente de novo.",
+        "erroPlanejar": "Não consegui planejar as cenas. Recarregue e tente de novo.",
+        "erroCenas": "Não consegui gerar as cenas. Tente de novo.",
+        "erroAplicar": "Não consegui aplicar o b-roll. Tente de novo."
+      }
     },
     "roteiro": {
       "modos": {

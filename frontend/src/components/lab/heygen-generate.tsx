@@ -17,19 +17,32 @@ type Props = {
   onClearLook?: () => void;
   /** Criou um clone novo no HeyGen → o pai recarrega a galeria */
   onGroupsChanged?: () => void;
+  /** Wizard Vídeo Edição (W3): áudio vem travado da estação anterior —
+   *  o picker some e todo vídeo usa esta fonte. */
+  presetAudio?: HeygenAudioSel;
+  presetAudioLabel?: string;
+  /** Um vídeo SUBMETIDO NESTA TELA ficou pronto (o wizard guarda no draft). */
+  onVideoReady?: (v: { id: string; video_url: string | null }) => void;
 };
 
-export function HeygenGenerate({ selectedLook, onClearLook, onGroupsChanged }: Props) {
+export function HeygenGenerate({
+  selectedLook, onClearLook, onGroupsChanged, presetAudio, presetAudioLabel, onVideoReady,
+}: Props) {
   const [images, setImages] = useState<PlatformImage[]>([]);
   const [audios, setAudios] = useState<AudioGen[]>([]);
   const [videos, setVideos] = useState<HgVideo[]>([]);
   const [imageMode, setImageMode] = useState<"platform_image" | "upload" | "heygen_look">("platform_image");
   const [imageSel, setImageSel] = useState<HeygenImageSel | null>(null);
-  const [audioSel, setAudioSel] = useState<HeygenAudioSel | null>(null);
+  const [audioSelLivre, setAudioSelLivre] = useState<HeygenAudioSel | null>(null);
+  const audioSel = presetAudio ?? audioSelLivre;
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Só vídeos submetidos AQUI disparam onVideoReady (a lista mostra os antigos).
+  const submittedRef = useRef<Set<string>>(new Set());
+  const onReadyRef = useRef(onVideoReady);
+  onReadyRef.current = onVideoReady;
 
   useEffect(() => {
     void (async () => {
@@ -61,6 +74,10 @@ export function HeygenGenerate({ selectedLook, onClearLook, onGroupsChanged }: P
     const json = await res.json();
     const v = (json?.data ?? json) as HgVideo;
     setVideos((prev) => prev.map((p) => (p.id === id ? { ...p, ...v } : p)));
+    if (v.status === "ready" && submittedRef.current.has(id)) {
+      submittedRef.current.delete(id); // dispara 1x por vídeo
+      onReadyRef.current?.({ id, video_url: v.video_url ?? null });
+    }
     return v;
   }, []);
 
@@ -120,6 +137,7 @@ export function HeygenGenerate({ selectedLook, onClearLook, onGroupsChanged }: P
         return;
       }
       const id = (json?.data?.id ?? json?.id) as string;
+      submittedRef.current.add(id);
       setVideos((prev) => [
         { id, status: "processing", title: title.trim() || null, error_message: null, created_at: new Date().toISOString() },
         ...prev,
@@ -150,7 +168,13 @@ export function HeygenGenerate({ selectedLook, onClearLook, onGroupsChanged }: P
         onChange={setImageSel}
       />
 
-      <HeygenAudioPicker audios={audios} value={audioSel} onChange={setAudioSel} />
+      {presetAudio ? (
+        <p className="rounded-[var(--radius-sm)] border border-[var(--hairline)] px-3 py-2 text-[12.5px] text-[var(--mute)]">
+          🔒 Áudio do vídeo: <strong className="text-[var(--ink)]">{presetAudioLabel ?? "áudio escolhido no passo anterior"}</strong>
+        </p>
+      ) : (
+        <HeygenAudioPicker audios={audios} value={audioSelLivre} onChange={setAudioSelLivre} />
+      )}
 
       {/* Título + gerar */}
       <div className="flex flex-wrap items-center gap-2">

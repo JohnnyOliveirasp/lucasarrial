@@ -180,6 +180,23 @@ def build_plan(words: list[dict], n_scenes: int, total: float,
     return [p for p in plan if p["t1"] - p["t0"] >= 1.0 / FPS]
 
 
+FADE_S = 0.12  # W5: duração do fade de transição (curto — respiro, não efeito)
+
+
+def _fade_suffix(seg: dict) -> str:
+    """W5 (wizard): fade nas TROCAS de cena, aplicado DENTRO do segmento —
+    não altera a contagem de frames, então toda a QA de sync fica intocada.
+    (xfade de verdade sobreporia segmentos e exigiria replanejar o timeline.)"""
+    dur = seg["t1"] - seg["t0"]
+    parts = []
+    if seg.get("fade_in"):
+        parts.append(f"fade=t=in:st=0:d={FADE_S}:color={seg['fade_in']}")
+    if seg.get("fade_out"):
+        st = max(0.0, dur - FADE_S)
+        parts.append(f"fade=t=out:st={st:.3f}:d={FADE_S}:color={seg['fade_out']}")
+    return ("," + ",".join(parts)) if parts else ""
+
+
 def _render_segment(scene: Path, seg: dict, out: Path) -> None:
     """Um sub-plano: trim (loop se a cena for curta) + 9:16 + zoompan (G1).
     Rosto (F4): offset é EXATO (lip-sync) — nunca aplica módulo/realinha.
@@ -191,7 +208,7 @@ def _render_segment(scene: Path, seg: dict, out: Path) -> None:
     # Slide em PNG/JPG (§2.9): imagem vira plano ESTÁTICO (-loop 1, sem zoom).
     if _is_image(scene):
         vf = (f"fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,"
-              f"crop={W}:{H},setsar=1")
+              f"crop={W}:{H},setsar=1") + _fade_suffix(seg)
         _run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1",
               "-t", f"{dur + 0.25:.3f}", "-i", str(scene), "-vf", vf,
               "-frames:v", str(max(1, round(dur * FPS))), "-an",
@@ -214,6 +231,7 @@ def _render_segment(scene: Path, seg: dict, out: Path) -> None:
               f"crop={W}:{H},zoompan=z='min(1+{force}*on,{cap})'"
               f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps={FPS},"
               f"setsar=1")
+    vf += _fade_suffix(seg)
     # -frames:v EXATO: com -t decimal o ffmpeg incluia 1 frame extra em bordas
     # de arredondamento (pts 0.066667 < t "0.0667") e o vídeo somava frames a
     # mais que o áudio — pego pela QA final (delta 0.145s no smoke da máquina).
@@ -270,6 +288,20 @@ def handle_montage(inp: dict, log) -> dict:
         if seg["scene"] in static and not seg["face"]:
             seg["static"] = True
             seg["src_offset"] = 0.0
+    # W5 (wizard): preset de transição — fade escuro/claro só nas TROCAS de
+    # cena (sub-planos da MESMA cena seguem em corte seco). Rosto (F4) fica
+    # fora: o lip-sync não pode escurecer.
+    transition = str(inp.get("transition") or "corte")
+    if transition in ("fade", "fade_branco"):
+        cor = "white" if transition == "fade_branco" else "black"
+        for i, seg in enumerate(plan):
+            if seg.get("face"):
+                continue
+            if i + 1 < len(plan) and plan[i + 1]["scene"] != seg["scene"]:
+                seg["fade_out"] = cor
+            if i > 0 and plan[i - 1]["scene"] != seg["scene"]:
+                seg["fade_in"] = cor
+
     # H1 sem deslocar o timeline: a capa SUBSTITUI os primeiros 0,08s do
     # primeiro plano (senão todo J-cut atrasaria 0,08s em relação à fala).
     # Snap na grade de frames pra soma das durações continuar frame-exata.

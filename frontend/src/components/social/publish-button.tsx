@@ -14,6 +14,14 @@ import { Link } from "@/i18n/navigation";
 type Account = { id: string; username: string | null; status: string };
 type PublisherState = { enabled: boolean; accounts: Account[] };
 
+/** Conteúdo DA plataforma publicável (o servidor valida a posse por id/key). */
+export type PublishButtonSource =
+  | { kind: "image"; id: string }
+  | { kind: "clone-padrao"; id: string }
+  | { kind: "clone-heygen"; id: string }
+  | { kind: "cenas"; id: string }
+  | { kind: "edicao"; key: string };
+
 let stateCache: Promise<PublisherState> | null = null;
 function loadPublisherState(force = false): Promise<PublisherState> {
   if (!stateCache || force) {
@@ -32,13 +40,16 @@ export function PublishButton({
   source,
   context,
   thumbnailUrl,
+  previewVideoUrl,
   className,
 }: {
   /** Referência do conteúdo NA plataforma (o servidor valida a posse). */
-  source: { kind: "image"; id: string };
+  source: PublishButtonSource;
   /** Texto-base pro "✨ Gerar legenda" (prompt da imagem / roteiro). */
   context?: string | null;
   thumbnailUrl?: string | null;
+  /** Preview de vídeo no popup (URL presignada) — usado pelos kinds de vídeo. */
+  previewVideoUrl?: string | null;
   className?: string;
 }) {
   const t = useTranslations("social");
@@ -73,6 +84,7 @@ export function PublishButton({
           source={source}
           context={context}
           thumbnailUrl={thumbnailUrl}
+          previewVideoUrl={previewVideoUrl}
           accounts={state.accounts.filter((a) => a.status === "active")}
           onClose={() => setOpen(false)}
         />
@@ -85,12 +97,14 @@ function PublishModal({
   source,
   context,
   thumbnailUrl,
+  previewVideoUrl,
   accounts,
   onClose,
 }: {
-  source: { kind: "image"; id: string };
+  source: PublishButtonSource;
   context?: string | null;
   thumbnailUrl?: string | null;
+  previewVideoUrl?: string | null;
   accounts: Account[];
   onClose: () => void;
 }) {
@@ -176,13 +190,23 @@ function PublishModal({
           </div>
         ) : (
           <div className="mt-4 flex flex-col gap-3">
-            {thumbnailUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={thumbnailUrl}
-                alt=""
-                className="max-h-40 w-auto self-center rounded-[var(--radius-sm)] object-contain"
+            {previewVideoUrl ? (
+              <video
+                src={previewVideoUrl}
+                controls
+                playsInline
+                preload="metadata"
+                className="max-h-48 w-auto self-center rounded-[var(--radius-sm)]"
               />
+            ) : (
+              thumbnailUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={thumbnailUrl}
+                  alt=""
+                  className="max-h-40 w-auto self-center rounded-[var(--radius-sm)] object-contain"
+                />
+              )
             )}
             {accounts.length === 0 ? (
               <p className="text-[13.5px] text-[var(--mute)]">

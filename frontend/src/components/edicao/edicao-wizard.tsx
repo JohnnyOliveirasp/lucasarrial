@@ -4,13 +4,16 @@
  * 🚧 Vídeo Edição 2.0 — casca do wizard (W0 da spec 11/08).
  * 5 estações lineares, navegável pra FRENTE e pra TRÁS; rascunho persiste em
  * localStorage (nenhum job de servidor até a E2, então não precisa de tabela).
- * W1 = estação Roteiro funcional; E2-E5 entram nas fases W2-W6.
+ * W6 fechou o ciclo: Roteiro → Áudio → Vídeo base → Edição → Saída.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { PassoRoteiro } from "./passo-roteiro";
 import { PassoAudio } from "./passo-audio";
+import { PassoVideo } from "./passo-video";
+import { PassoEditar } from "./passo-editar";
+import { PassoSaida } from "./passo-saida";
 
 const DRAFT_KEY = "fc-edicao-draft-v1";
 const PASSOS = ["roteiro", "audio", "video", "editar", "saida"] as const;
@@ -21,25 +24,53 @@ export type AudioSel =
   | { kind: "generation"; id: string; label: string }
   | { kind: "take"; key: string; label: string };
 
+/** Vídeo base pronto na E3 (W3 = caminhos de clone; W4 = cenas do Estúdio). */
+export type VideoSel =
+  | { kind: "clone-padrao"; id: string; label: string }
+  | { kind: "clone-heygen"; id: string; label: string }
+  | { kind: "cenas"; id: string; label: string };
+
 export type EdicaoDraft = {
   passo: number;
   roteiro: string;
   roteiroId: string | null;
   seconds: number;
   audio: AudioSel | null;
+  video: VideoSel | null;
+  /** Projeto do Estúdio criado pelo caminho Cenas (retoma poll após reload). */
+  cenasProjectId: string | null;
+  /** W5: job de legenda do clone em voo (retoma poll após reload). */
+  captionJob: { job: string; key: string } | null;
+  /** W5: projeto do Estúdio do b-roll do clone + job de overlay em voo. */
+  brollProjectId: string | null;
+  brollJob: { job: string; key: string } | null;
+  /** W5: key R2 do vídeo editado (b-roll e/ou legenda) — a E5 prefere ele. */
+  videoEditadoKey: string | null;
 };
 
-const VAZIO: EdicaoDraft = { passo: 0, roteiro: "", roteiroId: null, seconds: 60, audio: null };
+export const DRAFT_VAZIO: EdicaoDraft = {
+  passo: 0,
+  roteiro: "",
+  roteiroId: null,
+  seconds: 60,
+  audio: null,
+  video: null,
+  cenasProjectId: null,
+  captionJob: null,
+  brollProjectId: null,
+  brollJob: null,
+  videoEditadoKey: null,
+};
 
 export function EdicaoWizard() {
   const t = useTranslations("edicao");
-  const [draft, setDraft] = useState<EdicaoDraft>(VAZIO);
+  const [draft, setDraft] = useState<EdicaoDraft>(DRAFT_VAZIO);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
-      if (raw) setDraft({ ...VAZIO, ...(JSON.parse(raw) as Partial<EdicaoDraft>) });
+      if (raw) setDraft({ ...DRAFT_VAZIO, ...(JSON.parse(raw) as Partial<EdicaoDraft>) });
     } catch {
       /* rascunho corrompido: começa limpo */
     }
@@ -60,14 +91,16 @@ export function EdicaoWizard() {
 
   if (!loaded) return null;
 
-  // Gate de avanço por estação: E1 exige roteiro; E2 exige áudio escolhido.
-  // As estações seguintes destravan conforme as fases W3+ chegarem.
+  // Gate de avanço por estação: E1 exige roteiro; E2 exige áudio escolhido;
+  // E3 exige o vídeo base pronto. E4-E5 destravan nas fases W5-W6.
   const podeAvancar =
     draft.passo === 0
       ? draft.roteiro.trim().length > 0
       : draft.passo === 1
         ? draft.audio !== null
-        : draft.passo < PASSOS.length - 1;
+        : draft.passo === 2
+          ? draft.video !== null
+          : draft.passo < PASSOS.length - 1;
 
   return (
     <div className="flex flex-col gap-5">
@@ -109,8 +142,12 @@ export function EdicaoWizard() {
         <PassoRoteiro draft={draft} onChange={update} />
       ) : draft.passo === 1 ? (
         <PassoAudio draft={draft} onChange={update} />
+      ) : draft.passo === 2 ? (
+        <PassoVideo draft={draft} onChange={update} />
+      ) : draft.passo === 3 ? (
+        <PassoEditar draft={draft} onChange={update} />
       ) : (
-        <EmConstrucao id={PASSOS[draft.passo]} />
+        <PassoSaida draft={draft} onChange={update} />
       )}
 
       {/* Navegação */}
@@ -132,17 +169,6 @@ export function EdicaoWizard() {
           {t("avancar")} <ChevronRight className="size-4" />
         </button>
       </div>
-    </div>
-  );
-}
-
-/** Placeholder honesto das estações que as fases W2+ vão construir. */
-function EmConstrucao({ id }: { id: PassoId }) {
-  const t = useTranslations("edicao");
-  return (
-    <div className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6 text-center">
-      <p className="text-[14px] font-medium text-[var(--ink)]">{t(`passos.${id}`)}</p>
-      <p className="mt-1 text-[13px] text-[var(--mute)]">{t(`emBreve.${id}`)}</p>
     </div>
   );
 }

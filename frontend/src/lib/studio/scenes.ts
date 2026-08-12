@@ -12,9 +12,12 @@
  */
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { r2, imagesBucket } from "@/lib/r2/client";
+import { createPresignedGet } from "@/lib/r2/presigned";
 import { getAdmin } from "@/lib/db/admin";
 import { kieCreateVideoTask, kieGetTask, friendlyKieError } from "@/lib/kie/client";
 import { stillTextLooksBroken } from "@/lib/studio/scene-qa";
+import { moderateImagePrompt } from "@/lib/llm/moderate-image-prompt";
+import { getVideoFallback } from "@/lib/video/tiers";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { StudioSceneRow } from "@/lib/db/types";
 
@@ -73,6 +76,20 @@ async function kieCreateStill(prompt: string): Promise<string> {
  */
 export async function startSceneStill(scene: Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">): Promise<string | null> {
   const admin = getAdmin();
+  // W4 (enxerto 1, do gerador antigo): o prompt_en é derivado da FALA do
+  // usuário por LLM — modera ANTES do Kie (mesmo classificador do Gerador de
+  // Imagem). Bloqueio aqui = nada foi cobrado ainda (débito só após taskId).
+  const mod = await moderateImagePrompt(scene.prompt_en);
+  if (!mod.allowed) {
+    await admin
+      .from("studio_scenes")
+      .update({
+        status: "failed",
+        error_message: "Esta cena foi bloqueada pela moderação de conteúdo. Ajuste o trecho do roteiro e gere de novo.",
+      } as never)
+      .eq("id", scene.id);
+    return null;
+  }
   try {
     const taskId = await kieCreateStill(`${scene.prompt_en}, ${DIALECT_SUFFIX[scene.dialect]}`);
     await admin
@@ -154,6 +171,30 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
       return;
     }
 
+    // W4 (enxerto 2, pré-requisito): persiste o still no R2 — a URL do Kie
+    // expira, e o failover de animação precisa da imagem de entrada. Best-effort:
+    // sem still salvo a cena segue normal, só perde o direito ao fallback.
+    let stillKey: string | null = scene.image_path;
+    if (!stillKey) {
+      try {
+        const resp = await fetch(stillUrl, { cache: "no-store" });
+        if (resp.ok) {
+          const bytes = Buffer.from(await resp.arrayBuffer());
+          stillKey = `${scene.user_id}/studio-bank/${scene.id}-still.png`;
+          await r2.send(
+            new PutObjectCommand({
+              Bucket: imagesBucket(),
+              Key: stillKey,
+              Body: bytes,
+              ContentType: resp.headers.get("content-type") ?? "image/png",
+            }),
+          );
+        }
+      } catch {
+        stillKey = null;
+      }
+    }
+
     try {
       const { taskId } = await kieCreateVideoTask({
         model: VIDEO_MODEL,
@@ -165,7 +206,7 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
       });
       await admin
         .from("studio_scenes")
-        .update({ status: "animating", kie_task_id: taskId } as never)
+        .update({ status: "animating", kie_task_id: taskId, image_path: stillKey } as never)
         .eq("id", scene.id);
     } catch (e) {
       await failScene(scene, e instanceof Error ? e.message : "animação não iniciou");
@@ -176,6 +217,37 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
   if (scene.status === "animating" && scene.kie_task_id) {
     const info = await kieGetTask(scene.kie_task_id);
     if (info.state === "fail") {
+      // W4 (enxerto 2, do gerador antigo): 1 retry no modelo reserva antes de
+      // reprovar — claim atômico (anim_retried false→true) garante que poll ×
+      // webhook não redespachem em dobro; SEM cobrar de novo (mesmo debit_ref).
+      const fb = getVideoFallback("bronze");
+      if (fb && !scene.anim_retried && scene.image_path) {
+        const { data: claimed } = await admin
+          .from("studio_scenes")
+          .update({ anim_retried: true } as never)
+          .eq("id", scene.id)
+          .eq("anim_retried", false)
+          .select("id");
+        if (!claimed || claimed.length === 0) return; // outro sync já assumiu
+        try {
+          const stillAgain = await createPresignedGet(imagesBucket(), scene.image_path, 3600);
+          const { taskId } = await kieCreateVideoTask({
+            model: fb.kieModel,
+            promptEn: MOTION_PROMPT,
+            imageUrl: stillAgain,
+            aspectRatio: "9:16",
+            resolution: fb.resolution,
+            durationSeconds: fb.durationSeconds,
+          });
+          await admin
+            .from("studio_scenes")
+            .update({ kie_task_id: taskId } as never)
+            .eq("id", scene.id);
+          return;
+        } catch {
+          /* reserva também não subiu — cai na reprova com estorno abaixo */
+        }
+      }
       await failScene(scene, info.failMsg || info.failCode || "animação falhou");
       return;
     }

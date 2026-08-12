@@ -1616,9 +1616,23 @@
     "title": "Publisher",
     "subtitle": "Connect your professional Instagram account and publish or schedule Reels, photos and stories without leaving FastCloner. Soon the videos you generate here will go straight to your profile.",
     "loading": "Loading…",
+    "tiktok": {
+      "privacy": "Who can view:",
+      "privacyLevels": {
+        "PUBLIC_TO_EVERYONE": "Everyone",
+        "MUTUALLY_FOLLOWED_FRIENDS": "Friends (mutual follow)",
+        "FOLLOWER_OF_CREATOR": "Followers",
+        "SELF_ONLY": "Only me (private)"
+      },
+      "disableComment": "Disable comments",
+      "brandOrganic": "Promoting my own business",
+      "brandContent": "Paid partnership (branded content)",
+      "musicConsent": "By posting, you confirm you own the rights to this content and agree to TikTok's Music Usage Confirmation."
+    },
     "accounts": {
       "title": "Connected accounts",
       "connect": "Connect Instagram",
+      "connectTiktok": "Connect TikTok",
       "empty": "No account yet. Connect a Professional Instagram account (Creator or Business — switching is free in the Instagram app settings).",
       "connected": "· connected",
       "reconnect": "· ⚠️ reconnect",
@@ -1701,11 +1715,17 @@
       "editar": "Editing",
       "saida": "Publish"
     },
-    "emBreve": {
-      "audio": "Here you'll generate audio with your cloned voice or record while reading the teleprompter. Under construction (phase W2).",
-      "video": "Here the audio becomes video: generated scenes or your clone (HeyGen or our Standard 2.0). Under construction (phase W3-W4).",
-      "editar": "Captions, extra scenes and transitions — or skip straight to publishing. Under construction (phase W5).",
-      "saida": "Download the final video or schedule publishing. Under construction (phase W6)."
+    "saida": {
+      "semVideo": "Go back to the Base video station: the video hasn't been created yet.",
+      "pronto": "Your video is ready!",
+      "prontoEditado": "Your video is ready, with your edits applied.",
+      "carregando": "Preparing the final video…",
+      "erro": "Couldn't load the video right now.",
+      "tentarDeNovo": "Try again",
+      "baixar": "Download video",
+      "agendadas": "Scheduled posts",
+      "cancelar": "Cancel",
+      "novo": "Start a new video"
     },
     "audio": {
       "caminhos": {
@@ -1740,6 +1760,132 @@
       "erroEnvio": "Upload failed — record again.",
       "labelTake": "your recording (take)",
       "takeFicaSalvo": "The recording is saved to your takes and can later be used to train your voice."
+    },
+    "video": {
+      "semAudio": "Go back to the Audio station and pick an audio first — the video is born from it.",
+      "caminhos": {
+        "cenas": {
+          "titulo": "Generated scenes",
+          "corpo": "AI creates the video scenes from your script, without showing a face."
+        },
+        "clone": {
+          "titulo": "My clone speaking",
+          "corpo": "A photo of you becomes a video speaking the audio from the previous station."
+        }
+      },
+      "cenas": {
+        "intro": "AI turns your audio into a scenes video: one scene per sentence, no faces, with free reuse from your bank and the shared library.",
+        "custos": "Costs: audio prep {limpeza} cr · new scene {cena} cr (reuse is free) · montage {montagem} cr.",
+        "iniciar": "Prepare audio ({custo} cr)",
+        "carregando": "Loading the project…",
+        "preparandoAudio": "Preparing the audio (cleanup + transcription)… takes 1-2 minutes.",
+        "gerarCenas": "Generate scenes ({custo} cr per new scene)",
+        "gerandoCenas": "Generating scenes… {prontas}/{total} ready",
+        "cenasProntas": "{total} scenes ready",
+        "banco": "bank",
+        "cenasFalharam": "Some scenes failed (their cost was refunded). Try again — only the failed ones are redone.",
+        "tentarCenasDeNovo": "Redo failed scenes",
+        "montar": "Assemble video ({custo} cr)",
+        "montando": "Assembling the video… a few minutes.",
+        "tentarMontarDeNovo": "Try assembling again",
+        "pronto": "Video ready!",
+        "labelVideo": "Studio scenes · {n} scenes",
+        "recomecar": "Start over",
+        "semCreditos": "Not enough credits.",
+        "erroIniciar": "Couldn't prepare the audio. Try again.",
+        "erroCenas": "Couldn't generate the scenes. Try again.",
+        "erroMontar": "Couldn't assemble the video. Try again."
+      },
+      "cloneOpcoes": {
+        "padrao": {
+          "titulo": "Standard 2.0",
+          "corpo": "Our lip-sync engine — 105 credits per second of audio."
+        },
+        "heygen": {
+          "titulo": "HeyGen (my account)",
+          "corpo": "Uses your HeyGen account API key — spends credits from there."
+        }
+      },
+      "escolhido": "Base video ready: {label} — you can move on, or generate another below.",
+      "padrao": {
+        "carregandoAudio": "Preparing the audio from the previous station…",
+        "audioPronto": "Audio: {label} · {s}s · video cost: {custo} credits",
+        "audioLongo": "This audio is {s}s long — Video Clone accepts at most {max}s. Go back to the Audio station and make a shorter version, or use HeyGen.",
+        "erroAudio": "Couldn't prepare the audio — go back to the Audio station and try again.",
+        "erroUpload": "Photo upload failed — try again.",
+        "foto": "Photo of the speaker",
+        "gerar": "Generate video ({custo} cr)",
+        "gerando": "Generating the video… it takes a few minutes (you can navigate away, progress continues).",
+        "erroGerar": "Couldn't start the generation.",
+        "semCreditos": "Not enough credits for this video.",
+        "emAndamento": "You already have a clone video in progress — wait for it to finish.",
+        "falhou": "The generation failed and your credits were refunded. Try again.",
+        "pronto": "Video ready!",
+        "labelVideo": "Standard 2.0 clone · {s}s",
+        "refazer": "Generate another"
+      },
+      "heygen": {
+        "audioTravado": "The video audio will be the one from the previous station: {label}",
+        "labelVideo": "HeyGen clone"
+      }
+    },
+    "editar": {
+      "semVideo": "Go back to the Video station and generate the base video first.",
+      "nao": {
+        "titulo": "No, it's ready",
+        "corpo": "Go straight to publishing with the video as it is."
+      },
+      "sim": {
+        "titulo": "Yes, I want to edit",
+        "corpo": "Captions, soundtrack and cut style before publishing."
+      },
+      "podeAvancar": "Great — you can move on to publishing.",
+      "clone": {
+        "intro": "Burns karaoke captions into your clone video, synced to the speech. Video and audio stay untouched.",
+        "legendar": "Add captions ({custo} cr)",
+        "legendarDeNovo": "Re-caption ({custo} cr)",
+        "legendando": "Captioning the video… 1-2 minutes.",
+        "pronto": "Captioned video ready — moves on to publishing.",
+        "brollEmBreve": "Extra scenes over the clone (b-roll) and transitions arrive in the next step of this phase.",
+        "semCreditos": "Not enough credits.",
+        "erro": "Couldn't caption the video. Try again."
+      },
+      "cenas": {
+        "legendas": "Captions (karaoke, 2 words at a time)",
+        "semMusica": "No music",
+        "estiloDinamico": "Dynamic cut (zoom + sub-shots)",
+        "estiloSobrio": "Sober cut (still)",
+        "aplicar": "Apply edit ({custo} cr)",
+        "aplicarDeNovo": "Re-apply with other options ({custo} cr)",
+        "nota": "Editing re-assembles the video from scratch with the same scenes — each application costs the montage price.",
+        "montando": "Assembling the edited video… a few minutes.",
+        "pronto": "Edited video ready!",
+        "semCreditos": "Not enough credits.",
+        "erro": "Couldn't assemble the edited video. Try again.",
+        "transicaoCorte": "Hard cut",
+        "transicaoFade": "Dark fade",
+        "transicaoFadeBranco": "Light fade"
+      },
+      "broll": {
+        "titulo": "Scenes on top (b-roll)",
+        "intro": "AI suggests which sentences of your video get scenes on top — you choose which ones go in. Your face shows between scenes.",
+        "iniciar": "Prepare b-roll ({custo} cr)",
+        "preparando": "Preparing the audio (transcription)… 1-2 minutes.",
+        "planejando": "AI is suggesting the scenes…",
+        "sugestao": "AI suggestion — uncheck sentences that should keep ONLY your face:",
+        "gratis": "· bank reuse (free)",
+        "gerarCenas": "Generate {n} scene(s) — {custo} cr",
+        "gerandoCenas": "Generating scenes… {prontas}/{total} ready",
+        "cenasFalharam": "Some scenes failed (cost refunded).",
+        "tentarDeNovo": "Redo failed scenes",
+        "aplicar": "Apply b-roll to the video ({custo} cr)",
+        "aplicando": "Applying the scenes over the video… 1-2 minutes.",
+        "semCreditos": "Not enough credits.",
+        "erroIniciar": "Couldn't prepare the audio. Try again.",
+        "erroPlanejar": "Couldn't plan the scenes. Reload and try again.",
+        "erroCenas": "Couldn't generate the scenes. Try again.",
+        "erroAplicar": "Couldn't apply the b-roll. Try again."
+      }
     },
     "roteiro": {
       "modos": {

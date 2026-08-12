@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { HeygenGenerate } from "./heygen-generate";
+import type { HeygenAudioSel } from "./heygen-audio-picker";
 
 type Account = {
   status: string;
@@ -19,7 +20,15 @@ type Account = {
 type Look = { id: string; name: string; image_url: string | null };
 type Group = { id: string; name: string; preview_url: string | null; num_looks: number; looks?: Look[] };
 
-export function HeygenConnect() {
+type Props = {
+  /** Wizard Vídeo Edição (W3): áudio travado da estação anterior + aviso de
+   *  vídeo pronto — repassados direto pro HeygenGenerate. */
+  presetAudio?: HeygenAudioSel;
+  presetAudioLabel?: string;
+  onVideoReady?: (v: { id: string; video_url: string | null }) => void;
+};
+
+export function HeygenConnect({ presetAudio, presetAudioLabel, onVideoReady }: Props = {}) {
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [account, setAccount] = useState<Account>(null);
@@ -218,6 +227,9 @@ export function HeygenConnect() {
         selectedLook={selectedLook}
         onClearLook={() => setSelectedLook(null)}
         onGroupsChanged={() => void loadState()}
+        presetAudio={presetAudio}
+        presetAudioLabel={presetAudioLabel}
+        onVideoReady={onVideoReady}
       />
     </div>
   );

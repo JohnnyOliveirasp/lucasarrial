@@ -37,13 +37,21 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   let captions = true;
   // Estilo de edição: "dynamic" (zoom+sub-planos, padrão) ou "sober" (parado).
   let editStyle: "dynamic" | "sober" = "dynamic";
+  // W5 (wizard): transição entre cenas — corte seco (padrão) ou fade.
+  let transition: "corte" | "fade" | "fade_branco" = "corte";
   try {
-    const body = (await request.json()) as { music_key?: unknown; captions?: unknown; edit_style?: unknown };
+    const body = (await request.json()) as {
+      music_key?: unknown;
+      captions?: unknown;
+      edit_style?: unknown;
+      transition?: unknown;
+    };
     if (typeof body.music_key === "string" && body.music_key.startsWith("studio-music/")) {
       musicKey = body.music_key;
     }
     if (typeof body.captions === "boolean") captions = body.captions;
     if (body.edit_style === "sober") editStyle = "sober";
+    if (body.transition === "fade" || body.transition === "fade_branco") transition = body.transition;
   } catch {
     /* sem body = sem música */
   }
@@ -153,6 +161,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         output_upload_url: videoPutUrl,
         captions,
         edit_style: editStyle,
+        transition,
         music_url: musicUrl,
       },
       { webhook: webhookUrlFor("generation") },

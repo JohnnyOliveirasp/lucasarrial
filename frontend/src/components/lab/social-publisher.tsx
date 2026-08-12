@@ -51,6 +51,13 @@ export function SocialPublisher() {
   const [scheduledAt, setScheduledAt] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // TikTok: opções do criador (privacidade permitida) + escolhas do post.
+  const [ttPrivacyOptions, setTtPrivacyOptions] = useState<string[]>([]);
+  const [ttPrivacy, setTtPrivacy] = useState("SELF_ONLY");
+  const [ttDisableComment, setTtDisableComment] = useState(false);
+  const [ttBrandOrganic, setTtBrandOrganic] = useState(false);
+  const [ttBrandContent, setTtBrandContent] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const [accRes, pubRes] = await Promise.all([
@@ -85,6 +92,29 @@ export function SocialPublisher() {
     }
   }, [load]);
 
+  // conta TikTok selecionada → busca os níveis de privacidade permitidos
+  useEffect(() => {
+    const acc = accounts.find((a) => a.id === accountId);
+    if (acc?.platform !== "tiktok") {
+      setTtPrivacyOptions([]);
+      return;
+    }
+    let alive = true;
+    void fetch(`/api/v1/social/tiktok/creator-info?account_id=${accountId}`)
+      .then(async (r) => {
+        const j = await r.json();
+        const opts: string[] = j?.data?.creator_info?.privacy_level_options ?? [];
+        if (alive && opts.length > 0) {
+          setTtPrivacyOptions(opts);
+          setTtPrivacy((cur) => (opts.includes(cur) ? cur : opts[0]));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [accountId, accounts]);
+
   // poll enquanto tem publicação em voo
   useEffect(() => {
     const inFlight = pubs.some((p) => p.status === "processing" || p.status === "ready");
@@ -103,11 +133,11 @@ export function SocialPublisher() {
     };
   }, [pubs, load]);
 
-  async function connect() {
+  async function connect(platform: "instagram" | "tiktok") {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/social/instagram/connect?locale=${locale}`);
+      const res = await fetch(`/api/v1/social/${platform}/connect?locale=${locale}`);
       const json = await res.json();
       const url = json?.data?.url ?? json?.url;
       if (!res.ok || !url) {
@@ -157,6 +187,14 @@ export function SocialPublisher() {
           source: picked.source,
           caption: caption.trim() || undefined,
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+          platform_options: isTiktok
+            ? {
+                privacy_level: ttPrivacy,
+                disable_comment: ttDisableComment,
+                brand_organic: ttBrandOrganic,
+                brand_content: ttBrandContent,
+              }
+            : undefined,
         }),
       });
       const json = await res.json();
@@ -178,6 +216,7 @@ export function SocialPublisher() {
   if (loading) return <p className="text-[14px] text-[var(--mute)]">{t("loading")}</p>;
 
   const activeAccounts = accounts.filter((a) => a.status === "active");
+  const isTiktok = activeAccounts.find((a) => a.id === accountId)?.platform === "tiktok";
 
   return (
     <div className="flex max-w-3xl flex-col gap-5">
@@ -188,14 +227,24 @@ export function SocialPublisher() {
       <div className="rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="font-sans text-[16px] font-semibold text-[var(--ink)]">{t("accounts.title")}</h2>
-          <button
-            type="button"
-            onClick={() => void connect()}
-            disabled={busy}
-            className="rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
-          >
-            {t("accounts.connect")}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void connect("instagram")}
+              disabled={busy}
+              className="rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+            >
+              {t("accounts.connect")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void connect("tiktok")}
+              disabled={busy}
+              className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-4 py-2 text-[13px] font-semibold text-[var(--ink)] disabled:opacity-40"
+            >
+              {t("accounts.connectTiktok")}
+            </button>
+          </div>
         </div>
         {accounts.length === 0 ? (
           <p className="mt-3 text-[13.5px] text-[var(--mute)]">{t("accounts.empty")}</p>
@@ -207,6 +256,9 @@ export function SocialPublisher() {
                 className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[var(--hairline)] px-3 py-2"
               >
                 <span className="text-[13.5px] text-[var(--ink)]">
+                  <span className="mr-1.5 rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[10.5px] uppercase text-[var(--ash)]">
+                    {a.platform === "tiktok" ? "TikTok" : "Instagram"}
+                  </span>
                   @{a.username ?? a.id}{" "}
                   <span className="text-[12px] text-[var(--ash)]">
                     {a.status === "active" ? t("accounts.connected") : t("accounts.reconnect")}
@@ -238,12 +290,55 @@ export function SocialPublisher() {
               >
                 {activeAccounts.map((a) => (
                   <option key={a.id} value={a.id}>
-                    @{a.username ?? a.id}
+                    {a.platform === "tiktok" ? "TikTok" : "Instagram"} · @{a.username ?? a.id}
                   </option>
                 ))}
               </select>
             )}
             <SocialMediaPicker value={picked} onChange={setPicked} />
+            {isTiktok && (
+              <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-[var(--hairline)] p-3">
+                <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
+                  {t("tiktok.privacy")}
+                  <select
+                    value={ttPrivacy}
+                    onChange={(e) => setTtPrivacy(e.target.value)}
+                    className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-2 py-1.5 text-[12.5px] text-[var(--ink)]"
+                  >
+                    {(ttPrivacyOptions.length > 0 ? ttPrivacyOptions : ["SELF_ONLY"]).map((p) => (
+                      <option key={p} value={p}>
+                        {t(`tiktok.privacyLevels.${p}` as never)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
+                  <input
+                    type="checkbox"
+                    checked={ttDisableComment}
+                    onChange={(e) => setTtDisableComment(e.target.checked)}
+                  />
+                  {t("tiktok.disableComment")}
+                </label>
+                <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
+                  <input
+                    type="checkbox"
+                    checked={ttBrandOrganic}
+                    onChange={(e) => setTtBrandOrganic(e.target.checked)}
+                  />
+                  {t("tiktok.brandOrganic")}
+                </label>
+                <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
+                  <input
+                    type="checkbox"
+                    checked={ttBrandContent}
+                    onChange={(e) => setTtBrandContent(e.target.checked)}
+                  />
+                  {t("tiktok.brandContent")}
+                </label>
+                <p className="text-[11.5px] text-[var(--ash)]">{t("tiktok.musicConsent")}</p>
+              </div>
+            )}
             <div className="flex flex-col gap-1">
               <textarea
                 value={caption}

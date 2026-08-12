@@ -19,6 +19,7 @@ import {
   refreshLongLived,
   InstagramError,
 } from "@/lib/social/instagram";
+import { advanceTikTokPublication, startTikTokPublication } from "@/lib/social/tiktok-publish";
 import type { PublicationRow, SocialAccountRow } from "@/lib/db/types";
 
 const MAX_ATTEMPTS = 3;
@@ -59,12 +60,15 @@ async function failForAuth(pub: PublicationRow, message: string): Promise<void> 
   await patch(pub.id, { status: "failed", error: message });
 }
 
-/** ready → processing: cria o container no Instagram. */
+/** ready → processing: cria o container (IG) ou faz init+upload (TikTok). */
 export async function startPublication(pub: PublicationRow): Promise<void> {
   const account = await loadAccount(pub.account_id);
   if (!account || account.status !== "active") {
-    await patch(pub.id, { status: "failed", error: "Conta do Instagram desconectada. Reconecte e tente de novo." });
+    await patch(pub.id, { status: "failed", error: "Conta desconectada. Reconecte e tente de novo." });
     return;
+  }
+  if (account.platform === "tiktok") {
+    return startTikTokPublication(pub, account, await resolveMediaUrl(pub.media_url));
   }
   try {
     const token = decryptToken(account.access_token_encrypted);
@@ -96,8 +100,11 @@ export async function advancePublication(pub: PublicationRow): Promise<void> {
   }
   const account = await loadAccount(pub.account_id);
   if (!account) {
-    await patch(pub.id, { status: "failed", error: "Conta do Instagram não encontrada." });
+    await patch(pub.id, { status: "failed", error: "Conta da rede social não encontrada." });
     return;
+  }
+  if (account.platform === "tiktok") {
+    return advanceTikTokPublication(pub, account);
   }
   try {
     const token = decryptToken(account.access_token_encrypted);
@@ -181,12 +188,14 @@ export async function sweepPublications(): Promise<{ started: number; advanced: 
     await patch(pub.id, { media_url: pub.media_url.replace("r2://", "r2-cleaned://") });
   }
 
-  // 4. tokens ativos vencendo em <10 dias → refresh
+  // 4. tokens IG ativos vencendo em <10 dias → refresh. (TikTok renova
+  //    on-demand a cada uso — o access dura só 24h, não entra aqui.)
   const soon = new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString();
   const { data: expiring } = await admin
     .from("social_accounts")
     .select("*")
     .eq("status", "active")
+    .eq("platform", "instagram")
     .lte("token_expires_at", soon)
     .limit(20);
   for (const account of (expiring ?? []) as SocialAccountRow[]) {
