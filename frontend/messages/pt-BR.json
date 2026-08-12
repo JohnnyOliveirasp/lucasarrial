@@ -1701,11 +1701,17 @@
       "editar": "Edição",
       "saida": "Publicar"
     },
-    "emBreve": {
-      "audio": "Aqui você vai gerar o áudio com a sua voz clonada ou gravar lendo o roteiro no teleprompter. Em construção (fase W2).",
-      "video": "Aqui o áudio vira vídeo: cenas geradas ou o seu clone (HeyGen ou Padrão 2.0). Em construção (fase W3-W4).",
-      "editar": "Legendas, cenas extras e transições — ou pule direto pra publicação. Em construção (fase W5).",
-      "saida": "Baixar o vídeo final ou agendar a publicação. Em construção (fase W6)."
+    "saida": {
+      "semVideo": "Volte à estação Vídeo base: o vídeo ainda não foi criado.",
+      "pronto": "Seu vídeo está pronto!",
+      "prontoEditado": "Seu vídeo está pronto, com as edições aplicadas.",
+      "carregando": "Preparando o vídeo final…",
+      "erro": "Não deu pra carregar o vídeo agora.",
+      "tentarDeNovo": "Tentar de novo",
+      "baixar": "Baixar vídeo",
+      "agendadas": "Publicações agendadas",
+      "cancelar": "Cancelar",
+      "novo": "Começar um novo vídeo"
     },
     "audio": {
       "caminhos": {

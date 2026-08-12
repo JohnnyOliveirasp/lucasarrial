@@ -1701,11 +1701,17 @@
       "editar": "Editing",
       "saida": "Publish"
     },
-    "emBreve": {
-      "audio": "Here you'll generate audio with your cloned voice or record while reading the teleprompter. Under construction (phase W2).",
-      "video": "Here the audio becomes video: generated scenes or your clone (HeyGen or our Standard 2.0). Under construction (phase W3-W4).",
-      "editar": "Captions, extra scenes and transitions — or skip straight to publishing. Under construction (phase W5).",
-      "saida": "Download the final video or schedule publishing. Under construction (phase W6)."
+    "saida": {
+      "semVideo": "Go back to the Base video station: the video hasn't been created yet.",
+      "pronto": "Your video is ready!",
+      "prontoEditado": "Your video is ready, with your edits applied.",
+      "carregando": "Preparing the final video…",
+      "erro": "Couldn't load the video right now.",
+      "tentarDeNovo": "Try again",
+      "baixar": "Download video",
+      "agendadas": "Scheduled posts",
+      "cancelar": "Cancel",
+      "novo": "Start a new video"
     },
     "audio": {
       "caminhos": {

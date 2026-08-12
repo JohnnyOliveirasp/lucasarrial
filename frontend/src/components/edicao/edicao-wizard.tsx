@@ -4,7 +4,7 @@
  * 🚧 Vídeo Edição 2.0 — casca do wizard (W0 da spec 11/08).
  * 5 estações lineares, navegável pra FRENTE e pra TRÁS; rascunho persiste em
  * localStorage (nenhum job de servidor até a E2, então não precisa de tabela).
- * W1 = estação Roteiro funcional; E2-E5 entram nas fases W2-W6.
+ * W6 fechou o ciclo: Roteiro → Áudio → Vídeo base → Edição → Saída.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -13,6 +13,7 @@ import { PassoRoteiro } from "./passo-roteiro";
 import { PassoAudio } from "./passo-audio";
 import { PassoVideo } from "./passo-video";
 import { PassoEditar } from "./passo-editar";
+import { PassoSaida } from "./passo-saida";
 
 const DRAFT_KEY = "fc-edicao-draft-v1";
 const PASSOS = ["roteiro", "audio", "video", "editar", "saida"] as const;
@@ -47,7 +48,7 @@ export type EdicaoDraft = {
   videoEditadoKey: string | null;
 };
 
-const VAZIO: EdicaoDraft = {
+export const DRAFT_VAZIO: EdicaoDraft = {
   passo: 0,
   roteiro: "",
   roteiroId: null,
@@ -63,13 +64,13 @@ const VAZIO: EdicaoDraft = {
 
 export function EdicaoWizard() {
   const t = useTranslations("edicao");
-  const [draft, setDraft] = useState<EdicaoDraft>(VAZIO);
+  const [draft, setDraft] = useState<EdicaoDraft>(DRAFT_VAZIO);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
-      if (raw) setDraft({ ...VAZIO, ...(JSON.parse(raw) as Partial<EdicaoDraft>) });
+      if (raw) setDraft({ ...DRAFT_VAZIO, ...(JSON.parse(raw) as Partial<EdicaoDraft>) });
     } catch {
       /* rascunho corrompido: começa limpo */
     }
@@ -146,7 +147,7 @@ export function EdicaoWizard() {
       ) : draft.passo === 3 ? (
         <PassoEditar draft={draft} onChange={update} />
       ) : (
-        <EmConstrucao id={PASSOS[draft.passo]} />
+        <PassoSaida draft={draft} onChange={update} />
       )}
 
       {/* Navegação */}
@@ -168,17 +169,6 @@ export function EdicaoWizard() {
           {t("avancar")} <ChevronRight className="size-4" />
         </button>
       </div>
-    </div>
-  );
-}
-
-/** Placeholder honesto das estações que as fases W2+ vão construir. */
-function EmConstrucao({ id }: { id: PassoId }) {
-  const t = useTranslations("edicao");
-  return (
-    <div className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6 text-center">
-      <p className="text-[14px] font-medium text-[var(--ink)]">{t(`passos.${id}`)}</p>
-      <p className="mt-1 text-[13px] text-[var(--mute)]">{t(`emBreve.${id}`)}</p>
     </div>
   );
 }
