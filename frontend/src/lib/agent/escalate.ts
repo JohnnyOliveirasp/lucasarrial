@@ -16,7 +16,10 @@ import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
 import type { AgentChatRow } from "@/lib/db/types";
 
-const MARKER = /\[ESCALAR(-TECNICO)?:\s*([^\]]{1,300})\]/i;
+// Caso Anderson 10/08: resumo >300 chars não casava o regex → marcador VAZAVA
+// pro chat do aluno e nenhum e-mail saía. Sem limite no match; o corte pra
+// exibição/e-mail é feito por quem consome (slice), nunca no regex.
+const MARKER = /\[ESCALAR(-TECNICO)?:\s*([^\]]+)\]/i;
 const PANEL_URL = "https://fastcloner.com/admin/agente";
 
 /** Separa o marcador de escalação da resposta visível ao aluno. */
@@ -28,7 +31,7 @@ export function extractEscalation(reply: string): {
 } {
   const m = reply.match(MARKER);
   if (!m) return { clean: reply.trim(), reason: null, technical: false };
-  return { clean: reply.replace(MARKER, "").trim(), reason: m[2].trim(), technical: Boolean(m[1]) };
+  return { clean: reply.replace(MARKER, "").trim(), reason: m[2].trim().slice(0, 1000), technical: Boolean(m[1]) };
 }
 
 /** Pedido Johnny 05/08: escalações da Fast só pra ele + caixa oficial do suporte. */

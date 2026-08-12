@@ -100,10 +100,9 @@ async function emailEscalation(args: {
 }): Promise<void> {
   try {
     // Pedido Johnny 05/08: escalações da Fast só pra ele + suporte@ (era admin_emails inteira).
-    const to = new Set<string>([SUPPORT_EMAIL]);
-    if (!args.technical) {
-      to.add("johnny.oliveirasp@gmail.com");
-    }
+    // Caso Anderson 11/08: escalação TÉCNICA só pra suporte@ morria sem humano
+    // (a caixa é atendida pela própria Fast) — Johnny entra em TODAS.
+    const to = new Set<string>([SUPPORT_EMAIL, "johnny.oliveirasp@gmail.com"]);
     await sendEmail({
       to: [...to],
       subject: `${args.technical ? "⚙️ ERRO TÉCNICO" : "🙋 Aluno pedindo humano"} — help do app — ${args.email}`,
