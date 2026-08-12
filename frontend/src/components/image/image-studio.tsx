@@ -83,6 +83,8 @@ export function ImageStudio({
   }
 
   // Reidrata a referência fixa da sessão anterior (chave → URL fresca).
+  // Sem localStorage (1º login), cai pra referência definida no SERVIDOR
+  // (profiles.image_ref_key — onboarding via planilha, 12/08).
   useEffect(() => {
     let stored: string | null = null;
     try {
@@ -90,8 +92,22 @@ export function ImageStudio({
     } catch {
       stored = null;
     }
-    if (!stored) return;
     let cancelled = false;
+    if (!stored) {
+      (async () => {
+        try {
+          const r = await fetch("/api/v1/images/ref-default", { cache: "no-store" });
+          if (!r.ok) return;
+          const { key, url } = await r.json();
+          if (!cancelled && key && url) persistFixedRef({ key, url });
+        } catch {
+          /* sem referência do servidor — segue vazio */
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
     (async () => {
       try {
         const r = await fetch("/api/v1/images/ref-url", {
@@ -114,6 +130,7 @@ export function ImageStudio({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   // "Usar como referência" vindo do histórico.

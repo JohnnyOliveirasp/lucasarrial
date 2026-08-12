@@ -61,6 +61,7 @@ export type ProfileRow = {
   credits_extra: number;        // créditos avulsos comprados (não expiram)
   pending_payment_at: Timestamp | null; // Pix/boleto gerado aguardando pagamento (banner); NULL = nada pendente
   last_seen_at: Timestamp | null; // heartbeat p/ "online agora" no /admin
+  image_ref_key: string | null; // referência FIXA do estúdio de imagem (mig 68, onboarding via planilha)
   created_at: Timestamp;
   updated_at: Timestamp;
 };
