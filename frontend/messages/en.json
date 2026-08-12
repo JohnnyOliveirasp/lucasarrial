@@ -1616,9 +1616,23 @@
     "title": "Publisher",
     "subtitle": "Connect your professional Instagram account and publish or schedule Reels, photos and stories without leaving FastCloner. Soon the videos you generate here will go straight to your profile.",
     "loading": "Loading…",
+    "tiktok": {
+      "privacy": "Who can view:",
+      "privacyLevels": {
+        "PUBLIC_TO_EVERYONE": "Everyone",
+        "MUTUALLY_FOLLOWED_FRIENDS": "Friends (mutual follow)",
+        "FOLLOWER_OF_CREATOR": "Followers",
+        "SELF_ONLY": "Only me (private)"
+      },
+      "disableComment": "Disable comments",
+      "brandOrganic": "Promoting my own business",
+      "brandContent": "Paid partnership (branded content)",
+      "musicConsent": "By posting, you confirm you own the rights to this content and agree to TikTok's Music Usage Confirmation."
+    },
     "accounts": {
       "title": "Connected accounts",
       "connect": "Connect Instagram",
+      "connectTiktok": "Connect TikTok",
       "empty": "No account yet. Connect a Professional Instagram account (Creator or Business — switching is free in the Instagram app settings).",
       "connected": "· connected",
       "reconnect": "· ⚠️ reconnect",

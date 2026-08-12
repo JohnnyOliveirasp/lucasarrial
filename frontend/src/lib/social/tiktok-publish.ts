@@ -31,7 +31,7 @@ async function markAuthFailure(pub: PublicationRow, message: string): Promise<vo
 }
 
 /** Access token do TikTok dura 24h — renova on-demand quando falta <10min. */
-async function freshAccessToken(account: SocialAccountRow): Promise<string> {
+export async function freshAccessToken(account: SocialAccountRow): Promise<string> {
   const expiresAt = account.token_expires_at ? new Date(account.token_expires_at).getTime() : 0;
   if (expiresAt > Date.now() + 10 * 60 * 1000) {
     return decryptToken(account.access_token_encrypted);
