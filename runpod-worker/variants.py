@@ -150,6 +150,56 @@ def handle_caption_burn(inp: dict, log) -> dict:
     return {"caption_burn": True, "words": len(words), "duration_s": round(base_dur, 2)}
 
 
+def handle_broll_overlay(inp: dict, log) -> dict:
+    """W5 (wizard Vídeo Edição): cenas de b-roll POR CIMA de um MP4 pronto
+    (vídeo clone) — overlay por janela (enable=between). O áudio e a duração
+    do base ficam INTOCADOS; cada cena é aparada no tamanho da janela (teto =
+    duração da própria cena) e cobre o quadro inteiro (scale+crop).
+
+    Input: { base_video_url, inserts:[{t0,t1,video_url}], output_upload_url }
+    """
+    base_url = inp.get("base_video_url")
+    inserts = inp.get("inserts") or []
+    put_url = inp.get("output_upload_url")
+    if not base_url or not inserts or not put_url:
+        return {"error": "missing 'base_video_url'/'inserts'/'output_upload_url'"}
+
+    job_dir = Path(tempfile.mkdtemp(prefix="broll_"))
+    base = download_to_dir([base_url], job_dir / "in")[0]
+    W, H = video_size(base)
+    base_dur = _duration(base)
+    scene_files = download_to_dir([i["video_url"] for i in inserts], job_dir / "scenes")
+
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(base)]
+    for f in scene_files:
+        cmd += ["-i", str(f)]
+    fc: list[str] = []
+    last = "0:v"
+    for j, ins in enumerate(inserts):
+        t0 = float(ins["t0"])
+        sdur = _duration(scene_files[j])
+        length = max(0.4, min(float(ins["t1"]) - t0, sdur - 0.05))
+        t1 = t0 + length
+        ov, vo = f"ov{j}", f"v{j}"
+        fc.append(
+            f"[{j + 1}:v]trim=0:{length:.3f},scale={W}:{H}:force_original_aspect_ratio=increase,"
+            f"crop={W}:{H},setsar=1,setpts=PTS-STARTPTS+{t0:.3f}/TB[{ov}]"
+        )
+        # eof_action=pass: o base segue normal depois que a cena acaba.
+        fc.append(f"[{last}][{ov}]overlay=0:0:eof_action=pass:enable='between(t,{t0:.3f},{t1:.3f})'[{vo}]")
+        last = vo
+    out = job_dir / "broll.mp4"
+    cmd += ["-filter_complex", ";".join(fc), "-map", f"[{last}]", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-c:a", "copy", str(out)]
+    _run(cmd)
+    if abs(_duration(out) - base_dur) > 0.15:
+        return {"error": "b-roll mudou a duração do vídeo (>0,15s)"}
+    upload_file_to_presigned_url(out, put_url, content_type="video/mp4")
+    log("info", "broll_overlay.done", inserts=len(inserts), dur=round(base_dur, 1))
+    return {"broll_overlay": True, "inserts": len(inserts), "duration_s": round(base_dur, 2)}
+
+
 def slide_png(title: str, bullets: list[str], size: tuple[int, int], out: Path) -> Path:
     from PIL import Image, ImageDraw, ImageFont
 

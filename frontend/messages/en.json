@@ -1845,6 +1845,26 @@
         "transicaoCorte": "Hard cut",
         "transicaoFade": "Dark fade",
         "transicaoFadeBranco": "Light fade"
+      },
+      "broll": {
+        "titulo": "Scenes on top (b-roll)",
+        "intro": "AI suggests which sentences of your video get scenes on top — you choose which ones go in. Your face shows between scenes.",
+        "iniciar": "Prepare b-roll ({custo} cr)",
+        "preparando": "Preparing the audio (transcription)… 1-2 minutes.",
+        "planejando": "AI is suggesting the scenes…",
+        "sugestao": "AI suggestion — uncheck sentences that should keep ONLY your face:",
+        "gratis": "· bank reuse (free)",
+        "gerarCenas": "Generate {n} scene(s) — {custo} cr",
+        "gerandoCenas": "Generating scenes… {prontas}/{total} ready",
+        "cenasFalharam": "Some scenes failed (cost refunded).",
+        "tentarDeNovo": "Redo failed scenes",
+        "aplicar": "Apply b-roll to the video ({custo} cr)",
+        "aplicando": "Applying the scenes over the video… 1-2 minutes.",
+        "semCreditos": "Not enough credits.",
+        "erroIniciar": "Couldn't prepare the audio. Try again.",
+        "erroPlanejar": "Couldn't plan the scenes. Reload and try again.",
+        "erroCenas": "Couldn't generate the scenes. Try again.",
+        "erroAplicar": "Couldn't apply the b-roll. Try again."
       }
     },
     "roteiro": {

@@ -40,7 +40,10 @@ export type EdicaoDraft = {
   cenasProjectId: string | null;
   /** W5: job de legenda do clone em voo (retoma poll após reload). */
   captionJob: { job: string; key: string } | null;
-  /** W5: key R2 do vídeo legendado — a E5 prefere ele ao vídeo base. */
+  /** W5: projeto do Estúdio do b-roll do clone + job de overlay em voo. */
+  brollProjectId: string | null;
+  brollJob: { job: string; key: string } | null;
+  /** W5: key R2 do vídeo editado (b-roll e/ou legenda) — a E5 prefere ele. */
   videoEditadoKey: string | null;
 };
 
@@ -53,6 +56,8 @@ const VAZIO: EdicaoDraft = {
   video: null,
   cenasProjectId: null,
   captionJob: null,
+  brollProjectId: null,
+  brollJob: null,
   videoEditadoKey: null,
 };
 

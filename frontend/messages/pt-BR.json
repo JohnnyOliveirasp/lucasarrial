@@ -1845,6 +1845,26 @@
         "transicaoCorte": "Corte seco",
         "transicaoFade": "Fade escuro",
         "transicaoFadeBranco": "Fade claro"
+      },
+      "broll": {
+        "titulo": "Cenas por cima (b-roll)",
+        "intro": "A IA sugere quais frases do seu vídeo ganham cenas por cima — você escolhe quais entram. O rosto volta a aparecer entre as cenas.",
+        "iniciar": "Preparar b-roll ({custo} cr)",
+        "preparando": "Preparando o áudio (transcrição)… 1-2 minutos.",
+        "planejando": "A IA está sugerindo as cenas…",
+        "sugestao": "Sugestão da IA — desmarque as frases que devem ficar SÓ com o seu rosto:",
+        "gratis": "· reuso do banco (grátis)",
+        "gerarCenas": "Gerar {n} cena(s) — {custo} cr",
+        "gerandoCenas": "Gerando cenas… {prontas}/{total} prontas",
+        "cenasFalharam": "Algumas cenas falharam (valor estornado).",
+        "tentarDeNovo": "Refazer cenas que falharam",
+        "aplicar": "Aplicar b-roll no vídeo ({custo} cr)",
+        "aplicando": "Aplicando as cenas por cima do vídeo… 1-2 minutos.",
+        "semCreditos": "Créditos insuficientes.",
+        "erroIniciar": "Não consegui preparar o áudio. Tente de novo.",
+        "erroPlanejar": "Não consegui planejar as cenas. Recarregue e tente de novo.",
+        "erroCenas": "Não consegui gerar as cenas. Tente de novo.",
+        "erroAplicar": "Não consegui aplicar o b-roll. Tente de novo."
       }
     },
     "roteiro": {

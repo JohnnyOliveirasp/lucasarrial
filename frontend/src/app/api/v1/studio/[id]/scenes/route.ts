@@ -51,6 +51,20 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const { id } = await ctx.params;
 
+  // W5 (wizard, b-roll no clone): plan_only devolve a SUGESTÃO do planner sem
+  // criar/cobrar nada; sentences[] gera SÓ as frases escolhidas pela pessoa.
+  let planOnly = false;
+  let chosen: Set<number> | null = null;
+  try {
+    const body = (await request.json()) as { plan_only?: unknown; sentences?: unknown };
+    planOnly = body.plan_only === true;
+    if (Array.isArray(body.sentences)) {
+      chosen = new Set(body.sentences.filter((n): n is number => Number.isInteger(n)));
+    }
+  } catch {
+    /* sem body = comportamento original (todas as frases) */
+  }
+
   const admin = getAdmin();
   const { data: project, error } = await admin
     .from("studio_projects")
@@ -65,7 +79,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   // Retry: plano já existe → só re-dispara as cenas que falharam (a tentativa
   // anterior foi estornada; a nova é cobrada de novo, cena a cena).
-  if (project.scenes_status === "failed" && Array.isArray(project.scene_plan) && project.scene_plan.length > 0) {
+  if (!planOnly && project.scenes_status === "failed" && Array.isArray(project.scene_plan) && project.scene_plan.length > 0) {
     const ids = [...new Set((project.scene_plan as StudioScenePlanItem[]).map((p) => p.scene_id))];
     const { data: failed } = await admin
       .from("studio_scenes")
@@ -118,6 +132,21 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       rawError: e instanceof Error ? e.message : String(e),
     });
     return serverError("Não consegui planejar as cenas agora. Tente novamente.");
+  }
+
+  if (planOnly) {
+    return jsonOk({
+      plan: plan.map((p) => ({
+        sentence: p.sentence,
+        text: sentences[p.sentence] ?? "",
+        reused: Boolean(p.reuse_id),
+      })),
+    });
+  }
+  if (chosen) {
+    const sel = chosen;
+    plan = plan.filter((p) => sel.has(p.sentence));
+    if (plan.length === 0) return badRequest("Nenhuma frase selecionada.");
   }
 
   // Gate F5: cobra só as cenas NOVAS (reuso do banco pessoal é grátis).

@@ -1213,6 +1213,10 @@ def handler(event: dict) -> dict:
             # Wizard W5: legenda karaokê num MP4 pronto (clone/re-legendar)
             from variants import handle_caption_burn
             return handle_caption_burn(inp, log=_log)
+        if job_type == "broll_overlay":
+            # Wizard W5: cenas de b-roll por cima de um MP4 pronto (clone)
+            from variants import handle_broll_overlay
+            return handle_broll_overlay(inp, log=_log)
         if job_type == "slides":
             # Máquina E4: artes de slide (PIL, estáticas, estados progressivos)
             from variants import handle_slides

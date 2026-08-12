@@ -6,3 +6,6 @@
  * da spec 11/08); trocar aqui muda o gate e o débito juntos.
  */
 export const EDICAO_CAPTION_COST = 200;
+
+/** ⚠️ Mesma assunção: aplicar b-roll por cima do clone = 1 render ffmpeg. */
+export const EDICAO_BROLL_COST = 200;

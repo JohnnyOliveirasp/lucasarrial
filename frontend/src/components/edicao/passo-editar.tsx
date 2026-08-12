@@ -14,6 +14,7 @@ import { useTranslations } from "next-intl";
 import { Captions, Check, Film, Loader2, Music, Sparkles, SkipForward } from "lucide-react";
 import { STUDIO_MONTAGE_COST } from "@/lib/studio/pricing";
 import { EDICAO_CAPTION_COST } from "@/lib/edicao/pricing";
+import { EditarCloneBroll } from "./editar-clone-broll";
 import type { EdicaoDraft } from "./edicao-wizard";
 
 type Trilha = { key: string; label: string };
@@ -82,8 +83,18 @@ export function PassoEditar({ draft, onChange }: Props) {
   );
 }
 
-/* ── Clone: legendas karaokê queimadas no MP4 pronto (job caption_burn) ── */
+/* ── Clone: b-roll por cima + legendas karaokê (ordem importa: b-roll antes,
+      legenda por cima do resultado — senão a cena cobriria a legenda) ── */
 function EditarClone({ draft, onChange }: Props) {
+  return (
+    <div className="flex flex-col gap-3">
+      <EditarCloneBroll draft={draft} onChange={onChange} />
+      <EditarCloneLegendas draft={draft} onChange={onChange} />
+    </div>
+  );
+}
+
+function EditarCloneLegendas({ draft, onChange }: Props) {
   const t = useTranslations("edicao.editar.clone");
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -134,6 +145,10 @@ function EditarClone({ draft, onChange }: Props) {
             draft.audio.kind === "generation"
               ? { kind: "generation", id: draft.audio.id }
               : { kind: "take", key: draft.audio.key },
+          // b-roll aplicado antes → legenda por cima do resultado.
+          ...(draft.videoEditadoKey?.includes("/edicao/broll/")
+            ? { source_key: draft.videoEditadoKey }
+            : {}),
         }),
       });
       const j = await res.json().catch(() => ({}));

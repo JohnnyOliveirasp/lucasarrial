@@ -1845,6 +1845,26 @@
         "transicaoCorte": "Corte seco",
         "transicaoFade": "Fade oscuro",
         "transicaoFadeBranco": "Fade claro"
+      },
+      "broll": {
+        "titulo": "Escenas encima (b-roll)",
+        "intro": "La IA sugiere qué frases de tu video reciben escenas encima — tú eliges cuáles entran. Tu rostro aparece entre las escenas.",
+        "iniciar": "Preparar b-roll ({custo} cr)",
+        "preparando": "Preparando el audio (transcripción)… 1-2 minutos.",
+        "planejando": "La IA está sugiriendo las escenas…",
+        "sugestao": "Sugerencia de la IA — desmarca las frases que deben quedar SOLO con tu rostro:",
+        "gratis": "· reutilización del banco (gratis)",
+        "gerarCenas": "Generar {n} escena(s) — {custo} cr",
+        "gerandoCenas": "Generando escenas… {prontas}/{total} listas",
+        "cenasFalharam": "Algunas escenas fallaron (costo devuelto).",
+        "tentarDeNovo": "Rehacer escenas fallidas",
+        "aplicar": "Aplicar b-roll al video ({custo} cr)",
+        "aplicando": "Aplicando las escenas sobre el video… 1-2 minutos.",
+        "semCreditos": "Créditos insuficientes.",
+        "erroIniciar": "No pude preparar el audio. Inténtalo de nuevo.",
+        "erroPlanejar": "No pude planear las escenas. Recarga e inténtalo de nuevo.",
+        "erroCenas": "No pude generar las escenas. Inténtalo de nuevo.",
+        "erroAplicar": "No pude aplicar el b-roll. Inténtalo de nuevo."
       }
     },
     "roteiro": {
