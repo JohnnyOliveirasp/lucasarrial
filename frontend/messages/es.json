@@ -1841,7 +1841,10 @@
         "montando": "Montando el video editado… unos minutos.",
         "pronto": "¡Video editado listo!",
         "semCreditos": "Créditos insuficientes.",
-        "erro": "No pude montar el video editado. Inténtalo de nuevo."
+        "erro": "No pude montar el video editado. Inténtalo de nuevo.",
+        "transicaoCorte": "Corte seco",
+        "transicaoFade": "Fade oscuro",
+        "transicaoFadeBranco": "Fade claro"
       }
     },
     "roteiro": {

@@ -188,6 +188,7 @@ function EditarCenas({ draft }: { draft: EdicaoDraft }) {
   const [legendas, setLegendas] = useState(true);
   const [musicKey, setMusicKey] = useState("");
   const [estilo, setEstilo] = useState<"dynamic" | "sober">("dynamic");
+  const [transicao, setTransicao] = useState<"corte" | "fade" | "fade_branco">("corte");
   const [fase, setFase] = useState<"form" | "montando" | "pronto">("form");
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -238,6 +239,7 @@ function EditarCenas({ draft }: { draft: EdicaoDraft }) {
         body: JSON.stringify({
           captions: legendas,
           edit_style: estilo,
+          transition: transicao,
           ...(musicKey ? { music_key: musicKey } : {}),
         }),
       });
@@ -303,6 +305,19 @@ function EditarCenas({ draft }: { draft: EdicaoDraft }) {
             >
               <option value="dynamic">{t("estiloDinamico")}</option>
               <option value="sober">{t("estiloSobrio")}</option>
+            </select>
+            <select
+              value={transicao}
+              onChange={(e) =>
+                setTransicao(
+                  e.target.value === "fade" ? "fade" : e.target.value === "fade_branco" ? "fade_branco" : "corte",
+                )
+              }
+              className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
+            >
+              <option value="corte">{t("transicaoCorte")}</option>
+              <option value="fade">{t("transicaoFade")}</option>
+              <option value="fade_branco">{t("transicaoFadeBranco")}</option>
             </select>
           </div>
 

@@ -1841,7 +1841,10 @@
         "montando": "Assembling the edited video… a few minutes.",
         "pronto": "Edited video ready!",
         "semCreditos": "Not enough credits.",
-        "erro": "Couldn't assemble the edited video. Try again."
+        "erro": "Couldn't assemble the edited video. Try again.",
+        "transicaoCorte": "Hard cut",
+        "transicaoFade": "Dark fade",
+        "transicaoFadeBranco": "Light fade"
       }
     },
     "roteiro": {
