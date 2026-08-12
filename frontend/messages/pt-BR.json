@@ -1820,7 +1820,16 @@
         "corpo": "Legendas, trilha sonora e estilo de corte antes de publicar."
       },
       "podeAvancar": "Beleza — pode avançar pra publicação.",
-      "cloneEmBreve": "Edição do vídeo clone (legendas e cenas extras por cima) chega na próxima etapa desta fase — em construção.",
+      "clone": {
+        "intro": "Queima legendas karaokê no seu vídeo clone, sincronizadas com a fala. O vídeo e o áudio ficam intocados.",
+        "legendar": "Legendar vídeo ({custo} cr)",
+        "legendarDeNovo": "Legendar de novo ({custo} cr)",
+        "legendando": "Legendando o vídeo… 1-2 minutos.",
+        "pronto": "Vídeo legendado pronto — segue pra publicação.",
+        "brollEmBreve": "Cenas extras por cima do clone (b-roll) e transições chegam na próxima etapa desta fase.",
+        "semCreditos": "Créditos insuficientes.",
+        "erro": "Não consegui legendar o vídeo. Tente de novo."
+      },
       "cenas": {
         "legendas": "Legendas (karaokê, 2 palavras por vez)",
         "semMusica": "Sem música",

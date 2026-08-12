@@ -38,6 +38,10 @@ export type EdicaoDraft = {
   video: VideoSel | null;
   /** Projeto do Estúdio criado pelo caminho Cenas (retoma poll após reload). */
   cenasProjectId: string | null;
+  /** W5: job de legenda do clone em voo (retoma poll após reload). */
+  captionJob: { job: string; key: string } | null;
+  /** W5: key R2 do vídeo legendado — a E5 prefere ele ao vídeo base. */
+  videoEditadoKey: string | null;
 };
 
 const VAZIO: EdicaoDraft = {
@@ -48,6 +52,8 @@ const VAZIO: EdicaoDraft = {
   audio: null,
   video: null,
   cenasProjectId: null,
+  captionJob: null,
+  videoEditadoKey: null,
 };
 
 export function EdicaoWizard() {
@@ -133,7 +139,7 @@ export function EdicaoWizard() {
       ) : draft.passo === 2 ? (
         <PassoVideo draft={draft} onChange={update} />
       ) : draft.passo === 3 ? (
-        <PassoEditar draft={draft} />
+        <PassoEditar draft={draft} onChange={update} />
       ) : (
         <EmConstrucao id={PASSOS[draft.passo]} />
       )}

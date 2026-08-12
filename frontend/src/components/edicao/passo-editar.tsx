@@ -11,17 +11,19 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Check, Film, Loader2, Music, Sparkles, SkipForward } from "lucide-react";
+import { Captions, Check, Film, Loader2, Music, Sparkles, SkipForward } from "lucide-react";
 import { STUDIO_MONTAGE_COST } from "@/lib/studio/pricing";
+import { EDICAO_CAPTION_COST } from "@/lib/edicao/pricing";
 import type { EdicaoDraft } from "./edicao-wizard";
 
 type Trilha = { key: string; label: string };
 
 type Props = {
   draft: EdicaoDraft;
+  onChange: (patch: Partial<EdicaoDraft>) => void;
 };
 
-export function PassoEditar({ draft }: Props) {
+export function PassoEditar({ draft, onChange }: Props) {
   const t = useTranslations("edicao.editar");
   const [querEditar, setQuerEditar] = useState<boolean | null>(null);
 
@@ -74,10 +76,106 @@ export function PassoEditar({ draft }: Props) {
         (draft.video.kind === "cenas" ? (
           <EditarCenas draft={draft} />
         ) : (
-          <div className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6 text-center">
-            <p className="text-[13px] text-[var(--mute)]">{t("cloneEmBreve")}</p>
-          </div>
+          <EditarClone draft={draft} onChange={onChange} />
         ))}
+    </div>
+  );
+}
+
+/* ── Clone: legendas karaokê queimadas no MP4 pronto (job caption_burn) ── */
+function EditarClone({ draft, onChange }: Props) {
+  const t = useTranslations("edicao.editar.clone");
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const job = draft.captionJob;
+
+  // Poll do job em voo (retomável — o job mora no draft/localStorage).
+  useEffect(() => {
+    if (!job) return;
+    const tick = async () => {
+      try {
+        const res = await fetch(
+          `/api/v1/edicao/captions?job=${encodeURIComponent(job.job)}&key=${encodeURIComponent(job.key)}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) return;
+        const j = await res.json();
+        const d = j?.data ?? j;
+        if (d.status === "ready") {
+          setVideoUrl(d.video_url ?? null);
+          onChange({ videoEditadoKey: job.key, captionJob: null });
+        } else if (d.status === "failed") {
+          setErro(d.error ?? t("erro"));
+          onChange({ captionJob: null });
+        }
+      } catch {
+        /* próximo tick */
+      }
+    };
+    void tick();
+    const timer = setInterval(() => void tick(), 5000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.job]);
+
+  async function legendar() {
+    if (!draft.video || !draft.audio) return;
+    setBusy(true);
+    setErro(null);
+    setVideoUrl(null);
+    try {
+      const res = await fetch("/api/v1/edicao/captions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          video: { kind: draft.video.kind, id: draft.video.id },
+          audio:
+            draft.audio.kind === "generation"
+              ? { kind: "generation", id: draft.audio.id }
+              : { kind: "take", key: draft.audio.key },
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.status === 402) throw new Error(t("semCreditos"));
+      if (!res.ok) throw new Error(j?.error?.message ?? j?.message ?? t("erro"));
+      const d = j?.data ?? j;
+      onChange({ captionJob: { job: d.job_id, key: d.output_key }, videoEditadoKey: null });
+    } catch (e) {
+      setErro(e instanceof Error && e.message ? e.message : t("erro"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-4">
+      {job ? (
+        <p className="flex items-center gap-2 text-[13.5px] text-[var(--ink)]">
+          <Loader2 className="size-4 animate-spin" /> {t("legendando")}
+        </p>
+      ) : (
+        <>
+          {draft.videoEditadoKey && (
+            <p className="flex items-center gap-2 text-[13.5px] font-medium text-emerald-300">
+              <Film className="size-4" /> {t("pronto")}
+            </p>
+          )}
+          {videoUrl && <video src={videoUrl} controls className="max-h-96 w-full rounded-[var(--radius-sm)]" />}
+          <p className="text-[13px] text-[var(--mute)]">{t("intro")}</p>
+          <button
+            type="button"
+            onClick={() => void legendar()}
+            disabled={busy}
+            className="flex w-fit items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Captions className="size-4" />}
+            {draft.videoEditadoKey ? t("legendarDeNovo", { custo: EDICAO_CAPTION_COST }) : t("legendar", { custo: EDICAO_CAPTION_COST })}
+          </button>
+          <p className="text-[12px] text-[var(--ash)]">{t("brollEmBreve")}</p>
+          {erro && <p className="text-[13px] text-red-400">{erro}</p>}
+        </>
+      )}
     </div>
   );
 }

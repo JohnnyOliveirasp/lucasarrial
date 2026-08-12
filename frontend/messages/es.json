@@ -1820,7 +1820,16 @@
         "corpo": "Subtítulos, banda sonora y estilo de corte antes de publicar."
       },
       "podeAvancar": "Perfecto — puedes avanzar a la publicación.",
-      "cloneEmBreve": "La edición del video clon (subtítulos y escenas extra encima) llega en el próximo paso de esta fase — en construcción.",
+      "clone": {
+        "intro": "Quema subtítulos karaoke en tu video clon, sincronizados con el habla. El video y el audio quedan intactos.",
+        "legendar": "Subtitular video ({custo} cr)",
+        "legendarDeNovo": "Subtitular de nuevo ({custo} cr)",
+        "legendando": "Subtitulando el video… 1-2 minutos.",
+        "pronto": "Video subtitulado listo — sigue a la publicación.",
+        "brollEmBreve": "Escenas extra sobre el clon (b-roll) y transiciones llegan en el próximo paso de esta fase.",
+        "semCreditos": "Créditos insuficientes.",
+        "erro": "No pude subtitular el video. Inténtalo de nuevo."
+      },
       "cenas": {
         "legendas": "Subtítulos (karaoke, 2 palabras a la vez)",
         "semMusica": "Sin música",

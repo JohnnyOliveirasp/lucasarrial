@@ -115,6 +115,41 @@ def handle_caption_variants(inp: dict, log) -> dict:
     return {"caption_variants": True, "count": len(done), "variants": done}
 
 
+def handle_caption_burn(inp: dict, log) -> dict:
+    """W5 (wizard Vídeo Edição): queima a legenda karaokê num MP4 PRONTO —
+    vídeo clone falante, ou re-legendar um vídeo montado sem pagar re-montagem.
+    Reusa o burn_karaoke do finish.py (PIL + overlay por janela); a duração do
+    vídeo fica INTOCADA (mesma QA dos outros pós-passes).
+
+    Input: { video_url, words:[{word,start,end}], output_upload_url,
+             cuts?: [float], suppress_windows?: [[a,b]] }
+    """
+    from finish import burn_karaoke
+
+    video_url = inp.get("video_url")
+    words = inp.get("words") or []
+    put_url = inp.get("output_upload_url")
+    if not video_url or not words or not put_url:
+        return {"error": "missing 'video_url'/'words'/'output_upload_url'"}
+
+    job_dir = Path(tempfile.mkdtemp(prefix="caption_"))
+    video = download_to_dir([video_url], job_dir / "in")[0]
+    base_dur = _duration(video)
+    out = job_dir / "captioned.mp4"
+    burn_karaoke(
+        video,
+        words,
+        out,
+        cuts=[float(c) for c in (inp.get("cuts") or [])],
+        suppress_windows=[(float(a), float(b)) for a, b in (inp.get("suppress_windows") or [])],
+    )
+    if abs(_duration(out) - base_dur) > 0.15:
+        return {"error": "legenda mudou a duração do vídeo (>0,15s)"}
+    upload_file_to_presigned_url(out, put_url, content_type="video/mp4")
+    log("info", "caption_burn.done", words=len(words), dur=round(base_dur, 1))
+    return {"caption_burn": True, "words": len(words), "duration_s": round(base_dur, 2)}
+
+
 def slide_png(title: str, bullets: list[str], size: tuple[int, int], out: Path) -> Path:
     from PIL import Image, ImageDraw, ImageFont
 

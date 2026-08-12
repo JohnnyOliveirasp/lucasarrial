@@ -1820,7 +1820,16 @@
         "corpo": "Captions, soundtrack and cut style before publishing."
       },
       "podeAvancar": "Great — you can move on to publishing.",
-      "cloneEmBreve": "Clone video editing (captions and extra scenes on top) arrives in the next step of this phase — under construction.",
+      "clone": {
+        "intro": "Burns karaoke captions into your clone video, synced to the speech. Video and audio stay untouched.",
+        "legendar": "Add captions ({custo} cr)",
+        "legendarDeNovo": "Re-caption ({custo} cr)",
+        "legendando": "Captioning the video… 1-2 minutes.",
+        "pronto": "Captioned video ready — moves on to publishing.",
+        "brollEmBreve": "Extra scenes over the clone (b-roll) and transitions arrive in the next step of this phase.",
+        "semCreditos": "Not enough credits.",
+        "erro": "Couldn't caption the video. Try again."
+      },
       "cenas": {
         "legendas": "Captions (karaoke, 2 words at a time)",
         "semMusica": "No music",
