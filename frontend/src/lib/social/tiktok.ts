@@ -4,7 +4,9 @@
  * Sandbox (app não auditado): posts saem SELF_ONLY e só contas Target Users.
  */
 
-export const TIKTOK_SCOPES = ["user.info.basic", "video.publish", "video.upload"];
+// video.upload (rascunho) fica FORA até o demo mostrar esse fluxo — pedir
+// scope que a demo não demonstra é motivo clássico de reprovação na auditoria.
+export const TIKTOK_SCOPES = ["user.info.basic", "video.publish"];
 
 const AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/";
 const API = "https://open.tiktokapis.com/v2";

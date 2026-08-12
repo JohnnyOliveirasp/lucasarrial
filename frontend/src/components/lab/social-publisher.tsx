@@ -55,6 +55,8 @@ export function SocialPublisher({ platform = "instagram" }: { platform?: "instag
   const [ttPrivacyOptions, setTtPrivacyOptions] = useState<string[]>([]);
   const [ttPrivacy, setTtPrivacy] = useState("SELF_ONLY");
   const [ttDisableComment, setTtDisableComment] = useState(false);
+  /** Criador desativou comentários na CONTA → nosso toggle trava (auditoria). */
+  const [ttCommentLocked, setTtCommentLocked] = useState(false);
   const [ttBrandOrganic, setTtBrandOrganic] = useState(false);
   const [ttBrandContent, setTtBrandContent] = useState(false);
 
@@ -113,10 +115,18 @@ export function SocialPublisher({ platform = "instagram" }: { platform?: "instag
     void fetch(`/api/v1/social/tiktok/creator-info?account_id=${accountId}`)
       .then(async (r) => {
         const j = await r.json();
-        const opts: string[] = j?.data?.creator_info?.privacy_level_options ?? [];
-        if (alive && opts.length > 0) {
+        const info = j?.data?.creator_info ?? {};
+        const opts: string[] = info.privacy_level_options ?? [];
+        if (!alive) return;
+        if (opts.length > 0) {
           setTtPrivacyOptions(opts);
           setTtPrivacy((cur) => (opts.includes(cur) ? cur : opts[0]));
+        }
+        // Regra da auditoria: respeitar as configurações do criador — se a
+        // conta tem comentários desativados, o post não pode oferecer ligar.
+        if (info.comment_disabled) {
+          setTtDisableComment(true);
+          setTtCommentLocked(true);
         }
       })
       .catch(() => {});
@@ -313,6 +323,7 @@ export function SocialPublisher({ platform = "instagram" }: { platform?: "instag
                   <input
                     type="checkbox"
                     checked={ttDisableComment}
+                    disabled={ttCommentLocked}
                     onChange={(e) => setTtDisableComment(e.target.checked)}
                   />
                   {t("tiktok.disableComment")}
