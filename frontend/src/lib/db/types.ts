@@ -475,13 +475,15 @@ export type ScriptMessageUpdate = Partial<Omit<ScriptMessageRow, "id" | "script_
 export type SocialAccountRow = {
   id: string;
   user_id: string;
-  platform: "instagram";
-  /** id do usuário NA plataforma (IG user id). */
+  platform: "instagram" | "tiktok";
+  /** id do usuário NA plataforma (IG user id / TikTok open_id). */
   account_ref: string;
   username: string | null;
-  auth_kind: "instagram_login";
+  auth_kind: "instagram_login" | "tiktok_oauth";
   /** AES-256-GCM (lib/social/crypto) — NUNCA devolver ao client. */
   access_token_encrypted: string;
+  /** TikTok renova o access (24h) por refresh_token (365d); IG não usa. */
+  refresh_token_encrypted: string | null;
   token_expires_at: Timestamp | null;
   status: "active" | "expired" | "revoked";
   connected_at: Timestamp;
@@ -494,6 +496,7 @@ export type SocialAccountInsert = {
   username?: string | null;
   auth_kind?: SocialAccountRow["auth_kind"];
   access_token_encrypted: string;
+  refresh_token_encrypted?: string | null;
   token_expires_at?: Timestamp | null;
   status?: SocialAccountRow["status"];
   updated_at?: Timestamp;
@@ -505,7 +508,7 @@ export type PublicationRow = {
   id: string;
   user_id: string;
   account_id: string;
-  platform: "instagram";
+  platform: "instagram" | "tiktok";
   media_type: "reel" | "image" | "story";
   media_url: string;
   caption: string | null;
@@ -514,6 +517,8 @@ export type PublicationRow = {
   container_id: string | null;
   platform_post_id: string | null;
   permalink: string | null;
+  /** TikTok: { privacy_level, disable_comment, brand_content, brand_organic }. */
+  platform_options: Record<string, unknown> | null;
   attempts: number;
   error: string | null;
   created_at: Timestamp;
@@ -528,6 +533,7 @@ export type PublicationInsert = {
   caption?: string | null;
   scheduled_at?: Timestamp | null;
   status?: PublicationRow["status"];
+  platform_options?: PublicationRow["platform_options"];
 };
 export type PublicationUpdate = Partial<Omit<PublicationRow, "id" | "user_id" | "created_at">>;
 

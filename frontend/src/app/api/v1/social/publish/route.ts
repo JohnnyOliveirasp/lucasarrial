@@ -32,6 +32,12 @@ export async function POST(request: NextRequest) {
     caption?: string;
     media_type?: string;
     scheduled_at?: string;
+    platform_options?: {
+      privacy_level?: string;
+      disable_comment?: boolean;
+      brand_content?: boolean;
+      brand_organic?: boolean;
+    };
   };
   try {
     body = await request.json();
@@ -90,26 +96,38 @@ export async function POST(request: NextRequest) {
   const admin = getAdmin();
   const { data: account } = await admin
     .from("social_accounts")
-    .select("id, status")
+    .select("id, status, platform")
     .eq("id", accountId)
     .eq("user_id", auth.user_id)
     .maybeSingle();
-  if (!account) return badRequest("Conta do Instagram não encontrada");
+  if (!account) return badRequest("Conta da rede social não encontrada");
   if (account.status !== "active") {
-    return badRequest("A conexão com o Instagram expirou. Reconecte a conta.");
+    return badRequest("A conexão com a rede social expirou. Reconecte a conta.");
   }
+
+  // TikTok: opções de compliance vindas do popup (privacidade + publi).
+  const platformOptions =
+    account.platform === "tiktok" && body.platform_options
+      ? {
+          privacy_level: String(body.platform_options.privacy_level ?? "SELF_ONLY"),
+          disable_comment: Boolean(body.platform_options.disable_comment),
+          brand_content: Boolean(body.platform_options.brand_content),
+          brand_organic: Boolean(body.platform_options.brand_organic),
+        }
+      : null;
 
   const { data: created, error } = await admin
     .from("publications")
     .insert({
       user_id: auth.user_id,
       account_id: accountId,
-      platform: "instagram",
+      platform: account.platform as PublicationRow["platform"],
       media_type: mediaType as PublicationRow["media_type"],
       media_url: mediaUrl,
       caption,
       scheduled_at: scheduledAt,
       status: "ready",
+      platform_options: platformOptions,
     })
     .select("*")
     .single();
