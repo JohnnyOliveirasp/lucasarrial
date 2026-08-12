@@ -44,21 +44,27 @@ export function PassoSaida({ draft, onChange }: Props) {
     const load = async () => {
       try {
         let resolved: string | null = null;
+        // jsonOk devolve o objeto DIRETO (sem envelope "data") — mesmo
+        // fallback `?.data ?? j` dos outros passos (bug "Couldn't load", 12/08).
         if (editadoKey) {
           const res = await fetch(`/api/v1/edicao/video-url?key=${encodeURIComponent(editadoKey)}`);
-          const d = (await res.json())?.data ?? {};
+          const j = await res.json();
+          const d = j?.data ?? j ?? {};
           resolved = d.video_url ?? null;
         } else if (video.kind === "clone-padrao") {
           const res = await fetch(`/api/v1/video-clone/${video.id}`, { cache: "no-store" });
-          const d = (await res.json())?.data ?? {};
+          const j = await res.json();
+          const d = j?.data ?? j ?? {};
           resolved = d.clone?.video_url ?? null;
         } else if (video.kind === "clone-heygen") {
           const res = await fetch(`/api/v1/heygen/videos/${video.id}`, { cache: "no-store" });
-          const d = (await res.json())?.data ?? {};
+          const j = await res.json();
+          const d = j?.data ?? j ?? {};
           resolved = d.video_url ?? null;
         } else {
           const res = await fetch(`/api/v1/studio/${video.id}`, { cache: "no-store" });
-          const d = (await res.json())?.data ?? {};
+          const j = await res.json();
+          const d = j?.data ?? j ?? {};
           resolved = d.project?.edited_video_url ?? d.project?.video_url ?? null;
         }
         if (!alive) return;
@@ -164,7 +170,8 @@ function Agendadas() {
     try {
       const res = await fetch("/api/v1/social/publish", { cache: "no-store" });
       if (!res.ok) return;
-      const d = (await res.json())?.data ?? {};
+      const j = await res.json();
+      const d = j?.data ?? j ?? {};
       const rows = (d.publications ?? []) as Array<
         Agendada & { status: string; scheduled_at: string | null }
       >;

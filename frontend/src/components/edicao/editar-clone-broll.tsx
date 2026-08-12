@@ -111,7 +111,9 @@ export function EditarCloneBroll({ draft, onChange }: Props) {
           { cache: "no-store" },
         );
         if (!res.ok) return;
-        const d = (await res.json())?.data ?? {};
+        // jsonOk devolve o objeto direto — fallback igual aos outros passos.
+        const j = await res.json();
+        const d = j?.data ?? j ?? {};
         if (d.status === "ready") {
           setVideoUrl(d.video_url ?? null);
           onChange({ videoEditadoKey: job.key, brollJob: null });
