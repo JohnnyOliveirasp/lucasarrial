@@ -1746,6 +1746,7 @@
       "semVozCta": "Clonar mi voz",
       "voz": "Voz",
       "escolhaVoz": "Elige la voz…",
+      "apagarTake": "Borrar esta grabación",
       "custoTts": "{chars} caracteres · costo {custo} créditos (mínimo 400)",
       "gerarAudio": "Generar audio",
       "gerandoAudio": "Generando… (~1 min)",

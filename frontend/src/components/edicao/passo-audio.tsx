@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-import { Loader2, Mic, MonitorPlay, Sparkles, Square } from "lucide-react";
+import { Loader2, Mic, MonitorPlay, Sparkles, Square, Trash2 } from "lucide-react";
 import { Teleprompter } from "@/components/voice/teleprompter";
 import type { AudioSel, EdicaoDraft } from "./edicao-wizard";
 
@@ -212,6 +212,7 @@ function CaminhoGravar({ draft, escolher }: { draft: EdicaoDraft; escolher: (a: 
   const [gravando, setGravando] = useState(false);
   const [segundos, setSegundos] = useState(0);
   const [subindo, setSubindo] = useState(false);
+  const [apagando, setApagando] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -231,6 +232,23 @@ function CaminhoGravar({ draft, escolher }: { draft: EdicaoDraft; escolher: (a: 
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Apaga um take ruim (rota DELETE do recorder-test, posse pelo token). */
+  async function apagarTake(key: string) {
+    if (!token) return;
+    setApagando(key);
+    try {
+      await fetch(`/api/v1/recorder-test/takes?key=${encodeURIComponent(key)}`, {
+        method: "DELETE",
+        headers: { "x-recorder-token": token },
+      });
+      // Se o apagado era o take escolhido, destrava a seleção da estação.
+      if (draft.audio?.kind === "take" && draft.audio.key === key) escolher(null);
+      await listar(token);
+    } finally {
+      setApagando(null);
+    }
+  }
 
   async function listar(tk: string) {
     const j = await fetch("/api/v1/recorder-test/takes", { headers: { "x-recorder-token": tk } })
@@ -365,6 +383,22 @@ function CaminhoGravar({ draft, escolher }: { draft: EdicaoDraft; escolher: (a: 
                 />
                 <span className="truncate text-[12.5px] text-[var(--ink)]">{tk.name}</span>
                 <audio src={tk.url} controls preload="none" className="ml-auto h-8 max-w-[220px]" />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void apagarTake(tk.key);
+                  }}
+                  disabled={apagando === tk.key}
+                  title={t("apagarTake")}
+                  className="shrink-0 text-[var(--ash)] hover:text-[var(--danger,#e5484d)] disabled:opacity-40"
+                >
+                  {apagando === tk.key ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
+                </button>
               </label>
             </li>
           ))}
