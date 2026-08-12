@@ -1753,7 +1753,29 @@
           "corpo": "Uma foto sua vira vídeo falando o áudio da estação anterior."
         }
       },
-      "cenasEmBreve": "O caminho de cenas (motor do Estúdio) chega na fase W4 — por enquanto, gere o vídeo pelo clone.",
+      "cenas": {
+        "intro": "A IA transforma o seu áudio num vídeo de cenas: uma cena por frase, sem rosto, com reuso grátis do seu banco e do acervo compartilhado.",
+        "custos": "Custos: preparar o áudio {limpeza} cr · cena nova {cena} cr (reuso é grátis) · montagem {montagem} cr.",
+        "iniciar": "Preparar áudio ({custo} cr)",
+        "carregando": "Carregando o projeto…",
+        "preparandoAudio": "Preparando o áudio (limpeza + transcrição)… leva 1-2 minutos.",
+        "gerarCenas": "Gerar cenas ({custo} cr por cena nova)",
+        "gerandoCenas": "Gerando cenas… {prontas}/{total} prontas",
+        "cenasProntas": "{total} cenas prontas",
+        "banco": "banco",
+        "cenasFalharam": "Algumas cenas falharam (o valor delas foi estornado). Tente de novo — só as que falharam são refeitas.",
+        "tentarCenasDeNovo": "Refazer cenas que falharam",
+        "montar": "Montar vídeo ({custo} cr)",
+        "montando": "Montando o vídeo… alguns minutos.",
+        "tentarMontarDeNovo": "Tentar montar de novo",
+        "pronto": "Vídeo pronto!",
+        "labelVideo": "Cenas do Estúdio · {n} cenas",
+        "recomecar": "Recomeçar",
+        "semCreditos": "Créditos insuficientes.",
+        "erroIniciar": "Não consegui preparar o áudio. Tente de novo.",
+        "erroCenas": "Não consegui gerar as cenas. Tente de novo.",
+        "erroMontar": "Não consegui montar o vídeo. Tente de novo."
+      },
       "cloneOpcoes": {
         "padrao": {
           "titulo": "Padrão 2.0",

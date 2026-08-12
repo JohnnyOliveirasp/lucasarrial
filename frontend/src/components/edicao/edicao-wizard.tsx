@@ -22,10 +22,11 @@ export type AudioSel =
   | { kind: "generation"; id: string; label: string }
   | { kind: "take"; key: string; label: string };
 
-/** Vídeo base pronto na E3 (W3 = caminhos de clone; cenas chegam na W4). */
+/** Vídeo base pronto na E3 (W3 = caminhos de clone; W4 = cenas do Estúdio). */
 export type VideoSel =
   | { kind: "clone-padrao"; id: string; label: string }
-  | { kind: "clone-heygen"; id: string; label: string };
+  | { kind: "clone-heygen"; id: string; label: string }
+  | { kind: "cenas"; id: string; label: string };
 
 export type EdicaoDraft = {
   passo: number;
@@ -34,9 +35,19 @@ export type EdicaoDraft = {
   seconds: number;
   audio: AudioSel | null;
   video: VideoSel | null;
+  /** Projeto do Estúdio criado pelo caminho Cenas (retoma poll após reload). */
+  cenasProjectId: string | null;
 };
 
-const VAZIO: EdicaoDraft = { passo: 0, roteiro: "", roteiroId: null, seconds: 60, audio: null, video: null };
+const VAZIO: EdicaoDraft = {
+  passo: 0,
+  roteiro: "",
+  roteiroId: null,
+  seconds: 60,
+  audio: null,
+  video: null,
+  cenasProjectId: null,
+};
 
 export function EdicaoWizard() {
   const t = useTranslations("edicao");

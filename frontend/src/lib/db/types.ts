@@ -827,6 +827,8 @@ export type StudioSceneRow = {
   kie_task_id: string | null;
   /** QA F5: já regerou o still 1x por texto quebrado? */
   qa_retried: boolean;
+  /** W4 (enxerto 2): já redespachou a animação 1x no modelo reserva? */
+  anim_retried: boolean;
   /** Referência do débito da tentativa paga (chave do estorno automático). */
   debit_ref: string | null;
   /** F3 (mig 49): b-roll curado pelo admin — entra no reuso de TODOS. */

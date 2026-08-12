@@ -1753,7 +1753,29 @@
           "corpo": "A photo of you becomes a video speaking the audio from the previous station."
         }
       },
-      "cenasEmBreve": "The scenes path (Studio engine) arrives in phase W4 — for now, generate the video with your clone.",
+      "cenas": {
+        "intro": "AI turns your audio into a scenes video: one scene per sentence, no faces, with free reuse from your bank and the shared library.",
+        "custos": "Costs: audio prep {limpeza} cr · new scene {cena} cr (reuse is free) · montage {montagem} cr.",
+        "iniciar": "Prepare audio ({custo} cr)",
+        "carregando": "Loading the project…",
+        "preparandoAudio": "Preparing the audio (cleanup + transcription)… takes 1-2 minutes.",
+        "gerarCenas": "Generate scenes ({custo} cr per new scene)",
+        "gerandoCenas": "Generating scenes… {prontas}/{total} ready",
+        "cenasProntas": "{total} scenes ready",
+        "banco": "bank",
+        "cenasFalharam": "Some scenes failed (their cost was refunded). Try again — only the failed ones are redone.",
+        "tentarCenasDeNovo": "Redo failed scenes",
+        "montar": "Assemble video ({custo} cr)",
+        "montando": "Assembling the video… a few minutes.",
+        "tentarMontarDeNovo": "Try assembling again",
+        "pronto": "Video ready!",
+        "labelVideo": "Studio scenes · {n} scenes",
+        "recomecar": "Start over",
+        "semCreditos": "Not enough credits.",
+        "erroIniciar": "Couldn't prepare the audio. Try again.",
+        "erroCenas": "Couldn't generate the scenes. Try again.",
+        "erroMontar": "Couldn't assemble the video. Try again."
+      },
       "cloneOpcoes": {
         "padrao": {
           "titulo": "Standard 2.0",

@@ -15,6 +15,7 @@ import { Clapperboard, UserRound } from "lucide-react";
 import { HeygenConnect } from "@/components/lab/heygen-connect";
 import type { EdicaoDraft, VideoSel } from "./edicao-wizard";
 import { ClonePadrao } from "./clone-padrao";
+import { PassoCenas } from "./passo-cenas";
 
 type Props = {
   draft: EdicaoDraft;
@@ -24,10 +25,14 @@ type Props = {
 export function PassoVideo({ draft, onChange }: Props) {
   const t = useTranslations("edicao.video");
   const [caminho, setCaminho] = useState<"cenas" | "clone" | null>(
-    draft.video ? "clone" : null,
+    draft.video?.kind === "cenas" || draft.cenasProjectId
+      ? "cenas"
+      : draft.video
+        ? "clone"
+        : null,
   );
   const [opcao, setOpcao] = useState<"padrao" | "heygen" | null>(
-    draft.video ? (draft.video.kind === "clone-padrao" ? "padrao" : "heygen") : null,
+    draft.video?.kind === "clone-padrao" ? "padrao" : draft.video?.kind === "clone-heygen" ? "heygen" : null,
   );
 
   const escolher = (v: VideoSel | null) => onChange({ video: v });
@@ -73,11 +78,7 @@ export function PassoVideo({ draft, onChange }: Props) {
         </p>
       )}
 
-      {caminho === "cenas" && (
-        <div className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6 text-center">
-          <p className="text-[13px] text-[var(--mute)]">{t("cenasEmBreve")}</p>
-        </div>
-      )}
+      {caminho === "cenas" && <PassoCenas draft={draft} onChange={onChange} escolher={escolher} />}
 
       {caminho === "clone" && (
         <>

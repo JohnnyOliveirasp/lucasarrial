@@ -1753,7 +1753,29 @@
           "corpo": "Una foto tuya se convierte en un video hablando el audio de la estación anterior."
         }
       },
-      "cenasEmBreve": "El camino de escenas (motor del Estudio) llega en la fase W4 — por ahora, genera el video con tu clon.",
+      "cenas": {
+        "intro": "La IA convierte tu audio en un video de escenas: una escena por frase, sin rostro, con reutilización gratis de tu banco y del acervo compartido.",
+        "custos": "Costos: preparar el audio {limpeza} cr · escena nueva {cena} cr (reutilizar es gratis) · montaje {montagem} cr.",
+        "iniciar": "Preparar audio ({custo} cr)",
+        "carregando": "Cargando el proyecto…",
+        "preparandoAudio": "Preparando el audio (limpieza + transcripción)… tarda 1-2 minutos.",
+        "gerarCenas": "Generar escenas ({custo} cr por escena nueva)",
+        "gerandoCenas": "Generando escenas… {prontas}/{total} listas",
+        "cenasProntas": "{total} escenas listas",
+        "banco": "banco",
+        "cenasFalharam": "Algunas escenas fallaron (su costo fue devuelto). Inténtalo de nuevo — solo se rehacen las que fallaron.",
+        "tentarCenasDeNovo": "Rehacer escenas fallidas",
+        "montar": "Montar video ({custo} cr)",
+        "montando": "Montando el video… unos minutos.",
+        "tentarMontarDeNovo": "Intentar montar de nuevo",
+        "pronto": "¡Video listo!",
+        "labelVideo": "Escenas del Estudio · {n} escenas",
+        "recomecar": "Empezar de nuevo",
+        "semCreditos": "Créditos insuficientes.",
+        "erroIniciar": "No pude preparar el audio. Inténtalo de nuevo.",
+        "erroCenas": "No pude generar las escenas. Inténtalo de nuevo.",
+        "erroMontar": "No pude montar el video. Inténtalo de nuevo."
+      },
       "cloneOpcoes": {
         "padrao": {
           "titulo": "Estándar 2.0",
