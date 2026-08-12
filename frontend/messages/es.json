@@ -1741,6 +1741,52 @@
       "labelTake": "tu grabación (toma)",
       "takeFicaSalvo": "La grabación queda guardada en tus tomas y puede usarse después para entrenar tu voz."
     },
+    "video": {
+      "semAudio": "Vuelve a la estación de Audio y elige un audio primero — el video nace de él.",
+      "caminhos": {
+        "cenas": {
+          "titulo": "Escenas generadas",
+          "corpo": "La IA crea las escenas del video a partir del guion, sin mostrar rostro."
+        },
+        "clone": {
+          "titulo": "Mi clon hablando",
+          "corpo": "Una foto tuya se convierte en un video hablando el audio de la estación anterior."
+        }
+      },
+      "cenasEmBreve": "El camino de escenas (motor del Estudio) llega en la fase W4 — por ahora, genera el video con tu clon.",
+      "cloneOpcoes": {
+        "padrao": {
+          "titulo": "Estándar 2.0",
+          "corpo": "Nuestro motor de lip-sync — 105 créditos por segundo de audio."
+        },
+        "heygen": {
+          "titulo": "HeyGen (mi cuenta)",
+          "corpo": "Usa la API key de tu cuenta HeyGen — consume los créditos de allí."
+        }
+      },
+      "escolhido": "Video base listo: {label} — puedes avanzar, o generar otro abajo.",
+      "padrao": {
+        "carregandoAudio": "Preparando el audio de la estación anterior…",
+        "audioPronto": "Audio: {label} · {s}s · costo del video: {custo} créditos",
+        "audioLongo": "Este audio dura {s}s — Video Clone acepta como máximo {max}s. Vuelve a la estación de Audio y haz una versión más corta, o usa HeyGen.",
+        "erroAudio": "No pude preparar el audio — vuelve a la estación de Audio e inténtalo de nuevo.",
+        "erroUpload": "Falló la subida de la foto — inténtalo de nuevo.",
+        "foto": "Foto de quien habla",
+        "gerar": "Generar video ({custo} cr)",
+        "gerando": "Generando el video… tarda unos minutos (puedes navegar, el progreso continúa).",
+        "erroGerar": "No se pudo iniciar la generación.",
+        "semCreditos": "Créditos insuficientes para este video.",
+        "emAndamento": "Ya tienes un video clon en curso — espera a que termine.",
+        "falhou": "La generación falló y tus créditos fueron devueltos. Inténtalo de nuevo.",
+        "pronto": "¡Video listo!",
+        "labelVideo": "Clon Estándar 2.0 · {s}s",
+        "refazer": "Generar otro"
+      },
+      "heygen": {
+        "audioTravado": "El audio del video será el de la estación anterior: {label}",
+        "labelVideo": "Clon HeyGen"
+      }
+    },
     "roteiro": {
       "modos": {
         "gerar": "Generar con IA",

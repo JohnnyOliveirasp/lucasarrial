@@ -11,6 +11,7 @@ import { useTranslations } from "next-intl";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { PassoRoteiro } from "./passo-roteiro";
 import { PassoAudio } from "./passo-audio";
+import { PassoVideo } from "./passo-video";
 
 const DRAFT_KEY = "fc-edicao-draft-v1";
 const PASSOS = ["roteiro", "audio", "video", "editar", "saida"] as const;
@@ -21,15 +22,21 @@ export type AudioSel =
   | { kind: "generation"; id: string; label: string }
   | { kind: "take"; key: string; label: string };
 
+/** Vídeo base pronto na E3 (W3 = caminhos de clone; cenas chegam na W4). */
+export type VideoSel =
+  | { kind: "clone-padrao"; id: string; label: string }
+  | { kind: "clone-heygen"; id: string; label: string };
+
 export type EdicaoDraft = {
   passo: number;
   roteiro: string;
   roteiroId: string | null;
   seconds: number;
   audio: AudioSel | null;
+  video: VideoSel | null;
 };
 
-const VAZIO: EdicaoDraft = { passo: 0, roteiro: "", roteiroId: null, seconds: 60, audio: null };
+const VAZIO: EdicaoDraft = { passo: 0, roteiro: "", roteiroId: null, seconds: 60, audio: null, video: null };
 
 export function EdicaoWizard() {
   const t = useTranslations("edicao");
@@ -60,14 +67,16 @@ export function EdicaoWizard() {
 
   if (!loaded) return null;
 
-  // Gate de avanço por estação: E1 exige roteiro; E2 exige áudio escolhido.
-  // As estações seguintes destravan conforme as fases W3+ chegarem.
+  // Gate de avanço por estação: E1 exige roteiro; E2 exige áudio escolhido;
+  // E3 exige o vídeo base pronto. E4-E5 destravan nas fases W5-W6.
   const podeAvancar =
     draft.passo === 0
       ? draft.roteiro.trim().length > 0
       : draft.passo === 1
         ? draft.audio !== null
-        : draft.passo < PASSOS.length - 1;
+        : draft.passo === 2
+          ? draft.video !== null
+          : draft.passo < PASSOS.length - 1;
 
   return (
     <div className="flex flex-col gap-5">
@@ -109,6 +118,8 @@ export function EdicaoWizard() {
         <PassoRoteiro draft={draft} onChange={update} />
       ) : draft.passo === 1 ? (
         <PassoAudio draft={draft} onChange={update} />
+      ) : draft.passo === 2 ? (
+        <PassoVideo draft={draft} onChange={update} />
       ) : (
         <EmConstrucao id={PASSOS[draft.passo]} />
       )}
