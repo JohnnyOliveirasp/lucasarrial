@@ -1809,6 +1809,32 @@
         "labelVideo": "Clone HeyGen"
       }
     },
+    "editar": {
+      "semVideo": "Volte à estação de Vídeo e gere o vídeo base primeiro.",
+      "nao": {
+        "titulo": "Não, tá pronto",
+        "corpo": "Seguir direto pra publicação com o vídeo como está."
+      },
+      "sim": {
+        "titulo": "Sim, quero editar",
+        "corpo": "Legendas, trilha sonora e estilo de corte antes de publicar."
+      },
+      "podeAvancar": "Beleza — pode avançar pra publicação.",
+      "cloneEmBreve": "Edição do vídeo clone (legendas e cenas extras por cima) chega na próxima etapa desta fase — em construção.",
+      "cenas": {
+        "legendas": "Legendas (karaokê, 2 palavras por vez)",
+        "semMusica": "Sem música",
+        "estiloDinamico": "Corte dinâmico (zoom + sub-planos)",
+        "estiloSobrio": "Corte sóbrio (parado)",
+        "aplicar": "Aplicar edição ({custo} cr)",
+        "aplicarDeNovo": "Re-aplicar com outras opções ({custo} cr)",
+        "nota": "A edição re-monta o vídeo do zero com as mesmas cenas — cada aplicação custa o valor da montagem.",
+        "montando": "Montando o vídeo editado… alguns minutos.",
+        "pronto": "Vídeo editado pronto!",
+        "semCreditos": "Créditos insuficientes.",
+        "erro": "Não consegui montar o vídeo editado. Tente de novo."
+      }
+    },
     "roteiro": {
       "modos": {
         "gerar": "Gerar com IA",

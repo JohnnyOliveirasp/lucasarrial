@@ -12,6 +12,7 @@ import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { PassoRoteiro } from "./passo-roteiro";
 import { PassoAudio } from "./passo-audio";
 import { PassoVideo } from "./passo-video";
+import { PassoEditar } from "./passo-editar";
 
 const DRAFT_KEY = "fc-edicao-draft-v1";
 const PASSOS = ["roteiro", "audio", "video", "editar", "saida"] as const;
@@ -131,6 +132,8 @@ export function EdicaoWizard() {
         <PassoAudio draft={draft} onChange={update} />
       ) : draft.passo === 2 ? (
         <PassoVideo draft={draft} onChange={update} />
+      ) : draft.passo === 3 ? (
+        <PassoEditar draft={draft} />
       ) : (
         <EmConstrucao id={PASSOS[draft.passo]} />
       )}

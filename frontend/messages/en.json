@@ -1809,6 +1809,32 @@
         "labelVideo": "HeyGen clone"
       }
     },
+    "editar": {
+      "semVideo": "Go back to the Video station and generate the base video first.",
+      "nao": {
+        "titulo": "No, it's ready",
+        "corpo": "Go straight to publishing with the video as it is."
+      },
+      "sim": {
+        "titulo": "Yes, I want to edit",
+        "corpo": "Captions, soundtrack and cut style before publishing."
+      },
+      "podeAvancar": "Great — you can move on to publishing.",
+      "cloneEmBreve": "Clone video editing (captions and extra scenes on top) arrives in the next step of this phase — under construction.",
+      "cenas": {
+        "legendas": "Captions (karaoke, 2 words at a time)",
+        "semMusica": "No music",
+        "estiloDinamico": "Dynamic cut (zoom + sub-shots)",
+        "estiloSobrio": "Sober cut (still)",
+        "aplicar": "Apply edit ({custo} cr)",
+        "aplicarDeNovo": "Re-apply with other options ({custo} cr)",
+        "nota": "Editing re-assembles the video from scratch with the same scenes — each application costs the montage price.",
+        "montando": "Assembling the edited video… a few minutes.",
+        "pronto": "Edited video ready!",
+        "semCreditos": "Not enough credits.",
+        "erro": "Couldn't assemble the edited video. Try again."
+      }
+    },
     "roteiro": {
       "modos": {
         "gerar": "Generate with AI",
