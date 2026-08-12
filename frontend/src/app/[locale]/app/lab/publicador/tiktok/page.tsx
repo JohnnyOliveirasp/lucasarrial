@@ -5,18 +5,13 @@ import { socialPublisherAllowedEmail } from "@/lib/social/access";
 import { SocialPublisher } from "@/components/lab/social-publisher";
 
 /**
- * 🧪 Lab · Publicador ("nosso Blotato", 05/08). O aluno conecta o Instagram
- * Profissional dele (login do próprio Instagram, sem Facebook) e publica/agenda
- * Reels, fotos e stories daqui — a Máquina de vídeo vai postar sozinha por
- * esta mesma API (/api/v1/social/publish).
- *
- * 🚧 PRÉ-PRODUÇÃO: só admin até o App Review da Meta liberar pros alunos
- * (em In development publica só pra contas com papel de tester no app).
- * i18n completo (06/08): o screencast do review vai em inglês.
+ * 🧪 Lab · Publicador → TikTok (12/08). Mesmo trilho do Instagram, página
+ * própria (menu Publicador tem um submenu por rede — pedido do Johnny).
+ * Sandbox do TikTok: posts saem privados até a auditoria aprovar.
  */
 export const dynamic = "force-dynamic";
 
-export default async function PublicadorPage({
+export default async function PublicadorTiktokPage({
   params,
 }: {
   params: Promise<{ locale: string }>;
@@ -38,11 +33,11 @@ export default async function PublicadorPage({
       <div>
         <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--ash)]">{t("labBadge")}</span>
         <h1 className="mt-1 font-sans text-[26px] font-semibold tracking-[-0.03em] text-[var(--ink)]">
-          {t("title")}
+          {t("tiktok.pageTitle")}
         </h1>
-        <p className="mt-1 max-w-2xl text-[14px] text-[var(--mute)]">{t("subtitle")}</p>
+        <p className="mt-1 max-w-2xl text-[14px] text-[var(--mute)]">{t("tiktok.pageSubtitle")}</p>
       </div>
-      <SocialPublisher platform="instagram" />
+      <SocialPublisher platform="tiktok" />
     </div>
   );
 }

@@ -1617,6 +1617,8 @@
     "subtitle": "Conecta tu Instagram profesional y publica o programa Reels, fotos e historias sin salir de FastCloner. Pronto los videos generados aquí irán directo a tu perfil.",
     "loading": "Cargando…",
     "tiktok": {
+      "pageTitle": "Publicador · TikTok",
+      "pageSubtitle": "Conecta tu cuenta de TikTok y publica o programa videos sin salir de FastCloner. En fase de prueba, los posts salen en modo privado (solo tú los ves).",
       "privacy": "Quién puede ver:",
       "privacyLevels": {
         "PUBLIC_TO_EVERYONE": "Todos",

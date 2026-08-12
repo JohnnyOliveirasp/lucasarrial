@@ -1617,6 +1617,8 @@
     "subtitle": "Connect your professional Instagram account and publish or schedule Reels, photos and stories without leaving FastCloner. Soon the videos you generate here will go straight to your profile.",
     "loading": "Loading…",
     "tiktok": {
+      "pageTitle": "Publisher · TikTok",
+      "pageSubtitle": "Connect your TikTok account and publish or schedule videos without leaving FastCloner. During testing, posts are private (only you can see them).",
       "privacy": "Who can view:",
       "privacyLevels": {
         "PUBLIC_TO_EVERYONE": "Everyone",

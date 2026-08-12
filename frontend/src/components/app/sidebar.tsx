@@ -23,6 +23,8 @@ import {
   Wand2,
   MonitorPlay,
   Send,
+  Camera,
+  Music2,
   type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
@@ -57,6 +59,9 @@ export function Sidebar({
   const inVideos = pathname.includes("/app/videos");
   const [videosOpen, setVideosOpen] = useState(false);
   const showVideos = videosOpen || inVideos;
+  const inPublisher = pathname.includes("/app/lab/publicador");
+  const [publisherOpen, setPublisherOpen] = useState(false);
+  const showPublisher = publisherOpen || inPublisher;
 
   const lockTrainingTitle = tShell("lockTraining", {
     n: TRAINING_CREDIT_COST.toLocaleString("pt-BR"),
@@ -303,14 +308,52 @@ export function Sidebar({
                   label={t("nav.script")}
                   active={pathname.endsWith("/app/roteiro")}
                 />
-                {/* 🧪 Publicador ("nosso Blotato", 05/08): Instagram primeiro.
-                    App Review da Meta aprova → gradua pros alunos. */}
-                <NavLeaf
-                  href="/app/lab/publicador"
-                  icon={Send}
-                  label={tShell("publisher")}
-                  active={pathname.endsWith("/app/lab/publicador")}
-                />
+                {/* 🧪 Publicador ("nosso Blotato", 05/08): grupo expansível
+                    com um submenu por rede (pedido Johnny 12/08). */}
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setPublisherOpen((o) => !o)}
+                    aria-expanded={showPublisher}
+                    className={[
+                      "group flex w-full items-center justify-between gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm transition-[background-color,color] duration-[var(--dur-base)] ease-[var(--ease-out)]",
+                      inPublisher
+                        ? "text-[var(--ink)]"
+                        : "text-[var(--mute)] hover:bg-[var(--surface-card)] hover:text-[var(--ink)]",
+                    ].join(" ")}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Send
+                        className={[
+                          "h-4 w-4",
+                          inPublisher ? "text-[var(--silver)]" : "text-[var(--ash)] group-hover:text-[var(--silver)]",
+                        ].join(" ")}
+                      />
+                      <span className="font-medium">{tShell("publisher")}</span>
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-[var(--ash)] transition-transform duration-[var(--dur-base)] ${
+                        showPublisher ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {showPublisher && (
+                    <ul className="ml-[19px] mt-1 flex flex-col gap-1 border-l border-[var(--hairline)] pl-2">
+                      <NavLeaf
+                        href="/app/lab/publicador"
+                        icon={Camera}
+                        label="Instagram"
+                        active={pathname.endsWith("/app/lab/publicador")}
+                      />
+                      <NavLeaf
+                        href="/app/lab/publicador/tiktok"
+                        icon={Music2}
+                        label="TikTok"
+                        active={pathname.endsWith("/app/lab/publicador/tiktok")}
+                      />
+                    </ul>
+                  )}
+                </li>
               </ul>
               <div className="mt-2 border-t border-[var(--hairline)] pt-2">
                 <NavLeaf

@@ -1617,6 +1617,8 @@
     "subtitle": "Conecte seu Instagram profissional e publique ou agende Reels, fotos e stories sem sair do FastCloner. Em breve os vídeos gerados aqui dentro vão direto pro seu perfil.",
     "loading": "Carregando…",
     "tiktok": {
+      "pageTitle": "Publicador · TikTok",
+      "pageSubtitle": "Conecte sua conta do TikTok e publique ou agende vídeos sem sair do FastCloner. Em fase de teste, os posts saem no modo privado (só você vê).",
       "privacy": "Quem pode ver:",
       "privacyLevels": {
         "PUBLIC_TO_EVERYONE": "Todo mundo",

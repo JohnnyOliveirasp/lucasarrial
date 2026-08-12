@@ -33,7 +33,7 @@ type Publication = {
   thumb_url: string | null;
 };
 
-export function SocialPublisher() {
+export function SocialPublisher({ platform = "instagram" }: { platform?: "instagram" | "tiktok" }) {
   const t = useTranslations("social");
   const locale = useLocale();
   const [loading, setLoading] = useState(true);
@@ -66,16 +66,26 @@ export function SocialPublisher() {
       ]);
       const acc = await accRes.json();
       const pub = await pubRes.json();
-      const accList: Account[] = acc?.data?.accounts ?? acc?.accounts ?? [];
+      // Página é POR PLATAFORMA (menu Publicador → Instagram | TikTok):
+      // cada uma só mostra as contas e publicações da própria rede.
+      const accList: Account[] = (acc?.data?.accounts ?? acc?.accounts ?? []).filter(
+        (a: Account) => a.platform === platform,
+      );
+      const accIds = new Set(accList.map((a) => a.id));
       setAccounts(accList);
-      setPubs(pub?.data?.publications ?? pub?.publications ?? []);
+      setPubs(
+        ((pub?.data?.publications ?? pub?.publications ?? []) as (Publication & { account_id?: string })[]).filter(
+          (p) => accIds.has(p.account_id ?? ""),
+        ),
+      );
       setAccountId((cur) => cur || accList.find((a) => a.status === "active")?.id || "");
     } catch {
       setError(t("errors.load"));
     } finally {
       setLoading(false);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` fica de fora (padrão do arquivo)
+  }, [platform]);
 
   useEffect(() => {
     void load();
@@ -133,7 +143,7 @@ export function SocialPublisher() {
     };
   }, [pubs, load]);
 
-  async function connect(platform: "instagram" | "tiktok") {
+  async function connect() {
     setBusy(true);
     setError(null);
     try {
@@ -216,7 +226,7 @@ export function SocialPublisher() {
   if (loading) return <p className="text-[14px] text-[var(--mute)]">{t("loading")}</p>;
 
   const activeAccounts = accounts.filter((a) => a.status === "active");
-  const isTiktok = activeAccounts.find((a) => a.id === accountId)?.platform === "tiktok";
+  const isTiktok = platform === "tiktok";
 
   return (
     <div className="flex max-w-3xl flex-col gap-5">
@@ -227,24 +237,14 @@ export function SocialPublisher() {
       <div className="rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="font-sans text-[16px] font-semibold text-[var(--ink)]">{t("accounts.title")}</h2>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => void connect("instagram")}
-              disabled={busy}
-              className="rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
-            >
-              {t("accounts.connect")}
-            </button>
-            <button
-              type="button"
-              onClick={() => void connect("tiktok")}
-              disabled={busy}
-              className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-4 py-2 text-[13px] font-semibold text-[var(--ink)] disabled:opacity-40"
-            >
-              {t("accounts.connectTiktok")}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => void connect()}
+            disabled={busy}
+            className="rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+          >
+            {platform === "tiktok" ? t("accounts.connectTiktok") : t("accounts.connect")}
+          </button>
         </div>
         {accounts.length === 0 ? (
           <p className="mt-3 text-[13.5px] text-[var(--mute)]">{t("accounts.empty")}</p>
@@ -256,9 +256,6 @@ export function SocialPublisher() {
                 className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[var(--hairline)] px-3 py-2"
               >
                 <span className="text-[13.5px] text-[var(--ink)]">
-                  <span className="mr-1.5 rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[10.5px] uppercase text-[var(--ash)]">
-                    {a.platform === "tiktok" ? "TikTok" : "Instagram"}
-                  </span>
                   @{a.username ?? a.id}{" "}
                   <span className="text-[12px] text-[var(--ash)]">
                     {a.status === "active" ? t("accounts.connected") : t("accounts.reconnect")}
@@ -290,7 +287,7 @@ export function SocialPublisher() {
               >
                 {activeAccounts.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.platform === "tiktok" ? "TikTok" : "Instagram"} · @{a.username ?? a.id}
+                    @{a.username ?? a.id}
                   </option>
                 ))}
               </select>
