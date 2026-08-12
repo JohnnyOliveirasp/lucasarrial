@@ -97,7 +97,14 @@ export async function GET(request: NextRequest, ctx: Ctx) {
   }
 
   // F3: sincroniza cenas pendentes com o Kie (still → anima → R2 banco)
-  const scenes: { id: string; concept: string; status: string; reused: boolean }[] = [];
+  const scenes: {
+    id: string;
+    concept: string;
+    status: string;
+    reused: boolean;
+    /** Download individual da cena (12/08, pedido Johnny) — presigned 1h. */
+    video_url: string | null;
+  }[] = [];
   const plan = (current.scene_plan ?? []) as StudioScenePlanItem[];
   if (Array.isArray(plan) && plan.length > 0) {
     const ids = [...new Set(plan.map((p) => p.scene_id))];
@@ -136,7 +143,12 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       if (seen.has(p.scene_id)) continue;
       seen.add(p.scene_id);
       const s = byId.get(p.scene_id);
-      if (s) scenes.push({ id: s.id, concept: s.concept, status: s.status, reused: p.reused });
+      if (!s) continue;
+      const sceneUrl =
+        s.status === "ready" && s.video_path
+          ? await createPresignedGet(imagesBucket(), s.video_path, 3600).catch(() => null)
+          : null;
+      scenes.push({ id: s.id, concept: s.concept, status: s.status, reused: p.reused, video_url: sceneUrl });
     }
   }
 

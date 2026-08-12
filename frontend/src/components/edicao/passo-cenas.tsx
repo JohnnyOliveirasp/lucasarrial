@@ -11,12 +11,19 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Check, Clapperboard, Film, Loader2, RefreshCw, X } from "lucide-react";
+import { Check, Clapperboard, Download, Film, Loader2, RefreshCw, X } from "lucide-react";
+import { downloadFromUrl } from "@/components/image/download-file";
 import { STUDIO_CLEAN_COST } from "@/lib/credits/config";
 import { STUDIO_SCENE_COST, STUDIO_MONTAGE_COST } from "@/lib/studio/pricing";
 import type { AudioSel, EdicaoDraft, VideoSel } from "./edicao-wizard";
 
-type Cena = { id: string; concept: string; status: string; reused: boolean };
+type Cena = {
+  id: string;
+  concept: string;
+  status: string;
+  reused: boolean;
+  video_url?: string | null;
+};
 type Projeto = {
   id: string;
   status: string;
@@ -239,6 +246,16 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
                 )}
                 <span className="max-w-44 truncate">{c.concept}</span>
                 {c.reused && <span className="text-[10px] text-[var(--ash)]">{t("banco")}</span>}
+                {c.video_url && (
+                  <button
+                    type="button"
+                    onClick={() => downloadFromUrl(c.video_url!, c.concept || "cena", "mp4")}
+                    title={t("baixarCena")}
+                    className="text-[var(--ash)] hover:text-[var(--ink)]"
+                  >
+                    <Download className="size-3" />
+                  </button>
+                )}
               </li>
             ))}
           </ul>

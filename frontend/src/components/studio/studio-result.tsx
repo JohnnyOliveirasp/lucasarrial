@@ -38,7 +38,7 @@ export type StudioProjectDetail = {
   montage_report?: string | null;
   video_url?: string | null;
   scenes_status?: "idle" | "generating" | "ready" | "failed";
-  scenes?: { id: string; concept: string; status: string; reused: boolean }[];
+  scenes?: { id: string; concept: string; status: string; reused: boolean; video_url?: string | null }[];
   face_status?: "idle" | "processing" | "ready" | "failed";
 };
 
@@ -202,6 +202,16 @@ export function StudioResult({
                     {s.status === "ready" ? "✓" : s.status === "failed" ? "✕" : <Loader2 className="h-3 w-3 animate-spin" />}
                     {s.concept}
                     {s.reused && <span className="text-[var(--ash)]">· {t("result.bankChip")}</span>}
+                    {s.video_url && (
+                      <button
+                        type="button"
+                        onClick={() => downloadFromUrl(s.video_url!, s.concept || "cena", "mp4")}
+                        title={t("result.sceneDownload")}
+                        className="text-[var(--ash)] hover:text-[var(--ink)]"
+                      >
+                        <Download className="h-3 w-3" />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
