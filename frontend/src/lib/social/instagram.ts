@@ -222,5 +222,18 @@ export function friendlyInstagramError(e: unknown): string {
   if (e.status === 401 || e.code === 190) {
     return "A conexão com o Instagram expirou. Reconecte a conta e tente de novo.";
   }
+  // Caso Lucas 13/08: OAuth completa mas a Graph devolve 400/código 100
+  // ("Unsupported request") na troca/perfil. Na prática são 2 causas, ambas
+  // fora do app: conta não-Profissional, ou @ sem convite de testador aceito
+  // (app da Meta em modo desenvolvimento até o App Review passar).
+  if (e.code === 100 && /unsupported request/i.test(e.message)) {
+    return (
+      "O Instagram recusou a conexão. Confira: 1) a conta precisa ser " +
+      "PROFISSIONAL (Criador ou Comercial — troca grátis nas configurações do " +
+      "Instagram); 2) enquanto o app está em análise da Meta, o @ precisa ser " +
+      "adicionado como testador no painel e ACEITAR o convite no Instagram " +
+      "(Configurações → Site e apps → Convites de testador). Depois conecte de novo."
+    );
+  }
   return e.message;
 }

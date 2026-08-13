@@ -43,9 +43,14 @@ export async function GET(request: NextRequest) {
   if (!code || !verified) return labRedirect(request, { error: "state" });
   const { userId, locale } = verified;
 
+  // Etapa marcada pro log (caso Lucas 13/08: "Unsupported request" sem saber
+  // se veio da troca do token ou da leitura do perfil).
+  let etapa = "exchange_code";
   try {
     const short = await exchangeCode(code);
+    etapa = "long_lived";
     const long = await toLongLived(short.accessToken);
+    etapa = "perfil";
     const profile = await getProfile(long.accessToken);
     const { error } = await getAdmin()
       .from("social_accounts")
@@ -66,7 +71,7 @@ export async function GET(request: NextRequest) {
     if (error) return labRedirect(request, { error: "save" }, locale);
     return labRedirect(request, { connected: "1", username: profile.username }, locale);
   } catch (e) {
-    console.error("[social/instagram/callback]", e);
+    console.error(`[social/instagram/callback] etapa=${etapa}`, e);
     return labRedirect(request, { error: "exchange", detail: friendlyInstagramError(e) }, locale);
   }
 }
