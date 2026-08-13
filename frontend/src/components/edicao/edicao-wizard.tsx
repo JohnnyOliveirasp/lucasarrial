@@ -84,7 +84,17 @@ export function EdicaoWizard() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
-      if (raw) setDraft({ ...DRAFT_VAZIO, ...(JSON.parse(raw) as Partial<EdicaoDraft>) });
+      if (raw) {
+        const d = { ...DRAFT_VAZIO, ...(JSON.parse(raw) as Partial<EdicaoDraft>) };
+        // Migração 13/08: rascunho que "escapou" pro início com vídeo pronto
+        // (o código pré-travas deixava voltar pro passo 1 sem limpar) →
+        // devolve pra Saída com as travas armadas; de lá ou edita ou recomeça.
+        if (d.video !== null && d.passo <= 1) {
+          d.passo = 4;
+          d.finalizado = true;
+        }
+        setDraft(d);
+      }
     } catch {
       /* rascunho corrompido: começa limpo */
     }
