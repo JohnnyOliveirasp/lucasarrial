@@ -113,6 +113,9 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     /** C2 (13/08): prompt visível/editável + frases que esta cena cobre. */
     prompt_en: string;
     frases: string[];
+    /** C4: cena gerada com as fotos da pessoa (painel mostra as 2 opções
+     *  de regerar: com a foto × sem mim). */
+    com_pessoa: boolean;
   }[] = [];
   const plan = (current.scene_plan ?? []) as StudioScenePlanItem[];
   if (Array.isArray(plan) && plan.length > 0) {
@@ -165,6 +168,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
         video_url: sceneUrl,
         prompt_en: s.prompt_en,
         frases: plan.filter((x) => x.scene_id === s.id).map((x) => x.text),
+        com_pessoa: (s.ref_image_paths ?? []).length > 0,
       });
     }
   }

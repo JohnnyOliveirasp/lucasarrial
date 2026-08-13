@@ -28,6 +28,8 @@ type Cena = {
   /** C2: prompt visível/editável + frases cobertas (painel da miniatura). */
   prompt_en?: string;
   frases?: string[];
+  /** C4: cena gerada com as fotos da pessoa. */
+  com_pessoa?: boolean;
 };
 type Projeto = {
   id: string;

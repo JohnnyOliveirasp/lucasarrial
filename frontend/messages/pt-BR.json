@@ -1816,7 +1816,10 @@
           "aguardeGerando": "As cenas ainda estão sendo geradas — dá pra mexer quando terminar.",
           "semCreditos": "Créditos insuficientes.",
           "erroAcao": "Não deu certo agora. Tente de novo.",
-          "erroFoto": "Não consegui enviar a foto. Tente de novo (JPG, PNG ou WEBP)."
+          "erroFoto": "Não consegui enviar a foto. Tente de novo (JPG, PNG ou WEBP).",
+          "regerarMesmaFoto": "Regerar com a mesma foto ({custo} cr)",
+          "regerarSemMim": "Regerar sem minha foto ({custo} cr)",
+          "outraFoto": "Usar outra foto ({custo} cr)"
         },
         "fotosPergunta": "Você quer incluir fotos suas nas cenas, ou prefere automático?",
         "fotosAutoTitulo": "Automático",

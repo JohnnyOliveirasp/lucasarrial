@@ -1816,7 +1816,10 @@
           "aguardeGerando": "Las escenas aún se están generando — podrás editarlas al terminar.",
           "semCreditos": "Créditos insuficientes.",
           "erroAcao": "Algo salió mal. Inténtalo de nuevo.",
-          "erroFoto": "No se pudo subir la foto. Inténtalo de nuevo (JPG, PNG o WEBP)."
+          "erroFoto": "No se pudo subir la foto. Inténtalo de nuevo (JPG, PNG o WEBP).",
+          "regerarMesmaFoto": "Regenerar con la misma foto ({custo} cr)",
+          "regerarSemMim": "Regenerar sin mi foto ({custo} cr)",
+          "outraFoto": "Usar otra foto ({custo} cr)"
         },
         "fotosPergunta": "¿Quieres incluir fotos tuyas en las escenas, o prefieres automático?",
         "fotosAutoTitulo": "Automático",

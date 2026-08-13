@@ -43,12 +43,16 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const { id, sceneId } = await ctx.params;
 
-  let body: { action?: unknown; prompt_en?: unknown; photo_key?: unknown } = {};
+  // keep_person (13/08): cena COM a pessoa pode regerar de 2 jeitos —
+  // true (padrão) = mesmas fotos; false = vira b-roll SEM a pessoa (o prompt
+  // é convertido pra versão sem rosto quando o usuário não editou o dele).
+  let body: { action?: unknown; prompt_en?: unknown; photo_key?: unknown; keep_person?: unknown } = {};
   try {
     body = await request.json();
   } catch {
     return badRequest("Corpo inválido");
   }
+  const keepPerson = body.keep_person !== false;
   const action = body.action;
   if (action !== "improve" && action !== "redo" && action !== "photo") {
     return badRequest("Ação inválida");
@@ -70,11 +74,12 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   const { data: orig } = await admin
     .from("studio_scenes")
-    .select("id, concept, prompt_en, dialect")
+    .select("id, concept, prompt_en, dialect, ref_image_paths")
     .eq("id", sceneId)
     .maybeSingle();
   if (!orig) return notFound("Scene");
-  const origRow = orig as Pick<StudioSceneRow, "id" | "concept" | "prompt_en" | "dialect">;
+  const origRow = orig as Pick<StudioSceneRow, "id" | "concept" | "prompt_en" | "dialect" | "ref_image_paths">;
+  const origRefs = (origRow.ref_image_paths ?? []).filter(Boolean);
 
   // ── improve: LLM reescreve o prompt (1 cr, cobra só se der certo) ──
   if (action === "improve") {
@@ -124,27 +129,53 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     if (!(await objectExists(imagesBucket(), photoKey))) return notFound("Foto");
   }
 
-  const prompt =
+  const promptDado =
     action === "redo" && typeof body.prompt_en === "string" && body.prompt_en.trim()
       ? body.prompt_en.trim().slice(0, MAX_PROMPT_CHARS)
-      : origRow.prompt_en;
+      : null;
+
+  // Regerar SEM a pessoa numa cena que tinha foto: o prompt original descreve
+  // "the person from the reference photo" — sem conversão, o modelo inventaria
+  // um rosto genérico. A LLM (variante EN, que já exige b-roll sem rostos)
+  // reescreve pra mesma cena SEM a pessoa. Prompt editado pelo usuário vale
+  // como está.
+  const virandoBroll = action === "redo" && !keepPerson && origRefs.length > 0;
+  let prompt = promptDado ?? origRow.prompt_en;
+  if (virandoBroll && !promptDado) {
+    try {
+      const contexto = entries.map((e) => e.text).join(" ").slice(0, 600);
+      prompt = await improveScenePrompt(origRow.prompt_en, contexto, "en");
+    } catch {
+      /* conversão falhou — segue com o prompt original (moderação/QA cobrem) */
+    }
+  }
+
+  // Mantém as fotos quando é redo COM a pessoa (mesmas referências) ou photo.
+  const manterRefs = action === "redo" && keepPerson && origRefs.length > 0;
+  const conceptBase = origRow.concept.replace(/ \((com você|minha foto)\)$/, "");
 
   // Cena NOVA (a original pode ser do banco/compartilhada — não se muta).
   const { data: created, error: insErr } = await admin
     .from("studio_scenes")
     .insert({
       user_id: auth.user_id,
-      concept: action === "photo" ? `${origRow.concept} (minha foto)` : origRow.concept,
+      concept:
+        action === "photo"
+          ? `${conceptBase} (minha foto)`
+          : manterRefs
+            ? `${conceptBase} (com você)`
+            : conceptBase,
       prompt_en: prompt,
       dialect: origRow.dialect,
       // C3: cena com FOTO da pessoa NUNCA vai pro banco global; b-roll
       // regerado (sem rosto) entra automático como as demais.
-      shared: action !== "photo",
+      shared: action !== "photo" && !manterRefs,
+      ref_image_paths: manterRefs ? origRefs : null,
     } as never)
-    .select("id, prompt_en, dialect")
+    .select("id, prompt_en, dialect, ref_image_paths")
     .single();
   if (insErr || !created) return serverError("Falha ao criar a cena.");
-  const row = created as Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">;
+  const row = created as Pick<StudioSceneRow, "id" | "prompt_en" | "dialect" | "ref_image_paths">;
 
   const taskId =
     action === "photo"

@@ -21,6 +21,9 @@ export type CenaDetalhe = {
   video_url?: string | null;
   prompt_en?: string;
   frases?: string[];
+  /** C4: cena gerada com as fotos da pessoa → painel mostra 3 opções de
+   *  regerar (mesma foto · outra foto · sem mim). */
+  com_pessoa?: boolean;
 };
 
 export function CenaPainel({
@@ -71,11 +74,12 @@ export function CenaPainel({
     }
   }
 
-  async function regerar() {
+  /** keepPerson: true = mesmas fotos; false = vira b-roll sem a pessoa. */
+  async function regerar(keepPerson: boolean) {
     setBusy("regerar");
     setErro(null);
     try {
-      await acao({ action: "redo", prompt_en: prompt });
+      await acao({ action: "redo", prompt_en: prompt, keep_person: keepPerson });
       onMudou();
     } catch (e) {
       setErro(e instanceof Error ? e.message : t("erroAcao"));
@@ -146,13 +150,27 @@ export function CenaPainel({
           {busy === "melhorar" ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
           {t("melhorar", { custo: IMPROVE_PROMPT_COST })}
         </button>
-        <button type="button" onClick={() => void regerar()} disabled={travado || !prompt.trim()} className={BTN}>
-          {busy === "regerar" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-          {t("regerar", { custo: STUDIO_SCENE_COST })}
-        </button>
+        {cena.com_pessoa ? (
+          <>
+            {/* Cena COM a pessoa: regerar mantendo as fotos OU virar b-roll. */}
+            <button type="button" onClick={() => void regerar(true)} disabled={travado || !prompt.trim()} className={BTN}>
+              {busy === "regerar" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              {t("regerarMesmaFoto", { custo: STUDIO_SCENE_COST })}
+            </button>
+            <button type="button" onClick={() => void regerar(false)} disabled={travado} className={BTN}>
+              {busy === "regerar" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              {t("regerarSemMim", { custo: STUDIO_SCENE_COST })}
+            </button>
+          </>
+        ) : (
+          <button type="button" onClick={() => void regerar(true)} disabled={travado || !prompt.trim()} className={BTN}>
+            {busy === "regerar" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+            {t("regerar", { custo: STUDIO_SCENE_COST })}
+          </button>
+        )}
         <button type="button" onClick={() => fotoRef.current?.click()} disabled={travado} className={BTN}>
           {busy === "foto" ? <Loader2 className="size-3.5 animate-spin" /> : <ImageUp className="size-3.5" />}
-          {t("minhaFoto", { custo: STUDIO_SCENE_COST })}
+          {t(cena.com_pessoa ? "outraFoto" : "minhaFoto", { custo: STUDIO_SCENE_COST })}
         </button>
         <input
           ref={fotoRef}
