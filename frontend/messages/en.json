@@ -1819,7 +1819,15 @@
           "erroFoto": "Couldn't upload the photo. Try again (JPG, PNG or WEBP).",
           "regerarMesmaFoto": "Regenerate with the same photo ({custo} cr)",
           "regerarSemMim": "Regenerate without my photo ({custo} cr)",
-          "outraFoto": "Use another photo ({custo} cr)"
+          "outraFoto": "Use another photo ({custo} cr)",
+          "regerarComImagem": "Regenerate with my image ({custo} cr)",
+          "regerarGenerica": "Regenerate generic scene ({custo} cr)",
+          "escolhaPergunta": "Do you want to upload a new photo, or pick from your ready images?",
+          "escolherGaleria": "Pick from my images",
+          "uploadNovaFoto": "Upload a new photo",
+          "carregandoFotos": "Loading your images…",
+          "galeriaVazia": "You have no ready images yet — use upload.",
+          "usarEstaFoto": "Use this photo in the scene"
         },
         "fotosPergunta": "Do you want to include photos of yourself in the scenes, or keep it automatic?",
         "fotosAutoTitulo": "Automatic",

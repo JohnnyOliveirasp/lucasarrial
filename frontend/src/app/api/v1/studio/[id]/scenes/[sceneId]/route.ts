@@ -16,6 +16,7 @@
  * redo/photo invalidam a montagem (montage_status volta a idle — o botão
  * Montar reaparece quando as cenas ficarem prontas).
  */
+import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
@@ -43,16 +44,29 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const { id, sceneId } = await ctx.params;
 
-  // keep_person (13/08): cena COM a pessoa pode regerar de 2 jeitos —
-  // true (padrão) = mesmas fotos; false = vira b-roll SEM a pessoa (o prompt
-  // é convertido pra versão sem rosto quando o usuário não editou o dele).
-  let body: { action?: unknown; prompt_en?: unknown; photo_key?: unknown; keep_person?: unknown } = {};
+  // Spec Johnny 13/08 (screenshot em _Bugs/Video_Edit): redo tem 2 sabores —
+  // com MINHA IMAGEM (photo_keys = foto da galeria OU upload; vira referência
+  // da cena) ou GENÉRICA (keep_person=false → b-roll sem pessoa, prompt
+  // convertido). save_to_gallery=true grava a foto enviada no acervo.
+  let body: {
+    action?: unknown;
+    prompt_en?: unknown;
+    photo_key?: unknown;
+    keep_person?: unknown;
+    photo_keys?: unknown;
+    save_to_gallery?: unknown;
+  } = {};
   try {
     body = await request.json();
   } catch {
     return badRequest("Corpo inválido");
   }
   const keepPerson = body.keep_person !== false;
+  const redoPhotoKeys = Array.isArray(body.photo_keys)
+    ? body.photo_keys
+        .filter((k): k is string => typeof k === "string" && k.startsWith(`${auth.user_id}/`))
+        .slice(0, 3)
+    : [];
   const action = body.action;
   if (action !== "improve" && action !== "redo" && action !== "photo") {
     return badRequest("Ação inválida");
@@ -134,12 +148,49 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       ? body.prompt_en.trim().slice(0, MAX_PROMPT_CHARS)
       : null;
 
+  // Valida as fotos do redo-com-imagem (galeria ou upload) e, se pedido,
+  // grava a foto nova no acervo "Minhas fotos" (aparece na galeria depois).
+  let refsEscolhidas: string[] = [];
+  if (action === "redo" && redoPhotoKeys.length > 0) {
+    refsEscolhidas = (
+      await Promise.all(redoPhotoKeys.map(async (k) => ((await objectExists(imagesBucket(), k)) ? k : null)))
+    ).filter((k): k is string => k !== null);
+    if (refsEscolhidas.length === 0) return notFound("Foto");
+    if (body.save_to_gallery === true) {
+      for (const k of refsEscolhidas) {
+        const { data: ja } = await admin
+          .from("image_generations")
+          .select("id")
+          .eq("user_id", auth.user_id)
+          .eq("image_path", k)
+          .limit(1)
+          .maybeSingle();
+        if (!ja) {
+          await admin.from("image_generations").insert({
+            id: randomUUID(),
+            user_id: auth.user_id,
+            name: "Foto enviada",
+            prompt: "",
+            input_image_path: "",
+            aspect_ratio: "auto",
+            resolution: "original",
+            credits_cost: 0,
+            image_path: k,
+            status: "ready",
+            kie_model: "upload",
+          });
+        }
+      }
+    }
+  }
+
   // Regerar SEM a pessoa numa cena que tinha foto: o prompt original descreve
   // "the person from the reference photo" — sem conversão, o modelo inventaria
   // um rosto genérico. A LLM (variante EN, que já exige b-roll sem rostos)
   // reescreve pra mesma cena SEM a pessoa. Prompt editado pelo usuário vale
   // como está.
-  const virandoBroll = action === "redo" && !keepPerson && origRefs.length > 0;
+  const virandoBroll =
+    action === "redo" && refsEscolhidas.length === 0 && !keepPerson && origRefs.length > 0;
   let prompt = promptDado ?? origRow.prompt_en;
   if (virandoBroll && !promptDado) {
     try {
@@ -150,8 +201,16 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     }
   }
 
-  // Mantém as fotos quando é redo COM a pessoa (mesmas referências) ou photo.
-  const manterRefs = action === "redo" && keepPerson && origRefs.length > 0;
+  // Referências da cena nova: foto ESCOLHIDA agora > mesmas fotos de antes.
+  const refsFinais =
+    action === "redo"
+      ? refsEscolhidas.length > 0
+        ? refsEscolhidas
+        : keepPerson
+          ? origRefs
+          : []
+      : [];
+  const manterRefs = refsFinais.length > 0;
   const conceptBase = origRow.concept.replace(/ \((com você|minha foto)\)$/, "");
 
   // Cena NOVA (a original pode ser do banco/compartilhada — não se muta).
@@ -170,7 +229,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       // C3: cena com FOTO da pessoa NUNCA vai pro banco global; b-roll
       // regerado (sem rosto) entra automático como as demais.
       shared: action !== "photo" && !manterRefs,
-      ref_image_paths: manterRefs ? origRefs : null,
+      ref_image_paths: manterRefs ? refsFinais : null,
     } as never)
     .select("id, prompt_en, dialect, ref_image_paths")
     .single();

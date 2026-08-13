@@ -1,16 +1,19 @@
 "use client";
 
 /**
- * C2 (13/08) — painel de UMA cena aberto pela miniatura da estação Cenas:
- * player + frases cobertas + PROMPT editável com 3 ações:
- *   · Melhorar prompt (IA, 1 cr — só reescreve, nada é gerado)
- *   · Regerar a cena com o prompt atual (custa 1 cena)
- *   · Usar minha foto no lugar (upload → anima; custa 1 cena)
- * Regerar/foto invalidam a montagem — o botão Montar reaparece na estação.
+ * Painel de UMA cena (spec final Johnny 13/08, screenshot _Bugs/Video_Edit):
+ *   1. Melhorar prompt (IA, 1 cr — só reescreve o texto)
+ *   2. Regerar com minha imagem → pergunta: escolher da GALERIA de imagens
+ *      (popup) OU fazer UPLOAD de foto nova (upload também entra na galeria).
+ *      A foto vira a referência e a cena é gerada a partir dela.
+ *   3. Regerar cena genérica (b-roll sem pessoa; prompt convertido pela LLM
+ *      quando a cena tinha gente)
+ * Regerar (2 e 3) cria cena NOVA, troca o ponteiro só neste projeto e
+ * reabre a montagem.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { ImageUp, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Check, ImageUp, Images, Loader2, RefreshCw, Sparkles, UserRound } from "lucide-react";
 import { STUDIO_SCENE_COST } from "@/lib/studio/pricing";
 import { IMPROVE_PROMPT_COST } from "@/lib/video/config";
 
@@ -21,10 +24,11 @@ export type CenaDetalhe = {
   video_url?: string | null;
   prompt_en?: string;
   frases?: string[];
-  /** C4: cena gerada com as fotos da pessoa → painel mostra 3 opções de
-   *  regerar (mesma foto · outra foto · sem mim). */
+  /** C4: cena gerada com as fotos da pessoa. */
   com_pessoa?: boolean;
 };
+
+type FotoAcervo = { id: string; image_url: string | null; image_path: string | null; status: string };
 
 export function CenaPainel({
   projectId,
@@ -41,9 +45,25 @@ export function CenaPainel({
 }) {
   const t = useTranslations("edicao.video.cenas.painel");
   const [prompt, setPrompt] = useState(cena.prompt_en ?? "");
-  const [busy, setBusy] = useState<"melhorar" | "regerar" | "foto" | null>(null);
+  const [busy, setBusy] = useState<"melhorar" | "regerar" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // "Regerar com minha imagem": null = fechado; "menu" = upload×galeria;
+  // "galeria" = popup de fotos do acervo aberto.
+  const [escolha, setEscolha] = useState<null | "menu" | "galeria">(null);
+  const [fotos, setFotos] = useState<FotoAcervo[] | null>(null);
   const fotoRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (escolha !== "galeria" || fotos !== null) return;
+    fetch("/api/v1/images", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { images: [] }))
+      .then((j) =>
+        setFotos(
+          ((j.images ?? []) as FotoAcervo[]).filter((f) => f.status === "ready" && f.image_url && f.image_path),
+        ),
+      )
+      .catch(() => setFotos([]));
+  }, [escolha, fotos]);
 
   async function acao(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const res = await fetch(`/api/v1/studio/${projectId}/scenes/${cena.id}`, {
@@ -74,12 +94,19 @@ export function CenaPainel({
     }
   }
 
-  /** keepPerson: true = mesmas fotos; false = vira b-roll sem a pessoa. */
-  async function regerar(keepPerson: boolean) {
+  /** Regenera: com foto escolhida (galeria/upload) OU genérica sem pessoa. */
+  async function regerar(opts: { photoKeys?: string[]; saveToGallery?: boolean; generica?: boolean }) {
     setBusy("regerar");
     setErro(null);
     try {
-      await acao({ action: "redo", prompt_en: prompt, keep_person: keepPerson });
+      await acao({
+        action: "redo",
+        prompt_en: prompt,
+        ...(opts.photoKeys?.length
+          ? { photo_keys: opts.photoKeys, save_to_gallery: opts.saveToGallery === true }
+          : {}),
+        ...(opts.generica ? { keep_person: false } : {}),
+      });
       onMudou();
     } catch (e) {
       setErro(e instanceof Error ? e.message : t("erroAcao"));
@@ -89,7 +116,7 @@ export function CenaPainel({
   }
 
   async function enviarFoto(file: File) {
-    setBusy("foto");
+    setBusy("regerar");
     setErro(null);
     try {
       const up = await fetch("/api/v1/images/upload-url", {
@@ -100,18 +127,15 @@ export function CenaPainel({
       const uj = await up.json().catch(() => ({}));
       const ud = (uj?.data ?? uj ?? {}) as { key?: string; upload_url?: string; error?: { message?: string } };
       if (!up.ok || !ud.key || !ud.upload_url) throw new Error(ud?.error?.message ?? t("erroFoto"));
-      const put = await fetch(ud.upload_url, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
+      const put = await fetch(ud.upload_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
       if (!put.ok) throw new Error(t("erroFoto"));
-      await acao({ action: "photo", photo_key: ud.key });
-      onMudou();
+      setBusy(null);
+      // Upload também entra na galeria de imagens (save_to_gallery).
+      await regerar({ photoKeys: [ud.key], saveToGallery: true });
     } catch (e) {
       setErro(e instanceof Error ? e.message : t("erroFoto"));
-    } finally {
       setBusy(null);
+    } finally {
       if (fotoRef.current) fotoRef.current.value = "";
     }
   }
@@ -122,7 +146,10 @@ export function CenaPainel({
 
   return (
     <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] p-3.5">
-      <p className="text-[13px] font-medium text-[var(--ink)]">{cena.concept}</p>
+      <p className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--ink)]">
+        {cena.com_pessoa && <UserRound className="size-3.5 text-[var(--silver)]" />}
+        {cena.concept}
+      </p>
 
       {cena.video_url && (
         <video src={cena.video_url} controls playsInline preload="metadata" className="max-h-80 w-auto self-start rounded-[var(--radius-sm)] border border-[var(--hairline)]" />
@@ -145,32 +172,25 @@ export function CenaPainel({
         />
       </label>
 
+      {/* Spec 13/08: melhorar · regerar com minha imagem · regerar genérica */}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => void melhorar()} disabled={travado} className={BTN}>
           {busy === "melhorar" ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
           {t("melhorar", { custo: IMPROVE_PROMPT_COST })}
         </button>
-        {cena.com_pessoa ? (
-          <>
-            {/* Cena COM a pessoa: regerar mantendo as fotos OU virar b-roll. */}
-            <button type="button" onClick={() => void regerar(true)} disabled={travado || !prompt.trim()} className={BTN}>
-              {busy === "regerar" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-              {t("regerarMesmaFoto", { custo: STUDIO_SCENE_COST })}
-            </button>
-            <button type="button" onClick={() => void regerar(false)} disabled={travado} className={BTN}>
-              {busy === "regerar" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-              {t("regerarSemMim", { custo: STUDIO_SCENE_COST })}
-            </button>
-          </>
-        ) : (
-          <button type="button" onClick={() => void regerar(true)} disabled={travado || !prompt.trim()} className={BTN}>
-            {busy === "regerar" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-            {t("regerar", { custo: STUDIO_SCENE_COST })}
-          </button>
-        )}
-        <button type="button" onClick={() => fotoRef.current?.click()} disabled={travado} className={BTN}>
-          {busy === "foto" ? <Loader2 className="size-3.5 animate-spin" /> : <ImageUp className="size-3.5" />}
-          {t(cena.com_pessoa ? "outraFoto" : "minhaFoto", { custo: STUDIO_SCENE_COST })}
+        <button
+          type="button"
+          onClick={() => setEscolha(escolha ? null : "menu")}
+          disabled={travado}
+          aria-expanded={escolha !== null}
+          className={BTN}
+        >
+          <UserRound className="size-3.5" />
+          {t("regerarComImagem", { custo: STUDIO_SCENE_COST })}
+        </button>
+        <button type="button" onClick={() => void regerar({ generica: true })} disabled={travado} className={BTN}>
+          {busy === "regerar" ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+          {t("regerarGenerica", { custo: STUDIO_SCENE_COST })}
         </button>
         <input
           ref={fotoRef}
@@ -183,6 +203,51 @@ export function CenaPainel({
           }}
         />
       </div>
+
+      {/* "Com minha imagem": upload novo × galeria de imagens já prontas */}
+      {escolha && (
+        <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-[var(--hairline)] p-3">
+          <p className="text-[12.5px] text-[var(--ink)]">{t("escolhaPergunta")}</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setEscolha("galeria")} disabled={travado} className={BTN}>
+              <Images className="size-3.5" /> {t("escolherGaleria")}
+            </button>
+            <button type="button" onClick={() => fotoRef.current?.click()} disabled={travado} className={BTN}>
+              <ImageUp className="size-3.5" /> {t("uploadNovaFoto")}
+            </button>
+          </div>
+
+          {escolha === "galeria" &&
+            (fotos === null ? (
+              <p className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
+                <Loader2 className="size-3.5 animate-spin" /> {t("carregandoFotos")}
+              </p>
+            ) : fotos.length === 0 ? (
+              <p className="text-[12.5px] text-[var(--mute)]">{t("galeriaVazia")}</p>
+            ) : (
+              <ul className="grid max-h-56 grid-cols-4 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-6">
+                {fotos.slice(0, 24).map((f) => (
+                  <li key={f.id}>
+                    <button
+                      type="button"
+                      onClick={() => void regerar({ photoKeys: [f.image_path as string] })}
+                      disabled={travado}
+                      title={t("usarEstaFoto")}
+                      className="group relative block aspect-square w-full overflow-hidden rounded-[var(--radius-sm)] border border-[var(--hairline)] transition-colors hover:border-[var(--hairline-bright)] disabled:opacity-40"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={f.image_url as string} alt="" className="h-full w-full object-cover" />
+                      <span className="absolute inset-0 hidden place-items-center bg-black/40 group-hover:grid">
+                        <Check className="size-4 text-white" />
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ))}
+        </div>
+      )}
+
       {bloqueado && <p className="text-[12px] text-[var(--ash)]">{t("aguardeGerando")}</p>}
       {erro && <p className="text-[13px] text-red-400">{erro}</p>}
     </div>

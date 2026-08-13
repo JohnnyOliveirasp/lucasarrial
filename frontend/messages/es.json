@@ -1819,7 +1819,15 @@
           "erroFoto": "No se pudo subir la foto. Inténtalo de nuevo (JPG, PNG o WEBP).",
           "regerarMesmaFoto": "Regenerar con la misma foto ({custo} cr)",
           "regerarSemMim": "Regenerar sin mi foto ({custo} cr)",
-          "outraFoto": "Usar otra foto ({custo} cr)"
+          "outraFoto": "Usar otra foto ({custo} cr)",
+          "regerarComImagem": "Regenerar con mi imagen ({custo} cr)",
+          "regerarGenerica": "Regenerar escena genérica ({custo} cr)",
+          "escolhaPergunta": "¿Quieres subir una foto nueva, o elegir de tus imágenes listas?",
+          "escolherGaleria": "Elegir de mis imágenes",
+          "uploadNovaFoto": "Subir una foto nueva",
+          "carregandoFotos": "Cargando tus imágenes…",
+          "galeriaVazia": "Aún no tienes imágenes listas — usa la subida.",
+          "usarEstaFoto": "Usar esta foto en la escena"
         },
         "fotosPergunta": "¿Quieres incluir fotos tuyas en las escenas, o prefieres automático?",
         "fotosAutoTitulo": "Automático",

@@ -1819,7 +1819,15 @@
           "erroFoto": "Não consegui enviar a foto. Tente de novo (JPG, PNG ou WEBP).",
           "regerarMesmaFoto": "Regerar com a mesma foto ({custo} cr)",
           "regerarSemMim": "Regerar sem minha foto ({custo} cr)",
-          "outraFoto": "Usar outra foto ({custo} cr)"
+          "outraFoto": "Usar outra foto ({custo} cr)",
+          "regerarComImagem": "Regerar com minha imagem ({custo} cr)",
+          "regerarGenerica": "Regerar cena genérica ({custo} cr)",
+          "escolhaPergunta": "Você quer fazer upload de uma foto nova, ou escolher das suas imagens já prontas?",
+          "escolherGaleria": "Escolher das minhas imagens",
+          "uploadNovaFoto": "Fazer upload de foto nova",
+          "carregandoFotos": "Carregando suas imagens…",
+          "galeriaVazia": "Você ainda não tem imagens prontas — use o upload.",
+          "usarEstaFoto": "Usar esta foto na cena"
         },
         "fotosPergunta": "Você quer incluir fotos suas nas cenas, ou prefere automático?",
         "fotosAutoTitulo": "Automático",
