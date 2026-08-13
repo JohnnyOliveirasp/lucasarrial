@@ -1508,7 +1508,8 @@
       "lockApi": "Subscribe to unlock the API.",
       "preProduction": "Pre-production testing",
       "admin": "Admin",
-      "publisher": "Publisher"
+      "publisher": "Publisher",
+      "lockPlan": "Subscribe to unlock this tool."
     },
     "apiDocs": {
       "copied": "Copied",

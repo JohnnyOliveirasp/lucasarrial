@@ -164,8 +164,9 @@ export function Sidebar({
       href: "/app/videos/edicao",
       icon: Clapperboard,
       label: t("nav.videoEdicao"),
-      locked: false,
-      lockTitle: "",
+      // Sem assinatura = trancado (Johnny 13/08, mesma regra do Roteiro).
+      locked: !unlimited && !subscribed,
+      lockTitle: tShell("lockPlan"),
     },
     {
       href: "/app/videos/vendas",
@@ -207,12 +208,15 @@ export function Sidebar({
 
           {/* Gerador de Roteiros — graduado 13/08 (ordem Johnny): porta de
               entrada do funil (roteiro → áudio → vídeo), logo abaixo do
-              Dashboard. */}
+              Dashboard. Sem assinatura = trancado (Johnny 13/08: quem não
+              assina — ex. contas da planilha sem plano — não acessa). */}
           <NavLeaf
             href="/app/roteiro"
             icon={PenLine}
             label={t("nav.script")}
             active={pathname.endsWith("/app/roteiro")}
+            locked={!unlimited && !subscribed}
+            lockTitle={tShell("lockPlan")}
           />
 
           {/* Grupo Vozes (expansível) */}

@@ -1508,7 +1508,8 @@
       "lockApi": "Assine o plano para liberar a API.",
       "preProduction": "Teste pré-produção",
       "admin": "Admin",
-      "publisher": "Publicador"
+      "publisher": "Publicador",
+      "lockPlan": "Assine o plano para liberar esta ferramenta."
     },
     "apiDocs": {
       "copied": "Copiado",

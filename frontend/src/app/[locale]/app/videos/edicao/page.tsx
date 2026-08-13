@@ -2,12 +2,14 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { redirect } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin/guard";
+import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { EdicaoWizard } from "@/components/edicao/edicao-wizard";
 
 /**
- * 🚧 Vídeo Edição 2.0 — wizard central (spec 11/08, project-video-edicao-wizard):
+ * 🎬 Estúdio Automático (Vídeo Edição 2.0) — wizard central:
  * Roteiro → Áudio → Vídeo base (Cenas|Clone) → Editar? → Final.
- * PRÉ-PRODUÇÃO: só admin vê/usa até o veredito do Lucas.
+ * ✅ GRADUADO 13/08 (ordem Johnny) pra todos os ASSINANTES — sem assinatura
+ * não acessa (ex.: contas da planilha sem plano), mesma regra do Roteiro.
  */
 export default async function VideoEdicaoPage({
   params,
@@ -25,11 +27,12 @@ export default async function VideoEdicaoPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("email")
+    .select("email, access_until")
     .eq("id", user.id)
     .single();
   const email = profile?.email ?? user.email ?? null;
-  // ✅ GRADUADO 13/08 (ordem do Johnny): aberto pra todos os alunos.
+  const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
+  if (!bypassesBilling(email) && !subscribed) return redirect({ href: "/app/dashboard", locale });
   // O admin ainda importa: o caminho HeyGen (BYOK em validação) só aparece
   // pra admin; publicar continua atrás do gate do Publicador (App Review).
   const admin = await isAdmin(email);

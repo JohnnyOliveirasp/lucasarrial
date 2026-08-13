@@ -1508,7 +1508,8 @@
       "lockApi": "Suscríbete para desbloquear la API.",
       "preProduction": "Prueba de preproducción",
       "admin": "Admin",
-      "publisher": "Publicador"
+      "publisher": "Publicador",
+      "lockPlan": "Suscríbete al plan para desbloquear esta herramienta."
     },
     "apiDocs": {
       "copied": "Copiado",

@@ -43,6 +43,8 @@ export default async function RoteiroPage({
   }
   const team = bypassesBilling(email);
   const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
+  // Johnny 13/08: sem assinatura não acessa (ex.: contas da planilha sem plano).
+  if (!team && !subscribed) redirect({ href: "/app/dashboard", locale });
 
   return (
     <div className="flex flex-col gap-10">
