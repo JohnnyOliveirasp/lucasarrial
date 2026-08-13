@@ -1913,7 +1913,13 @@
         "erro": "No pude montar el video editado. Inténtalo de nuevo.",
         "transicaoCorte": "Corte seco",
         "transicaoFade": "Fade oscuro",
-        "transicaoFadeBranco": "Fade claro"
+        "transicaoFadeBranco": "Fade claro",
+        "musicaLabel": "Banda sonora",
+        "musicaHint": "Música de fondo del acervo, mezclada bajito debajo de tu voz.",
+        "estiloLabel": "Estilo de edición",
+        "estiloHint": "Dinámico: zooms y reencuadres dentro de las escenas, ritmo de video viral. Sobrio: cámara quieta, sin zoom.",
+        "transicaoLabel": "Transición entre escenas",
+        "transicaoHint": "Cómo una escena cambia a la otra: corte seco (instantáneo, estándar TikTok), fade oscuro o flash blanco."
       },
       "broll": {
         "titulo": "Escenas encima (b-roll)",

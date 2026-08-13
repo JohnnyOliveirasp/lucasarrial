@@ -1913,7 +1913,13 @@
         "erro": "Não consegui montar o vídeo editado. Tente de novo.",
         "transicaoCorte": "Corte seco",
         "transicaoFade": "Fade escuro",
-        "transicaoFadeBranco": "Fade claro"
+        "transicaoFadeBranco": "Fade claro",
+        "musicaLabel": "Trilha sonora",
+        "musicaHint": "Música de fundo do acervo, mixada baixinho por baixo da sua fala.",
+        "estiloLabel": "Estilo de edição",
+        "estiloHint": "Dinâmico: zooms e recortes dentro das cenas, ritmo de vídeo viral. Sóbrio: câmera parada, sem zoom.",
+        "transicaoLabel": "Transição entre cenas",
+        "transicaoHint": "Como uma cena troca pra outra: corte seco (instantâneo, padrão TikTok), fade escuro (escurece e volta) ou flash branco."
       },
       "broll": {
         "titulo": "Cenas por cima (b-roll)",

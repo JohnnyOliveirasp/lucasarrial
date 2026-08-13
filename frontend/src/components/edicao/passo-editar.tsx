@@ -299,41 +299,56 @@ function EditarCenas({ draft }: { draft: EdicaoDraft }) {
             {t("legendas")}
           </label>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Music className="size-4 text-[var(--mute)]" aria-hidden />
-            <select
-              value={musicKey}
-              onChange={(e) => setMusicKey(e.target.value)}
-              className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
-            >
-              <option value="">{t("semMusica")}</option>
-              {(trilhas ?? []).map((tr) => (
-                <option key={tr.key} value={tr.key}>
-                  {tr.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={estilo}
-              onChange={(e) => setEstilo(e.target.value === "sober" ? "sober" : "dynamic")}
-              className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
-            >
-              <option value="dynamic">{t("estiloDinamico")}</option>
-              <option value="sober">{t("estiloSobrio")}</option>
-            </select>
-            <select
-              value={transicao}
-              onChange={(e) =>
-                setTransicao(
-                  e.target.value === "fade" ? "fade" : e.target.value === "fade_branco" ? "fade_branco" : "corte",
-                )
-              }
-              className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
-            >
-              <option value="corte">{t("transicaoCorte")}</option>
-              <option value="fade">{t("transicaoFade")}</option>
-              <option value="fade_branco">{t("transicaoFadeBranco")}</option>
-            </select>
+          {/* Cada combo com rótulo + explicação (pedido Johnny 13/08: aluno
+              não sabia o que "corte dinâmico"/"corte seco" faziam). */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <label className="flex flex-col gap-1">
+              <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ash)]">
+                <Music className="size-3.5" aria-hidden /> {t("musicaLabel")}
+              </span>
+              <select
+                value={musicKey}
+                onChange={(e) => setMusicKey(e.target.value)}
+                className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
+              >
+                <option value="">{t("semMusica")}</option>
+                {(trilhas ?? []).map((tr) => (
+                  <option key={tr.key} value={tr.key}>
+                    {tr.label}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[11px] leading-snug text-[var(--ash)]">{t("musicaHint")}</span>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ash)]">{t("estiloLabel")}</span>
+              <select
+                value={estilo}
+                onChange={(e) => setEstilo(e.target.value === "sober" ? "sober" : "dynamic")}
+                className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
+              >
+                <option value="dynamic">{t("estiloDinamico")}</option>
+                <option value="sober">{t("estiloSobrio")}</option>
+              </select>
+              <span className="text-[11px] leading-snug text-[var(--ash)]">{t("estiloHint")}</span>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ash)]">{t("transicaoLabel")}</span>
+              <select
+                value={transicao}
+                onChange={(e) =>
+                  setTransicao(
+                    e.target.value === "fade" ? "fade" : e.target.value === "fade_branco" ? "fade_branco" : "corte",
+                  )
+                }
+                className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 py-2 text-[13px] text-[var(--ink)]"
+              >
+                <option value="corte">{t("transicaoCorte")}</option>
+                <option value="fade">{t("transicaoFade")}</option>
+                <option value="fade_branco">{t("transicaoFadeBranco")}</option>
+              </select>
+              <span className="text-[11px] leading-snug text-[var(--ash)]">{t("transicaoHint")}</span>
+            </label>
           </div>
 
           <button

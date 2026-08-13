@@ -1913,7 +1913,13 @@
         "erro": "Couldn't assemble the edited video. Try again.",
         "transicaoCorte": "Hard cut",
         "transicaoFade": "Dark fade",
-        "transicaoFadeBranco": "Light fade"
+        "transicaoFadeBranco": "Light fade",
+        "musicaLabel": "Soundtrack",
+        "musicaHint": "Background music from the library, mixed quietly under your voice.",
+        "estiloLabel": "Editing style",
+        "estiloHint": "Dynamic: zooms and reframes inside scenes, viral-video pacing. Sober: static camera, no zoom.",
+        "transicaoLabel": "Scene transition",
+        "transicaoHint": "How one scene changes to the next: hard cut (instant, TikTok default), dark fade or white flash."
       },
       "broll": {
         "titulo": "Scenes on top (b-roll)",
