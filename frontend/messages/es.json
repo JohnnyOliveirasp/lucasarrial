@@ -675,11 +675,11 @@
   "sales": {
     "board": {
       "eyebrow": "Videos",
-      "title": "Video de Ventas TikTok",
+      "title": "Video de Productos",
       "description": "Sube las fotos de tu producto, elige quién lo presenta y la IA crea el guion de venta, las escenas y el video completo — listo para TikTok, con hasta 60 segundos."
     },
     "new": {
-      "eyebrow": "Video de Ventas TikTok",
+      "eyebrow": "Video de Productos",
       "title": "Nuevo video de venta"
     },
     "setup": {
@@ -743,7 +743,7 @@
         "tooLarge": "Archivo demasiado grande (máx. 25MB).",
         "readFile": "No pudimos leer ese archivo de audio.",
         "readDuration": "No pudimos leer la duración de ese audio.",
-        "tooLong": "Tu audio dura {n}s — en Video de Ventas el máximo es {max}s.",
+        "tooLong": "Tu audio dura {n}s — en Video de Productos el máximo es {max}s.",
         "uploadFailed": "Falló la subida del audio. Inténtalo de nuevo.",
         "process": "Error al procesar el audio."
       }
