@@ -1822,7 +1822,7 @@
         "fotosAutoTitulo": "Automatic",
         "fotosAutoCorpo": "Everything is generated from your speech — scenes illustrate what you say.",
         "fotosEuTitulo": "I want to appear in the scenes",
-        "fotosEuCorpo": "Pick up to {max} photos of you — the AI decides which scenes you appear in.",
+        "fotosEuCorpo": "Pick up to {max} photos of you — the AI decides which scenes you appear in and keeps generating the remaining scenes normally.",
         "fotosCarregando": "Loading your photos…",
         "fotosVazio": "You have no photos yet. Upload or generate photos in Images first.",
         "fotosConsent": "By using photos you confirm you have the right to use them. Scenes with you are private — they never enter the shared bank.",

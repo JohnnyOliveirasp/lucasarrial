@@ -1822,7 +1822,7 @@
         "fotosAutoTitulo": "Automático",
         "fotosAutoCorpo": "Todo se genera a partir de tu locución — las escenas ilustran lo que dices.",
         "fotosEuTitulo": "Quiero aparecer en las escenas",
-        "fotosEuCorpo": "Elige hasta {max} fotos tuyas — la IA decide en qué escenas apareces.",
+        "fotosEuCorpo": "Elige hasta {max} fotos tuyas — la IA decide en qué escenas apareces y sigue generando las demás escenas normalmente.",
         "fotosCarregando": "Cargando tus fotos…",
         "fotosVazio": "Aún no tienes fotos. Sube o genera fotos en Imágenes primero.",
         "fotosConsent": "Al usar fotos confirmas que tienes derecho a usarlas. Las escenas contigo son privadas — nunca entran al banco compartido.",
