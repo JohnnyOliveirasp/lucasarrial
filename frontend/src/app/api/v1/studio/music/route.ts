@@ -7,15 +7,12 @@
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { jsonError, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
-import { isAdmin } from "@/lib/admin/guard";
+import { jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  // 🚧 PRÉ-PRODUÇÃO: só admin até validar (remover junto com o guard da página).
-  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
 
   try {
     const res = await r2.send(

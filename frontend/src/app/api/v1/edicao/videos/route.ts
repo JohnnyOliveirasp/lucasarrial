@@ -10,8 +10,7 @@
 import type { NextRequest } from "next/server";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { authenticate } from "@/lib/api/auth";
-import { jsonError, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
-import { isAdmin } from "@/lib/admin/guard";
+import { jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { r2, imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
@@ -31,8 +30,6 @@ type VideoGerado = {
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  // 🚧 PRÉ-PRODUÇÃO: só admin até validar (remover junto com o guard da página).
-  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
 
   const bucket = imagesBucket();
   try {

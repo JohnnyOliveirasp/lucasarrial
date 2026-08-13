@@ -12,16 +12,13 @@ import type { NextRequest } from "next/server";
 import { randomUUID } from "crypto";
 import { CopyObjectCommand } from "@aws-sdk/client-s3";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonError, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
-import { isAdmin } from "@/lib/admin/guard";
+import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
 
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  // 🚧 PRÉ-PRODUÇÃO: mesmo gate das outras rotas do Estúdio.
-  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
 
   let body: { generation_id?: unknown; take_key?: unknown } = {};
   try {

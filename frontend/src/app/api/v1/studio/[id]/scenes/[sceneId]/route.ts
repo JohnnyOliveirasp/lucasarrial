@@ -21,7 +21,6 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { isAdmin } from "@/lib/admin/guard";
 import { bypassesBilling } from "@/lib/credits/access";
 import { debitCredits } from "@/lib/credits/service";
 import { gateStudioCredits } from "@/lib/studio/billing";
@@ -40,8 +39,6 @@ const MAX_PROMPT_CHARS = 1200;
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  // 🚧 PRÉ-PRODUÇÃO: só admin até validar (remover junto com o guard da página).
-  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const { id, sceneId } = await ctx.params;
 
   // Spec Johnny 13/08 (screenshot em _Bugs/Video_Edit): redo tem 2 sabores —

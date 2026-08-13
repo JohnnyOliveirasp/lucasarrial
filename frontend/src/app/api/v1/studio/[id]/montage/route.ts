@@ -6,9 +6,8 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
+import { badRequest, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { isAdmin } from "@/lib/admin/guard";
 import { debitCredits } from "@/lib/credits/service";
 import { gateStudioCredits } from "@/lib/studio/billing";
 import { STUDIO_MONTAGE_COST } from "@/lib/studio/pricing";
@@ -34,8 +33,6 @@ const TEST_SCENE_KEYS = [1, 2, 3, 4, 5, 6].map((n) => `studio-test-scenes/scene$
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  // 🚧 PRÉ-PRODUÇÃO: só admin até validar (remover junto com o guard da página).
-  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const { id } = await ctx.params;
 
   // Trilha escolhida pelo usuário — ou nenhuma ("Sem música").

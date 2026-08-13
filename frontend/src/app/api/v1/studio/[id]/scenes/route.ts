@@ -8,9 +8,8 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
+import { badRequest, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { isAdmin } from "@/lib/admin/guard";
 import { debitCredits } from "@/lib/credits/service";
 import { gateStudioCredits } from "@/lib/studio/billing";
 import { STUDIO_SCENE_COST } from "@/lib/studio/pricing";
@@ -78,8 +77,6 @@ function groupAdjacent(sentences: string[], k: number): number[][] {
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  // 🚧 PRÉ-PRODUÇÃO: só admin até validar (remover junto com o guard da página).
-  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const { id } = await ctx.params;
 
   // W5 (wizard, b-roll no clone): plan_only devolve a SUGESTÃO do planner sem

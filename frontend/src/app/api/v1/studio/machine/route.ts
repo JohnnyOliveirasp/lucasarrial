@@ -8,9 +8,8 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonError, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
+import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { isAdmin } from "@/lib/admin/guard";
 import { debitCredits } from "@/lib/credits/service";
 import { gateStudioCredits } from "@/lib/studio/billing";
 import { startMachineTts, MACHINE_AUDIO_COST, type MachineProject } from "@/lib/studio/machine";
@@ -21,8 +20,6 @@ const SCRIPT_MAX = 2000; // mesmo teto do TTS (TEXT_MAX do generate)
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  // 🚧 PRÉ-PRODUÇÃO: só admin até validar (remover junto com o guard da página).
-  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
   const admin = getAdmin();
 
   let body: { script?: unknown; voice_id?: unknown; name?: unknown; music_key?: unknown } = {};

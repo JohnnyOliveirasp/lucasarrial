@@ -156,11 +156,14 @@ export function Sidebar({
 
   // Sub-itens de "Vídeos". Entrada livre — o gate de créditos acontece dentro
   // do wizard, nos estágios pagos.
+  // ✅ 13/08 (ordem Johnny): Estúdio Automático GRADUOU e entrou no lugar do
+  // Vídeo História, que desceu pra pré-produção como histórico. Publicar no
+  // Instagram continua atrás do gate do Publicador (App Review da Meta).
   const videoChildren = [
     {
-      href: "/app/videos/history",
+      href: "/app/videos/edicao",
       icon: Clapperboard,
-      label: t("nav.videoHistory"),
+      label: t("nav.videoEdicao"),
       locked: false,
       lockTitle: "",
     },
@@ -332,16 +335,15 @@ export function Sidebar({
                 {tShell("preProduction")}
               </span>
               <ul className="flex flex-col gap-1">
-                {/* 🚧 Estúdio Automático (ex-"Vídeo Edição 2.0", renome 13/08)
-                    — wizard central: roteiro → áudio → vídeo base → edição →
-                    publicar. O Banco de Cenas NÃO tem item próprio (decisão
-                    13/08: fora de contexto confunde) — o explorador vive
-                    DENTRO da geração de cenas do wizard. */}
+                {/* ✅ Estúdio Automático GRADUOU 13/08 → grupo Vídeos público.
+                    O Vídeo História desceu pra cá como histórico (ordem
+                    Johnny 13/08): alunos novos usam o wizard; projetos
+                    antigos seguem acessíveis por aqui. */}
                 <NavLeaf
-                  href="/app/videos/edicao"
-                  icon={Clapperboard}
-                  label={t("nav.videoEdicao")}
-                  active={pathname.endsWith("/app/videos/edicao")}
+                  href="/app/videos/history"
+                  icon={History}
+                  label={t("nav.videoHistory")}
+                  active={pathname.endsWith("/app/videos/history")}
                 />
                 {/* F0 unificação: a ENTRADA é o wizard de 2 perguntas
                     (/app/videos/estudio); o workspace antigo (/studio) segue

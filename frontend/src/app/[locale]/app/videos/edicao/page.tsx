@@ -29,7 +29,10 @@ export default async function VideoEdicaoPage({
     .eq("id", user.id)
     .single();
   const email = profile?.email ?? user.email ?? null;
-  if (!(await isAdmin(email))) return redirect({ href: "/app/dashboard", locale });
+  // ✅ GRADUADO 13/08 (ordem do Johnny): aberto pra todos os alunos.
+  // O admin ainda importa: o caminho HeyGen (BYOK em validação) só aparece
+  // pra admin; publicar continua atrás do gate do Publicador (App Review).
+  const admin = await isAdmin(email);
 
   const t = await getTranslations({ locale, namespace: "edicao" });
 
@@ -43,7 +46,7 @@ export default async function VideoEdicaoPage({
       </h1>
       <p className="mt-1 text-[13.5px] text-[var(--mute)]">{t("subtitle")}</p>
       <div className="mt-6">
-        <EdicaoWizard />
+        <EdicaoWizard admin={admin} />
       </div>
     </div>
   );

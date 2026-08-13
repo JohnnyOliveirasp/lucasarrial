@@ -7,8 +7,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonError, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
-import { isAdmin } from "@/lib/admin/guard";
+import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { debitCredits } from "@/lib/credits/service";
 import { gateStudioCredits } from "@/lib/studio/billing";
 import { STUDIO_SCRIPT_COST } from "@/lib/studio/pricing";
@@ -21,8 +20,6 @@ import {
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  // 🚧 PRÉ-PRODUÇÃO: só admin até validar (remover junto com o guard da página).
-  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
 
   let body: { idea?: unknown; seconds?: unknown } = {};
   try {

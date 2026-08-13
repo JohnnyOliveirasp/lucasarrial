@@ -10,9 +10,8 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { jsonError, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
+import { jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { isAdmin } from "@/lib/admin/guard";
 import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import type { StudioSceneRow } from "@/lib/db/types";
@@ -46,8 +45,6 @@ async function toItems(rows: StudioSceneRow[]): Promise<Item[]> {
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  // 🚧 PRÉ-PRODUÇÃO: gradua junto com o Vídeo Editor.
-  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
 
   const admin = getAdmin();
   const SELECT = "id, user_id, concept, prompt_en, dialect, status, kie_task_id, qa_retried, anim_retried, debit_ref, image_path, video_path, ref_image_paths, error_message, created_at";

@@ -13,8 +13,7 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
-import { isAdmin } from "@/lib/admin/guard";
+import { badRequest, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { debitCredits } from "@/lib/credits/service";
 import { gateStudioCredits } from "@/lib/studio/billing";
@@ -56,8 +55,6 @@ async function resolveVideo(userId: string, v: VideoRef): Promise<{ bucket: stri
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  // 🚧 PRÉ-PRODUÇÃO: wizard é admin-only até o veredito do Lucas.
-  if (!(await isAdmin(auth.email))) return jsonError("forbidden", "Ferramenta em teste (pré-produção).", 403);
 
   let body: { project_id?: unknown; video?: VideoRef } = {};
   try {

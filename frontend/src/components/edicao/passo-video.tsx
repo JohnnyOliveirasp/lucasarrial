@@ -20,9 +20,11 @@ import { PassoCenas } from "./passo-cenas";
 type Props = {
   draft: EdicaoDraft;
   onChange: (patch: Partial<EdicaoDraft>) => void;
+  /** Graduação 13/08: HeyGen (BYOK em validação) só aparece pra admin. */
+  admin?: boolean;
 };
 
-export function PassoVideo({ draft, onChange }: Props) {
+export function PassoVideo({ draft, onChange, admin = false }: Props) {
   const t = useTranslations("edicao.video");
   const [caminho, setCaminho] = useState<"cenas" | "clone" | null>(
     draft.video?.kind === "cenas" || draft.cenasProjectId
@@ -82,9 +84,9 @@ export function PassoVideo({ draft, onChange }: Props) {
 
       {caminho === "clone" && (
         <>
-          {/* Padrão 2.0 × HeyGen */}
+          {/* Padrão 2.0 × HeyGen (HeyGen só pra admin até o BYOK validar) */}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {(["padrao", "heygen"] as const).map((o) => (
+            {(admin ? (["padrao", "heygen"] as const) : (["padrao"] as const)).map((o) => (
               <button
                 key={o}
                 type="button"

@@ -75,7 +75,7 @@ export const DRAFT_VAZIO: EdicaoDraft = {
   finalizado: false,
 };
 
-export function EdicaoWizard() {
+export function EdicaoWizard({ admin = false }: { admin?: boolean }) {
   const t = useTranslations("edicao");
   const [draft, setDraft] = useState<EdicaoDraft>(DRAFT_VAZIO);
   const [loaded, setLoaded] = useState(false);
@@ -183,7 +183,7 @@ export function EdicaoWizard() {
       ) : draft.passo === 1 ? (
         <PassoAudio draft={draft} onChange={update} />
       ) : draft.passo === 2 ? (
-        <PassoVideo draft={draft} onChange={update} />
+        <PassoVideo draft={draft} onChange={update} admin={admin} />
       ) : draft.passo === 3 ? (
         <PassoEditar draft={draft} onChange={update} />
       ) : (
