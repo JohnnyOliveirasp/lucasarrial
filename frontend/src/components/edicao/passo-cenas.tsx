@@ -275,7 +275,11 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
                         {c.status === "failed" ? (
                           <X className="size-4 text-red-400" />
                         ) : (
-                          <Loader2 className="size-4 animate-spin text-[var(--ash)]" />
+                          // Spinner sozinho não comunica (pedido Johnny 13/08).
+                          <span className="flex flex-col items-center gap-1 px-1 text-center">
+                            <Loader2 className="size-4 animate-spin text-[var(--ash)]" />
+                            <span className="text-[9.5px] leading-tight text-[var(--ash)]">{t("gerandoCena")}</span>
+                          </span>
                         )}
                       </span>
                     )}

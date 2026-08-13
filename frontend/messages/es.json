@@ -1834,7 +1834,8 @@
         "bancoAutoTitulo": "Dejar que la IA elija",
         "bancoAutoCorpo": "La IA lee tu guion y reutiliza sola las escenas del acervo que encajan — gratis, ya incluido.",
         "bancoEscolherTitulo": "Quiero elegir del banco",
-        "bancoEscolherCorpo": "Tú marcas las escenas y la IA coloca cada una en la frase donde mejor encaja — sin costo."
+        "bancoEscolherCorpo": "Tú marcas las escenas y la IA coloca cada una en la frase donde mejor encaja — sin costo.",
+        "gerandoCena": "Espera, generando la escena…"
       },
       "cloneOpcoes": {
         "padrao": {
