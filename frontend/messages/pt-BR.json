@@ -16,7 +16,7 @@
       "script": "Gerador de Roteiros",
       "videos": "Vídeos",
       "videoHistory": "Vídeo História",
-      "videoSales": "Vídeo Vendas TikTok",
+      "videoSales": "Vídeo de Produtos",
       "videoClone": "Vídeo Clone",
       "videoStudio": "Vídeo Estúdio",
       "videoEdicao": "Estúdio Automático",
@@ -675,11 +675,11 @@
   "sales": {
     "board": {
       "eyebrow": "Vídeos",
-      "title": "Vídeo Vendas TikTok",
+      "title": "Vídeo de Produtos",
       "description": "Suba as fotos do seu produto, escolha quem apresenta e a IA cria o roteiro de venda, as cenas e o vídeo completo — pronto pro TikTok, com até 60 segundos."
     },
     "new": {
-      "eyebrow": "Vídeo Vendas TikTok",
+      "eyebrow": "Vídeo de Produtos",
       "title": "Novo vídeo de venda"
     },
     "setup": {

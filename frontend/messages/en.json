@@ -12,7 +12,7 @@
       "script": "Script Generator",
       "videos": "Videos",
       "videoHistory": "Video Story",
-      "videoSales": "TikTok Sales Video",
+      "videoSales": "Product Video",
       "videoClone": "Clone Video",
       "videoStudio": "Video Studio",
       "videoEdicao": "Automatic Studio",
@@ -675,11 +675,11 @@
   "sales": {
     "board": {
       "eyebrow": "Videos",
-      "title": "TikTok Sales Video",
+      "title": "Product Video",
       "description": "Upload your product photos, pick who presents it, and the AI creates the sales script, the scenes, and the full video — TikTok-ready, up to 60 seconds."
     },
     "new": {
-      "eyebrow": "TikTok Sales Video",
+      "eyebrow": "Product Video",
       "title": "New sales video"
     },
     "setup": {
