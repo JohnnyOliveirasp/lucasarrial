@@ -1934,7 +1934,8 @@
       "historicoVazio": "You have no generated scripts yet.",
       "seuRoteiro": "Your script",
       "roteiroPlaceholder": "The final script goes here — generate with AI, pick from history or write your own.",
-      "contagem": "{chars} characters"
+      "contagem": "{chars} characters",
+      "gerarOutro": "Generate another script with the same topic ({custo} cr)"
     }
   },
   "roteiro": {
@@ -1968,5 +1969,19 @@
     "linkLabel": "Or start from a reference video (optional)",
     "linkPlaceholder": "Paste a link to a Reel, Short or YouTube video",
     "linkHelp": "We listen to the video and use its TOPIC as a starting point — the script comes out new, in your words, never a copy. Videos up to 3 minutes (Reels and Shorts). Instagram links usually require login and may not open; nothing is charged in that case."
+  },
+  "bancoCenas": {
+    "eyebrow": "Videos",
+    "title": "Scene Bank",
+    "subtitle": "Your generated scenes and the shared collection — shared scenes are reused for free in your videos.",
+    "abas": {
+      "mine": "My scenes",
+      "acervo": "Collection"
+    },
+    "carregando": "Loading scenes…",
+    "erro": "Couldn't load the scene bank right now.",
+    "vazioMine": "You have no scenes yet — they're created when you generate a video with scenes in the Video Editor.",
+    "vazioAcervo": "The shared collection is still empty.",
+    "comVoce": "with you"
   }
 }

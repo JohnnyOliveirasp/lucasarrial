@@ -34,6 +34,9 @@ export type EdicaoDraft = {
   passo: number;
   roteiro: string;
   roteiroId: string | null;
+  /** Tema/link usados na geração — habilitam o "Gerar outro roteiro" (13/08). */
+  roteiroIdeia: string | null;
+  roteiroLink: string | null;
   seconds: number;
   audio: AudioSel | null;
   video: VideoSel | null;
@@ -52,6 +55,8 @@ export const DRAFT_VAZIO: EdicaoDraft = {
   passo: 0,
   roteiro: "",
   roteiroId: null,
+  roteiroIdeia: null,
+  roteiroLink: null,
   seconds: 60,
   audio: null,
   video: null,

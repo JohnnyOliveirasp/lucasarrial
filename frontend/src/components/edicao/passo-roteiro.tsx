@@ -39,13 +39,20 @@ export function PassoRoteiro({ draft, onChange }: Props) {
       .catch(() => setHist([]));
   }, [modo, hist]);
 
-  async function gerar() {
+  /**
+   * Gera com o formulário OU regenera com o tema salvo no rascunho (botão
+   * "Gerar outro roteiro" embaixo do texto — pedido Johnny 13/08: quem não
+   * gostou regenera ali mesmo, sem voltar de aba; cobra os 100 cr de novo).
+   */
+  async function gerar(reusarTema = false) {
+    const useIdea = reusarTema ? (draft.roteiroIdeia ?? "") : idea.trim();
+    const useLink = reusarTema ? (draft.roteiroLink ?? "") : link.trim();
     setGerando(true);
     setErro(null);
     try {
       const body: Record<string, unknown> = { seconds: draft.seconds };
-      if (link.trim()) body.link = link.trim();
-      else body.idea = idea.trim();
+      if (useLink) body.link = useLink;
+      else body.idea = useIdea;
       const res = await fetch("/api/v1/roteiro", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -58,7 +65,13 @@ export function PassoRoteiro({ draft, onChange }: Props) {
       }
       const script = (j?.data?.script ?? j?.script ?? "") as string;
       const id = (j?.data?.id ?? j?.id ?? null) as string | null;
-      onChange({ roteiro: script, roteiroId: id });
+      // O anterior fica salvo em "Meus roteiros" — trocar aqui é seguro.
+      onChange({
+        roteiro: script,
+        roteiroId: id,
+        roteiroIdeia: useIdea || null,
+        roteiroLink: useLink || null,
+      });
       setModo("escrever");
     } finally {
       setGerando(false);
@@ -173,6 +186,18 @@ export function PassoRoteiro({ draft, onChange }: Props) {
           <p className="mt-1 text-[11.5px] text-[var(--ash)]">
             {t("contagem", { chars: draft.roteiro.length })}
           </p>
+        )}
+        {/* Não gostou? Regenera com o MESMO tema, sem voltar de aba (13/08). */}
+        {draft.roteiro && (draft.roteiroIdeia || draft.roteiroLink) && (
+          <button
+            type="button"
+            onClick={() => void gerar(true)}
+            disabled={gerando}
+            className="mt-2 flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3.5 py-2 text-[13px] text-[var(--ink)] disabled:opacity-40"
+          >
+            {gerando ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            {t("gerarOutro", { custo: ROTEIRO_COST })}
+          </button>
         )}
       </div>
     </div>

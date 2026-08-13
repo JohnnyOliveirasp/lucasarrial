@@ -1934,7 +1934,8 @@
       "historicoVazio": "Aún no tienes guiones generados.",
       "seuRoteiro": "Tu guion",
       "roteiroPlaceholder": "El guion final va aquí — genera con IA, elige del historial o escribe el tuyo.",
-      "contagem": "{chars} caracteres"
+      "contagem": "{chars} caracteres",
+      "gerarOutro": "Generar otro guion con el mismo tema ({custo} cr)"
     }
   },
   "roteiro": {
@@ -1968,5 +1969,19 @@
     "linkLabel": "O parte de un video de referencia (opcional)",
     "linkPlaceholder": "Pega el enlace de un Reel, Short o video de YouTube",
     "linkHelp": "Escuchamos el video y usamos su TEMA como punto de partida — el guion sale nuevo, con tus palabras, nunca una copia. Videos de hasta 3 minutos (Reels y Shorts). Los enlaces de Instagram suelen pedir inicio de sesión y pueden no abrir; en ese caso no se cobra nada."
+  },
+  "bancoCenas": {
+    "eyebrow": "Videos",
+    "title": "Banco de Escenas",
+    "subtitle": "Tus escenas generadas y el acervo compartido — las escenas del acervo se reutilizan gratis en tus videos.",
+    "abas": {
+      "mine": "Mis escenas",
+      "acervo": "Acervo"
+    },
+    "carregando": "Cargando escenas…",
+    "erro": "No se pudo cargar el banco de escenas ahora.",
+    "vazioMine": "Aún no tienes escenas — nacen cuando generas un video con escenas en el Video Editor.",
+    "vazioAcervo": "El acervo compartido aún está vacío.",
+    "comVoce": "contigo"
   }
 }

@@ -1934,7 +1934,8 @@
       "historicoVazio": "Você ainda não tem roteiros gerados.",
       "seuRoteiro": "Seu roteiro",
       "roteiroPlaceholder": "O roteiro final aparece aqui — gere com IA, escolha do histórico ou escreva do seu jeito.",
-      "contagem": "{chars} caracteres"
+      "contagem": "{chars} caracteres",
+      "gerarOutro": "Gerar outro roteiro com o mesmo tema ({custo} cr)"
     }
   },
   "roteiro": {
@@ -1968,5 +1969,19 @@
     "linkLabel": "Ou parta de um vídeo de referência (opcional)",
     "linkPlaceholder": "Cole o link de um Reels, Short ou vídeo do YouTube",
     "linkHelp": "A gente escuta o vídeo e usa o ASSUNTO dele como ponto de partida — o roteiro sai novo, com as suas palavras, nunca uma cópia. Vídeos de até 3 minutos (Reels e Shorts). Link do Instagram costuma pedir login e pode não abrir; nesse caso nada é cobrado."
+  },
+  "bancoCenas": {
+    "eyebrow": "Vídeos",
+    "title": "Banco de Cenas",
+    "subtitle": "Suas cenas geradas e o acervo compartilhado — cenas do acervo são reaproveitadas de graça nos seus vídeos.",
+    "abas": {
+      "mine": "Minhas cenas",
+      "acervo": "Acervo"
+    },
+    "carregando": "Carregando cenas…",
+    "erro": "Não consegui carregar o banco de cenas agora.",
+    "vazioMine": "Você ainda não tem cenas — elas nascem quando você gera um vídeo com cenas no Vídeo Editor.",
+    "vazioAcervo": "O acervo compartilhado ainda está vazio.",
+    "comVoce": "com você"
   }
 }
