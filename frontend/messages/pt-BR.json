@@ -1799,7 +1799,13 @@
         "semCreditos": "Créditos insuficientes.",
         "erroIniciar": "Não consegui preparar o áudio. Tente de novo.",
         "erroCenas": "Não consegui gerar as cenas. Tente de novo.",
-        "erroMontar": "Não consegui montar o vídeo. Tente de novo."
+        "erroMontar": "Não consegui montar o vídeo. Tente de novo.",
+        "confirmFrases": "Sua fala tem {frases} frases — a sugestão é 1 cena por frase ({frases} cenas).",
+        "confirmSemContagem": "Vamos planejar as cenas a partir da sua fala.",
+        "confirmCusto": "Até {custo} créditos ({cada} por cena nova — cenas reaproveitadas do banco são grátis).",
+        "confirmQtd": "Quantidade de cenas:",
+        "confirmMax": "máx. {max}",
+        "gerarQtd": "Gerar {n} cenas"
       },
       "cloneOpcoes": {
         "padrao": {

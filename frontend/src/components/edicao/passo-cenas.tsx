@@ -33,6 +33,8 @@ type Projeto = {
   montage_status: string;
   montage_error?: string | null;
   video_url: string | null;
+  /** C1: nº de frases da fala (1 cena por frase é a sugestão do motor). */
+  sentence_count?: number | null;
 };
 
 type Props = {
@@ -59,6 +61,8 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
   const [proj, setProj] = useState<Projeto | null>(null);
   const [busy, setBusy] = useState<"iniciar" | "cenas" | "montar" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // C1: quantidade de cenas escolhida na confirmação (null = sugestão 1/frase).
+  const [qtdCenas, setQtdCenas] = useState<number | null>(null);
   const escolhidoRef = useRef(false);
 
   const carregar = useCallback(async (id: string) => {
@@ -120,12 +124,17 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
     }
   }
 
-  async function gerarCenas() {
+  async function gerarCenas(sceneCount?: number) {
     if (!projectId) return;
     setBusy("cenas");
     setErro(null);
     try {
-      const res = await fetch(`/api/v1/studio/${projectId}/scenes`, { method: "POST" });
+      const res = await fetch(`/api/v1/studio/${projectId}/scenes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // C1: quantidade confirmada pela pessoa (frases vizinhas agrupam).
+        body: JSON.stringify(sceneCount ? { scene_count: sceneCount } : {}),
+      });
       const j = await res.json().catch(() => ({}));
       if (res.status === 402) throw new Error(t("semCreditos"));
       if (!res.ok) throw new Error(j?.error?.message ?? j?.message ?? t("erroCenas"));
@@ -211,18 +220,46 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
         </p>
       )}
 
-      {/* F3: cenas */}
-      {proj.status === "audio_ready" && proj.scenes_status === "idle" && (
-        <button
-          type="button"
-          onClick={() => void gerarCenas()}
-          disabled={busy !== null}
-          className="flex w-fit items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
-        >
-          {busy === "cenas" ? <Loader2 className="size-4 animate-spin" /> : <Clapperboard className="size-4" />}
-          {t("gerarCenas", { custo: STUDIO_SCENE_COST })}
-        </button>
-      )}
+      {/* F3: cenas — C1: confirmação ANTES de gerar/cobrar (pedido Johnny
+          13/08: 23 cenas num áudio de 59s assustou; agora a pessoa vê o
+          número, aceita ou ajusta — frases vizinhas dividem a mesma cena). */}
+      {proj.status === "audio_ready" && proj.scenes_status === "idle" && (() => {
+        const frases = proj.sentence_count ?? 0;
+        const escolhida = Math.min(Math.max(qtdCenas ?? frases, 1), Math.max(frases, 1));
+        return (
+          <div className="flex flex-col gap-2.5 rounded-[var(--radius-sm)] border border-[var(--hairline)] p-3">
+            <p className="text-[13px] text-[var(--ink)]">
+              {frases > 0 ? t("confirmFrases", { frases }) : t("confirmSemContagem")}
+            </p>
+            <p className="text-[12px] text-[var(--ash)]">
+              {t("confirmCusto", { custo: escolhida * STUDIO_SCENE_COST, cada: STUDIO_SCENE_COST })}
+            </p>
+            {frases > 1 && (
+              <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
+                {t("confirmQtd")}
+                <input
+                  type="number"
+                  min={1}
+                  max={frases}
+                  value={escolhida}
+                  onChange={(e) => setQtdCenas(Number(e.target.value) || frases)}
+                  className="w-20 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-transparent px-2 py-1 text-[13px] text-[var(--ink)]"
+                />
+                <span className="text-[11px] text-[var(--ash)]">{t("confirmMax", { max: frases })}</span>
+              </label>
+            )}
+            <button
+              type="button"
+              onClick={() => void gerarCenas(escolhida < frases ? escolhida : undefined)}
+              disabled={busy !== null}
+              className="flex w-fit items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+            >
+              {busy === "cenas" ? <Loader2 className="size-4 animate-spin" /> : <Clapperboard className="size-4" />}
+              {frases > 0 ? t("gerarQtd", { n: escolhida }) : t("gerarCenas", { custo: STUDIO_SCENE_COST })}
+            </button>
+          </div>
+        );
+      })()}
 
       {proj.scenes.length > 0 && (
         <div className="flex flex-col gap-1.5">

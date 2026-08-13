@@ -44,6 +44,33 @@ async function chargeDispatchedScene(args: {
 
 type Ctx = { params: Promise<{ id: string }> };
 
+/**
+ * C1: agrupa frases VIZINHAS em k grupos equilibrados por tamanho de texto
+ * (proxy da duração falada). Cada grupo vira UMA cena; a montagem segue
+ * frase a frase normalmente — frases do mesmo grupo apontam pra mesma cena.
+ */
+function groupAdjacent(sentences: string[], k: number): number[][] {
+  const n = sentences.length;
+  const groups: number[][] = [];
+  let cur: number[] = [];
+  let acc = 0;
+  const total = sentences.reduce((a, s) => a + Math.max(1, s.length), 0);
+  const quota = total / k;
+  for (let i = 0; i < n; i++) {
+    cur.push(i);
+    acc += Math.max(1, sentences[i].length);
+    const groupsLeft = k - groups.length - 1; // grupos que faltam APÓS fechar este
+    const sentsLeft = n - i - 1;
+    if (groups.length < k - 1 && (acc >= quota || sentsLeft === groupsLeft)) {
+      groups.push(cur);
+      cur = [];
+      acc = 0;
+    }
+  }
+  if (cur.length) groups.push(cur);
+  return groups;
+}
+
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
@@ -53,13 +80,24 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   // W5 (wizard, b-roll no clone): plan_only devolve a SUGESTÃO do planner sem
   // criar/cobrar nada; sentences[] gera SÓ as frases escolhidas pela pessoa.
+  // C1 (13/08): scene_count = quantidade escolhida na confirmação — frases
+  // vizinhas são agrupadas e dividem a MESMA cena (a montagem já suporta
+  // scene_id repetido entre frases; ignorado quando sentences[] vem junto).
   let planOnly = false;
   let chosen: Set<number> | null = null;
+  let targetCount: number | null = null;
   try {
-    const body = (await request.json()) as { plan_only?: unknown; sentences?: unknown };
+    const body = (await request.json()) as {
+      plan_only?: unknown;
+      sentences?: unknown;
+      scene_count?: unknown;
+    };
     planOnly = body.plan_only === true;
     if (Array.isArray(body.sentences)) {
       chosen = new Set(body.sentences.filter((n): n is number => Number.isInteger(n)));
+    }
+    if (typeof body.scene_count === "number" && Number.isInteger(body.scene_count) && body.scene_count >= 1) {
+      targetCount = body.scene_count;
     }
   } catch {
     /* sem body = comportamento original (todas as frases) */
@@ -110,6 +148,16 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const sentences = sentencesFromWords(words);
   if (sentences.length === 0) return badRequest("Este projeto não tem transcrição.");
 
+  // C1: com scene_count menor que o nº de frases, o planner recebe os GRUPOS
+  // (frases vizinhas coladas) e cada grupo vira 1 cena. plan_only e
+  // sentences[] (W5) seguem na granularidade de frase, sem agrupamento.
+  const grouping =
+    !planOnly && !chosen && targetCount !== null && targetCount < sentences.length;
+  const groups: number[][] = grouping
+    ? groupAdjacent(sentences, Math.max(1, targetCount as number))
+    : sentences.map((_, i) => [i]);
+  const units = groups.map((g) => g.map((i) => sentences[i]).join(" "));
+
   // Banco pro planejador reusar: cenas do PRÓPRIO aluno + acervo
   // COMPARTILHADO (F3, mig 49: b-roll curado pelo admin — custo zero).
   const { data: bankRows } = await admin
@@ -123,7 +171,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   let plan;
   try {
-    plan = await planScenes(sentences, bank);
+    plan = await planScenes(units, bank);
   } catch (e) {
     await handleTechFailure({
       feature: "Vídeo Estúdio (planejador de cenas F3)",
@@ -138,7 +186,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     return jsonOk({
       plan: plan.map((p) => ({
         sentence: p.sentence,
-        text: sentences[p.sentence] ?? "",
+        text: units[p.sentence] ?? "",
         reused: Boolean(p.reuse_id),
       })),
     });
@@ -159,34 +207,43 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   });
   if (!gate.ok) return gate.deny;
 
-  // Cria as cenas novas + monta o mapa frase→cena do projeto.
+  // Cria as cenas novas + monta o mapa frase→cena do projeto. Com C1
+  // (agrupamento), TODAS as frases do grupo apontam pra mesma cena — a
+  // montagem segue frase a frase e o b-roll simplesmente continua no ar.
   const scenePlan: StudioScenePlanItem[] = [];
   let newScenes = 0;
   for (const p of plan) {
+    let sceneId: string;
+    let reused: boolean;
     if (p.reuse_id) {
-      scenePlan.push({ sentence: p.sentence, text: sentences[p.sentence] ?? "", scene_id: p.reuse_id, reused: true });
-      continue;
+      sceneId = p.reuse_id;
+      reused = true;
+    } else {
+      const { data: created, error: insErr } = await admin
+        .from("studio_scenes")
+        .insert({
+          user_id: auth.user_id,
+          concept: p.concept,
+          prompt_en: p.prompt_en,
+          dialect: p.dialect,
+        } as never)
+        .select("id, prompt_en, dialect")
+        .single();
+      if (insErr || !created) return serverError("Falha ao criar as cenas.");
+      const row = created as Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">;
+      const taskId = await startSceneStill(row);
+      if (taskId) {
+        await chargeDispatchedScene({
+          userId: auth.user_id, projectId: id, sceneId: row.id, taskId, billed: gate.billed,
+        });
+      }
+      newScenes += 1;
+      sceneId = row.id;
+      reused = false;
     }
-    const { data: created, error: insErr } = await admin
-      .from("studio_scenes")
-      .insert({
-        user_id: auth.user_id,
-        concept: p.concept,
-        prompt_en: p.prompt_en,
-        dialect: p.dialect,
-      } as never)
-      .select("id, prompt_en, dialect")
-      .single();
-    if (insErr || !created) return serverError("Falha ao criar as cenas.");
-    const row = created as Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">;
-    const taskId = await startSceneStill(row);
-    if (taskId) {
-      await chargeDispatchedScene({
-        userId: auth.user_id, projectId: id, sceneId: row.id, taskId, billed: gate.billed,
-      });
+    for (const si of groups[p.sentence] ?? [p.sentence]) {
+      scenePlan.push({ sentence: si, text: sentences[si] ?? "", scene_id: sceneId, reused });
     }
-    newScenes += 1;
-    scenePlan.push({ sentence: p.sentence, text: sentences[p.sentence] ?? "", scene_id: row.id, reused: false });
   }
 
   await admin

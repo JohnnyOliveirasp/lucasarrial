@@ -21,7 +21,13 @@ import {
 import { syncStudioScene } from "@/lib/studio/scenes";
 import { syncFaceSegments } from "@/lib/studio/face";
 import { advanceMachine, type MachineProject } from "@/lib/studio/machine";
-import type { StudioFaceSegment, StudioScenePlanItem, StudioSceneRow } from "@/lib/db/types";
+import { sentencesFromWords } from "@/lib/studio/scene-planner";
+import type {
+  StudioFaceSegment,
+  StudioScenePlanItem,
+  StudioSceneRow,
+  StudioTranscriptWord,
+} from "@/lib/db/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -239,6 +245,11 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       video_url,
       scenes_status: current.scenes_status,
       scenes,
+      // C1 (13/08): nº de frases da fala — a UI mostra "N frases → N cenas"
+      // ANTES de gerar/cobrar (mesma segmentação do planner).
+      sentence_count: sentencesFromWords(
+        (current.transcript_words ?? []) as StudioTranscriptWord[],
+      ).length,
       face_status: current.face_status,
       auto_pilot: current.auto_pilot,
       machine_step: current.machine_step,

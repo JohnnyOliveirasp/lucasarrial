@@ -1799,7 +1799,13 @@
         "semCreditos": "Créditos insuficientes.",
         "erroIniciar": "No pude preparar el audio. Inténtalo de nuevo.",
         "erroCenas": "No pude generar las escenas. Inténtalo de nuevo.",
-        "erroMontar": "No pude montar el video. Inténtalo de nuevo."
+        "erroMontar": "No pude montar el video. Inténtalo de nuevo.",
+        "confirmFrases": "Tu locución tiene {frases} frases — sugerimos 1 escena por frase ({frases} escenas).",
+        "confirmSemContagem": "Planearemos las escenas a partir de tu locución.",
+        "confirmCusto": "Hasta {custo} créditos ({cada} por escena nueva — las escenas reutilizadas del banco son gratis).",
+        "confirmQtd": "Cantidad de escenas:",
+        "confirmMax": "máx. {max}",
+        "gerarQtd": "Generar {n} escenas"
       },
       "cloneOpcoes": {
         "padrao": {

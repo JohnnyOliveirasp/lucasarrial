@@ -1799,7 +1799,13 @@
         "semCreditos": "Not enough credits.",
         "erroIniciar": "Couldn't prepare the audio. Try again.",
         "erroCenas": "Couldn't generate the scenes. Try again.",
-        "erroMontar": "Couldn't assemble the video. Try again."
+        "erroMontar": "Couldn't assemble the video. Try again.",
+        "confirmFrases": "Your speech has {frases} sentences — we suggest 1 scene per sentence ({frases} scenes).",
+        "confirmSemContagem": "We'll plan the scenes from your speech.",
+        "confirmCusto": "Up to {custo} credits ({cada} per new scene — scenes reused from your bank are free).",
+        "confirmQtd": "Number of scenes:",
+        "confirmMax": "max {max}",
+        "gerarQtd": "Generate {n} scenes"
       },
       "cloneOpcoes": {
         "padrao": {
