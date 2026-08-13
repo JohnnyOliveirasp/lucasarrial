@@ -1982,6 +1982,12 @@
       "titulo": "Videos generados",
       "baixar": "Descargar el video",
       "fechar": "Cerrar"
+    },
+    "novoVideo": {
+      "titulo": "¿Empezar un video nuevo?",
+      "texto": "Tu video actual ya está guardado en “Videos generados” — no se pierde nada. El guion, el audio y las escenas de este flujo se limpiarán para empezar de cero.",
+      "confirmar": "Empezar nuevo",
+      "cancelar": "Quedarme aquí"
     }
   },
   "roteiro": {

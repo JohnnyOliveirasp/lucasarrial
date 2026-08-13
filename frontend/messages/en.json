@@ -1982,6 +1982,12 @@
       "titulo": "Generated videos",
       "baixar": "Download video",
       "fechar": "Close"
+    },
+    "novoVideo": {
+      "titulo": "Start a new video?",
+      "texto": "Your current video is already saved in “Generated videos” — nothing is lost. The script, audio and scenes of this flow will be cleared so you can start fresh.",
+      "confirmar": "Start new",
+      "cancelar": "Stay here"
     }
   },
   "roteiro": {
