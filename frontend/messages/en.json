@@ -1977,6 +1977,11 @@
       "roteiroPlaceholder": "The final script goes here — generate with AI, pick from history or write your own.",
       "contagem": "{chars} characters",
       "gerarOutro": "Generate another script with the same topic ({custo} cr)"
+    },
+    "videosGerados": {
+      "titulo": "Generated videos",
+      "baixar": "Download video",
+      "fechar": "Close"
     }
   },
   "roteiro": {

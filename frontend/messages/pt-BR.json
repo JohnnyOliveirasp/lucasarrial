@@ -1977,6 +1977,11 @@
       "roteiroPlaceholder": "O roteiro final aparece aqui — gere com IA, escolha do histórico ou escreva do seu jeito.",
       "contagem": "{chars} caracteres",
       "gerarOutro": "Gerar outro roteiro com o mesmo tema ({custo} cr)"
+    },
+    "videosGerados": {
+      "titulo": "Vídeos gerados",
+      "baixar": "Baixar o vídeo",
+      "fechar": "Fechar"
     }
   },
   "roteiro": {

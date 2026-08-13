@@ -1977,6 +1977,11 @@
       "roteiroPlaceholder": "El guion final va aquí — genera con IA, elige del historial o escribe el tuyo.",
       "contagem": "{chars} caracteres",
       "gerarOutro": "Generar otro guion con el mismo tema ({custo} cr)"
+    },
+    "videosGerados": {
+      "titulo": "Videos generados",
+      "baixar": "Descargar el video",
+      "fechar": "Cerrar"
     }
   },
   "roteiro": {

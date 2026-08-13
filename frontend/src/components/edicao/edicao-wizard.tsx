@@ -14,6 +14,7 @@ import { PassoAudio } from "./passo-audio";
 import { PassoVideo } from "./passo-video";
 import { PassoEditar } from "./passo-editar";
 import { PassoSaida } from "./passo-saida";
+import { VideosGerados } from "./videos-gerados";
 
 const DRAFT_KEY = "fc-edicao-draft-v1";
 const PASSOS = ["roteiro", "audio", "video", "editar", "saida"] as const;
@@ -174,6 +175,9 @@ export function EdicaoWizard() {
           {t("avancar")} <ChevronRight className="size-4" />
         </button>
       </div>
+
+      {/* Histórico dos vídeos montados (Task #13, 13/08) — some se vazio. */}
+      <VideosGerados />
     </div>
   );
 }
