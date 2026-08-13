@@ -83,6 +83,10 @@ function CaminhoIA({ draft, escolher }: { draft: EdicaoDraft; escolher: (a: Audi
   const [gerando, setGerando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  // Id da geração no player — habilita o apagar (bug Johnny 13/08: só o
+  // take gravado tinha lixeira; o áudio de IA não tinha como descartar).
+  const [genAtual, setGenAtual] = useState<string | null>(null);
+  const [apagando, setApagando] = useState(false);
   const vivoRef = useRef(true);
 
   useEffect(() => {
@@ -136,6 +140,7 @@ function CaminhoIA({ draft, escolher }: { draft: EdicaoDraft; escolher: (a: Audi
             label: t("labelGeracao", { voz: voz?.name ?? "voz", s: Math.round(g.duration_seconds ?? 0) }),
           });
           setAudioUrl(g.audio_url ?? null);
+          setGenAtual(genId);
           break;
         }
         if (g.status === "failed") {
@@ -198,7 +203,38 @@ function CaminhoIA({ draft, escolher }: { draft: EdicaoDraft; escolher: (a: Audi
         {gerando ? t("gerandoAudio") : t("gerarAudio")}
       </button>
       {erro && <p className="text-[13px] text-red-400">{erro}</p>}
-      {audioUrl && <audio src={audioUrl} controls className="h-9 w-full max-w-md" />}
+      {audioUrl && (
+        <div className="flex items-center gap-2">
+          <audio src={audioUrl} controls className="h-9 w-full max-w-md" />
+          {/* Apagar o áudio de IA (mesma rota do Histórico, com as proteções
+              de referência da voz) — destrava gerar de novo. */}
+          {genAtual && (
+            <button
+              type="button"
+              onClick={async () => {
+                setApagando(true);
+                try {
+                  await fetch("/api/v1/generations", {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ids: [genAtual] }),
+                  });
+                  setAudioUrl(null);
+                  setGenAtual(null);
+                  escolher(null);
+                } finally {
+                  setApagando(false);
+                }
+              }}
+              disabled={apagando || gerando}
+              title={t("apagarAudio")}
+              className="shrink-0 text-[var(--ash)] hover:text-[var(--danger,#e5484d)] disabled:opacity-40"
+            >
+              {apagando ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

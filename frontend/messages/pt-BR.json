@@ -1763,7 +1763,8 @@
       "erroSessao": "Não consegui abrir a sessão de gravação — recarregue a página.",
       "erroEnvio": "Falha no envio — grave de novo.",
       "labelTake": "gravação sua (take)",
-      "takeFicaSalvo": "A gravação fica salva nos seus takes e pode ser usada depois no treino da sua voz."
+      "takeFicaSalvo": "A gravação fica salva nos seus takes e pode ser usada depois no treino da sua voz.",
+      "apagarAudio": "Apagar este áudio e liberar pra gerar outro"
     },
     "video": {
       "semAudio": "Volte à estação de Áudio e escolha um áudio primeiro — o vídeo nasce dele.",

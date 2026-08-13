@@ -1763,7 +1763,8 @@
       "erroSessao": "Could not open the recording session — reload the page.",
       "erroEnvio": "Upload failed — record again.",
       "labelTake": "your recording (take)",
-      "takeFicaSalvo": "The recording is saved to your takes and can later be used to train your voice."
+      "takeFicaSalvo": "The recording is saved to your takes and can later be used to train your voice.",
+      "apagarAudio": "Delete this audio and generate another"
     },
     "video": {
       "semAudio": "Go back to the Audio station and pick an audio first — the video is born from it.",

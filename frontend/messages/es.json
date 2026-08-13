@@ -1763,7 +1763,8 @@
       "erroSessao": "No pude abrir la sesión de grabación — recarga la página.",
       "erroEnvio": "Falló el envío — graba de nuevo.",
       "labelTake": "tu grabación (toma)",
-      "takeFicaSalvo": "La grabación queda guardada en tus tomas y puede usarse después para entrenar tu voz."
+      "takeFicaSalvo": "La grabación queda guardada en tus tomas y puede usarse después para entrenar tu voz.",
+      "apagarAudio": "Borrar este audio y generar otro"
     },
     "video": {
       "semAudio": "Vuelve a la estación de Audio y elige un audio primero — el video nace de él.",
