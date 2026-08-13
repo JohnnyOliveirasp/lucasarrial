@@ -11,12 +11,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-import { Loader2, Mic, MonitorPlay, Sparkles, Square, Trash2 } from "lucide-react";
+import { Loader2, Mic, MonitorPlay, Sparkles, Square, Trash2, Upload } from "lucide-react";
 import { Teleprompter } from "@/components/voice/teleprompter";
+import { CaminhoArquivo } from "./caminho-arquivo";
 import type { AudioSel, EdicaoDraft } from "./edicao-wizard";
 
 const TEXT_MAX = 2000; // teto do POST /voices/[id]/generate
-const REC_MAX_S = 300;
+// Regra universal 13/08: áudio de vídeo tem teto de 120s em todo lugar
+// (roteiro máx 90s, gravar, subir arquivo) — Reels não passa de 2 minutos.
+const REC_MAX_S = 120;
 
 type Voz = { id: string; name: string; status: string };
 type Take = { key: string; name: string; url: string };
@@ -28,7 +31,7 @@ type Props = {
 
 export function PassoAudio({ draft, onChange }: Props) {
   const t = useTranslations("edicao.audio");
-  const [caminho, setCaminho] = useState<"ia" | "gravar" | null>(
+  const [caminho, setCaminho] = useState<"ia" | "gravar" | "arquivo" | null>(
     draft.audio ? (draft.audio.kind === "generation" ? "ia" : "gravar") : null,
   );
 
@@ -37,8 +40,8 @@ export function PassoAudio({ draft, onChange }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {/* Escolha do caminho */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {(["ia", "gravar"] as const).map((c) => (
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {(["ia", "gravar", "arquivo"] as const).map((c) => (
           <button
             key={c}
             type="button"
@@ -54,7 +57,7 @@ export function PassoAudio({ draft, onChange }: Props) {
             ].join(" ")}
           >
             <p className="flex items-center gap-2 text-[14px] font-semibold text-[var(--ink)]">
-              {c === "ia" ? <Sparkles className="size-4" /> : <Mic className="size-4" />}
+              {c === "ia" ? <Sparkles className="size-4" /> : c === "gravar" ? <Mic className="size-4" /> : <Upload className="size-4" />}
               {t(`caminhos.${c}.titulo`)}
             </p>
             <p className="mt-1 text-[12.5px] text-[var(--mute)]">{t(`caminhos.${c}.corpo`)}</p>
@@ -70,6 +73,7 @@ export function PassoAudio({ draft, onChange }: Props) {
 
       {caminho === "ia" && <CaminhoIA draft={draft} escolher={escolher} />}
       {caminho === "gravar" && <CaminhoGravar draft={draft} escolher={escolher} />}
+      {caminho === "arquivo" && <CaminhoArquivo escolher={escolher} />}
     </div>
   );
 }

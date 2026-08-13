@@ -1739,6 +1739,10 @@
         "gravar": {
           "titulo": "Gravar eu mesmo",
           "corpo": "Você lê o roteiro no teleprompter e grava com o microfone. O take fica salvo."
+        },
+        "arquivo": {
+          "titulo": "Subir arquivo",
+          "corpo": "Já tem a narração pronta? Envie um áudio de até 2 minutos."
         }
       },
       "escolhido": "Áudio escolhido: {label} — pode avançar, ou trocar abaixo.",
@@ -1764,7 +1768,16 @@
       "erroEnvio": "Falha no envio — grave de novo.",
       "labelTake": "gravação sua (take)",
       "takeFicaSalvo": "A gravação fica salva nos seus takes e pode ser usada depois no treino da sua voz.",
-      "apagarAudio": "Apagar este áudio e liberar pra gerar outro"
+      "apagarAudio": "Apagar este áudio e liberar pra gerar outro",
+      "arquivo": {
+        "botao": "Escolher arquivo de áudio",
+        "enviando": "Enviando…",
+        "dica": "MP3, WAV ou M4A · máx {max}s (2 minutos) e 25MB. O arquivo fica salvo nos seus takes.",
+        "erroTamanho": "Arquivo grande demais (máx 25MB).",
+        "erroLeitura": "Não consegui ler esse arquivo — tente MP3, WAV ou M4A.",
+        "erroDuracao": "O áudio tem {s}s — o máximo é {max}s (Reels não passa de 2 minutos).",
+        "erroEnvio": "Falha no envio — tente de novo."
+      }
     },
     "video": {
       "semAudio": "Volte à estação de Áudio e escolha um áudio primeiro — o vídeo nasce dele.",

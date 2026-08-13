@@ -1739,6 +1739,10 @@
         "gravar": {
           "titulo": "Record myself",
           "corpo": "You read the script on the teleprompter and record with the mic. The take is saved."
+        },
+        "arquivo": {
+          "titulo": "Upload file",
+          "corpo": "Already have your narration? Upload an audio up to 2 minutes."
         }
       },
       "escolhido": "Audio chosen: {label} — you can proceed, or switch below.",
@@ -1764,7 +1768,16 @@
       "erroEnvio": "Upload failed — record again.",
       "labelTake": "your recording (take)",
       "takeFicaSalvo": "The recording is saved to your takes and can later be used to train your voice.",
-      "apagarAudio": "Delete this audio and generate another"
+      "apagarAudio": "Delete this audio and generate another",
+      "arquivo": {
+        "botao": "Choose audio file",
+        "enviando": "Uploading…",
+        "dica": "MP3, WAV or M4A · max {max}s (2 minutes) and 25MB. The file is saved with your takes.",
+        "erroTamanho": "File too large (max 25MB).",
+        "erroLeitura": "Couldn't read this file — try MP3, WAV or M4A.",
+        "erroDuracao": "Your audio is {s}s — the maximum is {max}s (Reels don't go past 2 minutes).",
+        "erroEnvio": "Upload failed — try again."
+      }
     },
     "video": {
       "semAudio": "Go back to the Audio station and pick an audio first — the video is born from it.",

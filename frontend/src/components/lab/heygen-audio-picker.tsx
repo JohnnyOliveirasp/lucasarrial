@@ -7,9 +7,16 @@
  * então o take fica salvo e pode entrar no treino da voz depois.
  */
 import { useEffect, useRef, useState } from "react";
-import { Mic, Square, Loader2, AlertTriangle } from "lucide-react";
+import { Mic, Square, Loader2, AlertTriangle, Upload as UploadIcon } from "lucide-react";
+import {
+  AUDIO_UPLOAD_MAX_BYTES,
+  AUDIO_VIDEO_MAX_S,
+  medirDuracaoArquivo,
+} from "@/lib/audio/duracao-arquivo";
 
-const MAX_SECONDS = 300;
+// Regra universal 13/08 (Johnny): áudio de vídeo tem teto de 120s — Reels
+// não passa de 2 minutos. Vale pra gravar E pra subir arquivo.
+const MAX_SECONDS = 120;
 
 export type AudioGen = {
   id: string;
@@ -32,7 +39,7 @@ type Props = {
 };
 
 export function HeygenAudioPicker({ audios, value, onChange }: Props) {
-  const [tab, setTab] = useState<"history" | "record">("history");
+  const [tab, setTab] = useState<"history" | "record" | "upload">("history");
   const [token, setToken] = useState<string | null>(null);
   const [takes, setTakes] = useState<Take[]>([]);
   const [recording, setRecording] = useState(false);
@@ -45,7 +52,7 @@ export function HeygenAudioPicker({ audios, value, onChange }: Props) {
 
   // Sessão do gravador (mesma do "Gravar pelo Celular") + takes já salvos.
   useEffect(() => {
-    if (tab !== "record" || token) return;
+    if ((tab !== "record" && tab !== "upload") || token) return;
     void (async () => {
       try {
         const res = await fetch("/api/v1/recorder-test/session");
@@ -143,13 +150,53 @@ export function HeygenAudioPicker({ audios, value, onChange }: Props) {
     }
   }
 
+  /** Aba "Subir arquivo" (13/08): mesma rotina dos takes, teto 120s + 25MB. */
+  async function enviarArquivo(file: File) {
+    setError(null);
+    if (file.size > AUDIO_UPLOAD_MAX_BYTES) {
+      setError("Arquivo grande demais (máx 25MB).");
+      return;
+    }
+    let dur = 0;
+    try {
+      dur = await medirDuracaoArquivo(file);
+    } catch {
+      setError("Não consegui ler esse arquivo — tente MP3, WAV ou M4A.");
+      return;
+    }
+    if (!Number.isFinite(dur) || dur > AUDIO_VIDEO_MAX_S + 0.5) {
+      setError(`O áudio tem ${Math.round(dur)}s — o máximo é ${AUDIO_VIDEO_MAX_S}s (Reels não passa de 2 minutos).`);
+      return;
+    }
+    if (!token) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/v1/recorder-test/upload", {
+        method: "POST",
+        headers: { "x-recorder-token": token },
+        body: fd,
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error?.message || "Falha no envio.");
+      const key = (j?.data?.key ?? j?.key) as string | undefined;
+      await refreshTakes(token);
+      if (key) onChange({ kind: "take", key });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha no envio — tente de novo.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   const mm = String(Math.floor(seconds / 60));
   const ss = String(seconds % 60).padStart(2, "0");
 
   return (
     <div>
       <div className="flex flex-wrap gap-2 text-[13px]">
-        {([["history", "Meus áudios"], ["record", "Gravar agora"]] as const).map(([k, label]) => (
+        {([["history", "Meus áudios"], ["record", "Gravar agora"], ["upload", "Subir arquivo"]] as const).map(([k, label]) => (
           <button
             key={k}
             type="button"
@@ -185,6 +232,33 @@ export function HeygenAudioPicker({ audios, value, onChange }: Props) {
             </p>
           )}
         </div>
+      ) : tab === "upload" ? (
+        <div className="mt-3 flex flex-col gap-2">
+          <label className="flex cursor-pointer items-center gap-2 self-start rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-4 py-2 text-[13px] font-medium text-[var(--ink)]">
+            {uploading ? <Loader2 className="size-4 animate-spin" /> : <UploadIcon className="size-4" />}
+            {uploading ? "Enviando…" : "Escolher arquivo de áudio"}
+            <input
+              type="file"
+              accept="audio/mpeg,audio/wav,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,.mp3,.wav,.m4a,.aac,.ogg"
+              className="hidden"
+              disabled={uploading || !token}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void enviarArquivo(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <p className="text-[12px] text-[var(--ash)]">MP3, WAV ou M4A · máx 2 minutos e 25MB. O arquivo fica salvo nos seus takes.</p>
+          {error && (
+            <p className="flex items-start gap-1.5 text-[12.5px] text-red-400">
+              <AlertTriangle className="mt-0.5 size-3.5 flex-none" /> {error}
+            </p>
+          )}
+          {value?.kind === "take" && (
+            <p className="text-[12.5px] text-emerald-300">Áudio enviado e selecionado ✓</p>
+          )}
+        </div>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
           <div className="flex items-center gap-3">
@@ -212,7 +286,7 @@ export function HeygenAudioPicker({ audios, value, onChange }: Props) {
               ) : uploading ? (
                 <span className="text-[var(--mute)]">salvando a gravação…</span>
               ) : (
-                <span className="text-[var(--mute)]">Clique pra gravar com o microfone (máx 5min)</span>
+                <span className="text-[var(--mute)]">Clique pra gravar com o microfone (máx 2min)</span>
               )}
               <p className="text-[12px] text-[var(--ash)]">
                 A gravação fica salva nos seus takes e pode ser usada depois no treino da sua voz.
