@@ -281,11 +281,18 @@ def burn_karaoke(
 def mix_music(video_in: Path, music: Path, out: Path,
               music_db: int = -18, ratio: int = 4, boom: bool = True) -> Path:
     """E1-E3 + QA: trilha em loop desde t=0, sidechain ducking moderado (a
-    música NUNCA some), boom ~2x decaindo até 1,2s, limiter no master."""
+    música NUNCA some), boom ~2x decaindo até 1,2s, limiter no master.
+    13/08 (Johnny): fade-out da TRILHA nos últimos 1,5s — só a música decai;
+    a voz não é tocada (antes a música cortava seca junto com o -shortest)."""
+    dur = float(subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", str(video_in)],
+        capture_output=True, text=True).stdout.strip() or 0)
+    fade = f"afade=t=out:st={max(0.0, dur - 1.5):.3f}:d=1.5," if dur > 3 else ""
     pos_duck = ("volume='if(lt(t,1.2),2.0-0.8333*t,1)':eval=frame," if boom else "")
     fc = (f"[1:a]volume={music_db}dB,aloop=loop=-1:size=2e9[m];"
           f"[m][0:a]sidechaincompress=threshold=0.1:ratio={ratio}:attack=50:release=400"
-          f":makeup=1[d0];[d0]{pos_duck}anull[duck];"
+          f":makeup=1[d0];[d0]{pos_duck}{fade}anull[duck];"
           f"[0:a][duck]amix=inputs=2:duration=first:dropout_transition=2,"
           f"alimiter=limit=0.95[a]")
     _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(video_in), "-i", str(music),
