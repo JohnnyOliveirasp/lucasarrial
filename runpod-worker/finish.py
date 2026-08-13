@@ -32,6 +32,74 @@ Y_FRAC = 0.68          # centro-baixo
 MAX_WORDS = 2
 MAX_GROUP_DUR = 1.1
 
+# ── Estilos de legenda (13/08) ───────────────────────────────────────────────
+# caption_style opcional no job espelha os SUBTITLE_PRESETS do app (fonte via
+# URL + cores + posição + tamanho). SEM o campo, o comportamento é IDÊNTICO ao
+# de sempre (branca bold, contorno preto, centro-baixo) — mudança aditiva.
+
+_POSITION_Y = {"bottom": 0.80, "center": 0.50, "top": 0.18}
+
+
+def _hex_rgba(v, fallback):
+    """'#RRGGBB' ou [r,g,b,a] → tupla RGBA do PIL."""
+    if isinstance(v, (list, tuple)) and len(v) in (3, 4):
+        r, g, b = int(v[0]), int(v[1]), int(v[2])
+        a = int(v[3]) if len(v) == 4 else 255
+        return (r, g, b, a)
+    if isinstance(v, str) and re.fullmatch(r"#?[0-9a-fA-F]{6}", v.strip()):
+        s = v.strip().lstrip("#")
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16), 255)
+    return fallback
+
+
+def parse_caption_style(style: dict | None, tmp: Path) -> dict:
+    """Normaliza o caption_style do job (baixa a fonte, resolve cores/posição).
+    Nunca lança: qualquer campo inválido cai no padrão antigo."""
+    st = {
+        "font_path": FONT_PATH,
+        "color": (255, 255, 255, 255),
+        "active": None,          # cor da palavra sendo falada (karaokê real)
+        "stroke": (0, 0, 0, 220),
+        "box": None,             # RGBA da faixa atrás do texto (estilo boxed)
+        "upper": False,
+        "y_frac": Y_FRAC,
+        "size_mult": 1.0,
+        "max_words": MAX_WORDS,
+    }
+    if not isinstance(style, dict):
+        return st
+    url = style.get("font_url")
+    if isinstance(url, str) and url.startswith("http"):
+        try:
+            import urllib.request
+            dst = tmp / "caption_font.ttf"
+            urllib.request.urlretrieve(url, dst)  # noqa: S310 — URL nossa (assets do app)
+            if dst.stat().st_size > 1000:
+                st["font_path"] = str(dst)
+        except Exception:
+            pass  # segue com a fonte padrão
+    st["color"] = _hex_rgba(style.get("color"), st["color"])
+    if style.get("active_color"):
+        st["active"] = _hex_rgba(style.get("active_color"), None)
+    st["stroke"] = _hex_rgba(style.get("stroke"), st["stroke"])
+    if style.get("box_rgba") is not None:
+        st["box"] = _hex_rgba(style.get("box_rgba"), None)
+    st["upper"] = style.get("uppercase") is True
+    st["y_frac"] = _POSITION_Y.get(style.get("position"), st["y_frac"])
+    try:
+        m = float(style.get("size_mult") or 1.0)
+        if 0.5 <= m <= 2.5:
+            st["size_mult"] = m
+    except (TypeError, ValueError):
+        pass
+    try:
+        mw = int(style.get("max_words") or MAX_WORDS)
+        if 1 <= mw <= 4:
+            st["max_words"] = mw
+    except (TypeError, ValueError):
+        pass
+    return st
+
 
 def _run(cmd: list[str]) -> None:
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -48,7 +116,7 @@ def video_size(path: Path) -> tuple[int, int]:
     return int(w), int(h)
 
 
-def _groups(words: list[dict]) -> list[list[dict]]:
+def _groups(words: list[dict], max_words: int = MAX_WORDS) -> list[list[dict]]:
     """Agrupa palavras em blocos curtos respeitando pausas e pontuação (D1)."""
     gs: list[list[dict]] = []
     cur: list[dict] = []
@@ -59,7 +127,7 @@ def _groups(words: list[dict]) -> list[list[dict]]:
             gap = w["start"] - cur[-1]["end"]
             dur = w["end"] - cur[0]["start"]
             closes = re.search(r"[.!?…]$", cur[-1]["word"].strip())
-            if gap > 0.55 or dur > MAX_GROUP_DUR or len(cur) >= MAX_WORDS or closes:
+            if gap > 0.55 or dur > MAX_GROUP_DUR or len(cur) >= max_words or closes:
                 gs.append(cur)
                 cur = []
         cur.append(w)
@@ -68,40 +136,67 @@ def _groups(words: list[dict]) -> list[list[dict]]:
     return gs
 
 
-def _group_png(palavras: list[dict], out_png: Path, size: tuple[int, int]) -> Path:
-    """PNG transparente NA RESOLUÇÃO REAL do vídeo, grupo no centro-baixo."""
+def _group_png(
+    palavras: list[dict],
+    out_png: Path,
+    size: tuple[int, int],
+    style: dict | None = None,
+    active_index: int | None = None,
+) -> Path:
+    """PNG transparente NA RESOLUÇÃO REAL do vídeo. `style` (parse_caption_style)
+    controla fonte/cores/posição/tamanho; `active_index` pinta a palavra sendo
+    falada com a cor de destaque (karaokê real dos presets Hormozi etc.)."""
     from PIL import Image, ImageDraw, ImageFont
 
+    st = style or parse_caption_style(None, out_png.parent)
     W, H = size
-    caption_px = max(24, int(H * CAPTION_SIZE_FRAC))
+    caption_px = max(24, int(H * CAPTION_SIZE_FRAC * st["size_mult"]))
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    font = ImageFont.truetype(FONT_PATH, caption_px)
+    font = ImageFont.truetype(st["font_path"], caption_px)
     toks = [w["word"].strip() for w in palavras]
+    if st["upper"]:
+        toks = [t.upper() for t in toks]
 
     max_w = int(W * 0.86)
-    lines: list[list[str]] = []
-    cur: list[str] = []
-    for t in toks:
+    lines: list[list[tuple[int, str]]] = []
+    cur: list[tuple[int, str]] = []
+    for idx, t in enumerate(toks):
         wpx = d.textlength(t + " ", font=font)
-        curw = sum(d.textlength(x + " ", font=font) for x in cur)
+        curw = sum(d.textlength(x + " ", font=font) for _, x in cur)
         if cur and curw + wpx > max_w:
             lines.append(cur)
             cur = []
-        cur.append(t)
+        cur.append((idx, t))
     if cur:
         lines.append(cur)
 
     lh = int(caption_px * 1.25)
-    y0 = int(H * Y_FRAC - lh * len(lines) / 2)
+    y0 = int(H * st["y_frac"] - lh * len(lines) / 2)
     stroke = max(2, int(caption_px * 0.06))
+
+    # Faixa atrás do texto (estilo boxed) — cobre o bloco inteiro com folga.
+    if st["box"]:
+        pad = int(caption_px * 0.35)
+        widest = max(
+            sum(d.textlength(t + " ", font=font) for _, t in ln) - d.textlength(" ", font=font)
+            for ln in lines
+        )
+        x0 = (W - widest) / 2 - pad
+        d.rectangle(
+            [x0, y0 - pad, x0 + widest + 2 * pad, y0 + lh * len(lines) + pad],
+            fill=tuple(st["box"]),
+        )
+
     for i, ln in enumerate(lines):
-        lw = sum(d.textlength(t + " ", font=font) for t in ln) - d.textlength(" ", font=font)
+        lw = sum(d.textlength(t + " ", font=font) for _, t in ln) - d.textlength(" ", font=font)
         x = (W - lw) / 2
-        for t in ln:
+        for idx, t in enumerate([t for _, t in ln]):
+            tok_idx = ln[idx][0]
+            cor = st["active"] if (st["active"] and tok_idx == active_index) else st["color"]
             d.text((x, y0 + i * lh), t, font=font,
-                   fill=(255, 255, 255, 255), stroke_width=stroke,
-                   stroke_fill=(0, 0, 0, 220))
+                   fill=tuple(cor), stroke_width=0 if st["box"] else stroke,
+                   stroke_fill=tuple(st["stroke"]))
             x += d.textlength(t + " ", font=font)
     img.save(out_png)
     return out_png
@@ -114,14 +209,19 @@ def burn_karaoke(
     cuts: list[float],
     suppress_windows: list[tuple[float, float]] | None = None,
     batch: int = 30,
+    style: dict | None = None,
 ) -> Path:
     """Queima a legenda karaokê em lotes de overlays (filtergraph pequeno).
     `cuts` = timestamps de troca de cena (D3). `suppress_windows` = janelas
-    onde a cena já tem texto (D4) — nenhum grupo aparece dentro delas."""
+    onde a cena já tem texto (D4) — nenhum grupo aparece dentro delas.
+    `style` (caption_style do job) muda fonte/cores/posição — sem ele, o
+    visual é o de sempre. Preset com active_color vira karaokê REAL: um
+    overlay por palavra, com a palavra falada na cor de destaque."""
     cuts = sorted(cuts or [])
     sup = suppress_windows or []
-    groups = _groups(words)
     tmp = Path(tempfile.mkdtemp(prefix="karaoke_"))
+    st = parse_caption_style(style, tmp)
+    groups = _groups(words, st["max_words"])
     size = video_size(video_in)  # resolução REAL — nunca assumir 1080x1920
 
     items: list[tuple[Path, float, float]] = []
@@ -138,8 +238,25 @@ def burn_karaoke(
                 fim = c - 0.02
                 break
         fim = max(fim, g[-1]["end"] - 0.02)
-        png = _group_png(g, tmp / f"g{i:03d}.png", size)
-        items.append((png, round(ini, 2), round(fim, 2)))
+        if st["active"] and len(g) > 1:
+            # Karaokê real: fatia a janela do grupo nas fronteiras entre
+            # palavras (ponto médio fala→fala) — cada fatia com a palavra
+            # da vez acesa. Grupos têm ≤4 palavras, o nº de overlays segue
+            # pequeno e o batch existente absorve.
+            bounds = [ini]
+            for j in range(len(g) - 1):
+                bounds.append(max(ini, min(fim, (g[j]["end"] + g[j + 1]["start"]) / 2)))
+            bounds.append(fim)
+            for j in range(len(g)):
+                a, b = bounds[j], bounds[j + 1]
+                if b - a < 0.05:
+                    continue
+                png = _group_png(g, tmp / f"g{i:03d}w{j}.png", size, st, active_index=j)
+                items.append((png, round(a, 2), round(b, 2)))
+        else:
+            png = _group_png(g, tmp / f"g{i:03d}.png", size, st,
+                             active_index=0 if st["active"] else None)
+            items.append((png, round(ini, 2), round(fim, 2)))
 
     src = video_in
     for base in range(0, len(items), batch):

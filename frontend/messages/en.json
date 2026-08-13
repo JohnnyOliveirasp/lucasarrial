@@ -1940,6 +1940,23 @@
         "erroPlanejar": "Couldn't plan the scenes. Reload and try again.",
         "erroCenas": "Couldn't generate the scenes. Try again.",
         "erroAplicar": "Couldn't apply the b-roll. Try again."
+      },
+      "legendaPicker": {
+        "estilo": "Caption style",
+        "semLegenda": "no captions",
+        "previewA": "your",
+        "previewB": "caption",
+        "posicao": "Position",
+        "posicoes": {
+          "bottom": "Bottom",
+          "center": "Center",
+          "top": "Top"
+        },
+        "tamanho": "Size",
+        "tamanhos": {
+          "normal": "Normal",
+          "large": "Large"
+        }
       }
     },
     "roteiro": {

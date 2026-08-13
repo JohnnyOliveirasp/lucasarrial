@@ -14,7 +14,9 @@ import { useTranslations } from "next-intl";
 import { Captions, Check, Film, Loader2, Music, Sparkles, SkipForward } from "lucide-react";
 import { STUDIO_MONTAGE_COST } from "@/lib/studio/pricing";
 import { EDICAO_CAPTION_COST } from "@/lib/edicao/pricing";
+import type { SubtitlePosition, SubtitleSize } from "@/lib/video/subtitle-presets";
 import { EditarCloneBroll } from "./editar-clone-broll";
+import { LegendaPicker } from "./legenda-picker";
 import type { EdicaoDraft } from "./edicao-wizard";
 
 type Trilha = { key: string; label: string };
@@ -200,7 +202,11 @@ function EditarCenas({ draft }: { draft: EdicaoDraft }) {
   const t = useTranslations("edicao.editar.cenas");
   const projectId = draft.video?.kind === "cenas" ? draft.video.id : null;
   const [trilhas, setTrilhas] = useState<Trilha[] | null>(null);
-  const [legendas, setLegendas] = useState(true);
+  // Estilo de legenda (13/08): galeria de presets no lugar do checkbox —
+  // "karaoke" é o visual clássico do montador; "none" = sem legenda.
+  const [legendaEstilo, setLegendaEstilo] = useState("karaoke");
+  const [legendaPos, setLegendaPos] = useState<SubtitlePosition | null>(null);
+  const [legendaTam, setLegendaTam] = useState<SubtitleSize | null>(null);
   const [musicKey, setMusicKey] = useState("");
   const [estilo, setEstilo] = useState<"dynamic" | "sober">("dynamic");
   const [transicao, setTransicao] = useState<"corte" | "fade" | "fade_branco">("corte");
@@ -252,7 +258,7 @@ function EditarCenas({ draft }: { draft: EdicaoDraft }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          captions: legendas,
+          caption: { style: legendaEstilo, position: legendaPos, size: legendaTam },
           edit_style: estilo,
           transition: transicao,
           ...(musicKey ? { music_key: musicKey } : {}),
@@ -289,15 +295,17 @@ function EditarCenas({ draft }: { draft: EdicaoDraft }) {
             </>
           )}
 
-          <label className="flex w-fit cursor-pointer items-center gap-2 text-[13.5px] text-[var(--ink)]">
-            <input
-              type="checkbox"
-              checked={legendas}
-              onChange={(e) => setLegendas(e.target.checked)}
-              className="accent-[var(--ink)]"
-            />
-            {t("legendas")}
-          </label>
+          {/* Galeria de estilos de legenda (pedido Johnny 13/08: escolher o
+              estilo igual Vídeo História — checkbox não rola). */}
+          <LegendaPicker
+            value={legendaEstilo}
+            onChange={setLegendaEstilo}
+            position={legendaPos}
+            onPosition={setLegendaPos}
+            size={legendaTam}
+            onSize={setLegendaTam}
+            disabled={busy}
+          />
 
           {/* Cada combo com rótulo + explicação (pedido Johnny 13/08: aluno
               não sabia o que "corte dinâmico"/"corte seco" faziam). */}

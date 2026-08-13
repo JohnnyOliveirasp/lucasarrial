@@ -1940,6 +1940,23 @@
         "erroPlanejar": "No pude planear las escenas. Recarga e inténtalo de nuevo.",
         "erroCenas": "No pude generar las escenas. Inténtalo de nuevo.",
         "erroAplicar": "No pude aplicar el b-roll. Inténtalo de nuevo."
+      },
+      "legendaPicker": {
+        "estilo": "Estilo del subtítulo",
+        "semLegenda": "sin subtítulos",
+        "previewA": "tu",
+        "previewB": "subtítulo",
+        "posicao": "Posición",
+        "posicoes": {
+          "bottom": "Abajo",
+          "center": "Centro",
+          "top": "Arriba"
+        },
+        "tamanho": "Tamaño",
+        "tamanhos": {
+          "normal": "Normal",
+          "large": "Grande"
+        }
       }
     },
     "roteiro": {

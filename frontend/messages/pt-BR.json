@@ -1940,6 +1940,23 @@
         "erroPlanejar": "Não consegui planejar as cenas. Recarregue e tente de novo.",
         "erroCenas": "Não consegui gerar as cenas. Tente de novo.",
         "erroAplicar": "Não consegui aplicar o b-roll. Tente de novo."
+      },
+      "legendaPicker": {
+        "estilo": "Estilo da legenda",
+        "semLegenda": "sem legenda",
+        "previewA": "sua",
+        "previewB": "legenda",
+        "posicao": "Posição",
+        "posicoes": {
+          "bottom": "Embaixo",
+          "center": "Centro",
+          "top": "Em cima"
+        },
+        "tamanho": "Tamanho",
+        "tamanhos": {
+          "normal": "Normal",
+          "large": "Grande"
+        }
       }
     },
     "roteiro": {

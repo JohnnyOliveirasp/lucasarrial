@@ -350,8 +350,11 @@ def handle_montage(inp: dict, log) -> dict:
     if inp.get("captions", True):
         cuts = sorted({seg["t0"] for seg in plan if seg["t0"] > 0.1})
         captioned = job_dir / "captioned.mp4"
+        # caption_style (13/08): preset de legenda escolhido no app (fonte via
+        # URL + cores + posição). Ausente → visual clássico, sem mudança.
         burn_karaoke(current, words, captioned, cuts=list(cuts),
-                     suppress_windows=[tuple(wdw) for wdw in inp.get("suppress_windows") or []])
+                     suppress_windows=[tuple(wdw) for wdw in inp.get("suppress_windows") or []],
+                     style=inp.get("caption_style"))
         # Regra 6: pós-passe NUNCA muda a duração (>0,1s = bug, aborta)
         _assert_duration("legenda", _duration(captioned), base_dur)
         current = captioned

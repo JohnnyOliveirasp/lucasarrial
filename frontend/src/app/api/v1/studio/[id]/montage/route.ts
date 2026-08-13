@@ -15,6 +15,13 @@ import { STUDIO_MONTAGE_COST } from "@/lib/studio/pricing";
 import { R2_BUCKETS, imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet, createPresignedPut } from "@/lib/r2/presigned";
 import { runpodSubmitTrain, webhookUrlFor } from "@/lib/runpod/client";
+import { buildCaptionStyle, isValidCaptionStyle } from "@/lib/studio/caption-style";
+import {
+  SUBTITLE_POSITIONS,
+  SUBTITLE_SIZES,
+  type SubtitlePosition,
+  type SubtitleSize,
+} from "@/lib/video/subtitle-presets";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { StudioFaceSegment, StudioScenePlanItem, StudioSceneRow } from "@/lib/db/types";
 
@@ -35,6 +42,9 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   let musicKey: string | null = null;
   // Legenda opcional (pedido de aluno 01/08) — padrão: com legenda.
   let captions = true;
+  // Estilo de LEGENDA (13/08): preset do app (caption.style/position/size).
+  // "none" desliga; ausente = visual clássico do worker.
+  let captionStyle: Record<string, unknown> | null = null;
   // Estilo de edição: "dynamic" (zoom+sub-planos, padrão) ou "sober" (parado).
   let editStyle: "dynamic" | "sober" = "dynamic";
   // W5 (wizard): transição entre cenas — corte seco (padrão) ou fade.
@@ -43,6 +53,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     const body = (await request.json()) as {
       music_key?: unknown;
       captions?: unknown;
+      caption?: { style?: unknown; position?: unknown; size?: unknown };
       edit_style?: unknown;
       transition?: unknown;
     };
@@ -50,6 +61,20 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       musicKey = body.music_key;
     }
     if (typeof body.captions === "boolean") captions = body.captions;
+    if (body.caption && isValidCaptionStyle(body.caption.style)) {
+      if (body.caption.style === "none") {
+        captions = false;
+      } else {
+        captions = true;
+        const pos = SUBTITLE_POSITIONS.includes(body.caption.position as SubtitlePosition)
+          ? (body.caption.position as SubtitlePosition)
+          : null;
+        const siz = SUBTITLE_SIZES.includes(body.caption.size as SubtitleSize)
+          ? (body.caption.size as SubtitleSize)
+          : null;
+        captionStyle = buildCaptionStyle(body.caption.style, pos, siz);
+      }
+    }
     if (body.edit_style === "sober") editStyle = "sober";
     if (body.transition === "fade" || body.transition === "fade_branco") transition = body.transition;
   } catch {
@@ -160,6 +185,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         face_sentences: faceSentences.length > 0 ? faceSentences : null,
         output_upload_url: videoPutUrl,
         captions,
+        caption_style: captionStyle,
         edit_style: editStyle,
         transition,
         music_url: musicUrl,
