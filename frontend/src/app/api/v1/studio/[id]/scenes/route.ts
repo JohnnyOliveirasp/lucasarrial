@@ -15,7 +15,11 @@ import { debitCredits } from "@/lib/credits/service";
 import { gateStudioCredits } from "@/lib/studio/billing";
 import { STUDIO_SCENE_COST } from "@/lib/studio/pricing";
 import { planScenes, sentencesFromWords, type BankScene } from "@/lib/studio/scene-planner";
+import { fitPersonIntoScenes } from "@/lib/studio/person-scenes";
 import { startSceneStill } from "@/lib/studio/scenes";
+import { objectExists } from "@/lib/r2/exists";
+import { imagesBucket } from "@/lib/r2/client";
+import { createPresignedGet } from "@/lib/r2/presigned";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { StudioScenePlanItem, StudioSceneRow, StudioTranscriptWord } from "@/lib/db/types";
 
@@ -86,11 +90,15 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   let planOnly = false;
   let chosen: Set<number> | null = null;
   let targetCount: number | null = null;
+  // C4: fotos da pessoa (opt-in na confirmação) — LLM com visão decide em
+  // quais cenas ela entra; essas cenas são privadas (nunca banco global).
+  let photoKeys: string[] = [];
   try {
     const body = (await request.json()) as {
       plan_only?: unknown;
       sentences?: unknown;
       scene_count?: unknown;
+      photo_keys?: unknown;
     };
     planOnly = body.plan_only === true;
     if (Array.isArray(body.sentences)) {
@@ -98,6 +106,11 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     }
     if (typeof body.scene_count === "number" && Number.isInteger(body.scene_count) && body.scene_count >= 1) {
       targetCount = body.scene_count;
+    }
+    if (Array.isArray(body.photo_keys)) {
+      photoKeys = body.photo_keys
+        .filter((k): k is string => typeof k === "string" && k.startsWith(`${auth.user_id}/`))
+        .slice(0, 3);
     }
   } catch {
     /* sem body = comportamento original (todas as frases) */
@@ -191,6 +204,39 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       })),
     });
   }
+
+  // C4: com fotos, a LLM de visão escolhe as cenas da pessoa e reescreve o
+  // prompt delas (reuso desligado — cena com pessoa é sempre nova/privada).
+  // Falhou a visão → segue 100% b-roll em vez de quebrar a geração.
+  const personUnits = new Map<number, string>();
+  if (photoKeys.length > 0) {
+    const valid = (
+      await Promise.all(photoKeys.map(async (k) => ((await objectExists(imagesBucket(), k)) ? k : null)))
+    ).filter((k): k is string => k !== null);
+    photoKeys = valid;
+    if (valid.length > 0) {
+      try {
+        const photoUrls = await Promise.all(valid.map((k) => createPresignedGet(imagesBucket(), k, 3600)));
+        const decisions = await fitPersonIntoScenes(
+          photoUrls,
+          plan.map((p) => ({
+            index: p.sentence,
+            concept: p.concept,
+            prompt_en: p.prompt_en,
+            text: units[p.sentence] ?? "",
+          })),
+        );
+        for (const d of decisions) personUnits.set(d.index, d.prompt_en);
+        plan = plan.map((p) =>
+          personUnits.has(p.sentence)
+            ? { ...p, reuse_id: null, prompt_en: personUnits.get(p.sentence) as string, concept: `${p.concept} (com você)` }
+            : p,
+        );
+      } catch (e) {
+        console.error("[studio/scenes] visão pessoa falhou:", e instanceof Error ? e.message : e);
+      }
+    }
+  }
   if (chosen) {
     const sel = chosen;
     plan = plan.filter((p) => sel.has(p.sentence));
@@ -219,6 +265,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       sceneId = p.reuse_id;
       reused = true;
     } else {
+      const comPessoa = personUnits.has(p.sentence);
       const { data: created, error: insErr } = await admin
         .from("studio_scenes")
         .insert({
@@ -228,12 +275,14 @@ export async function POST(request: NextRequest, ctx: Ctx) {
           dialect: p.dialect,
           // C3 (13/08): b-roll gerado (sem rosto por regra do estilo) entra
           // AUTOMÁTICO no banco global — reuso é grátis pra todo mundo.
-          shared: true,
+          // C4: cena COM a pessoa é privada e guarda as fotos de referência.
+          shared: !comPessoa,
+          ref_image_paths: comPessoa ? photoKeys : null,
         } as never)
-        .select("id, prompt_en, dialect")
+        .select("id, prompt_en, dialect, ref_image_paths")
         .single();
       if (insErr || !created) return serverError("Falha ao criar as cenas.");
-      const row = created as Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">;
+      const row = created as Pick<StudioSceneRow, "id" | "prompt_en" | "dialect" | "ref_image_paths">;
       const taskId = await startSceneStill(row);
       if (taskId) {
         await chargeDispatchedScene({

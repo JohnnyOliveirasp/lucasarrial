@@ -14,7 +14,7 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { r2, imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { getAdmin } from "@/lib/db/admin";
-import { kieCreateVideoTask, kieGetTask, friendlyKieError } from "@/lib/kie/client";
+import { kieCreateImageTask, kieCreateVideoTask, kieGetTask, friendlyKieError } from "@/lib/kie/client";
 import { stillTextLooksBroken } from "@/lib/studio/scene-qa";
 import { moderateImagePrompt } from "@/lib/llm/moderate-image-prompt";
 import { getVideoFallback } from "@/lib/video/tiers";
@@ -29,6 +29,23 @@ const VIDEO_MODEL = "grok-imagine-video-1-5-preview";
 const MOTION_PROMPT =
   "subtle handheld camera movement, natural ambient motion, realistic, " +
   "real-time everyday pacing, brisk — NOT slow-motion, not dreamy or floaty, no faces";
+
+/** C4: cena COM a pessoa — mesma pegada, sem o "no faces". */
+const MOTION_PROMPT_PERSON =
+  "subtle handheld camera movement, natural ambient motion, realistic, " +
+  "real-time everyday pacing, brisk — NOT slow-motion, not dreamy or floaty, " +
+  "keep the person's face consistent and natural";
+
+/**
+ * C4: sufixo do still COM a pessoa (fotos de referência via image-to-image).
+ * Base realista do Lucas SEM o "no faces" + trava de semelhança com a foto.
+ */
+const PERSON_SUFFIX =
+  "the person from the reference photo, keep the SAME face, hair and physical " +
+  "appearance as the reference photo, shot on iphone, handheld amateur footage, " +
+  "imperfect natural lighting, slightly grainy, realistic documentary style, candid, " +
+  "not staged, no cinematic color grade, real skin texture, no retouching, " +
+  "no beauty filter, vertical 9:16 portrait composition, no text watermark";
 
 /** Prompt-base do dialeto (03_DIALETOS_VISUAIS.md, literal). */
 const DIALECT_SUFFIX: Record<"realista" | "craft", string> = {
@@ -69,12 +86,36 @@ async function kieCreateStill(prompt: string): Promise<string> {
 }
 
 /**
+ * C4: despacha a task do still respeitando as fotos de referência da pessoa
+ * (image-to-image, sufixo com rosto) ou o texto puro (b-roll sem rosto).
+ * QA retry e o startSceneStill usam o MESMO caminho.
+ */
+async function dispatchStillTask(
+  scene: Pick<StudioSceneRow, "prompt_en" | "dialect"> & { ref_image_paths?: string[] | null },
+): Promise<string> {
+  const refs = (scene.ref_image_paths ?? []).filter(Boolean);
+  if (refs.length > 0) {
+    const urls = await Promise.all(refs.map((k) => createPresignedGet(imagesBucket(), k, 3600)));
+    const { taskId } = await kieCreateImageTask({
+      prompt: `${scene.prompt_en}, ${PERSON_SUFFIX}`,
+      input_urls: urls,
+      aspect_ratio: "9:16",
+      resolution: "1K",
+    });
+    return taskId;
+  }
+  return kieCreateStill(`${scene.prompt_en}, ${DIALECT_SUFFIX[scene.dialect]}`);
+}
+
+/**
  * Dispara o still de uma cena (planning|failed → generating_still).
  * Devolve o taskId do Kie quando despachou (é a referência do débito F5,
  * gravada em debit_ref pelo chamador que cobra) ou null se nem começou
  * (nada foi cobrado — a falha aqui não estorna).
  */
-export async function startSceneStill(scene: Pick<StudioSceneRow, "id" | "prompt_en" | "dialect">): Promise<string | null> {
+export async function startSceneStill(
+  scene: Pick<StudioSceneRow, "id" | "prompt_en" | "dialect"> & { ref_image_paths?: string[] | null },
+): Promise<string | null> {
   const admin = getAdmin();
   // W4 (enxerto 1, do gerador antigo): o prompt_en é derivado da FALA do
   // usuário por LLM — modera ANTES do Kie (mesmo classificador do Gerador de
@@ -91,7 +132,7 @@ export async function startSceneStill(scene: Pick<StudioSceneRow, "id" | "prompt
     return null;
   }
   try {
-    const taskId = await kieCreateStill(`${scene.prompt_en}, ${DIALECT_SUFFIX[scene.dialect]}`);
+    const taskId = await dispatchStillTask(scene);
     await admin
       .from("studio_scenes")
       .update({ status: "generating_still", kie_task_id: taskId, qa_retried: false, error_message: null } as never)
@@ -198,7 +239,7 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
     const broken = await stillTextLooksBroken(stillUrl);
     if (broken && !scene.qa_retried) {
       try {
-        const retryTask = await kieCreateStill(`${scene.prompt_en}, ${DIALECT_SUFFIX[scene.dialect]}`);
+        const retryTask = await dispatchStillTask(scene);
         await admin
           .from("studio_scenes")
           .update({ kie_task_id: retryTask, qa_retried: true } as never)
@@ -240,7 +281,7 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
     try {
       const { taskId } = await kieCreateVideoTask({
         model: VIDEO_MODEL,
-        promptEn: MOTION_PROMPT,
+        promptEn: (scene.ref_image_paths ?? []).length > 0 ? MOTION_PROMPT_PERSON : MOTION_PROMPT,
         imageUrl: stillUrl,
         aspectRatio: "9:16",
         resolution: "720p",
@@ -275,7 +316,7 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
           const stillAgain = await createPresignedGet(imagesBucket(), scene.image_path, 3600);
           const { taskId } = await kieCreateVideoTask({
             model: fb.kieModel,
-            promptEn: MOTION_PROMPT,
+            promptEn: (scene.ref_image_paths ?? []).length > 0 ? MOTION_PROMPT_PERSON : MOTION_PROMPT,
             imageUrl: stillAgain,
             aspectRatio: "9:16",
             resolution: fb.resolution,

@@ -1816,7 +1816,16 @@
           "semCreditos": "Not enough credits.",
           "erroAcao": "Something went wrong. Try again.",
           "erroFoto": "Couldn't upload the photo. Try again (JPG, PNG or WEBP)."
-        }
+        },
+        "fotosPergunta": "Do you want to include photos of yourself in the scenes, or keep it automatic?",
+        "fotosAutoTitulo": "Automatic",
+        "fotosAutoCorpo": "Everything is generated from your speech — scenes illustrate what you say.",
+        "fotosEuTitulo": "I want to appear in the scenes",
+        "fotosEuCorpo": "Pick up to {max} photos of you — the AI decides which scenes you appear in.",
+        "fotosCarregando": "Loading your photos…",
+        "fotosVazio": "You have no photos yet. Upload or generate photos in Images first.",
+        "fotosConsent": "By using photos you confirm you have the right to use them. Scenes with you are private — they never enter the shared bank.",
+        "fotosEscolhaModo": "Choose automatic or select at least 1 photo to continue."
       },
       "cloneOpcoes": {
         "padrao": {

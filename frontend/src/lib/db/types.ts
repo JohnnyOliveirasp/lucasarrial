@@ -842,6 +842,9 @@ export type StudioSceneRow = {
   shared: boolean;
   image_path: string | null;
   video_path: string | null;
+  /** C4 (mig 71): fotos da PESSOA usadas na cena — retry/fallback redespacham
+   *  com as mesmas referências; presença ⇒ shared=false sempre. */
+  ref_image_paths: string[] | null;
   error_message: string | null;
   created_at: Timestamp;
 };

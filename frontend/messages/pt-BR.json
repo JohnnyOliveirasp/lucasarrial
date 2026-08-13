@@ -1816,7 +1816,16 @@
           "semCreditos": "Créditos insuficientes.",
           "erroAcao": "Não deu certo agora. Tente de novo.",
           "erroFoto": "Não consegui enviar a foto. Tente de novo (JPG, PNG ou WEBP)."
-        }
+        },
+        "fotosPergunta": "Você quer incluir fotos suas nas cenas, ou prefere automático?",
+        "fotosAutoTitulo": "Automático",
+        "fotosAutoCorpo": "Tudo será gerado de acordo com a sua fala — cenas ilustram o que você diz.",
+        "fotosEuTitulo": "Quero aparecer nas cenas",
+        "fotosEuCorpo": "Escolha até {max} fotos suas — a IA decide em quais cenas você entra.",
+        "fotosCarregando": "Carregando suas fotos…",
+        "fotosVazio": "Você ainda não tem fotos no acervo. Suba ou gere fotos em Imagens primeiro.",
+        "fotosConsent": "Ao usar fotos, você confirma que tem o direito de uso da imagem delas. Cenas com você são privadas — nunca entram no banco compartilhado.",
+        "fotosEscolhaModo": "Escolha automático ou selecione ao menos 1 foto pra continuar."
       },
       "cloneOpcoes": {
         "padrao": {

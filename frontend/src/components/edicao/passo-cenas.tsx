@@ -129,7 +129,7 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
     }
   }
 
-  async function gerarCenas(sceneCount?: number) {
+  async function gerarCenas(sceneCount?: number, photoKeys: string[] = []) {
     if (!projectId) return;
     setBusy("cenas");
     setErro(null);
@@ -137,8 +137,11 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
       const res = await fetch(`/api/v1/studio/${projectId}/scenes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // C1: quantidade confirmada pela pessoa (frases vizinhas agrupam).
-        body: JSON.stringify(sceneCount ? { scene_count: sceneCount } : {}),
+        // C1: quantidade confirmada; C4: fotos da pessoa (opt-in).
+        body: JSON.stringify({
+          ...(sceneCount ? { scene_count: sceneCount } : {}),
+          ...(photoKeys.length > 0 ? { photo_keys: photoKeys } : {}),
+        }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.status === 402) throw new Error(t("semCreditos"));
@@ -232,7 +235,7 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
         <ConfirmCenas
           frases={proj.sentence_count ?? 0}
           gerando={busy !== null}
-          onGerar={(n) => void gerarCenas(n)}
+          onGerar={(n, fotos) => void gerarCenas(n, fotos)}
         />
       )}
 

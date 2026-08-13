@@ -1816,7 +1816,16 @@
           "semCreditos": "Créditos insuficientes.",
           "erroAcao": "Algo salió mal. Inténtalo de nuevo.",
           "erroFoto": "No se pudo subir la foto. Inténtalo de nuevo (JPG, PNG o WEBP)."
-        }
+        },
+        "fotosPergunta": "¿Quieres incluir fotos tuyas en las escenas, o prefieres automático?",
+        "fotosAutoTitulo": "Automático",
+        "fotosAutoCorpo": "Todo se genera a partir de tu locución — las escenas ilustran lo que dices.",
+        "fotosEuTitulo": "Quiero aparecer en las escenas",
+        "fotosEuCorpo": "Elige hasta {max} fotos tuyas — la IA decide en qué escenas apareces.",
+        "fotosCarregando": "Cargando tus fotos…",
+        "fotosVazio": "Aún no tienes fotos. Sube o genera fotos en Imágenes primero.",
+        "fotosConsent": "Al usar fotos confirmas que tienes derecho a usarlas. Las escenas contigo son privadas — nunca entran al banco compartido.",
+        "fotosEscolhaModo": "Elige automático o selecciona al menos 1 foto para continuar."
       },
       "cloneOpcoes": {
         "padrao": {
