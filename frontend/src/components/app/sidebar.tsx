@@ -274,17 +274,11 @@ export function Sidebar({
                 {tShell("preProduction")}
               </span>
               <ul className="flex flex-col gap-1">
-                {/* 🚧 Banco de Cenas (13/08): galeria das cenas do aluno +
-                    acervo compartilhado. Gradua junto com o Vídeo Editor. */}
-                <NavLeaf
-                  href="/app/videos/banco-cenas"
-                  icon={Clapperboard}
-                  label="Banco de Cenas"
-                  active={pathname.endsWith("/app/videos/banco-cenas")}
-                />
-                {/* 🚧 Vídeo Edição 2.0 — wizard central (spec 11/08): roteiro →
-                    áudio → vídeo base → edição → publicar. Fases W0-W6; Lucas
-                    valida → vira O produto e reorganiza o menu de vídeos. */}
+                {/* 🚧 Estúdio Automático (ex-"Vídeo Edição 2.0", renome 13/08)
+                    — wizard central: roteiro → áudio → vídeo base → edição →
+                    publicar. O Banco de Cenas NÃO tem item próprio (decisão
+                    13/08: fora de contexto confunde) — o explorador vive
+                    DENTRO da geração de cenas do wizard. */}
                 <NavLeaf
                   href="/app/videos/edicao"
                   icon={Clapperboard}

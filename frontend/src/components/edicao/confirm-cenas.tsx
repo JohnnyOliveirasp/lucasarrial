@@ -10,12 +10,14 @@
  */
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Check, Clapperboard, Loader2, UserRound, Wand2 } from "lucide-react";
+import { Check, Clapperboard, Library, Loader2, UserRound, Wand2 } from "lucide-react";
 import { STUDIO_SCENE_COST } from "@/lib/studio/pricing";
+import { BancoCenasPicker } from "@/components/studio/banco-cenas";
 
 type FotoAcervo = { id: string; image_url: string | null; image_path: string | null; status: string };
 
 const MAX_FOTOS = 3;
+const MAX_CENAS_BANCO = 10;
 
 export function ConfirmCenas({
   frases,
@@ -25,14 +27,18 @@ export function ConfirmCenas({
   /** Nº de frases da fala (sentence_count do GET). */
   frases: number;
   gerando: boolean;
-  /** sceneCount undefined = sugestão (1 cena/frase); photoKeys = fotos da pessoa (C4). */
-  onGerar: (sceneCount: number | undefined, photoKeys: string[]) => void;
+  /** sceneCount undefined = sugestão (1 cena/frase); photoKeys = fotos (C4);
+   *  bankIds = cenas escolhidas à mão no banco (reuso grátis). */
+  onGerar: (sceneCount: number | undefined, photoKeys: string[], bankIds: string[]) => void;
 }) {
   const t = useTranslations("edicao.video.cenas");
   const [qtd, setQtd] = useState<number | null>(null);
   const [modo, setModo] = useState<"auto" | "fotos" | null>(null);
   const [fotos, setFotos] = useState<FotoAcervo[] | null>(null);
   const [selecionadas, setSelecionadas] = useState<string[]>([]);
+  // Explorador do banco: null = IA escolhe (padrão, grátis); array = manual.
+  const [bancoManual, setBancoManual] = useState(false);
+  const [cenasBanco, setCenasBanco] = useState<string[]>([]);
   const escolhida = Math.min(Math.max(qtd ?? frases, 1), Math.max(frases, 1));
 
   // Acervo "Minhas fotos" — só quando a pessoa escolhe aparecer.
@@ -141,9 +147,43 @@ export function ConfirmCenas({
           </>
         ))}
 
+      {/* Explorador do banco (13/08): aproveitar cenas prontas = grátis. */}
+      <p className="mt-1 text-[13px] text-[var(--ink)]">{t("bancoPergunta")}</p>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <button type="button" onClick={() => setBancoManual(false)} aria-pressed={!bancoManual} className={CARD(!bancoManual)}>
+          <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--ink)]">
+            <Wand2 className="size-3.5" /> {t("bancoAutoTitulo")}
+          </p>
+          <p className="mt-0.5 text-[12px] text-[var(--mute)]">{t("bancoAutoCorpo")}</p>
+        </button>
+        <button type="button" onClick={() => setBancoManual(true)} aria-pressed={bancoManual} className={CARD(bancoManual)}>
+          <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--ink)]">
+            <Library className="size-3.5" /> {t("bancoEscolherTitulo")}
+          </p>
+          <p className="mt-0.5 text-[12px] text-[var(--mute)]">{t("bancoEscolherCorpo")}</p>
+        </button>
+      </div>
+      {bancoManual && (
+        <BancoCenasPicker
+          selecionadas={cenasBanco}
+          onToggle={(id) =>
+            setCenasBanco((s) =>
+              s.includes(id) ? s.filter((x) => x !== id) : s.length >= MAX_CENAS_BANCO ? s : [...s, id],
+            )
+          }
+          max={MAX_CENAS_BANCO}
+        />
+      )}
+
       <button
         type="button"
-        onClick={() => onGerar(escolhida < frases ? escolhida : undefined, modo === "fotos" ? selecionadas : [])}
+        onClick={() =>
+          onGerar(
+            escolhida < frases ? escolhida : undefined,
+            modo === "fotos" ? selecionadas : [],
+            bancoManual ? cenasBanco : [],
+          )
+        }
         disabled={gerando || !podeGerar}
         className="flex w-fit items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
       >

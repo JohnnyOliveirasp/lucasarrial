@@ -15,7 +15,7 @@
       "videoSales": "TikTok Sales Video",
       "videoClone": "Clone Video",
       "videoStudio": "Video Studio",
-      "videoEdicao": "Video Edit 2.0",
+      "videoEdicao": "Automatic Studio",
       "settings": "Settings"
     },
     "comingSoon": "Coming soon",
@@ -1707,7 +1707,7 @@
   },
   "edicao": {
     "eyebrow": "Pre-production",
-    "title": "Video Edit 2.0",
+    "title": "Automatic Studio",
     "subtitle": "From script to final video in one flow: script, audio, base video, editing and publishing.",
     "voltar": "Back",
     "avancar": "Next",
@@ -1825,7 +1825,12 @@
         "fotosCarregando": "Loading your photos…",
         "fotosVazio": "You have no photos yet. Upload or generate photos in Images first.",
         "fotosConsent": "By using photos you confirm you have the right to use them. Scenes with you are private — they never enter the shared bank.",
-        "fotosEscolhaModo": "Choose automatic or select at least 1 photo to continue."
+        "fotosEscolhaModo": "Choose automatic or select at least 1 photo to continue.",
+        "bancoPergunta": "Want to reuse ready scenes from the bank? (costs no credits)",
+        "bancoAutoTitulo": "Let the AI choose",
+        "bancoAutoCorpo": "The AI reads your script and reuses fitting scenes from the collection automatically — free, already included.",
+        "bancoEscolherTitulo": "I want to pick from the bank",
+        "bancoEscolherCorpo": "You pick the scenes and the AI places each one on the sentence where it fits best — at no cost."
       },
       "cloneOpcoes": {
         "padrao": {
@@ -1982,6 +1987,7 @@
     "erro": "Couldn't load the scene bank right now.",
     "vazioMine": "You have no scenes yet — they're created when you generate a video with scenes in the Video Editor.",
     "vazioAcervo": "The shared collection is still empty.",
-    "comVoce": "with you"
+    "comVoce": "with you",
+    "selecionadas": "{n} of {max} selected"
   }
 }

@@ -92,13 +92,17 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   let targetCount: number | null = null;
   // C4: fotos da pessoa (opt-in na confirmação) — LLM com visão decide em
   // quais cenas ela entra; essas cenas são privadas (nunca banco global).
+  // Explorador (13/08): bank_scene_ids = cenas escolhidas À MÃO no banco —
+  // o planner é OBRIGADO a reusar cada uma (grátis pra pessoa).
   let photoKeys: string[] = [];
+  let bankSceneIds: string[] = [];
   try {
     const body = (await request.json()) as {
       plan_only?: unknown;
       sentences?: unknown;
       scene_count?: unknown;
       photo_keys?: unknown;
+      bank_scene_ids?: unknown;
     };
     planOnly = body.plan_only === true;
     if (Array.isArray(body.sentences)) {
@@ -111,6 +115,9 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       photoKeys = body.photo_keys
         .filter((k): k is string => typeof k === "string" && k.startsWith(`${auth.user_id}/`))
         .slice(0, 3);
+    }
+    if (Array.isArray(body.bank_scene_ids)) {
+      bankSceneIds = [...new Set(body.bank_scene_ids.filter((v): v is string => typeof v === "string"))].slice(0, 10);
     }
   } catch {
     /* sem body = comportamento original (todas as frases) */
@@ -180,11 +187,25 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     .eq("status", "ready")
     .order("created_at", { ascending: false })
     .limit(80);
-  const bank = (bankRows ?? []) as BankScene[];
+  let bank = (bankRows ?? []) as BankScene[];
+
+  // Explorador: valida as escolhas manuais (só cena PRONTA que é minha OU
+  // compartilhada) e garante que estejam no banco que o planner enxerga.
+  if (bankSceneIds.length > 0) {
+    const { data: pickedRows } = await admin
+      .from("studio_scenes")
+      .select("id, concept, user_id, shared, status")
+      .in("id", bankSceneIds);
+    const picked = ((pickedRows ?? []) as Array<BankScene & { user_id: string; shared: boolean; status: string }>)
+      .filter((s) => s.status === "ready" && (s.user_id === auth.user_id || s.shared));
+    bankSceneIds = picked.map((s) => s.id);
+    const known = new Set(bank.map((b) => b.id));
+    bank = [...bank, ...picked.filter((s) => !known.has(s.id)).map((s) => ({ id: s.id, concept: s.concept }))];
+  }
 
   let plan;
   try {
-    plan = await planScenes(units, bank);
+    plan = await planScenes(units, bank, bankSceneIds);
   } catch (e) {
     await handleTechFailure({
       feature: "Vídeo Estúdio (planejador de cenas F3)",

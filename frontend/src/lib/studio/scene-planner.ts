@@ -46,12 +46,20 @@ export function sentencesFromWords(
   return sents.filter((s) => s.trim().length > 0);
 }
 
-function buildSystem(bank: BankScene[]): string {
+function buildSystem(bank: BankScene[], preferredIds: string[] = []): string {
   const bankBlock = bank.length
     ? `\nBANCO DE CENAS JÁ EXISTENTES desta pessoa (reuse quando o conceito servir — custo zero):\n${bank
         .map((b) => `- id=${b.id} · ${b.concept}`)
         .join("\n")}\n`
     : "\n(banco de cenas vazio — todas as cenas serão novas)\n";
+
+  // Explorador do banco (13/08): a pessoa escolheu cenas à mão — obrigatório
+  // usar CADA uma na frase onde melhor encaixa (economia de créditos dela).
+  const preferredBlock = preferredIds.length
+    ? `\nESCOLHA MANUAL DO USUÁRIO: ele selecionou estas cenas do banco e você DEVE reusar CADA UMA delas (reuse_id) exatamente uma vez, na frase onde o conceito melhor encaixa: ${preferredIds
+        .map((id) => `id=${id}`)
+        .join(", ")}. As demais frases seguem as regras normais.\n`
+    : "";
 
   return `Você é o diretor de b-roll de um vídeo vertical 9:16 estilo documentário viral (Emily Higgins/VOX). Vai receber as frases FALADAS pela pessoa, numeradas. Para CADA frase, escolha a cena de b-roll que roda enquanto ela é dita.
 
@@ -61,7 +69,7 @@ DIALETOS (um DOMINANTE por vídeo — use "realista" na grande maioria):
 - "realista": cena do dia a dia como se filmada casualmente num iPhone (celular, laptop, mesa, telas, ambientes). É o padrão.
 - "craft": objetos de papel/madeira numa mesa vistos de cima — SÓ para conceito abstrato sem objeto real óbvio (rede de agentes, níveis, pirâmide de ideias).
 
-REUSO:${bankBlock}
+REUSO:${bankBlock}${preferredBlock}
 Se reusar, preencha "reuse_id" com o id e deixe prompt_en="". Prefira reusar quando o conceito é genuinamente o mesmo; NÃO force reuso em conceito diferente.
 
 PROMPT (cenas novas): "prompt_en" em INGLÊS, 1-2 frases concretas descrevendo a cena (cenário, objetos, ação sutil, luz). PROIBIDO: rostos/pessoas identificáveis, texto legível em telas ou rótulos, marcas. NÃO inclua instruções de estilo (grão, câmera, 9:16) — o estilo do dialeto é adicionado automaticamente depois.
@@ -109,6 +117,7 @@ function parsePlan(raw: string, nSentences: number, bankIds: Set<string>): Plann
 export async function planScenes(
   sentences: string[],
   bank: BankScene[],
+  preferredIds: string[] = [],
 ): Promise<PlannedScene[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("LLM indisponível (sem chave)");
@@ -125,7 +134,7 @@ export async function planScenes(
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 4000,
-      system: [{ type: "text", text: buildSystem(bank) }],
+      system: [{ type: "text", text: buildSystem(bank, preferredIds) }],
       messages: [
         {
           role: "user",

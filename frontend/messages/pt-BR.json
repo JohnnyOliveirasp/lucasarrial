@@ -19,7 +19,7 @@
       "videoSales": "Vídeo Vendas TikTok",
       "videoClone": "Vídeo Clone",
       "videoStudio": "Vídeo Estúdio",
-      "videoEdicao": "Vídeo Edição 2.0",
+      "videoEdicao": "Estúdio Automático",
       "settings": "Configurações"
     },
     "comingSoon": "Em breve",
@@ -1707,7 +1707,7 @@
   },
   "edicao": {
     "eyebrow": "Pré-produção",
-    "title": "Vídeo Edição 2.0",
+    "title": "Estúdio Automático",
     "subtitle": "Do roteiro ao vídeo final, num caminho só: roteiro, áudio, vídeo base, edição e publicação.",
     "voltar": "Voltar",
     "avancar": "Avançar",
@@ -1825,7 +1825,12 @@
         "fotosCarregando": "Carregando suas fotos…",
         "fotosVazio": "Você ainda não tem fotos no acervo. Suba ou gere fotos em Imagens primeiro.",
         "fotosConsent": "Ao usar fotos, você confirma que tem o direito de uso da imagem delas. Cenas com você são privadas — nunca entram no banco compartilhado.",
-        "fotosEscolhaModo": "Escolha automático ou selecione ao menos 1 foto pra continuar."
+        "fotosEscolhaModo": "Escolha automático ou selecione ao menos 1 foto pra continuar.",
+        "bancoPergunta": "Quer aproveitar cenas prontas do banco? (não gasta créditos)",
+        "bancoAutoTitulo": "Deixar a IA escolher",
+        "bancoAutoCorpo": "A IA lê seu roteiro e reaproveita sozinha as cenas do acervo que encaixam — de graça, já incluso.",
+        "bancoEscolherTitulo": "Quero escolher do banco",
+        "bancoEscolherCorpo": "Você marca as cenas e a IA encaixa cada uma na frase onde faz mais sentido — sem custo."
       },
       "cloneOpcoes": {
         "padrao": {
@@ -1982,6 +1987,7 @@
     "erro": "Não consegui carregar o banco de cenas agora.",
     "vazioMine": "Você ainda não tem cenas — elas nascem quando você gera um vídeo com cenas no Vídeo Editor.",
     "vazioAcervo": "O acervo compartilhado ainda está vazio.",
-    "comVoce": "com você"
+    "comVoce": "com você",
+    "selecionadas": "{n} de {max} selecionadas"
   }
 }
