@@ -1805,7 +1805,18 @@
         "confirmCusto": "Up to {custo} credits ({cada} per new scene — scenes reused from your bank are free).",
         "confirmQtd": "Number of scenes:",
         "confirmMax": "max {max}",
-        "gerarQtd": "Generate {n} scenes"
+        "gerarQtd": "Generate {n} scenes",
+        "painel": {
+          "frases": "What is spoken in this scene",
+          "prompt": "Scene prompt",
+          "melhorar": "Improve prompt ({custo} cr)",
+          "regerar": "Regenerate scene ({custo} cr)",
+          "minhaFoto": "Use my photo ({custo} cr)",
+          "aguardeGerando": "Scenes are still generating — you can edit when they finish.",
+          "semCreditos": "Not enough credits.",
+          "erroAcao": "Something went wrong. Try again.",
+          "erroFoto": "Couldn't upload the photo. Try again (JPG, PNG or WEBP)."
+        }
       },
       "cloneOpcoes": {
         "padrao": {

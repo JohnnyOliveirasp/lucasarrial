@@ -110,6 +110,48 @@ export async function startSceneStill(scene: Pick<StudioSceneRow, "id" | "prompt
 }
 
 /**
+ * C2 (13/08): anima uma cena direto de uma FOTO do usuário (pula o still).
+ * A foto já vive no imagesBucket (upload-url). Devolve o taskId despachado
+ * (referência do débito) ou null se nem começou (nada cobrado).
+ */
+export async function startSceneAnimateFromImage(
+  sceneId: string,
+  imageKey: string,
+): Promise<string | null> {
+  const admin = getAdmin();
+  try {
+    const imageUrl = await createPresignedGet(imagesBucket(), imageKey, 3600);
+    const { taskId } = await kieCreateVideoTask({
+      model: VIDEO_MODEL,
+      promptEn: MOTION_PROMPT,
+      imageUrl,
+      aspectRatio: "9:16",
+      resolution: "720p",
+      durationSeconds: 5,
+    });
+    await admin
+      .from("studio_scenes")
+      .update({
+        status: "animating",
+        kie_task_id: taskId,
+        image_path: imageKey,
+        error_message: null,
+      } as never)
+      .eq("id", sceneId);
+    return taskId;
+  } catch (e) {
+    await admin
+      .from("studio_scenes")
+      .update({
+        status: "failed",
+        error_message: friendlyKieError(e instanceof Error ? e.message : "erro"),
+      } as never)
+      .eq("id", sceneId);
+    return null;
+  }
+}
+
+/**
  * Marca a cena como failed + ESTORNA o débito dela (F5; debit_ref é a chave,
  * único por tentativa paga) + alerta o suporte quando é falha técnica.
  */

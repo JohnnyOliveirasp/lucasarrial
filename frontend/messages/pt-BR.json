@@ -1805,7 +1805,18 @@
         "confirmCusto": "Até {custo} créditos ({cada} por cena nova — cenas reaproveitadas do banco são grátis).",
         "confirmQtd": "Quantidade de cenas:",
         "confirmMax": "máx. {max}",
-        "gerarQtd": "Gerar {n} cenas"
+        "gerarQtd": "Gerar {n} cenas",
+        "painel": {
+          "frases": "O que é falado nesta cena",
+          "prompt": "Prompt da cena",
+          "melhorar": "Melhorar prompt ({custo} cr)",
+          "regerar": "Regerar cena ({custo} cr)",
+          "minhaFoto": "Usar minha foto ({custo} cr)",
+          "aguardeGerando": "As cenas ainda estão sendo geradas — dá pra mexer quando terminar.",
+          "semCreditos": "Créditos insuficientes.",
+          "erroAcao": "Não deu certo agora. Tente de novo.",
+          "erroFoto": "Não consegui enviar a foto. Tente de novo (JPG, PNG ou WEBP)."
+        }
       },
       "cloneOpcoes": {
         "padrao": {

@@ -110,6 +110,9 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     reused: boolean;
     /** Download individual da cena (12/08, pedido Johnny) — presigned 1h. */
     video_url: string | null;
+    /** C2 (13/08): prompt visível/editável + frases que esta cena cobre. */
+    prompt_en: string;
+    frases: string[];
   }[] = [];
   const plan = (current.scene_plan ?? []) as StudioScenePlanItem[];
   if (Array.isArray(plan) && plan.length > 0) {
@@ -154,7 +157,15 @@ export async function GET(request: NextRequest, ctx: Ctx) {
         s.status === "ready" && s.video_path
           ? await createPresignedGet(imagesBucket(), s.video_path, 3600).catch(() => null)
           : null;
-      scenes.push({ id: s.id, concept: s.concept, status: s.status, reused: p.reused, video_url: sceneUrl });
+      scenes.push({
+        id: s.id,
+        concept: s.concept,
+        status: s.status,
+        reused: p.reused,
+        video_url: sceneUrl,
+        prompt_en: s.prompt_en,
+        frases: plan.filter((x) => x.scene_id === s.id).map((x) => x.text),
+      });
     }
   }
 

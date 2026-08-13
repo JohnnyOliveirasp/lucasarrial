@@ -15,6 +15,8 @@ import { Check, Clapperboard, Download, Film, Loader2, RefreshCw, X } from "luci
 import { downloadFromUrl } from "@/components/image/download-file";
 import { STUDIO_CLEAN_COST } from "@/lib/credits/config";
 import { STUDIO_SCENE_COST, STUDIO_MONTAGE_COST } from "@/lib/studio/pricing";
+import { CenaPainel } from "./cena-painel";
+import { ConfirmCenas } from "./confirm-cenas";
 import type { AudioSel, EdicaoDraft, VideoSel } from "./edicao-wizard";
 
 type Cena = {
@@ -23,6 +25,9 @@ type Cena = {
   status: string;
   reused: boolean;
   video_url?: string | null;
+  /** C2: prompt visível/editável + frases cobertas (painel da miniatura). */
+  prompt_en?: string;
+  frases?: string[];
 };
 type Projeto = {
   id: string;
@@ -61,8 +66,8 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
   const [proj, setProj] = useState<Projeto | null>(null);
   const [busy, setBusy] = useState<"iniciar" | "cenas" | "montar" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  // C1: quantidade de cenas escolhida na confirmação (null = sugestão 1/frase).
-  const [qtdCenas, setQtdCenas] = useState<number | null>(null);
+  // C2: miniatura clicada → painel da cena (prompt/regerar/foto).
+  const [cenaAberta, setCenaAberta] = useState<string | null>(null);
   const escolhidoRef = useRef(false);
 
   const carregar = useCallback(async (id: string) => {
@@ -223,79 +228,90 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
       {/* F3: cenas — C1: confirmação ANTES de gerar/cobrar (pedido Johnny
           13/08: 23 cenas num áudio de 59s assustou; agora a pessoa vê o
           número, aceita ou ajusta — frases vizinhas dividem a mesma cena). */}
-      {proj.status === "audio_ready" && proj.scenes_status === "idle" && (() => {
-        const frases = proj.sentence_count ?? 0;
-        const escolhida = Math.min(Math.max(qtdCenas ?? frases, 1), Math.max(frases, 1));
-        return (
-          <div className="flex flex-col gap-2.5 rounded-[var(--radius-sm)] border border-[var(--hairline)] p-3">
-            <p className="text-[13px] text-[var(--ink)]">
-              {frases > 0 ? t("confirmFrases", { frases }) : t("confirmSemContagem")}
-            </p>
-            <p className="text-[12px] text-[var(--ash)]">
-              {t("confirmCusto", { custo: escolhida * STUDIO_SCENE_COST, cada: STUDIO_SCENE_COST })}
-            </p>
-            {frases > 1 && (
-              <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
-                {t("confirmQtd")}
-                <input
-                  type="number"
-                  min={1}
-                  max={frases}
-                  value={escolhida}
-                  onChange={(e) => setQtdCenas(Number(e.target.value) || frases)}
-                  className="w-20 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-transparent px-2 py-1 text-[13px] text-[var(--ink)]"
-                />
-                <span className="text-[11px] text-[var(--ash)]">{t("confirmMax", { max: frases })}</span>
-              </label>
-            )}
-            <button
-              type="button"
-              onClick={() => void gerarCenas(escolhida < frases ? escolhida : undefined)}
-              disabled={busy !== null}
-              className="flex w-fit items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
-            >
-              {busy === "cenas" ? <Loader2 className="size-4 animate-spin" /> : <Clapperboard className="size-4" />}
-              {frases > 0 ? t("gerarQtd", { n: escolhida }) : t("gerarCenas", { custo: STUDIO_SCENE_COST })}
-            </button>
-          </div>
-        );
-      })()}
+      {proj.status === "audio_ready" && proj.scenes_status === "idle" && (
+        <ConfirmCenas
+          frases={proj.sentence_count ?? 0}
+          gerando={busy !== null}
+          onGerar={(n) => void gerarCenas(n)}
+        />
+      )}
 
+      {/* C2 (13/08): MINIATURAS em grade (não vídeos empilhados) — clicou,
+          abre o painel da cena com player + prompt + regerar/melhorar/foto. */}
       {proj.scenes.length > 0 && (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <p className="text-[12.5px] text-[var(--mute)]">
             {proj.scenes_status === "generating"
               ? t("gerandoCenas", { prontas, total: proj.scenes.length })
               : t("cenasProntas", { total: proj.scenes.length })}
           </p>
-          <ul className="flex flex-wrap gap-1.5">
-            {proj.scenes.map((c) => (
-              <li
-                key={c.id}
-                className="flex items-center gap-1.5 rounded-full border border-[var(--hairline)] px-2.5 py-1 text-[11.5px] text-[var(--mute)]"
-              >
-                {c.status === "ready" ? (
-                  <Check className="size-3 text-emerald-400" />
-                ) : c.status === "failed" ? (
-                  <X className="size-3 text-red-400" />
-                ) : (
-                  <Loader2 className="size-3 animate-spin" />
-                )}
-                <span className="max-w-44 truncate">{c.concept}</span>
-                {c.reused && <span className="text-[10px] text-[var(--ash)]">{t("banco")}</span>}
-                {c.video_url && (
+          <ul className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-6">
+            {proj.scenes.map((c) => {
+              const aberta = cenaAberta === c.id;
+              return (
+                <li key={c.id} className="flex flex-col gap-1">
                   <button
                     type="button"
-                    onClick={() => downloadFromUrl(c.video_url!, c.concept || "cena", "mp4")}
-                    title={t("baixarCena")}
-                    className="text-[var(--ash)] hover:text-[var(--ink)]"
+                    onClick={() => setCenaAberta(aberta ? null : c.id)}
+                    aria-pressed={aberta}
+                    title={c.concept}
+                    className={`relative block w-full overflow-hidden rounded-[var(--radius-sm)] border transition-colors ${
+                      aberta
+                        ? "border-[var(--hairline-bright)] shadow-[0_0_0_1px_var(--hairline-bright)]"
+                        : "border-[var(--hairline)] hover:border-[var(--hairline-strong)]"
+                    }`}
                   >
-                    <Download className="size-3" />
+                    {c.video_url ? (
+                      <video src={c.video_url} muted playsInline preload="metadata" className="aspect-[9/16] w-full object-cover" />
+                    ) : (
+                      <span className="grid aspect-[9/16] w-full place-items-center">
+                        {c.status === "failed" ? (
+                          <X className="size-4 text-red-400" />
+                        ) : (
+                          <Loader2 className="size-4 animate-spin text-[var(--ash)]" />
+                        )}
+                      </span>
+                    )}
+                    {c.status === "ready" && (
+                      <Check className="absolute right-1 top-1 size-3.5 rounded-full bg-[var(--surface-deep)]/80 p-0.5 text-emerald-400" />
+                    )}
                   </button>
-                )}
-              </li>
-            ))}
+                  <span className="flex items-center gap-1">
+                    <span className="min-w-0 flex-1 truncate text-[10.5px] text-[var(--mute)]">{c.concept}</span>
+                    {c.reused && <span className="shrink-0 text-[9px] text-[var(--ash)]">{t("banco")}</span>}
+                    {c.video_url && (
+                      <button
+                        type="button"
+                        onClick={() => downloadFromUrl(c.video_url!, c.concept || "cena", "mp4")}
+                        title={t("baixarCena")}
+                        className="shrink-0 text-[var(--ash)] hover:text-[var(--ink)]"
+                      >
+                        <Download className="size-3" />
+                      </button>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
+          {cenaAberta &&
+            (() => {
+              const c = proj.scenes.find((x) => x.id === cenaAberta);
+              if (!c || !projectId) return null;
+              return (
+                <CenaPainel
+                  key={c.id}
+                  projectId={projectId}
+                  cena={c}
+                  bloqueado={proj.scenes_status === "generating"}
+                  onMudou={() => {
+                    setCenaAberta(null);
+                    escolhidoRef.current = false;
+                    void carregar(projectId);
+                  }}
+                />
+              );
+            })()}
         </div>
       )}
 

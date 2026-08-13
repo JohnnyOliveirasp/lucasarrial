@@ -1805,7 +1805,18 @@
         "confirmCusto": "Hasta {custo} créditos ({cada} por escena nueva — las escenas reutilizadas del banco son gratis).",
         "confirmQtd": "Cantidad de escenas:",
         "confirmMax": "máx. {max}",
-        "gerarQtd": "Generar {n} escenas"
+        "gerarQtd": "Generar {n} escenas",
+        "painel": {
+          "frases": "Lo que se dice en esta escena",
+          "prompt": "Prompt de la escena",
+          "melhorar": "Mejorar prompt ({custo} cr)",
+          "regerar": "Regenerar escena ({custo} cr)",
+          "minhaFoto": "Usar mi foto ({custo} cr)",
+          "aguardeGerando": "Las escenas aún se están generando — podrás editarlas al terminar.",
+          "semCreditos": "Créditos insuficientes.",
+          "erroAcao": "Algo salió mal. Inténtalo de nuevo.",
+          "erroFoto": "No se pudo subir la foto. Inténtalo de nuevo (JPG, PNG o WEBP)."
+        }
       },
       "cloneOpcoes": {
         "padrao": {
