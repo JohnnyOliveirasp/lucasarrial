@@ -222,6 +222,8 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
   }
 
   const prontas = proj.scenes.filter((c) => c.status === "ready").length;
+  // 🔒 Montagem em andamento: nada de mexer nas cenas até o render acabar.
+  const montagemRodando = proj.montage_status === "processing" || busy === "montar";
 
   return (
     <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-4">
@@ -244,7 +246,9 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
       )}
 
       {/* C2 (13/08): MINIATURAS em grade (não vídeos empilhados) — clicou,
-          abre o painel da cena com player + prompt + regerar/melhorar/foto. */}
+          abre o painel da cena com player + prompt + regerar/melhorar/foto.
+          🔒 Durante a MONTAGEM tudo trava (bug Johnny 13/08: mexer em cena
+          no meio do render dava caca). */}
       {proj.scenes.length > 0 && (
         <div className="flex flex-col gap-2">
           <p className="text-[12.5px] text-[var(--mute)]">
@@ -260,6 +264,7 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
                   <button
                     type="button"
                     onClick={() => setCenaAberta(aberta ? null : c.id)}
+                    disabled={montagemRodando}
                     aria-pressed={aberta}
                     title={c.concept}
                     className={`relative block w-full overflow-hidden rounded-[var(--radius-sm)] border transition-colors ${
@@ -306,6 +311,7 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
             })}
           </ul>
           {cenaAberta &&
+            !montagemRodando &&
             (() => {
               const c = proj.scenes.find((x) => x.id === cenaAberta);
               if (!c || !projectId) return null;

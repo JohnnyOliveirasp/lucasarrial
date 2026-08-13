@@ -123,9 +123,13 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     return jsonOk({ prompt: improved });
   }
 
-  // redo/photo mexem na geração — nunca no meio de uma geração em andamento.
+  // redo/photo mexem na geração — nunca no meio de uma geração em andamento
+  // nem com a MONTAGEM rodando (o render usa as cenas; trocar no meio = caca).
   if (project.scenes_status === "generating") {
     return badRequest("As cenas ainda estão sendo geradas — espere terminar.");
+  }
+  if (project.montage_status === "processing") {
+    return badRequest("O vídeo está sendo montado — espere a montagem terminar pra mexer nas cenas.");
   }
 
   const gate = await gateStudioCredits({
