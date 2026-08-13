@@ -137,6 +137,9 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       concept: action === "photo" ? `${origRow.concept} (minha foto)` : origRow.concept,
       prompt_en: prompt,
       dialect: origRow.dialect,
+      // C3: cena com FOTO da pessoa NUNCA vai pro banco global; b-roll
+      // regerado (sem rosto) entra automático como as demais.
+      shared: action !== "photo",
     } as never)
     .select("id, prompt_en, dialect")
     .single();

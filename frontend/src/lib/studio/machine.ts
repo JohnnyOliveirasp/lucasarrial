@@ -169,6 +169,8 @@ async function dispatchScenes(p: MachineProject, email: string): Promise<void> {
         prompt_en: item.prompt_en,
         dialect: item.dialect,
         kind: "broll",
+        // C3 (13/08): b-roll sem rosto entra automático no banco global.
+        shared: true,
       } as never)
       .select("id, prompt_en, dialect")
       .single();

@@ -226,6 +226,9 @@ export async function POST(request: NextRequest, ctx: Ctx) {
           concept: p.concept,
           prompt_en: p.prompt_en,
           dialect: p.dialect,
+          // C3 (13/08): b-roll gerado (sem rosto por regra do estilo) entra
+          // AUTOMÁTICO no banco global — reuso é grátis pra todo mundo.
+          shared: true,
         } as never)
         .select("id, prompt_en, dialect")
         .single();
