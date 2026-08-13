@@ -10,6 +10,7 @@ import { HelpWidget } from "@/components/app/help-widget";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { isAdmin } from "@/lib/admin/guard";
+import { socialPublisherAllowedEmail } from "@/lib/social/access";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 
 export default async function AppLayout({
@@ -58,6 +59,8 @@ export default async function AppLayout({
   const creditsTotal =
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
   const admin = await isAdmin(email);
+  // Publicador: admin OU liberação individual (modelo "aluno pede", 13/08).
+  const publisherAllowed = await socialPublisherAllowedEmail(email);
 
   // Pix/boleto aguardando pagamento: mostra o banner só se ainda SEM acesso e o
   // aviso for recente (< 3 dias — janela típica do Pix). Some quando liberar/expirar.
@@ -77,7 +80,7 @@ export default async function AppLayout({
 
   return (
     <div className="grid min-h-svh grid-cols-1 lg:grid-cols-[260px_1fr] bg-[var(--canvas)]">
-      <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} hasReadyVoice={hasReadyVoice} />
+      <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} hasReadyVoice={hasReadyVoice} publisherAllowed={publisherAllowed} />
       <div className="flex flex-col">
         <Topbar
           email={profile?.email ?? user.email ?? ""}

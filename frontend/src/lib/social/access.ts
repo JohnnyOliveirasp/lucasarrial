@@ -12,9 +12,21 @@ import { isAdmin } from "@/lib/admin/guard";
 
 const REVIEWER_EMAILS = new Set(["meta.reviewer@fastcloner.com"]);
 
-/** E-mail pode usar o Publicador? (admin OU login de teste do revisor) */
+/**
+ * Liberações individuais (modelo travado 13/08: aluno PEDE → a gente liga só
+ * pra ele; a chave geral continua sendo a aprovação do App Review da Meta).
+ * 13/08: contas do Lucas liberadas por ordem do Johnny (post no Instagram).
+ */
+const ALLOWED_EMAILS = new Set([
+  "lucas.m.arrial@gmail.com",
+  "lucas@lucasarrial.com",
+  "lucasarrial@gmail.com",
+]);
+
+/** E-mail pode usar o Publicador? (admin OU revisor OU liberação individual) */
 export async function socialPublisherAllowedEmail(email: string | null): Promise<boolean> {
-  if (email && REVIEWER_EMAILS.has(email.toLowerCase())) return true;
+  const low = email?.toLowerCase() ?? "";
+  if (low && (REVIEWER_EMAILS.has(low) || ALLOWED_EMAILS.has(low))) return true;
   return isAdmin(email);
 }
 
