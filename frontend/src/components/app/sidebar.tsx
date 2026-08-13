@@ -148,6 +148,16 @@ export function Sidebar({
             active={pathname.endsWith("/app/dashboard")}
           />
 
+          {/* Gerador de Roteiros — graduado 13/08 (ordem Johnny): porta de
+              entrada do funil (roteiro → áudio → vídeo), logo abaixo do
+              Dashboard. */}
+          <NavLeaf
+            href="/app/roteiro"
+            icon={PenLine}
+            label={t("nav.script")}
+            active={pathname.endsWith("/app/roteiro")}
+          />
+
           {/* Grupo Vozes (expansível) */}
           <li>
             <button
@@ -298,15 +308,6 @@ export function Sidebar({
                   icon={MonitorPlay}
                   label="Vídeo HeyGen"
                   active={pathname.endsWith("/app/lab/video-heygen")}
-                />
-                {/* 🧪 Gerador de Roteiro (10/08): porta de entrada do funil
-                    (roteiro 100 cr → áudio → vídeo). Só admin até o Lucas ler
-                    roteiro e aprovar a qualidade do texto em pt-BR. */}
-                <NavLeaf
-                  href="/app/roteiro"
-                  icon={PenLine}
-                  label={t("nav.script")}
-                  active={pathname.endsWith("/app/roteiro")}
                 />
                 {/* 🧪 Publicador ("nosso Blotato", 05/08): grupo expansível
                     com um submenu por rede (pedido Johnny 12/08). */}

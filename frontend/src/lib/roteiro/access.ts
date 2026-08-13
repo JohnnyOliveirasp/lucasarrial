@@ -1,17 +1,10 @@
 /**
- * Gate do Gerador de Roteiro — PRÉ-PRODUÇÃO.
+ * Gate do Gerador de Roteiros — GRADUADO (ordem do Johnny 13/08).
  *
- * Mesmo padrão do Publicador ([[social/access.ts]]): enquanto o Lucas não dá o
- * veredito sobre a qualidade do texto em pt-BR, TUDO (a página e as três rotas)
- * fica restrito a admin. O recurso já está no ar e cobra crédito de verdade —
- * abrir pros 400 antes de alguém ler um roteiro seria descobrir o problema pelo
- * suporte.
- *
- * 👉 GRADUAR: trocar o corpo por `return true` e mover o item do sidebar do
- * bloco de pré-produção pro grupo público. Nada mais precisa mudar.
+ * Ficou em pré-produção admin-only de 10/08 a 13/08; liberado pra todos os
+ * assinantes junto com a mudança do menu (item "Gerador de Roteiros" abaixo
+ * do Dashboard). O parâmetro fica pra manter a assinatura das rotas.
  */
-import { isAdmin } from "@/lib/admin/guard";
-
-export async function roteiroAllowedEmail(email: string | null | undefined): Promise<boolean> {
-  return isAdmin(email);
+export async function roteiroAllowedEmail(_email: string | null | undefined): Promise<boolean> {
+  return true;
 }
