@@ -21,21 +21,28 @@ export function ReactPassoAjuste({
 }) {
   const [pedido, setPedido] = useState("");
   const [oferta, setOferta] = useState("");
-  const [ocupado, setOcupado] = useState<"roteiro" | "cta" | null>(null);
+  const [ocupado, setOcupado] = useState<"roteiro" | "cta" | "limpar" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [querCta, setQuerCta] = useState<boolean | null>(draft.cta ? true : null);
 
-  async function chamar(modo: "reescrever" | "cta") {
-    const texto = modo === "cta" ? oferta : pedido;
+  async function chamar(modo: "reescrever" | "cta" | "limpar") {
+    // "limpar" tira a chamada que o modelo colou no fim do comentário —
+    // o pedido já vai pronto, a pessoa não precisa escrever nada.
+    const texto =
+      modo === "cta"
+        ? oferta
+        : modo === "limpar"
+          ? "Remova QUALQUER chamada para ação do final (link na bio, acesse, saiba mais, me chama). O texto tem que terminar no comentário sobre o vídeo, sem convite nenhum."
+          : pedido;
     if (!texto.trim()) return;
-    setOcupado(modo === "cta" ? "cta" : "roteiro");
+    setOcupado(modo === "cta" ? "cta" : modo === "limpar" ? "limpar" : "roteiro");
     setErro(null);
     try {
       const r = await fetch("/api/v1/react/ajustar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          modo,
+          modo: modo === "limpar" ? "reescrever" : modo,
           roteiro: draft.roteiro,
           pedido: texto,
           duracao_seg: draft.viral?.duracao_seg ?? 30,
@@ -50,7 +57,7 @@ export function ReactPassoAjuste({
         update({ cta: j.cta });
       } else {
         update({ roteiro: j.roteiro });
-        setPedido("");
+        if (modo !== "limpar") setPedido("");
       }
     } catch {
       setErro("Falha de rede.");
@@ -62,6 +69,20 @@ export function ReactPassoAjuste({
   const duracao = draft.viral?.duracao_seg ? Math.round(draft.viral.duracao_seg) : null;
   const palavras = draft.roteiro.trim() ? draft.roteiro.trim().split(/\s+/).length : 0;
   const segundos = Math.round(palavras / 2.5);
+  const estourou = duracao !== null && segundos > duracao;
+
+  /**
+   * O modelo às vezes escreve chamada no fim do roteiro mesmo mandado não
+   * escrever (visto no teste do Johnny 14/08). Com o CTA separado, o vídeo
+   * termina com DUAS chamadas seguidas.
+   */
+  const CHAMADA = /(link na bio|clica no link|acesse|acessa|chama no direct|saiba mais|comenta a palavra|me chama)/i;
+  const ctaDuplicado = Boolean(draft.cta.trim()) && CHAMADA.test(draft.roteiro.slice(-160));
+
+  /** A fala final é o que a voz vai dizer, na ordem: comentário + chamada. */
+  const falaFinal = [draft.roteiro.trim(), draft.cta.trim()].filter(Boolean).join("\n\n");
+  const palavrasFinal = falaFinal ? falaFinal.trim().split(/\s+/).length : 0;
+  const segundosFinal = Math.round(palavrasFinal / 2.5);
 
   return (
     <div className="flex flex-col gap-4">
@@ -79,9 +100,16 @@ export function ReactPassoAjuste({
         rows={8}
         className="w-full rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-3 text-[13.5px] leading-relaxed text-[var(--ink)] outline-none focus:border-[var(--ink)]"
       />
-      <p className="-mt-2 text-[12px] text-[var(--mute)]">
-        {palavras} palavras · ~{segundos}s de fala
-        {duracao !== null ? ` · vídeo tem ${duracao}s` : ""}
+      <p className="-mt-2 flex flex-wrap items-center gap-2 text-[12px] text-[var(--mute)]">
+        <span>
+          {palavras} palavras · ~{segundos}s de fala
+          {duracao !== null ? ` · vídeo tem ${duracao}s` : ""}
+        </span>
+        {estourou && (
+          <span className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-2 py-0.5 text-[11.5px] text-[var(--ink)]">
+            ⚠️ passa do tempo do vídeo — corte, ou o final fica sem imagem
+          </span>
+        )}
       </p>
 
       <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-[var(--hairline)] p-3">
@@ -197,6 +225,47 @@ export function ReactPassoAjuste({
           </div>
         )}
       </div>
+
+      {/* A fala final: é isso que a voz vai dizer, costurado. Sem este bloco
+          a pessoa tem dois textos soltos e nenhuma ideia do resultado
+          (dúvida do Johnny no teste de 14/08). */}
+      {falaFinal && (
+        <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[12.5px] font-semibold text-[var(--ink)]">
+              A fala final — é isso que a sua voz vai dizer
+            </p>
+            <span className="ml-auto text-[11.5px] text-[var(--mute)]">
+              {palavrasFinal} palavras · ~{segundosFinal}s
+            </span>
+          </div>
+          <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--ink)]">
+            {falaFinal}
+          </p>
+          {draft.cta && (
+            <p className="text-[11.5px] text-[var(--mute)]">
+              A parte final ({Math.round(draft.cta.trim().split(/\s+/).length / 2.5)}s) roda na
+              cena da chamada, depois do vídeo — não disputa os {duracao ?? "?"}s do viral.
+            </p>
+          )}
+          {ctaDuplicado && (
+            <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-2.5 py-2">
+              <span className="text-[11.5px] text-[var(--ink)]">
+                ⚠️ Seu comentário já termina com uma chamada — vai ficar chamando duas vezes
+                seguidas.
+              </span>
+              <button
+                type="button"
+                onClick={() => chamar("limpar")}
+                disabled={ocupado !== null}
+                className="ml-auto h-8 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3 text-[11.5px] text-[var(--ink)] disabled:opacity-40"
+              >
+                {ocupado === "limpar" ? "Tirando…" : "Tirar a chamada do comentário"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {erro && <p className="text-[12.5px] text-red-400">{erro}</p>}
     </div>
