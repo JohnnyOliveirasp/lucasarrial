@@ -29,7 +29,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { importImages, importTrainingAudios } from "@/lib/onboarding/import";
 import { gerarAvatares } from "@/lib/onboarding/avatares";
 
-export const maxDuration = 300; // áudios de treino podem ser grandes
+export const maxDuration = 600; // vídeo de 600MB+ + áudios de treino (502 do caso A125)
 
 type Body = {
   email?: unknown;
