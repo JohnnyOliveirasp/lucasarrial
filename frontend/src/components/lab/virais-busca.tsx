@@ -55,8 +55,13 @@ const CAMPO =
   "rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--ink)]";
 const BOTAO =
   "rounded-[var(--radius-sm)] bg-[var(--ink)] px-5 text-[14px] font-semibold text-[var(--surface-deep)] disabled:opacity-40";
-/** Mesma grade das cenas do wizard (passo-cenas.tsx): miniatura, não card. */
-const GRADE = "grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-6";
+/**
+ * Grade do banco de cenas do Estúdio (banco-cenas.tsx): miniatura pequena,
+ * sem card. Card com borda + legenda de 2 linhas fazia cada vídeo ocupar
+ * meia tela (marcado pelo Johnny 14/08) — aqui são 100 vídeos pra bater o
+ * olho, não 6 cenas.
+ */
+const GRADE = "grid grid-cols-4 gap-1.5 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
 
 export function ViraisBusca() {
   const [videos, setVideos] = useState<Viral[]>([]);
@@ -599,60 +604,68 @@ function Miniatura({
   onMarcar: () => void;
 }) {
   return (
-    <li
-      className={`relative flex flex-col overflow-hidden rounded-[var(--radius)] border bg-[var(--surface)] ${
-        selecionadoNaLista ? "border-[var(--ink)]" : "border-[var(--hairline-strong)]"
-      }`}
-    >
-      {/* seleção em massa: fica por cima da capa, no canto */}
-      <label
-        className="absolute left-1.5 top-1.5 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded bg-black/60"
-        title="Selecionar para apagar ou marcar em massa"
+    <li className="flex flex-col gap-0.5" title={v.legenda ?? ""}>
+      <div
+        className={`relative overflow-hidden rounded-[var(--radius-sm)] border ${
+          selecionadoNaLista ? "border-[var(--ink)]" : "border-[var(--hairline)]"
+        }`}
       >
-        <input type="checkbox" checked={selecionadoNaLista} onChange={onSelecionar} />
-      </label>
-      <button
-        type="button"
-        onClick={onAbrir}
-        className="relative aspect-[9/16] w-full overflow-hidden bg-black/80"
-        title="Abrir para assistir"
-      >
-        {v.thumb_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={v.thumb_url}
-            alt=""
-            className="h-full w-full object-cover"
-            loading="lazy"
-            referrerPolicy="no-referrer"
+        {/* seleção em massa: caixinha por cima da capa, estilo caixa de e-mail */}
+        <label
+          className="absolute left-0.5 top-0.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-black/60"
+          title="Selecionar para apagar ou marcar em massa"
+        >
+          <input
+            type="checkbox"
+            checked={selecionadoNaLista}
+            onChange={onSelecionar}
+            className="h-3 w-3"
           />
-        ) : (
-          <span className="flex h-full items-center justify-center text-[12px] text-white/60">
-            sem capa
-          </span>
-        )}
-        <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
-          ❤️ {compacto(v.likes)}
-        </span>
-        {v.selecionado && (
-          <span className="absolute right-1 top-1 rounded bg-[var(--ink)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--surface-deep)]">
-            ✓ baixar
-          </span>
-        )}
-      </button>
-      <div className="flex flex-1 flex-col gap-0.5 p-1.5">
-        <span className="truncate text-[10px] text-[var(--mute)]">
-          @{v.autor ?? "?"}
-          {v.views ? ` · ${compacto(v.views)}` : ""}
-        </span>
-        <p className="line-clamp-2 text-[11px] leading-tight text-[var(--ink)]">
-          {v.legenda || "(sem descrição)"}
-        </p>
-        <label className="mt-auto flex items-center gap-1 pt-0.5 text-[11px] text-[var(--ink)]">
-          <input type="checkbox" checked={v.selecionado} onChange={onMarcar} />
-          baixar
         </label>
+        <button
+          type="button"
+          onClick={onAbrir}
+          className="relative block aspect-[9/16] w-full overflow-hidden bg-black/80"
+          title="Abrir para assistir"
+        >
+          {v.thumb_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={v.thumb_url}
+              alt=""
+              className="h-full w-full object-cover"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <span className="flex h-full items-center justify-center text-[10px] text-white/60">
+              sem capa
+            </span>
+          )}
+          <span className="absolute bottom-0.5 left-0.5 rounded bg-black/70 px-1 text-[9px] font-medium text-white">
+            ❤️ {compacto(v.likes)}
+          </span>
+        </button>
+        {/* "baixar" virou selo clicável no canto — a linha de checkbox com
+            texto embaixo dobrava a altura da miniatura. */}
+        <button
+          type="button"
+          onClick={onMarcar}
+          aria-pressed={v.selecionado}
+          title={v.selecionado ? "Na lista de download — clique pra tirar" : "Marcar pra baixar"}
+          className={`absolute bottom-0.5 right-0.5 z-10 rounded px-1 text-[9px] font-semibold ${
+            v.selecionado
+              ? "bg-[var(--ink)] text-[var(--surface-deep)]"
+              : "bg-black/60 text-white/70"
+          }`}
+        >
+          {v.selecionado ? "✓ baixar" : "baixar"}
+        </button>
       </div>
+      <span className="truncate text-[9px] leading-tight text-[var(--mute)]">
+        @{v.autor ?? "?"}
+        {v.views ? ` · ${compacto(v.views)}` : ""}
+      </span>
     </li>
   );
 }
