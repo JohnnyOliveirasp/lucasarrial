@@ -12,10 +12,20 @@
  * O CTA entra no MESMO áudio, no fim: ele tem cena própria, então não
  * disputa o tempo do viral.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactDraft } from "./react-tipos";
 
 type Voz = { id: string; name: string; status: string };
+
+/** Uma linha do histórico de gerações (GET /api/v1/generations). */
+type GenHist = {
+  id: string;
+  status: string;
+  text_raw: string | null;
+  audio_url: string | null;
+};
+
+const EM_VOO = ["pending", "generating"];
 
 export function ReactPassoAudio({
   draft,
@@ -27,7 +37,17 @@ export function ReactPassoAudio({
   const [vozes, setVozes] = useState<Voz[]>([]);
   const [vozId, setVozId] = useState<string>(draft.vozId ?? "");
   const [gerando, setGerando] = useState(false);
+  const [recuperando, setRecuperando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  /** Vira false quando a tela sai — o poll para de escrever em componente morto. */
+  const vivo = useRef(true);
+  useEffect(() => {
+    vivo.current = true;
+    return () => {
+      vivo.current = false;
+    };
+  }, []);
 
   /** Texto final falado: comentário + CTA (quando existir). */
   const texto = [draft.roteiro.trim(), draft.cta.trim()].filter(Boolean).join("\n\n");
@@ -47,6 +67,82 @@ export function ReactPassoAudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Acompanha uma geração até o fim. Vive fora do gerar() de propósito: ele
+   * também roda na VOLTA pra tela. O id fica no rascunho desde o primeiro
+   * segundo, então sair no meio não perde mais o áudio — nem faz pagar de novo.
+   */
+  const acompanhar = useCallback(
+    async (genId: string): Promise<void> => {
+      for (let i = 0; i < 120; i++) {
+        const j = await fetch(`/api/v1/generations/${genId}`, { cache: "no-store" })
+          .then((r) => r.json())
+          .catch(() => null);
+        // ⚠️ A rota devolve { generation: {...} } — NÃO tem envelope "data".
+        // Ler errado aqui fazia o poll nunca ver "ready" (bug de 14/08).
+        const g = (j?.generation ?? j?.data?.generation ?? j) as {
+          status?: string;
+          audio_url?: string | null;
+          error_message?: string | null;
+        } | null;
+        if (g?.status === "ready" && g.audio_url) {
+          update({ audioUrl: g.audio_url, audioGenId: genId });
+          return;
+        }
+        if (g?.status === "failed") {
+          setErro(g.error_message ?? "A geração do áudio falhou.");
+          update({ audioGenId: null });
+          return;
+        }
+        // Saiu da tela: para o loop, mas o id está guardado — retoma na volta.
+        if (!vivo.current) return;
+        await new Promise((s) => setTimeout(s, 3000));
+      }
+      setErro("O áudio está demorando demais. Volte a este passo em instantes.");
+    },
+    [update],
+  );
+
+  /** Na volta pra tela: retoma o áudio que ficou gerando (e renova a URL, que
+   *  é presignada e vence em 1h). */
+  useEffect(() => {
+    if (!draft.audioGenId) return;
+    setRecuperando(true);
+    void acompanhar(draft.audioGenId).finally(() => setRecuperando(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Resgate: áudio gerado numa visita anterior que o rascunho não guardou.
+   * Procura no histórico da voz um áudio com EXATAMENTE este texto — se achar,
+   * adota em vez de gerar (e cobrar) de novo.
+   */
+  const resgatado = useRef<string>("");
+  useEffect(() => {
+    if (!vozId || draft.audioGenId || draft.audioUrl || texto.length < 20) return;
+    if (resgatado.current === vozId) return;
+    resgatado.current = vozId;
+    void (async () => {
+      const j = await fetch(`/api/v1/generations?voice_id=${vozId}&limit=10`, {
+        cache: "no-store",
+      })
+        .then((r) => r.json())
+        .catch(() => null);
+      const igual = ((j?.generations ?? []) as GenHist[]).find(
+        (g) => (g.text_raw ?? "").trim() === texto.trim(),
+      );
+      if (!igual || !vivo.current) return;
+      if (igual.status === "ready" && igual.audio_url) {
+        update({ vozId, audioUrl: igual.audio_url, audioGenId: igual.id });
+      } else if (EM_VOO.includes(igual.status)) {
+        update({ vozId, audioGenId: igual.id });
+        setRecuperando(true);
+        await acompanhar(igual.id).finally(() => setRecuperando(false));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vozId, texto]);
+
   async function gerar() {
     if (!vozId) return;
     setGerando(true);
@@ -62,22 +158,15 @@ export function ReactPassoAudio({
         setErro(j?.error?.message ?? "Não consegui gerar o áudio.");
         return;
       }
-      const genId = (j?.data?.generation_id ?? j?.generation_id) as string;
-      // Poll até ficar pronto — a rota sincroniza com o RunPod sozinha.
-      for (let i = 0; i < 90; i++) {
-        await new Promise((s) => setTimeout(s, 3000));
-        const st = await fetch(`/api/v1/generations/${genId}`).then((r) => r.json());
-        const g = st?.data ?? st;
-        if (g?.status === "ready" && g?.audio_url) {
-          update({ vozId, audioUrl: g.audio_url, audioGenId: genId });
-          return;
-        }
-        if (g?.status === "failed") {
-          setErro(g?.error_message ?? "A geração do áudio falhou.");
-          return;
-        }
+      const genId = (j?.generation_id ?? j?.data?.generation_id) as string | undefined;
+      if (!genId) {
+        setErro("O servidor não devolveu a geração.");
+        return;
       }
-      setErro("O áudio está demorando demais.");
+      // Guarda o id ANTES de esperar: é isso que salva o áudio já cobrado se a
+      // pessoa fechar a aba no meio.
+      update({ vozId, audioGenId: genId, audioUrl: null });
+      await acompanhar(genId);
     } catch {
       setErro("Falha de rede ao gerar o áudio.");
     } finally {
@@ -126,7 +215,12 @@ export function ReactPassoAudio({
             <div className="flex flex-wrap items-center gap-2">
               <select
                 value={vozId}
-                onChange={(e) => setVozId(e.target.value)}
+                onChange={(e) => {
+                  setVozId(e.target.value);
+                  // Guarda a voz no rascunho já na escolha: sem ela o resgate
+                  // do áudio não tem onde procurar.
+                  update({ vozId: e.target.value || null });
+                }}
                 className="h-10 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 text-[13px] text-[var(--ink)]"
               >
                 <option value="" className="bg-[var(--surface-deep)] text-[var(--ink)]">
@@ -145,15 +239,26 @@ export function ReactPassoAudio({
               <button
                 type="button"
                 onClick={gerar}
-                disabled={gerando || !vozId || texto.length < 20}
+                disabled={gerando || recuperando || !vozId || texto.length < 20}
                 className="h-10 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
               >
-                {gerando ? "Gerando o áudio…" : draft.audioUrl ? "Gerar de novo" : "Gerar o áudio"}
+                {gerando
+                  ? "Gerando o áudio…"
+                  : recuperando
+                    ? "Procurando o áudio…"
+                    : draft.audioUrl
+                      ? "Gerar de novo"
+                      : "Gerar o áudio"}
               </button>
               <span className="text-[12px] text-[var(--mute)]">
                 {custo.toLocaleString("pt-BR")} créditos
               </span>
             </div>
+          )}
+          {recuperando && !draft.audioUrl && (
+            <p className="text-[12px] text-[var(--mute)]">
+              Este áudio já foi mandado gerar — estou recuperando ele em vez de cobrar de novo.
+            </p>
           )}
           {draft.audioUrl && (
             <audio src={draft.audioUrl} controls className="h-9 w-full max-w-md" />
