@@ -29,6 +29,9 @@ import { dispararTreinoOnboarding } from "./treino";
 type Admin = SupabaseClient<Database>;
 
 const MAX_IMAGE_BYTES = 30 * 1024 * 1024; // 30MB por foto
+// Lote 1 (14/08): "fotos" do aluno = 1 VÍDEO dele (165-304MB). Baixamos o
+// vídeo com teto próprio e extraímos 3 frames que viram as fotos.
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 400 * 1024 * 1024; // 400MB por take (1h WAV cabe)
 const MAX_IMAGES = 20;
 const MAX_AUDIOS = 20; // mesmo teto do MAX_FILES_PER_VOICE
@@ -53,6 +56,54 @@ function imageDestKey(userId: string, fileId: string, ext: string): string {
 }
 
 /**
+ * Aluno mandou VÍDEO no lugar de foto: baixa com teto maior, extrai 3 frames
+ * (15/45/75% da duração) e sobe cada um como foto do acervo. Chaves com o
+ * prefixo `onboarding_<fileId>.` — a mesma sonda de idempotência das fotos
+ * normais encontra os frames num reprocesso. Devolve quantos frames entraram.
+ */
+async function importarFramesDoVideo(
+  admin: Admin,
+  userId: string,
+  fileId: string,
+  allKeys: string[],
+): Promise<number> {
+  const file = await downloadDriveFile(fileId, MAX_VIDEO_BYTES);
+  if (!file.contentType.startsWith("video/")) return 0;
+  const { extrairFramesDeVideo } = await import("./video-frames");
+  const frames = await extrairFramesDeVideo(file.bytes);
+  const safe = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
+  let n = 0;
+  for (let i = 0; i < frames.length; i++) {
+    const destKey = `${userId}/uploads/onboarding_${safe}.frame${i}.jpg`;
+    await r2.send(
+      new PutObjectCommand({
+        Bucket: imagesBucket(),
+        Key: destKey,
+        Body: frames[i],
+        ContentType: "image/jpeg",
+      }),
+    );
+    const { error: insertErr } = await admin.from("image_generations").insert({
+      id: randomUUID(),
+      user_id: userId,
+      name: `Foto do vídeo (${i + 1})`,
+      prompt: "",
+      input_image_path: "",
+      aspect_ratio: "auto",
+      resolution: "original",
+      credits_cost: 0,
+      image_path: destKey,
+      status: "ready",
+      kie_model: "upload",
+    });
+    if (insertErr) throw new Error(insertErr.message);
+    allKeys.push(destKey);
+    n++;
+  }
+  return n;
+}
+
+/**
  * Importa as fotos do Drive pro acervo do aluno e define a referência do
  * clone se ainda não houver (profiles.image_ref_key).
  */
@@ -67,18 +118,18 @@ export async function importImages(
 
   for (const fileId of fileIds.slice(0, MAX_IMAGES)) {
     try {
-      // Idempotência: o acervo já tem uma foto com esse fileId?
+      // Idempotência: o acervo já tem foto(s) com esse fileId? (um vídeo
+      // vira até 3 frames, todos com o mesmo prefixo — pega todos.)
       const probe = imageDestKey(userId, fileId, "");
-      const { data: existing } = await admin
+      const { data: existingRows } = await admin
         .from("image_generations")
         .select("id, image_path")
         .eq("user_id", userId)
         .like("image_path", `${probe}%`)
-        .limit(1)
-        .maybeSingle();
-      if (existing) {
+        .limit(5);
+      if (existingRows && existingRows.length > 0) {
         result.skipped++;
-        allKeys.push(existing.image_path as string);
+        for (const ex of existingRows) allKeys.push(ex.image_path as string);
         continue;
       }
 
@@ -118,10 +169,22 @@ export async function importImages(
       allKeys.push(destKey);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      // Pasta de fotos com vídeo/arquivo gigante no meio (lote 1, 13/08):
-      // ignora e segue — a linha só falha se NENHUMA foto aproveitável sobrar.
+      // Vídeo (ou arquivo grande) no lugar de foto: tenta extrair 3 frames
+      // do vídeo — é o que o time fazia na mão (print do vídeo do aluno).
       if (/teto \d+MB|não é imagem/.test(msg)) {
-        result.ignored!.push({ id: fileId, reason: msg });
+        try {
+          const n = await importarFramesDoVideo(admin, userId, fileId, allKeys);
+          if (n > 0) {
+            result.imported++;
+            continue;
+          }
+          result.ignored!.push({ id: fileId, reason: msg });
+        } catch (e2) {
+          result.ignored!.push({
+            id: fileId,
+            reason: `${msg}; frames: ${e2 instanceof Error ? e2.message : String(e2)}`,
+          });
+        }
       } else {
         result.failed.push({ id: fileId, error: msg });
       }
