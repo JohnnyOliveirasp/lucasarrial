@@ -67,6 +67,8 @@ export type ReactDraft = {
   legendaEstilo: string;
   legendaPosicao: SubtitlePosition | null;
   legendaTamanho: SubtitleSize | null;
+  /** Imagem de fundo do trecho em que só você aparece. null = fundo escuro. */
+  fundoFinal: string | null;
   /** Pedido em voo (react_jobs). Guardado pra tela reencontrar o job depois de
    *  um F5 — sem isso o vídeo só aparecia em "Vídeos gerados". */
   jobId: string | null;
@@ -90,5 +92,6 @@ export const DRAFT_VAZIO: ReactDraft = {
   legendaEstilo: "karaoke",
   legendaPosicao: null,
   legendaTamanho: null,
+  fundoFinal: null,
   jobId: null,
 };

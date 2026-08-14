@@ -36,6 +36,13 @@ const SUAVIDADE = 0.04;
 /** Menos que isso não vale virar trecho separado — só encurta a fala. */
 const MIN_EXCEDENTE_S = 1.5;
 
+/**
+ * Congela o último quadro por até 10s. É o cinto de segurança contra o clone
+ * sair mais curto que a fala: melhor a imagem parada do que o vídeo acabar no
+ * meio da frase (defeito que o Johnny pegou no 1º React, 14/08).
+ */
+const SEGURA_FIM = "tpad=stop_mode=clone:stop_duration=10,";
+
 export type PlanoMontagem = {
   /** Quanto tempo o viral aparece. */
   segundosViral: number;
@@ -66,17 +73,21 @@ async function trechoComViral(args: {
 }): Promise<void> {
   const { viral, avatar, saida, layout, segundos } = args;
   let filtro: string;
+  // ⚠️ O clone pode sair um pouco mais curto que a fala. Sem isto o vídeo
+  // simplesmente ACABA antes do áudio; com o tpad o último quadro congela e a
+  // fala termina inteira.
+  const AV = `[1:v]${SEGURA_FIM}`;
   if (layout === "recorte") {
     // Viral ocupa a tela; você entra recortado no canto inferior esquerdo,
     // ocupando ~38% da largura (proporção do reel de referência do Lucas).
     filtro = [
       `[0:v]scale=${L}:${A}:force_original_aspect_ratio=increase,crop=${L}:${A},setsar=1[bg]`,
-      `[1:v]chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},scale=${Math.round(L * 0.38)}:-1[me]`,
+      `${AV}chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},scale=${Math.round(L * 0.38)}:-1[me]`,
       `[bg][me]overlay=x=24:y=H-h-120:format=auto[v]`,
     ].join(";");
   } else {
-    const cima = layout === "viral-em-cima" ? "[0:v]" : "[1:v]";
-    const baixo = layout === "viral-em-cima" ? "[1:v]" : "[0:v]";
+    const cima = layout === "viral-em-cima" ? "[0:v]" : AV;
+    const baixo = layout === "viral-em-cima" ? AV : "[0:v]";
     const meia = A / 2;
     filtro = [
       `${cima}scale=${L}:${meia}:force_original_aspect_ratio=increase,crop=${L}:${meia},setsar=1[top]`,
@@ -120,16 +131,22 @@ async function trechoSoVoce(args: {
     const recorte = layoutRecorte
       ? `chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},`
       : "";
+    // ⚠️ Imagem parada quer `-loop 1`; `-stream_loop` é pra vídeo. Trocar os
+    // dois dá um clipe de 1 frame (ou um erro seco) em vez de fundo.
+    const parada = /\.(png|jpe?g|webp|gif|bmp)$/i.test(cena);
     await run(
       "ffmpeg",
       [
         "-y", "-v", "error",
-        "-stream_loop", "-1", "-t", String(segundos), "-i", cena,
+        ...(parada
+          ? ["-loop", "1", "-framerate", "30"]
+          : ["-stream_loop", "-1"]),
+        "-t", String(segundos), "-i", cena,
         "-ss", String(inicio), "-t", String(segundos), "-i", avatar,
         "-filter_complex",
         [
           `[0:v]scale=${L}:${A}:force_original_aspect_ratio=increase,crop=${L}:${A},setsar=1[bg]`,
-          `[1:v]${recorte}scale=${Math.round(L * 0.42)}:-1[me]`,
+          `[1:v]${SEGURA_FIM}${recorte}scale=${Math.round(L * 0.42)}:-1[me]`,
           `[bg][me]overlay=x=(W-w)/2:y=H-h-160:format=auto[v]`,
         ].join(";"),
         "-map", "[v]", "-an",
@@ -145,8 +162,8 @@ async function trechoSoVoce(args: {
   // Sem cena: você em tela cheia. No layout de recorte o fundo é verde, então
   // ele vira um fundo escuro sólido em vez de aparecer verde na tela.
   const filtro = layoutRecorte
-    ? `[1:v]chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},scale=${L}:-1[me];[0:v][me]overlay=(W-w)/2:(H-h)/2:format=auto[v]`
-    : `[1:v]scale=${L}:${A}:force_original_aspect_ratio=increase,crop=${L}:${A},setsar=1[v]`;
+    ? `[1:v]${SEGURA_FIM}chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},scale=${L}:-1[me];[0:v][me]overlay=(W-w)/2:(H-h)/2:format=auto[v]`
+    : `[1:v]${SEGURA_FIM}scale=${L}:${A}:force_original_aspect_ratio=increase,crop=${L}:${A},setsar=1[v]`;
 
   await run(
     "ffmpeg",

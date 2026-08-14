@@ -556,6 +556,8 @@ export type ReactJobRow = {
   legenda_estilo: string | null;
   legenda_posicao: string | null;
   legenda_tamanho: string | null;
+  /** mig 79 — fundo do trecho "você em tela cheia"; null = fundo escuro. */
+  fundo_key: string | null;
   criado_em: Timestamp;
   atualizado_em: Timestamp;
 };

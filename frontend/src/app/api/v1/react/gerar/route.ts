@@ -14,7 +14,13 @@ import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { baixarViral, marcarDownload } from "@/lib/virais/download";
 import { marcarUsado } from "@/lib/virais/pessoal";
-import { dispararClone, estadoClone, montarEEnviar, trazerParaR2 } from "@/lib/react/gerar";
+import {
+  dispararClone,
+  duracaoDeUrl,
+  estadoClone,
+  montarEEnviar,
+  trazerParaR2,
+} from "@/lib/react/gerar";
 import type { LayoutMontagem } from "@/lib/react/montagem";
 import {
   SUBTITLE_POSITIONS,
@@ -48,6 +54,7 @@ export async function POST(request: NextRequest) {
   const cta = typeof b.cta === "string" ? b.cta.trim() : "";
   const fotoUrl = typeof b.foto_url === "string" ? b.foto_url : null;
   const audioUrl = typeof b.audio_url === "string" ? b.audio_url : null;
+  const fundoUrl = typeof b.fundo_url === "string" && b.fundo_url ? b.fundo_url : null;
   // Legenda: mesmos presets do editor de vídeo (validados pela lista oficial).
   const legendaEstilo =
     typeof b.legenda_estilo === "string" && SUBTITLE_PRESET_IDS.includes(b.legenda_estilo)
@@ -79,8 +86,13 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
   if (!viral?.url) return badRequest("Vídeo não encontrado no acervo.");
 
+  // A estimativa por palavras é só o plano B. Quem manda é o áudio: com a
+  // conta `palavras ÷ 2,5` o clone saía curto e o vídeo cortava a fala no fim
+  // (bug do 1º React, 14/08). Medimos o mp3 antes de pedir o clone.
   const palavras = [roteiro, cta].join(" ").trim().split(/\s+/).filter(Boolean).length;
-  const segundos = Math.max(1, Math.round(palavras / PALAVRAS_POR_SEGUNDO));
+  const estimado = Math.max(1, Math.round(palavras / PALAVRAS_POR_SEGUNDO));
+  const medido = audioUrl ? await duracaoDeUrl(audioUrl) : null;
+  const segundos = medido ? Math.ceil(medido + 0.35) : estimado;
 
   const { data: job, error } = await admin
     .from("react_jobs")
@@ -139,6 +151,20 @@ export async function POST(request: NextRequest) {
       return badRequest("Gere o áudio antes (passo da voz).");
     }
 
+    // Fundo do trecho final (opcional): sai da galeria de imagens do aluno.
+    let fundoKey: string | null = null;
+    if (fundoUrl) {
+      try {
+        fundoKey = await trazerParaR2(
+          fundoUrl,
+          `${userId}/react/${jobId}/fundo.png`,
+          "image/png",
+        );
+      } catch {
+        fundoKey = null; // fundo é enfeite: não derruba o pedido
+      }
+    }
+
     const cloneKey = `${userId}/react/${jobId}/clone.mp4`;
     const cloneJob = await dispararClone({ fotoKey, audioKey, saidaKey: cloneKey, segundos });
 
@@ -150,6 +176,7 @@ export async function POST(request: NextRequest) {
         audio_url: audioKey,
         clone_job_id: cloneJob,
         clone_r2_key: cloneKey,
+        fundo_key: fundoKey,
         status: "clonando",
         atualizado_em: new Date().toISOString(),
       } as never)
@@ -173,7 +200,7 @@ export async function GET(request: NextRequest) {
 
   const admin = getAdmin();
   const COLUNAS =
-    "id, status, erro, r2_key, segundos, layout, viral_r2_key, clone_job_id, clone_r2_key, audio_url, viral_id, criado_em, legenda_estilo, legenda_posicao, legenda_tamanho";
+    "id, status, erro, r2_key, segundos, layout, viral_r2_key, clone_job_id, clone_r2_key, audio_url, viral_id, criado_em, legenda_estilo, legenda_posicao, legenda_tamanho, fundo_key";
   // Sem id = "tem algum pedido meu em voo?". A tela pergunta isso ao abrir:
   // o job do Johnny de 14/08 nasceu antes de o rascunho guardar o jobId e
   // ficou órfão — parado em "clonando" porque ninguém perguntava por ele.
@@ -234,6 +261,7 @@ export async function GET(request: NextRequest) {
           legendaEstilo: data.legenda_estilo,
           legendaPosicao: data.legenda_posicao as SubtitlePosition | null,
           legendaTamanho: data.legenda_tamanho as SubtitleSize | null,
+          fundoKey: data.fundo_key,
         });
         await admin
           .from("react_jobs")

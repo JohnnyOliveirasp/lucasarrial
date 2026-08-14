@@ -50,6 +50,44 @@ export async function trazerParaR2(url: string, key: string, contentType: string
   return key;
 }
 
+/** Quanto tempo o arquivo REALMENTE tem. null = não consegui medir. */
+async function duracaoDoArquivo(caminho: string): Promise<number | null> {
+  try {
+    const { stdout } = await run("ffprobe", [
+      "-v", "error",
+      "-show_entries", "format=duration",
+      "-of", "default=nw=1:nk=1",
+      caminho,
+    ]);
+    const d = Number(String(stdout).trim());
+    return Number.isFinite(d) && d > 0 ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Duração real de um áudio que ainda está numa URL.
+ *
+ * ⚠️ Existe porque a conta `palavras ÷ 2,5` MENTE: no 1º React do Johnny
+ * (14/08) a fala real passou da estimativa e o vídeo cortou no meio do
+ * "se você quer acessar www...". Quem manda no tempo é o áudio, não o texto.
+ */
+export async function duracaoDeUrl(url: string): Promise<number | null> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "react-dur-"));
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const arq = path.join(dir, "audio.bin");
+    await fs.writeFile(arq, Buffer.from(await res.arrayBuffer()));
+    return await duracaoDoArquivo(arq);
+  } catch {
+    return null;
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /** Dispara o clone com a foto de fundo verde + a fala. Devolve o job do RunPod. */
 export async function dispararClone(args: {
   fotoKey: string;
@@ -102,6 +140,8 @@ export async function montarEEnviar(args: {
   legendaEstilo?: string | null;
   legendaPosicao?: SubtitlePosition | null;
   legendaTamanho?: SubtitleSize | null;
+  /** Imagem de fundo do trecho "você em tela cheia". null = fundo escuro. */
+  fundoKey?: string | null;
 }): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "react-"));
   try {
@@ -115,6 +155,23 @@ export async function montarEEnviar(args: {
       baixarDoR2(BUCKET_WORKER, args.cloneKey, clone),
       baixarDoR2(R2_BUCKETS.generations, args.audioKey, audio),
     ]);
+
+    // Última palavra do dono da verdade: o arquivo. Uma folga curta segura a
+    // sílaba final (o corte seco comia o "…ponto com" do CTA).
+    const real = await duracaoDoArquivo(audio);
+    const segundos = real ? Math.ceil((real + 0.35) * 100) / 100 : args.segundos;
+
+    // Fundo do trecho final, quando a pessoa escolheu um.
+    let fundo: string | null = null;
+    if (args.fundoKey) {
+      try {
+        fundo = path.join(dir, "fundo" + path.extname(args.fundoKey).slice(0, 5));
+        await baixarDoR2(R2_BUCKETS.generations, args.fundoKey, fundo);
+      } catch (e) {
+        console.error("[react] fundo ignorado:", e instanceof Error ? e.message : e);
+        fundo = null;
+      }
+    }
 
     // Legenda: os timestamps saem do Whisper POR PALAVRA e casam 1:1 com o
     // vídeo porque o áudio É o que gerou o clone. Falhou? o vídeo sai sem
@@ -145,8 +202,9 @@ export async function montarEEnviar(args: {
       audio,
       saida,
       layout: args.layout,
-      segundos: args.segundos,
+      segundos,
       viralSegundos: args.viralSegundos,
+      cena: fundo,
       ass,
       fontsDir: FONTS_DIR,
     });

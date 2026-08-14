@@ -122,6 +122,7 @@ export function ReactPassoSaida({
           layout: draft.layout,
           roteiro: draft.roteiro,
           cta: draft.cta,
+          fundo_url: draft.fundoFinal,
           legenda_estilo: draft.legendaEstilo,
           legenda_posicao: draft.legendaPosicao,
           legenda_tamanho: draft.legendaTamanho,
