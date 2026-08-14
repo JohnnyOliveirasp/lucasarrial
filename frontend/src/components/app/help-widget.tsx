@@ -12,6 +12,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { usePathname } from "@/i18n/navigation";
 import { MessageCircle, X, Send, ImagePlus, Camera, Loader2, Mic, Trash2 } from "lucide-react";
 import { useVoiceRecorder } from "@/components/app/use-voice-recorder";
+import { useArrastavel } from "@/components/app/use-arrastavel";
 import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
 
 type Msg = {
@@ -70,6 +71,8 @@ export function HelpWidget() {
   const locale = useLocale();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  // Balão arrastável (14/08): fixo no canto ele tapava botão de wizard.
+  const { pos, arrastando, foiArrasto, handlers } = useArrastavel();
   const [loaded, setLoaded] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -241,13 +244,23 @@ export function HelpWidget() {
 
   return (
     <>
-      {/* Balão flutuante — pílula laranja em evidência, igual à da landing */}
+      {/* Balão flutuante — pílula laranja em evidência, igual à da landing.
+          ARRASTÁVEL desde 14/08: fixo no canto ele cobriu o "Continuar" do
+          wizard e travou o Johnny. Botão de ajuda não pode atrapalhar o uso. */}
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        {...handlers}
+        onClick={() => {
+          // arrastar não abre o chat
+          if (foiArrasto()) return;
+          setOpen((v) => !v);
+        }}
+        style={{ right: pos.right, bottom: pos.bottom }}
+        title={open ? t("close") : `${t("open")} — arraste para mover`}
         aria-label={open ? t("close") : t("open")}
         className={[
-          "fixed bottom-5 right-5 z-50 inline-flex h-14 items-center justify-center gap-2 rounded-full font-sans font-bold transition-transform duration-[var(--dur-base)] ease-[var(--ease-out)] hover:scale-105 active:scale-95",
+          "fixed z-50 inline-flex h-14 touch-none items-center justify-center gap-2 rounded-full font-sans font-bold transition-transform duration-[var(--dur-base)] ease-[var(--ease-out)] hover:scale-105 active:scale-95",
+          arrastando ? "cursor-grabbing opacity-90" : "cursor-grab",
           open
             ? "w-14 border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] text-[var(--ink)] shadow-[0_8px_30px_rgba(0,0,0,0.45)]"
             : "px-5 bg-[#ff6a00] text-black shadow-[0_8px_30px_rgba(255,106,0,.35)]",
@@ -265,7 +278,9 @@ export function HelpWidget() {
 
       {/* Painel */}
       {open && (
-        <div className="fixed bottom-24 right-5 z-50 flex h-[min(560px,calc(100svh-8rem))] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] shadow-[0_16px_60px_rgba(0,0,0,0.6)]">
+        <div
+          style={{ right: pos.right, bottom: pos.bottom + 76 }}
+          className="fixed z-50 flex h-[min(560px,calc(100svh-8rem))] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] shadow-[0_16px_60px_rgba(0,0,0,0.6)]">
           <header className="flex items-center gap-3 border-b border-[var(--hairline)] px-4 py-3">
             <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#ff6a00] font-sans text-sm font-bold text-black">
               F
