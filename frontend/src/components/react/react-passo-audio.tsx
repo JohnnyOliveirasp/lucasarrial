@@ -13,6 +13,7 @@
  * disputa o tempo do viral.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Loader2, Trash2 } from "lucide-react";
 import type { ReactDraft } from "./react-tipos";
 
 type Voz = { id: string; name: string; status: string };
@@ -38,6 +39,7 @@ export function ReactPassoAudio({
   const [vozId, setVozId] = useState<string>(draft.vozId ?? "");
   const [gerando, setGerando] = useState(false);
   const [recuperando, setRecuperando] = useState(false);
+  const [apagando, setApagando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   /** Vira false quando a tela sai — o poll para de escrever em componente morto. */
@@ -142,6 +144,39 @@ export function ReactPassoAudio({
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vozId, texto]);
+
+  /**
+   * Joga o áudio fora de vez: sai do rascunho E do histórico (R2 + banco).
+   * Sem isso o "Gerar de novo" deixava o áudio ruim pra trás — e o resgate
+   * podia trazê-lo de volta na visita seguinte.
+   */
+  async function apagar() {
+    const genId = draft.audioGenId;
+    if (!genId) {
+      update({ audioUrl: null, audioGenId: null });
+      return;
+    }
+    if (!window.confirm("Apagar este áudio? Ele sai do histórico e não volta.")) return;
+    setApagando(true);
+    setErro(null);
+    try {
+      const r = await fetch("/api/v1/generations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [genId] }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => null);
+        setErro(j?.error?.message ?? "Não consegui apagar o áudio.");
+        return;
+      }
+      update({ audioUrl: null, audioGenId: null });
+    } catch {
+      setErro("Falha de rede ao apagar o áudio.");
+    } finally {
+      setApagando(false);
+    }
+  }
 
   async function gerar() {
     if (!vozId) return;
@@ -261,7 +296,23 @@ export function ReactPassoAudio({
             </p>
           )}
           {draft.audioUrl && (
-            <audio src={draft.audioUrl} controls className="h-9 w-full max-w-md" />
+            <div className="flex items-center gap-2">
+              <audio src={draft.audioUrl} controls className="h-9 w-full max-w-md" />
+              <button
+                type="button"
+                onClick={apagar}
+                disabled={apagando}
+                title="Apagar este áudio"
+                aria-label="Apagar este áudio"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] text-[var(--mute)] transition-colors hover:border-red-400/60 hover:text-red-400 disabled:opacity-40"
+              >
+                {apagando ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           )}
         </div>
       )}
