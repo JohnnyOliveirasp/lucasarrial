@@ -55,6 +55,8 @@ const CAMPO =
   "rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--ink)]";
 const BOTAO =
   "rounded-[var(--radius-sm)] bg-[var(--ink)] px-5 text-[14px] font-semibold text-[var(--surface-deep)] disabled:opacity-40";
+/** Mesma grade das cenas do wizard (passo-cenas.tsx): miniatura, não card. */
+const GRADE = "grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-6";
 
 export function ViraisBusca() {
   const [videos, setVideos] = useState<Viral[]>([]);
@@ -303,7 +305,7 @@ export function ViraisBusca() {
             <strong className="text-[var(--ink)]">Buscar virais</strong>.
           </p>
         ) : (
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <ul className={GRADE}>
             {videos.map((v) => (
               <Miniatura
                 key={v.id}
@@ -638,17 +640,17 @@ function Miniatura({
           </span>
         )}
       </button>
-      <div className="flex flex-1 flex-col gap-1 p-2">
-        <span className="text-[11px] text-[var(--mute)]">
+      <div className="flex flex-1 flex-col gap-0.5 p-1.5">
+        <span className="truncate text-[10px] text-[var(--mute)]">
           @{v.autor ?? "?"}
-          {v.views ? ` · ${compacto(v.views)} views` : ""}
+          {v.views ? ` · ${compacto(v.views)}` : ""}
         </span>
-        <p className="line-clamp-2 text-[12px] leading-snug text-[var(--ink)]">
+        <p className="line-clamp-2 text-[11px] leading-tight text-[var(--ink)]">
           {v.legenda || "(sem descrição)"}
         </p>
-        <label className="mt-auto flex items-center gap-1.5 pt-1 text-[12px] text-[var(--ink)]">
+        <label className="mt-auto flex items-center gap-1 pt-0.5 text-[11px] text-[var(--ink)]">
           <input type="checkbox" checked={v.selecionado} onChange={onMarcar} />
-          baixar este
+          baixar
         </label>
       </div>
     </li>
