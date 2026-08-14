@@ -61,7 +61,7 @@ const BOTAO =
  * meia tela (marcado pelo Johnny 14/08) — aqui são 100 vídeos pra bater o
  * olho, não 6 cenas.
  */
-const GRADE = "grid grid-cols-4 gap-1.5 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10";
+const GRADE = "grid grid-cols-5 gap-1 sm:grid-cols-8 lg:grid-cols-12 xl:grid-cols-14";
 
 export function ViraisBusca() {
   const [videos, setVideos] = useState<Viral[]>([]);
