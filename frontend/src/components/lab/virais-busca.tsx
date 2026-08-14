@@ -63,6 +63,8 @@ export function ViraisBusca() {
   const [minLikes, setMinLikes] = useState(0);
   const [filtro, setFiltro] = useState("");
   const [soSelecionados, setSoSelecionados] = useState(false);
+  const [limpando, setLimpando] = useState(false);
+  const [recado, setRecado] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -100,6 +102,33 @@ export function ViraisBusca() {
   }
 
   const marcados = videos.filter((v) => v.selecionado).length;
+
+  /** Faxina: joga fora o que não presta e mantém a curadoria intacta. */
+  async function limpar() {
+    const ok = window.confirm(
+      `Apagar do acervo TODOS os vídeos que você NÃO marcou?\n\n` +
+        `Os ${marcados} marcados continuam aqui. Isso não apaga nada no TikTok — ` +
+        `só limpa esta lista.`,
+    );
+    if (!ok) return;
+    setLimpando(true);
+    try {
+      const r = await fetch("/api/v1/virais/videos", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ escopo: "nao_marcados" }),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        setRecado(`${j.apagados} vídeos removidos da lista.`);
+        await carregar();
+      } else {
+        setRecado(j?.error?.message ?? "Não consegui limpar.");
+      }
+    } finally {
+      setLimpando(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -143,8 +172,19 @@ export function ViraisBusca() {
               />
               ver só a minha lista de download
             </label>
+            <button
+              type="button"
+              onClick={limpar}
+              disabled={limpando || videos.length === 0}
+              title="Apaga da lista os vídeos que você não marcou"
+              className="h-9 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3 text-[13px] text-[var(--ink)] disabled:opacity-40"
+            >
+              {limpando ? "Limpando…" : "Limpar não marcados"}
+            </button>
           </div>
         </div>
+
+        {recado && <p className="text-[13px] text-[var(--ink)]">{recado}</p>}
 
         {carregando ? (
           <p className="text-[14px] text-[var(--mute)]">Carregando…</p>

@@ -9,7 +9,7 @@ import type { NextRequest } from "next/server";
 import { gateAdmin } from "@/lib/admin/api";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { FILTRO_PADRAO, listarAcervo, marcarSelecao } from "@/lib/virais/acervo";
+import { FILTRO_PADRAO, limparAcervo, listarAcervo, marcarSelecao } from "@/lib/virais/acervo";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +40,32 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     console.error("[virais/videos]", e instanceof Error ? e.message : e);
     return serverError("Não consegui carregar os vídeos.");
+  }
+}
+
+/**
+ * DELETE — faxina do acervo. Apaga os NÃO marcados (tudo, ou só de uma busca).
+ * O que está marcado nunca sai: é a curadoria do usuário.
+ */
+export async function DELETE(request: NextRequest) {
+  const gate = await gateAdmin(request);
+  if ("res" in gate) return gate.res;
+
+  let body: { escopo?: unknown; termo_busca?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return badRequest("Corpo inválido");
+  }
+  const escopo = body.escopo === "termo" ? "termo" : "nao_marcados";
+  const termo = typeof body.termo_busca === "string" ? body.termo_busca.trim() : null;
+
+  try {
+    const apagados = await limparAcervo(getAdmin(), escopo, termo);
+    return jsonOk({ apagados });
+  } catch (e) {
+    console.error("[virais/limpar]", e instanceof Error ? e.message : e);
+    return serverError("Não consegui limpar agora.");
   }
 }
 

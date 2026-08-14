@@ -76,6 +76,28 @@ export async function listarAcervo(admin: Admin, f: FiltroAcervo) {
   return data ?? [];
 }
 
+/**
+ * Faxina do acervo. Uma busca pode trazer 1.000 vídeos e a maioria é lixo —
+ * depois de marcar o que presta, isso limpa o resto (pedido do Johnny 14/08).
+ *
+ * REGRA DURA: o que está MARCADO nunca é apagado, em nenhum escopo. É a
+ * curadoria dele; perder isso seria pior do que não ter a faxina.
+ */
+export async function limparAcervo(
+  admin: Admin,
+  escopo: "nao_marcados" | "termo",
+  termo: string | null,
+): Promise<number> {
+  let q = admin.from("viral_videos").delete({ count: "exact" }).eq("selecionado", false);
+  if (escopo === "termo") {
+    if (!termo) return 0;
+    q = q.eq("termo_busca", termo);
+  }
+  const { error, count } = await q;
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
 /** Marca/desmarca "quero baixar este" — é o que segura o R2 de virar lixão. */
 export async function marcarSelecao(
   admin: Admin,
