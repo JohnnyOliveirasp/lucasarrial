@@ -11,7 +11,23 @@
  */
 import { score } from "./tipos";
 
-const ACTOR_ID = "5K30i8aFccKNF5ICs"; // apidojo/tiktok-scraper
+/**
+ * ⚠️ TROCA DE MOTOR 14/08, decidida por TESTE do Johnny (não por estatística).
+ *
+ * O `apidojo/tiktok-scraper` (5K30i8aFccKNF5ICs) é 12x mais barato e tem
+ * melhor taxa de sucesso NA MÉDIA — mas na busca real dele
+ * ("church translation, church interpreter, live translation church")
+ * devolveu literalmente `{"noResults": true}` nos 3 termos. O
+ * `clockworks/tiktok-scraper`, na MESMA busca, trouxe vídeos com legenda,
+ * link, likes, views, data, autor e capa.
+ *
+ * Ou seja: o barato só é barato quando acha alguma coisa. Motor padrão passa
+ * a ser o clockworks; o apidojo fica documentado como alternativa econômica
+ * (US$0,30/1k contra US$3,70/1k no free tier) pra nichos onde ele responda.
+ */
+const ACTOR_ID = "GdWCkxBtKWOsKjdch"; // clockworks/tiktok-scraper
+const ACTOR_ECONOMICO = "5K30i8aFccKNF5ICs"; // apidojo — vazio no nicho do Johnny
+export const CUSTO_POR_VIDEO_USD = 0.0037; // clockworks, free tier
 const API = "https://api.apify.com/v2";
 
 export function apifyToken(): string {
@@ -58,6 +74,14 @@ export const PERIODOS = [
 ] as const;
 
 export type Periodo = (typeof PERIODOS)[number]["id"];
+
+/** Nosso período → o rótulo que o clockworks espera em videoSearchDateFilter. */
+const JANELA: Record<string, string> = {
+  THIS_WEEK: "this week",
+  THIS_MONTH: "this month",
+  LAST_THREE_MONTHS: "last 3 months",
+  LAST_SIX_MONTHS: "last 6 months",
+};
 
 /**
  * Como buscar. O actor aceita palavra-chave (keywords) OU uma URL de
@@ -125,23 +149,35 @@ export function separarLista(texto: string): string[] {
 export async function dispararBusca(p: PedidoBusca): Promise<RunApify> {
   const token = apifyToken();
   if (!token) throw new Error("sem_token");
+  // Campos do clockworks: cada tipo tem o SEU campo (não é tudo startUrls).
   const input: Record<string, unknown> = {
-    maxItems: p.maxItems,
-    dateRange: p.periodo,
+    resultsPerPage: p.maxItems,
+    excludePinnedPosts: true,
+    shouldDownloadVideos: false, // nós baixamos só o que for marcado
+    shouldDownloadCovers: false,
   };
   if (p.nichos.length > 0) {
-    input.keywords = p.nichos;
-    input.sortType = "MOST_LIKED"; // viral, não relevância — só vale aqui
-    input.includeSearchKeywords = true;
+    input.searchQueries = p.nichos;
+    input.searchSection = "/video"; // só vídeo; sem isso mistura perfis
+    // Ordenação e janela de data só valem na seção /video.
+    input.videoSearchSorting = "Most liked";
+    if (p.periodo !== "ALL_TIME") input.videoSearchDateFilter = JANELA[p.periodo];
   }
-  const urls = [
-    ...p.perfis.map(urlDePerfil),
-    ...p.hashtags.map(urlDeHashtag),
-    ...p.links.map((l) => (/^https?:\/\/(www\.)?tiktok\.com\//i.test(l.trim()) ? l.trim() : null)),
-  ].filter((u): u is string => !!u);
-  if (urls.length > 0) input.startUrls = urls;
-  if (!input.keywords && !input.startUrls) throw new Error("nada_pra_buscar");
-  if (p.pais) input.location = p.pais;
+  if (p.hashtags.length > 0) {
+    input.hashtags = p.hashtags.map((h) => h.trim().replace(/^#/, "")).filter(Boolean);
+  }
+  if (p.perfis.length > 0) {
+    input.profiles = p.perfis.map((u) => u.trim().replace(/^@/, "")).filter(Boolean);
+  }
+  const urls = p.links
+    .map((l) => l.trim())
+    .filter((l) => /^https?:\/\/(www\.)?tiktok\.com\//i.test(l));
+  if (urls.length > 0) input.postURLs = urls;
+
+  if (!input.searchQueries && !input.hashtags && !input.profiles && !input.postURLs) {
+    throw new Error("nada_pra_buscar");
+  }
+  if (p.pais) input.proxyCountryCode = p.pais;
 
   const resp = await fetch(`${API}/acts/${ACTOR_ID}/runs`, {
     method: "POST",
@@ -194,6 +230,37 @@ export async function listarRuns(limite = 10): Promise<RunApify[]> {
   }));
 }
 
+/**
+ * Item do clockworks (formato provado no dataset real do Johnny 14/08).
+ * Nomes BEM diferentes do apidojo — por isso o normalizador aceita os dois.
+ */
+type ItemClockworks = {
+  id?: string;
+  text?: string;
+  webVideoUrl?: string;
+  diggCount?: number;
+  playCount?: number;
+  commentCount?: number;
+  shareCount?: number;
+  collectCount?: number;
+  createTimeISO?: string;
+  createTime?: number;
+  hashtags?: Array<string | { name?: string }>;
+  mediaUrls?: string[];
+  searchQuery?: string;
+  authorMeta?: {
+    name?: string;
+    nickName?: string;
+    fans?: number;
+    profileUrl?: string;
+  };
+  videoMeta?: {
+    duration?: number;
+    coverUrl?: string;
+    originalCoverUrl?: string;
+  };
+};
+
 /** Item cru do actor apidojo (nomes conforme o README oficial dele). */
 type ItemApify = {
   id?: string;
@@ -243,6 +310,43 @@ function dataDoItem(it: ItemApify): string | null {
   return null;
 }
 
+/** Converte o item do clockworks pro nosso formato. */
+function normalizarClockworks(it: ItemClockworks): ViralImportado | null {
+  const videoId = it.id ? String(it.id) : "";
+  const url = it.webVideoUrl ?? "";
+  if (!videoId || !url) return null;
+  const publicado =
+    it.createTimeISO ??
+    (typeof it.createTime === "number" && it.createTime > 0
+      ? new Date(it.createTime * 1000).toISOString()
+      : null);
+  const base = {
+    likes: Number(it.diggCount ?? 0) || 0,
+    views: Number(it.playCount ?? 0) || null,
+    comentarios: Number(it.commentCount ?? 0) || null,
+    compartilhamentos: Number(it.shareCount ?? 0) || null,
+    publicado_em: publicado,
+  };
+  return {
+    plataforma: "tiktok",
+    video_id: videoId,
+    url,
+    autor: it.authorMeta?.name ?? null,
+    autor_seguidores: Number(it.authorMeta?.fans ?? 0) || null,
+    legenda: (it.text ?? "").trim() || null,
+    duracao_seg: typeof it.videoMeta?.duration === "number" ? it.videoMeta.duration : null,
+    thumb_url: it.videoMeta?.coverUrl ?? it.videoMeta?.originalCoverUrl ?? null,
+    // mediaUrls é o mp4 direto; expira, mas serve pro player e pro download.
+    video_url: it.mediaUrls?.[0] ?? null,
+    hashtags: (it.hashtags ?? [])
+      .map((h) => (typeof h === "string" ? h : h?.name ?? ""))
+      .filter(Boolean)
+      .slice(0, 20),
+    ...base,
+    score: score({ ...base, plataforma: "tiktok" } as never),
+  };
+}
+
 function normalizar(it: ItemApify): ViralImportado | null {
   const videoId = it.id ? String(it.id) : "";
   const url = it.postPage ?? "";
@@ -280,7 +384,13 @@ export async function itensDoRun(datasetId: string, teto = 1000): Promise<ViralI
   );
   const lista = Array.isArray(json) ? json : [];
   const normalizados = lista
-    .map(normalizar)
+    .map((it) => {
+      const bruto = it as ItemApify & ItemClockworks & { noResults?: boolean };
+      // O apidojo grava {"noResults": true} quando a busca não achou nada.
+      if (bruto?.noResults) return null;
+      // Cada actor usa nomes próprios: o campo da URL diz qual é qual.
+      return bruto?.webVideoUrl ? normalizarClockworks(bruto) : normalizar(bruto);
+    })
     .filter((v): v is ViralImportado => v !== null);
   // Mesmo vídeo pode vir 2x quando a busca cruza hashtag e keyword.
   return [...new Map(normalizados.map((v) => [v.video_id, v])).values()];

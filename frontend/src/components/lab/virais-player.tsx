@@ -63,6 +63,10 @@ export function ViralPlayer({
           </button>
         </div>
 
+        {/* Toca SEM baixar: se o scraper trouxe o mp4, usa ele; senão cai no
+            player oficial do TikTok embutido (não custa nada e sempre existe).
+            Mandar o Apify baixar todo vídeo sairia caro e é o oposto da
+            curadoria — só o marcado desce depois. */}
         <div className="flex justify-center rounded-[12px] bg-black/80 p-2">
           {v.video_url && !falhou ? (
             <video
@@ -73,6 +77,13 @@ export function ViralPlayer({
               playsInline
               onError={() => setFalhou(true)}
               className="max-h-[60vh] rounded-[8px]"
+            />
+          ) : v.plataforma === "tiktok" && v.video_id ? (
+            <iframe
+              src={`https://www.tiktok.com/embed/v2/${encodeURIComponent(v.video_id)}`}
+              title="Vídeo do TikTok"
+              allow="encrypted-media; fullscreen"
+              className="h-[60vh] w-full max-w-[340px] rounded-[8px] border-0"
             />
           ) : (
             <div className="flex flex-col items-center gap-3 p-8 text-center">
@@ -86,7 +97,7 @@ export function ViralPlayer({
                 />
               ) : null}
               <p className="text-[13px] text-white/80">
-                O link direto do vídeo expirou — abra no original pra assistir.
+                Não consegui tocar aqui — abra no original.
               </p>
             </div>
           )}

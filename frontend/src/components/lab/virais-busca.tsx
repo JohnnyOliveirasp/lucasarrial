@@ -350,7 +350,7 @@ function FormBusca({ onPronto }: { onPronto: () => Promise<void> }) {
       </div>
       <p className="text-[12px] text-[var(--mute)]">
         Traz os vídeos mais curtidos do período no TikTok · custo desta busca ≈ US${" "}
-        {(maxItens * 0.0003).toFixed(2)}
+        {(maxItens * 0.0037).toFixed(2)}
       </p>
       {situacao && <p className="text-[13px] text-[var(--ink)]">{situacao}</p>}
     </form>
