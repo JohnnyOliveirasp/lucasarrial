@@ -41,6 +41,7 @@ type Img = {
   video_prompt_pt: string | null;
   video_error: string | null;
   video_url: string | null;
+  kie_model: string | null;
 };
 
 export function ImageHistory({
@@ -79,7 +80,10 @@ export function ImageHistory({
       const res = await fetch(`/api/v1/images?lang=${lang}`, { cache: "no-store" });
       if (!res.ok) throw new Error(t("errors.load"));
       const json = await res.json();
-      setItems((json.images ?? []) as Img[]);
+      // Johnny 13/08: HISTÓRICO é só de imagens GERADAS. Uploads (fotos da
+      // pessoa, kie_model="upload") ficam no acervo dos pickers como
+      // referência, mas não aparecem aqui.
+      setItems(((json.images ?? []) as Img[]).filter((g) => g.kie_model !== "upload"));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("errors.generic"));
     } finally {

@@ -5,8 +5,12 @@
  * "Recebido" da planilha DFY e faz o serviço completo:
  *   1. Cria a conta do aluno (email+senha da planilha, e-mail já confirmado).
  *      Conta nasce ZERO créditos e travada — estado padrão de não-assinante.
- *   2. Importa as fotos do Drive pro acervo (1 vira referência do clone).
- *   3. Importa os áudios do Drive pra área de treino (SEM disparar treino).
+ *   2. Importa as fotos do Drive como REFERÊNCIA (close frontal vira a
+ *      principal via visão; nada vai pro histórico — só geradas ficam lá).
+ *   3. GERA 2-3 avatares do aluno com as fotos (por conta da casa).
+ *   4. Importa os áudios do Drive e DISPARA O TREINO da voz (casa paga).
+ *   (Correção Johnny 13/08, caso Vinicius — antes: foto no histórico +
+ *   referência aleatória + voz parada esperando o aluno pagar.)
  *
  * Segurança: header X-Onboarding-Secret contra ONBOARDING_WEBHOOK_SECRET,
  * comparação em tempo constante (mesmo padrão do webhook Hotmart).
@@ -23,6 +27,7 @@ import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { importImages, importTrainingAudios } from "@/lib/onboarding/import";
+import { gerarAvatares } from "@/lib/onboarding/avatares";
 
 export const maxDuration = 300; // áudios de treino podem ser grandes
 
@@ -34,6 +39,8 @@ type Body = {
   images?: unknown;
   audios?: unknown;
   row?: unknown;
+  /** Correção de conta importada no modelo antigo: re-escolhe a referência. */
+  force_reference?: unknown;
 };
 
 function validSecret(header: string | null): boolean {
@@ -136,9 +143,23 @@ export async function POST(request: NextRequest) {
       { onConflict: "id", ignoreDuplicates: true },
     );
 
-  const imagesResult = await importImages(admin, userId, images).catch((e) => {
+  const forceReference = body.force_reference === true;
+  const imagesResult = await importImages(admin, userId, images, { forceReference }).catch((e) => {
     console.error("[onboarding/import] imagens:", e instanceof Error ? e.message : e);
-    return { imported: 0, skipped: 0, failed: images.map((id) => ({ id, error: "falha geral" })), reference_key: null };
+    return {
+      imported: 0,
+      skipped: 0,
+      failed: images.map((id) => ({ id, error: "falha geral" })),
+      reference_key: null,
+      all_keys: [] as string[],
+    };
+  });
+
+  // 2-3 avatares gerados com as fotos (casa paga; idempotente). Falha aqui
+  // NÃO derruba o import — fica registrada na resposta pra nota da planilha.
+  const avatarsResult = await gerarAvatares(admin, userId, imagesResult.all_keys).catch((e) => {
+    console.error("[onboarding/import] avatares:", e instanceof Error ? e.message : e);
+    return { created: 0, skipped: 0, failed: [{ nome: "todos", error: "falha geral" }] };
   });
 
   let audiosResult;
@@ -152,6 +173,7 @@ export async function POST(request: NextRequest) {
       failed: audios.map((id) => ({ id, error: "falha geral" })),
       voice_id: null,
       voice_status: null,
+      training: null,
     };
   }
 
@@ -163,6 +185,7 @@ export async function POST(request: NextRequest) {
     ok,
     user: { id: userId, created },
     images: imagesResult,
+    avatars: avatarsResult,
     audios: audiosResult,
     row: typeof body.row === "number" ? body.row : null,
   });

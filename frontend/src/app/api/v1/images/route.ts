@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   const { data: rows, error } = await admin
     .from("image_generations")
     .select(
-      "id, name, prompt, prompt_en, prompt_es, aspect_ratio, resolution, credits_cost, image_path, status, error_message, created_at, video_status, video_path, video_tier, video_prompt_pt, video_error",
+      "id, name, prompt, prompt_en, prompt_es, aspect_ratio, resolution, credits_cost, image_path, status, error_message, created_at, video_status, video_path, video_tier, video_prompt_pt, video_error, kie_model",
     )
     .eq("user_id", auth.user_id)
     .order("created_at", { ascending: false });
@@ -93,6 +93,9 @@ export async function GET(request: NextRequest) {
         image_url,
         // Chave R2 do resultado — "usar como referência" no estúdio (29/07).
         image_path: g.status === "ready" ? g.image_path : null,
+        // Johnny 13/08: histórico é só de GERADAS — o front usa isto pra
+        // esconder uploads (kie_model === "upload") do card de histórico.
+        kie_model: g.kie_model,
         video_status: g.video_status,
         video_tier: g.video_tier,
         video_prompt_pt: g.video_prompt_pt,

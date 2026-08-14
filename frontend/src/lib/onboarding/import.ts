@@ -1,12 +1,16 @@
 /**
  * Importadores do onboarding via planilha (Drive → R2 → banco). Server-only.
  *
- * - Imagens → acervo "Minhas fotos" (`image_generations`, igual ao
- *   /api/v1/images/import). 1 foto vira a IMAGEM DE REFERÊNCIA do clone
- *   (profiles.image_ref_key): se só tem 1, é ela; várias, 1 aleatória — as
- *   demais ficam no acervo (decisão Johnny 12/08).
- * - Áudios → voz nova em `awaiting_training` (área de treino), SEM disparar
- *   treino. Duração medida via ffmpeg (mesma régua do uploads-complete).
+ * CORREÇÃO JOHNNY 13/08 (caso Vinicius): as fotos do Drive NÃO são histórico
+ * — são matéria-prima de REFERÊNCIA. Fluxo correto:
+ * - Fotos → acervo de referência (`image_generations` kie_model="upload";
+ *   o card de HISTÓRICO esconde uploads — histórico é só de GERADAS).
+ *   A melhor foto (close de rosto FRONTAL, escolhida por visão/Haiku) vira a
+ *   referência principal (profiles.image_ref_key); as demais ficam de extras.
+ * - Com as fotos, o sistema GERA 2-3 avatares (lib/onboarding/avatares.ts,
+ *   por conta da casa) — esses SIM aparecem no histórico (são gerados).
+ * - Áudios → voz "Minha Voz" e DISPARA O TREINO na hora (por conta da casa,
+ *   lib/onboarding/treino.ts) — o aluno já entra com a voz treinando.
  *
  * Tudo idempotente por fileId do Drive: chave R2 determinística → reprocessar
  * a mesma linha da planilha não duplica nada.
@@ -19,6 +23,8 @@ import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { buildRawAudioKey, createPresignedGet } from "@/lib/r2/presigned";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 import { downloadDriveFile, pickExtension } from "./drive";
+import { escolherReferenciaFrontal } from "./referencia";
+import { dispararTreinoOnboarding } from "./treino";
 
 type Admin = SupabaseClient<Database>;
 
@@ -51,7 +57,8 @@ export async function importImages(
   admin: Admin,
   userId: string,
   fileIds: string[],
-): Promise<ImportResult & { reference_key: string | null }> {
+  opts: { forceReference?: boolean } = {},
+): Promise<ImportResult & { reference_key: string | null; all_keys: string[] }> {
   const result: ImportResult = { imported: 0, skipped: 0, failed: [] };
   const allKeys: string[] = [];
 
@@ -111,8 +118,10 @@ export async function importImages(
     }
   }
 
-  // Referência do clone: só define se ainda não existe (não sobrescreve
-  // escolha do aluno). 1 foto = ela; várias = 1 aleatória.
+  // Referência principal (Johnny 13/08): a foto de CLOSE DE ROSTO FRONTAL,
+  // escolhida por visão (Haiku) — não mais aleatória. Só define se não
+  // existe (não sobrescreve escolha do aluno), salvo forceReference (usado
+  // na correção de contas importadas no modelo antigo).
   let referenceKey: string | null = null;
   if (allKeys.length > 0) {
     const { data: prof } = await admin
@@ -120,25 +129,53 @@ export async function importImages(
       .select("image_ref_key")
       .eq("id", userId)
       .maybeSingle();
-    if (prof && !prof.image_ref_key) {
-      referenceKey = allKeys[Math.floor(Math.random() * allKeys.length)];
+    if (prof && (!prof.image_ref_key || opts.forceReference)) {
+      let idx = 0;
+      try {
+        const urls = await Promise.all(
+          allKeys.map((k) => createPresignedGet(imagesBucket(), k, 3600)),
+        );
+        idx = await escolherReferenciaFrontal(urls);
+      } catch {
+        /* visão falhou → primeira foto */
+      }
+      referenceKey = allKeys[idx] ?? allKeys[0];
       await admin.from("profiles").update({ image_ref_key: referenceKey }).eq("id", userId);
     } else {
       referenceKey = (prof?.image_ref_key as string | null) ?? null;
     }
   }
 
-  return { ...result, reference_key: referenceKey };
+  return { ...result, reference_key: referenceKey, all_keys: allKeys };
 }
 
 export type AudioImportResult = ImportResult & {
   voice_id: string | null;
   voice_status: string | null;
+  training: string | null;
 };
 
+/** Tenta disparar o treino (casa paga); nunca derruba o import. */
+async function tentarTreino(
+  admin: Admin,
+  userId: string,
+  voiceId: string,
+): Promise<{ status: string | null; nota: string }> {
+  try {
+    const r = await dispararTreinoOnboarding(admin, userId, voiceId);
+    return r.ok
+      ? { status: "training", nota: "treino disparado" }
+      : { status: null, nota: `treino não disparado: ${r.reason}` };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[onboarding/import] treino:", msg);
+    return { status: null, nota: `treino falhou: ${msg}` };
+  }
+}
+
 /**
- * Importa os áudios do Drive pra área de TREINO (voz em awaiting_training).
- * NÃO dispara treino — o aluno (com créditos) clica em Treinar depois.
+ * Importa os áudios do Drive e DISPARA O TREINO (correção Johnny 13/08 —
+ * antes ficava parado em awaiting_training esperando o aluno pagar).
  */
 export async function importTrainingAudios(
   admin: Admin,
@@ -146,7 +183,9 @@ export async function importTrainingAudios(
   fileIds: string[],
 ): Promise<AudioImportResult> {
   const result: ImportResult = { imported: 0, skipped: 0, failed: [] };
-  if (fileIds.length === 0) return { ...result, voice_id: null, voice_status: null };
+  if (fileIds.length === 0) {
+    return { ...result, voice_id: null, voice_status: null, training: null };
+  }
 
   // Idempotência: a voz do onboarding já existe e passou do upload → pronto.
   const { data: existing } = await admin
@@ -160,7 +199,23 @@ export async function importTrainingAudios(
 
   if (existing && existing.status !== "uploading") {
     result.skipped = fileIds.length;
-    return { ...result, voice_id: existing.id as string, voice_status: existing.status as string };
+    // Reprocesso de conta importada no modelo antigo: voz parada esperando
+    // o aluno pagar → dispara o treino agora (idempotente: training/ready
+    // não entram aqui).
+    let training: string | null = null;
+    if (existing.status === "awaiting_training") {
+      const t = await tentarTreino(admin, userId, existing.id as string);
+      training = t.nota;
+      if (t.status) {
+        return { ...result, voice_id: existing.id as string, voice_status: t.status, training };
+      }
+    }
+    return {
+      ...result,
+      voice_id: existing.id as string,
+      voice_status: existing.status as string,
+      training,
+    };
   }
 
   let voiceId = existing?.id as string | undefined;
@@ -200,7 +255,7 @@ export async function importTrainingAudios(
 
   if (uploadedKeys.length === 0) {
     // Nada subiu — deixa a voz em "uploading" pra próxima tentativa retomar.
-    return { ...result, voice_id: voiceId, voice_status: "uploading" };
+    return { ...result, voice_id: voiceId, voice_status: "uploading", training: null };
   }
 
   // Duração via ffmpeg (mesma régua do uploads-complete: <20min brutos rejeita).
@@ -233,5 +288,14 @@ export async function importTrainingAudios(
     .eq("id", voiceId);
   if (updErr) throw new Error(`atualizar voice falhou: ${updErr.message}`);
 
-  return { ...result, voice_id: voiceId, voice_status: nextStatus };
+  // Johnny 13/08: áudio importado → treino JÁ dispara (casa paga).
+  let training: string | null = null;
+  let finalStatus: string = nextStatus;
+  if (nextStatus === "awaiting_training") {
+    const t = await tentarTreino(admin, userId, voiceId);
+    training = t.nota;
+    if (t.status) finalStatus = t.status;
+  }
+
+  return { ...result, voice_id: voiceId, voice_status: finalStatus, training };
 }
