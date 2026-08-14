@@ -23,6 +23,32 @@ export function PainelViral({
   onDevolver: () => void;
 }) {
   const [copiado, setCopiado] = useState(false);
+  const [estado, setEstado] = useState(v.download_status);
+  const [baixando, setBaixando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function baixar() {
+    setBaixando(true);
+    setErro(null);
+    try {
+      const r = await fetch("/api/v1/virais/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ viral_id: v.id }),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        setEstado("pronto");
+      } else {
+        setEstado("erro");
+        setErro(j?.error?.message ?? "Não consegui baixar agora.");
+      }
+    } catch {
+      setErro("Falha de rede ao baixar.");
+    } finally {
+      setBaixando(false);
+    }
+  }
 
   return (
     <div
@@ -80,9 +106,29 @@ export function PainelViral({
           >
             ▶ Fazer React com este vídeo
           </button>
-          <p className="text-center text-[11px] text-[var(--mute)]">
-            é aqui que o vídeo é baixado de verdade — só quando você for produzir
-          </p>
+
+          {/* O download vive AQUI: guardar não baixa nada, o arquivo só nasce
+              quando a pessoa vai produzir. Enquanto o wizard não existe, o
+              botão fica avulso pra dar pra testar e baixar o material. */}
+          <button
+            type="button"
+            onClick={baixar}
+            disabled={baixando || estado === "pronto"}
+            className="flex h-10 items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] text-[13px] font-medium text-[var(--ink)] disabled:opacity-50"
+          >
+            {estado === "pronto"
+              ? "✓ vídeo baixado"
+              : baixando
+                ? "Baixando do TikTok…"
+                : "⬇ Baixar o vídeo agora"}
+          </button>
+          {erro ? (
+            <p className="text-center text-[11px] text-red-400">{erro}</p>
+          ) : (
+            <p className="text-center text-[11px] text-[var(--mute)]">
+              o vídeo é baixado só quando você for produzir — sem marca d&apos;água
+            </p>
+          )}
 
           <Link
             href={`/app/videos/edicao?link=${encodeURIComponent(v.url)}`}
