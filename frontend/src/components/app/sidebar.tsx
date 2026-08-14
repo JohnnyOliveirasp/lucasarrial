@@ -397,15 +397,12 @@ export function Sidebar({
                   label="Meus Virais"
                   active={pathname.endsWith("/app/lab/meus-virais")}
                 />
-                {/* ⏳ Wizard ainda não existe: entra trancado pra aparecer na
-                    árvore sem levar ninguém pra um 404. */}
+                {/* Wizard do Video React — R0/R1 de pé, R2-R6 em construção. */}
                 <NavLeaf
-                  href="/app/lab/meus-virais"
+                  href="/app/lab/react"
                   icon={Clapperboard}
                   label="React"
-                  active={false}
-                  locked
-                  lockTitle="Ainda em construção"
+                  active={pathname.endsWith("/app/lab/react")}
                 />
               </GrupoPre>
 
