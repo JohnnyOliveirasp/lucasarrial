@@ -31,7 +31,7 @@ type Admin = SupabaseClient<Database>;
 const MAX_IMAGE_BYTES = 30 * 1024 * 1024; // 30MB por foto
 // Lote 1 (14/08): "fotos" do aluno = 1 VÍDEO dele (165-304MB). Baixamos o
 // vídeo com teto próprio e extraímos 3 frames que viram as fotos.
-const MAX_VIDEO_BYTES = 800 * 1024 * 1024; // caso A128: vídeo de 611MB
+const MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024; // streaming pra disco — tamanho quase não importa (A248: 878MB)
 const MAX_AUDIO_BYTES = 400 * 1024 * 1024; // 400MB por take (1h WAV cabe)
 const MAX_IMAGES = 20;
 const MAX_AUDIOS = 20; // mesmo teto do MAX_FILES_PER_VOICE
@@ -67,12 +67,23 @@ async function importarFramesDoVideo(
   fileId: string,
   allKeys: string[],
 ): Promise<number> {
-  const file = await downloadDriveFile(fileId, MAX_VIDEO_BYTES);
-  // NÃO filtrar por content-type: o Drive serve .mp4/.mov como
-  // application/octet-stream (lote 1 v4 — 4 linhas ignoradas por isso).
-  // O ffprobe decide: se não for vídeo, a extração lança e vira "ignorado".
-  const { extrairFramesDeVideo } = await import("./video-frames");
-  const frames = await extrairFramesDeVideo(file.bytes);
+  // STREAMING pra disco (A248: 878MB — nada de Buffer gigante na RAM).
+  // Sem filtro de content-type: o Drive serve .mp4/.mov como octet-stream;
+  // o ffprobe decide — se não for vídeo, a extração lança e vira "ignorado".
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "onbdl-"));
+  let frames: Buffer[];
+  try {
+    const src = join(dir, "video.bin");
+    const { downloadDriveFileToPath } = await import("./drive");
+    await downloadDriveFileToPath(fileId, src, MAX_VIDEO_BYTES);
+    const { extrairFramesDeArquivo } = await import("./video-frames");
+    frames = await extrairFramesDeArquivo(src);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
   const safe = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
   let n = 0;
   for (let i = 0; i < frames.length; i++) {

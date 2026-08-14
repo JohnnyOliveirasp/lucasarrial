@@ -77,6 +77,54 @@ export async function downloadDriveFile(
   };
 }
 
+
+/**
+ * Variante STREAMING: baixa direto pra um arquivo em disco (vídeos de
+ * centenas de MB — caso A248: 878MB — sem Buffer gigante na RAM do app).
+ */
+export async function downloadDriveFileToPath(
+  fileId: string,
+  destPath: string,
+  maxBytes: number,
+): Promise<{ contentType: string; bytes: number }> {
+  const url =
+    `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}` +
+    `&export=download&confirm=t`;
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok || !res.body) {
+    throw new Error(`Drive respondeu ${res.status} pro arquivo ${fileId}`);
+  }
+  const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
+  if (contentType.startsWith("text/html")) {
+    throw new Error(
+      `Arquivo ${fileId} não está público no Drive (veio página HTML, não o arquivo)`,
+    );
+  }
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (declared > maxBytes) {
+    throw new Error(
+      `Arquivo ${fileId} tem ${Math.round(declared / 1e6)}MB (teto ${Math.round(maxBytes / 1e6)}MB)`,
+    );
+  }
+  const { createWriteStream } = await import("node:fs");
+  const { Readable, Transform } = await import("node:stream");
+  const { pipeline } = await import("node:stream/promises");
+  let total = 0;
+  const contador = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      total += chunk.length;
+      if (total > maxBytes) {
+        cb(new Error(`Arquivo ${fileId} passou de ${Math.round(maxBytes / 1e6)}MB no download`));
+        return;
+      }
+      cb(null, chunk);
+    },
+  });
+  await pipeline(Readable.fromWeb(res.body as never), contador, createWriteStream(destPath));
+  if (total === 0) throw new Error(`Arquivo ${fileId} veio vazio do Drive`);
+  return { contentType: contentType.split(";")[0] || "application/octet-stream", bytes: total };
+}
+
 /** Extensão a partir do filename OU do content-type (fallback). */
 export function pickExtension(
   filename: string | null,

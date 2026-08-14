@@ -26,12 +26,10 @@ function run(cmd: string, args: string[]): Promise<string> {
   });
 }
 
-/** Extrai até 3 frames JPEG do vídeo. Lança com mensagem legível se falhar. */
-export async function extrairFramesDeVideo(videoBytes: Buffer): Promise<Buffer[]> {
+/** Extrai até 3 frames JPEG de um vídeo JÁ em disco (streaming — A248). */
+export async function extrairFramesDeArquivo(src: string): Promise<Buffer[]> {
   const dir = await mkdtemp(join(tmpdir(), "onbvid-"));
   try {
-    const src = join(dir, "video.bin");
-    await writeFile(src, videoBytes);
     const durStr = await run("ffprobe", [
       "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", src,
     ]);
@@ -49,6 +47,18 @@ export async function extrairFramesDeVideo(videoBytes: Buffer): Promise<Buffer[]
       frames.push(await readFile(out));
     }
     return frames;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Compat: extrai frames de um Buffer (grava temp e delega). */
+export async function extrairFramesDeVideo(videoBytes: Buffer): Promise<Buffer[]> {
+  const dir = await mkdtemp(join(tmpdir(), "onbvidbuf-"));
+  try {
+    const src = join(dir, "video.bin");
+    await writeFile(src, videoBytes);
+    return await extrairFramesDeArquivo(src);
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
