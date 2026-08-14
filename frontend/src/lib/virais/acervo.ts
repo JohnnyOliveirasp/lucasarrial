@@ -83,6 +83,16 @@ export async function listarAcervo(admin: Admin, f: FiltroAcervo) {
  * REGRA DURA: o que está MARCADO nunca é apagado, em nenhum escopo. É a
  * curadoria dele; perder isso seria pior do que não ter a faxina.
  */
+export async function apagarPorIds(admin: Admin, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { error, count } = await admin
+    .from("viral_videos")
+    .delete({ count: "exact" })
+    .in("id", ids.slice(0, 500));
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
 export async function limparAcervo(
   admin: Admin,
   escopo: "nao_marcados" | "termo",

@@ -65,6 +65,8 @@ export function ViraisBusca() {
   const [soSelecionados, setSoSelecionados] = useState(false);
   const [limpando, setLimpando] = useState(false);
   const [recado, setRecado] = useState<string | null>(null);
+  /** Seleção múltipla estilo caixa de e-mail — NÃO é a marcação de download. */
+  const [selecao, setSelecao] = useState<Set<string>>(new Set());
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -102,6 +104,69 @@ export function ViraisBusca() {
   }
 
   const marcados = videos.filter((v) => v.selecionado).length;
+
+  function alternarSelecao(id: string) {
+    setSelecao((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
+  }
+
+  function selecionarTodos() {
+    setSelecao((atual) =>
+      atual.size === videos.length ? new Set() : new Set(videos.map((v) => v.id)),
+    );
+  }
+
+  /** Apaga exatamente os selecionados (o que a caixinha do card marcou). */
+  async function apagarSelecionados() {
+    const ids = [...selecao];
+    if (ids.length === 0) return;
+    const comMarca = videos.filter((v) => selecao.has(v.id) && v.selecionado).length;
+    const aviso = comMarca > 0 ? `\n\n⚠️ ${comMarca} deles estão na sua lista de download.` : "";
+    if (!window.confirm(`Apagar ${ids.length} vídeos da lista?${aviso}`)) return;
+    setLimpando(true);
+    try {
+      const r = await fetch("/api/v1/virais/videos", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        setRecado(`${j.apagados} vídeos apagados.`);
+        setSelecao(new Set());
+        await carregar();
+      } else {
+        setRecado(j?.error?.message ?? "Não consegui apagar.");
+      }
+    } finally {
+      setLimpando(false);
+    }
+  }
+
+  /** Marca de uma vez todos os selecionados pra baixar. */
+  async function marcarSelecionados() {
+    const ids = [...selecao];
+    if (ids.length === 0) return;
+    setLimpando(true);
+    try {
+      for (const id of ids) {
+        await fetch("/api/v1/virais/videos", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, selecionado: true }),
+        });
+      }
+      setRecado(`${ids.length} vídeos marcados pra baixar.`);
+      setSelecao(new Set());
+      await carregar();
+    } finally {
+      setLimpando(false);
+    }
+  }
 
   /** Faxina: joga fora o que não presta e mantém a curadoria intacta. */
   async function limpar() {
@@ -186,6 +251,50 @@ export function ViraisBusca() {
 
         {recado && <p className="text-[13px] text-[var(--ink)]">{recado}</p>}
 
+        {/* Barra de ações em massa — só aparece quando há seleção. */}
+        {videos.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--hairline)] bg-[var(--surface)] px-3 py-2">
+            <label className="flex items-center gap-1.5 text-[13px] text-[var(--ink)]">
+              <input
+                type="checkbox"
+                checked={selecao.size === videos.length && videos.length > 0}
+                onChange={selecionarTodos}
+              />
+              selecionar todos
+            </label>
+            <span className="text-[13px] text-[var(--mute)]">
+              {selecao.size > 0 ? `${selecao.size} selecionados` : "nenhum selecionado"}
+            </span>
+            {selecao.size > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={marcarSelecionados}
+                  disabled={limpando}
+                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3 text-[12px] text-[var(--ink)] disabled:opacity-40"
+                >
+                  marcar pra baixar
+                </button>
+                <button
+                  type="button"
+                  onClick={apagarSelecionados}
+                  disabled={limpando}
+                  className="h-8 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3 text-[12px] font-medium text-[var(--ink)] disabled:opacity-40"
+                >
+                  {limpando ? "…" : `apagar ${selecao.size}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelecao(new Set())}
+                  className="h-8 px-2 text-[12px] text-[var(--mute)] underline"
+                >
+                  cancelar
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {carregando ? (
           <p className="text-[14px] text-[var(--mute)]">Carregando…</p>
         ) : videos.length === 0 ? (
@@ -199,6 +308,8 @@ export function ViraisBusca() {
               <Miniatura
                 key={v.id}
                 v={v}
+                selecionadoNaLista={selecao.has(v.id)}
+                onSelecionar={() => alternarSelecao(v.id)}
                 onAbrir={() => setAberto(v)}
                 onMarcar={() => alternar(v)}
               />
@@ -474,15 +585,30 @@ function ImportarBuscas({ onImportou }: { onImportou: () => Promise<void> }) {
 
 function Miniatura({
   v,
+  selecionadoNaLista,
+  onSelecionar,
   onAbrir,
   onMarcar,
 }: {
   v: Viral;
+  selecionadoNaLista: boolean;
+  onSelecionar: () => void;
   onAbrir: () => void;
   onMarcar: () => void;
 }) {
   return (
-    <li className="flex flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface)]">
+    <li
+      className={`relative flex flex-col overflow-hidden rounded-[var(--radius)] border bg-[var(--surface)] ${
+        selecionadoNaLista ? "border-[var(--ink)]" : "border-[var(--hairline-strong)]"
+      }`}
+    >
+      {/* seleção em massa: fica por cima da capa, no canto */}
+      <label
+        className="absolute left-1.5 top-1.5 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded bg-black/60"
+        title="Selecionar para apagar ou marcar em massa"
+      >
+        <input type="checkbox" checked={selecionadoNaLista} onChange={onSelecionar} />
+      </label>
       <button
         type="button"
         onClick={onAbrir}

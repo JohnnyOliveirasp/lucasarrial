@@ -9,7 +9,13 @@ import type { NextRequest } from "next/server";
 import { gateAdmin } from "@/lib/admin/api";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { FILTRO_PADRAO, limparAcervo, listarAcervo, marcarSelecao } from "@/lib/virais/acervo";
+import {
+  apagarPorIds,
+  FILTRO_PADRAO,
+  limparAcervo,
+  listarAcervo,
+  marcarSelecao,
+} from "@/lib/virais/acervo";
 
 export const dynamic = "force-dynamic";
 
@@ -51,12 +57,25 @@ export async function DELETE(request: NextRequest) {
   const gate = await gateAdmin(request);
   if ("res" in gate) return gate.res;
 
-  let body: { escopo?: unknown; termo_busca?: unknown };
+  let body: { escopo?: unknown; termo_busca?: unknown; ids?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return badRequest("Corpo inválido");
   }
+
+  // Seleção múltipla (estilo caixa de e-mail): apaga exatamente o que veio.
+  if (Array.isArray(body.ids)) {
+    const ids = body.ids.filter((x): x is string => typeof x === "string" && x.length > 0);
+    if (ids.length === 0) return badRequest("Nenhum vídeo selecionado.");
+    try {
+      return jsonOk({ apagados: await apagarPorIds(getAdmin(), ids) });
+    } catch (e) {
+      console.error("[virais/apagar]", e instanceof Error ? e.message : e);
+      return serverError("Não consegui apagar agora.");
+    }
+  }
+
   const escopo = body.escopo === "termo" ? "termo" : "nao_marcados";
   const termo = typeof body.termo_busca === "string" ? body.termo_busca.trim() : null;
 
