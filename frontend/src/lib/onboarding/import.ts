@@ -68,7 +68,9 @@ async function importarFramesDoVideo(
   allKeys: string[],
 ): Promise<number> {
   const file = await downloadDriveFile(fileId, MAX_VIDEO_BYTES);
-  if (!file.contentType.startsWith("video/")) return 0;
+  // NÃO filtrar por content-type: o Drive serve .mp4/.mov como
+  // application/octet-stream (lote 1 v4 — 4 linhas ignoradas por isso).
+  // O ffprobe decide: se não for vídeo, a extração lança e vira "ignorado".
   const { extrairFramesDeVideo } = await import("./video-frames");
   const frames = await extrairFramesDeVideo(file.bytes);
   const safe = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
@@ -193,9 +195,10 @@ export async function importImages(
 
   // Tinha arquivos mas nenhum aproveitável → isso SIM é erro da linha.
   if (fileIds.length > 0 && allKeys.length === 0 && result.failed.length === 0) {
+    const motivos = result.ignored!.map((x) => x.reason).join("; ").slice(0, 180);
     result.failed.push({
       id: "fotos",
-      error: `nenhuma foto aproveitável (${result.ignored!.length} arquivo(s) ignorado(s): vídeo/grande demais)`,
+      error: `nenhuma foto aproveitável (${result.ignored!.length} ignorado(s): ${motivos || "?"})`,
     });
   }
 
