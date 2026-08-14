@@ -17,6 +17,19 @@ function secretKey(): string {
   return k;
 }
 
+/**
+ * A chave configurada é de PRODUÇÃO?
+ *
+ * 🔴 Incidente 14/08: prod rodou dois meses com `sk_test_`. O Checkout de
+ * teste entrega o cartão 4242 na própria tela — 12 alunos levaram 2,2 milhões
+ * de créditos de graça, e quem tentou pagar de verdade foi recusado. Com esta
+ * checagem a loja fecha sozinha se a chave não for `sk_live_`, e reabre
+ * sozinha quando a chave certa entrar (sem depender de ninguém lembrar).
+ */
+export function stripeEmModoReal(): boolean {
+  return (process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_");
+}
+
 export type CheckoutSession = { id: string; url: string };
 
 /**

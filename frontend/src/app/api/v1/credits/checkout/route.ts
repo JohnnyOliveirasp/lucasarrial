@@ -20,7 +20,7 @@ import {
 import { getAdmin } from "@/lib/db/admin";
 import { findCreditPackage } from "@/lib/credits/config";
 import { hasActiveAccess } from "@/lib/credits/access";
-import { createCheckoutSession } from "@/lib/stripe/client";
+import { createCheckoutSession, stripeEmModoReal } from "@/lib/stripe/client";
 
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
@@ -35,6 +35,15 @@ export async function POST(request: NextRequest) {
 
   const pkg = body.package_id ? findCreditPackage(body.package_id) : null;
   if (!pkg) return badRequest("package_id inválido");
+
+  // 🔴 Loja fechada enquanto a chave não for de produção (incidente 14/08:
+  // dois meses em sk_test_ = compra de mentira creditando de verdade e
+  // cartão real sendo recusado). Reabre sozinha quando entrar a sk_live_.
+  if (!stripeEmModoReal()) {
+    return forbidden(
+      "A compra de créditos está temporariamente indisponível — estamos finalizando a configuração do pagamento. Tente novamente em breve.",
+    );
+  }
 
   // Gate: só quem tem assinatura ativa (ou é equipe) compra créditos avulsos.
   const { data: profile } = await getAdmin()

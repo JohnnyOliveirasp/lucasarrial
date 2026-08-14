@@ -22,6 +22,8 @@ const PROVIDER = "stripe" as const;
 type StripeEvent = {
   id?: string;
   type?: string;
+  /** false = evento do modo de teste: NUNCA credita (ver guarda no processamento). */
+  livemode?: boolean;
   data?: { object?: Record<string, unknown> };
 };
 
@@ -71,6 +73,24 @@ export async function POST(request: NextRequest) {
       const userId = metadata.user_id;
       const credits = Number(metadata.credits);
       const paid = session.payment_status === "paid";
+      // 🔴 14/08: a chave do Stripe estava em MODO DE TESTE em produção desde
+      // 09/06. O Checkout de teste oferece o cartão 4242 na própria tela, então
+      // 12 alunos "compraram" 2.210.000 créditos com dinheiro de mentira
+      // (R$1.551 que nunca entraram) — enquanto quem usava cartão real era
+      // RECUSADO. Esta guarda fica PARA SEMPRE: evento de teste não credita,
+      // não importa qual chave esteja configurada.
+      const live = session.livemode === true || event.livemode === true;
+
+      if (!live) {
+        await admin
+          .from("payment_events")
+          .update({
+            processed_at: new Date().toISOString(),
+            error: "livemode=false — evento de teste, nada creditado",
+          })
+          .eq("id", evRow.id);
+        return jsonOk({ handled: "test_mode_ignored" });
+      }
 
       if (paid && userId && Number.isFinite(credits) && credits > 0) {
         await addExtraCredits({
