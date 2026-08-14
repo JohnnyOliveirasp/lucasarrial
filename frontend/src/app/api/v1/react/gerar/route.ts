@@ -1,0 +1,209 @@
+/**
+ * POST /api/v1/react/gerar — coloca o Video React na fila (migração 76).
+ * GET  ?job=<id>          — estado do job (a tela pergunta).
+ *
+ * Por que fila e não resposta direta: o clone roda no RunPod e leva minutos.
+ * A rota faz o que é rápido (garante o mp4 do viral no R2) e registra o job;
+ * o clone e a montagem acontecem em seguida, como no resto do app.
+ */
+import type { NextRequest } from "next/server";
+import { gateAdmin } from "@/lib/admin/api";
+import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
+import { getAdmin } from "@/lib/db/admin";
+import { baixarViral, marcarDownload } from "@/lib/virais/download";
+import { marcarUsado } from "@/lib/virais/pessoal";
+import { dispararClone, estadoClone, montarEEnviar, trazerParaR2 } from "@/lib/react/gerar";
+import type { LayoutMontagem } from "@/lib/react/montagem";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
+
+const LAYOUTS = new Set(["recorte", "viral-em-cima", "viral-embaixo"]);
+/** Ritmo de fala em pt-BR (mesmo do roteiro). */
+const PALAVRAS_POR_SEGUNDO = 2.5;
+
+export async function POST(request: NextRequest) {
+  const gate = await gateAdmin(request);
+  if ("res" in gate) return gate.res;
+
+  let b: Record<string, unknown>;
+  try {
+    b = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return badRequest("Corpo inválido");
+  }
+
+  const viralId = typeof b.viral_id === "string" ? b.viral_id : "";
+  const layout = typeof b.layout === "string" ? b.layout : "";
+  const roteiro = typeof b.roteiro === "string" ? b.roteiro.trim() : "";
+  const cta = typeof b.cta === "string" ? b.cta.trim() : "";
+  const fotoUrl = typeof b.foto_url === "string" ? b.foto_url : null;
+  const audioUrl = typeof b.audio_url === "string" ? b.audio_url : null;
+
+  if (!viralId) return badRequest("Faltou o vídeo.");
+  if (!LAYOUTS.has(layout)) return badRequest("Layout inválido.");
+  if (roteiro.length < 20) return badRequest("Roteiro curto demais.");
+  if (!fotoUrl) return badRequest("Falta a foto preparada.");
+
+  const admin = getAdmin();
+  const userId = gate.auth.user_id;
+
+  const { data: viral } = await admin
+    .from("viral_videos")
+    .select("id, url")
+    .eq("id", viralId)
+    .maybeSingle();
+  if (!viral?.url) return badRequest("Vídeo não encontrado no acervo.");
+
+  const palavras = [roteiro, cta].join(" ").trim().split(/\s+/).filter(Boolean).length;
+  const segundos = Math.max(1, Math.round(palavras / PALAVRAS_POR_SEGUNDO));
+
+  const { data: job, error } = await admin
+    .from("react_jobs")
+    .insert({
+      user_id: userId,
+      viral_id: viralId,
+      layout,
+      roteiro,
+      cta: cta || null,
+      foto_url: fotoUrl,
+      audio_url: audioUrl,
+      segundos,
+      status: "baixando",
+    } as never)
+    .select("id")
+    .single();
+  if (error || !job) {
+    console.error("[react/gerar] insert", error?.message);
+    return serverError("Não consegui criar o pedido.");
+  }
+  const jobId = (job as { id: string }).id;
+
+  // O mp4 do viral é a única peça que dá pra garantir agora — e é rápida.
+  // É AQUI que o arquivo nasce: guardar na prateleira nunca baixou nada.
+  try {
+    const { data: ja } = await admin
+      .from("viral_user_videos")
+      .select("r2_key, download_status")
+      .eq("user_id", userId)
+      .eq("viral_id", viralId)
+      .maybeSingle();
+
+    let r2Key = ja?.download_status === "pronto" ? ja.r2_key : null;
+    if (!r2Key) {
+      const baixado = await baixarViral({ url: viral.url, userId, viralId });
+      r2Key = baixado.r2Key;
+      await marcarDownload(admin, userId, viralId, { status: "pronto", r2Key });
+    }
+    // Vira "usado": alimenta o selo "N pessoas usando" na galeria.
+    await marcarUsado(admin, userId, viralId);
+
+    // A foto vem do Kie por URL temporária — traz pro nosso lado antes que
+    // expire, e é ela (fundo verde) que vai pro clone.
+    const fotoKey = await trazerParaR2(fotoUrl, `${userId}/react/${jobId}/avatar.png`, "image/png");
+    const audioKey = audioUrl
+      ? await trazerParaR2(audioUrl, `${userId}/react/${jobId}/fala.mp3`, "audio/mpeg")
+      : null;
+    if (!audioKey) {
+      await admin
+        .from("react_jobs")
+        .update({ status: "erro", erro: "Falta o áudio da fala.", atualizado_em: new Date().toISOString() } as never)
+        .eq("id", jobId);
+      return badRequest("Gere o áudio antes (passo da voz).");
+    }
+
+    const cloneKey = `${userId}/react/${jobId}/clone.mp4`;
+    const cloneJob = await dispararClone({ fotoKey, audioKey, saidaKey: cloneKey, segundos });
+
+    await admin
+      .from("react_jobs")
+      .update({
+        viral_r2_key: r2Key,
+        foto_url: fotoKey,
+        audio_url: audioKey,
+        clone_job_id: cloneJob,
+        clone_r2_key: cloneKey,
+        status: "clonando",
+        atualizado_em: new Date().toISOString(),
+      } as never)
+      .eq("id", jobId);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "falha ao baixar o viral";
+    await admin
+      .from("react_jobs")
+      .update({ status: "erro", erro: msg, atualizado_em: new Date().toISOString() } as never)
+      .eq("id", jobId);
+    return serverError(msg);
+  }
+
+  return jsonOk({ job_id: jobId, status: "clonando", segundos });
+}
+
+export async function GET(request: NextRequest) {
+  const gate = await gateAdmin(request);
+  if ("res" in gate) return gate.res;
+  const id = (request.nextUrl.searchParams.get("job") ?? "").trim();
+  if (!id) return badRequest("Faltou o id do pedido.");
+
+  const admin = getAdmin();
+  const { data } = await admin
+    .from("react_jobs")
+    .select(
+      "id, status, erro, r2_key, segundos, layout, viral_r2_key, clone_job_id, clone_r2_key, audio_url, criado_em",
+    )
+    .eq("id", id)
+    .eq("user_id", gate.auth.user_id)
+    .maybeSingle();
+  if (!data) return badRequest("Pedido não encontrado.");
+
+  // O job só anda quando alguém pergunta — mesmo padrão do Vídeo Clone.
+  if (data.status === "clonando" && data.clone_job_id) {
+    try {
+      const st = await estadoClone(data.clone_job_id);
+      if (st.status === "COMPLETED") {
+        await admin
+          .from("react_jobs")
+          .update({ status: "montando", atualizado_em: new Date().toISOString() } as never)
+          .eq("id", id);
+        const saidaKey = `${gate.auth.user_id}/react/${id}/final.mp4`;
+        const key = await montarEEnviar({
+          viralKey: data.viral_r2_key!,
+          cloneKey: data.clone_r2_key!,
+          audioKey: data.audio_url!,
+          layout: data.layout as LayoutMontagem,
+          segundos: Number(data.segundos) || 20,
+          saidaKey,
+        });
+        await admin
+          .from("react_jobs")
+          .update({ status: "pronto", r2_key: key, atualizado_em: new Date().toISOString() } as never)
+          .eq("id", id);
+        return jsonOk({ ...data, status: "pronto", r2_key: key });
+      }
+      if (["FAILED", "CANCELLED", "TIMED_OUT"].includes(st.status)) {
+        await admin
+          .from("react_jobs")
+          .update({
+            status: "erro",
+            erro: st.error ?? `clone ${st.status}`,
+            atualizado_em: new Date().toISOString(),
+          } as never)
+          .eq("id", id);
+        return jsonOk({ ...data, status: "erro", erro: st.error ?? st.status });
+      }
+    } catch (e) {
+      console.error("[react/gerar:get]", e instanceof Error ? e.message : e);
+      await admin
+        .from("react_jobs")
+        .update({
+          status: "erro",
+          erro: e instanceof Error ? e.message.slice(0, 300) : "falha na montagem",
+          atualizado_em: new Date().toISOString(),
+        } as never)
+        .eq("id", id);
+      return jsonOk({ ...data, status: "erro" });
+    }
+  }
+
+  return jsonOk(data);
+}

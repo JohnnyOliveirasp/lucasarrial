@@ -530,6 +530,35 @@ export type ViralUserVideoInsert = Omit<ViralUserVideoRow, "id" | "criado_em"> &
 };
 export type ViralUserVideoUpdate = Partial<Omit<ViralUserVideoRow, "id" | "criado_em">>;
 
+// ───────── react_jobs (mig 76 — fila do Video React) ─────────
+/** fila → baixando → clonando → montando → pronto | erro */
+export type ReactJobRow = {
+  id: string;
+  user_id: string;
+  viral_id: string;
+  layout: string;
+  roteiro: string;
+  cta: string | null;
+  /** vira chave do R2 assim que a foto sai do Kie pro nosso lado. */
+  foto_url: string | null;
+  audio_url: string | null;
+  segundos: number;
+  viral_r2_key: string | null;
+  clone_job_id: string | null;
+  clone_r2_key: string | null;
+  status: string;
+  erro: string | null;
+  r2_key: string | null;
+  criado_em: Timestamp;
+  atualizado_em: Timestamp;
+};
+export type ReactJobInsert = Omit<ReactJobRow, "id" | "criado_em" | "atualizado_em"> & {
+  id?: string;
+  criado_em?: Timestamp;
+  atualizado_em?: Timestamp;
+};
+export type ReactJobUpdate = Partial<Omit<ReactJobRow, "id" | "criado_em">>;
+
 // ───────── script_messages (mig 69 — chat de ajuste do roteiro) ─────────
 export type ScriptMessageRow = {
   id: string;
@@ -1113,6 +1142,7 @@ export type Database = {
       script_messages: { Row: ScriptMessageRow; Insert: ScriptMessageInsert; Update: ScriptMessageUpdate; Relationships: Rel };
       viral_videos: { Row: ViralVideoRow; Insert: ViralVideoInsert; Update: ViralVideoUpdate; Relationships: Rel };
       viral_user_videos: { Row: ViralUserVideoRow; Insert: ViralUserVideoInsert; Update: ViralUserVideoUpdate; Relationships: Rel };
+      react_jobs: { Row: ReactJobRow; Insert: ReactJobInsert; Update: ReactJobUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: {

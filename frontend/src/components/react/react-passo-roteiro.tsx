@@ -12,6 +12,8 @@ import type { ReactDraft } from "./react-tipos";
 
 type Resposta = {
   roteiro: string;
+  /** O que o modelo viu na tela — prova de que ele assistiu mesmo. */
+  descricao?: string;
   tem_fala: boolean;
   palavras: number;
   palavras_alvo: number;
@@ -64,8 +66,9 @@ export function ReactPassoRoteiro({
       <div>
         <h2 className="text-[15px] font-semibold text-[var(--ink)]">O que você vai falar</h2>
         <p className="mt-0.5 text-[12.5px] text-[var(--mute)]">
-          A plataforma ouve o vídeo de <strong>@{draft.viral?.autor ?? "?"}</strong> e escreve o
-          seu comentário. Você ajusta depois — o texto é seu.
+          A plataforma <strong>assiste</strong> o vídeo de{" "}
+          <strong>@{draft.viral?.autor ?? "?"}</strong> — imagem e áudio — e escreve o seu
+          comentário. Você ajusta depois: o texto é seu.
         </p>
       </div>
 
@@ -84,17 +87,17 @@ export function ReactPassoRoteiro({
         </button>
         {gerando && (
           <span className="text-[12px] text-[var(--mute)]">
-            baixa o áudio, transcreve e escreve — leva uns 40 segundos
+            ele vê e ouve o vídeo inteiro antes de escrever — leva uns 20 segundos
           </span>
         )}
       </div>
 
       {erro && <p className="text-[12.5px] text-red-400">{erro}</p>}
 
-      {info && !info.tem_fala && (
+      {info?.descricao && (
         <p className="rounded-[var(--radius-sm)] border border-[var(--hairline)] px-3 py-2 text-[12px] text-[var(--mute)]">
-          Esse viral não tem fala — o roteiro saiu da legenda e do contexto do post. Vale
-          conferir com mais atenção.
+          <strong className="text-[var(--ink)]">O que ele viu:</strong> {info.descricao}
+          {!info.tem_fala && " (o vídeo não tem fala — o roteiro saiu do que aparece na tela)"}
         </p>
       )}
 

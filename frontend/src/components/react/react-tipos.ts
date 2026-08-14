@@ -55,6 +55,11 @@ export type ReactDraft = {
    *  tempo do viral — pergunta do Johnny que virou regra). */
   cta: string;
   ctaCena: CtaCena | null;
+  /** R4: voz clonada (TTS) ou a pessoa grava com teleprompter. */
+  modoAudio: "clone" | "gravar" | null;
+  vozId: string | null;
+  audioUrl: string | null;
+  audioGenId: string | null;
   layout: LayoutReact | null;
 };
 
@@ -67,5 +72,9 @@ export const DRAFT_VAZIO: ReactDraft = {
   roteiro: "",
   cta: "",
   ctaCena: null,
+  modoAudio: null,
+  vozId: null,
+  audioUrl: null,
+  audioGenId: null,
   layout: null,
 };

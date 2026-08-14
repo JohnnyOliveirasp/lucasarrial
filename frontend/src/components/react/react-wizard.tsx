@@ -21,6 +21,9 @@ import { ReactPassoVideo } from "./react-passo-video";
 import { ReactPassoAvatar } from "./react-passo-avatar";
 import { ReactPassoRoteiro } from "./react-passo-roteiro";
 import { ReactPassoAjuste } from "./react-passo-ajuste";
+import { ReactPassoAudio } from "./react-passo-audio";
+import { ReactPassoLayout } from "./react-passo-layout";
+import { ReactPassoSaida } from "./react-passo-saida";
 import type { ReactDraft } from "./react-tipos";
 import { DRAFT_VAZIO, PASSOS } from "./react-tipos";
 
@@ -108,17 +111,9 @@ export function ReactWizard() {
         {draft.passo === 1 && <ReactPassoAvatar draft={draft} update={update} />}
         {draft.passo === 2 && <ReactPassoRoteiro draft={draft} update={update} />}
         {draft.passo === 3 && <ReactPassoAjuste draft={draft} update={update} />}
-        {draft.passo > 3 && (
-          <div className="flex flex-col gap-2 py-6 text-center">
-            <p className="text-[14px] text-[var(--ink)]">
-              O passo <strong>{PASSOS[draft.passo]}</strong> ainda está em construção.
-            </p>
-            <p className="text-[12.5px] text-[var(--mute)]">
-              Já está de pé: o vídeo escolhido, o avatar, o download sem marca d&apos;água e o
-              recorte em fundo verde (provado em 14/08).
-            </p>
-          </div>
-        )}
+        {draft.passo === 4 && <ReactPassoAudio draft={draft} update={update} />}
+        {draft.passo === 5 && <ReactPassoLayout draft={draft} update={update} />}
+        {draft.passo === 6 && <ReactPassoSaida draft={draft} />}
       </div>
 
       <div className="flex items-center gap-2">
