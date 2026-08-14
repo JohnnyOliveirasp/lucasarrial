@@ -11,7 +11,6 @@ import {
   AudioLines,
   History,
   Settings,
-  Lock,
   ShieldCheck,
   ChevronDown,
   Images,
@@ -22,13 +21,14 @@ import {
   UserSquare2,
   Wand2,
   Flame,
+  FlaskConical,
   MonitorPlay,
   Send,
   Camera,
   Music2,
-  type LucideIcon,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
+import { GrupoPre, NavLeaf } from "./sidebar-nav";
 
 type Props = {
   /** Saldo total de créditos do usuário (plano + avulsos). */
@@ -349,25 +349,10 @@ export function Sidebar({
               <span className="block px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ash)]">
                 {tShell("preProduction")}
               </span>
-              {/* Árvore da pré-produção (desenho do Johnny 14/08): "Vídeos"
-                  ensaia a estrutura que vai pra produção; "Teste Apenas"
-                  guarda o que só existe pra conferência. */}
-              <SubTitulo>Vídeos</SubTitulo>
-              <ul className="flex flex-col gap-1">
-                {/* Vídeos Virais (POC 13/08): parte 1 = achar o viral do nicho
-                    por likes/recência. Vira base do Video React.
-                    ⏳ "Meus Vídeos Virais" e "Video React" entram aqui quando
-                    as telas existirem — item de menu sem página é 404. */}
-                <NavLeaf
-                  href="/app/lab/virais"
-                  icon={Flame}
-                  label="Galeria de Vídeos Virais"
-                  active={pathname.endsWith("/app/lab/virais")}
-                />
-              </ul>
-
-              <SubTitulo>Teste Apenas</SubTitulo>
-              <ul className="flex flex-col gap-1">
+              {/* Dois MENUS dentro da pré-produção (correção do Johnny 14/08):
+                  "Teste Apenas" guarda o que só existe pra conferência;
+                  "Vídeo" ensaia a árvore que vai pra produção. */}
+              <GrupoPre label="Teste Apenas" icon={FlaskConical}>
                 {/* ✅ Estúdio Automático GRADUOU 13/08 → grupo Vídeos público.
                     O Vídeo História desceu pra cá como histórico (ordem
                     Johnny 13/08): alunos novos usam o wizard; projetos
@@ -390,7 +375,32 @@ export function Sidebar({
                     pathname.endsWith("/app/videos/studio")
                   }
                 />
-              </ul>
+              </GrupoPre>
+
+              <GrupoPre
+                label="Vídeo"
+                icon={Video}
+                defaultOpen={pathname.includes("/app/lab/virais")}
+              >
+                {/* A tela da POC (busca + acervo + curadoria) é a base de
+                    "Meus Virais" — por isso ela assume o nome aqui. */}
+                <NavLeaf
+                  href="/app/lab/virais"
+                  icon={Flame}
+                  label="Meus Virais"
+                  active={pathname.endsWith("/app/lab/virais")}
+                />
+                {/* ⏳ Tela ainda não existe: entra trancada pra aparecer na
+                    árvore sem levar ninguém pra um 404. */}
+                <NavLeaf
+                  href="/app/lab/virais"
+                  icon={Clapperboard}
+                  label="React"
+                  active={false}
+                  locked
+                  lockTitle="Ainda em construção"
+                />
+              </GrupoPre>
 
               <ul className="mt-1 flex flex-col gap-1">
                 {/* Gravador Celular GRADUOU (03/08): virou a seção "Ou grave
@@ -424,59 +434,3 @@ export function Sidebar({
   );
 }
 
-/** Rótulo de agrupamento dentro da pré-produção (um nível abaixo do título). */
-function SubTitulo({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="mt-1 block px-3 pb-0.5 pt-1 text-[10px] font-medium text-[var(--mute)]">
-      {children}
-    </span>
-  );
-}
-
-function NavLeaf({
-  href,
-  icon: Icon,
-  label,
-  active,
-  locked = false,
-  lockTitle = "",
-  bare = false,
-}: {
-  href: string;
-  icon: LucideIcon;
-  label: string;
-  active: boolean;
-  locked?: boolean;
-  lockTitle?: string;
-  /** `bare` = não envolve em <li> (já está num <li> próprio, ex.: Admin). */
-  bare?: boolean;
-}) {
-  const link = (
-    <Link
-      href={locked ? "#" : href}
-      aria-disabled={locked}
-      tabIndex={locked ? -1 : undefined}
-      onClick={locked ? (e) => e.preventDefault() : undefined}
-      title={locked ? lockTitle : undefined}
-      className={[
-        "group flex items-center justify-between gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm transition-[background-color,color] duration-[var(--dur-base)] ease-[var(--ease-out)]",
-        active
-          ? "bg-[var(--surface-elevated)] text-[var(--ink)]"
-          : "text-[var(--mute)] hover:bg-[var(--surface-card)] hover:text-[var(--ink)]",
-        locked ? "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-[var(--mute)]" : "",
-      ].join(" ")}
-    >
-      <span className="flex items-center gap-3">
-        <Icon
-          className={[
-            "h-4 w-4",
-            active ? "text-[var(--silver)]" : "text-[var(--ash)] group-hover:text-[var(--silver)]",
-          ].join(" ")}
-        />
-        <span className="font-medium">{label}</span>
-      </span>
-      {locked && <Lock className="h-3.5 w-3.5 text-[var(--ash)]" />}
-    </Link>
-  );
-  return bare ? link : <li>{link}</li>;
-}
