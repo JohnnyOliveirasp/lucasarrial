@@ -15,8 +15,8 @@ export type Ordem = "score" | "likes" | "views" | "recentes";
 export type Filtros = {
   minLikes: number;
   dias: number;
-  tema: string;
   ordem: Ordem;
+  /** Um campo só peneira tema, @perfil e legenda — ver o comentário do JSX. */
   termo: string;
   soSelecionados: boolean;
 };
@@ -24,7 +24,6 @@ export type Filtros = {
 export const FILTROS_INICIAIS: Filtros = {
   minLikes: 0,
   dias: 0,
-  tema: "",
   ordem: "score",
   termo: "",
   soSelecionados: false,
@@ -74,31 +73,42 @@ export function ViraisFiltros({
         ))}
       </Linha>
 
-      {temas.length > 0 && (
-        <Linha rotulo="Tema">
+      {/* Tema é CAMPO, não ficha: com 400 alunos buscando, ficha vira parede
+          de botões (Johnny, 14/08). Filtra ao digitar e apagar traz tudo de
+          volta — as buscas já feitas aparecem como sugestão. */}
+      <Linha rotulo="Tema">
+        <input
+          value={f.termo}
+          onChange={(e) => set("termo", e.target.value)}
+          list="virais-temas"
+          placeholder="digite um tema, @perfil ou palavra — apague pra ver tudo"
+          className={`h-8 w-full max-w-md ${CAMPO}`}
+        />
+        <datalist id="virais-temas">
+          {temas.map((t) => (
+            <option key={t.tema} value={t.tema}>
+              {t.total} vídeos
+            </option>
+          ))}
+        </datalist>
+        {f.termo && (
           <button
             type="button"
-            onClick={() => set("tema", "")}
-            className={ficha(f.tema === "")}
+            onClick={() => set("termo", "")}
+            className="h-8 px-2 text-[11px] text-[var(--mute)] underline"
           >
-            todos
+            limpar
           </button>
-          {temas.map((t) => (
-            <button
-              key={t.tema}
-              type="button"
-              onClick={() => set("tema", f.tema === t.tema ? "" : t.tema)}
-              className={ficha(f.tema === t.tema)}
-              title={`${t.tema}\n${t.total} vídeos · ${t.marcados} marcados pra baixar`}
-            >
-              {/* o termo gravado é a busca INTEIRA ("a, b, c") — sem corte a
-                  ficha ocupa a linha toda. O texto cheio fica no title. */}
-              {t.tema.length > 26 ? `${t.tema.slice(0, 26)}…` : t.tema}
-              <span className="ml-1 opacity-60">{t.total}</span>
-            </button>
-          ))}
-        </Linha>
-      )}
+        )}
+        <label className="ml-auto flex items-center gap-1.5 text-[11px] text-[var(--ink)]">
+          <input
+            type="checkbox"
+            checked={f.soSelecionados}
+            onChange={(e) => set("soSelecionados", e.target.checked)}
+          />
+          só a minha lista
+        </label>
+      </Linha>
 
       <Linha rotulo="Quando">
         {PERIODOS.map((p) => (
@@ -124,22 +134,6 @@ export function ViraisFiltros({
             {o.rotulo}
           </button>
         ))}
-        <span className="ml-auto flex items-center gap-2">
-          <input
-            value={f.termo}
-            onChange={(e) => set("termo", e.target.value)}
-            placeholder="@perfil ou palavra"
-            className={`h-7 w-48 ${CAMPO}`}
-          />
-          <label className="flex items-center gap-1.5 text-[11px] text-[var(--ink)]">
-            <input
-              type="checkbox"
-              checked={f.soSelecionados}
-              onChange={(e) => set("soSelecionados", e.target.checked)}
-            />
-            só a minha lista
-          </label>
-        </span>
       </Linha>
     </div>
   );

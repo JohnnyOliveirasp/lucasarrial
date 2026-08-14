@@ -41,7 +41,6 @@ export function ViraisBusca() {
       const qs = new URLSearchParams({
         min_likes: String(f.minLikes),
         dias: String(f.dias),
-        tema: f.tema,
         ordem: f.ordem,
         termo: f.termo,
         selecionados: f.soSelecionados ? "1" : "0",
