@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ReactPassoVideo } from "./react-passo-video";
 import { ReactPassoAvatar } from "./react-passo-avatar";
+import { ReactPassoRoteiro } from "./react-passo-roteiro";
 import type { ReactDraft } from "./react-tipos";
 import { DRAFT_VAZIO, PASSOS } from "./react-tipos";
 
@@ -59,7 +60,13 @@ export function ReactWizard() {
   if (!carregado) return <p className="text-[14px] text-[var(--mute)]">Carregando…</p>;
 
   const podeAvancar =
-    draft.passo === 0 ? draft.viral !== null : draft.passo === 1 ? draft.avatar !== null : false;
+    draft.passo === 0
+      ? draft.viral !== null
+      : draft.passo === 1
+        ? draft.avatar !== null
+        : draft.passo === 2
+          ? draft.roteiro.trim().length > 20
+          : false;
 
   return (
     <div className="flex flex-col gap-5">
@@ -96,7 +103,8 @@ export function ReactWizard() {
       <div className="rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface)] p-4">
         {draft.passo === 0 && <ReactPassoVideo draft={draft} update={update} />}
         {draft.passo === 1 && <ReactPassoAvatar draft={draft} update={update} />}
-        {draft.passo > 1 && (
+        {draft.passo === 2 && <ReactPassoRoteiro draft={draft} update={update} />}
+        {draft.passo > 2 && (
           <div className="flex flex-col gap-2 py-6 text-center">
             <p className="text-[14px] text-[var(--ink)]">
               O passo <strong>{PASSOS[draft.passo]}</strong> ainda está em construção.

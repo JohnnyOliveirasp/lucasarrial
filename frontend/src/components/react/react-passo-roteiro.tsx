@@ -1,0 +1,124 @@
+"use client";
+
+/**
+ * R2 — a LLM assiste o viral e escreve o comentário.
+ *
+ * A conta de tempo fica VISÍVEL: a fala precisa caber na duração do viral,
+ * senão a montagem não fecha. Melhor a pessoa ver isso aqui do que descobrir
+ * depois de gastar crédito de clone (105 cr/s).
+ */
+import { useState } from "react";
+import type { ReactDraft } from "./react-tipos";
+
+type Resposta = {
+  roteiro: string;
+  tem_fala: boolean;
+  palavras: number;
+  palavras_alvo: number;
+  segundos_estimados: number;
+  duracao_viral: number;
+};
+
+export function ReactPassoRoteiro({
+  draft,
+  update,
+}: {
+  draft: ReactDraft;
+  update: (m: Partial<ReactDraft>) => void;
+}) {
+  const [gerando, setGerando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [info, setInfo] = useState<Resposta | null>(null);
+
+  async function gerar() {
+    if (!draft.viral) return;
+    setGerando(true);
+    setErro(null);
+    try {
+      const r = await fetch("/api/v1/react/roteiro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ viral_id: draft.viral.id }),
+      });
+      const j = await r.json();
+      if (r.ok) {
+        setInfo(j as Resposta);
+        update({ roteiro: j.roteiro });
+      } else {
+        setErro(j?.error?.message ?? "Não consegui escrever o roteiro.");
+      }
+    } catch {
+      setErro("Falha de rede.");
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  const duracao = draft.viral?.duracao_seg ? Math.round(draft.viral.duracao_seg) : null;
+  const palavras = draft.roteiro.trim() ? draft.roteiro.trim().split(/\s+/).length : 0;
+  const segundos = Math.round(palavras / 2.5);
+  const estourou = duracao !== null && segundos > duracao;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <h2 className="text-[15px] font-semibold text-[var(--ink)]">O que você vai falar</h2>
+        <p className="mt-0.5 text-[12.5px] text-[var(--mute)]">
+          A plataforma ouve o vídeo de <strong>@{draft.viral?.autor ?? "?"}</strong> e escreve o
+          seu comentário. Você ajusta depois — o texto é seu.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={gerar}
+          disabled={gerando || !draft.viral}
+          className="h-10 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 text-[13.5px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+        >
+          {gerando
+            ? "Assistindo o vídeo…"
+            : draft.roteiro
+              ? "Escrever de novo"
+              : "Escrever meu comentário"}
+        </button>
+        {gerando && (
+          <span className="text-[12px] text-[var(--mute)]">
+            baixa o áudio, transcreve e escreve — leva uns 40 segundos
+          </span>
+        )}
+      </div>
+
+      {erro && <p className="text-[12.5px] text-red-400">{erro}</p>}
+
+      {info && !info.tem_fala && (
+        <p className="rounded-[var(--radius-sm)] border border-[var(--hairline)] px-3 py-2 text-[12px] text-[var(--mute)]">
+          Esse viral não tem fala — o roteiro saiu da legenda e do contexto do post. Vale
+          conferir com mais atenção.
+        </p>
+      )}
+
+      {draft.roteiro && (
+        <>
+          <textarea
+            value={draft.roteiro}
+            onChange={(e) => update({ roteiro: e.target.value })}
+            rows={10}
+            className="w-full rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-3 text-[13.5px] leading-relaxed text-[var(--ink)] outline-none focus:border-[var(--ink)]"
+          />
+          <div className="flex flex-wrap items-center gap-3 text-[12px]">
+            <span className="text-[var(--mute)]">
+              {palavras} palavras · <strong className="text-[var(--ink)]">~{segundos}s</strong> de fala
+              {duracao !== null ? ` · vídeo tem ${duracao}s` : ""}
+            </span>
+            {estourou && (
+              <span className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-2 py-0.5 text-[11.5px] text-[var(--ink)]">
+                ⚠️ sua fala passa do tempo do vídeo — corte um pouco, ou o final fica sem imagem
+              </span>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
