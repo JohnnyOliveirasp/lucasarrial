@@ -71,9 +71,26 @@ export function ReactPassoSaida({
     }
   }, []);
 
-  /** Voltou pra tela (ou deu F5) com pedido em voo: retoma o acompanhamento. */
+  /**
+   * Ao abrir: retoma o pedido do rascunho ou, se não houver, pergunta ao
+   * servidor se existe um em voo (pedido feito antes de o rascunho guardar o
+   * jobId, ou aberto de outro navegador).
+   */
   useEffect(() => {
-    if (draft.jobId) void acompanhar(draft.jobId);
+    void (async () => {
+      if (draft.jobId) {
+        await acompanhar(draft.jobId);
+        return;
+      }
+      const j = (await fetch("/api/v1/react/gerar", { cache: "no-store" })
+        .then((r) => r.json())
+        .catch(() => null)) as (JobReact & { id?: string; job?: null }) | null;
+      const emVoo = j?.status === "baixando" || j?.status === "clonando" || j?.status === "montando";
+      if (!j?.id || !emVoo || !vivo.current) return;
+      update({ jobId: j.id });
+      setJob(j);
+      await acompanhar(j.id);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

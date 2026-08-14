@@ -144,19 +144,30 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const gate = await gateAdmin(request);
   if ("res" in gate) return gate.res;
-  const id = (request.nextUrl.searchParams.get("job") ?? "").trim();
-  if (!id) return badRequest("Faltou o id do pedido.");
+  const pedido = (request.nextUrl.searchParams.get("job") ?? "").trim();
 
   const admin = getAdmin();
-  const { data } = await admin
-    .from("react_jobs")
-    .select(
-      "id, status, erro, r2_key, segundos, layout, viral_r2_key, clone_job_id, clone_r2_key, audio_url, viral_id, criado_em",
-    )
-    .eq("id", id)
-    .eq("user_id", gate.auth.user_id)
-    .maybeSingle();
-  if (!data) return badRequest("Pedido não encontrado.");
+  const COLUNAS =
+    "id, status, erro, r2_key, segundos, layout, viral_r2_key, clone_job_id, clone_r2_key, audio_url, viral_id, criado_em";
+  // Sem id = "tem algum pedido meu em voo?". A tela pergunta isso ao abrir:
+  // o job do Johnny de 14/08 nasceu antes de o rascunho guardar o jobId e
+  // ficou órfão — parado em "clonando" porque ninguém perguntava por ele.
+  const { data } = pedido
+    ? await admin
+        .from("react_jobs")
+        .select(COLUNAS)
+        .eq("id", pedido)
+        .eq("user_id", gate.auth.user_id)
+        .maybeSingle()
+    : await admin
+        .from("react_jobs")
+        .select(COLUNAS)
+        .eq("user_id", gate.auth.user_id)
+        .order("criado_em", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+  if (!data) return jsonOk({ job: null });
+  const id = data.id;
 
   // Duração do viral: é ela que diz onde o vídeo acaba e começa o "só você".
   // A capa vem junto: é ela que a tela usa de miniatura enquanto monta.
