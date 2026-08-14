@@ -14,7 +14,9 @@ import {
   FILTRO_PADRAO,
   limparAcervo,
   listarAcervo,
+  listarTemas,
   marcarSelecao,
+  normalizarOrdem,
 } from "@/lib/virais/acervo";
 
 export const dynamic = "force-dynamic";
@@ -30,17 +32,26 @@ export async function GET(request: NextRequest) {
   };
 
   try {
-    const videos = await listarAcervo(getAdmin(), {
-      ...FILTRO_PADRAO,
-      minLikes: inteiro("min_likes", 0),
-      dias: inteiro("dias", 0),
-      limite: inteiro("limite", FILTRO_PADRAO.limite),
-      termo: (p.get("termo") ?? "").trim().slice(0, 60),
-      apenasSelecionados: p.get("selecionados") === "1",
-    });
+    const admin = getAdmin();
+    // As fichas de tema vêm junto: a tela precisa delas em toda carga e o
+    // agrupamento é uma query só (função virais_temas, migração 74).
+    const [videos, temas] = await Promise.all([
+      listarAcervo(admin, {
+        ...FILTRO_PADRAO,
+        minLikes: inteiro("min_likes", 0),
+        dias: inteiro("dias", 0),
+        limite: inteiro("limite", FILTRO_PADRAO.limite),
+        termo: (p.get("termo") ?? "").trim().slice(0, 60),
+        tema: (p.get("tema") ?? "").trim().slice(0, 120),
+        ordem: normalizarOrdem(p.get("ordem")),
+        apenasSelecionados: p.get("selecionados") === "1",
+      }),
+      listarTemas(admin).catch(() => []),
+    ]);
     return jsonOk({
       total: videos.length,
       selecionados: videos.filter((v) => v.selecionado).length,
+      temas,
       videos,
     });
   } catch (e) {

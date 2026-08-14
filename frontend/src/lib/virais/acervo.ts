@@ -8,10 +8,23 @@ import type { ViralImportado } from "./apify";
 
 type Admin = SupabaseClient<Database>;
 
+/** Como a grade ordena. "score" = engajamento amortecido pela idade. */
+export type OrdemAcervo = "score" | "likes" | "views" | "recentes";
+
+const COLUNA_ORDEM: Record<OrdemAcervo, string> = {
+  score: "score",
+  likes: "likes",
+  views: "views",
+  recentes: "publicado_em",
+};
+
 export type FiltroAcervo = {
   minLikes: number;
   dias: number;
   termo: string;
+  /** Termo que trouxe o vídeo — é o "tema" das fichas da tela. */
+  tema: string;
+  ordem: OrdemAcervo;
   apenasSelecionados: boolean;
   limite: number;
 };
@@ -20,9 +33,15 @@ export const FILTRO_PADRAO: FiltroAcervo = {
   minLikes: 0,
   dias: 0,
   termo: "",
+  tema: "",
+  ordem: "score",
   apenasSelecionados: false,
-  limite: 60,
+  limite: 120,
 };
+
+export function normalizarOrdem(v: string | null): OrdemAcervo {
+  return v === "likes" || v === "views" || v === "recentes" ? v : "score";
+}
 
 /**
  * Grava os vídeos de uma execução. Conflito em (plataforma, video_id) =
@@ -54,7 +73,7 @@ export async function importarVideos(
   return { gravados: count ?? linhas.length, erro: null };
 }
 
-/** A lista da tela: mais quentes primeiro. */
+/** A lista da tela: mais quentes primeiro (ou como o usuário pedir). */
 export async function listarAcervo(admin: Admin, f: FiltroAcervo) {
   let q = admin
     .from("viral_videos")
@@ -62,13 +81,16 @@ export async function listarAcervo(admin: Admin, f: FiltroAcervo) {
       "id, plataforma, video_id, url, autor, autor_seguidores, legenda, likes, views, comentarios, publicado_em, duracao_seg, thumb_url, video_url, hashtags, score, termo_busca, selecionado, download_status, r2_key",
     )
     .eq("descartado", false) // o que foi jogado fora não volta
-    .order("score", { ascending: false })
-    .limit(Math.min(200, Math.max(1, f.limite)));
+    // nullsFirst: false senão o vídeo sem data/views sobe no topo da grade.
+    .order(COLUNA_ORDEM[f.ordem], { ascending: false, nullsFirst: false })
+    .limit(Math.min(300, Math.max(1, f.limite)));
 
   if (f.minLikes > 0) q = q.gte("likes", f.minLikes);
   if (f.dias > 0) {
     q = q.gte("publicado_em", new Date(Date.now() - f.dias * 86_400_000).toISOString());
   }
+  // Ficha de tema: casa com o termo exato que trouxe o vídeo.
+  if (f.tema) q = q.eq("termo_busca", f.tema);
   if (f.termo) {
     const t = f.termo.replace(/[%,]/g, " ").trim();
     if (t) q = q.or(`legenda.ilike.%${t}%,autor.ilike.%${t}%,termo_busca.ilike.%${t}%`);
@@ -78,6 +100,18 @@ export async function listarAcervo(admin: Admin, f: FiltroAcervo) {
   const { data, error } = await q;
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+export type TemaAcervo = { tema: string; total: number; marcados: number };
+
+/**
+ * Fichas de tema da tela (migração 74). Agrupa no Postgres — contar no Node
+ * exigiria puxar o acervo inteiro pra memória.
+ */
+export async function listarTemas(admin: Admin): Promise<TemaAcervo[]> {
+  const { data, error } = await admin.rpc("virais_temas" as never);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TemaAcervo[];
 }
 
 /**

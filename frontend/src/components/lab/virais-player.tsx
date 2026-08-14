@@ -9,8 +9,10 @@
  * original é a saída (por isso ele fica sempre visível).
  */
 import { useState } from "react";
-import type { Viral } from "./virais-busca";
-import { compacto } from "./virais-busca";
+// Direto dos módulos-folha: importar do virais-busca fechava um ciclo
+// (busca → player → busca).
+import { compacto } from "./virais-estilo";
+import type { Viral } from "./virais-tipos";
 
 export function ViralPlayer({
   v,
