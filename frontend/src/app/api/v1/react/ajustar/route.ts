@@ -10,13 +10,15 @@
  */
 import type { NextRequest } from "next/server";
 import { gateAdmin } from "@/lib/admin/api";
-import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
+import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
 import {
   contarPalavras,
   escreverCta,
+  REACT_AJUSTE_COST,
   reescreverReact,
   segundosEstimados,
 } from "@/lib/react/roteiro";
+import { debitCredits } from "@/lib/credits/service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -36,6 +38,23 @@ export async function POST(request: NextRequest) {
   const pedido = typeof body.pedido === "string" ? body.pedido.trim() : "";
   if (!roteiro) return badRequest("Faltou o roteiro.");
   if (!pedido) return badRequest("Escreva o que você quer mudar.");
+
+  // Cada ajuste é uma chamada de LLM — barata, mas não de graça. Mesma régua
+  // do chat do Gerador de Roteiro (10 cr).
+  const deb = await debitCredits({
+    userId: gate.auth.user_id,
+    amount: REACT_AJUSTE_COST,
+    kind: "generation",
+    refType: "react_ajuste",
+    note: body.modo === "cta" ? "React: escrever CTA" : "React: ajustar roteiro",
+  });
+  if (!deb.ok) {
+    return jsonError(
+      "insufficient_credits",
+      `Este ajuste custa ${REACT_AJUSTE_COST} créditos e seu saldo não cobre.`,
+      402,
+    );
+  }
 
   try {
     if (body.modo === "cta") {

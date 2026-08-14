@@ -522,6 +522,9 @@ export type ViralUserVideoRow = {
   download_erro: string | null;
   /** Régua do TTL: arquivo sem uso há 60 dias sai do R2 (metadado fica). */
   arquivo_tocado_em: Timestamp | null;
+  /** Quantas vezes o Gemini já assistiu ESTE vídeo pra ESTA pessoa (mig 77).
+   *  A 1ª está inclusa no React; da 2ª em diante cobra. */
+  roteiros_gerados: number;
   criado_em: Timestamp;
 };
 export type ViralUserVideoInsert = Omit<ViralUserVideoRow, "id" | "criado_em"> & {

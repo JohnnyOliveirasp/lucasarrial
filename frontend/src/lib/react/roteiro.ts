@@ -23,6 +23,19 @@ const TRANSCRIPT_MAX = 12_000;
  */
 export const PALAVRAS_POR_SEGUNDO = 2.5;
 
+/**
+ * Preço do React (régua fechada com o Johnny em 14/08).
+ *
+ * A 1ª escrita do roteiro está inclusa na taxa do React. Da 2ª em diante
+ * cobra: cada tentativa manda o vídeo INTEIRO pro Gemini de novo, com
+ * download e banda — o Johnny apertou 3x testando e viu o buraco.
+ * O ajuste de texto é bem mais barato (não reassiste o vídeo), então segue a
+ * régua do chat do Gerador de Roteiro.
+ */
+export const REACT_COST = 300;
+export const REACT_REESCRITA_COST = 50;
+export const REACT_AJUSTE_COST = 10;
+
 export function palavrasAlvo(duracaoSeg: number): number {
   // Deixa 15% de respiro: o viral também precisa "falar" sozinho em algum
   // momento, senão vira locução por cima do vídeo inteiro.

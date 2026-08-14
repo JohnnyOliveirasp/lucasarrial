@@ -19,6 +19,9 @@ type Resposta = {
   palavras_alvo: number;
   segundos_estimados: number;
   duracao_viral: number;
+  /** Quanto custa apertar de novo (a 1ª vem inclusa no React). */
+  proxima_custa?: number;
+  escritas?: number;
 };
 
 export function ReactPassoRoteiro({
@@ -85,9 +88,15 @@ export function ReactPassoRoteiro({
               ? "Escrever de novo"
               : "Escrever meu comentário"}
         </button>
-        {gerando && (
+        {gerando ? (
           <span className="text-[12px] text-[var(--mute)]">
             ele vê e ouve o vídeo inteiro antes de escrever — leva uns 20 segundos
+          </span>
+        ) : (
+          <span className="text-[12px] text-[var(--mute)]">
+            {draft.roteiro
+              ? `escrever de novo custa ${info?.proxima_custa ?? 50} créditos — ele assiste o vídeo outra vez`
+              : "a primeira escrita já está inclusa no React"}
           </span>
         )}
       </div>

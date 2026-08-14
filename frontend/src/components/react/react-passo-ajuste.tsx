@@ -69,7 +69,7 @@ export function ReactPassoAjuste({
         <h2 className="text-[15px] font-semibold text-[var(--ink)]">Ajuste e chamada final</h2>
         <p className="mt-0.5 text-[12.5px] text-[var(--mute)]">
           Peça a mudança em português e o roteiro é reescrito inteiro, com a sua ideia
-          dentro — em vez de colar um parágrafo solto no meio.
+          dentro — em vez de colar um parágrafo solto no meio. Cada ajuste custa 10 créditos.
         </p>
       </div>
 

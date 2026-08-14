@@ -19,7 +19,13 @@ import { getAdmin } from "@/lib/db/admin";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
 import { baixarViral, DownloadViralError, marcarDownload } from "@/lib/virais/download";
 import { assistirEEscrever, pastaTemporaria } from "@/lib/react/assistir";
-import { contarPalavras, palavrasAlvo, segundosEstimados } from "@/lib/react/roteiro";
+import {
+  contarPalavras,
+  palavrasAlvo,
+  REACT_REESCRITA_COST,
+  segundosEstimados,
+} from "@/lib/react/roteiro";
+import { debitCredits } from "@/lib/credits/service";
 
 export const dynamic = "force-dynamic";
 /** Baixar (se preciso) + Gemini: ~20s no caso comum. */
@@ -56,10 +62,31 @@ export async function POST(request: NextRequest) {
     // 1. O mp4: usa o que já está no R2; só baixa se ainda não existir.
     const { data: meu } = await admin
       .from("viral_user_videos")
-      .select("r2_key, download_status")
+      .select("r2_key, download_status, roteiros_gerados")
       .eq("user_id", userId)
       .eq("viral_id", viralId)
       .maybeSingle();
+
+    // 0. COBRANÇA: a 1ª escrita está inclusa no React; da 2ª em diante cobra,
+    // porque cada tentativa manda o vídeo inteiro pro Gemini de novo.
+    const jaEscreveu = meu?.roteiros_gerados ?? 0;
+    if (jaEscreveu > 0) {
+      const deb = await debitCredits({
+        userId,
+        amount: REACT_REESCRITA_COST,
+        kind: "generation",
+        refType: "react_roteiro",
+        refId: viralId,
+        note: `React: reescrita ${jaEscreveu + 1} do roteiro`,
+      });
+      if (!deb.ok) {
+        return jsonError(
+          "insufficient_credits",
+          `Escrever de novo custa ${REACT_REESCRITA_COST} créditos e seu saldo não cobre.`,
+          402,
+        );
+      }
+    }
 
     let key = meu?.download_status === "pronto" ? meu.r2_key : null;
     if (!key) {
@@ -80,6 +107,13 @@ export async function POST(request: NextRequest) {
       palavrasAlvo: alvo,
     });
 
+    // Só conta o que deu certo: falha não vira cobrança na próxima.
+    await admin
+      .from("viral_user_videos")
+      .update({ roteiros_gerados: jaEscreveu + 1 } as never)
+      .eq("user_id", userId)
+      .eq("viral_id", viralId);
+
     return jsonOk({
       roteiro: leitura.roteiro,
       transcricao: leitura.transcricao.slice(0, 4000),
@@ -89,6 +123,9 @@ export async function POST(request: NextRequest) {
       palavras_alvo: alvo,
       segundos_estimados: segundosEstimados(leitura.roteiro),
       duracao_viral: Math.round(duracao),
+      // A tela avisa quanto custa apertar de novo.
+      proxima_custa: REACT_REESCRITA_COST,
+      escritas: jaEscreveu + 1,
     });
   } catch (e) {
     if (e instanceof DownloadViralError) {
