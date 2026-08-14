@@ -38,14 +38,23 @@ export type AvatarEscolhido =
 /** Layouts do R5. O de recorte é o formato do Lucas (chromakey provado). */
 export type LayoutReact = "recorte" | "viral-em-cima" | "viral-embaixo";
 
+/** O que aparece na tela durante o CTA (ele tem cena própria). */
+export type CtaCena = "avatar" | "cena";
+
 export type ReactDraft = {
   passo: number;
   viral: ViralEscolhido | null;
   avatar: AvatarEscolhido | null;
+  /** Foto que o aluno escolheu na galeria (URL presignada). */
+  fotoOriginal: string | null;
+  /** Versão preparada: meio corpo pra cima + fundo verde (é ela que entra
+   *  no clone quando o layout for o recorte por cima do viral). */
+  fotoPronta: string | null;
   roteiro: string;
   /** CTA é sempre o FIM do vídeo e tem cena própria (senão a fala passa do
    *  tempo do viral — pergunta do Johnny que virou regra). */
   cta: string;
+  ctaCena: CtaCena | null;
   layout: LayoutReact | null;
 };
 
@@ -53,7 +62,10 @@ export const DRAFT_VAZIO: ReactDraft = {
   passo: 0,
   viral: null,
   avatar: null,
+  fotoOriginal: null,
+  fotoPronta: null,
   roteiro: "",
   cta: "",
+  ctaCena: null,
   layout: null,
 };

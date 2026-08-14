@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ReactPassoVideo } from "./react-passo-video";
 import { ReactPassoAvatar } from "./react-passo-avatar";
 import { ReactPassoRoteiro } from "./react-passo-roteiro";
+import { ReactPassoAjuste } from "./react-passo-ajuste";
 import type { ReactDraft } from "./react-tipos";
 import { DRAFT_VAZIO, PASSOS } from "./react-tipos";
 
@@ -63,10 +64,12 @@ export function ReactWizard() {
     draft.passo === 0
       ? draft.viral !== null
       : draft.passo === 1
-        ? draft.avatar !== null
+        ? draft.avatar !== null && draft.fotoPronta !== null
         : draft.passo === 2
           ? draft.roteiro.trim().length > 20
-          : false;
+          : draft.passo === 3
+            ? draft.roteiro.trim().length > 20
+            : false;
 
   return (
     <div className="flex flex-col gap-5">
@@ -104,7 +107,8 @@ export function ReactWizard() {
         {draft.passo === 0 && <ReactPassoVideo draft={draft} update={update} />}
         {draft.passo === 1 && <ReactPassoAvatar draft={draft} update={update} />}
         {draft.passo === 2 && <ReactPassoRoteiro draft={draft} update={update} />}
-        {draft.passo > 2 && (
+        {draft.passo === 3 && <ReactPassoAjuste draft={draft} update={update} />}
+        {draft.passo > 3 && (
           <div className="flex flex-col gap-2 py-6 text-center">
             <p className="text-[14px] text-[var(--ink)]">
               O passo <strong>{PASSOS[draft.passo]}</strong> ainda está em construção.

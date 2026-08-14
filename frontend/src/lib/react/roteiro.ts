@@ -50,6 +50,32 @@ REGRAS:
 - NÃO escreva chamada para ação no fim: ela é escrita depois, num passo separado.
 - Devolva APENAS o texto que a pessoa vai falar, em parágrafos curtos.`;
 
+/**
+ * Reescrever ≠ remendar. Quando a pessoa pede uma mudança, o modelo devolve o
+ * roteiro INTEIRO já com a ideia dela dentro — colar o pedido no meio do
+ * texto quebra o ritmo do reaction (regra combinada com o Johnny 14/08).
+ */
+const SISTEMA_AJUSTE = `Você reescreve roteiros de REACTION em português do Brasil.
+
+Recebe o roteiro atual e um pedido de mudança do criador. Devolve o roteiro INTEIRO reescrito, já com o pedido incorporado de forma natural — nunca cole o pedido como um parágrafo solto no meio.
+
+Mantenha: o gancho na primeira frase, o tom falado, frases curtas, sem emoji, sem hashtag, sem marcação de cena.
+Não escreva chamada para ação: ela é escrita em outro passo.
+Devolva APENAS o roteiro final.`;
+
+/**
+ * O CTA é sempre o FIM do vídeo e tem CENA PRÓPRIA — por isso não entra na
+ * conta de tempo do viral (pergunta do Johnny que virou regra).
+ */
+const SISTEMA_CTA = `Você escreve a chamada para ação (CTA) que fecha um vídeo de reaction, em português do Brasil.
+
+REGRAS:
+- 1 ou 2 frases, no máximo. É o fim do vídeo, não um anúncio.
+- Fala direta com quem assistiu, ligando o assunto do vídeo à oferta.
+- Sem "link na bio" genérico se o criador disse onde ir — use o que ele deu.
+- Sem emoji, sem hashtag, sem exagero de vendedor.
+- Devolva APENAS a fala do CTA.`;
+
 export type FonteViral = {
   transcricao: string;
   legenda: string | null;
@@ -61,6 +87,79 @@ export type FonteViral = {
 export async function ouvirViral(url: string): Promise<{ transcript: string; title: string | null }> {
   const fonte = await transcribeFromLink(url);
   return { transcript: fonte.transcript ?? "", title: fonte.title ?? null };
+}
+
+/** Uma chamada à LLM. Os três usos (escrever, reescrever, CTA) passam por aqui. */
+async function perguntar(
+  sistema: string,
+  usuario: string,
+  maxTokens = 2_000,
+): Promise<{ texto: string; model: string }> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error("LLM indisponível (sem chave)");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(DEEPSEEK_API, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL(),
+        // Mesmo cuidado do Gerador de Roteiro: o V4-Flash é modelo de
+        // raciocínio e os tokens de "pensar" contam no max_tokens — sem
+        // desligar, ele devolve content VAZIO em 1 de cada 3 chamadas.
+        thinking: { type: "disabled" },
+        max_tokens: maxTokens,
+        temperature: 0.85,
+        messages: [
+          { role: "system", content: sistema },
+          { role: "user", content: usuario },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    return { texto: (json.choices?.[0]?.message?.content ?? "").trim(), model: MODEL() };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** R3 — reescreve o roteiro inteiro com o pedido do criador dentro. */
+export async function reescreverReact(args: {
+  roteiro: string;
+  pedido: string;
+  duracaoSeg: number;
+}): Promise<{ roteiro: string; model: string }> {
+  const alvo = palavrasAlvo(args.duracaoSeg);
+  const { texto, model } = await perguntar(
+    SISTEMA_AJUSTE,
+    [
+      `ROTEIRO ATUAL:\n${args.roteiro}`,
+      `\nO QUE O CRIADOR QUER MUDAR:\n${args.pedido}`,
+      `\nTAMANHO: aproximadamente ${alvo} palavras (o vídeo tem ${Math.round(args.duracaoSeg)}s).`,
+    ].join("\n"),
+  );
+  if (texto.length < 40) throw new Error("Reescrita vazia ou curta demais");
+  return { roteiro: texto, model };
+}
+
+/** R3 — escreve o CTA que fecha o vídeo (cena própria, fora do tempo do viral). */
+export async function escreverCta(args: {
+  roteiro: string;
+  oferta: string;
+}): Promise<{ cta: string; model: string }> {
+  const { texto, model } = await perguntar(
+    SISTEMA_CTA,
+    [
+      `ASSUNTO DO VÍDEO (roteiro que acabou de ser falado):\n${args.roteiro.slice(0, 2000)}`,
+      `\nO QUE O CRIADOR QUER OFERECER / PRA ONDE MANDAR:\n${args.oferta}`,
+    ].join("\n"),
+    500,
+  );
+  if (texto.length < 10) throw new Error("CTA vazio");
+  return { cta: texto, model };
 }
 
 /** Escreve o roteiro do react, no tamanho que cabe no viral. */

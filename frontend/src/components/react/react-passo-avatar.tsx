@@ -11,6 +11,7 @@
  * viral (o formato do Lucas) — e é por isso que a foto importa tanto.
  */
 import { UserSquare2, MonitorPlay } from "lucide-react";
+import { ReactFotoAvatar } from "./react-foto-avatar";
 import type { AvatarEscolhido, ReactDraft } from "./react-tipos";
 
 const OPCOES: {
@@ -77,6 +78,9 @@ export function ReactPassoAvatar({
           );
         })}
       </ul>
+
+      {/* A foto só faz sentido depois de escolher o caminho. */}
+      {draft.avatar && <ReactFotoAvatar draft={draft} update={update} />}
 
       {/* Regra do Johnny (14/08): a foto do avatar tem que ser do MEIO CORPO
           PRA CIMA. De corpo inteiro o rosto vira um ponto — e no React o
