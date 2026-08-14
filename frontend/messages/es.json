@@ -12,8 +12,9 @@
       "script": "Generador de Guiones",
       "videos": "Vídeos",
       "videoHistory": "Video Historia",
-      "videoSales": "Video de Productos",
-      "videoClone": "Video Clon",
+      "videoSales": "Productos",
+      "videoClone": "Clon",
+      "videoHeygen": "HeyGen",
       "videoStudio": "Video Estudio",
       "videoEdicao": "Estudio Automático",
       "settings": "Configuración"

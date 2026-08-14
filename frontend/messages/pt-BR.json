@@ -16,8 +16,9 @@
       "script": "Gerador de Roteiros",
       "videos": "Vídeos",
       "videoHistory": "Vídeo História",
-      "videoSales": "Vídeo de Produtos",
-      "videoClone": "Vídeo Clone",
+      "videoSales": "Produtos",
+      "videoClone": "Clone",
+      "videoHeygen": "HeyGen",
       "videoStudio": "Vídeo Estúdio",
       "videoEdicao": "Estúdio Automático",
       "settings": "Configurações"

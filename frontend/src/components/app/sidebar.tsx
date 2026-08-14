@@ -183,6 +183,16 @@ export function Sidebar({
       locked: false,
       lockTitle: "",
     },
+    // ✅ HeyGen BYOK GRADUOU 14/08 (ordem Johnny): o Lucas rodou e passou, e
+    // o upload de áudio que faltava subiu em 507ae4c (13/08). Aluno usa a
+    // própria API key — o gate de créditos daqui não se aplica.
+    {
+      href: "/app/lab/video-heygen",
+      icon: MonitorPlay,
+      label: t("nav.videoHeygen"),
+      locked: false,
+      lockTitle: "",
+    },
   ];
 
   return (
@@ -339,15 +349,25 @@ export function Sidebar({
               <span className="block px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ash)]">
                 {tShell("preProduction")}
               </span>
+              {/* Árvore da pré-produção (desenho do Johnny 14/08): "Vídeos"
+                  ensaia a estrutura que vai pra produção; "Teste Apenas"
+                  guarda o que só existe pra conferência. */}
+              <SubTitulo>Vídeos</SubTitulo>
               <ul className="flex flex-col gap-1">
                 {/* Vídeos Virais (POC 13/08): parte 1 = achar o viral do nicho
-                    por likes/recência. Vira base do vídeo de reação. */}
+                    por likes/recência. Vira base do Video React.
+                    ⏳ "Meus Vídeos Virais" e "Video React" entram aqui quando
+                    as telas existirem — item de menu sem página é 404. */}
                 <NavLeaf
                   href="/app/lab/virais"
                   icon={Flame}
-                  label="Vídeos Virais"
+                  label="Galeria de Vídeos Virais"
                   active={pathname.endsWith("/app/lab/virais")}
                 />
+              </ul>
+
+              <SubTitulo>Teste Apenas</SubTitulo>
+              <ul className="flex flex-col gap-1">
                 {/* ✅ Estúdio Automático GRADUOU 13/08 → grupo Vídeos público.
                     O Vídeo História desceu pra cá como histórico (ordem
                     Johnny 13/08): alunos novos usam o wizard; projetos
@@ -370,20 +390,16 @@ export function Sidebar({
                     pathname.endsWith("/app/videos/studio")
                   }
                 />
+              </ul>
+
+              <ul className="mt-1 flex flex-col gap-1">
                 {/* Gravador Celular GRADUOU (03/08): virou a seção "Ou grave
                     pelo celular" do Gravador oficial — saiu do menu 05/08
                     (pedido Johnny). A página /app/lab/gravador-celular segue
                     acessível por URL se precisar depurar. */}
                 {/* 🧪 Padrão 2.0 GRADUOU (08/08): virou o tier Padrão público
                     do Vídeo Clone (V1 aposentado, Turbo 80 cr/s). */}
-                {/* 🧪 Vídeo HeyGen BYOK (teste 05/08): aluno conecta a própria
-                    API key; Lucas valida → gradua pro grupo Vídeos. */}
-                <NavLeaf
-                  href="/app/lab/video-heygen"
-                  icon={MonitorPlay}
-                  label="Vídeo HeyGen"
-                  active={pathname.endsWith("/app/lab/video-heygen")}
-                />
+                {/* ✅ HeyGen BYOK GRADUOU 14/08 → grupo Vídeos público. */}
                 {/* 🧪 Publicador (JSX compartilhado — ver publisherGroup). */}
                 {publisherGroup}
               </ul>
@@ -405,6 +421,15 @@ export function Sidebar({
         <p className="font-mono text-[10px] tracking-[0.04em] text-[var(--ash)]">v0.1 · dev</p>
       </div>
     </aside>
+  );
+}
+
+/** Rótulo de agrupamento dentro da pré-produção (um nível abaixo do título). */
+function SubTitulo({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="mt-1 block px-3 pb-0.5 pt-1 text-[10px] font-medium text-[var(--mute)]">
+      {children}
+    </span>
   );
 }
 

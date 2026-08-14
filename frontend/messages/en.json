@@ -12,8 +12,9 @@
       "script": "Script Generator",
       "videos": "Videos",
       "videoHistory": "Video Story",
-      "videoSales": "Product Video",
-      "videoClone": "Clone Video",
+      "videoSales": "Products",
+      "videoClone": "Clone",
+      "videoHeygen": "HeyGen",
       "videoStudio": "Video Studio",
       "videoEdicao": "Automatic Studio",
       "settings": "Settings"
