@@ -552,6 +552,10 @@ export type ReactJobRow = {
   status: string;
   erro: string | null;
   r2_key: string | null;
+  /** mig 78 — mesmos ids de SUBTITLE_PRESETS; "none"/null = vídeo limpo. */
+  legenda_estilo: string | null;
+  legenda_posicao: string | null;
+  legenda_tamanho: string | null;
   criado_em: Timestamp;
   atualizado_em: Timestamp;
 };

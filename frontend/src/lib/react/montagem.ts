@@ -181,8 +181,12 @@ export async function montarReact(args: {
   segundos: number;
   viralSegundos: number;
   cena?: string | null;
+  /** .ass já escrito no disco (mesmos presets do editor). Sem ele, sai limpo. */
+  ass?: string | null;
+  /** Pasta com os TTFs — o libass acha a fonte pelo nome da família. */
+  fontsDir?: string | null;
 }): Promise<void> {
-  const { viral, avatar, audio, saida, layout, segundos, viralSegundos, cena } = args;
+  const { viral, avatar, audio, saida, layout, segundos, viralSegundos, cena, ass, fontsDir } = args;
   const dir = path.dirname(saida);
   const plano = planejar({ falaSegundos: segundos, viralSegundos });
 
@@ -219,6 +223,10 @@ export async function montarReact(args: {
 
   // Áudio: a fala manda; o som do viral fica embaixo (20%) pra dar contexto
   // sem competir. O viral só toca no trecho em que ele aparece.
+  // A legenda entra AQUI, no mesmo passe: com `subtitles` o vídeo precisa ser
+  // reencodado (não dá pra copiar o stream), então juntar as duas coisas
+  // economiza um encode inteiro.
+  const legenda = ass ? filtroLegenda(ass, fontsDir) : null;
   await run(
     "ffmpeg",
     [
@@ -230,11 +238,27 @@ export async function montarReact(args: {
       `[1:a]volume=0.2,apad=whole_dur=${segundos}[vlow];[2:a]volume=1.0[fala];[vlow][fala]amix=inputs=2:duration=first:dropout_transition=0[a]`,
       "-map", "0:v", "-map", "[a]",
       "-t", String(segundos),
-      "-c:v", "copy",
+      ...(legenda
+        ? ["-vf", legenda, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
+        : ["-c:v", "copy"]),
       "-c:a", "aac", "-b:a", "128k",
       "-movflags", "+faststart",
       saida,
     ],
-    { timeout: 600_000, maxBuffer: 8 * 1024 * 1024 },
+    { timeout: 900_000, maxBuffer: 8 * 1024 * 1024 },
   );
+}
+
+/**
+ * Filtro `subtitles=` com os caminhos escapados.
+ * ⚠️ O ffmpeg parseia o filtergraph ANTES do filtro: `:` e `\` no caminho
+ * quebram o parse (pego na mão em 14/08). Como chamamos por execFile (sem
+ * shell), o argumento chega literal — UMA barra por caractere especial. Com
+ * duas, o libavfilter corta o valor e diz "No option name near ...".
+ */
+function filtroLegenda(ass: string, fontsDir?: string | null): string {
+  const esc = (p: string) => p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
+  const partes = [`subtitles='${esc(ass)}'`];
+  if (fontsDir) partes.push(`fontsdir='${esc(fontsDir)}'`);
+  return partes.join(":");
 }

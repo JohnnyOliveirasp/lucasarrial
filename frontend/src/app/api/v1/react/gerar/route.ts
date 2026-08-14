@@ -16,6 +16,13 @@ import { baixarViral, marcarDownload } from "@/lib/virais/download";
 import { marcarUsado } from "@/lib/virais/pessoal";
 import { dispararClone, estadoClone, montarEEnviar, trazerParaR2 } from "@/lib/react/gerar";
 import type { LayoutMontagem } from "@/lib/react/montagem";
+import {
+  SUBTITLE_POSITIONS,
+  SUBTITLE_PRESET_IDS,
+  SUBTITLE_SIZES,
+  type SubtitlePosition,
+  type SubtitleSize,
+} from "@/lib/video/subtitle-presets";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -41,6 +48,21 @@ export async function POST(request: NextRequest) {
   const cta = typeof b.cta === "string" ? b.cta.trim() : "";
   const fotoUrl = typeof b.foto_url === "string" ? b.foto_url : null;
   const audioUrl = typeof b.audio_url === "string" ? b.audio_url : null;
+  // Legenda: mesmos presets do editor de vídeo (validados pela lista oficial).
+  const legendaEstilo =
+    typeof b.legenda_estilo === "string" && SUBTITLE_PRESET_IDS.includes(b.legenda_estilo)
+      ? b.legenda_estilo
+      : "none";
+  const legendaPosicao =
+    typeof b.legenda_posicao === "string" &&
+    SUBTITLE_POSITIONS.includes(b.legenda_posicao as SubtitlePosition)
+      ? (b.legenda_posicao as SubtitlePosition)
+      : null;
+  const legendaTamanho =
+    typeof b.legenda_tamanho === "string" &&
+    SUBTITLE_SIZES.includes(b.legenda_tamanho as SubtitleSize)
+      ? (b.legenda_tamanho as SubtitleSize)
+      : null;
 
   if (!viralId) return badRequest("Faltou o vídeo.");
   if (!LAYOUTS.has(layout)) return badRequest("Layout inválido.");
@@ -71,6 +93,9 @@ export async function POST(request: NextRequest) {
       foto_url: fotoUrl,
       audio_url: audioUrl,
       segundos,
+      legenda_estilo: legendaEstilo,
+      legenda_posicao: legendaPosicao,
+      legenda_tamanho: legendaTamanho,
       status: "baixando",
     } as never)
     .select("id")
@@ -148,7 +173,7 @@ export async function GET(request: NextRequest) {
 
   const admin = getAdmin();
   const COLUNAS =
-    "id, status, erro, r2_key, segundos, layout, viral_r2_key, clone_job_id, clone_r2_key, audio_url, viral_id, criado_em";
+    "id, status, erro, r2_key, segundos, layout, viral_r2_key, clone_job_id, clone_r2_key, audio_url, viral_id, criado_em, legenda_estilo, legenda_posicao, legenda_tamanho";
   // Sem id = "tem algum pedido meu em voo?". A tela pergunta isso ao abrir:
   // o job do Johnny de 14/08 nasceu antes de o rascunho guardar o jobId e
   // ficou órfão — parado em "clonando" porque ninguém perguntava por ele.
@@ -206,6 +231,9 @@ export async function GET(request: NextRequest) {
           segundos: Number(data.segundos) || 20,
           viralSegundos: viralSegundos,
           saidaKey,
+          legendaEstilo: data.legenda_estilo,
+          legendaPosicao: data.legenda_posicao as SubtitlePosition | null,
+          legendaTamanho: data.legenda_tamanho as SubtitleSize | null,
         });
         await admin
           .from("react_jobs")

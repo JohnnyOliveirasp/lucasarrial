@@ -13,6 +13,7 @@
  * O desenho é feito em CSS de propósito: mostrar a ideia não exige carregar
  * vídeo nenhum, e o preview real só existe depois da montagem.
  */
+import { LegendaPicker } from "@/components/edicao/legenda-picker";
 import type { LayoutReact, ReactDraft } from "./react-tipos";
 
 const OPCOES: { id: LayoutReact; titulo: string; corpo: string }[] = [
@@ -71,6 +72,21 @@ export function ReactPassoLayout({
           );
         })}
       </ul>
+
+      {/* Legenda: o MESMO seletor do editor de vídeo (ordem do Johnny 14/08 —
+          "preciso escolher da mesma forma que está no editor"). Reuso direto,
+          nada de galeria paralela que envelhece sozinha. */}
+      <div className="border-t border-[var(--hairline)] pt-4">
+        <h3 className="mb-2 text-[13px] font-semibold text-[var(--ink)]">Legenda</h3>
+        <LegendaPicker
+          value={draft.legendaEstilo}
+          onChange={(id) => update({ legendaEstilo: id })}
+          position={draft.legendaPosicao}
+          onPosition={(p) => update({ legendaPosicao: p })}
+          size={draft.legendaTamanho}
+          onSize={(s) => update({ legendaTamanho: s })}
+        />
+      </div>
     </div>
   );
 }

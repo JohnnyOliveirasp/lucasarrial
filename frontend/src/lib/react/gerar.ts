@@ -16,9 +16,14 @@ import { createPresignedGet } from "@/lib/r2/presigned";
 import { CLONE_TIERS, cloneExecutionTimeoutMs } from "@/lib/video-clone/config";
 import { buildInfiniteTalkWorkflow } from "@/lib/video-clone/workflow";
 import { getInfiniteTalkStatus, runInfiniteTalk } from "@/lib/video-clone/runpod";
+import { transcribeWords } from "@/lib/video/transcribe-words";
+import type { SubtitlePosition, SubtitleSize } from "@/lib/video/subtitle-presets";
+import { estiloTemLegenda, montarAss } from "./legenda";
 import { montarReact, type LayoutMontagem } from "./montagem";
 
 const run = promisify(execFile);
+/** Os TTFs viajam no deploy (public/assets) — o libass só precisa da pasta. */
+const FONTS_DIR = path.join(process.cwd(), "public", "assets", "subtitle-fonts");
 /** Padrão 2.0 — o mesmo tier do Vídeo Clone público. */
 const TIER = CLONE_TIERS[0];
 
@@ -93,6 +98,10 @@ export async function montarEEnviar(args: {
   /** Duração do viral: define onde ele acaba e começa o "só você". */
   viralSegundos: number;
   saidaKey: string;
+  /** Preset de legenda (mesmos ids do editor). "none"/vazio = vídeo limpo. */
+  legendaEstilo?: string | null;
+  legendaPosicao?: SubtitlePosition | null;
+  legendaTamanho?: SubtitleSize | null;
 }): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "react-"));
   try {
@@ -107,6 +116,29 @@ export async function montarEEnviar(args: {
       baixarDoR2(R2_BUCKETS.generations, args.audioKey, audio),
     ]);
 
+    // Legenda: os timestamps saem do Whisper POR PALAVRA e casam 1:1 com o
+    // vídeo porque o áudio É o que gerou o clone. Falhou? o vídeo sai sem
+    // legenda — não vale perder a montagem inteira por causa do texto.
+    let ass: string | null = null;
+    if (estiloTemLegenda(args.legendaEstilo)) {
+      try {
+        const palavras = await transcribeWords(R2_BUCKETS.generations, args.audioKey);
+        const corpo = montarAss({
+          palavras,
+          estilo: args.legendaEstilo as string,
+          posicao: args.legendaPosicao ?? null,
+          tamanho: args.legendaTamanho ?? null,
+        });
+        if (corpo) {
+          ass = path.join(dir, "legenda.ass");
+          await fs.writeFile(ass, corpo, "utf8");
+        }
+      } catch (e) {
+        console.error("[react] legenda pulada:", e instanceof Error ? e.message : e);
+        ass = null;
+      }
+    }
+
     await montarReact({
       viral,
       avatar: clone,
@@ -115,6 +147,8 @@ export async function montarEEnviar(args: {
       layout: args.layout,
       segundos: args.segundos,
       viralSegundos: args.viralSegundos,
+      ass,
+      fontsDir: FONTS_DIR,
     });
 
     // Conferência barata: vídeo vazio não sobe.

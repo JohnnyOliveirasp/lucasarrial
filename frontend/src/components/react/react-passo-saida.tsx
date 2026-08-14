@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Download, Loader2 } from "lucide-react";
 import { downloadFromUrl } from "@/components/image/download-file";
+import { getSubtitlePreset } from "@/lib/video/subtitle-presets";
 import type { ReactDraft } from "./react-tipos";
 
 /** Taxa fixa do React: LLM + preparo da foto + montagem + legenda. */
@@ -121,6 +122,9 @@ export function ReactPassoSaida({
           layout: draft.layout,
           roteiro: draft.roteiro,
           cta: draft.cta,
+          legenda_estilo: draft.legendaEstilo,
+          legenda_posicao: draft.legendaPosicao,
+          legenda_tamanho: draft.legendaTamanho,
         }),
       });
       const j = await r.json();
@@ -163,6 +167,7 @@ export function ReactPassoSaida({
               : "o viral cobre a fala inteira",
           ],
           ["Voz", draft.modoAudio === "gravar" ? "você grava" : draft.audioUrl ? "gerada" : "—"],
+          ["Legenda", getSubtitlePreset(draft.legendaEstilo).label],
         ].map(([k, v]) => (
           <div key={k} className="flex gap-2">
             <dt className="w-28 shrink-0 text-[var(--mute)]">{k}</dt>

@@ -1,4 +1,5 @@
 /** Rascunho do Video React (localStorage, igual ao wizard de Edição). */
+import type { SubtitlePosition, SubtitleSize } from "@/lib/video/subtitle-presets";
 
 /** Os 7 passos combinados com o Johnny em 14/08. */
 export const PASSOS = [
@@ -61,6 +62,11 @@ export type ReactDraft = {
   audioUrl: string | null;
   audioGenId: string | null;
   layout: LayoutReact | null;
+  /** Legenda queimada — os MESMOS presets do editor de vídeo (pedido do Johnny
+   *  14/08). "none" = vídeo limpo. */
+  legendaEstilo: string;
+  legendaPosicao: SubtitlePosition | null;
+  legendaTamanho: SubtitleSize | null;
   /** Pedido em voo (react_jobs). Guardado pra tela reencontrar o job depois de
    *  um F5 — sem isso o vídeo só aparecia em "Vídeos gerados". */
   jobId: string | null;
@@ -80,5 +86,9 @@ export const DRAFT_VAZIO: ReactDraft = {
   audioUrl: null,
   audioGenId: null,
   layout: null,
+  // Karaokê é o default do editor (getSubtitlePreset) — o React segue igual.
+  legendaEstilo: "karaoke",
+  legendaPosicao: null,
+  legendaTamanho: null,
   jobId: null,
 };
