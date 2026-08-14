@@ -46,10 +46,9 @@ export default async function ViraisPage({
           Vídeos Virais
         </h1>
         <p className="mt-1 max-w-2xl text-[14px] text-[var(--mute)]">
-          O acervo dos virais do nicho. Rode a busca no Apify, importe o resultado aqui,
-          assista ao que interessa e <strong>marque só os que valem a pena baixar</strong> —
-          nada vai pro nosso storage sem você mandar. O viral escolhido vira a base do
-          seu vídeo de reação.
+          Diga o nicho e o sistema traz os vídeos mais curtidos do TikTok. Assista ao que
+          interessa e <strong>marque só os que valem a pena baixar</strong> — nada vai pro
+          nosso storage sem você mandar. O viral escolhido vira a base do seu vídeo de reação.
         </p>
       </div>
       <ViraisBusca />
