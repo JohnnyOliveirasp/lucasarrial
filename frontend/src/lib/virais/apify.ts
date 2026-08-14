@@ -59,14 +59,63 @@ export const PERIODOS = [
 
 export type Periodo = (typeof PERIODOS)[number]["id"];
 
+/**
+ * Como buscar. O actor aceita palavra-chave (keywords) OU uma URL de
+ * partida (perfil, hashtag, som, local, busca).
+ * ⚠️ A ORDENAÇÃO por mais curtidos só vale na busca por PALAVRA — a doc do
+ * actor é explícita: "Only works with keyword search — does not apply to
+ * startUrls". Nos outros modos vem na ordem do TikTok e a gente reordena
+ * pelo score aqui.
+ */
+/**
+ * Os campos se SOMAM: dá pra buscar só por palavra, só por perfil, ou por
+ * palavra + 3 perfis + 2 hashtags de uma vez. O actor aceita `keywords` e
+ * `startUrls` na mesma execução.
+ */
 export type PedidoBusca = {
-  nicho: string;
+  /** Palavras/nichos. Ex.: ["handyman", "home repair"] */
+  nichos: string[];
+  /** @ dos perfis, com ou sem arroba. */
+  perfis: string[];
+  /** Hashtags, com ou sem #. */
+  hashtags: string[];
+  /** URLs do TikTok já prontas (perfil, tag, som, local, busca). */
+  links: string[];
   periodo: Periodo;
   /** Teto de vídeos: é o que define o custo (US$0,30 por 1.000). */
   maxItems: number;
   /** País de onde "olhar" o TikTok — o nicho handyman é dos EUA. */
   pais: string;
 };
+
+/** "@fulano", "tiktok.com/@fulano" ou "fulano" → URL do perfil. */
+export function urlDePerfil(entrada: string): string | null {
+  const user = entrada
+    .trim()
+    .replace(/^https?:\/\/[^/]*\//i, "")
+    .replace(/^@/, "")
+    .split(/[/?#]/)[0];
+  return user ? `https://www.tiktok.com/@${encodeURIComponent(user)}` : null;
+}
+
+/** "#tag", "tiktok.com/tag/x" ou "tag" → URL da hashtag. */
+export function urlDeHashtag(entrada: string): string | null {
+  const tag = entrada
+    .trim()
+    .replace(/^https?:\/\/[^/]*\/tag\//i, "")
+    .replace(/^#/, "")
+    .split(/[/?#]/)[0];
+  return tag ? `https://www.tiktok.com/tag/${encodeURIComponent(tag)}` : null;
+}
+
+/** Quebra o que a pessoa digitou (vírgula, ponto-e-vírgula ou linha). */
+export function separarLista(texto: string): string[] {
+  return texto
+    .split(/[\n,;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+}
 
 /**
  * Dispara a busca no Apify e devolve o id da execução. NÃO espera terminar:
@@ -77,12 +126,21 @@ export async function dispararBusca(p: PedidoBusca): Promise<RunApify> {
   const token = apifyToken();
   if (!token) throw new Error("sem_token");
   const input: Record<string, unknown> = {
-    keywords: [p.nicho],
-    sortType: "MOST_LIKED", // o que a gente quer é viral, não relevância
-    dateRange: p.periodo,
     maxItems: p.maxItems,
-    includeSearchKeywords: true,
+    dateRange: p.periodo,
   };
+  if (p.nichos.length > 0) {
+    input.keywords = p.nichos;
+    input.sortType = "MOST_LIKED"; // viral, não relevância — só vale aqui
+    input.includeSearchKeywords = true;
+  }
+  const urls = [
+    ...p.perfis.map(urlDePerfil),
+    ...p.hashtags.map(urlDeHashtag),
+    ...p.links.map((l) => (/^https?:\/\/(www\.)?tiktok\.com\//i.test(l.trim()) ? l.trim() : null)),
+  ].filter((u): u is string => !!u);
+  if (urls.length > 0) input.startUrls = urls;
+  if (!input.keywords && !input.startUrls) throw new Error("nada_pra_buscar");
   if (p.pais) input.location = p.pais;
 
   const resp = await fetch(`${API}/acts/${ACTOR_ID}/runs`, {

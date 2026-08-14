@@ -113,29 +113,35 @@ export function ViraisBusca() {
               {videos.length} vídeos · {marcados} marcados pra baixar
             </span>
           </h2>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <input
-              value={filtro}
-              onChange={(e) => setFiltro(e.target.value)}
-              placeholder="filtrar por @perfil ou palavra"
-              className={`h-9 w-56 ${CAMPO}`}
-            />
-            <input
-              type="number"
-              min={0}
-              step={10000}
-              value={minLikes}
-              onChange={(e) => setMinLikes(Number(e.target.value) || 0)}
-              title="Mínimo de likes"
-              className={`h-9 w-28 ${CAMPO}`}
-            />
+          {/* Peneira do que JÁ voltou — não busca nada novo no TikTok. */}
+          <div className="ml-auto flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-0.5 text-[11px] text-[var(--mute)]">
+              Peneirar por texto
+              <input
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value)}
+                placeholder="@perfil ou palavra da legenda"
+                className={`h-9 w-56 ${CAMPO}`}
+              />
+            </label>
+            <label className="flex flex-col gap-0.5 text-[11px] text-[var(--mute)]">
+              Likes acima de
+              <input
+                type="number"
+                min={0}
+                step={10000}
+                value={minLikes}
+                onChange={(e) => setMinLikes(Number(e.target.value) || 0)}
+                className={`h-9 w-28 ${CAMPO}`}
+              />
+            </label>
             <label className="flex h-9 items-center gap-1.5 text-[13px] text-[var(--ink)]">
               <input
                 type="checkbox"
                 checked={soSelecionados}
                 onChange={(e) => setSoSelecionados(e.target.checked)}
               />
-              só os marcados
+              ver só a minha lista de download
             </label>
           </div>
         </div>
@@ -144,7 +150,7 @@ export function ViraisBusca() {
           <p className="text-[14px] text-[var(--mute)]">Carregando…</p>
         ) : videos.length === 0 ? (
           <p className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] p-8 text-center text-[14px] text-[var(--mute)]">
-            Nenhum vídeo aqui ainda. Preencha o nicho lá em cima e clique em{" "}
+            Nenhum vídeo aqui ainda. Preencha um dos campos lá em cima e clique em{" "}
             <strong className="text-[var(--ink)]">Buscar virais</strong>.
           </p>
         ) : (
@@ -176,23 +182,33 @@ export function ViraisBusca() {
  * tela pergunta o status de 6 em 6s em vez de segurar a requisição.
  */
 function FormBusca({ onPronto }: { onPronto: () => Promise<void> }) {
-  const [nicho, setNicho] = useState("");
+  const [nichos, setNichos] = useState("");
+  const [perfis, setPerfis] = useState("");
+  const [hashtags, setHashtags] = useState("");
+  const [links, setLinks] = useState("");
   const [periodo, setPeriodo] = useState("LAST_THREE_MONTHS");
   const [maxItens, setMaxItens] = useState(100);
   const [pais, setPais] = useState("US");
   const [rodando, setRodando] = useState(false);
   const [situacao, setSituacao] = useState<string | null>(null);
 
+  const temAlgo = [nichos, perfis, hashtags, links].some((c) => c.trim().length > 0);
+  const alvo = [nichos, perfis, hashtags].filter(Boolean).join(", ").slice(0, 60) || "TikTok";
+
   async function buscar(e: React.FormEvent) {
     e.preventDefault();
-    if (!nicho.trim() || rodando) return;
+    if (rodando) return;
+    if (!temAlgo) {
+      setSituacao("Preencha pelo menos um campo: nicho, perfil, hashtag ou link.");
+      return;
+    }
     setRodando(true);
     setSituacao("Pedindo a busca ao Apify…");
     try {
       const r = await fetch("/api/v1/virais/buscar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nicho: nicho.trim(), periodo, max_itens: maxItens, pais }),
+        body: JSON.stringify({ nichos, perfis, hashtags, links, periodo, max_itens: maxItens, pais }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -200,12 +216,12 @@ function FormBusca({ onPronto }: { onPronto: () => Promise<void> }) {
         return;
       }
       const runId = j.run?.id as string;
-      setSituacao(`Buscando "${nicho}" no TikTok… isso leva alguns minutos.`);
+      setSituacao(`Buscando ${alvo} no TikTok… isso leva alguns minutos.`);
 
       for (let i = 0; i < 100; i++) {
         await new Promise((s) => setTimeout(s, 6000));
         const st = await fetch(
-          `/api/v1/virais/buscar?run=${encodeURIComponent(runId)}&termo=${encodeURIComponent(nicho.trim())}`,
+          `/api/v1/virais/buscar?run=${encodeURIComponent(runId)}&termo=${encodeURIComponent(j.termo ?? alvo)}`,
         );
         const sj = await st.json();
         if (!st.ok) {
@@ -240,16 +256,51 @@ function FormBusca({ onPronto }: { onPronto: () => Promise<void> }) {
       onSubmit={buscar}
       className="flex flex-col gap-3 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface)] p-4"
     >
-      <div className="flex flex-wrap items-end gap-3">
+      <p className="text-[13px] text-[var(--mute)]">
+        Preencha <strong className="text-[var(--ink)]">um ou vários</strong> campos — eles se
+        somam na mesma busca. Separe com vírgula pra buscar mais de um.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-[12px] text-[var(--mute)]">
-          Nicho
+          Nicho / palavra-chave
           <input
-            value={nicho}
-            onChange={(e) => setNicho(e.target.value)}
-            placeholder="handyman, marcenaria, finanças…"
-            className={`h-10 w-60 ${CAMPO}`}
+            value={nichos}
+            onChange={(e) => setNichos(e.target.value)}
+            placeholder="handyman, home repair"
+            className={`h-10 ${CAMPO}`}
+          />
+          <span className="text-[11px]">só aqui dá pra trazer ordenado pelos mais curtidos</span>
+        </label>
+        <label className="flex flex-col gap-1 text-[12px] text-[var(--mute)]">
+          Perfis (@)
+          <input
+            value={perfis}
+            onChange={(e) => setPerfis(e.target.value)}
+            placeholder="@gordonramsayofficial, @outroperfil"
+            className={`h-10 ${CAMPO}`}
+          />
+          <span className="text-[11px]">traz os vídeos desses perfis</span>
+        </label>
+        <label className="flex flex-col gap-1 text-[12px] text-[var(--mute)]">
+          Hashtags (#)
+          <input
+            value={hashtags}
+            onChange={(e) => setHashtags(e.target.value)}
+            placeholder="#handyman, #diy"
+            className={`h-10 ${CAMPO}`}
           />
         </label>
+        <label className="flex flex-col gap-1 text-[12px] text-[var(--mute)]">
+          Links do TikTok
+          <input
+            value={links}
+            onChange={(e) => setLinks(e.target.value)}
+            placeholder="cole URLs de perfil, tag, som ou local"
+            className={`h-10 ${CAMPO}`}
+          />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-end gap-3 border-t border-[var(--hairline)] pt-3">
         <label className="flex flex-col gap-1 text-[12px] text-[var(--mute)]">
           Período
           <select
@@ -291,7 +342,9 @@ function FormBusca({ onPronto }: { onPronto: () => Promise<void> }) {
             className={`h-10 w-20 uppercase ${CAMPO}`}
           />
         </label>
-        <button type="submit" disabled={rodando || !nicho.trim()} className={`h-10 ${BOTAO}`}>
+        {/* só desabilita ENQUANTO roda: antes ficava cinza morto com o campo
+            vazio e nem parecia botão (marcado pelo Johnny na tela 14/08). */}
+        <button type="submit" disabled={rodando} className={`h-10 ${BOTAO}`}>
           {rodando ? "Buscando…" : "Buscar virais"}
         </button>
       </div>

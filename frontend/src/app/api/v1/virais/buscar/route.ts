@@ -17,6 +17,7 @@ import {
   dispararBusca,
   itensDoRun,
   PERIODOS,
+  separarLista,
   verRun,
   type Periodo,
 } from "@/lib/virais/apify";
@@ -49,8 +50,20 @@ export async function POST(request: NextRequest) {
     return badRequest("Corpo inválido");
   }
 
-  const nicho = typeof body.nicho === "string" ? body.nicho.trim().slice(0, 80) : "";
-  if (!nicho) return badRequest("Diga o nicho que você quer buscar.");
+  // Os campos se SOMAM: dá pra buscar por palavra, por perfil, por hashtag
+  // e por link na mesma execução — ou por um só (pedido do Johnny 14/08).
+  const lista = (v: unknown) =>
+    typeof v === "string" ? separarLista(v.slice(0, 600)) : [];
+  const nichos = lista(body.nichos);
+  const perfis = lista(body.perfis);
+  const hashtags = lista(body.hashtags);
+  const links = lista(body.links);
+  if (nichos.length + perfis.length + hashtags.length + links.length === 0) {
+    return badRequest("Preencha pelo menos um campo: nicho, perfil, hashtag ou link.");
+  }
+  const rotulo = [...nichos, ...perfis.map((p) => `@${p.replace(/^@/, "")}`), ...hashtags]
+    .join(", ")
+    .slice(0, 80);
 
   const periodoPedido = typeof body.periodo === "string" ? body.periodo : "";
   const periodo = (PERIODOS.some((p) => p.id === periodoPedido)
@@ -65,8 +78,8 @@ export async function POST(request: NextRequest) {
   const pais = typeof body.pais === "string" ? body.pais.trim().toUpperCase().slice(0, 2) : "";
 
   try {
-    const run = await dispararBusca({ nicho, periodo, maxItems, pais });
-    return jsonOk({ run, nicho, custo_estimado_usd: +(maxItems * 0.0003).toFixed(2) });
+    const run = await dispararBusca({ nichos, perfis, hashtags, links, periodo, maxItems, pais });
+    return jsonOk({ run, termo: rotulo, custo_estimado_usd: +(maxItems * 0.0003).toFixed(2) });
   } catch (e) {
     console.error("[virais/buscar]", e instanceof Error ? e.message : e);
     return serverError(traduzir(e));
