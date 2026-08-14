@@ -21,6 +21,7 @@ import {
   ShoppingBag,
   UserSquare2,
   Wand2,
+  Flame,
   MonitorPlay,
   Send,
   Camera,
@@ -339,6 +340,14 @@ export function Sidebar({
                 {tShell("preProduction")}
               </span>
               <ul className="flex flex-col gap-1">
+                {/* Vídeos Virais (POC 13/08): parte 1 = achar o viral do nicho
+                    por likes/recência. Vira base do vídeo de reação. */}
+                <NavLeaf
+                  href="/app/lab/virais"
+                  icon={Flame}
+                  label="Vídeos Virais"
+                  active={pathname.endsWith("/app/lab/virais")}
+                />
                 {/* ✅ Estúdio Automático GRADUOU 13/08 → grupo Vídeos público.
                     O Vídeo História desceu pra cá como histórico (ordem
                     Johnny 13/08): alunos novos usam o wizard; projetos

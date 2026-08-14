@@ -451,6 +451,44 @@ export type ScriptInsert = {
 };
 export type ScriptUpdate = Partial<Omit<ScriptRow, "id" | "user_id" | "created_at">>;
 
+// ───────── viral_videos (mig 72 — "Vídeos Virais") ─────────
+export type ViralVideoRow = {
+  id: string;
+  plataforma: string;
+  /** id do vídeo NA REDE — âncora da dedup entre buscas. */
+  video_id: string;
+  url: string;
+  autor: string | null;
+  autor_seguidores: number | null;
+  legenda: string | null;
+  likes: number;
+  views: number | null;
+  comentarios: number | null;
+  compartilhamentos: number | null;
+  publicado_em: Timestamp | null;
+  duracao_seg: number | null;
+  thumb_url: string | null;
+  /** mp4 na CDN da rede: EXPIRA. Player e download sob demanda. */
+  video_url: string | null;
+  hashtags: string[] | null;
+  score: number;
+  termo_busca: string | null;
+  origem_run_id: string | null;
+  /** Só o marcado desce pro R2 — segura o bucket de virar depósito. */
+  selecionado: boolean;
+  selecionado_por: string | null;
+  selecionado_em: Timestamp | null;
+  download_status: string;
+  r2_key: string | null;
+  download_erro: string | null;
+  criado_em: Timestamp;
+};
+export type ViralVideoInsert = Omit<ViralVideoRow, "id" | "criado_em"> & {
+  id?: string;
+  criado_em?: Timestamp;
+};
+export type ViralVideoUpdate = Partial<Omit<ViralVideoRow, "id" | "criado_em">>;
+
 // ───────── script_messages (mig 69 — chat de ajuste do roteiro) ─────────
 export type ScriptMessageRow = {
   id: string;
@@ -1032,6 +1070,7 @@ export type Database = {
       publications: { Row: PublicationRow; Insert: PublicationInsert; Update: PublicationUpdate; Relationships: Rel };
       scripts: { Row: ScriptRow; Insert: ScriptInsert; Update: ScriptUpdate; Relationships: Rel };
       script_messages: { Row: ScriptMessageRow; Insert: ScriptMessageInsert; Update: ScriptMessageUpdate; Relationships: Rel };
+      viral_videos: { Row: ViralVideoRow; Insert: ViralVideoInsert; Update: ViralVideoUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: {
