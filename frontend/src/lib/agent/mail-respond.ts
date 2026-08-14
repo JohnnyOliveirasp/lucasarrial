@@ -12,6 +12,7 @@
  * avisa que a equipe confirma; nunca resolve sozinha). "PULAR" = silêncio.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { guardarPrints } from "./mail-anexos";
 import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
 import { buildAccountContext } from "./account";
@@ -132,7 +133,15 @@ export type MailSweepSummary = {
  * 03/08). Dedupe por aluno: reclamação repetida soma ocorrência no mesmo
  * incidente em vez de abrir outro.
  */
-async function openIncidentForSentinela(fromEmail: string, reason: string, excerpt: string): Promise<void> {
+async function openIncidentForSentinela(
+  fromEmail: string,
+  reason: string,
+  excerpt: string,
+  /** Prints que o aluno mandou (chaves no R2) — sem isso o incidente nasce
+   *  cego e alguém precisa abrir a caixa do suporte na mão (caso Claudia,
+   *  14/08). */
+  prints: string[] = [],
+): Promise<void> {
   const admin = getAdmin();
   const signature = `fast-email:${fromEmail}`;
   const now = new Date().toISOString();
@@ -160,6 +169,7 @@ async function openIncidentForSentinela(fromEmail: string, reason: string, excer
         last_seen_at: now,
         sample_error: excerpt.slice(0, 1000),
         description: reason,
+        ...(prints.length ? { attachment_path: prints.join(",") } : {}),
       } as never)
       .eq("id", existing.id);
     return;
@@ -175,6 +185,7 @@ async function openIncidentForSentinela(fromEmail: string, reason: string, excer
     sample_error: excerpt.slice(0, 1000),
     description: `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`,
     reported_by: "fast",
+    attachment_path: prints.length ? prints.join(",") : null,
     first_seen_at: now,
     last_seen_at: now,
   } as never);
@@ -361,7 +372,9 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   // Erro técnico sem solução na hora → incidente aberto pro Sentinela resolver.
   if (reason && technical) {
     try {
-      await openIncidentForSentinela(fromEmail, reason, text);
+      // O print é a prova: guarda ANTES de abrir o incidente.
+      const prints = await guardarPrints(mail.raw, { fromEmail, uid: mail.uid });
+      await openIncidentForSentinela(fromEmail, reason, text, prints);
     } catch (e) {
       console.error("[agent/mail] falha ao abrir incidente:", e instanceof Error ? e.message : e);
     }
