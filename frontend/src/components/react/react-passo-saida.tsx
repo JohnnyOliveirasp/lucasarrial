@@ -7,7 +7,9 @@
  * separada (React fixo · clone por segundo) pra pessoa entender que o caro é
  * o vídeo, não o nosso trabalho.
  */
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Download, Loader2 } from "lucide-react";
+import { downloadFromUrl } from "@/components/image/download-file";
 import type { ReactDraft } from "./react-tipos";
 
 /** Taxa fixa do React: LLM + preparo da foto + montagem + legenda. */
@@ -15,10 +17,65 @@ const CUSTO_REACT = 300;
 /** Clone de vídeo — o que realmente pesa. */
 const CREDITOS_POR_SEGUNDO = 105;
 
-export function ReactPassoSaida({ draft }: { draft: ReactDraft }) {
+/** As etapas do job (migração 76), na ordem em que acontecem. */
+const ETAPAS = [
+  { id: "baixando", rotulo: "Baixando o viral" },
+  { id: "clonando", rotulo: "Gravando você (clone)" },
+  { id: "montando", rotulo: "Montando o vídeo" },
+  { id: "pronto", rotulo: "Pronto" },
+] as const;
+
+type JobReact = {
+  status: string;
+  erro?: string | null;
+  video_url?: string | null;
+  thumb_url?: string | null;
+};
+
+export function ReactPassoSaida({
+  draft,
+  update,
+}: {
+  draft: ReactDraft;
+  update: (m: Partial<ReactDraft>) => void;
+}) {
   const [gerando, setGerando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [pronto, setPronto] = useState<string | null>(null);
+  const [job, setJob] = useState<JobReact | null>(null);
+  const [baixando, setBaixando] = useState(false);
+  const vivo = useRef(true);
+
+  useEffect(() => {
+    vivo.current = true;
+    return () => {
+      vivo.current = false;
+    };
+  }, []);
+
+  /**
+   * Acompanha o pedido até acabar. ⚠️ É o GET que faz o job ANDAR (mesmo
+   * padrão do Vídeo Clone) — sem esta tela perguntando, ele fica parado em
+   * "clonando" pra sempre. Foi o que aconteceu no 1º React do Johnny, 14/08.
+   */
+  const acompanhar = useCallback(async (jobId: string) => {
+    for (let i = 0; i < 400; i++) {
+      const j = (await fetch(`/api/v1/react/gerar?job=${encodeURIComponent(jobId)}`, {
+        cache: "no-store",
+      })
+        .then((r) => r.json())
+        .catch(() => null)) as JobReact | null;
+      if (j?.status) setJob(j);
+      if (j?.status === "pronto" || j?.status === "erro") return;
+      if (!vivo.current) return;
+      await new Promise((s) => setTimeout(s, 5000));
+    }
+  }, []);
+
+  /** Voltou pra tela (ou deu F5) com pedido em voo: retoma o acompanhamento. */
+  useEffect(() => {
+    if (draft.jobId) void acompanhar(draft.jobId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const texto = [draft.roteiro, draft.cta].filter(Boolean).join(" ");
   const palavras = texto.trim().split(/\s+/).filter(Boolean).length;
@@ -50,8 +107,14 @@ export function ReactPassoSaida({ draft }: { draft: ReactDraft }) {
         }),
       });
       const j = await r.json();
-      if (r.ok) setPronto(j.job_id ?? "ok");
-      else setErro(j?.error?.message ?? "Não consegui gerar agora.");
+      if (!r.ok) {
+        setErro(j?.error?.message ?? "Não consegui gerar agora.");
+        return;
+      }
+      const jobId = j.job_id as string;
+      update({ jobId });
+      setJob({ status: j.status ?? "clonando" });
+      await acompanhar(jobId);
     } catch {
       setErro("Falha de rede.");
     } finally {
@@ -115,22 +178,151 @@ export function ReactPassoSaida({ draft }: { draft: ReactDraft }) {
         </p>
       )}
 
-      <button
-        type="button"
-        onClick={gerar}
-        disabled={gerando || faltando.length > 0}
-        className="h-11 rounded-[var(--radius-sm)] bg-[var(--ink)] text-[14px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
-      >
-        {gerando ? "Montando o seu React…" : "Gerar o Video React"}
-      </button>
+      {!job && (
+        <button
+          type="button"
+          onClick={gerar}
+          disabled={gerando || faltando.length > 0}
+          className="h-11 rounded-[var(--radius-sm)] bg-[var(--ink)] text-[14px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+        >
+          {gerando ? "Enviando o pedido…" : "Gerar o Video React"}
+        </button>
+      )}
 
-      {pronto && (
-        <p className="rounded-[var(--radius-sm)] border border-[var(--hairline)] p-3 text-[12.5px] text-[var(--ink)]">
-          Pedido enviado. O vídeo aparece em Vídeos gerados quando ficar pronto — o clone
-          leva alguns minutos.
+      {job && (
+        <Acompanhamento
+          job={job}
+          thumbFallback={draft.viral?.thumb_url ?? null}
+          baixando={baixando}
+          onBaixar={(url) => {
+            setBaixando(true);
+            void downloadFromUrl(url, "video-react", "mp4").finally(() => setBaixando(false));
+          }}
+          onDeNovo={() => {
+            update({ jobId: null });
+            setJob(null);
+          }}
+        />
+      )}
+
+      {erro && <p className="text-[12.5px] text-red-400">{erro}</p>}
+    </div>
+  );
+}
+
+/**
+ * O vídeo nascendo NA TELA — pedido do Johnny 14/08: "tem que aparecer logo
+ * abaixo, na sequência", como no editor. Antes só dizia "pedido enviado" e
+ * mandava procurar em Vídeos gerados.
+ */
+function Acompanhamento({
+  job,
+  thumbFallback,
+  baixando,
+  onBaixar,
+  onDeNovo,
+}: {
+  job: JobReact;
+  thumbFallback: string | null;
+  baixando: boolean;
+  onBaixar: (url: string) => void;
+  onDeNovo: () => void;
+}) {
+  const atual = ETAPAS.findIndex((e) => e.id === job.status);
+  const capa = job.thumb_url ?? thumbFallback;
+  const falhou = job.status === "erro";
+  const pronto = job.status === "pronto" && job.video_url;
+
+  return (
+    <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-3">
+      <div className="flex gap-3">
+        {/* Miniatura: a capa do viral enquanto monta, o vídeo quando fica pronto. */}
+        <div className="h-[120px] w-[68px] shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-[var(--hairline)] bg-black/40">
+          {pronto ? (
+            <video
+              src={job.video_url!}
+              poster={capa ?? undefined}
+              muted
+              playsInline
+              preload="metadata"
+              className="h-full w-full object-cover"
+            />
+          ) : capa ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={capa} alt="" className="h-full w-full object-cover opacity-70" />
+          ) : null}
+        </div>
+
+        <ol className="flex flex-1 flex-col gap-1.5">
+          {ETAPAS.map((e, i) => {
+            const feito = !falhou && atual > i;
+            const agora = !falhou && atual === i;
+            return (
+              <li key={e.id} className="flex items-center gap-2 text-[12.5px]">
+                {feito ? (
+                  <Check className="size-3.5 shrink-0 text-emerald-400" />
+                ) : agora ? (
+                  <Loader2 className="size-3.5 shrink-0 animate-spin text-[var(--ink)]" />
+                ) : (
+                  <span className="size-3.5 shrink-0 rounded-full border border-[var(--hairline-strong)]" />
+                )}
+                <span className={feito || agora ? "text-[var(--ink)]" : "text-[var(--ash)]"}>
+                  {e.rotulo}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+
+      {!falhou && !pronto && (
+        <p className="text-[11.5px] text-[var(--mute)]">
+          Pode deixar esta tela aberta — o clone leva alguns minutos.
         </p>
       )}
-      {erro && <p className="text-[12.5px] text-red-400">{erro}</p>}
+
+      {pronto && (
+        <div className="flex flex-col gap-2">
+          <video
+            src={job.video_url!}
+            controls
+            playsInline
+            preload="metadata"
+            className="max-h-[420px] w-auto self-start rounded-[var(--radius-sm)] border border-[var(--hairline)]"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onBaixar(job.video_url!)}
+              disabled={baixando}
+              className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 py-2 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+            >
+              {baixando ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+              Baixar
+            </button>
+            <button
+              type="button"
+              onClick={onDeNovo}
+              className="text-[12.5px] text-[var(--mute)] underline"
+            >
+              gerar outro
+            </button>
+          </div>
+        </div>
+      )}
+
+      {falhou && (
+        <div className="flex flex-col gap-2">
+          <p className="text-[12.5px] text-red-400">{job.erro ?? "A geração falhou."}</p>
+          <button
+            type="button"
+            onClick={onDeNovo}
+            className="self-start rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3 py-1.5 text-[12.5px] text-[var(--ink)]"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      )}
     </div>
   );
 }

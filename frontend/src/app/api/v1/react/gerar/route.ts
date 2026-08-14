@@ -10,6 +10,8 @@ import type { NextRequest } from "next/server";
 import { gateAdmin } from "@/lib/admin/api";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { R2_BUCKETS } from "@/lib/r2/client";
+import { createPresignedGet } from "@/lib/r2/presigned";
 import { baixarViral, marcarDownload } from "@/lib/virais/download";
 import { marcarUsado } from "@/lib/virais/pessoal";
 import { dispararClone, estadoClone, montarEEnviar, trazerParaR2 } from "@/lib/react/gerar";
@@ -157,12 +159,23 @@ export async function GET(request: NextRequest) {
   if (!data) return badRequest("Pedido não encontrado.");
 
   // Duração do viral: é ela que diz onde o vídeo acaba e começa o "só você".
+  // A capa vem junto: é ela que a tela usa de miniatura enquanto monta.
   const { data: v } = await admin
     .from("viral_videos")
-    .select("duracao_seg")
+    .select("duracao_seg, thumb_url")
     .eq("id", data.viral_id)
     .maybeSingle();
   const viralSegundos = Number(v?.duracao_seg ?? 0) || 15;
+  const thumbUrl = v?.thumb_url ?? null;
+
+  /** Link tocável do vídeo pronto — sem isso a tela não tem o que mostrar. */
+  async function comVideo<T extends { r2_key?: string | null }>(row: T) {
+    const key = row.r2_key;
+    const video_url = key
+      ? await createPresignedGet(R2_BUCKETS.generations, key, 3600).catch(() => null)
+      : null;
+    return { ...row, video_url, thumb_url: thumbUrl };
+  }
 
   // O job só anda quando alguém pergunta — mesmo padrão do Vídeo Clone.
   if (data.status === "clonando" && data.clone_job_id) {
@@ -187,7 +200,7 @@ export async function GET(request: NextRequest) {
           .from("react_jobs")
           .update({ status: "pronto", r2_key: key, atualizado_em: new Date().toISOString() } as never)
           .eq("id", id);
-        return jsonOk({ ...data, status: "pronto", r2_key: key });
+        return jsonOk(await comVideo({ ...data, status: "pronto", r2_key: key }));
       }
       if (["FAILED", "CANCELLED", "TIMED_OUT"].includes(st.status)) {
         await admin
@@ -198,7 +211,7 @@ export async function GET(request: NextRequest) {
             atualizado_em: new Date().toISOString(),
           } as never)
           .eq("id", id);
-        return jsonOk({ ...data, status: "erro", erro: st.error ?? st.status });
+        return jsonOk({ ...data, status: "erro", erro: st.error ?? st.status, thumb_url: thumbUrl });
       }
     } catch (e) {
       console.error("[react/gerar:get]", e instanceof Error ? e.message : e);
@@ -214,5 +227,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return jsonOk(data);
+  return jsonOk(await comVideo(data));
 }

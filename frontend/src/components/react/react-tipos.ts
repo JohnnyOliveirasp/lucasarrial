@@ -61,6 +61,9 @@ export type ReactDraft = {
   audioUrl: string | null;
   audioGenId: string | null;
   layout: LayoutReact | null;
+  /** Pedido em voo (react_jobs). Guardado pra tela reencontrar o job depois de
+   *  um F5 — sem isso o vídeo só aparecia em "Vídeos gerados". */
+  jobId: string | null;
 };
 
 export const DRAFT_VAZIO: ReactDraft = {
@@ -77,4 +80,5 @@ export const DRAFT_VAZIO: ReactDraft = {
   audioUrl: null,
   audioGenId: null,
   layout: null,
+  jobId: null,
 };

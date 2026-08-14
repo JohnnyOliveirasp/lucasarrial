@@ -120,7 +120,7 @@ export function ReactWizard() {
         {draft.passo === 3 && <ReactPassoAjuste draft={draft} update={update} />}
         {draft.passo === 4 && <ReactPassoAudio draft={draft} update={update} />}
         {draft.passo === 5 && <ReactPassoLayout draft={draft} update={update} />}
-        {draft.passo === 6 && <ReactPassoSaida draft={draft} />}
+        {draft.passo === 6 && <ReactPassoSaida draft={draft} update={update} />}
       </div>
 
       <div className="flex items-center gap-2">
