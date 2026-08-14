@@ -128,7 +128,7 @@ export function ViraisBusca() {
     if (ids.length === 0) return;
     const comMarca = videos.filter((v) => selecao.has(v.id) && v.selecionado).length;
     const aviso = comMarca > 0 ? `\n\n⚠️ ${comMarca} deles estão na sua lista de download.` : "";
-    if (!window.confirm(`Apagar ${ids.length} vídeos da lista?${aviso}`)) return;
+    if (!window.confirm(`Jogar fora ${ids.length} vídeos? Eles não voltam em buscas futuras.${aviso}`)) return;
     setLimpando(true);
     try {
       const r = await fetch("/api/v1/virais/videos", {
@@ -138,7 +138,7 @@ export function ViraisBusca() {
       });
       const j = await r.json();
       if (r.ok) {
-        setRecado(`${j.apagados} vídeos apagados.`);
+        setRecado(`${j.apagados} vídeos jogados fora.`);
         setSelecao(new Set());
         await carregar();
       } else {
@@ -173,9 +173,9 @@ export function ViraisBusca() {
   /** Faxina: joga fora o que não presta e mantém a curadoria intacta. */
   async function limpar() {
     const ok = window.confirm(
-      `Apagar do acervo TODOS os vídeos que você NÃO marcou?\n\n` +
+      `Jogar fora TODOS os vídeos que você NÃO marcou?\n\n` +
         `Os ${marcados} marcados continuam aqui. Isso não apaga nada no TikTok — ` +
-        `só limpa esta lista.`,
+        `só some daqui — e a próxima busca não traz eles de volta.`,
     );
     if (!ok) return;
     setLimpando(true);
@@ -187,7 +187,7 @@ export function ViraisBusca() {
       });
       const j = await r.json();
       if (r.ok) {
-        setRecado(`${j.apagados} vídeos removidos da lista.`);
+        setRecado(`${j.apagados} vídeos jogados fora (não voltam em buscas futuras).`);
         await carregar();
       } else {
         setRecado(j?.error?.message ?? "Não consegui limpar.");

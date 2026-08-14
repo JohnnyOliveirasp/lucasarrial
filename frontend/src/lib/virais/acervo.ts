@@ -26,8 +26,11 @@ export const FILTRO_PADRAO: FiltroAcervo = {
 
 /**
  * Grava os vídeos de uma execução. Conflito em (plataforma, video_id) =
- * atualiza as métricas, mas NUNCA mexe na seleção nem no download — senão
- * reimportar apagaria a curadoria já feita.
+ * atualiza as métricas, mas NUNCA mexe na seleção, no download nem no
+ * descarte — senão reimportar apagaria a curadoria e traria de volta o que
+ * o usuário já jogou fora. O upsert só escreve as colunas que estão no
+ * payload; `selecionado`, `download_status` e `descartado` ficam de fora
+ * de propósito.
  */
 export async function importarVideos(
   admin: Admin,
@@ -58,6 +61,7 @@ export async function listarAcervo(admin: Admin, f: FiltroAcervo) {
     .select(
       "id, plataforma, video_id, url, autor, autor_seguidores, legenda, likes, views, comentarios, publicado_em, duracao_seg, thumb_url, video_url, hashtags, score, termo_busca, selecionado, download_status, r2_key",
     )
+    .eq("descartado", false) // o que foi jogado fora não volta
     .order("score", { ascending: false })
     .limit(Math.min(200, Math.max(1, f.limite)));
 
@@ -83,12 +87,22 @@ export async function listarAcervo(admin: Admin, f: FiltroAcervo) {
  * REGRA DURA: o que está MARCADO nunca é apagado, em nenhum escopo. É a
  * curadoria dele; perder isso seria pior do que não ter a faxina.
  */
+/**
+ * DESCARTE LÓGICO, não DELETE (correção 14/08 — o Johnny perguntou o óbvio:
+ * "se eu repetir a busca, ele traz o mesmo vídeo de novo?"). Sim, trazia:
+ * apagar de verdade não deixava memória. Agora o vídeo some da tela e o
+ * import — que faz upsert só das colunas que envia, e não envia `descartado`
+ * — reimporta as métricas sem ressuscitar o card.
+ */
 export async function apagarPorIds(admin: Admin, ids: string[]): Promise<number> {
   if (ids.length === 0) return 0;
   const { error, count } = await admin
     .from("viral_videos")
-    .delete({ count: "exact" })
-    .in("id", ids.slice(0, 500));
+    .update({ descartado: true, descartado_em: new Date().toISOString() } as never, {
+      count: "exact",
+    })
+    .in("id", ids.slice(0, 500))
+    .eq("descartado", false);
   if (error) throw new Error(error.message);
   return count ?? 0;
 }
@@ -98,7 +112,13 @@ export async function limparAcervo(
   escopo: "nao_marcados" | "termo",
   termo: string | null,
 ): Promise<number> {
-  let q = admin.from("viral_videos").delete({ count: "exact" }).eq("selecionado", false);
+  let q = admin
+    .from("viral_videos")
+    .update({ descartado: true, descartado_em: new Date().toISOString() } as never, {
+      count: "exact",
+    })
+    .eq("selecionado", false)
+    .eq("descartado", false);
   if (escopo === "termo") {
     if (!termo) return 0;
     q = q.eq("termo_busca", termo);

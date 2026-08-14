@@ -481,6 +481,9 @@ export type ViralVideoRow = {
   download_status: string;
   r2_key: string | null;
   download_erro: string | null;
+  /** Descarte lógico (mig 73): some da tela e a busca não traz de volta. */
+  descartado: boolean;
+  descartado_em: Timestamp | null;
   criado_em: Timestamp;
 };
 export type ViralVideoInsert = Omit<ViralVideoRow, "id" | "criado_em"> & {
