@@ -30,6 +30,7 @@ import {
 } from "@/lib/studio/finalize";
 import { finalizeVideoClone } from "@/lib/video-clone/finalize";
 import { handleTechFailure } from "@/lib/support/failure-alert";
+import { verificarOnboardingPronto } from "@/lib/onboarding/pronto";
 
 type RunpodWebhookPayload = {
   id: string;
@@ -78,6 +79,9 @@ export async function POST(request: NextRequest) {
 
   if (voice) {
     await handleTrainingWebhook(payload, voice.id, voice.user_id);
+    // Voz do onboarding ficou pronta? Pode ser a última peça → e-mail
+    // "plataforma pronta" (fire-and-forget; a função filtra não-onboarding).
+    void verificarOnboardingPronto(admin, voice.user_id);
     return jsonOk({ handled: "training" });
   }
 

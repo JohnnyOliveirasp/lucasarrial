@@ -21,25 +21,29 @@ type Admin = SupabaseClient<Database>;
 const IDEA_MARCA = "onboarding_avatar";
 const MAX_REFS = 6; // mesmo teto do /images/generate
 
-/** 3 estilos fixos — likeness em primeiro lugar, vertical 3:4. */
+/** 3 cenários OFICIAIS (prompts do Johnny 13/08) — likeness em primeiro
+ *  lugar, sempre olhando pra câmera, vertical 3:4. */
 const AVATARES: Array<{ nome: string; promptPt: string; promptEn: string }> = [
   {
-    nome: "Avatar profissional",
-    promptPt: "Retrato profissional de estúdio, fundo neutro, olhando pra câmera",
+    nome: "Profissionalismo (escritório)",
+    promptPt:
+      "Eu em um escritório moderno e bem iluminado, sentado(a) à mesa, olhando diretamente para a câmera, com uma expressão confiante e simpática.",
     promptEn:
-      "Professional studio portrait of the exact same person as in the reference photos — identical face, photorealistic. Chest-up framing, looking straight at the camera, soft studio lighting, clean neutral background, smart-casual outfit. Vertical portrait.",
+      "The exact same person as in the reference photos — identical face, photorealistic — in a modern, well-lit office, sitting at a desk, looking directly at the camera with a confident, friendly expression. Vertical portrait.",
   },
   {
-    nome: "Avatar criador",
-    promptPt: "Retrato estilo criador de conteúdo, ambiente moderno e caloroso",
+    nome: "Autoridade (estúdio de podcast)",
+    promptPt:
+      "Eu em um estúdio de podcast, sentado(a) em frente a um microfone, olhando diretamente para a câmera, com uma expressão confiante e natural.",
     promptEn:
-      "Friendly content-creator portrait of the exact same person as in the reference photos — identical face, photorealistic. Chest-up, natural confident smile, modern warm interior softly blurred behind, natural window light. Vertical portrait.",
+      "The exact same person as in the reference photos — identical face, photorealistic — in a podcast studio, sitting in front of a microphone, looking directly at the camera with a confident, natural expression. Vertical portrait.",
   },
   {
-    nome: "Avatar cinematográfico",
-    promptPt: "Retrato cinematográfico confiante, luz dramática suave",
+    nome: "Proximidade (ambiente de casa)",
+    promptPt:
+      "Eu em um ambiente aconchegante de casa, sentado(a) em um sofá, olhando diretamente para a câmera, com um sorriso natural e tranquilo.",
     promptEn:
-      "Cinematic confident portrait of the exact same person as in the reference photos — identical face, photorealistic. Chest-up, subtle dramatic rim lighting, dark elegant background with soft depth of field. Vertical portrait.",
+      "The exact same person as in the reference photos — identical face, photorealistic — in a cozy home setting, sitting on a sofa, looking directly at the camera with a natural, relaxed smile. Vertical portrait.",
   },
 ];
 

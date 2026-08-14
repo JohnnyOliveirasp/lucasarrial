@@ -15,6 +15,7 @@ import { syncImageTask } from "@/lib/images/sync";
 import { syncImageVideo } from "@/lib/images/video-sync";
 import { syncSceneImage } from "@/lib/video/image-sync";
 import { syncSceneVideo } from "@/lib/video/video-sync";
+import { verificarOnboardingPronto } from "@/lib/onboarding/pronto";
 
 function extractTaskId(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
   // 1) Gerador de imagem convencional.
   const { data: row } = await admin
     .from("image_generations")
-    .select("id, user_id, status")
+    .select("id, user_id, status, idea")
     .eq("kie_task_id", taskId)
     .maybeSingle();
 
@@ -53,6 +54,11 @@ export async function POST(request: NextRequest) {
       await syncImageTask(row.id, row.user_id, taskId);
     } catch {
       // best-effort; o poll do cliente ainda cobre
+    }
+    // Avatar do onboarding ficou pronto? Pode ser a última peça → e-mail
+    // "plataforma pronta" (fire-and-forget, nunca atrasa o webhook).
+    if (row.idea === "onboarding_avatar") {
+      void verificarOnboardingPronto(admin, row.user_id);
     }
     return jsonOk({ handled: "image" });
   }
