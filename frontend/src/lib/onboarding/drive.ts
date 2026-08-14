@@ -6,7 +6,16 @@
  * da planilha ANTES do POST no webhook, então aqui basta o endpoint público de
  * download. Usamos drive.usercontent.google.com com confirm=t, que pula o
  * interstício de "arquivo grande demais pra verificação de vírus".
+ *
+ * ⚠️ Os módulos `node:*` entram por import ESTÁTICO. Com `await import(...)`
+ * o bundle de produção devolve o namespace sem os named exports, e
+ * `new Transform(...)` explodia como "k is not a constructor" — derrubando
+ * justamente o caso mais comum (aluno manda vídeo no lugar da foto).
+ * Casos reais 14/08: linhas 346 e 398.
  */
+import { createWriteStream } from "node:fs";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 export type DriveFile = {
   bytes: Buffer;
@@ -106,9 +115,6 @@ export async function downloadDriveFileToPath(
       `Arquivo ${fileId} tem ${Math.round(declared / 1e6)}MB (teto ${Math.round(maxBytes / 1e6)}MB)`,
     );
   }
-  const { createWriteStream } = await import("node:fs");
-  const { Readable, Transform } = await import("node:stream");
-  const { pipeline } = await import("node:stream/promises");
   let total = 0;
   const contador = new Transform({
     transform(chunk: Buffer, _enc, cb) {

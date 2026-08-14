@@ -22,7 +22,11 @@ import type { Database, VoiceStatus } from "@/lib/db/types";
 import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { buildRawAudioKey, createPresignedGet } from "@/lib/r2/presigned";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
-import { downloadDriveFile, pickExtension } from "./drive";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { downloadDriveFile, downloadDriveFileToPath, pickExtension } from "./drive";
+import { extrairFramesDeArquivo } from "./video-frames";
 import { escolherReferenciaFrontal } from "./referencia";
 import { dispararTreinoOnboarding } from "./treino";
 
@@ -70,16 +74,11 @@ async function importarFramesDoVideo(
   // STREAMING pra disco (A248: 878MB — nada de Buffer gigante na RAM).
   // Sem filtro de content-type: o Drive serve .mp4/.mov como octet-stream;
   // o ffprobe decide — se não for vídeo, a extração lança e vira "ignorado".
-  const { mkdtemp, rm } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
   const dir = await mkdtemp(join(tmpdir(), "onbdl-"));
   let frames: Buffer[];
   try {
     const src = join(dir, "video.bin");
-    const { downloadDriveFileToPath } = await import("./drive");
     await downloadDriveFileToPath(fileId, src, MAX_VIDEO_BYTES);
-    const { extrairFramesDeArquivo } = await import("./video-frames");
     frames = await extrairFramesDeArquivo(src);
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
