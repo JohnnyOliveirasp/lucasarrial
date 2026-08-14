@@ -106,7 +106,7 @@ export function ViraisFiltros({
             checked={f.soSelecionados}
             onChange={(e) => set("soSelecionados", e.target.checked)}
           />
-          só a minha lista
+          só Meus Virais
         </label>
       </Linha>
 

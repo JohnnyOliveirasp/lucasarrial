@@ -65,21 +65,35 @@ export function Miniatura({
           <span className="absolute bottom-0.5 left-0.5 rounded bg-black/70 px-1 text-[9px] font-medium text-white">
             ❤️ {compacto(v.likes)}
           </span>
+          {/* Selo "N usando": ninguém perde o vídeo, mas todo mundo vê que
+              ele já rodou (decisão do Johnny — mostrar em vez de travar). */}
+          {v.usando > 0 && (
+            <span
+              className="absolute right-0.5 top-0.5 rounded bg-black/70 px-1 text-[9px] text-white/90"
+              title={`${v.usando} ${v.usando === 1 ? "pessoa está usando" : "pessoas estão usando"} este vídeo`}
+            >
+              👤 {v.usando}
+            </span>
+          )}
         </button>
-        {/* "baixar" é selo no canto: a linha de checkbox com texto embaixo
-            dobrava a altura da miniatura. */}
+        {/* Reservar é o gesto principal — e NÃO baixa nada: o mp4 só desce
+            quando a pessoa for produzir o React. */}
         <button
           type="button"
           onClick={onMarcar}
-          aria-pressed={v.selecionado}
-          title={v.selecionado ? "Na lista de download — clique pra tirar" : "Marcar pra baixar"}
+          aria-pressed={v.reservado}
+          title={
+            v.reservado
+              ? "Está em Meus Virais — clique pra tirar"
+              : "Guardar em Meus Virais (não baixa nada agora)"
+          }
           className={`absolute bottom-0.5 right-0.5 z-10 rounded px-1 text-[9px] font-semibold ${
-            v.selecionado
+            v.reservado
               ? "bg-[var(--ink)] text-[var(--surface-deep)]"
               : "bg-black/60 text-white/70"
           }`}
         >
-          {v.selecionado ? "✓ baixar" : "baixar"}
+          {v.reservado ? "✓ meu" : "usar"}
         </button>
       </div>
       <span className="truncate text-[9px] leading-tight text-[var(--mute)]">

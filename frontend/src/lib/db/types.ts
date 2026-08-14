@@ -481,9 +481,16 @@ export type ViralVideoRow = {
   download_status: string;
   r2_key: string | null;
   download_erro: string | null;
-  /** Descarte lógico (mig 73): some da tela e a busca não traz de volta. */
+  /** Descarte lógico (mig 73): some da tela e a busca não traz de volta.
+   *  ⚠️ Legado GLOBAL — a partir da mig 75 o descarte é pessoal
+   *  (viral_user_videos); este aqui vale pra todo mundo e só sobrevive pro
+   *  que já tinha sido jogado fora antes. */
   descartado: boolean;
   descartado_em: Timestamp | null;
+  /** Quem PAGOU a busca que trouxe o vídeo (mig 75). */
+  garimpado_por: string | null;
+  /** Vantagem de 7 dias de quem garimpou; depois cai no acervo comum. */
+  exclusivo_ate: Timestamp | null;
   criado_em: Timestamp;
 };
 export type ViralVideoInsert = Omit<ViralVideoRow, "id" | "criado_em"> & {
@@ -491,6 +498,37 @@ export type ViralVideoInsert = Omit<ViralVideoRow, "id" | "criado_em"> & {
   criado_em?: Timestamp;
 };
 export type ViralVideoUpdate = Partial<Omit<ViralVideoRow, "id" | "criado_em">>;
+
+// ───────── viral_user_videos (mig 75 — a curadoria vira PESSOAL) ─────────
+/**
+ * O catálogo é comum a todos; o que é de cada um mora aqui. Reservar NÃO
+ * baixa: o mp4 só desce quando a pessoa vai produzir o Video React.
+ */
+export type ViralUserVideoRow = {
+  id: string;
+  user_id: string;
+  viral_id: string;
+  /** "vou usar este" → entra em Meus Virais (só metadado + capa). */
+  reservado: boolean;
+  reservado_em: Timestamp | null;
+  /** Descarte PESSOAL: some da minha grade, fica na dos outros. */
+  descartado: boolean;
+  descartado_em: Timestamp | null;
+  /** Virou Video React — alimenta o selo "N pessoas usando". */
+  usado: boolean;
+  usado_em: Timestamp | null;
+  download_status: string;
+  r2_key: string | null;
+  download_erro: string | null;
+  /** Régua do TTL: arquivo sem uso há 60 dias sai do R2 (metadado fica). */
+  arquivo_tocado_em: Timestamp | null;
+  criado_em: Timestamp;
+};
+export type ViralUserVideoInsert = Omit<ViralUserVideoRow, "id" | "criado_em"> & {
+  id?: string;
+  criado_em?: Timestamp;
+};
+export type ViralUserVideoUpdate = Partial<Omit<ViralUserVideoRow, "id" | "criado_em">>;
 
 // ───────── script_messages (mig 69 — chat de ajuste do roteiro) ─────────
 export type ScriptMessageRow = {
@@ -1074,6 +1112,7 @@ export type Database = {
       scripts: { Row: ScriptRow; Insert: ScriptInsert; Update: ScriptUpdate; Relationships: Rel };
       script_messages: { Row: ScriptMessageRow; Insert: ScriptMessageInsert; Update: ScriptMessageUpdate; Relationships: Rel };
       viral_videos: { Row: ViralVideoRow; Insert: ViralVideoInsert; Update: ViralVideoUpdate; Relationships: Rel };
+      viral_user_videos: { Row: ViralUserVideoRow; Insert: ViralUserVideoInsert; Update: ViralUserVideoUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: {

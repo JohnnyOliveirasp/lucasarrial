@@ -16,7 +16,14 @@ export type Viral = {
   video_url: string | null;
   hashtags: string[] | null;
   termo_busca: string | null;
-  selecionado: boolean;
+  /** Guardei este em "Meus Virais" (mig 75). Reservar NÃO baixa o vídeo. */
+  reservado: boolean;
+  /** Já virou Video React. */
+  usado: boolean;
+  /** Quantas pessoas guardaram/usaram — o selo que substitui a trava. */
+  usando: number;
+  /** Garimpo pago de outra pessoa, ainda nos 7 dias de vantagem dela. */
+  exclusivo_de_outro: boolean;
   download_status: string;
 };
 

@@ -32,7 +32,7 @@ export function ViraisBusca() {
   const [f, setF] = useState<Filtros>(FILTROS_INICIAIS);
   const [limpando, setLimpando] = useState(false);
   const [recado, setRecado] = useState<string | null>(null);
-  /** Seleção múltipla estilo caixa de e-mail — NÃO é a marcação de download. */
+  /** Seleção múltipla estilo caixa de e-mail — NÃO é o "guardar". */
   const [selecao, setSelecao] = useState<Set<string>>(new Set());
 
   const carregar = useCallback(async () => {
@@ -43,7 +43,7 @@ export function ViraisBusca() {
         dias: String(f.dias),
         ordem: f.ordem,
         termo: f.termo,
-        selecionados: f.soSelecionados ? "1" : "0",
+        meus: f.soSelecionados ? "1" : "0",
         limite: "300",
       });
       const r = await fetch(`/api/v1/virais/videos?${qs}`);
@@ -63,20 +63,20 @@ export function ViraisBusca() {
   }, [carregar]);
 
   async function alternar(v: Viral) {
-    const novo = !v.selecionado;
-    setVideos((atual) => atual.map((x) => (x.id === v.id ? { ...x, selecionado: novo } : x)));
-    setAberto((a) => (a && a.id === v.id ? { ...a, selecionado: novo } : a));
+    const novo = !v.reservado;
+    setVideos((atual) => atual.map((x) => (x.id === v.id ? { ...x, reservado: novo } : x)));
+    setAberto((a) => (a && a.id === v.id ? { ...a, reservado: novo } : a));
     const r = await fetch("/api/v1/virais/videos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: v.id, selecionado: novo }),
+      body: JSON.stringify({ id: v.id, reservado: novo }),
     });
     if (!r.ok) {
-      setVideos((atual) => atual.map((x) => (x.id === v.id ? { ...x, selecionado: !novo } : x)));
+      setVideos((atual) => atual.map((x) => (x.id === v.id ? { ...x, reservado: !novo } : x)));
     }
   }
 
-  const marcados = videos.filter((v) => v.selecionado).length;
+  const marcados = videos.filter((v) => v.reservado).length;
 
   function alternarSelecao(id: string) {
     setSelecao((atual) => {
@@ -97,7 +97,7 @@ export function ViraisBusca() {
   async function apagarSelecionados() {
     const ids = [...selecao];
     if (ids.length === 0) return;
-    const comMarca = videos.filter((v) => selecao.has(v.id) && v.selecionado).length;
+    const comMarca = videos.filter((v) => selecao.has(v.id) && v.reservado).length;
     const aviso = comMarca > 0 ? `\n\n⚠️ ${comMarca} deles estão na sua lista de download.` : "";
     if (!window.confirm(`Jogar fora ${ids.length} vídeos? Eles não voltam em buscas futuras.${aviso}`)) return;
     setLimpando(true);
@@ -120,7 +120,7 @@ export function ViraisBusca() {
     }
   }
 
-  /** Marca de uma vez todos os selecionados pra baixar. */
+  /** Guarda de uma vez todos os selecionados em Meus Virais. */
   async function marcarSelecionados() {
     const ids = [...selecao];
     if (ids.length === 0) return;
@@ -130,10 +130,10 @@ export function ViraisBusca() {
         await fetch("/api/v1/virais/videos", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, selecionado: true }),
+          body: JSON.stringify({ id, reservado: true }),
         });
       }
-      setRecado(`${ids.length} vídeos marcados pra baixar.`);
+      setRecado(`${ids.length} vídeos guardados em Meus Virais.`);
       setSelecao(new Set());
       await carregar();
     } finally {
@@ -177,17 +177,17 @@ export function ViraisBusca() {
           <h2 className="text-[15px] font-semibold text-[var(--ink)]">
             Resultados
             <span className="ml-2 text-[13px] font-normal text-[var(--mute)]">
-              {videos.length} vídeos · {marcados} marcados pra baixar
+              {videos.length} vídeos · {marcados} em Meus Virais
             </span>
           </h2>
           <button
             type="button"
             onClick={limpar}
             disabled={limpando || videos.length === 0}
-            title="Apaga da lista os vídeos que você não marcou"
+            title="Joga fora, só da SUA grade, tudo que você não guardou"
             className="ml-auto h-8 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3 text-[12px] text-[var(--ink)] disabled:opacity-40"
           >
-            {limpando ? "Limpando…" : "Limpar não marcados"}
+            {limpando ? "Limpando…" : "Limpar não guardados"}
           </button>
         </div>
 
@@ -217,7 +217,7 @@ export function ViraisBusca() {
                   disabled={limpando}
                   className="h-7 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3 text-[12px] text-[var(--ink)] disabled:opacity-40"
                 >
-                  marcar pra baixar
+                  guardar em Meus Virais
                 </button>
                 <button
                   type="button"

@@ -119,13 +119,14 @@ export function ViralPlayer({
 
         <div className="flex flex-wrap items-center gap-3 border-t border-[var(--hairline)] pt-3">
           <label className="flex items-center gap-2 text-[14px] font-medium text-[var(--ink)]">
-            <input type="checkbox" checked={v.selecionado} onChange={onMarcar} />
-            Quero baixar este pra trabalhar
+            <input type="checkbox" checked={v.reservado} onChange={onMarcar} />
+            Guardar em Meus Virais
           </label>
-          {v.selecionado && (
+          {v.reservado && (
             <span className="text-[12px] text-[var(--mute)]">
+              {/* Reservar NÃO baixa: o mp4 só desce na hora de produzir. */}
               {v.download_status === "nao_baixado"
-                ? "entra na fila de download"
+                ? "guardado — o vídeo só é baixado quando você for fazer o React"
                 : v.download_status}
             </span>
           )}

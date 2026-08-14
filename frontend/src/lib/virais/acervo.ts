@@ -5,6 +5,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/types";
 import type { ViralImportado } from "./apify";
+import { contagemUso, estadosPessoais, idsDescartados, idsReservados } from "./pessoal";
 
 type Admin = SupabaseClient<Database>;
 
@@ -25,7 +26,8 @@ export type FiltroAcervo = {
   /** Termo que trouxe o vídeo — é o "tema" das fichas da tela. */
   tema: string;
   ordem: OrdemAcervo;
-  apenasSelecionados: boolean;
+  /** Só o que EU reservei = a tela "Meus Virais" (mig 75). */
+  apenasReservados: boolean;
   limite: number;
 };
 
@@ -35,7 +37,7 @@ export const FILTRO_PADRAO: FiltroAcervo = {
   termo: "",
   tema: "",
   ordem: "score",
-  apenasSelecionados: false,
+  apenasReservados: false,
   limite: 120,
 };
 
@@ -73,33 +75,75 @@ export async function importarVideos(
   return { gravados: count ?? linhas.length, erro: null };
 }
 
-/** A lista da tela: mais quentes primeiro (ou como o usuário pedir). */
-export async function listarAcervo(admin: Admin, f: FiltroAcervo) {
+/**
+ * A lista da tela: mais quentes primeiro (ou como o usuário pedir).
+ *
+ * A partir da migração 75 o catálogo é COMUM e a curadoria é PESSOAL: o que
+ * ESTE usuário descartou some só da grade dele, e `selecionado` da linha
+ * (legado global) deu lugar a `reservado` por pessoa.
+ *
+ * `apenasReservados` = a tela "Meus Virais".
+ */
+export async function listarAcervo(admin: Admin, f: FiltroAcervo, userId: string) {
+  // Descarte pessoal primeiro: sem isso o que a pessoa jogou fora voltaria.
+  const [descartados, reservados] = await Promise.all([
+    idsDescartados(admin, userId),
+    f.apenasReservados ? idsReservados(admin, userId) : Promise.resolve<string[]>([]),
+  ]);
+  if (f.apenasReservados && reservados.length === 0) return [];
+
   let q = admin
     .from("viral_videos")
     .select(
-      "id, plataforma, video_id, url, autor, autor_seguidores, legenda, likes, views, comentarios, publicado_em, duracao_seg, thumb_url, video_url, hashtags, score, termo_busca, selecionado, download_status, r2_key",
+      "id, plataforma, video_id, url, autor, autor_seguidores, legenda, likes, views, comentarios, publicado_em, duracao_seg, thumb_url, video_url, hashtags, score, termo_busca, exclusivo_ate, garimpado_por",
     )
-    .eq("descartado", false) // o que foi jogado fora não volta
+    // descarte GLOBAL legado (mig 73) — mantido pra não ressuscitar o que já
+    // tinha sido jogado fora antes da curadoria virar pessoal.
+    .eq("descartado", false)
     // nullsFirst: false senão o vídeo sem data/views sobe no topo da grade.
     .order(COLUNA_ORDEM[f.ordem], { ascending: false, nullsFirst: false })
     .limit(Math.min(300, Math.max(1, f.limite)));
 
+  if (f.apenasReservados) q = q.in("id", reservados);
+  if (descartados.length > 0) q = q.not("id", "in", `(${descartados.join(",")})`);
   if (f.minLikes > 0) q = q.gte("likes", f.minLikes);
   if (f.dias > 0) {
     q = q.gte("publicado_em", new Date(Date.now() - f.dias * 86_400_000).toISOString());
   }
-  // Ficha de tema: casa com o termo exato que trouxe o vídeo.
   if (f.tema) q = q.eq("termo_busca", f.tema);
   if (f.termo) {
     const t = f.termo.replace(/[%,]/g, " ").trim();
     if (t) q = q.or(`legenda.ilike.%${t}%,autor.ilike.%${t}%,termo_busca.ilike.%${t}%`);
   }
-  if (f.apenasSelecionados) q = q.eq("selecionado", true);
 
   const { data, error } = await q;
   if (error) throw new Error(error.message);
-  return data ?? [];
+  const linhas = data ?? [];
+
+  // Pinta a grade: o que é meu e quantos já usaram cada vídeo.
+  const ids = linhas.map((v) => (v as { id: string }).id);
+  const [meus, uso] = await Promise.all([
+    estadosPessoais(admin, userId, ids),
+    contagemUso(admin, ids),
+  ]);
+  const agora = Date.now();
+  return linhas.map((v) => {
+    const l = v as Record<string, unknown> & { id: string; exclusivo_ate: string | null; garimpado_por: string | null };
+    const meu = meus.get(l.id);
+    return {
+      ...l,
+      reservado: meu?.reservado ?? false,
+      usado: meu?.usado ?? false,
+      download_status: meu?.download_status ?? "nao_baixado",
+      r2_key: meu?.r2_key ?? null,
+      usando: uso.get(l.id) ?? 0,
+      /** Garimpo de outra pessoa ainda no prazo de 7 dias (mig 75). */
+      exclusivo_de_outro:
+        Boolean(l.exclusivo_ate) &&
+        new Date(l.exclusivo_ate as string).getTime() > agora &&
+        l.garimpado_por !== userId,
+    };
+  });
 }
 
 export type TemaAcervo = { tema: string; total: number; marcados: number };

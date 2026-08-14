@@ -21,6 +21,7 @@ import {
   UserSquare2,
   Wand2,
   Flame,
+  Bookmark,
   FlaskConical,
   MonitorPlay,
   Send,
@@ -382,18 +383,24 @@ export function Sidebar({
                 icon={Video}
                 defaultOpen={pathname.includes("/app/lab/virais")}
               >
-                {/* A tela da POC (busca + acervo + curadoria) é a base de
-                    "Meus Virais" — por isso ela assume o nome aqui. */}
+                {/* Galeria = o acervo COMUM (todo mundo vê o que qualquer
+                    busca trouxe). Meus Virais = a prateleira de cada um. */}
                 <NavLeaf
                   href="/app/lab/virais"
                   icon={Flame}
-                  label="Meus Virais"
+                  label="Galeria de Virais"
                   active={pathname.endsWith("/app/lab/virais")}
                 />
-                {/* ⏳ Tela ainda não existe: entra trancada pra aparecer na
+                <NavLeaf
+                  href="/app/lab/meus-virais"
+                  icon={Bookmark}
+                  label="Meus Virais"
+                  active={pathname.endsWith("/app/lab/meus-virais")}
+                />
+                {/* ⏳ Wizard ainda não existe: entra trancado pra aparecer na
                     árvore sem levar ninguém pra um 404. */}
                 <NavLeaf
-                  href="/app/lab/virais"
+                  href="/app/lab/meus-virais"
                   icon={Clapperboard}
                   label="React"
                   active={false}

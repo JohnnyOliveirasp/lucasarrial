@@ -10,14 +10,12 @@ import { gateAdmin } from "@/lib/admin/api";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import {
-  apagarPorIds,
   FILTRO_PADRAO,
-  limparAcervo,
   listarAcervo,
   listarTemas,
-  marcarSelecao,
   normalizarOrdem,
 } from "@/lib/virais/acervo";
+import { descartar, descartarNaoReservados, reservar } from "@/lib/virais/pessoal";
 
 export const dynamic = "force-dynamic";
 
@@ -36,21 +34,26 @@ export async function GET(request: NextRequest) {
     // As fichas de tema vêm junto: a tela precisa delas em toda carga e o
     // agrupamento é uma query só (função virais_temas, migração 74).
     const [videos, temas] = await Promise.all([
-      listarAcervo(admin, {
-        ...FILTRO_PADRAO,
-        minLikes: inteiro("min_likes", 0),
-        dias: inteiro("dias", 0),
-        limite: inteiro("limite", FILTRO_PADRAO.limite),
-        termo: (p.get("termo") ?? "").trim().slice(0, 60),
-        tema: (p.get("tema") ?? "").trim().slice(0, 120),
-        ordem: normalizarOrdem(p.get("ordem")),
-        apenasSelecionados: p.get("selecionados") === "1",
-      }),
+      listarAcervo(
+        admin,
+        {
+          ...FILTRO_PADRAO,
+          minLikes: inteiro("min_likes", 0),
+          dias: inteiro("dias", 0),
+          limite: inteiro("limite", FILTRO_PADRAO.limite),
+          termo: (p.get("termo") ?? "").trim().slice(0, 60),
+          tema: (p.get("tema") ?? "").trim().slice(0, 120),
+          ordem: normalizarOrdem(p.get("ordem")),
+          // `meus=1` é a tela "Meus Virais": só o que EU reservei.
+          apenasReservados: p.get("meus") === "1" || p.get("selecionados") === "1",
+        },
+        gate.auth.user_id,
+      ),
       listarTemas(admin).catch(() => []),
     ]);
     return jsonOk({
       total: videos.length,
-      selecionados: videos.filter((v) => v.selecionado).length,
+      reservados: videos.filter((v) => v.reservado).length,
       temas,
       videos,
     });
@@ -75,23 +78,26 @@ export async function DELETE(request: NextRequest) {
     return badRequest("Corpo inválido");
   }
 
-  // Seleção múltipla (estilo caixa de e-mail): apaga exatamente o que veio.
+  // Seleção múltipla (estilo caixa de e-mail): descarta exatamente o que veio.
+  // Descarte é PESSOAL (mig 75): some da MINHA grade, fica na dos outros.
   if (Array.isArray(body.ids)) {
     const ids = body.ids.filter((x): x is string => typeof x === "string" && x.length > 0);
     if (ids.length === 0) return badRequest("Nenhum vídeo selecionado.");
     try {
-      return jsonOk({ apagados: await apagarPorIds(getAdmin(), ids) });
+      return jsonOk({ apagados: await descartar(getAdmin(), gate.auth.user_id, ids) });
     } catch (e) {
       console.error("[virais/apagar]", e instanceof Error ? e.message : e);
       return serverError("Não consegui apagar agora.");
     }
   }
 
-  const escopo = body.escopo === "termo" ? "termo" : "nao_marcados";
-  const termo = typeof body.termo_busca === "string" ? body.termo_busca.trim() : null;
+  const termo =
+    body.escopo === "termo" && typeof body.termo_busca === "string"
+      ? body.termo_busca.trim()
+      : null;
 
   try {
-    const apagados = await limparAcervo(getAdmin(), escopo, termo);
+    const apagados = await descartarNaoReservados(getAdmin(), gate.auth.user_id, termo);
     return jsonOk({ apagados });
   } catch (e) {
     console.error("[virais/limpar]", e instanceof Error ? e.message : e);
@@ -103,7 +109,7 @@ export async function PATCH(request: NextRequest) {
   const gate = await gateAdmin(request);
   if ("res" in gate) return gate.res;
 
-  let body: { id?: unknown; selecionado?: unknown };
+  let body: { id?: unknown; reservado?: unknown; selecionado?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -111,13 +117,15 @@ export async function PATCH(request: NextRequest) {
   }
   const id = typeof body.id === "string" ? body.id : "";
   if (!id) return badRequest("Faltou o id do vídeo.");
-  const selecionado = body.selecionado === true;
+  // `selecionado` é o nome antigo do mesmo gesto — aceito pra não quebrar
+  // aba aberta com a versão anterior da tela.
+  const reservado = body.reservado === true || body.selecionado === true;
 
   try {
-    await marcarSelecao(getAdmin(), id, selecionado, gate.auth.user_id);
-    return jsonOk({ id, selecionado });
+    await reservar(getAdmin(), gate.auth.user_id, id, reservado);
+    return jsonOk({ id, reservado });
   } catch (e) {
-    console.error("[virais/selecionar]", e instanceof Error ? e.message : e);
-    return serverError("Não consegui salvar a seleção.");
+    console.error("[virais/reservar]", e instanceof Error ? e.message : e);
+    return serverError("Não consegui salvar.");
   }
 }
