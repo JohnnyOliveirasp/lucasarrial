@@ -124,6 +124,7 @@ export function ViraisBusca() {
 
   return (
     <div className="flex flex-col gap-5">
+      <FormBusca onPronto={carregar} />
       <ImportarBuscas
         runs={runs}
         aviso={aviso}
@@ -187,6 +188,158 @@ export function ViraisBusca() {
         />
       )}
     </div>
+  );
+}
+
+const PERIODOS = [
+  { id: "THIS_WEEK", rotulo: "Últimos 7 dias" },
+  { id: "THIS_MONTH", rotulo: "Último mês" },
+  { id: "LAST_THREE_MONTHS", rotulo: "Últimos 3 meses" },
+  { id: "LAST_SIX_MONTHS", rotulo: "Últimos 6 meses" },
+  { id: "ALL_TIME", rotulo: "Qualquer data" },
+];
+
+/**
+ * O botão que faz tudo: dispara a busca no Apify, acompanha até terminar e
+ * já traz os vídeos pro acervo. A busca roda em minutos, então a tela
+ * pergunta o status de 6 em 6 segundos em vez de segurar a requisição.
+ */
+function FormBusca({ onPronto }: { onPronto: () => Promise<void> }) {
+  const [nicho, setNicho] = useState("");
+  const [periodo, setPeriodo] = useState("LAST_THREE_MONTHS");
+  const [maxItens, setMaxItens] = useState(100);
+  const [pais, setPais] = useState("US");
+  const [rodando, setRodando] = useState(false);
+  const [situacao, setSituacao] = useState<string | null>(null);
+
+  async function buscar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!nicho.trim() || rodando) return;
+    setRodando(true);
+    setSituacao("Pedindo a busca ao Apify…");
+    try {
+      const r = await fetch("/api/v1/virais/buscar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nicho: nicho.trim(),
+          periodo,
+          max_itens: maxItens,
+          pais,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setSituacao(j?.error?.message ?? "Não consegui iniciar a busca.");
+        return;
+      }
+      const runId = j.run?.id as string;
+      setSituacao(`Buscando "${nicho}" no TikTok… isso leva alguns minutos.`);
+
+      // pergunta o status até terminar (teto de ~10 min)
+      for (let i = 0; i < 100; i++) {
+        await new Promise((s) => setTimeout(s, 6000));
+        const st = await fetch(
+          `/api/v1/virais/buscar?run=${encodeURIComponent(runId)}&termo=${encodeURIComponent(nicho.trim())}`,
+        );
+        const sj = await st.json();
+        if (!st.ok) {
+          setSituacao(sj?.error?.message ?? "Perdi o contato com a busca.");
+          return;
+        }
+        if (sj.terminou) {
+          setSituacao(
+            sj.gravados > 0
+              ? `Pronto: ${sj.gravados} vídeos no acervo.`
+              : sj.aviso ?? "A busca terminou sem resultado.",
+          );
+          await onPronto();
+          return;
+        }
+        const st2 = sj.run?.status;
+        if (st2 && st2 !== "RUNNING" && st2 !== "READY") {
+          setSituacao(`A busca terminou como ${st2}.`);
+          return;
+        }
+      }
+      setSituacao("A busca está demorando demais — veja depois em 'Suas buscas no Apify'.");
+    } catch {
+      setSituacao("Falha de rede ao buscar.");
+    } finally {
+      setRodando(false);
+    }
+  }
+
+  const custo = (maxItens * 0.0003).toFixed(2);
+
+  return (
+    <form
+      onSubmit={buscar}
+      className="flex flex-col gap-3 rounded-[14px] border border-[var(--hairline)] bg-[var(--surface)] p-4"
+    >
+      <div>
+        <h2 className="text-[15px] font-semibold text-[var(--ink)]">Buscar virais</h2>
+        <p className="text-[13px] text-[var(--mute)]">
+          Digite o nicho e o sistema busca no TikTok os vídeos mais curtidos do período,
+          já trazendo tudo pra cá.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-[12px] text-[var(--mute)]">
+          Nicho
+          <input
+            value={nicho}
+            onChange={(e) => setNicho(e.target.value)}
+            placeholder="handyman, marcenaria, finanças…"
+            className="h-10 w-60 rounded-[9px] border border-[var(--hairline)] bg-[var(--bg)] px-3 text-[14px] text-[var(--ink)] outline-none focus:border-[var(--ink)]"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-[12px] text-[var(--mute)]">
+          Período
+          <select
+            value={periodo}
+            onChange={(e) => setPeriodo(e.target.value)}
+            className="h-10 rounded-[9px] border border-[var(--hairline)] bg-[var(--bg)] px-2 text-[13px] text-[var(--ink)]"
+          >
+            {PERIODOS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.rotulo}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-[12px] text-[var(--mute)]">
+          Quantos vídeos
+          <input
+            type="number"
+            min={10}
+            max={500}
+            step={10}
+            value={maxItens}
+            onChange={(e) => setMaxItens(Number(e.target.value) || 100)}
+            className="h-10 w-28 rounded-[9px] border border-[var(--hairline)] bg-[var(--bg)] px-3 text-[14px] text-[var(--ink)] outline-none focus:border-[var(--ink)]"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-[12px] text-[var(--mute)]">
+          País
+          <input
+            value={pais}
+            onChange={(e) => setPais(e.target.value.toUpperCase().slice(0, 2))}
+            placeholder="US"
+            className="h-10 w-20 rounded-[9px] border border-[var(--hairline)] bg-[var(--bg)] px-3 text-[14px] uppercase text-[var(--ink)] outline-none focus:border-[var(--ink)]"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={rodando || !nicho.trim()}
+          className="h-10 rounded-[9px] bg-[var(--ink)] px-5 text-[14px] font-medium text-[var(--bg)] disabled:opacity-40"
+        >
+          {rodando ? "Buscando…" : "Buscar virais"}
+        </button>
+        <span className="text-[12px] text-[var(--mute)]">≈ US$ {custo} nesta busca</span>
+      </div>
+      {situacao && <p className="text-[13px] text-[var(--ink)]">{situacao}</p>}
+    </form>
   );
 }
 

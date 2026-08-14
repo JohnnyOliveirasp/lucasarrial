@@ -48,6 +48,79 @@ async function pedir<T>(caminho: string): Promise<T> {
   return (await resp.json()) as T;
 }
 
+/** Períodos que o actor aceita (enum do schema dele). */
+export const PERIODOS = [
+  { id: "THIS_WEEK", rotulo: "Últimos 7 dias" },
+  { id: "THIS_MONTH", rotulo: "Último mês" },
+  { id: "LAST_THREE_MONTHS", rotulo: "Últimos 3 meses" },
+  { id: "LAST_SIX_MONTHS", rotulo: "Últimos 6 meses" },
+  { id: "ALL_TIME", rotulo: "Qualquer data" },
+] as const;
+
+export type Periodo = (typeof PERIODOS)[number]["id"];
+
+export type PedidoBusca = {
+  nicho: string;
+  periodo: Periodo;
+  /** Teto de vídeos: é o que define o custo (US$0,30 por 1.000). */
+  maxItems: number;
+  /** País de onde "olhar" o TikTok — o nicho handyman é dos EUA. */
+  pais: string;
+};
+
+/**
+ * Dispara a busca no Apify e devolve o id da execução. NÃO espera terminar:
+ * uma busca de centenas de vídeos leva minutos e seguraria a requisição.
+ * A tela pergunta o status depois e importa quando ficar pronto.
+ */
+export async function dispararBusca(p: PedidoBusca): Promise<RunApify> {
+  const token = apifyToken();
+  if (!token) throw new Error("sem_token");
+  const input: Record<string, unknown> = {
+    keywords: [p.nicho],
+    sortType: "MOST_LIKED", // o que a gente quer é viral, não relevância
+    dateRange: p.periodo,
+    maxItems: p.maxItems,
+    includeSearchKeywords: true,
+  };
+  if (p.pais) input.location = p.pais;
+
+  const resp = await fetch(`${API}/acts/${ACTOR_ID}/runs`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (resp.status === 401 || resp.status === 403) throw new Error("token_invalido");
+  if (!resp.ok) throw new Error(`apify_http_${resp.status}`);
+  const json = (await resp.json()) as { data?: RunBruto };
+  const r = json.data;
+  if (!r?.id) throw new Error("apify_sem_run");
+  return {
+    id: r.id,
+    status: r.status,
+    iniciado_em: r.startedAt ?? null,
+    terminado_em: r.finishedAt ?? null,
+    dataset_id: r.defaultDatasetId ?? null,
+    itens: r.stats?.itemCount ?? null,
+  };
+}
+
+/** Status de uma execução — a tela pergunta de tempos em tempos. */
+export async function verRun(runId: string): Promise<RunApify> {
+  const json = await pedir<{ data?: RunBruto }>(`/actor-runs/${runId}`);
+  const r = json.data;
+  if (!r?.id) throw new Error("apify_run_sumiu");
+  return {
+    id: r.id,
+    status: r.status,
+    iniciado_em: r.startedAt ?? null,
+    terminado_em: r.finishedAt ?? null,
+    dataset_id: r.defaultDatasetId ?? null,
+    itens: r.stats?.itemCount ?? null,
+  };
+}
+
 /** As últimas execuções do scraper — é a lista que a tela oferece pra importar. */
 export async function listarRuns(limite = 10): Promise<RunApify[]> {
   const json = await pedir<{ data?: { items?: RunBruto[] } }>(

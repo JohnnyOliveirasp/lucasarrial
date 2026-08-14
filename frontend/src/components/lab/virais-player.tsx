@@ -65,7 +65,6 @@ export function ViralPlayer({
 
         <div className="flex justify-center rounded-[12px] bg-black/80 p-2">
           {v.video_url && !falhou ? (
-            // eslint-disable-next-line jsx-a11y/media-has-caption
             <video
               src={v.video_url}
               poster={v.thumb_url ?? undefined}
