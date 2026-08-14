@@ -63,16 +63,23 @@ export function ReactWizard() {
 
   if (!carregado) return <p className="text-[14px] text-[var(--mute)]">Carregando…</p>;
 
-  const podeAvancar =
-    draft.passo === 0
-      ? draft.viral !== null
-      : draft.passo === 1
-        ? draft.avatar !== null && draft.fotoPronta !== null
-        : draft.passo === 2
-          ? draft.roteiro.trim().length > 20
-          : draft.passo === 3
-            ? draft.roteiro.trim().length > 20
-            : false;
+  /**
+   * O que cada passo exige pra liberar o "Continuar".
+   * ⚠️ Faltavam 4/5/6 aqui: o áudio ficava pronto na tela e o botão seguia
+   * morto (achado do Johnny, 14/08). Passo novo = linha nova nesta lista.
+   */
+  const EXIGE: Record<number, boolean> = {
+    0: draft.viral !== null,
+    1: draft.avatar !== null && draft.fotoPronta !== null,
+    2: draft.roteiro.trim().length > 20,
+    3: draft.roteiro.trim().length > 20,
+    // Voz clonada: só depois do áudio pronto. Quem grava a própria voz sobe o
+    // arquivo na montagem, então não trava aqui.
+    4: draft.audioUrl !== null || draft.modoAudio === "gravar",
+    5: draft.layout !== null,
+  };
+  const ultimo = draft.passo === PASSOS.length - 1;
+  const podeAvancar = EXIGE[draft.passo] ?? false;
 
   return (
     <div className="flex flex-col gap-5">
@@ -125,14 +132,17 @@ export function ReactWizard() {
         >
           Voltar
         </button>
-        <button
-          type="button"
-          onClick={() => update({ passo: Math.min(PASSOS.length - 1, draft.passo + 1) })}
-          disabled={!podeAvancar}
-          className="ml-auto h-10 rounded-[var(--radius-sm)] bg-[var(--ink)] px-5 text-[14px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
-        >
-          Continuar
-        </button>
+        {/* No último passo o botão de gerar é o da própria tela de Saída. */}
+        {!ultimo && (
+          <button
+            type="button"
+            onClick={() => update({ passo: Math.min(PASSOS.length - 1, draft.passo + 1) })}
+            disabled={!podeAvancar}
+            className="ml-auto h-10 rounded-[var(--radius-sm)] bg-[var(--ink)] px-5 text-[14px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+          >
+            Continuar
+          </button>
+        )}
       </div>
     </div>
   );
