@@ -41,6 +41,9 @@ export type ImportResult = {
   imported: number;
   skipped: number;
   failed: Array<{ id: string; error: string }>;
+  /** Lote 1 (13/08): aluno joga VÍDEO/arquivo gigante na pasta de fotos —
+   *  não pode derrubar a linha. Não-imagem/acima do teto vira "ignorado". */
+  ignored?: Array<{ id: string; reason: string }>;
 };
 
 /** Chave R2 determinística da foto importada (idempotência por fileId). */
@@ -59,7 +62,7 @@ export async function importImages(
   fileIds: string[],
   opts: { forceReference?: boolean } = {},
 ): Promise<ImportResult & { reference_key: string | null; all_keys: string[] }> {
-  const result: ImportResult = { imported: 0, skipped: 0, failed: [] };
+  const result: ImportResult = { imported: 0, skipped: 0, failed: [], ignored: [] };
   const allKeys: string[] = [];
 
   for (const fileId of fileIds.slice(0, MAX_IMAGES)) {
@@ -114,8 +117,23 @@ export async function importImages(
       result.imported++;
       allKeys.push(destKey);
     } catch (e) {
-      result.failed.push({ id: fileId, error: e instanceof Error ? e.message : String(e) });
+      const msg = e instanceof Error ? e.message : String(e);
+      // Pasta de fotos com vídeo/arquivo gigante no meio (lote 1, 13/08):
+      // ignora e segue — a linha só falha se NENHUMA foto aproveitável sobrar.
+      if (/teto \d+MB|não é imagem/.test(msg)) {
+        result.ignored!.push({ id: fileId, reason: msg });
+      } else {
+        result.failed.push({ id: fileId, error: msg });
+      }
     }
+  }
+
+  // Tinha arquivos mas nenhum aproveitável → isso SIM é erro da linha.
+  if (fileIds.length > 0 && allKeys.length === 0 && result.failed.length === 0) {
+    result.failed.push({
+      id: "fotos",
+      error: `nenhuma foto aproveitável (${result.ignored!.length} arquivo(s) ignorado(s): vídeo/grande demais)`,
+    });
   }
 
   // Referência principal (Johnny 13/08): a foto de CLOSE DE ROSTO FRONTAL,
