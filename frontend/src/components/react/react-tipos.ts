@@ -24,14 +24,16 @@ export type ViralEscolhido = {
 };
 
 /**
- * Quem reage. Gravar vídeo na hora ficou FORA (decisão do Johnny 14/08:
- * caro e cheio de variável). ⚠️ `upload` só serve pros layouts de tela
- * dividida — vídeo gravado na sala não tem como ser recortado.
+ * Quem reage: **só clone ou HeyGen** (correção do Johnny 14/08).
+ *
+ * Gravar na hora ficou fora por custo, e subir vídeo próprio também não
+ * entra AQUI — esse upload é do vídeo VIRAL, no R0. Como os dois caminhos
+ * nascem de uma FOTO, todo React pode usar qualquer layout, inclusive o
+ * recorte por cima do viral.
  */
 export type AvatarEscolhido =
   | { kind: "clone"; label: string }
-  | { kind: "heygen"; label: string }
-  | { kind: "upload"; label: string };
+  | { kind: "heygen"; label: string };
 
 /** Layouts do R5. O de recorte é o formato do Lucas (chromakey provado). */
 export type LayoutReact = "recorte" | "viral-em-cima" | "viral-embaixo";
