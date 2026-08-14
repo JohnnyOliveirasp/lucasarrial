@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
   const { data: viral } = await admin
     .from("viral_videos")
-    .select("id, url")
+    .select("id, url, duracao_seg")
     .eq("id", viralId)
     .maybeSingle();
   if (!viral?.url) return badRequest("Vídeo não encontrado no acervo.");
@@ -149,12 +149,20 @@ export async function GET(request: NextRequest) {
   const { data } = await admin
     .from("react_jobs")
     .select(
-      "id, status, erro, r2_key, segundos, layout, viral_r2_key, clone_job_id, clone_r2_key, audio_url, criado_em",
+      "id, status, erro, r2_key, segundos, layout, viral_r2_key, clone_job_id, clone_r2_key, audio_url, viral_id, criado_em",
     )
     .eq("id", id)
     .eq("user_id", gate.auth.user_id)
     .maybeSingle();
   if (!data) return badRequest("Pedido não encontrado.");
+
+  // Duração do viral: é ela que diz onde o vídeo acaba e começa o "só você".
+  const { data: v } = await admin
+    .from("viral_videos")
+    .select("duracao_seg")
+    .eq("id", data.viral_id)
+    .maybeSingle();
+  const viralSegundos = Number(v?.duracao_seg ?? 0) || 15;
 
   // O job só anda quando alguém pergunta — mesmo padrão do Vídeo Clone.
   if (data.status === "clonando" && data.clone_job_id) {
@@ -172,6 +180,7 @@ export async function GET(request: NextRequest) {
           audioKey: data.audio_url!,
           layout: data.layout as LayoutMontagem,
           segundos: Number(data.segundos) || 20,
+          viralSegundos: viralSegundos,
           saidaKey,
         });
         await admin

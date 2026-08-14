@@ -76,6 +76,12 @@ export function ReactPassoSaida({ draft }: { draft: ReactDraft }) {
           ["Fala", `${palavras} palavras · ~${segundosFala}s`],
           ["Chamada final", draft.cta ? "sim" : "não"],
           ["Layout", draft.layout ?? "—"],
+          [
+            "Divisão",
+            draft.viral?.duracao_seg && segundosFala > Math.round(draft.viral.duracao_seg)
+              ? `${Math.round(draft.viral.duracao_seg)}s com o viral + ${segundosFala - Math.round(draft.viral.duracao_seg)}s só você`
+              : "o viral cobre a fala inteira",
+          ],
           ["Voz", draft.modoAudio === "gravar" ? "você grava" : draft.audioUrl ? "gerada" : "—"],
         ].map(([k, v]) => (
           <div key={k} className="flex gap-2">

@@ -90,6 +90,8 @@ export async function montarEEnviar(args: {
   audioKey: string;
   layout: LayoutMontagem;
   segundos: number;
+  /** Duração do viral: define onde ele acaba e começa o "só você". */
+  viralSegundos: number;
   saidaKey: string;
 }): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "react-"));
@@ -112,6 +114,7 @@ export async function montarEEnviar(args: {
       saida,
       layout: args.layout,
       segundos: args.segundos,
+      viralSegundos: args.viralSegundos,
     });
 
     // Conferência barata: vídeo vazio não sobe.

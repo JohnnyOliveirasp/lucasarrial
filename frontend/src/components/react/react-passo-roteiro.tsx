@@ -123,9 +123,9 @@ export function ReactPassoRoteiro({
               {palavras} palavras · <strong className="text-[var(--ink)]">~{segundos}s</strong> de fala
               {duracao !== null ? ` · vídeo tem ${duracao}s` : ""}
             </span>
-            {estourou && (
+            {estourou && duracao !== null && (
               <span className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-2 py-0.5 text-[11.5px] text-[var(--ink)]">
-                ⚠️ sua fala passa do tempo do vídeo — corte um pouco, ou o final fica sem imagem
+                o vídeo acaba antes: os últimos {segundos - duracao}s ficam com você em tela cheia
               </span>
             )}
           </div>

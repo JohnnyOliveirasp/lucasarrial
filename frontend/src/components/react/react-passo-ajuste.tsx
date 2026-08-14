@@ -105,9 +105,9 @@ export function ReactPassoAjuste({
           {palavras} palavras · ~{segundos}s de fala
           {duracao !== null ? ` · vídeo tem ${duracao}s` : ""}
         </span>
-        {estourou && (
+        {estourou && duracao !== null && (
           <span className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-2 py-0.5 text-[11.5px] text-[var(--ink)]">
-            ⚠️ passa do tempo do vídeo — corte, ou o final fica sem imagem
+            os últimos {segundos - duracao}s aparecem com você em tela cheia
           </span>
         )}
       </p>
