@@ -6,6 +6,9 @@
  * REDUZIDO por cima do viral — de corpo inteiro o rosto vira um pontinho — e
  * o recorte só funciona se o fundo for chapado.
  *
+ * ⚖️ O equilíbrio é fino: fechar demais mata os braços, abrir demais mata o
+ * rosto. A referência medida (reel do Lucas) é a cintura pra cima.
+ *
  * Usa o MESMO motor que já está em produção no Gerador de Imagem
  * (`gpt-image-2-image-to-image` no Kie). Provado na mão em 14/08 com a foto
  * da Rayanne: o verde saiu uniforme, os fios de cabelo sobreviveram e o
@@ -19,11 +22,23 @@
  */
 import { kieCreateImageTask } from "@/lib/kie/client";
 
-/** O prompt é a peça mais importante deste arquivo — mexer com cuidado. */
+/**
+ * O prompt é a peça mais importante deste arquivo — mexer com cuidado.
+ *
+ * 🔁 Corrigido 15/08: a 1ª versão pedia "head and shoulders large" e o
+ * enquadramento fechava tanto que **os braços sumiam** — o Johnny reclamou
+ * vendo o próprio React. Baixei o reel de referência do Lucas e medi: ele
+ * aparece da CINTURA pra cima, no canto inferior esquerdo, ocupando ~38% da
+ * largura (o mesmo do nosso layout) e com **os braços e a mão gesticulando
+ * dentro do quadro**. É isso que dá vida à reação; só cabeça parece foto 3x4.
+ */
 const PROMPT = [
-  "Reframe this photo as a waist-up portrait: head and shoulders large and centered,",
-  "facing the camera, eyes toward the lens. Keep the SAME person, same face, same hair,",
-  "same clothes, same skin tone — do not beautify or change identity.",
+  "Reframe this photo as a three-quarter shot: the person from the waist up,",
+  "BOTH ARMS AND HANDS FULLY VISIBLE inside the frame, in a natural relaxed",
+  "gesturing pose, facing the camera, eyes toward the lens.",
+  "Leave a small margin around the body — do not crop the arms, elbows or hands.",
+  "Keep the SAME person, same face, same hair, same clothes, same skin tone —",
+  "do not beautify or change identity.",
   "Replace the background with a solid uniform chroma key green (#00B140).",
   "Photorealistic, sharp focus on the face, no green spill on skin or hair,",
   "preserve fine hair detail at the edges. Vertical 3:4 framing.",

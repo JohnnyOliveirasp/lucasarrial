@@ -8,7 +8,7 @@
  * o vídeo, não o nosso trabalho.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Download, Loader2 } from "lucide-react";
+import { Check, Download, Loader2, Trash2 } from "lucide-react";
 import { downloadFromUrl } from "@/components/image/download-file";
 import { getSubtitlePreset } from "@/lib/video/subtitle-presets";
 import type { ReactDraft } from "./react-tipos";
@@ -44,6 +44,7 @@ export function ReactPassoSaida({
   const [erro, setErro] = useState<string | null>(null);
   const [job, setJob] = useState<JobReact | null>(null);
   const [baixando, setBaixando] = useState(false);
+  const [apagando, setApagando] = useState(false);
   const vivo = useRef(true);
 
   useEffect(() => {
@@ -107,6 +108,32 @@ export function ReactPassoSaida({
   if (draft.roteiro.trim().length < 20) faltando.push("o roteiro");
   if (!draft.layout) faltando.push("o layout");
   if (draft.modoAudio === "clone" && !draft.audioUrl) faltando.push("o áudio");
+
+  /** Apaga o React de vez: mp4 final, clone, foto e fala saem do R2 junto. */
+  async function apagar() {
+    const jobId = draft.jobId;
+    if (!window.confirm("Apagar este vídeo? Ele sai do seu acervo e não volta.")) return;
+    setApagando(true);
+    setErro(null);
+    try {
+      if (jobId) {
+        const r = await fetch(`/api/v1/react/gerar?job=${encodeURIComponent(jobId)}`, {
+          method: "DELETE",
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => null);
+          setErro(j?.error?.message ?? "Não consegui apagar o vídeo.");
+          return;
+        }
+      }
+      update({ jobId: null });
+      setJob(null);
+    } catch {
+      setErro("Falha de rede ao apagar.");
+    } finally {
+      setApagando(false);
+    }
+  }
 
   async function gerar() {
     setGerando(true);
@@ -225,6 +252,8 @@ export function ReactPassoSaida({
             update({ jobId: null });
             setJob(null);
           }}
+          onApagar={apagar}
+          apagando={apagando}
         />
       )}
 
@@ -244,12 +273,16 @@ function Acompanhamento({
   baixando,
   onBaixar,
   onDeNovo,
+  onApagar,
+  apagando,
 }: {
   job: JobReact;
   thumbFallback: string | null;
   baixando: boolean;
   onBaixar: (url: string) => void;
   onDeNovo: () => void;
+  onApagar: () => void;
+  apagando: boolean;
 }) {
   const atual = ETAPAS.findIndex((e) => e.id === job.status);
   const capa = job.thumb_url ?? thumbFallback;
@@ -278,8 +311,11 @@ function Acompanhamento({
 
         <ol className="flex flex-1 flex-col gap-1.5">
           {ETAPAS.map((e, i) => {
-            const feito = !falhou && atual > i;
-            const agora = !falhou && atual === i;
+            // ⚠️ "pronto" é a última etapa: sem o `&& !pronto` ela caía no ramo
+            // "acontecendo agora" e o spinner girava pra sempre com o vídeo já
+            // na tela (o círculo de "aguarde" que o Johnny viu, 15/08).
+            const feito = !falhou && (atual > i || Boolean(pronto));
+            const agora = !falhou && atual === i && !pronto;
             return (
               <li key={e.id} className="flex items-center gap-2 text-[12.5px]">
                 {feito ? (
@@ -329,6 +365,20 @@ function Acompanhamento({
               className="text-[12.5px] text-[var(--mute)] underline"
             >
               gerar outro
+            </button>
+            <button
+              type="button"
+              onClick={onApagar}
+              disabled={apagando}
+              title="Apagar este vídeo"
+              aria-label="Apagar este vídeo"
+              className="ml-auto grid h-9 w-9 place-items-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] text-[var(--mute)] transition-colors hover:border-red-400/60 hover:text-red-400 disabled:opacity-40"
+            >
+              {apagando ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
             </button>
           </div>
         </div>

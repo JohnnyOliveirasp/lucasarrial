@@ -11,6 +11,7 @@ import { gateAdmin } from "@/lib/admin/api";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { R2_BUCKETS } from "@/lib/r2/client";
+import { deleteByPrefix } from "@/lib/r2/delete";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { baixarViral, marcarDownload } from "@/lib/virais/download";
 import { marcarUsado } from "@/lib/virais/pessoal";
@@ -191,6 +192,38 @@ export async function POST(request: NextRequest) {
   }
 
   return jsonOk({ job_id: jobId, status: "clonando", segundos });
+}
+
+/**
+ * DELETE ?job=<id> — joga o React fora (arquivos do R2 + a linha da fila).
+ * Pedido do Johnny 15/08: "precisa aparecer um botão para deletar o vídeo".
+ * Apaga o job inteiro pela pasta, não só o mp4 final: o clone, o avatar e a
+ * fala daquele pedido não servem pra mais nada.
+ */
+export async function DELETE(request: NextRequest) {
+  const gate = await gateAdmin(request);
+  if ("res" in gate) return gate.res;
+  const id = (request.nextUrl.searchParams.get("job") ?? "").trim();
+  if (!id) return badRequest("Faltou o id do pedido.");
+
+  const admin = getAdmin();
+  const { data } = await admin
+    .from("react_jobs")
+    .select("id, status")
+    .eq("id", id)
+    .eq("user_id", gate.auth.user_id)
+    .maybeSingle();
+  if (!data) return badRequest("Pedido não encontrado.");
+
+  try {
+    await deleteByPrefix(R2_BUCKETS.generations, `${gate.auth.user_id}/react/${id}/`);
+  } catch (e) {
+    console.error("[react/gerar:delete] R2", e instanceof Error ? e.message : e);
+    // Arquivo órfão é chato, mas travar o "apagar" é pior: segue e some da lista.
+  }
+  const { error } = await admin.from("react_jobs").delete().eq("id", id).eq("user_id", gate.auth.user_id);
+  if (error) return serverError("Não consegui apagar o pedido.");
+  return jsonOk({ apagado: id });
 }
 
 export async function GET(request: NextRequest) {
