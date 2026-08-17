@@ -45,10 +45,12 @@ export const REACT_AJUSTE_COST = 10;
 export const FALA_MAX_SEGUNDOS = 90;
 
 export function palavrasAlvo(duracaoSeg: number): number {
-  // Deixa 15% de respiro: o viral também precisa "falar" sozinho em algum
-  // momento, senão vira locução por cima do vídeo inteiro.
+  // SEM desconto (correção Johnny 17/08): o vídeo final sai com o tamanho
+  // da FALA — os antigos 15% de "respiro" faziam a fala mirar 36s num viral
+  // de 42s e o corte comia o desfecho do vídeo. Viral abaixo do teto → a
+  // fala mira o tamanho CHEIO do viral; acima → o teto de 90s manda.
   const efetivo = Math.min(duracaoSeg, FALA_MAX_SEGUNDOS);
-  return Math.max(20, Math.round(efetivo * PALAVRAS_POR_SEGUNDO * 0.85));
+  return Math.max(20, Math.round(efetivo * PALAVRAS_POR_SEGUNDO));
 }
 
 export function contarPalavras(texto: string): number {
