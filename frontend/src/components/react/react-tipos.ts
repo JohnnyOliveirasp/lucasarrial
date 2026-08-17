@@ -51,6 +51,9 @@ export type ReactDraft = {
   /** Versão preparada: meio corpo pra cima + fundo verde (é ela que entra
    *  no clone quando o layout for o recorte por cima do viral). */
   fotoPronta: string | null;
+  /** Preparo em voo (task do Kie). Persistido pra tela RETOMAR ao voltar —
+   *  sem isso, sair da tela fazia o preparo "sumir" (caso Johnny 17/08). */
+  fotoTaskId: string | null;
   /** Direcionamento do criador (Johnny 17/08): o produto/ângulo que a
    *  reação deve puxar — sem isso o Gemini comenta só o tema do viral. */
   ideia: string;
@@ -83,6 +86,7 @@ export const DRAFT_VAZIO: ReactDraft = {
   avatar: null,
   fotoOriginal: null,
   fotoPronta: null,
+  fotoTaskId: null,
   ideia: "",
   roteiro: "",
   cta: "",

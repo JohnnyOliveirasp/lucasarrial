@@ -9,7 +9,7 @@
  *
  * O aluno não precisa entender chroma key: ele vê "foto pronta pro React".
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@/i18n/navigation";
 import type { ReactDraft } from "./react-tipos";
 
@@ -25,6 +25,14 @@ export function ReactFotoAvatar({
   const [galeria, setGaleria] = useState<Imagem[] | null>(null);
   const [preparando, setPreparando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const vivo = useRef(true);
+
+  useEffect(() => {
+    vivo.current = true;
+    return () => {
+      vivo.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -39,7 +47,46 @@ export function ReactFotoAvatar({
     })();
   }, []);
 
-  /** Dispara o preparo e acompanha até sair (o Kie é assíncrono). */
+  /** Acompanha uma task do Kie até sair (o preparo é assíncrono). */
+  const acompanhar = useCallback(
+    async (taskId: string) => {
+      setPreparando(true);
+      setErro(null);
+      try {
+        for (let i = 0; i < 60; i++) {
+          const st = await fetch(`/api/v1/react/foto?task=${encodeURIComponent(taskId)}`);
+          const sj = await st.json();
+          if (sj.estado === "success" && sj.url) {
+            update({ fotoPronta: sj.url, fotoTaskId: null });
+            return;
+          }
+          if (sj.estado === "fail") {
+            update({ fotoTaskId: null });
+            setErro(sj.erro ?? "O preparo da foto falhou.");
+            return;
+          }
+          if (!vivo.current) return;
+          await new Promise((s) => setTimeout(s, 4000));
+        }
+        setErro("O preparo está demorando demais — volte aqui daqui a pouco.");
+      } catch {
+        setErro("Falha de rede ao preparar a foto.");
+      } finally {
+        setPreparando(false);
+      }
+    },
+    [update],
+  );
+
+  // Preparo em voo no rascunho? RETOMA ao abrir a tela (caso Johnny 17/08:
+  // ele saiu no meio e, voltando, era como se a foto nunca tivesse existido).
+  useEffect(() => {
+    if (draft.fotoTaskId && !draft.fotoPronta) void acompanhar(draft.fotoTaskId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Dispara o preparo e acompanha. O taskId vai pro RASCUNHO na hora —
+   *  é ele que deixa a tela retomar se a pessoa sair e voltar. */
   async function preparar() {
     if (!draft.fotoOriginal) return;
     setPreparando(true);
@@ -52,27 +99,15 @@ export function ReactFotoAvatar({
       });
       const j = await r.json();
       if (!r.ok) {
+        setPreparando(false);
         setErro(j?.error?.message ?? "Não consegui preparar a foto.");
         return;
       }
-      for (let i = 0; i < 60; i++) {
-        await new Promise((s) => setTimeout(s, 4000));
-        const st = await fetch(`/api/v1/react/foto?task=${encodeURIComponent(j.task_id)}`);
-        const sj = await st.json();
-        if (sj.estado === "success" && sj.url) {
-          update({ fotoPronta: sj.url });
-          return;
-        }
-        if (sj.estado === "fail") {
-          setErro(sj.erro ?? "O preparo da foto falhou.");
-          return;
-        }
-      }
-      setErro("O preparo está demorando demais — tente de novo.");
+      update({ fotoTaskId: j.task_id as string });
+      await acompanhar(j.task_id as string);
     } catch {
-      setErro("Falha de rede ao preparar a foto.");
-    } finally {
       setPreparando(false);
+      setErro("Falha de rede ao preparar a foto.");
     }
   }
 
@@ -100,8 +135,10 @@ export function ReactFotoAvatar({
                   onClick={() =>
                     update({
                       fotoOriginal: ativa ? null : img.image_url,
-                      // trocou a foto → a versão preparada não vale mais
+                      // trocou a foto → a versão preparada (e o preparo em
+                      // voo) não valem mais
                       fotoPronta: null,
+                      fotoTaskId: null,
                     })
                   }
                   className={`relative block aspect-[3/4] w-full overflow-hidden rounded-[var(--radius-sm)] border ${
