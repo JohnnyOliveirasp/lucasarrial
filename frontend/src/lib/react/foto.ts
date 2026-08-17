@@ -42,15 +42,21 @@ import { pickImageRoute } from "@/lib/kie/failover";
  * preferia obedecer ao enquadramento da foto de entrada. Agora a ordem é
  * dura: CORTAR NA CINTURA, nada abaixo dela aparece, e a pessoa PREENCHE o
  * frame (cabeça perto do topo, cintura na borda de baixo).
+ *
+ * 🔁 Corrigido 17/08 (2): "natural relaxed GESTURING pose" fazia TODA foto
+ * sair com as mãos meio levantadas pra frente — o modelo obedecia ao
+ * "gesticulando" do jeito mais literal. Agora: braços visíveis mas
+ * RELAXADOS pra baixo, mão nenhuma levantada nem esticada pra câmera.
  */
 const PROMPT = [
   "CROP THIS PHOTO AT THE WAIST — a waist-up medium shot. Nothing below the",
   "waist may appear: no hips, no legs, no knees, no feet, regardless of the",
   "input photo's framing. The person must FILL the frame: head near the top",
   "edge, waist at the bottom edge.",
-  "BOTH ARMS AND HANDS FULLY VISIBLE inside the frame, in a natural relaxed",
-  "gesturing pose, facing the camera, eyes toward the lens — do not crop the",
-  "arms, elbows or hands.",
+  "Both arms visible inside the frame, RELAXED and hanging naturally down at",
+  "the sides — hands at or below waist level. Do NOT raise the hands, do NOT",
+  "reach or gesture toward the camera, no crossed arms. Facing the camera,",
+  "eyes toward the lens — do not crop the arms, elbows or hands.",
   "Keep the SAME person, same face, same hair, same clothes, same skin tone —",
   "do not beautify or change identity.",
   "Replace the background with a solid uniform chroma key green (#00B140).",
