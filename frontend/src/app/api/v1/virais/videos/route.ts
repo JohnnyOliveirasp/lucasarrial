@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const admin = getAdmin();
     // As fichas de tema vêm junto: a tela precisa delas em toda carga e o
     // agrupamento é uma query só (função virais_temas, migração 74).
-    const [videos, temas] = await Promise.all([
+    const [pagina, temas] = await Promise.all([
       listarAcervo(
         admin,
         {
@@ -41,6 +41,8 @@ export async function GET(request: NextRequest) {
           minLikes: inteiro("min_likes", 0),
           dias: inteiro("dias", 0),
           limite: inteiro("limite", FILTRO_PADRAO.limite),
+          // Paginação (17/08): todo o acervo é alcançável, página a página.
+          offset: inteiro("offset", 0),
           termo: (p.get("termo") ?? "").trim().slice(0, 60),
           tema: (p.get("tema") ?? "").trim().slice(0, 120),
           ordem: normalizarOrdem(p.get("ordem")),
@@ -52,10 +54,12 @@ export async function GET(request: NextRequest) {
       listarTemas(admin).catch(() => []),
     ]);
     return jsonOk({
-      total: videos.length,
-      reservados: videos.filter((v) => v.reservado).length,
+      // `total` agora é o TOTAL do filtro (não o tamanho da página) — é dele
+      // que a tela calcula quantas páginas existem.
+      total: pagina.total,
+      reservados: pagina.videos.filter((v) => v.reservado).length,
       temas,
-      videos,
+      videos: pagina.videos,
     });
   } catch (e) {
     console.error("[virais/videos]", e instanceof Error ? e.message : e);

@@ -24,6 +24,13 @@ import type { Viral } from "./virais-tipos";
 export type { Viral } from "./virais-tipos";
 export { compacto } from "./virais-estilo";
 
+/**
+ * Página = 4 linhas da grade no desktop largo (14 colunas × 4 — regra do
+ * Johnny 17/08: TODO o acervo alcançável, paginado; nada de teto escondendo
+ * vídeo como o 300 fixo fazia).
+ */
+const POR_PAGINA = 56;
+
 export function ViraisBusca() {
   const [videos, setVideos] = useState<Viral[]>([]);
   const [temas, setTemas] = useState<TemaAcervo[]>([]);
@@ -34,6 +41,9 @@ export function ViraisBusca() {
   const [recado, setRecado] = useState<string | null>(null);
   /** Seleção múltipla estilo caixa de e-mail — NÃO é o "guardar". */
   const [selecao, setSelecao] = useState<Set<string>>(new Set());
+  const [pagina, setPagina] = useState(1);
+  /** Total do FILTRO no servidor — é dele que saem os números das páginas. */
+  const [total, setTotal] = useState(0);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -44,16 +54,20 @@ export function ViraisBusca() {
         ordem: f.ordem,
         termo: f.termo,
         meus: f.soSelecionados ? "1" : "0",
-        limite: "300",
+        limite: String(POR_PAGINA),
+        offset: String((pagina - 1) * POR_PAGINA),
       });
       const r = await fetch(`/api/v1/virais/videos?${qs}`);
       const j = await r.json();
       setVideos(r.ok ? j.videos ?? [] : []);
-      if (r.ok) setTemas(j.temas ?? []);
+      if (r.ok) {
+        setTemas(j.temas ?? []);
+        setTotal(j.total ?? 0);
+      }
     } finally {
       setCarregando(false);
     }
-  }, [f]);
+  }, [f, pagina]);
 
   // Respiro antes de ir ao servidor: sem isto, cada tecla do campo de texto
   // (e cada ficha clicada em sequência) vira uma consulta.
@@ -191,7 +205,14 @@ export function ViraisBusca() {
           </button>
         </div>
 
-        <ViraisFiltros f={f} temas={temas} onMudar={setF} />
+        <ViraisFiltros
+          f={f}
+          temas={temas}
+          onMudar={(novo) => {
+            setF(novo);
+            setPagina(1); // filtro novo = volta pra 1ª página, senão cai numa página vazia
+          }}
+        />
 
         {recado && <p className="text-[13px] text-[var(--ink)]">{recado}</p>}
 
@@ -247,18 +268,28 @@ export function ViraisBusca() {
             <strong className="text-[var(--ink)]">Buscar virais</strong>.
           </p>
         ) : (
-          <ul className={GRADE}>
-            {videos.map((v) => (
-              <Miniatura
-                key={v.id}
-                v={v}
-                selecionadoNaLista={selecao.has(v.id)}
-                onSelecionar={() => alternarSelecao(v.id)}
-                onAbrir={() => setAberto(v)}
-                onMarcar={() => alternar(v)}
-              />
-            ))}
-          </ul>
+          <>
+            <ul className={GRADE}>
+              {videos.map((v) => (
+                <Miniatura
+                  key={v.id}
+                  v={v}
+                  selecionadoNaLista={selecao.has(v.id)}
+                  onSelecionar={() => alternarSelecao(v.id)}
+                  onAbrir={() => setAberto(v)}
+                  onMarcar={() => alternar(v)}
+                />
+              ))}
+            </ul>
+            <Paginacao
+              pagina={pagina}
+              total={total}
+              onIr={(p) => {
+                setPagina(p);
+                setSelecao(new Set()); // a seleção é da página que estava na tela
+              }}
+            />
+          </>
         )}
       </section>
 
@@ -268,5 +299,76 @@ export function ViraisBusca() {
         <ViralPlayer v={aberto} onFechar={() => setAberto(null)} onMarcar={() => alternar(aberto)} />
       )}
     </div>
+  );
+}
+
+/**
+ * Barra de páginas — números com janela (1 … 4 5 6 … 12), estilo ficha.
+ * Só aparece quando o filtro tem mais de uma página.
+ */
+function Paginacao({
+  pagina,
+  total,
+  onIr,
+}: {
+  pagina: number;
+  total: number;
+  onIr: (p: number) => void;
+}) {
+  const paginas = Math.ceil(total / POR_PAGINA);
+  if (paginas <= 1) return null;
+
+  // Janela: primeira, última e as vizinhas da atual; o resto vira "…".
+  const alvo = new Set([1, paginas, pagina - 1, pagina, pagina + 1]);
+  const itens: (number | "…")[] = [];
+  for (let p = 1; p <= paginas; p++) {
+    if (alvo.has(p)) itens.push(p);
+    else if (itens[itens.length - 1] !== "…") itens.push("…");
+  }
+
+  const botao =
+    "h-8 min-w-8 rounded-[var(--radius-sm)] border px-2 text-[12.5px] disabled:opacity-40";
+  return (
+    <nav className="flex flex-wrap items-center justify-center gap-1.5 pt-2">
+      <button
+        type="button"
+        disabled={pagina === 1}
+        onClick={() => onIr(pagina - 1)}
+        className={`${botao} border-[var(--hairline-strong)] text-[var(--ink)]`}
+      >
+        ‹
+      </button>
+      {itens.map((p, i) =>
+        p === "…" ? (
+          <span key={`e${i}`} className="px-1 text-[12.5px] text-[var(--ash)]">
+            …
+          </span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onIr(p)}
+            className={`${botao} ${
+              p === pagina
+                ? "border-[var(--ink)] bg-[var(--ink)] font-semibold text-[var(--surface-deep)]"
+                : "border-[var(--hairline-strong)] text-[var(--ink)]"
+            }`}
+          >
+            {p}
+          </button>
+        ),
+      )}
+      <button
+        type="button"
+        disabled={pagina === paginas}
+        onClick={() => onIr(pagina + 1)}
+        className={`${botao} border-[var(--hairline-strong)] text-[var(--ink)]`}
+      >
+        ›
+      </button>
+      <span className="ml-2 text-[12px] text-[var(--mute)]">
+        página {pagina} de {paginas} · {total.toLocaleString("pt-BR")} vídeos
+      </span>
+    </nav>
   );
 }

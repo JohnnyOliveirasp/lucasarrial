@@ -29,6 +29,8 @@ export type FiltroAcervo = {
   /** Só o que EU reservei = a tela "Meus Virais" (mig 75). */
   apenasReservados: boolean;
   limite: number;
+  /** Paginação (17/08): TODO o acervo é alcançável, página a página. */
+  offset: number;
 };
 
 export const FILTRO_PADRAO: FiltroAcervo = {
@@ -39,6 +41,7 @@ export const FILTRO_PADRAO: FiltroAcervo = {
   ordem: "score",
   apenasReservados: false,
   limite: 120,
+  offset: 0,
 };
 
 export function normalizarOrdem(v: string | null): OrdemAcervo {
@@ -90,19 +93,25 @@ export async function listarAcervo(admin: Admin, f: FiltroAcervo, userId: string
     idsDescartados(admin, userId),
     f.apenasReservados ? idsReservados(admin, userId) : Promise.resolve<string[]>([]),
   ]);
-  if (f.apenasReservados && reservados.length === 0) return [];
+  if (f.apenasReservados && reservados.length === 0) return { videos: [], total: 0 };
 
+  // Paginação (17/08, regra do Johnny): NENHUM vídeo fica inalcançável — a
+  // tela pagina. `count: exact` devolve o TOTAL do filtro junto da página,
+  // numa consulta só (o range não afeta a contagem).
+  const limite = Math.min(300, Math.max(1, f.limite));
+  const offset = Math.max(0, f.offset ?? 0);
   let q = admin
     .from("viral_videos")
     .select(
       "id, plataforma, video_id, url, autor, autor_seguidores, legenda, likes, views, comentarios, publicado_em, duracao_seg, thumb_url, video_url, hashtags, score, termo_busca, exclusivo_ate, garimpado_por",
+      { count: "exact" },
     )
     // descarte GLOBAL legado (mig 73) — mantido pra não ressuscitar o que já
     // tinha sido jogado fora antes da curadoria virar pessoal.
     .eq("descartado", false)
     // nullsFirst: false senão o vídeo sem data/views sobe no topo da grade.
     .order(COLUNA_ORDEM[f.ordem], { ascending: false, nullsFirst: false })
-    .limit(Math.min(300, Math.max(1, f.limite)));
+    .range(offset, offset + limite - 1);
 
   if (f.apenasReservados) q = q.in("id", reservados);
   if (descartados.length > 0) q = q.not("id", "in", `(${descartados.join(",")})`);
@@ -116,7 +125,7 @@ export async function listarAcervo(admin: Admin, f: FiltroAcervo, userId: string
     if (t) q = q.or(`legenda.ilike.%${t}%,autor.ilike.%${t}%,termo_busca.ilike.%${t}%`);
   }
 
-  const { data, error } = await q;
+  const { data, error, count } = await q;
   if (error) throw new Error(error.message);
   const linhas = data ?? [];
 
@@ -127,7 +136,7 @@ export async function listarAcervo(admin: Admin, f: FiltroAcervo, userId: string
     contagemUso(admin, ids),
   ]);
   const agora = Date.now();
-  return linhas.map((v) => {
+  const videos = linhas.map((v) => {
     const l = v as Record<string, unknown> & { id: string; exclusivo_ate: string | null; garimpado_por: string | null };
     const meu = meus.get(l.id);
     return {
@@ -144,6 +153,7 @@ export async function listarAcervo(admin: Admin, f: FiltroAcervo, userId: string
         l.garimpado_por !== userId,
     };
   });
+  return { videos, total: count ?? videos.length };
 }
 
 export type TemaAcervo = { tema: string; total: number; marcados: number };
