@@ -1,7 +1,10 @@
 /**
  * Onboarding — gera 2-3 AVATARES do aluno a partir das fotos importadas
  * (correção Johnny 13/08: "pegar todas elas e enviar para gerar 2 ou 3
- * avatares dele"). Por conta da casa (credits_cost 0).
+ * avatares dele"). COBRADO do aluno (correção Johnny 17/08 — antes era por
+ * conta da casa): mesmo preço e mesmo shape de débito do /images/generate,
+ * então o estorno automático de falha do Kie (lib/images/finalize) funciona
+ * igual. Sem saldo, o avatar NÃO é gerado (crédito é o único gate).
  *
  * Usa o mesmo caminho do /api/v1/images/generate (pickImageRoute +
  * kieCreateImageTask + row pending); o webhook/poll do Kie finaliza sozinho
@@ -15,6 +18,9 @@ import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { kieCreateImageTask, kieCallbackUrl } from "@/lib/kie/client";
 import { pickImageRoute } from "@/lib/kie/failover";
+import { imageCreditCost } from "@/lib/kie/config";
+import { bypassesBilling } from "@/lib/credits/access";
+import { debitCredits, getBalance } from "@/lib/credits/service";
 
 type Admin = SupabaseClient<Database>;
 
@@ -83,8 +89,27 @@ export async function gerarAvatares(
     inputKeys.map((k) => createPresignedGet(imagesBucket(), k, 24 * 3600)),
   );
 
+  // Mesma cobrança do /images/generate (equipe/admin não paga).
+  const { data: prof } = await admin
+    .from("profiles")
+    .select("email")
+    .eq("id", userId)
+    .maybeSingle();
+  const billed = !bypassesBilling((prof as { email?: string } | null)?.email ?? null);
+  const creditCost = imageCreditCost("1K");
+
   for (const avatar of AVATARES) {
     try {
+      if (billed) {
+        const bal = await getBalance(userId);
+        if (bal.total < creditCost) {
+          result.failed.push({
+            nome: avatar.nome,
+            error: `sem créditos (avatar custa ${creditCost}, saldo ${bal.total})`,
+          });
+          continue;
+        }
+      }
       const { taskId } = await kieCreateImageTask(
         {
           prompt: avatar.promptEn,
@@ -94,8 +119,9 @@ export async function gerarAvatares(
         },
         { callBackUrl: kieCallbackUrl(), model: rota.model },
       );
+      const id = randomUUID();
       const { error: insertErr } = await admin.from("image_generations").insert({
-        id: randomUUID(),
+        id,
         user_id: userId,
         name: avatar.nome,
         prompt: avatar.promptPt,
@@ -105,12 +131,25 @@ export async function gerarAvatares(
         input_image_paths: inputKeys,
         aspect_ratio: "3:4",
         resolution: "1K",
-        credits_cost: 0, // por conta da casa (onboarding)
+        credits_cost: billed ? creditCost : 0,
         status: "pending",
         kie_task_id: taskId,
         kie_model: rota.model,
       });
       if (insertErr) throw new Error(insertErr.message);
+
+      // Debita após criar a row (mesmo shape/ordem do /images/generate —
+      // o estorno automático do finalize casa com este débito pelo refId).
+      if (billed) {
+        await debitCredits({
+          userId,
+          amount: creditCost,
+          kind: "image",
+          refType: "image_generation",
+          refId: id,
+          note: "avatar do onboarding (1K)",
+        });
+      }
       result.created++;
     } catch (e) {
       result.failed.push({

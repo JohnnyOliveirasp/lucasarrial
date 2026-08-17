@@ -2,10 +2,15 @@
  * Onboarding — dispara o TREINO da voz importada (correção Johnny 13/08:
  * "o sistema precisa mandar para treinamento a voz dele").
  *
- * Réplica do core do POST /api/v1/voices/[id]/start-training SEM cobrança e
- * SEM HTTP (onboarding é por conta da casa; aluno entra zerado). Qualquer
- * mudança de receita lá (max_steps, timeout, chaves) deve espelhar aqui —
- * comentários cruzados nos dois arquivos.
+ * Réplica do core do POST /api/v1/voices/[id]/start-training SEM HTTP.
+ * COBRA o aluno (correção Johnny 17/08 — antes era por conta da casa e o
+ * estorno de treino falho ainda devolvia 10k nunca cobrados): mesmo custo,
+ * mesma checagem de saldo e mesmo shape de débito do start-training — assim
+ * o estorno automático do finalize-training funciona igual. Sem saldo, o
+ * treino NÃO dispara (crédito é o único gate); a voz fica awaiting_training
+ * e o aluno treina pelo app quando tiver créditos. Qualquer mudança de
+ * receita lá (max_steps, timeout, chaves) deve espelhar aqui — comentários
+ * cruzados nos dois arquivos.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/types";
@@ -18,6 +23,9 @@ import {
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { runpodSubmitTrain, webhookUrlFor } from "@/lib/runpod/client";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
+import { bypassesBilling } from "@/lib/credits/access";
+import { debitCredits, getBalance } from "@/lib/credits/service";
+import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
 
 type Admin = SupabaseClient<Database>;
 
@@ -51,6 +59,33 @@ export async function dispararTreinoOnboarding(
   }
   const paths = Array.isArray(voice.raw_audio_paths) ? voice.raw_audio_paths : [];
   if (paths.length === 0) return { ok: false, reason: "sem áudios" };
+
+  // Mesma cobrança do start-training (equipe/admin não paga). Saldo checado
+  // ANTES do despacho; o débito em si acontece depois, como lá.
+  const { data: prof } = await admin
+    .from("profiles")
+    .select("email")
+    .eq("id", userId)
+    .maybeSingle();
+  const billed = !bypassesBilling((prof as { email?: string } | null)?.email ?? null);
+  if (billed) {
+    const bal = await getBalance(userId);
+    if (bal.total < TRAINING_CREDIT_COST) {
+      await admin
+        .from("voices")
+        .update({
+          error_message:
+            `Treinar a voz custa ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos ` +
+            `e você tem ${bal.total.toLocaleString("pt-BR")}. Assine ou recarregue e ` +
+            `clique em Treinar.`,
+        })
+        .eq("id", voice.id);
+      return {
+        ok: false,
+        reason: `sem créditos (treino custa ${TRAINING_CREDIT_COST}, saldo ${bal.total})`,
+      };
+    }
+  }
 
   const loraKey = buildLoraKey(userId, voice.id);
   const referenceKey = buildAutoReferenceKey(userId, voice.id);
@@ -122,6 +157,19 @@ export async function dispararTreinoOnboarding(
     runpod_job_id: runpodJob.id,
     status: "queued",
   });
+
+  // Debita após o treino ser disparado com sucesso (mesmo shape do
+  // start-training — o estorno do finalize-training casa com este débito).
+  if (billed) {
+    await debitCredits({
+      userId,
+      amount: TRAINING_CREDIT_COST,
+      kind: "training",
+      refType: "voice",
+      refId: voice.id,
+      note: "clonagem/treino de voz (onboarding)",
+    });
+  }
 
   return { ok: true, runpod_job_id: runpodJob.id };
 }

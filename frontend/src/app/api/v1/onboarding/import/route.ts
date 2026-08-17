@@ -5,10 +5,15 @@
  * "Recebido" da planilha DFY e faz o serviço completo:
  *   1. Cria a conta do aluno (email+senha da planilha, e-mail já confirmado).
  *      Conta nasce ZERO créditos e travada — estado padrão de não-assinante.
- *   2. Importa as fotos do Drive como REFERÊNCIA (close frontal vira a
+ *   2. Resgata compras órfãs da Hotmart pelo e-mail (claimPurchasesOnLogin —
+ *      quem pagou ANTES da conta existir tem o crédito preso até o 1º login;
+ *      sem isso, as cobranças abaixo achariam saldo zero num aluno pagante).
+ *   3. Importa as fotos do Drive como REFERÊNCIA (close frontal vira a
  *      principal via visão; nada vai pro histórico — só geradas ficam lá).
- *   3. GERA 2-3 avatares do aluno com as fotos (por conta da casa).
- *   4. Importa os áudios do Drive e DISPARA O TREINO da voz (casa paga).
+ *   4. GERA 2-3 avatares do aluno com as fotos (COBRADO: 525 cr/avatar 1K).
+ *   5. Importa os áudios do Drive e DISPARA O TREINO da voz (COBRADO:
+ *      10.000 cr — correção Johnny 17/08; antes era por conta da casa).
+ *      Sem saldo, o item não roda e o motivo vai na nota da planilha.
  *   (Correção Johnny 13/08, caso Vinicius — antes: foto no histórico +
  *   referência aleatória + voz parada esperando o aluno pagar.)
  *
@@ -28,6 +33,7 @@ import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/respons
 import { getAdmin } from "@/lib/db/admin";
 import { importImages, importTrainingAudios } from "@/lib/onboarding/import";
 import { gerarAvatares } from "@/lib/onboarding/avatares";
+import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 
 export const maxDuration = 600; // vídeo de 600MB+ + áudios de treino (502 do caso A125)
 
@@ -143,6 +149,11 @@ export async function POST(request: NextRequest) {
       { onConflict: "id", ignoreDuplicates: true },
     );
 
+  // Compra Hotmart feita ANTES da conta existir fica órfã até o 1º login —
+  // resgata AGORA, senão treino e avatares (cobrados) veriam saldo zero num
+  // aluno que pagou. Idempotente e best-effort (nunca lança).
+  await claimPurchasesOnLogin(userId, email);
+
   const forceReference = body.force_reference === true;
   const imagesResult = await importImages(admin, userId, images, { forceReference }).catch((e) => {
     console.error("[onboarding/import] imagens:", e instanceof Error ? e.message : e);
@@ -155,7 +166,7 @@ export async function POST(request: NextRequest) {
     };
   });
 
-  // 2-3 avatares gerados com as fotos (casa paga; idempotente). Falha aqui
+  // 2-3 avatares gerados com as fotos (cobrado do aluno; idempotente). Falha aqui
   // NÃO derruba o import — fica registrada na resposta pra nota da planilha.
   const avatarsResult = await gerarAvatares(admin, userId, imagesResult.all_keys).catch((e) => {
     console.error("[onboarding/import] avatares:", e instanceof Error ? e.message : e);

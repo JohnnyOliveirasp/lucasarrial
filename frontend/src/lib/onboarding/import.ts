@@ -8,9 +8,11 @@
  *   A melhor foto (close de rosto FRONTAL, escolhida por visão/Haiku) vira a
  *   referência principal (profiles.image_ref_key); as demais ficam de extras.
  * - Com as fotos, o sistema GERA 2-3 avatares (lib/onboarding/avatares.ts,
- *   por conta da casa) — esses SIM aparecem no histórico (são gerados).
- * - Áudios → voz "Minha Voz" e DISPARA O TREINO na hora (por conta da casa,
+ *   COBRADO do aluno) — esses SIM aparecem no histórico (são gerados).
+ * - Áudios → voz "Minha Voz" e DISPARA O TREINO na hora (COBRADO do aluno,
  *   lib/onboarding/treino.ts) — o aluno já entra com a voz treinando.
+ *   (Correção Johnny 17/08: antes era por conta da casa; sem saldo o item
+ *   não roda e o motivo vai na nota da planilha.)
  *
  * Tudo idempotente por fileId do Drive: chave R2 determinística → reprocessar
  * a mesma linha da planilha não duplica nada.
@@ -249,7 +251,7 @@ export type AudioImportResult = ImportResult & {
   training: string | null;
 };
 
-/** Tenta disparar o treino (casa paga); nunca derruba o import. */
+/** Tenta disparar o treino (cobrado do aluno); nunca derruba o import. */
 async function tentarTreino(
   admin: Admin,
   userId: string,
@@ -382,7 +384,7 @@ export async function importTrainingAudios(
     .eq("id", voiceId);
   if (updErr) throw new Error(`atualizar voice falhou: ${updErr.message}`);
 
-  // Johnny 13/08: áudio importado → treino JÁ dispara (casa paga).
+  // Johnny 13/08: áudio importado → treino JÁ dispara (cobrado, 17/08).
   let training: string | null = null;
   let finalStatus: string = nextStatus;
   if (nextStatus === "awaiting_training") {
