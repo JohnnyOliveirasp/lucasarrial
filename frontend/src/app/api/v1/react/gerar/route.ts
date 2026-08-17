@@ -19,6 +19,7 @@ import {
   dispararClone,
   duracaoDeUrl,
   estadoClone,
+  cloneJaNoR2,
   montarEEnviar,
   trazerParaR2,
 } from "@/lib/react/gerar";
@@ -342,7 +343,12 @@ export async function GET(request: NextRequest) {
   // O job só anda quando alguém pergunta — mesmo padrão do Vídeo Clone.
   if (data.status === "clonando" && data.clone_job_id) {
     try {
-      const st = await estadoClone(data.clone_job_id);
+      // Clone já no R2? Monta direto — o status do RunPod expira (~30min) e
+      // a retomada de um job antigo morreria no estadoClone (caso 17/08).
+      const noR2 = data.clone_r2_key ? await cloneJaNoR2(data.clone_r2_key) : false;
+      const st: { status: string; error?: string | null } = noR2
+        ? { status: "COMPLETED" }
+        : await estadoClone(data.clone_job_id);
       if (st.status === "COMPLETED") {
         await admin
           .from("react_jobs")

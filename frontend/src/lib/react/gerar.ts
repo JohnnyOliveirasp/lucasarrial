@@ -10,7 +10,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { CLONE_TIERS, cloneExecutionTimeoutMs } from "@/lib/video-clone/config";
@@ -33,6 +33,20 @@ const TIER = CLONE_TIERS[0];
  * procurar o mp4 no bucket errado parece que o job falhou.
  */
 const BUCKET_WORKER = "voices-clone-ai-verse";
+
+/**
+ * O mp4 do clone já chegou no bucket do worker? Permite retomar um job sem
+ * perguntar ao RunPod — o status de lá EXPIRA (~30min) e a retomada de job
+ * antigo morria no estadoClone (caso 17/08).
+ */
+export async function cloneJaNoR2(cloneKey: string): Promise<boolean> {
+  try {
+    await r2.send(new HeadObjectCommand({ Bucket: BUCKET_WORKER, Key: cloneKey }));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * URL presignada do NOSSO R2 vence (1h-24h) e o rascunho do wizard pode ser
@@ -72,8 +86,30 @@ export async function trazerParaR2(url: string, key: string, contentType: string
   return key;
 }
 
-/** Quanto tempo o arquivo REALMENTE tem. null = não consegui medir. */
+/**
+ * Quanto tempo o arquivo REALMENTE tem. null = não consegui medir.
+ *
+ * ⚠️ DECODIFICA o áudio inteiro em vez de ler o cabeçalho: mp3 VBR mente a
+ * duração no header (caso 17/08: header dizia 52,25s, a fala ia até 53,94s
+ * e o `-t` da montagem degolava o fim do CTA — "para a sua igreja" cortado).
+ * O ffprobe de format=duration confia no header; o decode não.
+ */
 async function duracaoDoArquivo(caminho: string): Promise<number | null> {
+  try {
+    const { stderr } = await run(
+      "ffmpeg",
+      ["-v", "info", "-i", caminho, "-f", "null", "-"],
+      { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 },
+    );
+    // A última linha de progresso tem o tempo total decodificado.
+    const m = [...String(stderr).matchAll(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)].pop();
+    if (m) {
+      const d = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+      if (Number.isFinite(d) && d > 0) return d;
+    }
+  } catch {
+    /* cai pro ffprobe abaixo */
+  }
   try {
     const { stdout } = await run("ffprobe", [
       "-v", "error",
