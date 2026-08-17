@@ -128,6 +128,9 @@ export async function POST(request: NextRequest) {
 
     return jsonOk({
       roteiro: leitura.roteiro,
+      // CTA separado quando a IDEIA pediu um — o wizard preenche o passo 4
+      // com ele (nunca dentro do roteiro, senão duplicava; 17/08).
+      cta: leitura.cta || null,
       transcricao: leitura.transcricao.slice(0, 4000),
       descricao: leitura.descricao,
       tem_fala: leitura.temFala,

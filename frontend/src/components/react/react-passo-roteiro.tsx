@@ -12,6 +12,8 @@ import type { ReactDraft } from "./react-tipos";
 
 type Resposta = {
   roteiro: string;
+  /** CTA separado quando a Ideia pediu um — preenche o passo Ajuste + CTA. */
+  cta?: string | null;
   /** O que o modelo viu na tela — prova de que ele assistiu mesmo. */
   descricao?: string;
   tem_fala: boolean;
@@ -48,7 +50,9 @@ export function ReactPassoRoteiro({
       const j = await r.json();
       if (r.ok) {
         setInfo(j as Resposta);
-        update({ roteiro: j.roteiro });
+        // CTA veio separado (a Ideia pediu um)? Preenche o passo 4 — nunca
+        // vai dentro do roteiro, senão o vídeo saía com 2 chamadas (17/08).
+        update({ roteiro: j.roteiro, ...(j.cta ? { cta: j.cta as string } : {}) });
       } else {
         setErro(j?.error?.message ?? "Não consegui escrever o roteiro.");
       }
@@ -125,6 +129,14 @@ export function ReactPassoRoteiro({
         <p className="rounded-[var(--radius-sm)] border border-[var(--hairline)] px-3 py-2 text-[12px] text-[var(--mute)]">
           <strong className="text-[var(--ink)]">O que ele viu:</strong> {info.descricao}
           {!info.tem_fala && " (o vídeo não tem fala — o roteiro saiu do que aparece na tela)"}
+        </p>
+      )}
+
+      {info?.cta && (
+        <p className="text-[12px] text-[var(--mute)]">
+          ✓ A chamada final da sua ideia foi escrita e está no passo{" "}
+          <strong className="text-[var(--ink)]">Ajuste + CTA</strong> — ela vira uma cena
+          própria no fim do vídeo.
         </p>
       )}
 

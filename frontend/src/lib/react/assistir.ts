@@ -39,6 +39,9 @@ export type LeituraViral = {
   descricao: string;
   temFala: boolean;
   roteiro: string;
+  /** Chamada final quando a IDEIA pediu uma — vai separada pro passo do CTA
+   *  (cena própria), nunca dentro do roteiro (senão duplicava, 17/08). */
+  cta: string;
 };
 
 /** Encolhe pra 480p quando o arquivo é grande demais pra ir inline. */
@@ -88,7 +91,10 @@ const INSTRUCAO = (
     "- Opinião e ponto de vista, não narração da cena.",
     "- Linguagem falada, frases curtas, sem emoji, sem hashtag, sem marcação de cena.",
     "- NÃO copie as falas do vídeo original.",
-    "- NÃO escreva chamada para ação: ela é escrita em outro passo.",
+    "- NÃO escreva chamada para ação DENTRO do roteiro. Se a ideia do criador",
+    "  pedir uma chamada final (link, oferta, 'clique e saiba mais'), devolva",
+    "  essa chamada SEPARADA na chave \"cta\" do JSON — ela vira uma cena",
+    "  própria no fim do vídeo. Sem pedido de chamada, deixe \"cta\" vazio.",
     // Viral mais longo que o teto: o react vai ao ar SÓ com o começo do
     // vídeo (a montagem corta na fala) — o modelo assiste tudo, mas não
     // pode ancorar a fala em cena que o público nunca vai ver.
@@ -108,7 +114,8 @@ const INSTRUCAO = (
     '{"transcricao": "a fala literal do vídeo (vazio se não houver fala)",',
     ' "descricao": "o que acontece na tela, em 3 frases",',
     ' "tem_fala": true ou false,',
-    ' "roteiro": "o roteiro do reaction"}',
+    ' "roteiro": "o roteiro do reaction (SEM chamada para ação)",',
+    ' "cta": "a chamada final, só se a ideia pedir uma (senão vazio)"}',
   ]
     .filter(Boolean)
     .join("\n");
@@ -187,11 +194,12 @@ function interpretar(cru: string): LeituraViral {
       descricao: String(j.descricao ?? "").trim(),
       temFala: j.tem_fala === true,
       roteiro,
+      cta: String(j.cta ?? "").trim(),
     };
   } catch {
     // Sem JSON: o texto inteiro ainda serve como roteiro.
     if (limpo.length < 40) throw new Error("Resposta vazia do modelo");
-    return { transcricao: "", descricao: "", temFala: false, roteiro: limpo };
+    return { transcricao: "", descricao: "", temFala: false, roteiro: limpo, cta: "" };
   }
 }
 
