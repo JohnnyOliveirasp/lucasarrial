@@ -20,7 +20,11 @@
  * Se um dia precisar de fidelidade total, o caminho é segmentação (recorte
  * pixel a pixel), que preserva 100% a pessoa mas exige dependência nova.
  */
-import { kieCreateImageTask } from "@/lib/kie/client";
+import { randomUUID } from "crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/db/types";
+import { kieCreateImageTask, kieCallbackUrl } from "@/lib/kie/client";
+import { pickImageRoute } from "@/lib/kie/failover";
 
 /**
  * O prompt é a peça mais importante deste arquivo — mexer com cuidado.
@@ -57,18 +61,54 @@ const PROMPT = [
 /** Resolução do preparo — a rota cobra o preço de imagem desta resolução. */
 export const FOTO_REACT_RESOLUTION = "2K";
 
-export type FotoPreparada = { taskId: string };
+/** Marca da foto do React no histórico (idea) — mesma ideia do onboarding. */
+export const FOTO_REACT_IDEA = "react_foto";
+
+export type FotoPreparada = { taskId: string; generationId: string };
 
 /**
- * Dispara o preparo. Devolve o taskId — quem chama acompanha pelo mesmo
- * caminho das outras imagens (o Kie é assíncrono, igual ao RunPod).
+ * Dispara o preparo E registra a foto no HISTÓRICO como imagem gerada
+ * (decisão Johnny 17/08: o aluno pagou por ela — aparece no histórico, fica
+ * no R2 e pode ser reaproveitada). A row entra em `image_generations` como
+ * no /images/generate: o webhook/poll do Kie finaliza sozinho (salva no R2,
+ * marca ready; falha = estorno automático pelo pipeline padrão).
  */
-export async function prepararFotoVerde(imageUrl: string): Promise<FotoPreparada> {
-  const { taskId } = await kieCreateImageTask({
-    prompt: PROMPT,
-    input_urls: [imageUrl],
+export async function prepararFotoVerde(
+  admin: SupabaseClient<Database>,
+  userId: string,
+  imageUrl: string,
+  creditsCost: number,
+): Promise<FotoPreparada> {
+  const rota = await pickImageRoute();
+  if (rota.blocked) throw new Error("gerador de imagem indisponível (disjuntor)");
+
+  const { taskId } = await kieCreateImageTask(
+    {
+      prompt: PROMPT,
+      input_urls: [imageUrl],
+      aspect_ratio: "3:4",
+      resolution: FOTO_REACT_RESOLUTION,
+    },
+    { callBackUrl: kieCallbackUrl(), model: rota.model },
+  );
+
+  const generationId = randomUUID();
+  const { error: insertErr } = await admin.from("image_generations").insert({
+    id: generationId,
+    user_id: userId,
+    name: "Foto pronta pro React",
+    prompt: "Minha foto preparada pro Video React (meio corpo, fundo verde).",
+    prompt_en: PROMPT,
+    idea: FOTO_REACT_IDEA,
+    input_image_path: "",
     aspect_ratio: "3:4",
     resolution: FOTO_REACT_RESOLUTION,
+    credits_cost: creditsCost,
+    status: "pending",
+    kie_task_id: taskId,
+    kie_model: rota.model,
   });
-  return { taskId };
+  if (insertErr) throw new Error(insertErr.message);
+
+  return { taskId, generationId };
 }

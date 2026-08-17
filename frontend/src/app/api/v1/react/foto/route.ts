@@ -7,21 +7,25 @@
  * Johnny 14/08 — "no final nós vamos fazer tudo automático").
  *
  * COBRADO (correção Johnny 17/08): mesmo preço de gerar uma imagem na
- * resolução usada (2K = 960 cr). Débito no POST após o Kie aceitar a task;
- * se o GET vir a task falhar, estorna 1x (idempotente por contagem, via
- * handleTechFailure — sem e-mail: falha de foto não é pager).
+ * resolução usada (2K = 960 cr). Débito no POST após o Kie aceitar a task,
+ * no MESMO shape do /images/generate — a foto vira uma row de
+ * image_generations (decisão Johnny 17/08: aparece no HISTÓRICO, fica no R2
+ * e o estorno de falha sai do pipeline padrão do Kie).
  *
- * GET ?task= devolve o andamento (o Kie é assíncrono).
+ * GET ?task= devolve o andamento (o Kie é assíncrono). Quando o pipeline já
+ * salvou no R2, devolve a URL nossa (a do Kie expira).
  */
 import type { NextRequest } from "next/server";
 import { gateAdmin } from "@/lib/admin/api";
 import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
+import { getAdmin } from "@/lib/db/admin";
 import { kieGetTask } from "@/lib/kie/client";
 import { imageCreditCost } from "@/lib/kie/config";
+import { imagesBucket } from "@/lib/r2/client";
+import { createPresignedGet } from "@/lib/r2/presigned";
 import { prepararFotoVerde, FOTO_REACT_RESOLUTION } from "@/lib/react/foto";
 import { bypassesBilling } from "@/lib/credits/access";
 import { debitCredits, getBalance } from "@/lib/credits/service";
-import { handleTechFailure } from "@/lib/support/failure-alert";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -55,19 +59,25 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { taskId } = await prepararFotoVerde(imageUrl);
-    // Debita depois do Kie aceitar a task (mesma ordem das outras cobranças).
+    const { taskId, generationId } = await prepararFotoVerde(
+      getAdmin(),
+      gate.auth.user_id,
+      imageUrl,
+      billed ? custo : 0,
+    );
+    // Debita depois do Kie aceitar a task, no shape padrão de imagem — o
+    // estorno automático do finalize casa com este débito pelo refId.
     if (billed) {
       await debitCredits({
         userId: gate.auth.user_id,
         amount: custo,
         kind: "image",
-        refType: "react_foto",
-        refId: taskId,
+        refType: "image_generation",
+        refId: generationId,
         note: `foto pronta pro React (${FOTO_REACT_RESOLUTION})`,
       });
     }
-    return jsonOk({ task_id: taskId });
+    return jsonOk({ task_id: taskId, generation_id: generationId });
   } catch (e) {
     console.error("[react/foto]", e instanceof Error ? e.message : e);
     return serverError("Não consegui preparar a foto agora. Tente de novo.");
@@ -81,20 +91,23 @@ export async function GET(request: NextRequest) {
   if (!task) return badRequest("Faltou o id da tarefa.");
 
   try {
-    const info = await kieGetTask(task);
-    // Task falhou → estorna o débito do POST. Idempotente por contagem
-    // (poll repetido não devolve 2x); sem e-mail — falha de foto não é pager.
-    if (info.state === "fail") {
-      await handleTechFailure({
-        feature: "Foto do React",
-        userId: gate.auth.user_id,
-        refId: task,
-        rawError: info.failMsg ?? "Kie fail",
-        debitRefType: "react_foto",
-        refundRefType: "react_foto_refund",
-        alertSupport: false,
-      });
+    // O webhook do Kie finaliza a row sozinho (R2 + estorno em falha). Se já
+    // finalizou, respondemos com a NOSSA cópia — a URL do Kie expira.
+    const { data: row } = await getAdmin()
+      .from("image_generations")
+      .select("status, image_path, error_message")
+      .eq("kie_task_id", task)
+      .eq("user_id", gate.auth.user_id)
+      .maybeSingle();
+    if (row?.status === "ready" && row.image_path) {
+      const url = await createPresignedGet(imagesBucket(), row.image_path as string, 24 * 3600);
+      return jsonOk({ estado: "success", url, erro: null });
     }
+    if (row?.status === "failed") {
+      return jsonOk({ estado: "fail", url: null, erro: (row.error_message as string) ?? null });
+    }
+
+    const info = await kieGetTask(task);
     return jsonOk({
       estado: info.state,
       url: info.resultUrls?.[0] ?? null,
