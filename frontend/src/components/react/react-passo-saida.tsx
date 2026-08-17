@@ -59,18 +59,23 @@ export function ReactPassoSaida({
    * padrão do Vídeo Clone) — sem esta tela perguntando, ele fica parado em
    * "clonando" pra sempre. Foi o que aconteceu no 1º React do Johnny, 14/08.
    */
-  const acompanhar = useCallback(async (jobId: string) => {
+  const acompanhar = useCallback(async (jobId: string): Promise<JobReact | null> => {
+    let ultimo: JobReact | null = null;
     for (let i = 0; i < 400; i++) {
       const j = (await fetch(`/api/v1/react/gerar?job=${encodeURIComponent(jobId)}`, {
         cache: "no-store",
       })
         .then((r) => r.json())
         .catch(() => null)) as JobReact | null;
-      if (j?.status) setJob(j);
-      if (j?.status === "pronto" || j?.status === "erro") return;
-      if (!vivo.current) return;
+      if (j?.status) {
+        setJob(j);
+        ultimo = j;
+      }
+      if (j?.status === "pronto" || j?.status === "erro") return ultimo;
+      if (!vivo.current) return ultimo;
       await new Promise((s) => setTimeout(s, 5000));
     }
+    return ultimo;
   }, []);
 
   /**
@@ -81,7 +86,23 @@ export function ReactPassoSaida({
   useEffect(() => {
     void (async () => {
       if (draft.jobId) {
-        await acompanhar(draft.jobId);
+        const fim = await acompanhar(draft.jobId);
+        // O rascunho pode apontar pra um job MORTO enquanto existe um melhor
+        // do mesmo viral (caso 17/08: a duplicata cancelada escondia o vídeo
+        // PRONTO do job anterior). Deu erro? Pergunta pelo melhor e adota.
+        if (fim?.status === "erro" && draft.viral?.id && vivo.current) {
+          const melhor = (await fetch(
+            `/api/v1/react/gerar?viral=${encodeURIComponent(draft.viral.id)}`,
+            { cache: "no-store" },
+          )
+            .then((r) => r.json())
+            .catch(() => null)) as (JobReact & { id?: string }) | null;
+          if (melhor?.id && melhor.id !== draft.jobId && melhor.status !== "erro") {
+            update({ jobId: melhor.id });
+            setJob(melhor);
+            if (melhor.status !== "pronto") await acompanhar(melhor.id);
+          }
+        }
         return;
       }
       const j = (await fetch("/api/v1/react/gerar", { cache: "no-store" })

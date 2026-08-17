@@ -252,6 +252,7 @@ export async function GET(request: NextRequest) {
   const gate = await gateAdmin(request);
   if ("res" in gate) return gate.res;
   const pedido = (request.nextUrl.searchParams.get("job") ?? "").trim();
+  const viralParam = (request.nextUrl.searchParams.get("viral") ?? "").trim();
 
   const admin = getAdmin();
   const COLUNAS =
@@ -259,20 +260,63 @@ export async function GET(request: NextRequest) {
   // Sem id = "tem algum pedido meu em voo?". A tela pergunta isso ao abrir:
   // o job do Johnny de 14/08 nasceu antes de o rascunho guardar o jobId e
   // ficou órfão — parado em "clonando" porque ninguém perguntava por ele.
-  const { data } = pedido
-    ? await admin
+  // Com ?viral= = "qual o MELHOR job deste viral?" (caso 17/08: o rascunho
+  // apontava pra duplicata cancelada e o vídeo PRONTO ficava invisível):
+  // preferência em voo > pronto > o mais recente.
+  type LinhaJob = {
+    id: string;
+    status: string;
+    erro: string | null;
+    r2_key: string | null;
+    segundos: number;
+    layout: string;
+    viral_r2_key: string | null;
+    clone_job_id: string | null;
+    clone_r2_key: string | null;
+    audio_url: string | null;
+    viral_id: string;
+    criado_em: string;
+    legenda_estilo: string | null;
+    legenda_posicao: string | null;
+    legenda_tamanho: string | null;
+    fundo_key: string | null;
+  };
+  let data: LinhaJob | null;
+  if (pedido) {
+    data = (
+      await admin
         .from("react_jobs")
         .select(COLUNAS)
         .eq("id", pedido)
         .eq("user_id", gate.auth.user_id)
         .maybeSingle()
-    : await admin
+    ).data as LinhaJob | null;
+  } else if (viralParam) {
+    const { data: lista } = await admin
+      .from("react_jobs")
+      .select(COLUNAS)
+      .eq("user_id", gate.auth.user_id)
+      .eq("viral_id", viralParam)
+      .order("criado_em", { ascending: false })
+      .limit(10);
+    const jobs = (lista ?? []) as unknown as LinhaJob[];
+    const EM_VOO = ["fila", "baixando", "clonando", "montando"];
+    data =
+      jobs.find((j) => EM_VOO.includes(j.status)) ??
+      jobs.find((j) => j.status === "pronto") ??
+      jobs[0] ??
+      null;
+  } else {
+    data = (
+      await admin
         .from("react_jobs")
         .select(COLUNAS)
         .eq("user_id", gate.auth.user_id)
         .order("criado_em", { ascending: false })
         .limit(1)
-        .maybeSingle();
+        .maybeSingle()
+    ).data as LinhaJob | null;
+  }
   if (!data) return jsonOk({ job: null });
   const id = data.id;
 
