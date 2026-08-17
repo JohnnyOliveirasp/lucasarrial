@@ -60,6 +60,14 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
   for (const f of pending) {
     const error = f.error ?? "";
     const signature = errorSignature(f.kind, error);
+    // Erro do USUÁRIO (dataset ruim/arquivo sem áudio): o sistema já estorna
+    // e explica na tela — regra do Johnny (17/08): fecha SOZINHO como
+    // "ignored", em código, sem depender do Sentinela. A reincidência também
+    // NÃO reabre: cada aluno novo errando o upload não é notícia. O caso que
+    // importa (aluno travado repetindo falha SEM nenhuma voz pronta) tem
+    // incidente PRÓPRIO via escalateStuckUser — a lição do chunking (08/08)
+    // continua coberta por lá.
+    const userError = classifyCause(error) === "user_dataset";
     const { data: existingRaw } = await admin
       .from("incidents" as never)
       .select("id, status, occurrences, affected_emails, agent_notes")
@@ -71,7 +79,8 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
 
     let incidentId: string;
     if (existing) {
-      const reopened = existing.status === "fixed" || existing.status === "ignored";
+      const closed = existing.status === "fixed" || existing.status === "ignored";
+      const reopened = closed && !userError;
       const emails = new Set<string>(existing.affected_emails ?? []);
       if (f.email) emails.add(f.email);
       const notes: AgentNote[] = Array.isArray(existing.agent_notes)
@@ -102,12 +111,22 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
         .insert({
           kind: f.kind === "voice" ? "training" : f.kind,
           cause: classifyCause(error),
-          status: "open",
+          // user_dataset já nasce fechado: estornado + explicado ao aluno.
+          status: userError ? "ignored" : "open",
           signature,
           title: incidentTitle(f.kind, error),
           occurrences: 1,
           affected_emails: f.email ? [f.email] : [],
           sample_error: error.slice(0, 1000) || null,
+          ...(userError
+            ? {
+                resolution_note:
+                  "Fechado automaticamente (regra 17/08): erro do usuário no material enviado — " +
+                  "créditos estornados e mensagem explicativa mostrada na tela. " +
+                  "Aluno travado (repetição sem nenhuma voz pronta) abre incidente próprio.",
+                resolved_at: f.at,
+              }
+            : {}),
           first_seen_at: f.at,
           last_seen_at: f.at,
         } as never)

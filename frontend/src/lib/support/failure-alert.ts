@@ -167,6 +167,15 @@ async function hasNoReadyVoice(userId: string): Promise<boolean> {
   }
 }
 
+/**
+ * Moderação bloqueando conteúdo = PRODUTO FUNCIONANDO, não falha. Regra do
+ * Johnny (17/08): rajada de nsfw nasce fechada ("ignored") e reincidência não
+ * reabre — registro fica pro histórico, mas não vira fila de ninguém.
+ */
+function isModerationBlock(rawError: string): boolean {
+  return /nsfw|moderation|moderaç|conteúdo impróprio|content policy|flagged/i.test(rawError || "");
+}
+
 async function openBurstIncident(a: {
   refundRefType: string;
   feature: string;
@@ -177,6 +186,7 @@ async function openBurstIncident(a: {
   stuck: boolean;
 }): Promise<void> {
   const admin = getAdmin();
+  const userError = isModerationBlock(a.rawError);
   const signature = `fail-burst:${a.refundRefType}:${a.userEmail}`;
   const now = new Date().toISOString();
   const { data: existingRaw } = await admin
@@ -193,7 +203,8 @@ async function openBurstIncident(a: {
   } | null;
 
   if (existing) {
-    const reopened = existing.status === "fixed" || existing.status === "ignored";
+    const closed = existing.status === "fixed" || existing.status === "ignored";
+    const reopened = closed && !userError;
     await admin
       .from("incidents" as never)
       .update({
@@ -208,7 +219,7 @@ async function openBurstIncident(a: {
   await admin.from("incidents" as never).insert({
     kind: "reported",
     cause: "reported",
-    status: "open",
+    status: userError ? "ignored" : "open",
     signature,
     title:
       `${a.stuck ? "🚨 ALUNO TRAVADO" : "Rajada de falhas"}: ${a.feature} — ` +
@@ -227,6 +238,14 @@ async function openBurstIncident(a: {
           `passou 18 dias despercebido.`
         : ""),
     reported_by: "burst-rule",
+    ...(userError
+      ? {
+          resolution_note:
+            "Fechado automaticamente (regra 17/08): moderação de conteúdo bloqueou o pedido — " +
+            "o produto funcionou como devia. Fica só como registro.",
+          resolved_at: now,
+        }
+      : {}),
     first_seen_at: now,
     last_seen_at: now,
   } as never);
