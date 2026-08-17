@@ -54,6 +54,9 @@ const PROMPT = [
   "preserve fine hair detail at the edges. Vertical 3:4 framing.",
 ].join(" ");
 
+/** Resolução do preparo — a rota cobra o preço de imagem desta resolução. */
+export const FOTO_REACT_RESOLUTION = "2K";
+
 export type FotoPreparada = { taskId: string };
 
 /**
@@ -65,7 +68,7 @@ export async function prepararFotoVerde(imageUrl: string): Promise<FotoPreparada
     prompt: PROMPT,
     input_urls: [imageUrl],
     aspect_ratio: "3:4",
-    resolution: "2K",
+    resolution: FOTO_REACT_RESOLUTION,
   });
   return { taskId };
 }
