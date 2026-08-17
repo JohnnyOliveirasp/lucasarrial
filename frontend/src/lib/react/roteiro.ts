@@ -36,10 +36,19 @@ export const REACT_COST = 300;
 export const REACT_REESCRITA_COST = 50;
 export const REACT_AJUSTE_COST = 10;
 
+/**
+ * Teto da fala (decisão do Johnny 17/08): react NUNCA passa de 90s de fala,
+ * mesmo com viral longo — o caso do vídeo de 448s pedia ~950 palavras, que
+ * é monólogo (e clone de ~40.000 cr a 105 cr/s). A montagem já corta o
+ * viral na duração da fala, então o teto define o tamanho do vídeo final.
+ */
+export const FALA_MAX_SEGUNDOS = 90;
+
 export function palavrasAlvo(duracaoSeg: number): number {
   // Deixa 15% de respiro: o viral também precisa "falar" sozinho em algum
   // momento, senão vira locução por cima do vídeo inteiro.
-  return Math.max(20, Math.round(duracaoSeg * PALAVRAS_POR_SEGUNDO * 0.85));
+  const efetivo = Math.min(duracaoSeg, FALA_MAX_SEGUNDOS);
+  return Math.max(20, Math.round(efetivo * PALAVRAS_POR_SEGUNDO * 0.85));
 }
 
 export function contarPalavras(texto: string): number {
@@ -151,7 +160,7 @@ export async function reescreverReact(args: {
     [
       `ROTEIRO ATUAL:\n${args.roteiro}`,
       `\nO QUE O CRIADOR QUER MUDAR:\n${args.pedido}`,
-      `\nTAMANHO: aproximadamente ${alvo} palavras (o vídeo tem ${Math.round(args.duracaoSeg)}s).`,
+      `\nTAMANHO: aproximadamente ${alvo} palavras — a fala não pode passar de ${FALA_MAX_SEGUNDOS}s (o vídeo tem ${Math.round(args.duracaoSeg)}s).`,
     ].join("\n"),
   );
   if (texto.length < 40) throw new Error("Reescrita vazia ou curta demais");
@@ -187,9 +196,7 @@ export async function escreverReact(fonte: FonteViral): Promise<{ roteiro: strin
     `\nO QUE SE FALA NO VÍDEO (transcrição, matéria-prima — NÃO copiar):\n${
       fonte.transcricao.slice(0, TRANSCRIPT_MAX) || "(o vídeo não tem fala)"
     }`,
-    `\nTAMANHO: aproximadamente ${alvo} palavras. A fala precisa CABER nos ${Math.round(
-      fonte.duracaoSeg,
-    )} segundos do vídeo — passar disso quebra a montagem.`,
+    `\nTAMANHO: aproximadamente ${alvo} palavras — a fala não pode passar de ${FALA_MAX_SEGUNDOS} segundos, mesmo que o vídeo seja mais longo (a montagem corta o vídeo na fala).`,
   ].join("\n");
 
   const controller = new AbortController();

@@ -146,6 +146,11 @@ export function ReactPassoRoteiro({
                 o vídeo acaba antes: os últimos {segundos - duracao}s ficam com você em tela cheia
               </span>
             )}
+            {!estourou && duracao !== null && duracao - segundos > 15 && (
+              <span className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-2 py-0.5 text-[11.5px] text-[var(--ink)]">
+                sua fala é mais curta que o vídeo: o React sai com ~{segundos}s, usando só o começo do viral
+              </span>
+            )}
           </div>
         </>
       )}

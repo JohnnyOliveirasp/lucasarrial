@@ -18,6 +18,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { FALA_MAX_SEGUNDOS } from "@/lib/react/roteiro";
 
 const run = promisify(execFile);
 
@@ -88,7 +89,17 @@ const INSTRUCAO = (
     "- Linguagem falada, frases curtas, sem emoji, sem hashtag, sem marcação de cena.",
     "- NÃO copie as falas do vídeo original.",
     "- NÃO escreva chamada para ação: ela é escrita em outro passo.",
-    `- Tamanho: cerca de ${alvo} palavras. A fala precisa CABER nos ${duracao} segundos do vídeo.`,
+    // Viral mais longo que o teto: o react vai ao ar SÓ com o começo do
+    // vídeo (a montagem corta na fala) — o modelo assiste tudo, mas não
+    // pode ancorar a fala em cena que o público nunca vai ver.
+    duracao > FALA_MAX_SEGUNDOS
+      ? [
+          `- Tamanho: cerca de ${alvo} palavras — a fala NÃO pode passar de ${FALA_MAX_SEGUNDOS} segundos.`,
+          `- O vídeo tem ${duracao} segundos, mas o react vai ao ar usando SÓ os primeiros ~${FALA_MAX_SEGUNDOS}s dele.`,
+          "  Você assistiu tudo — use isso pra entender o contexto — mas comente o que aparece no COMEÇO:",
+          "  não cite cena, fala ou momento que só acontece depois desse corte.",
+        ].join("\n")
+      : `- Tamanho: cerca de ${alvo} palavras. A fala precisa CABER nos ${duracao} segundos do vídeo.`,
     "",
     `CONTEXTO: vídeo de @${autor}, ${duracao} segundos.`,
     legenda ? `LEGENDA DO POST: ${legenda.slice(0, 400)}` : "",
