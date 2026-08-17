@@ -18,7 +18,8 @@ import {
   reescreverReact,
   segundosEstimados,
 } from "@/lib/react/roteiro";
-import { debitCredits } from "@/lib/credits/service";
+import { debitCredits, getBalance } from "@/lib/credits/service";
+import { bypassesBilling } from "@/lib/credits/access";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -40,35 +41,46 @@ export async function POST(request: NextRequest) {
   if (!pedido) return badRequest("Escreva o que você quer mudar.");
 
   // Cada ajuste é uma chamada de LLM — barata, mas não de graça. Mesma régua
-  // do chat do Gerador de Roteiro (10 cr).
-  const deb = await debitCredits({
-    userId: gate.auth.user_id,
-    amount: REACT_AJUSTE_COST,
-    kind: "generation",
-    refType: "react_ajuste",
-    note: body.modo === "cta" ? "React: escrever CTA" : "React: ajustar roteiro",
-  });
-  if (!deb.ok) {
-    return jsonError(
-      "insufficient_credits",
-      `Este ajuste custa ${REACT_AJUSTE_COST} créditos e seu saldo não cobre.`,
-      402,
-    );
+  // do chat do Gerador de Roteiro (10 cr). Padrão da plataforma (17/08):
+  // equipe não paga, saldo checado ANTES, débito só DEPOIS do sucesso —
+  // LLM falhou = ninguém pagou (antes debitava antes e não estornava).
+  const billed = !bypassesBilling(gate.auth.email);
+  if (billed) {
+    const bal = await getBalance(gate.auth.user_id);
+    if (bal.total < REACT_AJUSTE_COST) {
+      return jsonError(
+        "insufficient_credits",
+        `Este ajuste custa ${REACT_AJUSTE_COST} créditos e seu saldo não cobre.`,
+        402,
+      );
+    }
   }
 
   try {
+    let resposta: Response;
     if (body.modo === "cta") {
       const { cta } = await escreverCta({ roteiro, oferta: pedido });
-      return jsonOk({ cta, palavras: contarPalavras(cta), segundos: segundosEstimados(cta) });
+      resposta = jsonOk({ cta, palavras: contarPalavras(cta), segundos: segundosEstimados(cta) });
+    } else {
+      const duracao = Number(body.duracao_seg) || 30;
+      const { roteiro: novo } = await reescreverReact({ roteiro, pedido, duracaoSeg: duracao });
+      resposta = jsonOk({
+        roteiro: novo,
+        palavras: contarPalavras(novo),
+        segundos_estimados: segundosEstimados(novo),
+      });
     }
 
-    const duracao = Number(body.duracao_seg) || 30;
-    const { roteiro: novo } = await reescreverReact({ roteiro, pedido, duracaoSeg: duracao });
-    return jsonOk({
-      roteiro: novo,
-      palavras: contarPalavras(novo),
-      segundos_estimados: segundosEstimados(novo),
-    });
+    if (billed) {
+      await debitCredits({
+        userId: gate.auth.user_id,
+        amount: REACT_AJUSTE_COST,
+        kind: "generation",
+        refType: "react_ajuste",
+        note: body.modo === "cta" ? "React: escrever CTA" : "React: ajustar roteiro",
+      });
+    }
+    return resposta;
   } catch (e) {
     console.error("[react/ajustar]", e instanceof Error ? e.message : e);
     return serverError("Não consegui ajustar agora. Tente de novo.");

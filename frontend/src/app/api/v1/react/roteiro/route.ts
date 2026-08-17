@@ -25,7 +25,8 @@ import {
   REACT_REESCRITA_COST,
   segundosEstimados,
 } from "@/lib/react/roteiro";
-import { debitCredits } from "@/lib/credits/service";
+import { debitCredits, getBalance } from "@/lib/credits/service";
+import { bypassesBilling } from "@/lib/credits/access";
 
 export const dynamic = "force-dynamic";
 /** Baixar (se preciso) + Gemini: ~20s no caso comum. */
@@ -69,17 +70,14 @@ export async function POST(request: NextRequest) {
 
     // 0. COBRANÇA: a 1ª escrita está inclusa no React; da 2ª em diante cobra,
     // porque cada tentativa manda o vídeo inteiro pro Gemini de novo.
+    // Padrão da plataforma (17/08): equipe não paga, saldo checado ANTES,
+    // débito só DEPOIS do sucesso — Gemini falhou = ninguém pagou (antes
+    // debitava aqui e não estornava; reescrita falha cobrava 50 à toa).
     const jaEscreveu = meu?.roteiros_gerados ?? 0;
-    if (jaEscreveu > 0) {
-      const deb = await debitCredits({
-        userId,
-        amount: REACT_REESCRITA_COST,
-        kind: "generation",
-        refType: "react_roteiro",
-        refId: viralId,
-        note: `React: reescrita ${jaEscreveu + 1} do roteiro`,
-      });
-      if (!deb.ok) {
+    const billed = !bypassesBilling(gate.auth.email);
+    if (jaEscreveu > 0 && billed) {
+      const bal = await getBalance(userId);
+      if (bal.total < REACT_REESCRITA_COST) {
         return jsonError(
           "insufficient_credits",
           `Escrever de novo custa ${REACT_REESCRITA_COST} créditos e seu saldo não cobre.`,
@@ -107,7 +105,17 @@ export async function POST(request: NextRequest) {
       palavrasAlvo: alvo,
     });
 
-    // Só conta o que deu certo: falha não vira cobrança na próxima.
+    // Só conta (e cobra) o que deu certo: falha não vira cobrança.
+    if (jaEscreveu > 0 && billed) {
+      await debitCredits({
+        userId,
+        amount: REACT_REESCRITA_COST,
+        kind: "generation",
+        refType: "react_roteiro",
+        refId: viralId,
+        note: `React: reescrita ${jaEscreveu + 1} do roteiro`,
+      });
+    }
     await admin
       .from("viral_user_videos")
       .update({ roteiros_gerados: jaEscreveu + 1 } as never)
