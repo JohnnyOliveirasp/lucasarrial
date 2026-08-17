@@ -9,7 +9,8 @@
  * sobre qual clicar).
  */
 import { useState } from "react";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
+import { DRAFT_VAZIO } from "@/components/react/react-tipos";
 import { compacto } from "./virais-estilo";
 import type { Viral } from "./virais-tipos";
 
@@ -22,10 +23,40 @@ export function PainelViral({
   onFechar: () => void;
   onDevolver: () => void;
 }) {
+  const router = useRouter();
   const [copiado, setCopiado] = useState(false);
   const [estado, setEstado] = useState(v.download_status);
   const [baixando, setBaixando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  /**
+   * Abre o wizard do React JÁ com este viral escolhido (rascunho novo no
+   * localStorage — mesmo formato do ReactWizard). O botão ficou "disabled"
+   * de 14→17/08 porque nasceu ANTES do wizard existir e ninguém religou;
+   * o Johnny achou na tela.
+   */
+  function fazerReact() {
+    try {
+      localStorage.setItem(
+        "fc-react-draft-v1",
+        JSON.stringify({
+          ...DRAFT_VAZIO,
+          viral: {
+            id: v.id,
+            url: v.url,
+            autor: v.autor ?? null,
+            thumb_url: v.thumb_url ?? null,
+            duracao_seg: v.duracao_seg ?? null,
+            likes: v.likes ?? 0,
+            download_status: estado,
+          },
+        }),
+      );
+    } catch {
+      /* sem localStorage: o wizard abre e a pessoa escolhe na prateleira */
+    }
+    router.push("/app/lab/react");
+  }
 
   async function baixar() {
     setBaixando(true);
@@ -96,13 +127,10 @@ export function PainelViral({
         </div>
 
         <div className="flex flex-col gap-2 border-t border-[var(--hairline)] pt-3">
-          {/* ⏳ O wizard ainda não existe — o botão fica visível e desligado
-              pra não prometer tela que não abre. */}
           <button
             type="button"
-            disabled
-            title="Wizard em construção"
-            className="flex h-11 items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--ink)] text-[14px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+            onClick={fazerReact}
+            className="flex h-11 items-center justify-center gap-2 rounded-[var(--radius-sm)] bg-[var(--ink)] text-[14px] font-semibold text-[var(--surface-deep)]"
           >
             ▶ Fazer React com este vídeo
           </button>
