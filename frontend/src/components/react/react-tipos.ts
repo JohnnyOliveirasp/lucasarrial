@@ -51,6 +51,9 @@ export type ReactDraft = {
   /** Versão preparada: meio corpo pra cima + fundo verde (é ela que entra
    *  no clone quando o layout for o recorte por cima do viral). */
   fotoPronta: string | null;
+  /** Direcionamento do criador (Johnny 17/08): o produto/ângulo que a
+   *  reação deve puxar — sem isso o Gemini comenta só o tema do viral. */
+  ideia: string;
   roteiro: string;
   /** CTA é sempre o FIM do vídeo e tem cena própria (senão a fala passa do
    *  tempo do viral — pergunta do Johnny que virou regra). */
@@ -80,6 +83,7 @@ export const DRAFT_VAZIO: ReactDraft = {
   avatar: null,
   fotoOriginal: null,
   fotoPronta: null,
+  ideia: "",
   roteiro: "",
   cta: "",
   ctaCena: null,

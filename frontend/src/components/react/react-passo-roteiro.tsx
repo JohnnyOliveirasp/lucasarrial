@@ -43,7 +43,7 @@ export function ReactPassoRoteiro({
       const r = await fetch("/api/v1/react/roteiro", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ viral_id: draft.viral.id }),
+        body: JSON.stringify({ viral_id: draft.viral.id, ideia: draft.ideia.trim() || undefined }),
       });
       const j = await r.json();
       if (r.ok) {
@@ -72,6 +72,24 @@ export function ReactPassoRoteiro({
           A plataforma <strong>assiste</strong> o vídeo de{" "}
           <strong>@{draft.viral?.autor ?? "?"}</strong> — imagem e áudio — e escreve o seu
           comentário. Você ajusta depois: o texto é seu.
+        </p>
+      </div>
+
+      <div>
+        <label className="text-[12.5px] font-medium text-[var(--ink)]" htmlFor="react-ideia">
+          Qual é a sua ideia? <span className="font-normal text-[var(--mute)]">(opcional, mas muda tudo)</span>
+        </label>
+        <textarea
+          id="react-ideia"
+          value={draft.ideia}
+          onChange={(e) => update({ ideia: e.target.value })}
+          rows={2}
+          maxLength={500}
+          placeholder="ex.: meu produto é tradução simultânea para igrejas — conecta o vídeo a isso"
+          className="mt-1 w-full rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-3 text-[13px] leading-relaxed text-[var(--ink)] outline-none placeholder:text-[var(--mute)] focus:border-[var(--ink)]"
+        />
+        <p className="mt-0.5 text-[11.5px] text-[var(--mute)]">
+          Sem isso, o comentário sai só no tema do vídeo. Com a ideia, ele puxa a reação pro seu assunto.
         </p>
       </div>
 

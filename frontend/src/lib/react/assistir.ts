@@ -57,12 +57,30 @@ async function encolher(origem: string): Promise<string> {
   return destino;
 }
 
-const INSTRUCAO = (autor: string, duracao: number, alvo: number, legenda: string | null) =>
+const INSTRUCAO = (
+  autor: string,
+  duracao: number,
+  alvo: number,
+  legenda: string | null,
+  ideia: string | null,
+) =>
   [
     "Você vai ASSISTIR o vídeo (imagem e áudio) e escrever o roteiro de um REACTION em português do Brasil.",
     "",
     "Quem vai falar é um criador que aparece na tela comentando este vídeo. Escreva SÓ a fala dele.",
     "",
+    // A ideia vem antes das regras de propósito: é o ângulo obrigatório da
+    // reação (Johnny 17/08 — sem isso o roteiro saía só no tema do viral).
+    ideia
+      ? [
+          "A IDEIA DO CRIADOR — a reação PRECISA seguir este ângulo:",
+          `"${ideia}"`,
+          "Comente o que acontece no vídeo DE VERDADE e conduza a fala para essa",
+          "ideia/produto com uma ponte natural — sem inventar fatos sobre o vídeo",
+          "e sem soar propaganda: é um comentário que desemboca no assunto dele.",
+          "",
+        ].join("\n")
+      : "",
     "REGRAS DO ROTEIRO:",
     "- Primeira frase é gancho: dá o motivo de continuar assistindo. Nada de 'fala galera' ou 'olha esse vídeo'.",
     "- Comente o que REALMENTE acontece no vídeo — o que você viu e ouviu. Não invente fato que não está lá.",
@@ -91,6 +109,8 @@ export async function assistirEEscrever(args: {
   legenda: string | null;
   duracaoSeg: number;
   palavrasAlvo: number;
+  /** Direcionamento do criador — o ângulo/produto que a reação deve puxar. */
+  ideia?: string | null;
 }): Promise<LeituraViral> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY não configurada");
@@ -117,6 +137,7 @@ export async function assistirEEscrever(args: {
                   Math.round(args.duracaoSeg),
                   args.palavrasAlvo,
                   args.legenda,
+                  args.ideia ?? null,
                 ),
               },
             ],

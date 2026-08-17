@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   const gate = await gateAdmin(request);
   if ("res" in gate) return gate.res;
 
-  let body: { viral_id?: unknown };
+  let body: { viral_id?: unknown; ideia?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -44,6 +44,9 @@ export async function POST(request: NextRequest) {
   }
   const viralId = typeof body.viral_id === "string" ? body.viral_id : "";
   if (!viralId) return badRequest("Faltou o id do vídeo.");
+  // Direcionamento do criador (Johnny 17/08): sem isso o Gemini comenta só
+  // o tema do viral — com a ideia, a reação puxa pro produto dele.
+  const ideia = typeof body.ideia === "string" ? body.ideia.trim().slice(0, 500) : "";
 
   const admin = getAdmin();
   const userId = gate.auth.user_id;
@@ -103,6 +106,7 @@ export async function POST(request: NextRequest) {
       legenda: viral.legenda,
       duracaoSeg: duracao,
       palavrasAlvo: alvo,
+      ideia: ideia || null,
     });
 
     // Só conta (e cobra) o que deu certo: falha não vira cobrança.
