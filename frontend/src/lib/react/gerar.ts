@@ -34,9 +34,31 @@ const TIER = CLONE_TIERS[0];
  */
 const BUCKET_WORKER = "voices-clone-ai-verse";
 
+/**
+ * URL presignada do NOSSO R2 vence (1h-24h) e o rascunho do wizard pode ser
+ * mais velho que isso — caso avatar.png 403 do Johnny 17/08 (foto preparada
+ * de manhã, "Gerar" à tarde). Se a URL é do nosso R2, extrai bucket+chave e
+ * assina de NOVO na hora de baixar. URL de fora (Kie etc.) passa intacta.
+ */
+async function renovarSeNosso(url: string): Promise<string> {
+  try {
+    const u = new URL(url);
+    if (!u.hostname.endsWith(".r2.cloudflarestorage.com")) return url;
+    const partes = u.pathname.replace(/^\//, "").split("/").map(decodeURIComponent);
+    // Virtual-host: bucket no hostname (5+ labels); path-style: bucket no path.
+    const vhost = u.hostname.split(".").length >= 5;
+    const bucket = vhost ? u.hostname.split(".")[0] : partes[0];
+    const key = (vhost ? partes : partes.slice(1)).join("/");
+    if (!bucket || !key) return url;
+    return await createPresignedGet(bucket, key, 3600);
+  } catch {
+    return url;
+  }
+}
+
 /** Traz um arquivo de URL pública pro nosso R2 (a foto sai do Kie e expira). */
 export async function trazerParaR2(url: string, key: string, contentType: string): Promise<string> {
-  const res = await fetch(url);
+  const res = await fetch(await renovarSeNosso(url));
   if (!res.ok) throw new Error(`não consegui baixar ${key} (${res.status})`);
   const bin = Buffer.from(await res.arrayBuffer());
   await r2.send(
