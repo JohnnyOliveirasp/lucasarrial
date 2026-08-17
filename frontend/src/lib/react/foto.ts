@@ -31,12 +31,22 @@ import { kieCreateImageTask } from "@/lib/kie/client";
  * aparece da CINTURA pra cima, no canto inferior esquerdo, ocupando ~38% da
  * largura (o mesmo do nosso layout) e com **os braços e a mão gesticulando
  * dentro do quadro**. É isso que dá vida à reação; só cabeça parece foto 3x4.
+ *
+ * 🔁 Corrigido 17/08: foto de CORPO INTEIRO entrava e SAÍA de corpo inteiro
+ * (teste do Johnny com a própria foto — ele ficou pequeno no quadro). O
+ * "reframe as three-quarter shot" era sugestão fraca demais: o modelo
+ * preferia obedecer ao enquadramento da foto de entrada. Agora a ordem é
+ * dura: CORTAR NA CINTURA, nada abaixo dela aparece, e a pessoa PREENCHE o
+ * frame (cabeça perto do topo, cintura na borda de baixo).
  */
 const PROMPT = [
-  "Reframe this photo as a three-quarter shot: the person from the waist up,",
+  "CROP THIS PHOTO AT THE WAIST — a waist-up medium shot. Nothing below the",
+  "waist may appear: no hips, no legs, no knees, no feet, regardless of the",
+  "input photo's framing. The person must FILL the frame: head near the top",
+  "edge, waist at the bottom edge.",
   "BOTH ARMS AND HANDS FULLY VISIBLE inside the frame, in a natural relaxed",
-  "gesturing pose, facing the camera, eyes toward the lens.",
-  "Leave a small margin around the body — do not crop the arms, elbows or hands.",
+  "gesturing pose, facing the camera, eyes toward the lens — do not crop the",
+  "arms, elbows or hands.",
   "Keep the SAME person, same face, same hair, same clothes, same skin tone —",
   "do not beautify or change identity.",
   "Replace the background with a solid uniform chroma key green (#00B140).",
