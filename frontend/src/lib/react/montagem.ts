@@ -240,20 +240,28 @@ export async function montarReact(args: {
 
   // Áudio: a fala manda; o som do viral fica embaixo (20%) pra dar contexto
   // sem competir. O viral só toca no trecho em que ele aparece.
+  // ⚠️ Nem todo viral TEM áudio (caso Johnny 17/08: vídeo da igreja veio
+  // sem stream de som e o `[1:a]` derrubava o ffmpeg com "matches no
+  // streams" — 2 gerações perdidas). Sem áudio no viral, entra só a fala.
   // A legenda entra AQUI, no mesmo passe: com `subtitles` o vídeo precisa ser
   // reencodado (não dá pra copiar o stream), então juntar as duas coisas
   // economiza um encode inteiro.
   const legenda = ass ? filtroLegenda(ass, fontsDir) : null;
+  const viralTemSom = await temAudio(viral);
   await run(
     "ffmpeg",
     [
       "-y", "-v", "error",
       "-i", videoMudo,
-      "-t", String(plano.segundosViral), "-i", viral,
+      ...(viralTemSom ? ["-t", String(plano.segundosViral), "-i", viral] : []),
       "-i", audio,
-      "-filter_complex",
-      `[1:a]volume=0.2,apad=whole_dur=${segundos}[vlow];[2:a]volume=1.0[fala];[vlow][fala]amix=inputs=2:duration=first:dropout_transition=0[a]`,
-      "-map", "0:v", "-map", "[a]",
+      ...(viralTemSom
+        ? [
+            "-filter_complex",
+            `[1:a]volume=0.2,apad=whole_dur=${segundos}[vlow];[2:a]volume=1.0[fala];[vlow][fala]amix=inputs=2:duration=first:dropout_transition=0[a]`,
+            "-map", "0:v", "-map", "[a]",
+          ]
+        : ["-map", "0:v", "-map", "1:a"]),
       "-t", String(segundos),
       ...(legenda
         ? ["-vf", legenda, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
@@ -264,6 +272,20 @@ export async function montarReact(args: {
     ],
     { timeout: 900_000, maxBuffer: 8 * 1024 * 1024 },
   );
+}
+
+/** O viral tem stream de áudio? (TikTok às vezes entrega vídeo mudo.) */
+async function temAudio(arquivo: string): Promise<boolean> {
+  try {
+    const { stdout } = await run(
+      "ffprobe",
+      ["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", arquivo],
+      { timeout: 30_000 },
+    );
+    return stdout.trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /**

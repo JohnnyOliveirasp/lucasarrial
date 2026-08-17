@@ -319,7 +319,13 @@ export async function GET(request: NextRequest) {
         .from("react_jobs")
         .update({
           status: "erro",
-          erro: e instanceof Error ? e.message.slice(0, 300) : "falha na montagem",
+          // O FIM da mensagem é onde mora o stderr do ffmpeg ("Command
+          // failed: <comando>\n<stderr>") — guardar o começo escondia a
+          // causa real (caso montagem 17/08, 2 falhas ilegíveis).
+          erro:
+            e instanceof Error
+              ? (e.message.length > 600 ? "…" : "") + e.message.slice(-600)
+              : "falha na montagem",
           atualizado_em: new Date().toISOString(),
         } as never)
         .eq("id", id);
