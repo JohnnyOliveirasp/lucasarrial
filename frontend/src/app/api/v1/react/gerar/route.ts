@@ -87,6 +87,28 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
   if (!viral?.url) return badRequest("Vídeo não encontrado no acervo.");
 
+  // Trava anti-duplicata (caso Johnny 17/08): a tela mostrou estado velho de
+  // "erro", ele apertou Gerar de novo e nasceu um SEGUNDO clone do mesmo
+  // vídeo — pro aluno seria clone pago em dobro (105 cr/s). Já existe job em
+  // voo pro mesmo viral? Devolve ELE em vez de abrir outro.
+  const { data: emVoo } = await admin
+    .from("react_jobs")
+    .select("id, status, segundos")
+    .eq("user_id", userId)
+    .eq("viral_id", viralId)
+    .in("status", ["fila", "baixando", "clonando", "montando"])
+    .order("criado_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (emVoo) {
+    return jsonOk({
+      job_id: (emVoo as { id: string }).id,
+      status: (emVoo as { status: string }).status,
+      segundos: (emVoo as { segundos: number }).segundos,
+      ja_existia: true,
+    });
+  }
+
   // A estimativa por palavras é só o plano B. Quem manda é o áudio: com a
   // conta `palavras ÷ 2,5` o clone saía curto e o vídeo cortava a fala no fim
   // (bug do 1º React, 14/08). Medimos o mp3 antes de pedir o clone.
