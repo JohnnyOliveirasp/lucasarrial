@@ -65,7 +65,19 @@ export function ReactPassoVideo({
               <li key={v.id}>
                 <button
                   type="button"
-                  onClick={() => update({ viral: escolhido ? null : v })}
+                  onClick={() =>
+                    // Trocar de vídeo LIMPA o que era do vídeo antigo (caso
+                    // Johnny 17/08: roteiro velho seguia na tela). Fica o que
+                    // é da PESSOA: foto, ideia, voz, layout e legenda.
+                    update({
+                      viral: escolhido ? null : v,
+                      roteiro: "",
+                      cta: "",
+                      audioUrl: null,
+                      audioGenId: null,
+                      jobId: null,
+                    })
+                  }
                   title={`@${v.autor ?? "?"} · ${compacto(v.likes)} likes`}
                   className={`relative block w-full overflow-hidden rounded-[var(--radius-sm)] border transition-colors ${
                     escolhido
