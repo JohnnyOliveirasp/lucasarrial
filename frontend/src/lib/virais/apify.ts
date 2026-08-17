@@ -108,8 +108,14 @@ export type PedidoBusca = {
   periodo: Periodo;
   /** Teto de vídeos: é o que define o custo (US$0,30 por 1.000). */
   maxItems: number;
-  /** País de onde "olhar" o TikTok — o nicho handyman é dos EUA. */
-  pais: string;
+  /**
+   * País de onde "olhar" o TikTok. ⚠️ IGNORADO desde 17/08 (provado em teste
+   * A/B/C): `proxyCountryCode:"BR"` fazia o actor devolver ~12 resultados de
+   * fome — foi a busca do Lucas. A palavra no idioma certo já puxa o conteúdo
+   * do país sem proxy nenhum. Campo mantido no tipo só pra não quebrar
+   * chamadas antigas; o builder NÃO o envia mais.
+   */
+  pais?: string;
 };
 
 /** "@fulano", "tiktok.com/@fulano" ou "fulano" → URL do perfil. */
@@ -177,7 +183,7 @@ export async function dispararBusca(p: PedidoBusca): Promise<RunApify> {
   if (!input.searchQueries && !input.hashtags && !input.profiles && !input.postURLs) {
     throw new Error("nada_pra_buscar");
   }
-  if (p.pais) input.proxyCountryCode = p.pais;
+  // proxyCountryCode NÃO vai mais (17/08): ver o comentário no tipo `pais`.
 
   const resp = await fetch(`${API}/acts/${ACTOR_ID}/runs`, {
     method: "POST",

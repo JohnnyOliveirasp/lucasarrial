@@ -26,7 +26,6 @@ export function FormBusca({ onPronto }: { onPronto: () => Promise<void> }) {
   const [links, setLinks] = useState("");
   const [periodo, setPeriodo] = useState("LAST_THREE_MONTHS");
   const [maxItens, setMaxItens] = useState(100);
-  const [pais, setPais] = useState("US");
   const [rodando, setRodando] = useState(false);
   const [situacao, setSituacao] = useState<string | null>(null);
 
@@ -46,7 +45,7 @@ export function FormBusca({ onPronto }: { onPronto: () => Promise<void> }) {
       const r = await fetch("/api/v1/virais/buscar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nichos, perfis, hashtags, links, periodo, max_itens: maxItens, pais }),
+        body: JSON.stringify({ nichos, perfis, hashtags, links, periodo, max_itens: maxItens }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -171,15 +170,10 @@ export function FormBusca({ onPronto }: { onPronto: () => Promise<void> }) {
             className={`h-10 w-28 ${CAMPO}`}
           />
         </label>
-        <label className="flex flex-col gap-1 text-[12px] text-[var(--mute)]">
-          País
-          <input
-            value={pais}
-            onChange={(e) => setPais(e.target.value.toUpperCase().slice(0, 2))}
-            placeholder="US"
-            className={`h-10 w-20 uppercase ${CAMPO}`}
-          />
-        </label>
+        {/* País/proxy REMOVIDO 17/08 (provado em teste A/B/C): com
+            proxyCountryCode "BR" o actor devolvia ~12 resultados de fome —
+            foi a busca do Lucas. A palavra em português já puxa o conteúdo
+            brasileiro sem proxy nenhum (14/08: 100 vídeos, top 610k likes). */}
         {/* só desabilita ENQUANTO roda: antes ficava cinza morto com o campo
             vazio e nem parecia botão (marcado pelo Johnny na tela 14/08). */}
         <button type="submit" disabled={rodando} className={`h-10 ${BOTAO}`}>
