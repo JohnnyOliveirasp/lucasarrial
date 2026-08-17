@@ -147,20 +147,33 @@ export function ReactFotoAvatar({
               </div>
             </>
           ) : (
-            <>
-              <button
-                type="button"
-                onClick={preparar}
-                disabled={preparando}
-                className="h-10 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
-              >
-                {preparando ? "Preparando sua foto…" : "Deixar a foto pronta pro React"}
-              </button>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={preparar}
+                  disabled={preparando}
+                  className="h-10 rounded-[var(--radius-sm)] bg-[var(--ink)] px-4 text-[13px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+                >
+                  {preparando ? "Preparando sua foto…" : "Deixar a foto pronta pro React"}
+                </button>
+                {/* Foto JÁ preparada (ex.: saiu do preparo e está no histórico)
+                    entra direto — sem pagar o preparo de novo (Johnny 17/08). */}
+                <button
+                  type="button"
+                  onClick={() => update({ fotoPronta: draft.fotoOriginal })}
+                  disabled={preparando}
+                  className="h-10 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-4 text-[13px] font-semibold text-[var(--ink)] disabled:opacity-40"
+                >
+                  Usar esta foto como está
+                </button>
+              </div>
               <span className="text-[11.5px] text-[var(--mute)]">
-                a gente reenquadra do meio do corpo pra cima e prepara o fundo — leva menos de
-                um minuto
+                &quot;Deixar pronta&quot; reenquadra do meio do corpo pra cima e prepara o fundo
+                (leva menos de um minuto). Se a foto já está preparada — meio corpo e fundo
+                verde —, use ela como está, sem custo.
               </span>
-            </>
+            </div>
           )}
         </div>
       )}
