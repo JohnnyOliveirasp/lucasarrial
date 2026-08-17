@@ -101,3 +101,13 @@ tmp/
 # Screenshots temp (configurações RunPod)
 _ConfiguracoesMaqina/
 voxbr/tagarela/.r2env
+# voxbr: sobem SÓ scripts e docs. Dados pesados ficam fora (17/08 — o dataset
+# mora no R2; parquet/wav/jsonl local é cache de trabalho, 10GB+):
+voxbr/VoxCPM/
+voxbr/amostras/
+voxbr/smoke/eval/
+voxbr/tagarela/*.parquet
+voxbr/tagarela/_train_final*.jsonl
+voxbr/tagarela/_work/
+voxbr/**/*.wav
+voxbr/**/*.safetensors
