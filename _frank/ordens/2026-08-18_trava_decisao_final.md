@@ -1,3 +1,7 @@
+> **⛔ SUPERADA.** O recorte por status da Hotmart e a ordem "Hotmart → trava"
+> morreram: o critério agora é **pagamento**. Vale
+> `2026-08-18_regra_final_pagou_fica.md`.
+
 # ORDEM — Trava do débito: decisão do Johnny (18/08, fim do dia)
 
 Resposta aos seus três números. **Trabalho bom:** você foi ao campo

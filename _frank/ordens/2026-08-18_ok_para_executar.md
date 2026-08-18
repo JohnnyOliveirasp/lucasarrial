@@ -1,3 +1,18 @@
+> # ⛔ ORDEM PARCIALMENTE SUPERADA — leia este aviso antes
+>
+> **O critério da trava do débito mudou.** O item **4.3** desta ordem manda
+> usar `hasActiveAccess` em `debitCredits`. **Isso está MORTO** — aplicar
+> aquilo bloquearia quem **já pagou** e cancelou, exatamente o oposto do que
+> o Johnny decidiu.
+>
+> **Vale em vez disso:** `2026-08-18_regra_final_pagou_fica.md` — o critério
+> é **pagamento**, não status de assinatura. Quem nunca pagou e saiu do trial
+> não gasta; quem pagou fica com o crédito.
+>
+> **Continua valendo desta ordem:** o item 1 (congelar a lista, com as três
+> exigências), a correção da consulta (`ORDER BY` + desempate), e os três
+> números de trial × venda do item 3.
+
 # ORDEM — OK pra executar (18/08, fechamento)
 
 Resposta às suas duas perguntas. **Você tem sinal verde pra abrir o card.**
