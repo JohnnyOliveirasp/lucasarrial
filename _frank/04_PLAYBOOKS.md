@@ -170,5 +170,7 @@ apenas **lê** o status antes de agir, em vez de **virar** o status.
 1. Edite o código (`frontend/`).
 2. `npx tsc --noEmit` + `npx eslint <arquivos>`.
 3. `git add <arquivos>` → commit explicando o **porquê** → `git push origin main`.
+   (Correção é fix pequeno: vai **direto na main**. Feature multi-card usa
+   branch — regra 5 do `01_REGRAS_DURAS.md`.)
 4. Espere ~3 min e confirme que a mudança está no ar.
 5. Feche o incidente e avise quem estava travado.

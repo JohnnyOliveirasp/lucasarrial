@@ -104,8 +104,14 @@ Você é quem julga o tamanho da tarefa. Se cabe num script que já existe no
 
 ## 5. Regras que valem em todo card
 
-Branch `feat/vigia-noturno`, PR, deploy **só** por push na main → Action → pm2.
-Nunca por SSH. Nada de `.env` commitado. Nada que gaste GPU ou crédito.
+O vigia é feature multi-card, então vale a **regra 5** nova do
+`01_REGRAS_DURAS.md`: branch `feat/vigia-noturno`, e **você mesmo faz o merge
+na main** quando o conjunto passa em `tsc --noEmit` + `eslint`. Não fique
+esperando aprovação de PR — não tem humano do outro lado. Fix urgente de aluno
+que aparecer no meio disso continua indo **direto na main**, sem branch.
+
+Deploy **só** pela `main` → Action → pm2. Nunca por SSH. Nada de `.env`
+commitado. Nada que gaste GPU ou crédito.
 Endpoint no padrão dos outros sweeps (`agentTokenOk`), cron do Hetzner às
 **04:00 BRT**, teto por tabela, sempre do **mais antigo pro mais novo**.
 
