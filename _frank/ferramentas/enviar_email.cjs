@@ -10,6 +10,11 @@
  *
  *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html
  *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html --bcc suporte@lucasarrial.com
+ *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html --dry-run
+ *
+ * --dry-run é o ENSAIO: imprime destinatário, remetente, assunto, bcc e o
+ * corpo inteiro SEM enviar nada. E-mail não tem desfazer — destinatário
+ * errado já chegou na caixa da pessoa. Ensaie antes.
  *
  * Teste SEMPRE mandando pra você mesmo antes de mandar pro aluno.
  */
@@ -23,12 +28,24 @@ require(path.join(RAIZ, "frontend", "node_modules", "dotenv")).config({
   path: path.join(RAIZ, "frontend", ".env.local"),
 });
 
-const [dest, assunto, arquivo] = process.argv.slice(2);
-const bccIdx = process.argv.indexOf("--bcc");
-const bcc = bccIdx > -1 ? process.argv[bccIdx + 1] : null;
+// Separa flags dos posicionais pra --dry-run/--bcc funcionarem em qualquer posição.
+const argv = process.argv.slice(2);
+const dryRun = argv.includes("--dry-run");
+let bcc = null;
+const posicionais = [];
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === "--dry-run") continue;
+  if (argv[i] === "--bcc") {
+    bcc = argv[i + 1] || null;
+    i++;
+    continue;
+  }
+  posicionais.push(argv[i]);
+}
+const [dest, assunto, arquivo] = posicionais;
 
 if (!dest || !assunto || !arquivo) {
-  console.error('uso: node enviar_email.cjs <destino> "<assunto>" <corpo.html> [--bcc <email>]');
+  console.error('uso: node enviar_email.cjs <destino> "<assunto>" <corpo.html> [--bcc <email>] [--dry-run]');
   process.exit(1);
 }
 
@@ -111,6 +128,21 @@ class Smtp {
 
 (async () => {
   const html = fs.readFileSync(path.resolve(arquivo), "utf8");
+
+  if (dryRun) {
+    // Ensaio: mostra exatamente o que sairia e para aqui. Nada toca o SMTP.
+    console.log("========== MODO SECO — NADA FOI ENVIADO ==========");
+    console.log(`Destinatário: ${dest}`);
+    console.log(`Remetente:    Fast - FastCloner <${USER}>`);
+    console.log(`Assunto:      ${assunto}`);
+    if (bcc) console.log(`Bcc:          ${bcc}`);
+    console.log("--- CORPO INTEIRO ---");
+    console.log(html);
+    console.log("--- FIM DO CORPO ---");
+    console.log("========== MODO SECO — NADA FOI ENVIADO ==========");
+    return;
+  }
+
   const destinos = [dest, ...(bcc ? [bcc] : [])];
   const mensagem = [
     `From: Fast - FastCloner <${USER}>`,

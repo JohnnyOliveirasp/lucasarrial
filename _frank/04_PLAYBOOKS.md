@@ -118,10 +118,17 @@ Sintomas: aluno com fotos e sem voz, ou avatares que falharam.
 ## J. Como mandar e-mail pro aluno
 
 ```bash
+# 1) ENSAIO — imprime destinatário, remetente, assunto e corpo SEM enviar nada:
+node _frank/ferramentas/enviar_email.cjs aluno@exemplo.com "Assunto" corpo.html --dry-run
+# 2) envio de verdade:
 node _frank/ferramentas/enviar_email.cjs aluno@exemplo.com "Assunto" corpo.html --bcc suporte@lucasarrial.com
 ```
-Roda da sua máquina, sem SSH (a senha está no `.env.local`).
+Roda da sua máquina, sem SSH (a senha está no `.env.local`). O
+`enviar_email.sh` (versão do servidor) aceita a mesma flag `--dry-run`.
 
+- **Ensaie com `--dry-run` antes de todo envio** — e-mail é irreversível:
+  destinatário errado já chegou na caixa da pessoa. Confira o endereço e o
+  corpo na saída do ensaio, só então rode sem a flag.
 - Corpo em HTML simples, tom humano, **sem jargão**.
 - Diga **o que aconteceu de verdade** e o que você já fez. Se a culpa foi
   nossa, assuma — o Johnny prefere assim.
