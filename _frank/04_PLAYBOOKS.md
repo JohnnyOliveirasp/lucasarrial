@@ -174,3 +174,63 @@ apenas **lê** o status antes de agir, em vez de **virar** o status.
    branch — regra 5 do `01_REGRAS_DURAS.md`.)
 4. Espere ~3 min e confirme que a mudança está no ar.
 5. Feche o incidente e avise quem estava travado.
+
+---
+
+## M. Provar que um gate REALMENTE bloqueia (antes de reportar)
+
+Nasceu em 18/08: investigando uma aluna, encontrei 147 pagantes com crédito e
+`access_until` vencido e reportei que **o botão Gerar estava travado** em cinco
+telas. Não estava. Em quase todas, aquela função só escolhia o **texto do
+aviso**. O número que mandei era maior que o real — e o Johnny lê relatório
+dirigindo, no acostamento. Errar pra mais faz ele tratar como emergência o que
+não é. Custa tanto quanto errar pra menos.
+
+**Achar o `import` não prova nada.** Import é sintoma. Prova é o ponto onde a
+variável **decide**.
+
+### O método
+
+1. **Siga a variável até onde ela decide.** Não pare no `import` nem na
+   atribuição. Vá até onde ela aparece dentro de um `if`, de um `redirect`, de
+   um `disabled`, ou na expressão que escolhe **o que renderiza**.
+2. **Classifique o destino.** Toda variável dessas cai em um de três lugares:
+   - **Bloqueia** — `redirect(...)`, `return jsonError(..., 403)`, ou entra no
+     `canFazerAlgo` que decide se o componente de trabalho aparece.
+   - **Só muda a aparência** — escolhe título, corpo do texto, rótulo do botão,
+     destino do link. **Não bloqueia nada.**
+   - **Só passa adiante** — vira `prop` de um componente. Não terminou: vá ao
+     componente e recomece o passo 1 lá dentro.
+3. **Backend e frontend são portões separados.** Confira os dois, sempre:
+   - Tela trancada + API aberta = bug de interface. O aluno está sendo impedido
+     de algo a que tem direito.
+   - Tela aberta + API trancada = o aluno clica e toma erro na cara.
+   - Neste projeto, o portão da API quase sempre é **crédito**
+     (`if (total < cost)`), porque crédito é o gate do produto.
+4. **Leia o comentário antes de julgar o código.** Aqui os comentários levam
+   **data e quem mandou** — foi feito de propósito, pra isso. Em 18/08 havia
+   `// Sem assinatura = trancado (Johnny 13/08 ...)` três linhas acima do gate
+   que eu ia chamar de violação de regra. Não era bug: era **ordem**, mais nova
+   que a regra do meu manual. A conclusão certa era *"achei um conflito entre o
+   manual e uma decisão de 13/08"*.
+5. **Cite arquivo e linha, sempre.** "`hasActiveAccess` em videos/clone" não é
+   prova. "`edicao/page.tsx:35` → `redirect` pro dashboard" é. Se você não
+   consegue apontar a linha, você ainda não provou.
+
+### Separe o que provou do que deduziu
+
+No relatório, duas listas diferentes:
+
+- **Provei:** tem linha de código, saída de comando ou número do banco atrás.
+- **Suspeito:** faz sentido, encaixa na história, e **ainda não tem prova**.
+
+Misturar os dois é o jeito mais rápido de fazer alguém tomar a decisão errada
+com confiança total. Se a sua conclusão muda a vida de mais de uma pessoa,
+ela pertence à primeira lista ou não sai do rascunho.
+
+### Antes de mandar um número no relatório
+
+Pergunte: **"o que exatamente essas N pessoas não conseguem fazer?"** Se a
+resposta é "estão bloqueadas", volte ao passo 1 — você ainda não sabe. A
+resposta boa tem a forma *"N pessoas não conseguem X e Y, mas continuam
+conseguindo Z"*.
