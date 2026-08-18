@@ -25,6 +25,13 @@ import type { VoiceStatus } from "@/lib/db/types";
 const MIN_TOTAL_SECONDS = 20 * 60;
 /** Só olha o que está parado há bastante tempo — upload grande demora. */
 const STUCK_AFTER_MS = 30 * 60 * 1000;
+/**
+ * Linha sem NENHUM áudio no R2 e velha: o envio nunca começou. Apagar é o que
+ * o POST /voices também faz (84f3197) — e é obrigatório aqui, senão essas
+ * linhas voltam pra fila toda rodada e comem o teto, deixando quem TEM áudio
+ * esperando pra sempre (foi o que aconteceu na 1ª limpeza, 18/08).
+ */
+const GHOST_AFTER_MS = 45 * 60 * 1000;
 /** Teto por rodada: medir áudio custa CPU; o cron roda a cada 5min. */
 const MAX_POR_RODADA = 3;
 const MIN_BYTES = 10_000;
@@ -35,6 +42,8 @@ export type RescueSummary = {
   rescued: number;
   rejected: number;
   no_audio: number;
+  /** linhas mortas (sem áudio nenhum) apagadas pra não entulhar a tela/fila */
+  cleaned: number;
   errors: number;
 };
 
@@ -54,7 +63,9 @@ async function audiosNoR2(userId: string, voiceId: string): Promise<string[]> {
 
 export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
   const admin = getAdmin();
-  const resumo: RescueSummary = { checked: 0, rescued: 0, rejected: 0, no_audio: 0, errors: 0 };
+  const resumo: RescueSummary = {
+    checked: 0, rescued: 0, rejected: 0, no_audio: 0, cleaned: 0, errors: 0,
+  };
 
   const cutoff = new Date(Date.now() - STUCK_AFTER_MS).toISOString();
   const { data: paradas } = await admin
@@ -65,13 +76,26 @@ export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
     .order("created_at", { ascending: true })
     .limit(MAX_POR_RODADA);
 
-  for (const voz of (paradas ?? []) as { id: string; user_id: string }[]) {
+  for (const voz of (paradas ?? []) as {
+    id: string;
+    user_id: string;
+    created_at: string;
+  }[]) {
     resumo.checked += 1;
     try {
       const chaves = await audiosNoR2(voz.user_id, voz.id);
       if (chaves.length === 0) {
-        // O aluno nunca chegou a subir nada — não há o que resgatar.
+        // O aluno nunca chegou a subir nada — não há o que resgatar. Velha o
+        // bastante = apaga (senão volta pra fila pra sempre e trava o teto).
         resumo.no_audio += 1;
+        if (Date.now() - new Date(voz.created_at).getTime() > GHOST_AFTER_MS) {
+          const { error } = await admin
+            .from("voices")
+            .delete()
+            .eq("id", voz.id)
+            .eq("status", "uploading");
+          if (!error) resumo.cleaned += 1;
+        }
         continue;
       }
 
