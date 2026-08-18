@@ -595,3 +595,74 @@ Quatro entregaram em **60-78s**; uma queimou **31min19s** e morreu no teto.
 1.000). Se o teto for 4x-13x o pior sucesso de 45 dias, ele não é o problema —
 e qualquer fix que mexa nele vai falhar de novo, como falharam três seguidos
 neste incidente.
+
+---
+
+## U. Dois relógios: a métrica que parece comparável e não é
+
+Nasceu em 18/08, corrigindo uma entrega minha da rodada anterior — e quase
+custou um corte de teto que mataria geração legítima de aluno.
+
+### O caso
+
+O incidente d3d8d1b2 estava parado porque o log do worker expira em ~30min.
+A saída foi instrumentar: gravar o tempo de execução **na hora da falha**
+(commit `1c09508`), pra comparar com a distribuição dos sucessos e separar
+**HANG do worker** de **COLD START**.
+
+O plano estava certo. A comparação, não:
+
+| Caminho | Fonte | O que mede de verdade |
+|---|---|---|
+| Sucesso | `out.elapsed_s` → `lib/generations/finalize.ts` | relógio **interno do worker** |
+| Falha | `executionTime` do RunPod | relógio **da plataforma** |
+
+No `handler.py`, o `t0 = time.monotonic()` é setado **depois** de
+`_ensure_model_downloaded()` e `VoxCPM.from_pretrained(...)`. A série histórica
+mede **só o loop de inferência**, com o modelo já baixado e já na VRAM: ela
+**exclui o cold start inteiro**. O `executionTime` da plataforma **inclui**.
+
+Resultado: comparar os dois daria **falso "HANG"** — e cold start era
+justamente a única hipótese que ninguém tinha conseguido matar.
+
+### A regra
+
+> **Duas medidas com o mesmo nome e a mesma unidade não são a mesma medida.**
+> Antes de comparar, ache o ponto exato onde cada relógio **começa** e onde
+> **para**. Segundo é segundo; começar depois de carregar o modelo não é.
+
+E o corolário que dói mais:
+
+> **Nunca corte um teto usando um número que não cobre o mesmo trabalho que o
+> teto cobre.** "Pior sucesso real = 7,7min" era o pior tempo de *inferência*,
+> não de *job*. Cortar o teto de 30min com esse número mataria job legítimo em
+> worker frio.
+
+### Como checar (3 minutos, e evita o estrago)
+
+1. Ache **todo** lugar que escreve a coluna: `grep -rn "<coluna>" src/`.
+   Se houver mais de um, desconfie: provavelmente são fontes diferentes.
+2. Pra cada fonte, ache o **início do cronômetro** no código que a produz
+   (no worker: onde está o `t0`, e o que roda **antes** dele).
+3. **Meça a cobertura**, não só o valor:
+   `total` vs `total com a coluna preenchida`. Se faltar pedaço, veja se o
+   buraco é **temporal** (coluna nova, inofensivo) ou **constante todo dia**
+   (caminho de código — e aí a amostra é enviesada por um mecanismo que você
+   ainda não conhece). No caso: 78,4% de cobertura, com 20-25% faltando em
+   **todos** os 45 dias.
+
+### O que ainda vale quando os relógios não batem
+
+Não jogue a instrumentação fora — **valor extremo continua conclusivo**.
+Falha que queima o teto inteiro (~30min) é hang com certeza: nenhum cold start
+plausível leva 30 minutos. O que se perde é a discriminação **fina** (uma falha
+em 8-15min fica ambígua). E continua valendo o relógio do estorno (playbook R),
+que é indireto mas honesto.
+
+### Ao consertar
+
+Se precisar do mesmo relógio nos dois lados, **não sobrescreva a coluna
+existente**: ela já carrega a série histórica no relógio antigo e normalmente
+alimenta alguma tela ("gerado em Xs"). Trocar o significado corrompe o
+histórico e infla o número mostrado ao aluno. Coluna nova = migration = aval do
+Johnny (regra 21).
