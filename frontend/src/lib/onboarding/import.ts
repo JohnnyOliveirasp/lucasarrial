@@ -18,7 +18,7 @@
  * a mesma linha da planilha não duplica nada.
  */
 import { randomUUID } from "crypto";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, VoiceStatus } from "@/lib/db/types";
 import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
@@ -59,6 +59,26 @@ export type ImportResult = {
 function imageDestKey(userId: string, fileId: string, ext: string): string {
   const safe = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
   return `${userId}/uploads/onboarding_${safe}.${ext}`;
+}
+
+/**
+ * Das chaves que o BANCO diz existir, quais estão MESMO no R2 (caso Ricardo
+ * 17/08). Linha órfã é pior que linha ausente: ela some da reimportação e
+ * ainda é oferecida ao Kie, que falha ao baixar.
+ */
+async function filtrarExistentesNoR2(chaves: string[]): Promise<string[]> {
+  const vivas = await Promise.all(
+    chaves.map(async (key) => {
+      try {
+        await r2.send(new HeadObjectCommand({ Bucket: imagesBucket(), Key: key }));
+        return key;
+      } catch {
+        console.error(`[onboarding/import] foto fantasma (linha sem objeto no R2): ${key}`);
+        return null;
+      }
+    }),
+  );
+  return vivas.filter((k): k is string => k !== null);
 }
 
 /**
@@ -134,6 +154,11 @@ export async function importImages(
     try {
       // Idempotência: o acervo já tem foto(s) com esse fileId? (um vídeo
       // vira até 3 frames, todos com o mesmo prefixo — pega todos.)
+      // ⚠️ CONFERE NO R2 (caso Ricardo 17/08): existia linha no banco cujo
+      // objeto NÃO estava no R2; a foto fantasma era pulada aqui, virava a
+      // referência do avatar e o Kie falhava com "Error while downloading" —
+      // 3 avatares perdidos (cobrados e estornados). Linha sem arquivo não
+      // conta como importada: reimporta.
       const probe = imageDestKey(userId, fileId, "");
       const { data: existingRows } = await admin
         .from("image_generations")
@@ -141,9 +166,12 @@ export async function importImages(
         .eq("user_id", userId)
         .like("image_path", `${probe}%`)
         .limit(5);
-      if (existingRows && existingRows.length > 0) {
+      const existentesNoR2 = await filtrarExistentesNoR2(
+        (existingRows ?? []).map((ex) => ex.image_path as string),
+      );
+      if (existentesNoR2.length > 0) {
         result.skipped++;
-        for (const ex of existingRows) allKeys.push(ex.image_path as string);
+        allKeys.push(...existentesNoR2);
         continue;
       }
 
