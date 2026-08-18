@@ -21,6 +21,11 @@ seguida.
 > repositório. O Johnny não é carteiro de texto técnico: pro Telegram vai só
 > o que ele decide, em português, sem jargão.
 
+## ⭐ LEIA ESTA PRIMEIRO
+
+**`2026-08-19_FECHAMENTO.md`** — a lista única do que falta. As ordens abaixo
+viram referência de detalhe; o que manda é o FECHAMENTO.
+
 ## Vigentes
 
 | Assunto | Ordem que vale |
