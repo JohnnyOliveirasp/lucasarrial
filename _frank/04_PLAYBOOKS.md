@@ -132,6 +132,39 @@ Roda da sua máquina, sem SSH (a senha está no `.env.local`).
 
 ---
 
+## L. Aluno cobrado duas vezes pela mesma coisa
+
+**Como aparece:** um registro parado na varredura que "não faz sentido" —
+foi assim que o caso do Rafael apareceu (treino queued há 38h).
+
+**Como investigar:** some as transações de crédito daquele recurso
+(`credit_transactions` filtrando por `ref_id`). Se der mais negativo que o
+preço de uma unidade, ele pagou mais de uma vez.
+
+**O julgamento (não devolva no automático):**
+
+| Evidência | Veredito |
+|---|---|
+| 2 débitos + **2 entregas concluídas** | cobrança **correta** — ele treinou duas vezes de propósito |
+| 2 débitos + **1 entrega**, poucos segundos/minutos de intervalo | **duplo clique** → devolver a diferença |
+| Débito sem entrega nenhuma e sem estorno | falha nossa → devolver |
+
+Em 18/08, dos 6 casos encontrados, **5 eram retreino legítimo** e só 1 era
+duplo clique. Devolver os 6 teria dado 50.000 créditos de graça por engano.
+
+**Como devolver:** RPC `add_extra_credits` com
+`ref_type: "voice_train_refund"` e `ref_id` = id do recurso. Confira antes se
+já não existe estorno com esse mesmo par (o estorno é idempotente por
+contagem). Depois **avise o aluno por e-mail** dizendo o que houve, quanto
+voltou e que a causa foi corrigida.
+
+**A causa desse caso já está fechada** (873ed1f): a rota do treino agora
+reserva a voz de forma atômica, e o botão trava por ref síncrono. Se
+aparecer cobrança dupla em OUTRO fluxo, procure o mesmo padrão: rota que
+apenas **lê** o status antes de agir, em vez de **virar** o status.
+
+---
+
 ## K. Publicar uma correção
 
 1. Edite o código (`frontend/`).

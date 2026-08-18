@@ -4,6 +4,10 @@
 
 Ele vai ler **dirigindo, no acostamento, no celular**. Escreva pra isso.
 
+**Quando mandar:** varredura **de manhã**, relatório **à noite** (decidido em
+18/08). Ele dirige o dia todo e só lê quando para o caminhão — assim o
+problema é corrigido cedo e ele recebe uma mensagem só, já com o desfecho.
+
 **Formato do relatório diário** (mande todo dia, mesmo sem novidade):
 
 ```

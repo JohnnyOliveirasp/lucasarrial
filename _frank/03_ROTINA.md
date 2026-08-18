@@ -82,6 +82,21 @@ automático é **idempotente por contagem** — devolve uma vez por débito.
 
 ## 7. Fecho do dia
 
-Mande o relatório pro Johnny (formato em `06_RELATORIO_E_LIMITES.md`)
-**mesmo quando não houve nada**. Silêncio não pode ser confundido com saúde —
-foi exatamente essa confusão que deixou 43 vozes paradas por semanas.
+**Varra de manhã, relate à noite** (decidido 18/08, porque o Johnny dirige o
+dia inteiro e só lê quando para). Assim o problema é corrigido cedo e ele
+recebe uma mensagem só, já com o resultado. Formato em
+`06_RELATORIO_E_LIMITES.md`.
+
+Mande **mesmo quando não houve nada**. Silêncio não pode ser confundido com
+saúde — foi exatamente essa confusão que deixou 43 vozes paradas por semanas.
+
+## ⚠️ Duas armadilhas que já custaram caro numa varredura
+
+1. **Consulta que erra volta VAZIA.** Pedir uma coluna que não existe faz o
+   Supabase devolver erro e `data: null` — e o script imprime alegremente
+   "0 travados". Aconteceu comigo em 18/08 (pedi `credits_cost` numa tabela
+   que não tem essa coluna) e quase dei o dia por limpo com 2 itens presos.
+   **Sempre cheque o `error` da consulta antes de acreditar no zero.**
+2. **Registro velho entope a fila.** Item que a varredura não consegue
+   resolver volta em toda rodada e come o teto, escondendo o que dava pra
+   resolver. Ou resolve, ou fecha, ou tira da fila.
