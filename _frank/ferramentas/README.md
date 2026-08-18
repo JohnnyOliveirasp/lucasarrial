@@ -14,7 +14,8 @@ Nenhum deles cobra crédito do aluno. Os que alteram dados só agem com
 | `resgatar_voz.cjs <voiceId> --confirmar` | Voz parada em "uploading" com áudio no R2: restaura e dispara o treino **por conta da casa** (não cobra). | sim |
 | `consertar_referencia.cjs --confirmar` | Acha `profiles.image_ref_key` apontando pra arquivo inexistente e troca por uma foto real. | sim |
 | `limpar_fantasmas.cjs --confirmar` | Apaga voz "uploading" com **zero** áudio no R2 e 45min+. Reconfere o R2 antes de cada exclusão. | sim |
-| `enviar_email.sh <dest> <assunto> <corpo.html>` | Manda e-mail pelo SMTP do `suporte@`. **Roda no servidor** (a senha está lá). | envia e-mail |
+| `enviar_email.cjs <dest> "<assunto>" <corpo.html> [--bcc x@y]` | **O jeito preferido de falar com aluno.** Node puro, roda da sua máquina, sem SSH — fala SMTP direto (587+STARTTLS) com a senha do `.env.local`. | envia e-mail |
+| `enviar_email.sh <dest> <assunto> <corpo.html>` | Mesma coisa em bash+curl, pra rodar **no servidor**. | envia e-mail |
 | `_comum.cjs` | Base compartilhada (credenciais, Supabase, R2). Não roda sozinho. | — |
 
 ## Exemplos
@@ -30,10 +31,13 @@ node _frank/ferramentas/aluno.cjs maria@exemplo.com
 node _frank/ferramentas/resgatar_voz.cjs <voiceId>            # simula
 node _frank/ferramentas/resgatar_voz.cjs <voiceId> --confirmar # executa
 
-# avisar a aluna (do servidor)
-scp corpo.html root@91.99.15.213:/tmp/
-ssh root@91.99.15.213 'BCC_ADMIN=suporte@lucasarrial.com bash /tmp/enviar_email.sh maria@exemplo.com "Sua voz ja esta pronta" /tmp/corpo.html'
+# avisar a aluna (da sua própria máquina)
+node _frank/ferramentas/enviar_email.cjs maria@exemplo.com "Sua voz ja esta pronta" corpo.html --bcc suporte@lucasarrial.com
 ```
+
+⚠️ Antes de mandar pro aluno, mande **pra você mesmo** e leia. E-mail não tem
+desfazer. Em lote, não use `--bcc` (enche a caixa do Johnny): mande um resumo
+único no fim.
 
 ## Ao criar ferramenta nova
 

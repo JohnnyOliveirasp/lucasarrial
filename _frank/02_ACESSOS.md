@@ -6,13 +6,25 @@ mostre o nome. Nunca cole o valor em log, relatório, commit ou Telegram.
 
 ## O cofre
 
-Tudo mora em **um arquivo só**: `frontend/.env.local` (ignorado pelo git).
+**Tudo mora em um arquivo só: `frontend/.env.local`** (ignorado pelo git).
+Ordem do Johnny em 18/08: *"todas as chaves passa para ele nos arquivos .env,
+ele deverá acessar tudo por lá"*. Você não precisa pedir credencial a
+ninguém — está tudo aí.
 
-- Na sua máquina: `<raiz-do-projeto>/frontend/.env.local`
-- Em produção: `/mnt/volume/aiverse/frontend/.env.local` (no Hetzner)
+- Na sua máquina: `<raiz-do-projeto>/frontend/.env.local` — **52 variáveis**,
+  conferidas em 18/08 (mesmos valores da máquina do Johnny + as 3 que só
+  existiam no servidor: `SUPPORT_MAIL_PASSWORD`, `ONBOARDING_WEBHOOK_SECRET`,
+  `SITE_URL`).
+- Em produção: `/mnt/volume/aiverse/frontend/.env.local` (no Hetzner) — tem
+  algumas a mais, todas de runtime do servidor.
 
-Os dois têm **as mesmas variáveis** (conferido em 18/08). Se faltar alguma na
-sua, copie do servidor — nunca invente valor.
+⚠️ **`AGENT_MAIL_ENABLED` ficou de fora da sua cópia de propósito.** Ela é o
+interruptor que faz a Fast responder a caixa do suporte. Se você ligar isso
+numa segunda máquina, **dois agentes respondem o mesmo e-mail** e o aluno
+recebe resposta duplicada. Pra falar com aluno use a ferramenta de e-mail
+(abaixo), nunca subindo uma segunda instância do app.
+
+Se algum dia faltar uma variável, copie do servidor — **nunca invente valor**.
 
 Em script Node: `require("dotenv").config({ path: ".env.local" })` rodando de
 dentro de `frontend/`.
@@ -75,9 +87,19 @@ Chave: `RUNPOD_API_KEY`. Endpoints (**nunca recriar**):
 
 | Uso | Como |
 |---|---|
-| **Falar com aluno** | SMTP `mail.privateemail.com:587` (STARTTLS), usuário `suporte@fastcloner.com`, senha em `SUPPORT_MAIL_PASSWORD`. Porta 465 está bloqueada. Script pronto: `ferramentas/enviar_email.sh` |
-| Caixa de entrada | IMAP no mesmo host — a Fast lê sozinha a cada 5 min |
+| **Falar com aluno** | `ferramentas/enviar_email.cjs` — Node puro, roda **da sua máquina**, sem SSH. Usa SMTP `mail.privateemail.com:587` (STARTTLS) com `SUPPORT_MAIL_PASSWORD`. Testado 18/08. |
+| Mesma coisa, pelo servidor | `ferramentas/enviar_email.sh` (bash+curl, roda no Hetzner) |
+| Caixa de entrada | IMAP no mesmo host — a Fast lê sozinha a cada 5 min. **Não leia a caixa em paralelo com ela.** |
 | Alertas internos | Resend (`RESEND_API_KEY`) — **só pra equipe**, nunca pra aluno |
+
+A porta 465 está bloqueada no Hetzner; use sempre a 587.
+
+## Onboarding pela planilha
+
+`ONBOARDING_WEBHOOK_SECRET` — header `x-onboarding-secret` no
+`POST /api/v1/onboarding/import`. É como se reprocessa a linha de um aluno
+cujo material não veio (o import é idempotente: não duplica conta, foto nem
+áudio). Precisa dos fileIds do Drive, que estão na planilha.
 
 ## Outros provedores
 

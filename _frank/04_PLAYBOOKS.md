@@ -118,14 +118,17 @@ Sintomas: aluno com fotos e sem voz, ou avatares que falharam.
 ## J. Como mandar e-mail pro aluno
 
 ```bash
-scp corpo.html root@91.99.15.213:/tmp/
-ssh root@91.99.15.213 'BCC_ADMIN=suporte@lucasarrial.com \
-  bash /tmp/enviar_email.sh aluno@exemplo.com "Assunto sem acento" /tmp/corpo.html'
+node _frank/ferramentas/enviar_email.cjs aluno@exemplo.com "Assunto" corpo.html --bcc suporte@lucasarrial.com
 ```
-- Corpo em HTML simples, UTF-8, tom humano.
-- **Assunto sem acento** (evita problema de codificação no cabeçalho).
-- Em lote: sem BCC (senão enche a caixa do Johnny) + um resumo no fim.
-- Sempre teste mandando pra você mesmo, **nunca pro aluno**.
+Roda da sua máquina, sem SSH (a senha está no `.env.local`).
+
+- Corpo em HTML simples, tom humano, **sem jargão**.
+- Diga **o que aconteceu de verdade** e o que você já fez. Se a culpa foi
+  nossa, assuma — o Johnny prefere assim.
+- Termine com **um passo claro** ("é só clicar em Treinar") ou **uma pergunta
+  objetiva**, nunca com um menu de opções.
+- Em lote: sem `--bcc` + um resumo único no fim.
+- **Teste mandando pra você mesmo antes.** E-mail não tem desfazer.
 
 ---
 
