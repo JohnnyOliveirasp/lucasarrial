@@ -23,10 +23,8 @@ seguida.
 
 ## ⭐ LEIA ESTA PRIMEIRO
 
-**`2026-08-19_watchdog_primeiro.md`** — prioridade nova: watchdog na frente
-de tudo (ninguém reinicia o Frank se ele cair, e o Johnny viaja em 6 dias).
-Depois dele, **`2026-08-19_FECHAMENTO.md`** — a lista única do que falta. As ordens abaixo
-viram referência de detalhe; o que manda é o FECHAMENTO.
+**`2026-08-19_ULTIMOS_5.md`** — as 5 últimas verificações pra prova fechar.
+Watchdog já está provado e encerrado. As ordens abaixo viram referência.
 
 ## Vigentes
 
