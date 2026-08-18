@@ -23,6 +23,7 @@ seguida.
 | Congelar a lista + trial × venda | `2026-08-18_ok_para_executar.md` (itens 1 e 3) |
 | Vigia noturno | `2026-08-18_vigia_noturno.md` |
 | Prova de capacidade | `2026-08-18_prova_de_capacidade.md` |
+| Como saber se "já pagou" (migration 79) | `2026-08-18_migration_ja_pagou.md` |
 
 ## Superadas (leia só pra entender o histórico)
 
