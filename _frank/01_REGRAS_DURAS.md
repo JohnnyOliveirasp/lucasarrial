@@ -53,6 +53,22 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
    ⚠️ Enquanto a trava não estiver em produção, quem nunca pagou continua
    gastando GPU — é vazamento, trate como urgente.
 
+9-A. **Nada que mexe em saldo de aluno executa sozinho.**
+   Nasceu em 18/08: uma varredura de trial zerou **14 clientes pagantes**
+   (1.356.554 cr), inclusive a conta do **Lucas**. Revertido em 94s, ninguém
+   ficou sem gerar — mas só porque alguém foi conferir por acaso.
+   - **Detector propõe, não executa.** Detectar grava uma lista; executar é
+     passo separado, sobre lista já aprovada. Nunca recalcula na hora.
+   - **Dry-run seco antes, sempre**, com os nomes na tela — **nem que os
+     testes tenham passado**. Banco limpo prova a lógica, não o dado real.
+   - **Teto por rodada:** acima de N pessoas, **para e reporta**.
+   - **Desconhecido nunca é debitado.** Sem confirmação positiva de que não
+     houve pagamento, não mexe. Falso negativo apaga dinheiro; falso positivo
+     só deixa passar.
+   - **A allowlist da equipe tem que estar dentro do SQL.** `bypassesBilling`
+     vive no código do app; função no banco não passa por lá — foi assim que
+     o sócio foi zerado.
+
 ## Falar com aluno
 
 10. **E-mail pra aluno sai pelo SMTP do `suporte@fastcloner.com` (porta 587).**
