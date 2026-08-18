@@ -59,16 +59,45 @@ export async function POST(request: NextRequest) {
   // 🐛 BUGFIX 2026-07-22: com o botão "Treinar" ativo durante o upload, o
   // segundo clique criava uma voz gêmea (2 treinos de 10k cr pro mesmo áudio;
   // 5 alunos afetados em 24h). Mesma voz ainda ativa = 409.
-  const { data: dup } = await admin
+  //
+  // 🐛 BUGFIX 2026-08-18: o "uploading" entrava na trava com a MESMA janela de
+  // 1h dos outros — então quem tinha um upload FALHO (nada chegou no R2) e
+  // tentava de novo com o mesmo nome ouvia "aguarde o treino em andamento"
+  // de um fantasma, e desistia. Upload em andamento de verdade termina em
+  // minutos: pra "uploading" a trava agora é de 15min, e a linha morta é
+  // apagada em vez de barrar a pessoa.
+  // Não barra depois de 15min; só APAGA depois de 45min — o sweep de resgate
+  // olha o que está parado há 30min, então nessa altura o áudio que existir
+  // já virou awaiting_training (e o filtro .eq("uploading") não pega ele).
+  const NAO_BARRA_MS = 15 * 60 * 1000;
+  const APAGA_MS = 45 * 60 * 1000;
+  const { data: dups } = await admin
     .from("voices")
-    .select("id")
+    .select("id, status, created_at")
     .eq("user_id", auth.user_id)
     .eq("name", name)
     .in("status", ["uploading", "validating", "awaiting_training", "training"])
     .gte("created_at", new Date(Date.now() - 60 * 60 * 1000).toISOString())
-    .limit(1)
-    .maybeSingle();
-  if (dup) {
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const agora = Date.now();
+  const fantasmas: string[] = [];
+  let bloqueia = false;
+  for (const d of (dups ?? []) as { id: string; status: string; created_at: string }[]) {
+    const idadeMs = agora - new Date(d.created_at).getTime();
+    if (d.status === "uploading" && idadeMs > NAO_BARRA_MS) {
+      if (idadeMs > APAGA_MS) fantasmas.push(d.id);
+      continue;
+    }
+    bloqueia = true;
+  }
+  // Linha morta de upload que nunca completou: só atrapalha (o áudio, se
+  // tiver chegado, já foi resgatado pelo sweep e não está mais "uploading").
+  if (fantasmas.length > 0) {
+    await admin.from("voices").delete().in("id", fantasmas).eq("status", "uploading");
+  }
+  if (bloqueia) {
     return jsonError(
       "duplicate_voice",
       "Você já tem um treino desta voz em andamento. Aguarde ele terminar antes de criar outra.",
