@@ -14,6 +14,13 @@ seguida.
 4. **Na dúvida entre duas, pergunte.** Nunca escolha em silêncio quando envolve
    dinheiro de aluno. Aconteceu em 18/08 e foi o Frank quem pegou.
 
+## Regra de canal (18/08)
+
+> **Coisa técnica vai no git. O Telegram é do Johnny.**
+> DDL, código, saída de comando, lista, consulta — commite, que eu leio do
+> repositório. O Johnny não é carteiro de texto técnico: pro Telegram vai só
+> o que ele decide, em português, sem jargão.
+
 ## Vigentes
 
 | Assunto | Ordem que vale |
@@ -24,6 +31,7 @@ seguida.
 | Vigia noturno | `2026-08-18_vigia_noturno.md` |
 | Prova de capacidade | `2026-08-18_prova_de_capacidade.md` |
 | Como saber se "já pagou" (migration 79) | `2026-08-18_migration_ja_pagou.md` |
+| Canal, conta de teste e prioridade | `2026-08-18_ddl_pelo_git_e_prioridade.md` |
 
 ## Superadas (leia só pra entender o histórico)
 
