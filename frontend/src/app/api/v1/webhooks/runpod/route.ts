@@ -191,14 +191,30 @@ async function handleGenerationWebhook(
   }
 
   const rawError = out.error || payload.error || `RunPod ${payload.status}`;
+  // Grava o tempo de execução que o RunPod já manda no webhook (incidente
+  // d3d8d1b2, 18/08): o log do worker expira ~30min depois do job, então toda
+  // investigação de "tempo de execução estourado" chegava tarde e batia em 404.
+  // Com elapsed_seconds preenchido na falha dá pra diferenciar HANG do worker
+  // (tempo alto) de COLD START (tempo baixo) sem depender de log que expira.
+  // NUNCA concatenar esse dado no error_message: a assinatura do incidente é
+  // derivada do texto do erro (src/lib/incidents/classify.ts) e identificador
+  // alfanumérico não normaliza — já estilhaçou a mesma falha em 4 incidentes.
+  const failUpdate: {
+    status: "failed";
+    error_message: string;
+    elapsed_seconds?: number;
+  } = {
+    status: "failed",
+    error_message: rawError.slice(0, 500),
+  };
+  if (typeof payload.executionTime === "number") {
+    failUpdate.elapsed_seconds = payload.executionTime / 1000; // RunPod manda em ms
+  }
   // Gate idempotente (corrida webhook×poll): só quem transiciona pra failed
   // dispara a contingência (estorno + e-mail pro suporte).
   const { data: claimed } = await getAdmin()
     .from("generations")
-    .update({
-      status: "failed",
-      error_message: rawError.slice(0, 500),
-    })
+    .update(failUpdate)
     .eq("id", generationId)
     .in("status", ["pending", "generating"])
     .select("id");

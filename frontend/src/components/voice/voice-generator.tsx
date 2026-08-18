@@ -321,7 +321,10 @@ export function VoiceGenerator({ voiceId }: Props) {
                 <div className="flex gap-3 font-mono text-[10px] tracking-wide text-[var(--ash)]">
                   <span>{new Date(take.startedAt).toLocaleTimeString("pt-BR")}</span>
                   {take.duration_seconds ? <span>· {formatDuration(take.duration_seconds)}</span> : null}
-                  {take.elapsed_seconds ? (
+                  {/* Só em take pronta (18/08, incidente d3d8d1b2): falha agora
+                      também grava elapsed_seconds pra diagnóstico, e "gerado em
+                      1879.6s" embaixo da mensagem de erro confundiria o aluno. */}
+                  {take.status === "ready" && take.elapsed_seconds ? (
                     <span>{t("generator.generatedIn", { s: take.elapsed_seconds.toFixed(1) })}</span>
                   ) : null}
                 </div>

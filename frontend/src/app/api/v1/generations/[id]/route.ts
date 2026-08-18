@@ -36,10 +36,27 @@ async function failGeneration(
   userId: string,
   jobId: string | null,
   rawError: string,
+  executionTimeMs?: number,
 ): Promise<void> {
+  // Grava o tempo de execução do RunPod também no caminho do POLL (incidente
+  // d3d8d1b2, 18/08): poll e webhook correm pelo mesmo gate idempotente, e quem
+  // vencer a transição pra failed é quem grava o tempo. O log do worker expira
+  // ~30min depois do job (investigação sempre batia em 404), então o
+  // elapsed_seconds na falha é o que permite diferenciar HANG do worker (tempo
+  // alto) de COLD START (tempo baixo) sem depender de log que expira. Nunca
+  // concatenar isso no error_message: a assinatura do incidente vem do texto do
+  // erro (src/lib/incidents/classify.ts) e já estilhaçou agregação no passado.
+  const failUpdate: {
+    status: "failed";
+    error_message: string;
+    elapsed_seconds?: number;
+  } = { status: "failed", error_message: rawError.slice(0, 500) };
+  if (typeof executionTimeMs === "number") {
+    failUpdate.elapsed_seconds = executionTimeMs / 1000; // RunPod manda em ms
+  }
   const { data: claimed } = await getAdmin()
     .from("generations")
-    .update({ status: "failed", error_message: rawError.slice(0, 500) })
+    .update(failUpdate)
     .eq("id", generationId)
     .in("status", POLLING_STATUSES)
     .select("id");
@@ -88,7 +105,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
           // Converte WAV->MP3 e marca ready (audio_path passa a apontar pro .mp3).
           await finalizeGenerationSuccess(id, gen.audio_path, out);
         } else {
-          await failGeneration(id, auth.user_id, gen.runpod_job_id, out.error ?? "unknown");
+          await failGeneration(id, auth.user_id, gen.runpod_job_id, out.error ?? "unknown", resp.executionTime);
         }
 
         const { data: refreshed } = await admin
@@ -100,7 +117,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
           .maybeSingle();
         if (refreshed) current = refreshed;
       } else if (resp.status === "FAILED" || resp.status === "CANCELLED" || resp.status === "TIMED_OUT") {
-        await failGeneration(id, auth.user_id, gen.runpod_job_id, `RunPod ${resp.status}: ${resp.error ?? ""}`);
+        await failGeneration(id, auth.user_id, gen.runpod_job_id, `RunPod ${resp.status}: ${resp.error ?? ""}`, resp.executionTime);
       }
     } catch {
       // ignora — devolve estado atual
