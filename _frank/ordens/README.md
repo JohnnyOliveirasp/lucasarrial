@@ -32,6 +32,7 @@ seguida.
 | Prova de capacidade | `2026-08-18_prova_de_capacidade.md` |
 | Como saber se "já pagou" (migration 79) | `2026-08-18_migration_ja_pagou.md` |
 | Canal, conta de teste e prioridade | `2026-08-18_ddl_pelo_git_e_prioridade.md` |
+| DDL aprovado + achados da prova | `2026-08-19_ddl_aprovado_e_achados.md` |
 
 ## Superadas (leia só pra entender o histórico)
 
