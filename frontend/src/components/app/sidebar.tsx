@@ -29,6 +29,7 @@ import {
   Music2,
 } from "lucide-react";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
+import { ROTEIRO_COST } from "@/lib/roteiro/config";
 import { GrupoPre, NavLeaf } from "./sidebar-nav";
 
 type Props = {
@@ -36,7 +37,9 @@ type Props = {
   creditsTotal: number;
   /** Equipe/admin: ilimitado, nunca trava. */
   unlimited: boolean;
-  /** Assinatura ativa? Libera itens que fazem parte do pacote pago (API). */
+  /** Assinatura ativa? Não tranca mais nada aqui — os cadeados olham CRÉDITO
+   *  (ordem do Johnny 18/08, gate_por_credito). Mantida no contrato porque o
+   *  layout continua passando e outras telas ainda usam pra escolher texto. */
   subscribed: boolean;
   /** É admin (allowlist)? Mostra o atalho pro painel /admin. */
   isAdmin: boolean;
@@ -50,7 +53,6 @@ type Props = {
 export function Sidebar({
   creditsTotal,
   unlimited,
-  subscribed,
   isAdmin,
   hasReadyVoice,
   publisherAllowed,
@@ -166,9 +168,10 @@ export function Sidebar({
       href: "/app/videos/edicao",
       icon: Clapperboard,
       label: t("nav.videoEdicao"),
-      // Sem assinatura = trancado (Johnny 13/08, mesma regra do Roteiro).
-      locked: !unlimited && !subscribed,
-      lockTitle: tShell("lockPlan"),
+      // Cadeado por CRÉDITO, não por assinatura (Johnny 18/08): mesma regra
+      // da página — sem custo mínimo único no wizard, o critério é ter saldo.
+      locked: !unlimited && creditsTotal <= 0,
+      lockTitle: tShell("lockCredits"),
     },
     {
       href: "/app/videos/vendas",
@@ -220,15 +223,17 @@ export function Sidebar({
 
           {/* Gerador de Roteiros — graduado 13/08 (ordem Johnny): porta de
               entrada do funil (roteiro → áudio → vídeo), logo abaixo do
-              Dashboard. Sem assinatura = trancado (Johnny 13/08: quem não
-              assina — ex. contas da planilha sem plano — não acessa). */}
+              Dashboard. Cadeado por CRÉDITO, não por assinatura (Johnny
+              18/08): quem pagou e cancelou mantém o crédito e a porta. */}
           <NavLeaf
             href="/app/roteiro"
             icon={PenLine}
             label={t("nav.script")}
             active={pathname.endsWith("/app/roteiro")}
-            locked={!unlimited && !subscribed}
-            lockTitle={tShell("lockPlan")}
+            locked={!unlimited && creditsTotal < ROTEIRO_COST}
+            lockTitle={tShell("lockCreditsMin", {
+              n: ROTEIRO_COST.toLocaleString("pt-BR"),
+            })}
           />
 
           {/* Grupo Vozes (expansível) */}
@@ -330,13 +335,16 @@ export function Sidebar({
             )}
           </li>
 
+          {/* Cadeado por CRÉDITO (Johnny 18/08): a PÁGINA de settings já
+              liberava por saldo (creditsTotal > 0) e só o menu ainda olhava
+              assinatura — menu dizia "trancado" e a tela abria. Bug puro. */}
           <NavLeaf
             href="/app/settings"
             icon={Settings}
             label={t("nav.settings")}
             active={pathname.endsWith("/app/settings")}
-            locked={!unlimited && !subscribed}
-            lockTitle={tShell("lockApi")}
+            locked={!unlimited && creditsTotal <= 0}
+            lockTitle={tShell("lockApiCredits")}
           />
 
           {/* Liberação individual do Publicador (13/08): não-admin com o gate
