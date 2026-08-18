@@ -182,7 +182,12 @@ export function CloneStudio({
   }
 
   async function generate() {
-    if (!image || !audio) return;
+    // Botão mudo custou 2 dias de uma aluna (18/08): faltando foto/áudio o
+    // clique agora EXPLICA o que falta em vez de não fazer nada em silêncio.
+    if (!image || !audio) {
+      setError(t(!image && !audio ? "errors.missingBoth" : !image ? "errors.missingImage" : "errors.missingAudio"));
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -429,7 +434,7 @@ export function CloneStudio({
             ? `${t("cost", { seconds: Math.max(5, Math.ceil(audio.seconds)), rate: tier.creditsPerSecond, cost: cost.toLocaleString("pt-BR") })}${!canAfford ? ` ${t("costBalance", { have: creditsTotal.toLocaleString("pt-BR") })}` : ""}`
             : t("pickToSeeCost")}
         </span>
-        <button type="button" disabled={!image || !audio || submitting || !!uploading} onClick={generate} className={PILL}>
+        <button type="button" disabled={submitting || !!uploading} onClick={generate} className={PILL}>
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
           {submitting ? t("sending") : audio ? t("generateWithCost", { cost: cost.toLocaleString("pt-BR") }) : t("generate")}
         </button>

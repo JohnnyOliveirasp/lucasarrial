@@ -789,7 +789,10 @@
         "upload": "Error en la subida",
         "start": "Falló el inicio de la generación",
         "failed": "La generación falló. Inténtalo de nuevo.",
-        "generic": "Error"
+        "generic": "Error",
+        "missingImage": "Elige una foto para continuar.",
+        "missingAudio": "Elige o sube un audio para continuar. Si todavía no creaste una voz, puedes subir un MP3 desde tu computadora.",
+        "missingBoth": "Elige una foto y un audio para continuar. Si todavía no creaste una voz, puedes subir un MP3 desde tu computadora."
       }
     },
     "pickers": {

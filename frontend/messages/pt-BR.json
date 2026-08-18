@@ -789,7 +789,10 @@
         "upload": "Erro no upload",
         "start": "Falha ao iniciar a geração",
         "failed": "A geração falhou. Tente novamente.",
-        "generic": "Erro"
+        "generic": "Erro",
+        "missingImage": "Escolha uma foto para continuar.",
+        "missingAudio": "Escolha ou envie um áudio para continuar. Se você ainda não tem voz criada, pode enviar um arquivo MP3 do seu computador.",
+        "missingBoth": "Escolha uma foto e um áudio para continuar. Se você ainda não tem voz criada, pode enviar um MP3 do seu computador."
       }
     },
     "pickers": {
