@@ -432,3 +432,89 @@ quatro acidentes isolados — e cada um parecia pequeno demais pra investigar.
 
 **Campo estruturado (coluna nova, migration com aval — regra 21) ou fora da
 string que gera a assinatura. Nunca concatenado no erro.**
+
+---
+
+## R. Falha sem log: descobrir COMO o job morreu pelo relógio do estorno
+
+Nasceu em 18/08 (incidente `2663506d`, vídeo clone da fcdnanda). O log do
+worker já tinha expirado (playbook Q) e o erro cru do RunPod era só
+`Job processing failed` — string genérica que não diz nada. Mesmo assim dá pra
+descartar metade das hipóteses **sem log nenhum**, usando o que o banco já
+guarda.
+
+### A régua: quanto tempo o job levou pra morrer
+
+O débito e o estorno automático estão em `credit_transactions` com timestamp
+de milissegundo. **A diferença entre os dois é, na prática, quanto tempo o job
+durou.**
+
+```sql
+-- débito e estorno do aluno na janela da falha
+select created_at, amount, reason from credit_transactions
+where user_id = '<id>' and created_at > '<inicio>' order by created_at;
+```
+
+Compare com **quanto tempo leva um job que dá certo** (débito → arquivo no R2,
+ou débito → `status: ready`). No caso real:
+
+| | tempo |
+|---|---|
+| 3 falhas | **38,0s · 36,6s · 36,2s** |
+| 2 sucessos do mesmo aluno, minutos depois | **~8 min** |
+| orçamento de `executionTimeout` do tier | ~41 min |
+
+### O que cada faixa significa
+
+- **Morte em segundos, consistente (fast-fail)** → o worker **rejeitou a
+  entrada** ou quebrou no carregamento. **Descarta** OOM durante difusão,
+  `executionTimeout` e fila/capacidade — nenhum dos três mata em 37s.
+  Procure a causa **na entrada**, não na GPU.
+- **Morte perto do teto do timeout** → hang de verdade. Aí sim é worker
+  travado (foi o caso do `d3d8d1b2`).
+- **Tempo variável, sem padrão** → suspeite de capacidade/concorrência.
+
+**Consistência importa tanto quanto o valor.** 36,2–38,0s em três tentativas é
+caminho de código determinístico. Falha aleatória não repete o tempo.
+
+### O outro par de olhos: quem MAIS rodou na mesma janela
+
+Antes de culpar "instabilidade" ou "o endpoint caiu", liste **todos** os jobs
+da janela, de todos os alunos, com o sufixo do endpoint (`-e1`/`-e2`):
+
+```js
+db.from("video_clones").select("id,user_id,status,created_at,runpod_job_id,num_frames")
+  .gte("created_at", ini).lte("created_at", fim).order("created_at")
+```
+
+No caso real, **3 segundos depois** da falha em `-e1` outro aluno teve `ready`
+em `-e1`, e **22 segundos depois** da falha em `-e2` outro teve `ready` em
+`-e2`. Isso mata "queda global" e "endpoint ruim" em uma consulta só.
+
+### Isolando a entrada culpada
+
+Quando o mesmo aluno falha várias vezes e depois acerta, **compare as
+entradas** — o próprio aluno fez o experimento pra você:
+
+- mesma **imagem** no sucesso e na falha → a imagem está boa;
+- **áudio** diferente no sucesso → o suspeito é o áudio;
+- baixe os dois arquivos e rode `ffprobe` (codec, sample rate, canais,
+  bitrate) **e** compare **bytes/segundo** — é assim que se prova que um
+  arquivo **não** está truncado, em vez de chutar "arquivo corrompido".
+
+### Antes de anunciar teto de tamanho/duração
+
+Se a falha tem número maior que o sucesso (frames, duração, chars), a
+tentação é gritar "achei o teto". **Não é teto até você olhar o tier inteiro:**
+
+```js
+// maior num_frames que DEU CERTO naquele tier, nos últimos 45 dias
+```
+
+No caso real as falhas eram 1100 frames e os sucessos 1075 — parecia teto. O
+tier `480p-v3` tinha **478 jobs / 4 falhas** e sucessos em **2275** frames.
+Hipótese morta em uma consulta.
+
+⚠️ **Pagine.** O Supabase corta em **1.000 linhas**; use `.range(from, from+999)`
+em laço. Analisar 1.000 de 1.407 linhas sem perceber é como concluir pela
+amostra errada — irmão da armadilha nº 1 do `03_ROTINA.md`.
