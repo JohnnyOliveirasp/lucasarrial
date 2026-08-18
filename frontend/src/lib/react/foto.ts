@@ -47,16 +47,25 @@ import { pickImageRoute } from "@/lib/kie/failover";
  * sair com as mãos meio levantadas pra frente — o modelo obedecia ao
  * "gesticulando" do jeito mais literal. Agora: braços visíveis mas
  * RELAXADOS pra baixo, mão nenhuma levantada nem esticada pra câmera.
+ *
+ * 🔁 Corrigido 17/08 (3): braços caídos encostavam nas BORDAS da foto e o
+ * recorte saía com o antebraço fatiado em linha reta (vídeo do Johnny) —
+ * além da pose estática deixar o clone sem movimento nenhum de braço.
+ * Agora: corpo INTEIRO dentro do quadro com verde de margem nas laterais,
+ * mãos soltas juntas na altura da cintura (pose viva, cotovelo dobrado).
  */
 const PROMPT = [
   "CROP THIS PHOTO AT THE WAIST — a waist-up medium shot. Nothing below the",
   "waist may appear: no hips, no legs, no knees, no feet, regardless of the",
   "input photo's framing. The person must FILL the frame: head near the top",
   "edge, waist at the bottom edge.",
-  "Both arms visible inside the frame, RELAXED and hanging naturally down at",
-  "the sides — hands at or below waist level. Do NOT raise the hands, do NOT",
-  "reach or gesture toward the camera, no crossed arms. Facing the camera,",
-  "eyes toward the lens — do not crop the arms, elbows or hands.",
+  "The ENTIRE body must be COMPLETELY INSIDE the frame with green background",
+  "visible around it on the left and right — no arm, elbow or shoulder may",
+  "touch or be cut by the image edges.",
+  "Hands relaxed and loosely held together in front of the body at waist",
+  "level, elbows slightly bent — a natural, alive stance. Do NOT raise the",
+  "hands toward the camera, no crossed arms. Facing the camera, eyes toward",
+  "the lens.",
   "Keep the SAME person, same face, same hair, same clothes, same skin tone —",
   "do not beautify or change identity.",
   "Replace the background with a solid uniform chroma key green (#00B140).",

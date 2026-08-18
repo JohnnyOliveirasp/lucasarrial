@@ -78,11 +78,12 @@ async function trechoComViral(args: {
   // fala termina inteira.
   const AV = `[1:v]${SEGURA_FIM}`;
   if (layout === "recorte") {
-    // Viral ocupa a tela; você entra recortado no canto inferior esquerdo,
-    // ocupando ~38% da largura (proporção do reel de referência do Lucas).
+    // Viral ocupa a tela; você entra recortado no canto inferior esquerdo.
+    // 46% da largura (era 38% do reel do Lucas; Johnny pediu MAIOR 17/08 —
+    // "deveria ser maior este espaço de onde aparece a minha imagem").
     filtro = [
       `[0:v]scale=${L}:${A}:force_original_aspect_ratio=increase,crop=${L}:${A},setsar=1[bg]`,
-      `${AV}chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},scale=${Math.round(L * 0.38)}:-1[me]`,
+      `${AV}chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},scale=${Math.round(L * 0.46)}:-1[me]`,
       `[bg][me]overlay=x=24:y=H-h-120:format=auto[v]`,
     ].join(";");
   } else {
