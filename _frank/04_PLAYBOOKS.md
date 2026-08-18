@@ -234,3 +234,72 @@ Pergunte: **"o que exatamente essas N pessoas não conseguem fazer?"** Se a
 resposta é "estão bloqueadas", volte ao passo 1 — você ainda não sabe. A
 resposta boa tem a forma *"N pessoas não conseguem X e Y, mas continuam
 conseguindo Z"*.
+
+---
+
+## N. Crédito: o que é dinheiro que entrou e o que não é
+
+**Leia isto ANTES de zerar, estornar ou julgar qualquer caso de crédito.**
+Levantado em 18/08 varrendo todas as transações positivas de
+`credit_transactions`.
+
+### ⚠️ A armadilha principal
+
+**`subscription_grant | payment_event` NÃO prova pagamento.** O trial gratuito
+da Hotmart gera o **mesmo** carimbo de `+100.000` que uma venda de verdade.
+Confirmado nos 4 trials que a API viva marcava `trial: true`, `price 0.00`:
+todos tinham `payment_event` de 100.000.
+
+Quem usar `payment_event` como prova de pagamento monta uma trava que **não
+pega ninguém do trial** — que é justamente o grupo que ela existe pra pegar.
+
+### As origens, por volume
+
+| kind \| ref_type | É pagamento? |
+|---|---|
+| `subscription_grant \| payment_event` | ⚠️ **CONTAMINADO** — mistura trial e venda |
+| `extra_purchase \| stripe_session` | ✅ **SIM** — dinheiro limpo |
+| `extra_purchase \| video_clone_refund` | ❌ estorno |
+| `extra_purchase \| voice_train_refund` | ❌ estorno |
+| `extra_purchase \| image_refund` | ❌ estorno |
+| `extra_purchase \| image_video_refund` | ❌ estorno |
+| `extra_purchase \| generation_refund` | ❌ estorno |
+| `extra_purchase \| studio_scene_refund` | ❌ estorno |
+| `extra_purchase \| support_refund` | ❌ estorno |
+| `extra_purchase \| admin_grant` | ❌ concessão da casa |
+| `extra_purchase \| stock_seed` | ❌ carga inicial |
+| `extra_purchase \| courtesy_grant` | ❌ cortesia |
+| `extra_purchase \| courtesy_test_access` | ❌ cortesia |
+| `extra_purchase \| courtesy_video_clone` | ❌ cortesia |
+| `extra_purchase \| bonus_cortesia` | ❌ cortesia |
+| `extra_purchase \| winback` | ❌ campanha |
+| `extra_purchase \| incident_apology_bonus` | ❌ desculpa por falha nossa |
+| `extra_purchase \| backlog_apology_bonus` | ❌ desculpa por falha nossa |
+| `extra_purchase \| compensation` | ❌ compensação |
+| `campaign_bonus \| credit_campaign` | ❌ campanha |
+
+**Saldo alto não é sinal de pagamento.** Separe sempre por origem.
+
+### Como saber de verdade se alguém pagou
+
+O payload do webhook da Hotmart **não tem campo `trial`** (chaves de topo:
+`buyer, product, producer, purchase, affiliates, commissions, subscription`).
+O que ele tem, e resolve, é o valor cobrado no próprio evento:
+
+- `purchase.price.value > 0` → entrou dinheiro naquele evento.
+- `purchase.price.value = 0` com `recurrence_number = 1` → trial.
+
+Isso é melhor que um rótulo: cupom de 100% também vem zerado, e continua
+correto, porque o que importa é caixa e não nome.
+
+⚠️ **`entitlements.raw_event` guarda UM evento só, não o histórico.** O
+`ddfleury@gmail.com` tem o evento do trial gravado (`value=0`, `rec#=1`) e
+mesmo assim recebeu recarga depois. Para histórico de pagamento use
+`GET /sales/history` da API da Hotmart (testado 18/08, HTTP 200), nunca o
+`raw_event`.
+
+### Contra-exemplo que mata qualquer atalho
+
+`martinmendezagiluilar7@gmail.com` está em **trial** na Hotmart e comprou
+**120.000 pelo Stripe** em 14/08. Regra do tipo "está em trial → zera"
+apagaria crédito de quem pôs dinheiro. **O critério é pagamento, e só ele.**
