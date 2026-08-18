@@ -380,3 +380,55 @@ git show origin/main:<caminho/do/arquivo> | grep -n "<a linha do bug>"
 **Mesma família do `|| 'Done.'`** (ordem `2026-08-19_done_falso.md`): trabalho
 não entregue se apresentando como concluído. A diferença é que aqui quem foi
 enganado foi o próximo agente — e o aluno esperou mais 6 horas por isso.
+
+---
+
+## Q. O incidente parado esperando uma prova que já evaporou
+
+Nasceu em 18/08 no incidente `d3d8d1b2` (geração de áudio estourando o
+tempo). Desde **07/08**, quatro rodadas de agentes diferentes fecharam a nota
+com o mesmo pedido: *"ação humana pendente: puxar os logs RunPod dos jobs X e
+Y"*. Ninguém puxou, e cada rodada seguinte **reforçava o pedido** em vez de
+questioná-lo. O incidente ficou **11 dias** sem andar.
+
+Bastou testar: `GET /v2/<endpoint>/status/<jobId>` devolveu **HTTP 404 "job
+not found"** nos dois endpoints, **~2h** depois da falha. O status de job do
+RunPod expira em **~30 min** — está escrito no `02_ACESSOS.md` desde sempre.
+Aqueles logs sumiram em 07 e 08/08, minutos depois de cada falha.
+
+> **Ninguém falhou em executar a tarefa: a tarefa era inexecutável.**
+
+### A regra
+
+**Antes de anotar "aguardando X", pergunte se X ainda é obtível.** Se a prova
+tem prazo de validade (status de job, URL assinada, log rotacionado, cache),
+"pego depois" quase sempre significa "não vou pegar nunca" — e o incidente
+vira uma sala de espera educada.
+
+### O que fazer no lugar
+
+1. **Teste a obtenção agora**, na rodada em que você escreveu o pedido. Um
+   `curl` responde se o plano é viável ou fantasia.
+2. **Se a prova expira, o plano certo é capturá-la na hora da falha**, não
+   buscá-la depois. Em geral o código **já tem o dado na mão** e o descarta:
+   aqui o poll recebia a resposta inteira do RunPod
+   (`generations/[id]/route.ts:83`) e guardava só o texto do erro, jogando
+   fora `executionTime`/`delayTime` que já existem tipados
+   (`runpod/client.ts:85-91`).
+3. **Se ninguém executou um pedido depois de 2 rodadas, o problema é o
+   pedido.** Releia-o como suspeito, não como pendência.
+
+### ⚠️ Ao guardar diagnóstico junto do erro, cuidado com a assinatura
+
+A assinatura do incidente é montada **a partir do texto do erro**
+(`incidents/classify.ts:87-109`). Ela normaliza números (`\d+` → `#`), UUID e
+hex longo — mas **não** normaliza identificador alfanumérico curto. Enfiar
+`workerId` no `error_message` faz **cada worker abrir um incidente novo**.
+
+Isso não é hipótese: com o Errno 28 (disco cheio) o path do cache
+(`/tmp/torchinductor_root/fw/…` × `…/rh/…`) mudava a cada job e a **mesma**
+falha abriu **4 incidentes de "1x" cada**. Uma falha recorrente disfarçada de
+quatro acidentes isolados — e cada um parecia pequeno demais pra investigar.
+
+**Campo estruturado (coluna nova, migration com aval — regra 21) ou fora da
+string que gera a assinatura. Nunca concatenado no erro.**
