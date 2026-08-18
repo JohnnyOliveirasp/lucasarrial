@@ -27,3 +27,52 @@ reativar a pessoa — não encontrar a conta zerada.
 Caso real que prova o mecanismo: a Viviana. `rec#1` em 11/08 com valor 0 (adesão
 ao trial) e `rec#2` em 18/08 com US$ 22 (primeira renovação, automática, 7 dias
 depois). O trial vira pagamento sozinho — é a regra, não a exceção.
+
+---
+
+## Terceira situação: ESTORNO (18/08, decidida depois)
+
+O Johnny apontou que a Viviana não era caso de "cancelou e continuou": *"ela
+cancela tudo porque ela pediu o estorno da compra"*.
+
+São **três** situações, não duas:
+
+| Situação | O que acontece com o crédito |
+|---|---|
+| Pagou e cancelou | **mantém** — o dinheiro ficou com a gente pelo ciclo |
+| Trial e saiu | **zera** — nunca pagou |
+| Pagou e foi **estornado** | **zera** — o dinheiro voltou pra pessoa |
+
+### Executado
+
+3 contas, todas com o mesmo padrão confirmado na Hotmart: `rec#1` de valor 0
+(adesão ao trial) + `rec#2` de valor cheio com status `REFUNDED`. Ou seja,
+pagaram uma mensalidade e receberam ela de volta.
+
+```
+tecnologylegacy@gmail.com   195.800 -> 0
+will.tico@gmail.com         100.000 -> 0
+contatoabreu25@gmail.com    100.000 -> 0   (+8.112 de extra PRESERVADOS)
+```
+
+Os 8.112 do contatoabreu25 vieram de **cinco** `video_clone_refund` — devolução
+por geração que falhou. É dívida nossa com ele, não entra na conta do estorno.
+
+Cada zeragem tem lançamento negativo em `credit_transactions`
+(`ref_type=estorno`), auditável e reversível.
+
+### Detalhe que apareceu no caminho
+
+O `will.tico` tinha **três** recargas de 100.000 no nosso banco, mas só **duas**
+compras na Hotmart — uma delas de valor zero. Ou seja, ele recebeu crédito a mais
+do que comprou. Bate com o bug de crédito em dobro descrito no comentário do
+webhook (`route.ts`, nota de 10/08: APPROVED e COMPLETE creditavam os dois). Não
+mudou a decisão dele — o dinheiro foi devolvido de qualquer jeito — mas vale saber
+que existiram contas com recarga duplicada.
+
+### O buraco estrutural
+
+`revokeAccess` troca o status do entitlement e **não encosta em saldo**. Então
+estorno devolvia o dinheiro e deixava o crédito. Card criado para o webhook zerar
+sozinho daqui pra frente, tratando só os três status de dinheiro-devolvido
+(refunded, chargeback, protest) e nunca o cancelamento de quem pagou.
