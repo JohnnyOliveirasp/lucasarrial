@@ -26,6 +26,12 @@ seguida.
 **`2026-08-19_ULTIMOS_5.md`** — as 5 últimas verificações pra prova fechar.
 Watchdog já está provado e encerrado. As ordens abaixo viram referência.
 
+## Rotina permanente
+
+**`2026-08-19_rotina_das_falhas.md`** — de hora em hora, olhar a fila de
+incidentes, corrigir pelo playbook e fechar. Um relatório por dia, mesmo em
+dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
+
 ## Vigentes
 
 | Assunto | Ordem que vale |
