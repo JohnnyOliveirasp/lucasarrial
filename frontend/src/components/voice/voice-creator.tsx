@@ -26,6 +26,34 @@ type LocalFile = {
   key?: string;                // R2 key (preenchido após receber upload_slot)
 };
 
+/**
+ * Assinatura de um áudio para efeito de repetição: **nome + tamanho**.
+ *
+ * NÃO entra `lastModified`. Ele parece identificar o arquivo, mas os takes do
+ * celular nascem de `new File(blob, nome)` — sem data — e o navegador carimba
+ * `Date.now()`, diferente a cada montagem da tela. Com ele na chave, o mesmo
+ * áudio passava duas vezes por dois caminhos: o import dos takes rodando de
+ * novo, e a pessoa escolhendo no disco um arquivo que já estava na lista.
+ *
+ * Caso Ketty, 18/08: 3 takes de 11:26 apareceram 6 vezes, a barra somou 22:55,
+ * o aviso disse "mínimo atingido" e o botão de treinar liberou com metade do
+ * áudio necessário. O mínimo existe para a voz sair boa — burlá-lo com áudio
+ * repetido treina o modelo no mesmo trecho e piora o resultado.
+ */
+function assinaturaAudio(f: File): string {
+  return `${f.name.trim().toLowerCase()}|${f.size}`;
+}
+
+/** Junta `novos` em `atuais` descartando o que já está lá (por id ou conteúdo). */
+function mesclarSemRepetir(novos: LocalFile[], atuais: LocalFile[]): LocalFile[] {
+  const ids = new Set(atuais.map((f) => f.id));
+  const assinaturas = new Set(atuais.map((f) => assinaturaAudio(f.file)));
+  const inéditos = novos.filter(
+    (n) => !ids.has(n.id) && !assinaturas.has(assinaturaAudio(n.file)),
+  );
+  return [...inéditos, ...atuais];
+}
+
 type Step = "form" | "upload" | "submitting" | "done";
 
 // ───── shared button styles ─────
@@ -90,7 +118,7 @@ export function VoiceCreator() {
             };
           });
         recorderClipIds.current = kept.map((c) => c.id);
-        setFiles((prev) => [...additions, ...prev]);
+        setFiles((prev) => mesclarSemRepetir(additions, prev));
         setRecorderImport({ count: kept.length, skipped: clips.length - kept.length });
       })
       .catch(() => {});
@@ -132,7 +160,7 @@ export function VoiceCreator() {
             phoneTakeKeys.current.push(t.key);
           } catch { /* take individual falhou — segue os outros */ }
         }
-        if (alive && additions.length > 0) setFiles((prev) => [...additions, ...prev]);
+        if (alive && additions.length > 0) setFiles((prev) => mesclarSemRepetir(additions, prev));
       } catch { /* sem takes do celular — segue normal */ }
     })();
     return () => { alive = false; };
@@ -158,15 +186,15 @@ export function VoiceCreator() {
   const missing = Math.max(0, MIN_DURATION_SECONDS - totalDuration);
 
   const addFiles = useCallback(async (incoming: File[]) => {
-    // Dedup contra arquivos já na lista (signature: name + size + lastModified)
-    const existing = new Set(
-      files.map((f) => `${f.file.name}|${f.file.size}|${f.file.lastModified}`),
-    );
+    // Dedup contra arquivos já na lista — ver `assinaturaAudio` (nome+tamanho;
+    // `lastModified` ficou de fora de propósito, era ele que deixava o mesmo
+    // áudio entrar duas vezes).
+    const existing = new Set(files.map((f) => assinaturaAudio(f.file)));
     const seen = new Set<string>();
     const unique: File[] = [];
     let duplicates = 0;
     for (const f of incoming) {
-      const sig = `${f.name}|${f.size}|${f.lastModified}`;
+      const sig = assinaturaAudio(f);
       if (existing.has(sig) || seen.has(sig)) {
         duplicates++;
         continue;
