@@ -37,7 +37,9 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
 9. **Crédito é o portão do uso — mas ele morre junto com a assinatura.**
    Decidido pelo Johnny **com o Lucas** em 18/08, depois que 147 pagantes
    apareceram com acesso vencido e crédito no bolso:
-   - Passou o período (o plano Founder é **semanal**), não renovou ou pediu
+   - Passou o período (Founder = **30 dias**; o **trial é de 7 dias**,
+     `trial: true`, valor 0.00 — conferido na API viva da Hotmart 18/08),
+     não renovou ou pediu
      cancelamento → **acesso cancelado E créditos zerados**. Ela deixou de
      pagar; não fica com o que não seguiu pagando.
    - Quem tem assinatura viva usa até acabar o crédito. Crédito acumula até
