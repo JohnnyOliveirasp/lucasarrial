@@ -166,6 +166,19 @@ export async function POST(request: NextRequest) {
     try {
       const t = await transcribeUploadedAudio(audioKey);
       duration = t.durationSeconds;
+      // ÁUDIO MUDO NÃO VAI PRA GPU (caso Fernanda, 18/08). Um mp3 de 44s com
+      // volume -91 dB (silêncio digital) foi cobrado e enviado TRÊS vezes; o
+      // WanVideoSampler divide por energia zero e estoura
+      // "Array must not contain infs or NaNs". Ninguém percebia porque a
+      // cobrança e o estorno se anulavam e só ficava o erro genérico na tela.
+      // O Whisper já roda aqui pra medir a duração e devolve o texto de graça:
+      // sem fala transcrita, não há o que sincronizar com o rosto.
+      if (!t.text) {
+        return badRequest(
+          "Esse áudio está sem som — não conseguimos ouvir nenhuma fala nele. " +
+            "Confira o arquivo (dê play antes de enviar) e tente de novo. Você não foi cobrada.",
+        );
+      }
     } catch {
       return serverError("Não conseguimos processar esse áudio. Tente novamente.");
     }
