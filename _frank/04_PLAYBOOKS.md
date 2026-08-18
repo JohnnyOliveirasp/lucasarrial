@@ -518,3 +518,80 @@ Hipótese morta em uma consulta.
 ⚠️ **Pagine.** O Supabase corta em **1.000 linhas**; use `.range(from, from+999)`
 em laço. Analisar 1.000 de 1.407 linhas sem perceber é como concluir pela
 amostra errada — irmão da armadilha nº 1 do `03_ROTINA.md`.
+
+---
+
+## S. A barreira que não existia: confira o esquema antes de pedir aval
+
+Nasceu em 18/08 no `d3d8d1b2`, o incidente mais antigo da casa (aberto em
+30/07, 23 falhas em 45 dias). Ele passou **19 dias** parado por um encadeamento
+de bloqueios — e o último deles era **imaginário**.
+
+A rodada das 20h concluiu certo que o diagnóstico precisava ser **capturado na
+hora da falha** (playbook Q) e que o `executionTime` do RunPod já chegava na
+nossa mão e era descartado. Aí escreveu: *"fazer isso direito = coluna nova
+(migration, aval do Johnny, regra 21)"* e deixou a binária pro Johnny.
+
+**A coluna já existia.** `generations.elapsed_seconds`, tipada em
+`db/types.ts:127`, preenchida em 2.258 sucessos e **nula em toda falha** —
+porque só o caminho do sucesso escrevia nela. O trabalho era de 4 linhas, cabia
+inteiro em "decida sozinho", e ficou esperando uma aprovação que nunca foi
+necessária.
+
+### A regra
+
+> **Antes de escrever "precisa de migration", liste as colunas da tabela.**
+> Uma query. Se já existe campo com a semântica certa (mesmo que hoje só seja
+> preenchido num caminho), não há migration, não há aval, não há espera.
+
+```js
+const { data } = await db.from("<tabela>").select("*").limit(1);
+console.log(Object.keys(data[0] || {}));
+```
+
+É irmã do playbook Q: lá a pendência era **inexecutável**, aqui era
+**desnecessária**. Nos dois casos o incidente virou sala de espera educada, e
+nos dois casos bastou **testar a premissa** em vez de repassá-la adiante.
+Pendência herdada de outra rodada é **suspeita**, não fato.
+
+⚠️ E ao começar a preencher um campo que antes era nulo, **procure quem lê**.
+Aqui o rodapé do `voice-generator` renderiza `elapsed_seconds` para take de
+**qualquer** status: preencher na falha faria o aluno ler *"gerado em 1879.6s"*
+embaixo da mensagem de erro vermelha. Campo novo preenchido = varra os
+consumidores antes de subir.
+
+---
+
+## T. O aluno repetiu: ele montou o experimento controlado de graça
+
+Também de 18/08, e foi o que finalmente provou a causa do `d3d8d1b2`.
+
+Quando alguém falha e **insiste**, ele costuma repetir a MESMA entrada. Isso é
+um experimento controlado que você não teria como montar (repetir por conta da
+casa gasta GPU e precisa de aval). **Procure a repetição antes de pedir
+qualquer coisa.**
+
+No caso real: a aluna rodou o **mesmo texto de 456 chars 5 vezes** em 37 min.
+Quatro entregaram em **60-78s**; uma queimou **31min19s** e morreu no teto.
+
+### O que a repetição prova de uma vez
+
+| Comparação | O que morre |
+|---|---|
+| Mesma entrada passou e falhou | entrada ruim, tamanho, formato — **todos** |
+| Mesmo endpoint entregou minutos antes | queda global, endpoint ruim, fila |
+| Sucesso ~1min × falha no teto | teto apertado, capacidade, lentidão |
+
+### A régua: compare o tempo com o TETO, não com a média
+
+- Morte **no teto**, com o trabalho real ordens de grandeza abaixo → **hang**.
+  O que determinou a duração foi o limite, não o trabalho.
+- Morte em **segundos consistentes**, muito antes do teto → **fast-fail na
+  entrada** (playbook R).
+- Morte em tempo **proporcional ao tamanho** → aí sim o teto está apertado.
+
+⚠️ **Antes de dizer "o teto está apertado", meça o pior sucesso REAL.** Levante
+`elapsed` de todas as entregas boas da janela, paginando (o Supabase corta em
+1.000). Se o teto for 4x-13x o pior sucesso de 45 dias, ele não é o problema —
+e qualquer fix que mexa nele vai falhar de novo, como falharam três seguidos
+neste incidente.
