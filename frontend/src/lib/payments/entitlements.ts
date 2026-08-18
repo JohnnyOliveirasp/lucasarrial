@@ -61,8 +61,13 @@ export async function grantAccess(input: GrantInput): Promise<void> {
   if (userId) await recomputeProfileAccess(userId);
 }
 
-/** Revoga/suspende acesso. Idempotente; ignora se o entitlement não existe. */
-export async function revokeAccess(input: RevokeInput): Promise<void> {
+/**
+ * Revoga/suspende acesso. Idempotente.
+ * Devolve true se um entitlement foi encontrado e atualizado; false se o
+ * externalId não casa com nenhum (revoke antes do grant, OU id extraído
+ * errado do payload — o caller decide se isso é erro e registra).
+ */
+export async function revokeAccess(input: RevokeInput): Promise<boolean> {
   const admin = getAdmin();
   const { data: existing } = await admin
     .from("entitlements")
@@ -71,7 +76,7 @@ export async function revokeAccess(input: RevokeInput): Promise<void> {
     .eq("external_id", input.externalId)
     .maybeSingle();
 
-  if (!existing) return; // revoke antes do grant — nada a fazer
+  if (!existing) return false; // nenhum entitlement com esse external_id
 
   const patch: EntitlementUpdate = {
     status: input.status,
@@ -83,6 +88,7 @@ export async function revokeAccess(input: RevokeInput): Promise<void> {
 
   await admin.from("entitlements").update(patch).eq("id", existing.id);
   if (existing.user_id) await recomputeProfileAccess(existing.user_id);
+  return true;
 }
 
 /**
