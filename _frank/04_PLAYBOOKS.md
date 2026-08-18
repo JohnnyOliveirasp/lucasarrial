@@ -310,3 +310,73 @@ mesmo assim recebeu recarga depois. Para histórico de pagamento use
 `martinmendezagiluilar7@gmail.com` está em **trial** na Hotmart e comprou
 **120.000 pelo Stripe** em 14/08. Regra do tipo "está em trial → zera"
 apagaria crédito de quem pôs dinheiro. **O critério é pagamento, e só ele.**
+
+---
+
+## O. Aluno diz "clico e não acontece nada" (o botão mudo)
+
+**Nasceu do caso da Viviana em 17-18/08** — o incidente que terminou em
+chargeback. Custou uma cliente que pagava US$22.
+
+**O sintoma que identifica:** o aluno não descreve um **erro**, ele descreve
+**ausência**. "Presiono generar y no pasa nada", "clico e não acontece nada",
+"o botão não responde". Não há mensagem, não há tela vermelha, não há nada.
+
+**Por que é traiçoeiro:** o clique **não chega ao backend**. Logo:
+- não gera erro, não abre incidente automático, não aparece em log nenhum;
+- a busca por erros da conta volta **limpa**, e isso parece boa notícia;
+- é invisível para toda a nossa monitoria, por construção.
+
+⚠️ **Conta sem erro nenhum + aluno insistindo = suspeite de botão mudo**,
+não de aluno confuso. A ausência de erro é a *assinatura* desse bug.
+
+### A receita
+
+1. **Abra a conta antes de responder qualquer coisa** (regra 11). Na Viviana,
+   `voices` = **zero** aparecia na primeira consulta e explicava tudo.
+2. **Vá no `disabled=` do botão da tela citada** e leia o que ele exige. Se a
+   expressão tem insumo do aluno (`!image || !audio`) e **não há tooltip,
+   toast nem texto**, você achou: quem não tem o insumo clica no vazio para
+   sempre.
+3. **Pergunte de onde vem o insumo.** O áudio do Video Clone vem de voz
+   clonada **ou** de MP3 do computador. Quem não tem voz e não sabe do MP3
+   fica preso permanentemente — e "permanentemente" é o que faz virar revolta.
+4. **Conserte a UI, não o caso.** Botão desabilitado só durante envio/upload;
+   faltando insumo, o clique **escreve o que falta**. Em todos os idiomas.
+   (Feito em `b9c4c9c` para o Video Clone.)
+5. **Varra as outras telas atrás do mesmo padrão** antes de fechar.
+
+### A regra que fica
+
+> **Botão desabilitado sem explicação é bug, não é proteção.**
+> Se a interface impede alguma coisa, ela tem que dizer o quê e o que fazer.
+> Bloqueio silencioso vira "o site está quebrado" na cabeça do aluno — e ele
+> tem razão.
+
+---
+
+## P. "O fix já está pronto" não é o mesmo que "o fix está no ar"
+
+Também de 18/08. A nota de um incidente dizia que a correção estava pronta na
+branch `agent/fix-video-clone-botao-silencioso`, com commit citado e
+verificação descrita. **A branch não existia no repositório** e o código
+quebrado seguia em `origin/main` **6 horas depois**. O agente anterior não
+conseguiu dar push (403) e o trabalho morreu na máquina dele — mas a nota
+lida de fora parecia entrega feita.
+
+**Antes de acreditar que algo foi corrigido, confirme onde importa:**
+
+```bash
+git fetch origin
+git show origin/main:<caminho/do/arquivo> | grep -n "<a linha do bug>"
+```
+
+- Bug ainda visível em `origin/main` → **não foi corrigido**, independente do
+  que a nota diga. Refaça.
+- Branch citada não aparece em `git branch -a` → **ela não existe aqui**.
+- Deploy: confirme no **servidor** (`grep` no arquivo em
+  `/mnt/volume/aiverse/frontend`), não só no verde do GitHub Action.
+
+**Mesma família do `|| 'Done.'`** (ordem `2026-08-19_done_falso.md`): trabalho
+não entregue se apresentando como concluído. A diferença é que aqui quem foi
+enganado foi o próximo agente — e o aluno esperou mais 6 horas por isso.
