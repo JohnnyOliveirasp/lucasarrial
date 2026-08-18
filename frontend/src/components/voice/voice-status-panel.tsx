@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
@@ -28,6 +28,8 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
   const [noCredits, setNoCredits] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [paywallDetail, setPaywallDetail] = useState<string | null>(null);
+  /** Trava síncrona do botão (o estado do React chega tarde demais). */
+  const emVoo = useRef(false);
 
   useEffect(() => {
     if (!POLLING_STATUSES.includes(status)) return;
@@ -51,6 +53,13 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
   }, [voiceId, status, router]);
 
   async function startTraining() {
+    // 🐛 18/08: `training` é estado do React — dois cliques no MESMO instante
+    // leem `false` os dois (o re-render não aconteceu ainda) e disparam dois
+    // treinos de 10.000. O ref muda na hora e fecha essa janela. A trava que
+    // realmente vale é a do servidor (a voz só sai de awaiting_training uma
+    // vez), mas o botão não pode nem deixar o clique sair daqui.
+    if (emVoo.current) return;
+    emVoo.current = true;
     setTraining(true);
     setError(null);
     try {
@@ -63,11 +72,20 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
         setPaywallDetail(json?.error?.message ?? null);
         setNoCredits(true);
         setTraining(false);
+        emVoo.current = false;
+        return;
+      }
+      // 409 = o treino já tinha começado (outra aba, recarregar a página no
+      // meio). Não é erro pro aluno: mostra "treinando" e segue.
+      if (res.status === 409) {
+        setStatus("training");
+        router.refresh();
         return;
       }
       if (!res.ok) {
         setError(json?.error?.message || t("panel.startError"));
         setTraining(false);
+        emVoo.current = false;
         return;
       }
       setStatus("training");
@@ -75,6 +93,7 @@ export function VoiceStatusPanel({ voiceId, initialStatus }: Props) {
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.networkError"));
       setTraining(false);
+      emVoo.current = false;
     }
   }
 

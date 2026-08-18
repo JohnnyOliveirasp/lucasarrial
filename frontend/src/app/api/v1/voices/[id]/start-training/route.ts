@@ -119,6 +119,42 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     }
   }
 
+  /**
+   * 🐛 BUGFIX 2026-08-18 — A TRAVA DO "TREINAR".
+   * Dois cliques viravam DOIS treinos da MESMA voz e DOIS débitos de 10.000
+   * (caso rafaelleitemacedo: 21:35:14 e 21:35:23 — 9 segundos de diferença).
+   * A checagem lá em cima só LIA o status: as duas requisições liam
+   * "awaiting_training" e passavam juntas. A trava de verdade é esta —
+   * quem consegue VIRAR o status é o único que segue (mesmo padrão dos gates
+   * idempotentes do webhook/poll). O botão da tela também trava, mas UI
+   * nenhuma protege contra clique duplo, reenvio de rede ou duas abas.
+   * Fica ANTES da parte lenta (estimativa de fala leva até 90s — é dentro
+   * dessa janela que o segundo clique entrava).
+   */
+  const { data: claimed } = await admin
+    .from("voices")
+    .update({ status: "training", error_message: null })
+    .eq("id", voice.id)
+    .eq("status", "awaiting_training")
+    .select("id")
+    .maybeSingle();
+  if (!claimed) {
+    return jsonError(
+      "training_already_started",
+      "O treino desta voz já começou. Aguarde ele terminar — você recebe a voz em alguns minutos.",
+      409,
+    );
+  }
+  /** Devolve a voz pra fila quando algo falha depois da reserva — senão ela
+   *  fica presa em "training" pra sempre e o aluno não consegue tentar. */
+  const desfazerReserva = async () => {
+    await admin
+      .from("voices")
+      .update({ status: "awaiting_training" })
+      .eq("id", voice.id)
+      .eq("status", "training");
+  };
+
   // 1. Presigned GETs pros áudios
   let audioUrls: string[];
   let loraUploadUrl: string;
@@ -157,6 +193,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       TRAIN_EXPIRES_SECONDS,
     );
   } catch (e) {
+    await desfazerReserva();
     return serverError(
       e instanceof Error ? `R2 presigned: ${e.message}` : "R2 presigned failed",
     );
@@ -175,9 +212,12 @@ export async function POST(request: NextRequest, ctx: Ctx) {
         1,
         Math.ceil((MIN_USEFUL_SPEECH_SECONDS - est.speechSeconds) / 60),
       );
+      // Volta pra fila (o aluno vai adicionar áudio e tentar de novo) e
+      // registra o motivo pra ele ver na tela.
       await admin
         .from("voices")
         .update({
+          status: "awaiting_training",
           error_message:
             `Seu áudio tem cerca de ${haveMin} min de fala (o resto é pausa ou silêncio) ` +
             `e o treino precisa de pelo menos ${MIN_USEFUL_SPEECH_SECONDS / 60} min falando.`,
@@ -217,6 +257,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       },
     );
   } catch (e) {
+    await desfazerReserva();
     return serverError(
       e instanceof Error ? `RunPod submit: ${e.message}` : "RunPod submit failed",
     );
