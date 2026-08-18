@@ -1202,6 +1202,10 @@ export type Database = {
         Args: { p_user_id: string; p_max_amount: number; p_ref_id?: string | null };
         Returns: Json;
       };
+      expire_trial_credits: {
+        Args: { p_grace_days?: number };
+        Returns: Json;
+      };
       claim_alert: { Args: { p_key: string; p_cooldown_seconds: number }; Returns: boolean };
       claim_render_job: { Args: Record<string, never>; Returns: RenderJobRow | null };
     };

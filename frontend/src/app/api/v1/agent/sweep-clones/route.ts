@@ -18,6 +18,7 @@ import { finalizeVideoClone } from "@/lib/video-clone/finalize";
 import { getRunpodBilling } from "@/lib/admin/runpod";
 import { processCourtesyCampaigns } from "@/lib/courtesy/service";
 import { rescueStuckVoiceUploads } from "@/lib/voices/rescue-stuck-uploads";
+import { expireTrialCredits, type TrialExpirySummary } from "@/lib/credits/trial-expiry";
 
 const STUCK_AFTER_MS = 10 * 60 * 1000; // só olha o que está preso há 10min+
 const NO_JOB_FAIL_MS = 60 * 60 * 1000; // sem job id há 1h = órfão de verdade
@@ -132,7 +133,23 @@ export async function POST(request: NextRequest) {
     console.error("[sweep-clones] resgate de vozes falhou:", e instanceof Error ? e.message : e);
   }
 
+  // Trial vencido (regra 18/08, mig 80): crédito de mensalidade do trial expira
+  // 10 dias após a adesão sem pagamento. A lógica inteira é atômica no banco
+  // (expire_trial_credits). Falha NUNCA é engolida: vai pro log E pro corpo da
+  // resposta como ok:false — mas não derruba o sweep de clones.
+  let trialExpiry: TrialExpirySummary | { ok: false; error: string } | null = null;
+  try {
+    trialExpiry = await expireTrialCredits();
+    if (trialExpiry.zeroed > 0 || trialExpiry.marked_paid > 0 || trialExpiry.skipped_active_access > 0) {
+      console.log("[sweep-clones] trial vencido", JSON.stringify(trialExpiry));
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[sweep-clones] expiração de trial FALHOU:", msg);
+    trialExpiry = { ok: false, error: msg };
+  }
+
   const summary = { checked: (stuck ?? []).length, ready, failed_refunded: failed, still_running: running, errors };
   if (summary.checked > 0) console.log("[sweep-clones]", JSON.stringify(summary));
-  return jsonOk({ sweep: summary, courtesy, voice_rescue: voiceRescue });
+  return jsonOk({ sweep: summary, courtesy, voice_rescue: voiceRescue, trial_expiry: trialExpiry });
 }
