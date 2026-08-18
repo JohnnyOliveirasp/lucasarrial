@@ -17,6 +17,7 @@ import { getInfiniteTalkStatus } from "@/lib/video-clone/runpod";
 import { finalizeVideoClone } from "@/lib/video-clone/finalize";
 import { getRunpodBilling } from "@/lib/admin/runpod";
 import { processCourtesyCampaigns } from "@/lib/courtesy/service";
+import { rescueStuckVoiceUploads } from "@/lib/voices/rescue-stuck-uploads";
 
 const STUCK_AFTER_MS = 10 * 60 * 1000; // só olha o que está preso há 10min+
 const NO_JOB_FAIL_MS = 60 * 60 * 1000; // sem job id há 1h = órfão de verdade
@@ -119,7 +120,19 @@ export async function POST(request: NextRequest) {
     console.error("[sweep-clones] cortesias falhou:", e instanceof Error ? e.message : e);
   }
 
+  // Vozes paradas em "uploading" com o áudio já no R2 (o browser subiu e não
+  // avisou o servidor). Best-effort — nunca derruba o sweep de clones.
+  let voiceRescue = null;
+  try {
+    voiceRescue = await rescueStuckVoiceUploads();
+    if (voiceRescue.rescued > 0 || voiceRescue.rejected > 0 || voiceRescue.errors > 0) {
+      console.log("[sweep-clones] resgate de vozes", JSON.stringify(voiceRescue));
+    }
+  } catch (e) {
+    console.error("[sweep-clones] resgate de vozes falhou:", e instanceof Error ? e.message : e);
+  }
+
   const summary = { checked: (stuck ?? []).length, ready, failed_refunded: failed, still_running: running, errors };
   if (summary.checked > 0) console.log("[sweep-clones]", JSON.stringify(summary));
-  return jsonOk({ sweep: summary, courtesy });
+  return jsonOk({ sweep: summary, courtesy, voice_rescue: voiceRescue });
 }
