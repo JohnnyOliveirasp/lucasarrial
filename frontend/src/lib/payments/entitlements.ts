@@ -61,13 +61,22 @@ export async function grantAccess(input: GrantInput): Promise<void> {
   if (userId) await recomputeProfileAccess(userId);
 }
 
+export type RevokeResult = {
+  /** false = externalId não casa com nenhum entitlement (o caller decide se é erro). */
+  found: boolean;
+  /** dono do entitlement revogado (null se órfão ou não encontrado). */
+  userId: string | null;
+};
+
 /**
  * Revoga/suspende acesso. Idempotente.
- * Devolve true se um entitlement foi encontrado e atualizado; false se o
- * externalId não casa com nenhum (revoke antes do grant, OU id extraído
- * errado do payload — o caller decide se isso é erro e registra).
+ * Devolve found:true se um entitlement foi encontrado e atualizado; found:false
+ * se o externalId não casa com nenhum (revoke antes do grant, OU id extraído
+ * errado do payload — o caller decide se isso é erro e registra). userId vem
+ * junto pro caller agir sobre a MESMA pessoa do entitlement (ex.: estorno
+ * zera o crédito de mensalidade — mig 82).
  */
-export async function revokeAccess(input: RevokeInput): Promise<boolean> {
+export async function revokeAccess(input: RevokeInput): Promise<RevokeResult> {
   const admin = getAdmin();
   const { data: existing } = await admin
     .from("entitlements")
@@ -76,7 +85,7 @@ export async function revokeAccess(input: RevokeInput): Promise<boolean> {
     .eq("external_id", input.externalId)
     .maybeSingle();
 
-  if (!existing) return false; // nenhum entitlement com esse external_id
+  if (!existing) return { found: false, userId: null }; // nenhum entitlement com esse external_id
 
   const patch: EntitlementUpdate = {
     status: input.status,
@@ -88,7 +97,7 @@ export async function revokeAccess(input: RevokeInput): Promise<boolean> {
 
   await admin.from("entitlements").update(patch).eq("id", existing.id);
   if (existing.user_id) await recomputeProfileAccess(existing.user_id);
-  return true;
+  return { found: true, userId: existing.user_id ?? null };
 }
 
 /**
