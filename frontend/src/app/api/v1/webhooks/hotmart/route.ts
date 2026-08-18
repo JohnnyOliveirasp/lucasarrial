@@ -29,6 +29,16 @@ import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
+import {
+  extractBuyerEmail,
+  extractExternalId,
+  extractNextChargeIso,
+  extractOfferCode,
+  extractProductCode,
+  extractPurchaseStatus,
+  extractTransactionId,
+  isUnknownExternalId,
+} from "@/lib/payments/hotmart-payload";
 import type { EntitlementStatus, Json } from "@/lib/db/types";
 
 const PROVIDER = "hotmart" as const;
@@ -97,10 +107,14 @@ export async function POST(request: NextRequest) {
 
   // 3. Processa o evento
   try {
-    const handled = await processEvent(eventType, data, buyerEmail);
+    const { handled, processError } = await processEvent(eventType, data, buyerEmail);
+    // processError ≠ exceção: o evento é marcado como processado (200 → a
+    // Hotmart para de reenviar; reenviar não resolveria), mas o erro fica
+    // REGISTRADO em payment_events.error em vez de sumir como sucesso limpo.
+    // Caso típico: revogação cujo externalId não casa com nenhum entitlement.
     await admin
       .from("payment_events")
-      .update({ processed_at: new Date().toISOString(), error: null })
+      .update({ processed_at: new Date().toISOString(), error: processError })
       .eq("id", evRow.id);
     return jsonOk({ handled });
   } catch (err) {
@@ -126,24 +140,26 @@ const AWAITING_STATUSES = new Set([
   "UNDER_ANALYSIS",
 ]);
 
-/** Status da transação (data.purchase.status), em maiúsculas; "" se ausente. */
-function extractPurchaseStatus(data: Record<string, unknown>): string {
-  const s = asRecord(data.purchase).status;
-  return typeof s === "string" ? s.toUpperCase() : "";
-}
-
 /** Marca (at=ISO) ou limpa (at=null) "pagamento pendente" no perfil, casando por e-mail. */
 async function setPendingPayment(buyerEmail: string | null, at: string | null): Promise<void> {
   if (!buyerEmail) return;
   await getAdmin().from("profiles").update({ pending_payment_at: at }).eq("email", buyerEmail);
 }
 
+type ProcessResult = {
+  handled: string;
+  /** erro NÃO-fatal: o evento é marcado processado, mas isto vai pra payment_events.error */
+  processError: string | null;
+};
+
+const ok = (handled: string): ProcessResult => ({ handled, processError: null });
+
 /** Mapeia o evento da Hotmart para liberar/revogar acesso. */
 async function processEvent(
   eventType: string,
   data: Record<string, unknown>,
   buyerEmail: string | null,
-): Promise<string> {
+): Promise<ProcessResult> {
   const externalId = extractExternalId(data, eventType);
   const productCode = extractProductCode(data);
   const purchaseStatus = extractPurchaseStatus(data);
@@ -159,7 +175,7 @@ async function processEvent(
     // (WAITING_PAYMENT etc.). Nesse caso NÃO liberamos — marcamos como pendente.
     if (purchaseStatus && !PAID_STATUSES.has(purchaseStatus)) {
       await setPendingPayment(buyerEmail, new Date().toISOString());
-      return `pending:${purchaseStatus}`;
+      return ok(`pending:${purchaseStatus}`);
     }
 
     // Assinatura: libera o acesso + credita o bolsão do ciclo (acumula).
@@ -205,13 +221,13 @@ async function processEvent(
       await alertOrphanPurchase(buyerEmail, externalId);
     }
     await setPendingPayment(buyerEmail, null); // pagou → limpa o pendente
-    return "granted";
+    return ok("granted");
   }
 
   // aguardando pagamento: Pix/boleto GERADO mas ainda não pago → banner no app.
   if (eventType === "PURCHASE_BILLET_PRINTED" || AWAITING_STATUSES.has(purchaseStatus)) {
     if (buyerEmail) await setPendingPayment(buyerEmail, new Date().toISOString());
-    return "pending";
+    return ok("pending");
   }
 
   // revoga
@@ -222,17 +238,30 @@ async function processEvent(
       eventType === "SUBSCRIPTION_CANCELLATION"
         ? extractNextChargeIso(data)
         : null;
-    await revokeAccess({
+    const found = await revokeAccess({
       provider: PROVIDER,
       externalId,
       status: revokeStatus,
       accessUntil: keepUntil,
       rawEvent: data,
     });
-    return `revoked:${revokeStatus}`;
+    if (!found) {
+      // Uma revogação que não encontrou dono é ERRO, não no-op (bug de 18/08:
+      // 185 cancelamentos viraram "revoked:canceled" limpos sem tocar em nada).
+      // HTTP continua 200 (reenvio da Hotmart não resolveria), mas o erro fica
+      // gravado em payment_events.error pra auditoria/alerta enxergar.
+      const why = isUnknownExternalId(externalId, eventType)
+        ? "externalId não extraído do payload (caiu no fallback unknown)"
+        : "externalId não casa com nenhum entitlement";
+      return {
+        handled: `revoke_unmatched:${revokeStatus}`,
+        processError: `${why}: ${externalId} [buyer: ${buyerEmail ?? "?"}]`,
+      };
+    }
+    return ok(`revoked:${revokeStatus}`);
   }
 
-  return "ignored";
+  return ok("ignored");
 }
 
 /**
@@ -273,57 +302,7 @@ function mapRevokeStatus(eventType: string): Exclude<EntitlementStatus, "active"
   return null;
 }
 
-// ── extração defensiva do payload 2.0 ───────────────────────────────────────
-
-function asRecord(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
-}
-
-function extractBuyerEmail(data: Record<string, unknown>): string | null {
-  const email = asRecord(data.buyer).email;
-  return typeof email === "string" ? email.trim().toLowerCase() : null;
-}
-
-/**
- * Identificador do PAGAMENTO (uma cobrança específica), ao contrário do
- * externalId, que na assinatura é o código do assinante e não muda nunca.
- * É a chave de idempotência do crédito: um pagamento credita uma vez.
- * Sem transação no payload devolve null — aí o grant segue sem trava, que é o
- * comportamento antigo (melhor creditar do que deixar alguém sem o que pagou).
- */
-function extractTransactionId(data: Record<string, unknown>): string | null {
-  const trx = asRecord(data.purchase).transaction;
-  return typeof trx === "string" && trx ? trx : null;
-}
-
-/** Assinatura usa o código do assinante (estável entre renovações); compra usa a transação. */
-function extractExternalId(data: Record<string, unknown>, eventType: string): string {
-  const sub = asRecord(data.subscription);
-  const subCode =
-    asRecord(sub.subscriber).code ?? sub.code ?? asRecord(asRecord(data.purchase).subscription).code;
-  const transaction = asRecord(data.purchase).transaction;
-  const id = subCode ?? transaction;
-  if (typeof id === "string" && id) return id;
-  return `${eventType}:unknown`;
-}
-
-function extractProductCode(data: Record<string, unknown>): string | null {
-  const id = asRecord(data.product).id ?? asRecord(data.product).ucode;
-  return id != null ? String(id) : null;
-}
-
-function extractOfferCode(data: Record<string, unknown>): string | null {
-  const code = asRecord(asRecord(data.purchase).offer).code;
-  return typeof code === "string" ? code : null;
-}
-
-/** date_next_charge vem em ms desde 1970 (UTC). Retorna ISO ou null. */
-function extractNextChargeIso(data: Record<string, unknown>): string | null {
-  const ms =
-    asRecord(data.purchase).date_next_charge ?? asRecord(data.subscription).date_next_charge;
-  if (typeof ms === "number" && ms > 0) return new Date(ms).toISOString();
-  return null;
-}
+// ── extração defensiva do payload 2.0: ver @/lib/payments/hotmart-payload ───
 
 function validHottok(received: string | null): boolean {
   const expected = process.env.HOTMART_HOTTOK ?? "";
