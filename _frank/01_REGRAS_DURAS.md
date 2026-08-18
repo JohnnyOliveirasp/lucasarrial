@@ -34,8 +34,18 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
    estorno automático credita mesmo assim — o aluno ganha crédito que nunca
    pagou. Ou você cobra normal, ou aceita esse efeito de propósito. Decida
    conscientemente e escreva no relatório.
-9. **Crédito é o único portão.** Não invente bloqueio novo por assinatura,
-   plano ou qualquer outra coisa.
+9. **Crédito é o portão do uso — mas ele morre junto com a assinatura.**
+   Decidido pelo Johnny **com o Lucas** em 18/08, depois que 147 pagantes
+   apareceram com acesso vencido e crédito no bolso:
+   - Passou o período (o plano Founder é **semanal**), não renovou ou pediu
+     cancelamento → **acesso cancelado E créditos zerados**. Ela deixou de
+     pagar; não fica com o que não seguiu pagando.
+   - Quem tem assinatura viva usa até acabar o crédito. Crédito acumula até
+     300k **enquanto ela paga**.
+   - **Não existe usar produto sem assinatura viva.** Nenhuma parte do
+     sistema é livre.
+   ⚠️ Enquanto o zeramento não estiver em produção, gente com acesso vencido
+   continua conseguindo gastar — é vazamento de GPU, trate como urgente.
 
 ## Falar com aluno
 
