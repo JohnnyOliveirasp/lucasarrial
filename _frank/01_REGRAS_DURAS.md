@@ -34,20 +34,24 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
    estorno automático credita mesmo assim — o aluno ganha crédito que nunca
    pagou. Ou você cobra normal, ou aceita esse efeito de propósito. Decida
    conscientemente e escreva no relatório.
-9. **Crédito é o portão do uso — mas ele morre junto com a assinatura.**
-   Decidido pelo Johnny **com o Lucas** em 18/08, depois que 147 pagantes
-   apareceram com acesso vencido e crédito no bolso:
-   - Passou o período (Founder = **30 dias**; o **trial é de 7 dias**,
-     `trial: true`, valor 0.00 — conferido na API viva da Hotmart 18/08),
-     não renovou ou pediu
-     cancelamento → **acesso cancelado E créditos zerados**. Ela deixou de
-     pagar; não fica com o que não seguiu pagando.
-   - Quem tem assinatura viva usa até acabar o crédito. Crédito acumula até
-     300k **enquanto ela paga**.
-   - **Não existe usar produto sem assinatura viva.** Nenhuma parte do
-     sistema é livre.
-   ⚠️ Enquanto o zeramento não estiver em produção, gente com acesso vencido
-   continua conseguindo gastar — é vazamento de GPU, trate como urgente.
+9. **Crédito PAGO é da pessoa. Só se zera crédito que nunca foi pago.**
+   Decidido pelo Johnny **com o Lucas** em 18/08. O que decide é o
+   **pagamento**, não o status da assinatura:
+   - Passou o **trial de 7 dias** e a cobrança rodou → é cliente,
+     **continua tudo**.
+   - Pediu cancelamento **depois de já ter pago** → para a cobrança
+     recorrente, **mas o crédito é dela** e ela usa até acabar. Ela comprou;
+     cancelar a renovação não apaga o que já foi pago.
+   - Cancelou **dentro do trial, sem nunca pagar** → **zera o crédito**.
+     Nunca entrou dinheiro.
+   ⚠️ **Bônus, cortesia, campanha e estorno NÃO são pagamento.** Entram como
+   crédito, mas quem só tem esses nunca pagou. Separe por origem, nunca pelo
+   saldo existir.
+   ⚠️ O plano Founder é de **30 dias** (`recurrency_period: 30` na API viva da
+   Hotmart, conferido 18/08). O que é de 7 dias é o **trial** (`trial: true`,
+   valor 0.00).
+   ⚠️ Enquanto a trava não estiver em produção, quem nunca pagou continua
+   gastando GPU — é vazamento, trate como urgente.
 
 ## Falar com aluno
 
