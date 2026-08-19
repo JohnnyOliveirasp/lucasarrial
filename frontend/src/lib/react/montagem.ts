@@ -79,12 +79,15 @@ async function trechoComViral(args: {
   const AV = `[1:v]${SEGURA_FIM}`;
   if (layout === "recorte") {
     // Viral ocupa a tela; você entra recortado no canto inferior esquerdo.
-    // 46% da largura (era 38% do reel do Lucas; Johnny pediu MAIOR 17/08 —
-    // "deveria ser maior este espaço de onde aparece a minha imagem").
+    // 19/08, calibrado contra o reel de referência do Johnny (IG DO6uRUQATaa):
+    // lá o avatar tem ~30% da largura e fica COLADO no canto — o corte da
+    // cintura cai na borda da tela e o meio-corpo parece inteiro. Os 46% de
+    // 17/08 dominavam a tela, e o y=H-h-120 deixava o avatar FLUTUANDO com um
+    // vão embaixo, que era o que dava a impressão de "cortado".
     filtro = [
       `[0:v]scale=${L}:${A}:force_original_aspect_ratio=increase,crop=${L}:${A},setsar=1[bg]`,
-      `${AV}chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},scale=${Math.round(L * 0.46)}:-1[me]`,
-      `[bg][me]overlay=x=24:y=H-h-120:format=auto[v]`,
+      `${AV}chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},scale=${Math.round(L * 0.32)}:-1[me]`,
+      `[bg][me]overlay=x=0:y=H-h:format=auto[v]`,
     ].join(";");
   } else {
     const cima = layout === "viral-em-cima" ? "[0:v]" : AV;

@@ -57,6 +57,9 @@ export async function POST(request: NextRequest) {
   const fotoUrl = typeof b.foto_url === "string" ? b.foto_url : null;
   const audioUrl = typeof b.audio_url === "string" ? b.audio_url : null;
   const fundoUrl = typeof b.fundo_url === "string" && b.fundo_url ? b.fundo_url : null;
+  // Motor da animação (19/08): Padrão 2.0 ou Turbo — mesmos ids do Vídeo
+  // Clone. Valor desconhecido cai no Padrão, nunca em erro.
+  const motor = typeof b.motor === "string" && ["480p-v3", "480p-v2"].includes(b.motor) ? b.motor : "480p-v3";
   // Legenda: mesmos presets do editor de vídeo (validados pela lista oficial).
   const legendaEstilo =
     typeof b.legenda_estilo === "string" && SUBTITLE_PRESET_IDS.includes(b.legenda_estilo)
@@ -190,7 +193,7 @@ export async function POST(request: NextRequest) {
     }
 
     const cloneKey = `${userId}/react/${jobId}/clone.mp4`;
-    const cloneJob = await dispararClone({ fotoKey, audioKey, saidaKey: cloneKey, segundos });
+    const cloneJob = await dispararClone({ fotoKey, audioKey, saidaKey: cloneKey, segundos, tierId: motor });
 
     await admin
       .from("react_jobs")

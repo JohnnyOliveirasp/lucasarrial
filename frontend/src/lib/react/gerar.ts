@@ -24,8 +24,15 @@ import { montarReact, type LayoutMontagem } from "./montagem";
 const run = promisify(execFile);
 /** Os TTFs viajam no deploy (public/assets) — o libass só precisa da pasta. */
 const FONTS_DIR = path.join(process.cwd(), "public", "assets", "subtitle-fonts");
-/** Padrão 2.0 — o mesmo tier do Vídeo Clone público. */
-const TIER = CLONE_TIERS[0];
+/**
+ * Motores de animação do React (19/08, pedido do Johnny): a foto parada era
+ * animada SEMPRE pelo Padrão 2.0, sem escolha. Agora a pessoa escolhe —
+ * Padrão 2.0 (CLONE_TIERS[0]) ou Turbo (CLONE_TIERS[1]), os mesmos ids do
+ * Vídeo Clone público. HeyGen fica pra quando a fonte da chave for decidida.
+ */
+function tierPorId(id?: string | null) {
+  return CLONE_TIERS.find((t) => t.id === id) ?? CLONE_TIERS[0];
+}
 
 /**
  * ⚠️ O worker grava no bucket `voices-clone-ai-verse` (BUCKET_NAME do
@@ -152,7 +159,10 @@ export async function dispararClone(args: {
   audioKey: string;
   saidaKey: string;
   segundos: number;
+  /** Id do tier do Vídeo Clone ("480p-v3" Padrão 2.0 | "480p-v2" Turbo). */
+  tierId?: string | null;
 }): Promise<string> {
+  const TIER = tierPorId(args.tierId);
   const [imageUrl, audioUrl] = await Promise.all([
     createPresignedGet(R2_BUCKETS.generations, args.fotoKey, 60 * 60 * 3),
     createPresignedGet(R2_BUCKETS.generations, args.audioKey, 60 * 60 * 3),

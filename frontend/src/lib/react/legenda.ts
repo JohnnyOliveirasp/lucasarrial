@@ -102,20 +102,31 @@ export function montarAss(args: {
 
   const L = args.largura ?? 1080;
   const A = args.altura ?? 1920;
-  const posicao = args.posicao ?? (args.estilo === "one_word" ? "center" : "bottom");
+  // Default TOPO (19/08): no layout do React o avatar mora no rodapé — legenda
+  // embaixo era desenhada EM CIMA dele. A referência do Johnny (IG DO6uRUQATaa)
+  // põe o texto grande no topo-centro, longe do avatar. Quem quiser embaixo
+  // ainda escolhe no seletor.
+  const posicao = args.posicao ?? (args.estilo === "one_word" ? "center" : "top");
   const grande = args.tamanho === "large" ? 1.3 : 1;
   const corpo = Math.round(A * 0.052 * d.escala * grande);
   const contorno = Math.max(2, Math.round(corpo * 0.07));
   // Margem de baixo generosa: no 9:16 a legenda colada no rodapé some atrás da
   // barra do TikTok.
-  const margemV = posicao === "bottom" ? Math.round(A * 0.14) : Math.round(A * 0.05);
+  // topo com 10% de respiro (na referência o título senta a ~15% da altura).
+  const margemV =
+    posicao === "bottom" ? Math.round(A * 0.14)
+    : posicao === "top" ? Math.round(A * 0.1)
+    : Math.round(A * 0.05);
 
   const cabecalho = [
     "[Script Info]",
     "ScriptType: v4.00+",
     `PlayResX: ${L}`,
     `PlayResY: ${A}`,
-    "WrapStyle: 2",
+    // WrapStyle 0 = quebra de linha inteligente. Estava em 2 (NUNCA quebra):
+    // linha mais larga que a tela era simplesmente CORTADA nas bordas — o
+    // "legendas estão cortando" que o Johnny viu no React de 19/08.
+    "WrapStyle: 0",
     "ScaledBorderAndShadow: yes",
     "",
     "[V4+ Styles]",
@@ -147,7 +158,14 @@ export function montarAss(args: {
     const bloco = args.palavras.slice(i, i + d.porBloco);
     for (let j = 0; j < bloco.length; j++) {
       const p = bloco[j];
-      const fim = j + 1 < bloco.length ? bloco[j + 1].start : Math.max(p.end, p.start + 0.12);
+      // Fim do último evento do bloco: NUNCA passa do início do bloco seguinte.
+      // Sem o teto, o "max(p.end, ...)" invadia o próximo bloco e o libass
+      // empilhava os dois na tela ao mesmo tempo (frame f_14 do React 19/08).
+      const proximoBloco = args.palavras[i + d.porBloco]?.start ?? Infinity;
+      const fim =
+        j + 1 < bloco.length
+          ? bloco[j + 1].start
+          : Math.min(Math.max(p.end, p.start + 0.12), proximoBloco);
       const texto = bloco
         .map((w, k) => {
           const t = escapar(d.maiuscula ? w.word.toUpperCase() : w.word);

@@ -74,6 +74,41 @@ export function ReactPassoLayout({
         })}
       </ul>
 
+      {/* Motor da animação (19/08): a foto era animada SEMPRE pelo Padrão 2.0
+          e o resultado podia sair parado demais — agora a pessoa escolhe.
+          Mesmos ids/preços do Vídeo Clone. */}
+      <div className="border-t border-[var(--hairline)] pt-4">
+        <h3 className="mb-1 text-[13px] font-semibold text-[var(--ink)]">Motor da animação</h3>
+        <p className="mb-2 text-[11.5px] text-[var(--mute)]">
+          Como a sua foto vira vídeo falando. Se sair com pouco movimento, tente o outro.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(
+            [
+              { id: "480p-v3", titulo: "Padrão 2.0", corpo: "Nosso motor principal — 105 créditos por segundo." },
+              { id: "480p-v2", titulo: "Turbo", corpo: "Mais rápido e mais barato — 80 créditos por segundo." },
+            ] as const
+          ).map((m) => {
+            const ativo = draft.motor === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => update({ motor: m.id })}
+                className={`flex flex-col gap-1 rounded-[var(--radius-sm)] border p-3 text-left transition-colors ${
+                  ativo
+                    ? "border-[var(--ink)] bg-[var(--surface-deep)]"
+                    : "border-[var(--hairline)] hover:border-[var(--hairline-strong)]"
+                }`}
+              >
+                <span className="text-[13px] font-semibold text-[var(--ink)]">{m.titulo}</span>
+                <span className="text-[11.5px] leading-snug text-[var(--mute)]">{m.corpo}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Legenda: o MESMO seletor do editor de vídeo (ordem do Johnny 14/08 —
           "preciso escolher da mesma forma que está no editor"). Reuso direto,
           nada de galeria paralela que envelhece sozinha. */}
