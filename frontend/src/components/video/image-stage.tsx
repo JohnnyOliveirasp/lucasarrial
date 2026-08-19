@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC, isHeicFile } from "@/lib/images/heic";
+import { putToR2, UploadError, uploadErrorText } from "@/lib/images/upload";
 import {
   ImageIcon,
   Upload,
@@ -42,6 +43,7 @@ export function ImageStage({
 }) {
   const t = useTranslations("videoWizard.images");
   const tc = useTranslations("videoWizard.common");
+  const tUpload = useTranslations("uploadErrors");
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [hasReference, setHasReference] = useState(false);
   const [hasConsent, setHasConsent] = useState(false);
@@ -107,12 +109,12 @@ export function ImageStage({
         });
         if (!up.ok) throw new Error("upload-url");
         const { key, upload_url } = await up.json();
-        const put = await fetch(upload_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
-        if (!put.ok) throw new Error("PUT");
+        // PUT direto no R2 com retry em falha transitória (rede/5xx).
+        await putToR2(upload_url, file, file.type);
         setRefs((p) => p.map((r) => (r.id === id ? { ...r, key, uploading: false } : r)));
-      } catch {
+      } catch (e) {
         setRefs((p) => p.filter((r) => r.id !== id));
-        setError(t("uploadFailed"));
+        setError(e instanceof UploadError ? uploadErrorText(e, file, tUpload) : t("uploadFailed"));
       }
     }
     if (fileRef.current) fileRef.current.value = "";
