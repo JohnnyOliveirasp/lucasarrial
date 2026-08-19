@@ -116,7 +116,23 @@ function corpo(raw) {
   try {
     await s.cmd(`LOGIN "${USER}" "${PASS.replace(/(["\\])/g, "\\$1")}"`);
 
-    const pasta = enviados ? '"INBOX.Sent"' : "INBOX";
+    // O nome da pasta de enviados MUDA por servidor ("INBOX.Sent", "Sent",
+    // "Sent Items"...). Estava fixo em "INBOX.Sent" e este servidor respondia
+    // NO "Mailbox doesn't exist" — ou seja, --enviados nunca funcionou e a
+    // pergunta "eu ja avisei esse aluno?" ficava sem resposta. Agora descobre
+    // pelo atributo \Sent do LIST, com os nomes comuns como plano B.
+    let pasta = "INBOX";
+    if (enviados) {
+      const linhas = (await s.cmd(`LIST "" "*"`)).split(/\r?\n/).filter((l) => l.startsWith("* LIST"));
+      const porAtributo = linhas.find((l) => /\\Sent/i.test(l));
+      const nome = (l) => l.match(/"([^"]*)"\s*$/)?.[1] || l.trim().split(/\s+/).pop();
+      const achado = porAtributo
+        ? nome(porAtributo)
+        : ["INBOX.Sent", "Sent", "Sent Items", "INBOX.Sent Items"].find((c) =>
+            linhas.some((l) => nome(l)?.toLowerCase() === c.toLowerCase()));
+      if (!achado) throw new Error(`pasta de enviados nao encontrada. Caixas: ${linhas.map(nome).join(", ")}`);
+      pasta = `"${achado}"`;
+    }
     await s.cmd(`SELECT ${pasta}`);
 
     // Contagem de não-lidos ANTES: é a prova de que a leitura não atrapalhou.
