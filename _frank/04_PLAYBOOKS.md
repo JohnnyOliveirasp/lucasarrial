@@ -666,3 +666,71 @@ existente**: ela já carrega a série histórica no relógio antigo e normalment
 alimenta alguma tela ("gerado em Xs"). Trocar o significado corrompe o
 histórico e infla o número mostrado ao aluno. Coluna nova = migration = aval do
 Johnny (regra 21).
+
+## V. "Job processing failed" no Vídeo Clone: meça o áudio antes de teorizar
+
+Nasceu em 18/08 (fcdnanda, 3 falhas em 3 min, `2663506d`). O worker
+InfiniteTalk morre **sem erro estruturado** por várias causas diferentes e
+todas chegam como a mesma string genérica `Job processing failed`. Ela não
+distingue nada — quem tenta diagnosticar pela mensagem inventa.
+
+**A entrada é barata de periciar e mata a maioria das hipóteses em 2 minutos.**
+Faça isso ANTES de olhar GPU, capacidade, frames ou código.
+
+### A receita
+
+1. Pegue `audio_path` e `image_path` das falhas **e dos sucessos vizinhos** do
+   mesmo aluno (`video_clones`, mesma conta, mesmo dia).
+2. Baixe os áudios do R2 — bucket **`generations-ai-verse-clone`** (o
+   `video-clone/uploads/` NÃO está no bucket de vozes nem no do worker; head
+   nos três antes de concluir que sumiu).
+3. Meça cada um:
+
+```bash
+ffmpeg -hide_banner -nostats -i a.mp3 -af astats=measure_perchannel=none -f null - 2>&1 | grep "Peak level"
+ffmpeg -hide_banner -i a.mp3 -af silencedetect=noise=-50dB:d=0.3 -f null - 2>&1 | grep silence
+ffmpeg -v warning -err_detect explode -i a.mp3 -f null -    # corrupção (causa do db17c668)
+```
+
+| Sintoma | Significa |
+|---|---|
+| `Peak level dB: -inf` + silêncio cobrindo o arquivo todo | **áudio mudo** — erro do usuário, `ignored` |
+| erro no `-err_detect explode` | **MP3 corrompido** — família do `db17c668` |
+| decodifica limpo, com sinal | a entrada está boa; a causa é outra |
+
+### As armadilhas que já me pegaram nessa investigação
+
+- **Compare com o sucesso do lado.** Se um job que **deu certo** usou a *mesma
+  imagem* que os que falharam, a imagem está inocente — e o aluno montou esse
+  experimento de graça (playbook T). Isso sozinho já elimina metade das
+  hipóteses.
+- **Cheque o endpoint no MINUTO da falha, não no dia.** Outro aluno `ready`
+  um segundo depois mata "capacidade/GPU" sem precisar de log do RunPod.
+- **Faixa de `num_frames` com taxa alta costuma ser contaminação.** A faixa
+  1050–1075 aparecia com 36,8% de falha e era **uma pessoa só** numa única
+  rajada. Sempre quebre a faixa por aluno antes de acreditar. Base real: >1000
+  frames falha 4,2% contra 3,8% geral, e já houve sucesso com 2.275 frames.
+- **Não herde a causa do incidente irmão.** A assinatura igual me fez começar
+  pela hipótese "MP3 corrompido" (a causa fechada do `db17c668`). Era a mais
+  atraente e estava errada — o arquivo decodificava perfeito.
+- ⚠️ **Valide o próprio script antes de acreditar nele.** O meu imprimiu
+  `ERRO_DECODE` nas 54 falhas, inclusive num arquivo que eu já sabia que
+  decodificava — era `execFileSync` lendo `stderr` só no `catch`, não dado.
+  O `astats` do ffmpeg escreve em **stderr mesmo quando dá certo**; use
+  `spawnSync` e leia `stderr` sempre. Uma saída uniforme demais ("todos
+  falharam") é sinal de bug seu, não de epidemia.
+
+### Se for áudio mudo
+
+Status **`ignored`** (origem é o arquivo do usuário — regra 14), mesma classe
+de `8d370ef5` e `57d360e4`. Mas confira o outro lado: **o produto deixou
+passar?** Se cobrou crédito e queimou GPU com um arquivo sem som, isso é
+lacuna nossa e vira card separado — o treino de voz já barra desde
+`f9f882a`/`ingest.ts`; o Vídeo Clone não barrava (card `4c82f566`).
+
+**Limiar seguro: pico < −60 dBFS.** Medido em 18/08: 60 sucessos têm pico
+mínimo de −19,09 dB e nenhum abaixo de −60 dB; das 54 falhas, só as 3 mudas
+davam `-inf`. São 40 dB de folga.
+⚠️ **Falso positivo é pior que o bug**: barrar áudio legítimo impede um
+pagante de gerar, enquanto o bug ao menos estorna. Barre só silêncio
+inequívoco e, se a medição falhar, **deixe passar**.
