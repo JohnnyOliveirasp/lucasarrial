@@ -381,6 +381,38 @@ git show origin/main:<caminho/do/arquivo> | grep -n "<a linha do bug>"
 não entregue se apresentando como concluído. A diferença é que aqui quem foi
 enganado foi o próximo agente — e o aluno esperou mais 6 horas por isso.
 
+### P2. A variante que pega VOCÊ: commit seu que nunca foi empurrado
+
+Em 19/08 caí nisto sozinho, com o playbook acima já escrito. Commitei dois
+fixes do incidente `d3d8d1b2` às 21:12 e 21:16 (-04). No mesmo intervalo outra
+frente empurrou 3 commits de vendas; o `git pull` abortou com *"Not possible to
+fast-forward"* e **os meus ficaram parados na máquina**. Duas horas depois eu
+escrevi num relatório que *"o fix está no bundle"* — porque conferi que o
+**commit existia**, não que ele estava **empurrado**.
+
+`git log` sozinho responde a pergunta errada: ele mostra o que você escreveu,
+não o que está em produção. A checagem de 1 segundo, que vale pra qualquer
+repositório:
+
+```bash
+git fetch origin && git log --oneline origin/main..HEAD
+```
+
+**Qualquer linha aqui = você tem código que não está em produção.** Rode isso
+como último passo de toda rodada, antes de escrever qualquer frase sobre o
+estado de um fix. Se voltar vazio, aí sim a frase pode ser escrita.
+
+⚠️ **Divergência é silenciosa.** `git status` diz "ahead 3, behind 3" numa
+linha que se lê como rotina, e um `git pull` que falhou no meio da rodada some
+do scrollback. Não confie em ter percebido na hora.
+
+⚠️ **E "no ar" tem uma segunda camada:** código que depende de coluna nova só
+funciona depois da **migration aplicada** (regra 21). No mesmo caso, mesmo
+depois do push, `delay_seconds` não existia no banco — então o fix estava no
+ar e **ainda assim não media nada**. Antes de dizer que uma instrumentação
+está armada, consulte a coluna no banco de verdade; DDL commitado não é DDL
+aplicado.
+
 ---
 
 ## Q. O incidente parado esperando uma prova que já evaporou
