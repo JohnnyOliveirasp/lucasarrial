@@ -734,3 +734,68 @@ davam `-inf`. São 40 dB de folga.
 ⚠️ **Falso positivo é pior que o bug**: barrar áudio legítimo impede um
 pagante de gerar, enquanto o bug ao menos estorna. Barre só silêncio
 inequívoco e, se a medição falhar, **deixe passar**.
+
+---
+
+## W. Os dois zeros mentirosos: quando "está limpo" é bug seu
+
+O `03_ROTINA.md` já ensina o zero mentiroso clássico: **consulta que erra volta
+vazia**, e a defesa é checar o `error` antes de acreditar. Em 19/08 levei duas
+mentiras que **passam por baixo dessa defesa**, porque em nenhuma das duas
+existe erro para checar. Ficam aqui as duas.
+
+### W1. Filtro em JavaScript sobre coluna que não existe
+
+Puxei `select("*")` dos incidentes e filtrei **no JS**:
+
+```js
+inc.filter(i => i.updated_at && i.updated_at >= "2026-08-18")   // 0 resultados
+```
+
+Resultado: **"0 incidentes fechados hoje"**. A verdade eram **5**. A tabela não
+tem `updated_at` — o campo é `resolved_at`. Em JS isso é `undefined`, o
+`&&` corta, o filtro devolve `[]` e **ninguém reclama**: não houve erro de
+consulta, porque a consulta foi `*` e veio inteira. A trava do `error` não
+protege aqui.
+
+**A defesa:** antes de filtrar por um campo, **imprima as colunas que voltaram**
+e confirme que o nome existe.
+
+```js
+const { data, error } = await db.from("incidents").select("*").limit(1);
+if (error) throw error;
+console.log("COLUNAS:", Object.keys(data[0]).join(", "));
+```
+
+Custa uma consulta. Se eu tivesse pulado, o relatório da noite diria "dia sem
+fechamento nenhum" num dia em que fechei 5 incidentes.
+
+> Regra curta: **zero que confirma o que você já esperava merece uma segunda
+> consulta.** Foi por esperar "dia calmo" que quase publiquei o zero.
+
+### W2. Marcador de deploy que é comentário
+
+Pra provar que um fix subiu (playbook P), grepei o bundle por uma string do
+diff — e deu **0 arquivos**. Ia reportar "não subiu". A string só existia num
+**comentário** do `.ts`, e o minificador apaga comentário. O fix estava no ar.
+
+**Marcador de deploy tem que sobreviver ao build.** Em ordem de confiança:
+
+| Marcador | Serve? |
+|---|---|
+| Texto de UI / chave de i18n (`"Escolha uma foto"`, `errors.audioMudo`) | ✅ o melhor |
+| Literal usado em lógica (`"SUBSCRIPTION_CANCELLATION"`) | ✅ |
+| Nome de coluna do banco (`elapsed_seconds`, `delayTime`) | ✅ |
+| Nome de função exportada | ⚠️ mangla no minificador |
+| Comentário, JSDoc, nome de arquivo `.ts` | ❌ some no build |
+
+E lembre que **cliente e servidor moram em pastas diferentes**: componente vai
+pro `.next/static`, rota de API vai pro `.next/server`. Grepar só um dos dois
+dá zero e parece prova.
+
+### O que as duas têm em comum
+
+Nas duas o sistema respondeu **exatamente o que eu perguntei** — a pergunta é
+que estava errada. Erro de consulta o script pega; **pergunta errada, não.**
+Quando o resultado for um zero que fecha o dia, gaste 30 segundos provando que
+a pergunta era possível de responder com "não-zero".
