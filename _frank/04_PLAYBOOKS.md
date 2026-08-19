@@ -942,5 +942,31 @@ Então, nesses casos, monte o e-mail para os admins com:
   bom? houve estorno?);
 - e **a pergunta objetiva**: "isto está aceitável?".
 
+### O caminho é o GRUPO, não o e-mail (19/08)
+
+O Johnny pôs a **Carol** no grupo **FASTCLONER - Suporte**. E-mail pra admin
+ninguém lê na hora; no grupo alguém olha. Então use:
+
+```
+node _frank/ferramentas/avisar_grupo.cjs --seco   --aluno maria@exemplo.com   --assunto "Voz saindo com letras cortadas"   --conferi "o texto de 30 letras gerou 0,4s — impossível; sem falha registrada"   --link "<URL assinada, 24h>"   --pergunta "alguém consegue ouvir e confirmar?"   --incidente ce6e157d
+```
+
+Rode **sempre com `--seco` primeiro** e leia o que vai sair. Sem `--seco` a
+mensagem vai pro grupo — e mensagem no grupo não tem desfazer.
+
+⚠️ A WAHA só escuta em `127.0.0.1` no servidor: da sua máquina o `--seco`
+funciona, o envio real precisa ser disparado de lá.
+
+**Regras da mensagem:**
+- **A pergunta é obrigatória.** Recado sem pedido claro é mensagem que todo
+  mundo lê e ninguém responde.
+- **Link assinado sempre**, senão ninguém vai atrás e o caso morre no grupo.
+- **Traga o que você já mediu.** "0,4s para 30 letras" faz a pessoa abrir; "a
+  aluna reclamou da voz" não faz.
+- **Grupo é da equipe.** Aluno continua sendo pelo `enviar_email.cjs`.
+
+E lembre: a Carol só fala no grupo **quando chamam ela pelo nome** — o
+burburinho normal não a acorda.
+
 Depois disso, o incidente fica `investigating` **com a nota dizendo que foi
-para os admins e quando**. Ele volta a ser seu quando a resposta chegar.
+para o grupo e quando**. Ele volta a ser seu quando a resposta chegar.
