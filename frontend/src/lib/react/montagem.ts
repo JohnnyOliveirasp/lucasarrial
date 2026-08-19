@@ -79,14 +79,14 @@ async function trechoComViral(args: {
   const AV = `[1:v]${SEGURA_FIM}`;
   if (layout === "recorte") {
     // Viral ocupa a tela; você entra recortado no canto inferior esquerdo.
-    // 19/08, calibrado contra o reel de referência do Johnny (IG DO6uRUQATaa):
-    // lá o avatar tem ~30% da largura e fica COLADO no canto — o corte da
-    // cintura cai na borda da tela e o meio-corpo parece inteiro. Os 46% de
-    // 17/08 dominavam a tela, e o y=H-h-120 deixava o avatar FLUTUANDO com um
-    // vão embaixo, que era o que dava a impressão de "cortado".
+    // Tamanho da janela: 46% (17/08) dominava a tela → 32% (19/08, medido no
+    // reel de referência) o Johnny achou PEQUENO e o gesto do braço batia na
+    // borda do quadro do clone → 40% (19/08 tarde). Continua colado no canto
+    // (y=H-h): o corte da cintura cai na borda da tela e o meio-corpo parece
+    // inteiro — o y=H-h-120 antigo deixava o avatar flutuando.
     filtro = [
       `[0:v]scale=${L}:${A}:force_original_aspect_ratio=increase,crop=${L}:${A},setsar=1[bg]`,
-      `${AV}chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},scale=${Math.round(L * 0.32)}:-1[me]`,
+      `${AV}chromakey=${VERDE}:${SIMILARIDADE}:${SUAVIDADE},scale=${Math.round(L * 0.4)}:-1[me]`,
       `[bg][me]overlay=x=0:y=H-h:format=auto[v]`,
     ].join(";");
   } else {

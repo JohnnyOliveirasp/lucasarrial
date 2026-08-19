@@ -24,7 +24,9 @@ export async function transcribeWords(bucket: string, key: string): Promise<Capt
   form.append("model", "whisper-1");
   form.append("response_format", "verbose_json");
   form.append("timestamp_granularities[]", "word");
-  form.append("language", "pt");
+  // SEM `language` fixo (19/08): estava cravado em "pt" e um áudio em INGLÊS
+  // saía com legenda em português — o Whisper forçado traduz em vez de
+  // transcrever (React do Johnny). Auto-detect transcreve no idioma falado.
 
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
