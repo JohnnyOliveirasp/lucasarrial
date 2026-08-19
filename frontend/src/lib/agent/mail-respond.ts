@@ -14,7 +14,7 @@
 import { getAdmin } from "@/lib/db/admin";
 import { guardarPrints } from "./mail-anexos";
 import type { AgentMessageRow } from "@/lib/db/types";
-import { buildAgentReply } from "./brain";
+import { AGENT_MODEL, buildAgentReply } from "./brain";
 import { buildAccountContext } from "./account";
 import { extractEscalation } from "./escalate";
 import { agentEnabled } from "./respond";
@@ -145,7 +145,7 @@ async function openIncidentForSentinela(
    *  cancelamento, reembolso, dúvida de conta). Os dois viram incidente desde
    *  19/08 — muda o rótulo, não a existência. */
   technical = true,
-): Promise<void> {
+): Promise<string | null> {
   const admin = getAdmin();
   const signature = `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`;
   const now = new Date().toISOString();
@@ -176,25 +176,81 @@ async function openIncidentForSentinela(
         ...(prints.length ? { attachment_path: prints.join(",") } : {}),
       } as never)
       .eq("id", existing.id);
-    return;
+    return existing.id;
   }
-  await admin.from("incidents" as never).insert({
-    kind: "reported",
-    cause: "reported",
-    status: "open",
-    signature,
-    title: `Fast (e-mail${technical ? "" : ", atendimento"}): ${reason.slice(0, 90)}`,
-    occurrences: 1,
-    affected_emails: [fromEmail],
-    sample_error: excerpt.slice(0, 1000),
-    description: technical
-      ? `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`
-      : `Pedido de ATENDIMENTO por e-mail ao suporte@ (cobrança, cancelamento, reembolso ou dúvida de conta) — a Fast não resolve isso sozinha e prometeu ao aluno que a equipe verificaria. Resumo dela: ${reason}`,
-    reported_by: "fast",
-    attachment_path: prints.length ? prints.join(",") : null,
-    first_seen_at: now,
-    last_seen_at: now,
-  } as never);
+  const { data: created } = await admin
+    .from("incidents" as never)
+    .insert({
+      kind: "reported",
+      cause: "reported",
+      status: "open",
+      signature,
+      title: `Fast (e-mail${technical ? "" : ", atendimento"}): ${reason.slice(0, 90)}`,
+      occurrences: 1,
+      affected_emails: [fromEmail],
+      sample_error: excerpt.slice(0, 1000),
+      description: technical
+        ? `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`
+        : `Pedido de ATENDIMENTO por e-mail ao suporte@ (cobrança, cancelamento, reembolso ou dúvida de conta) — a Fast não resolve isso sozinha e prometeu ao aluno que a equipe verificaria. Resumo dela: ${reason}`,
+      reported_by: "fast",
+      attachment_path: prints.length ? prints.join(",") : null,
+      first_seen_at: now,
+      last_seen_at: now,
+    } as never)
+    .select("id")
+    .maybeSingle();
+  return (created as unknown as { id: string } | null)?.id ?? null;
+}
+
+/**
+ * Registro do que a Fast ENVIOU (19/08): a caixa do suporte@ não tem pasta de
+ * enviados e o corpo respondido não era gravado em lugar nenhum — o único
+ * rastro era uma linha de console no pm2 (~22h de retenção). Duas vezes no
+ * mesmo dia precisamos auditar o que ela disse a um aluno (link de PIX, áudio
+ * incompleto) e não havia como. Grava DEPOIS do envio bem-sucedido; falha
+ * aqui NUNCA derruba o envio nem repete e-mail pro aluno — vira só uma linha
+ * de erro no log (inclusive enquanto a migration 85 não estiver aplicada).
+ */
+async function logMailReply(row: {
+  imapUid: number;
+  toEmail: string;
+  subject: string;
+  body: string;
+  /** 'resposta' (cérebro) | 'anexo_grande' (aviso automático de anexo pesado). */
+  kind?: "resposta" | "anexo_grande";
+  /** Texto recebido do aluno (o mesmo recorte que foi pro modelo). */
+  receivedBody?: string | null;
+  receivedMessageId?: string | null;
+  escalationReason?: string | null;
+  escalationTechnical?: boolean | null;
+  incidentId?: string | null;
+  /** Modelo que gerou o texto; null quando o texto é fixo (anexo grande). */
+  model?: string | null;
+}): Promise<void> {
+  try {
+    const { error } = await getAdmin()
+      .from("support_mail_replies" as never)
+      .insert({
+        imap_uid: row.imapUid,
+        to_email: row.toEmail,
+        subject: row.subject,
+        body: row.body,
+        kind: row.kind ?? "resposta",
+        received_body: row.receivedBody ?? null,
+        received_message_id: row.receivedMessageId ?? null,
+        escalated: Boolean(row.escalationReason),
+        escalation_reason: row.escalationReason ?? null,
+        escalation_technical: row.escalationTechnical ?? null,
+        incident_id: row.incidentId ?? null,
+        model: row.model ?? null,
+      } as never);
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    console.error(
+      `[agent/mail] falha ao registrar resposta enviada (uid=${row.imapUid}):`,
+      e instanceof Error ? e.message : e,
+    );
+  }
 }
 
 // Pedido Johnny 05/08: cópia oculta SÓ pra ele (antes ia pra admin_emails inteira).
@@ -271,12 +327,23 @@ async function responderAnexoGrande(
     "Desculpe o transtorno e obrigada!\n\n" +
     "Fast — FastCloner";
 
+  const replySubject = /^re:/i.test(subject) ? subject : `Re: ${subject}`;
   await sendSupportMail({
     to: fromEmail,
-    subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
+    subject: replySubject,
     text: texto,
     inReplyTo: messageId,
     bcc,
+  });
+  // Auditoria (19/08): registra o aviso enviado — texto fixo, sem modelo.
+  await logMailReply({
+    imapUid: mail.uid,
+    toEmail: fromEmail,
+    subject: replySubject,
+    body: texto,
+    kind: "anexo_grande",
+    receivedMessageId: messageId,
+    model: null,
   });
   // O time precisa saber que existe material esperando — mesmo sem o anexo,
   // o assunto e o remetente bastam pra ir atrás na caixa do suporte@.
@@ -386,15 +453,31 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   //
   // Se a Fast decidiu escalar, é porque ela não resolveu. O que muda entre
   // técnico e não-técnico é o RÓTULO do incidente, nunca a existência dele.
+  let incidentId: string | null = null;
   if (reason) {
     try {
       // O print é a prova: guarda ANTES de abrir o incidente.
       const prints = await guardarPrints(mail.raw, { fromEmail, uid: mail.uid });
-      await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
+      incidentId = await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
     } catch (e) {
       console.error("[agent/mail] falha ao abrir incidente:", e instanceof Error ? e.message : e);
     }
   }
+  // Auditoria (19/08): grava o que a Fast disse ao aluno, na íntegra, DEPOIS
+  // do envio — falha aqui nunca derruba nem repete o e-mail (try/catch dentro).
+  await logMailReply({
+    imapUid: mail.uid,
+    toEmail: fromEmail,
+    subject: replySubject,
+    body: visible,
+    kind: "resposta",
+    receivedBody: text,
+    receivedMessageId: messageId,
+    escalationReason: reason ?? null,
+    escalationTechnical: reason ? technical : null,
+    incidentId,
+    model: AGENT_MODEL,
+  });
   await markSeen(mail.uid);
   console.log(
     `[agent/mail] respondido uid=${mail.uid} para=${fromEmail}${reason ? (technical ? " (INCIDENTE técnico)" : " (INCIDENTE atendimento)") : ""}`,

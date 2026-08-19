@@ -9,6 +9,8 @@ import type { AgentMessageRow } from "@/lib/db/types";
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const MODEL = process.env.AGENT_MODEL || "claude-sonnet-4-5";
+/** Nome do modelo em uso — pro registro de auditoria (support_mail_replies). */
+export const AGENT_MODEL = MODEL;
 const TIMEOUT_MS = 45_000;
 
 /** Imagem anexada à ÚLTIMA mensagem do aluno (Claude é multimodal). */
