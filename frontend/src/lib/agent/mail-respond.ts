@@ -10,13 +10,17 @@
  *
  * Regras duras herdadas: dinheiro/reembolso → [ESCALAR] (a Fast acolhe e
  * avisa que a equipe confirma; nunca resolve sozinha). "PULAR" = silêncio.
+ *
+ * TODA escalação aqui (comum e técnica) abre incidente E avisa a equipe no
+ * WhatsApp (grupo de suporte + números individuais), igual ao chat — dedupe
+ * de 1 aviso por aluno×tipo a cada 6h via claim_alert (Johnny 19/08).
  */
 import { getAdmin } from "@/lib/db/admin";
 import { guardarPrints } from "./mail-anexos";
 import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
 import { buildAccountContext } from "./account";
-import { extractEscalation } from "./escalate";
+import { extractEscalation, notifyTeamEscalation } from "./escalate";
 import { agentEnabled } from "./respond";
 import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
 import { sendSupportMail } from "./mail-smtp";
@@ -133,6 +137,12 @@ export type MailSweepSummary = {
  * 03/08). Dedupe por aluno: reclamação repetida soma ocorrência no mesmo
  * incidente em vez de abrir outro.
  */
+/** Assinatura do incidente por aluno×tipo — também é a chave do dedupe do
+ *  aviso no zap (mesma janela de identidade, dois usos). */
+function incidentSignature(fromEmail: string, technical: boolean): string {
+  return `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`;
+}
+
 async function openIncidentForSentinela(
   fromEmail: string,
   reason: string,
@@ -147,7 +157,7 @@ async function openIncidentForSentinela(
   technical = true,
 ): Promise<void> {
   const admin = getAdmin();
-  const signature = `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`;
+  const signature = incidentSignature(fromEmail, technical);
   const now = new Date().toISOString();
   const { data: existingRaw } = await admin
     .from("incidents" as never)
@@ -393,6 +403,35 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
       await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
     } catch (e) {
       console.error("[agent/mail] falha ao abrir incidente:", e instanceof Error ? e.message : e);
+    }
+    // Aviso IMEDIATO à equipe no zap (autorizado Johnny 19/08): incidente
+    // sozinho espera a ronda do Sentinela — Luis, Katia e Itamar ficaram
+    // horas parados esperando uma equipe que não sabia deles. Mesmo caminho
+    // do chat (notifyTeamEscalation), grupo + números individuais.
+    //
+    // TRAVA contra spam: um aluno insistente não vira metralhadora no grupo.
+    // claim_alert (check-and-set atômico, o mesmo do sweep) limita a 1 aviso
+    // por aluno×tipo a cada 6h — reclamações repetidas continuam SOMANDO
+    // ocorrência no incidente acima, só o zap é deduplicado. Se o RPC
+    // falhar, avisa mesmo assim: aviso dobrado custa menos que silêncio.
+    try {
+      const { data: podeAvisar } = await admin.rpc("claim_alert", {
+        p_key: `zap:${incidentSignature(fromEmail, technical)}`,
+        p_cooldown_seconds: 6 * 3600,
+      });
+      if (podeAvisar !== false) {
+        await notifyTeamEscalation({
+          mail: { fromEmail, name: fromHeader.split("<")[0].trim().replace(/^"|"$/g, "") || null },
+          reason,
+          technical,
+          lastUserText: text,
+        });
+        console.log(`[agent/mail] equipe avisada no zap (ESCALADO) para=${fromEmail}`);
+      } else {
+        console.log(`[agent/mail] aviso ao zap suprimido (janela 6h) para=${fromEmail}`);
+      }
+    } catch (e) {
+      console.error("[agent/mail] falha ao avisar a equipe no zap:", e instanceof Error ? e.message : e);
     }
   }
   await markSeen(mail.uid);
