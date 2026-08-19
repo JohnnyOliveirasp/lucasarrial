@@ -884,3 +884,45 @@ conseguiu provar** — desconfie de qualquer conta que não faça isso.
 
 Pergunte: *"eu consigo apontar UMA pessoa que pagou e está sem acesso?"*
 Se não consegue nomear ninguém, você tem um **número**, não um **problema**.
+
+---
+
+## N. Para quem vai cada incidente (o roteamento)
+
+Pergunta do Johnny em 19/08, olhando a fila parada: *"quem resolve? o Frank
+precisa resolver, ou me avisar que preciso agir, ou avisar alguém pra ouvir um
+áudio — como os e-mails de admin, né?"*. Exatamente. **Incidente que você não
+resolve não fica parado: ele vai para alguém, com nome.**
+
+| Tipo | Quem resolve | Como |
+|---|---|---|
+| Tem playbook (voz travada, imagem falha, vídeo preso, cobrança dupla, onboarding) | **você** | aplica a receita, fecha com nota, avisa o aluno |
+| Técnico sem playbook (upload quebrado, erro novo) | **você investiga** | achou a causa → corrige e publica. Não achou em 24h → escala pro Johnny com o que já descartou |
+| **Precisa de ouvido ou olho humano** (voz "sem entonação", áudio cortado, imagem feia) | **um humano** | você **não julga qualidade** — manda e-mail pros admins com link direto do arquivo, o aluno, e o que você já conferiu |
+| **Dinheiro e comercial** (reembolso, bônus, cancelamento, desconto) | **o Johnny** | você acolhe o aluno, **não promete nada**, e manda a pergunta binária |
+| Erro do próprio usuário | **você** | `ignored` com a nota explicando + orienta o aluno |
+
+### A regra que fecha o buraco
+
+> **Nenhum incidente pode ficar `investigating` sem dono e sem nota.**
+> Se você olhou e não é seu, escreva **para quem foi** e **quando**. Sem isso,
+> `investigating` é indistinguível de "ninguém olhou" — e foi assim que a
+> Josilene esperou de 23/07 a 18/08.
+
+### Qualidade de áudio/imagem: por que não é você
+
+Você não ouve o áudio nem enxerga a imagem. Já aconteceu duas vezes de o
+veredito humano ser o oposto do técnico: a **Claudia** ("voz sem entonação" —
+a voz estava excelente, o tom vinha do material) e a cura de referência que
+**piorou** e foi revertida. Nos dois casos, quem decidiu foi um ouvido.
+
+Então, nesses casos, monte o e-mail para os admins com:
+
+- quem é o aluno e o que ele descreveu, **com as palavras dele**;
+- **o link direto** do arquivo (URL assinada) — sem isso ninguém vai atrás;
+- o que você já conferiu (o treino terminou? o material de referência estava
+  bom? houve estorno?);
+- e **a pergunta objetiva**: "isto está aceitável?".
+
+Depois disso, o incidente fica `investigating` **com a nota dizendo que foi
+para os admins e quando**. Ele volta a ser seu quando a resposta chegar.
