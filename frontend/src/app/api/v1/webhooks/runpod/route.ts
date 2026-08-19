@@ -230,7 +230,15 @@ async function handleGenerationWebhook(
     let executionTimeMs = payload.executionTime;
     if (typeof delayTimeMs !== "number") {
       try {
-        const st = await runpodGetStatus(payload.id, inferenceEndpoint());
+        // Teto de 5s: essa busca fala com a RunPod justamente quando a RunPod
+        // está mal — sem teto, um fetch pendurado (Node não tem timeout default)
+        // segura o webhook ANTES do estorno. O signal cobre o total, inclusive
+        // o fallback pro endpoint B. Estourou → TimeoutError → cai no catch.
+        const st = await runpodGetStatus(
+          payload.id,
+          inferenceEndpoint(),
+          AbortSignal.timeout(5000),
+        );
         if (typeof st.delayTime === "number") delayTimeMs = st.delayTime;
         if (typeof executionTimeMs !== "number" && typeof st.executionTime === "number") {
           executionTimeMs = st.executionTime;

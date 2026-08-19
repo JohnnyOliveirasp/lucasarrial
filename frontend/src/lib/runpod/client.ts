@@ -107,10 +107,11 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-async function getJson<T>(url: string): Promise<T> {
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, {
     headers: { "Authorization": `Bearer ${key()}` },
     cache: "no-store",
+    signal,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -153,15 +154,23 @@ export async function runpodSubmitInference(
  * endpoint consultado não conhecer o id, tenta o B (e vice-versa) antes de
  * propagar o erro. Sem B configurado, comportamento idêntico ao antigo.
  */
-export async function runpodGetStatus(jobId: string, endpoint?: string): Promise<RunpodStatusResponse> {
+export async function runpodGetStatus(
+  jobId: string,
+  endpoint?: string,
+  /** Teto de tempo TOTAL da consulta (cobre também o fallback pro B).
+   *  Sem signal, comportamento idêntico ao antigo — fetch sem timeout. */
+  signal?: AbortSignal,
+): Promise<RunpodStatusResponse> {
   const ep = endpoint || trainEndpoint();
   try {
-    return await getJson<RunpodStatusResponse>(`${BASE}/${ep}/status/${jobId}`);
+    return await getJson<RunpodStatusResponse>(`${BASE}/${ep}/status/${jobId}`, signal);
   } catch (e) {
+    // Se o teto de tempo estourou, não adianta tentar o B — o tempo acabou.
+    if (signal?.aborted) throw e;
     const b = inferenceEndpointB();
     if (b && b !== ep) {
       try {
-        return await getJson<RunpodStatusResponse>(`${BASE}/${b}/status/${jobId}`);
+        return await getJson<RunpodStatusResponse>(`${BASE}/${b}/status/${jobId}`, signal);
       } catch {
         /* propaga o erro original abaixo */
       }
