@@ -26,8 +26,12 @@ export async function POST(request: NextRequest) {
   }
 
   const key = (body.key ?? "").trim();
-  // Mesma defesa do generate: só chaves do espaço de imagens do próprio usuário.
-  if (!key || !key.startsWith(`${auth.user_id}/images/`)) {
+  // Mesma defesa do generate: só chaves do espaço do próprio usuário —
+  // `images/` (inputs de upload) ou `refs/` (referências salvas, 19/08).
+  if (
+    !key ||
+    (!key.startsWith(`${auth.user_id}/images/`) && !key.startsWith(`${auth.user_id}/refs/`))
+  ) {
     return badRequest("Imagem de referência inválida");
   }
 

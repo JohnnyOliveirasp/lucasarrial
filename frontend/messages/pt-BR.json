@@ -576,7 +576,9 @@
         "delete": "Não foi possível apagar."
       },
       "current": "Referência atual",
-      "currentTitle": "Esta é a foto de referência em uso agora"
+      "currentTitle": "Esta é a foto de referência em uso agora",
+      "addExtra": "Adicionar como extra",
+      "inExtras": "Já está nas extras"
     }
   },
   "misc": {

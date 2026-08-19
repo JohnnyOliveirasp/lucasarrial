@@ -576,7 +576,9 @@
         "delete": "Couldn't delete."
       },
       "current": "Current reference",
-      "currentTitle": "This is the reference photo in use right now"
+      "currentTitle": "This is the reference photo in use right now",
+      "addExtra": "Add as extra",
+      "inExtras": "Already in extras"
     }
   },
   "misc": {

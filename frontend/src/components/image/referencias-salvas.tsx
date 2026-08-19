@@ -11,19 +11,25 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Loader2, Pin, Trash2 } from "lucide-react";
+import { ImagePlus, Loader2, Pin, Trash2 } from "lucide-react";
 
 type Ref = { key: string; url: string; size: number; at: string | null };
 
 export function ReferenciasSalvas({
   reloadKey = 0,
   currentRefKey = null,
+  extrasKeys = [],
   onUseAsRef,
+  onAddExtra,
 }: {
   reloadKey?: number;
   /** Chave da referência EM USO: o card dela ganha a marca e trava o botão. */
   currentRefKey?: string | null;
+  /** Chaves já no quadro de fotos extras: o card marca e trava o botão. */
+  extrasKeys?: string[];
   onUseAsRef?: (key: string, url: string) => void;
+  /** Manda a foto pro quadro de fotos extras do gerador (sem upload novo). */
+  onAddExtra?: (key: string, url: string) => void;
 }) {
   const t = useTranslations("images.refs");
   const [refs, setRefs] = useState<Ref[]>([]);
@@ -87,6 +93,7 @@ export function ReferenciasSalvas({
       <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
         {refs.map((r) => {
           const emUso = currentRefKey === r.key;
+          const nasExtras = extrasKeys.includes(r.key);
           return (
           <li
             key={r.key}
@@ -114,14 +121,15 @@ export function ReferenciasSalvas({
                 <Pin className="h-3 w-3 text-[var(--silver)]" />
                 {emUso ? t("current") : t("use")}
               </button>
-              {/* A ATUAL não se apaga daqui: o estúdio ficaria apontando pra
-                  uma foto morta — o mesmo defeito que esta aba existe pra
-                  curar. Troque a referência primeiro, depois apague. */}
+              {/* Quem está no quadro (atual OU extra) não se apaga daqui: o
+                  gerador ficaria apontando pra uma foto morta — o mesmo
+                  defeito que esta aba existe pra curar. Tire do quadro
+                  primeiro, depois apague. */}
               <button
                 type="button"
                 onClick={() => void apagar(r.key)}
-                disabled={apagando === r.key || emUso}
-                title={emUso ? t("currentTitle") : t("delete")}
+                disabled={apagando === r.key || emUso || nasExtras}
+                title={emUso ? t("currentTitle") : nasExtras ? t("inExtras") : t("delete")}
                 className="inline-flex h-[24px] w-[24px] items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline)] text-[var(--mute)] hover:text-[var(--status-error)] disabled:opacity-50"
               >
                 {apagando === r.key ? (
@@ -131,6 +139,18 @@ export function ReferenciasSalvas({
                 )}
               </button>
             </div>
+            {/* Do banco direto pro quadro de extras (sem upload novo): é assim
+                que a pessoa monta o conjunto principal + extras da geração. */}
+            <button
+              type="button"
+              disabled={emUso || nasExtras}
+              onClick={() => onAddExtra?.(r.key, r.url)}
+              title={emUso ? t("currentTitle") : nasExtras ? t("inExtras") : t("addExtra")}
+              className="inline-flex items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-[var(--hairline)] py-1 font-sans text-[11px] font-medium text-[var(--mute)] hover:border-[var(--hairline-strong)] hover:text-[var(--ink)] disabled:opacity-50"
+            >
+              <ImagePlus className="h-3 w-3" />
+              {nasExtras ? t("inExtras") : t("addExtra")}
+            </button>
           </li>
           );
         })}

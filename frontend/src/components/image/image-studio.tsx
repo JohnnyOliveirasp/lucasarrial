@@ -28,8 +28,10 @@ const LABEL = "flex items-center gap-1.5 font-mono text-[11px] tracking-wide tex
 
 const PROMPT_MAX = 2000;
 const IDEA_MAX = 600;
-const MAX_IMAGES = 6; // gpt-image-2 aceita até 16; 6 cobra bem o caso de uso
-const MAX_EXTRAS = MAX_IMAGES - 1; // 1 fixa + 5 extras
+// gpt-image-2 aceita até 16; o fallback Seedream corta em 10 sozinho e a fixa
+// vai primeiro no array — então 15 é seguro nos dois motores (pedido 19/08).
+const MAX_IMAGES = 15;
+const MAX_EXTRAS = MAX_IMAGES - 1; // 1 fixa + 14 extras
 
 /** Referência FIXA (29/07): persiste entre gerações e sessões (localStorage). */
 export type FixedRef = { key: string; url: string };
@@ -49,9 +51,12 @@ export function ImageStudio({
   unlimited,
   userId,
   refRequest,
+  extraRequest,
   onGenerated,
   onAnimate,
   onFixedRefKey,
+  onRefsChanged,
+  onExtrasChange,
 }: {
   creditsTotal: number;
   unlimited: boolean;
@@ -59,11 +64,17 @@ export function ImageStudio({
   userId: string;
   /** "Usar como referência" do histórico: troca a referência fixa. */
   refRequest?: (FixedRef & { seq: number }) | null;
+  /** "Adicionar como extra" do banco de referências: entra nas fotos extras. */
+  extraRequest?: (FixedRef & { seq: number }) | null;
   onGenerated?: () => void;
   /** Abre o painel "Animar" desta imagem no histórico (feature Vídeo). */
   onAnimate?: (imageId: string) => void;
   /** Avisa o pai qual é a chave da referência ATUAL (aba marca "em uso"). */
   onFixedRefKey?: (key: string | null) => void;
+  /** Uma foto nova entrou no banco de referências (a aba recarrega). */
+  onRefsChanged?: () => void;
+  /** Chaves das fotos extras no quadro (a aba marca "já está nas extras"). */
+  onExtrasChange?: (keys: string[]) => void;
 }) {
   const t = useTranslations("images.studio");
   const tUpload = useTranslations("uploadErrors");
@@ -97,6 +108,7 @@ export function ImageStudio({
           if (!j?.key) return;
           setFixedRef((atual) => (atual?.key === next.key ? { key: j.key, url: j.url ?? atual.url } : atual));
           onFixedRefKey?.(j.key);
+          onRefsChanged?.();
           try {
             if (localStorage.getItem(fixedRefStorageKey(userId)) === next.key) {
               localStorage.setItem(fixedRefStorageKey(userId), j.key);
@@ -172,6 +184,29 @@ export function ImageStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refRequest?.seq]);
 
+  // "Adicionar como extra" vindo do banco: a foto já está no R2, só entra no
+  // quadro (sem upload novo). Duplicada ou igual à fixa não entra de novo.
+  useEffect(() => {
+    if (!extraRequest) return;
+    if (fixedRef?.key === extraRequest.key) return;
+    if (refs.some((x) => x.key === extraRequest.key)) return;
+    if (refs.length >= MAX_EXTRAS) {
+      setError(t("errors.maxPhotos", { max: MAX_IMAGES }));
+      return;
+    }
+    setRefs((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), preview: extraRequest.url, key: extraRequest.key, uploading: false },
+    ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraRequest?.seq]);
+
+  // A aba do banco marca quem já está nas extras — avisa a cada mudança.
+  useEffect(() => {
+    onExtrasChange?.(refs.filter((r) => r.key).map((r) => r.key as string));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refs]);
+
   // prompt
   const [idea, setIdea] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -237,8 +272,26 @@ export function ImageStudio({
       const { key, upload_url } = await r.json();
       // PUT direto no R2 com retry em falha transitória (rede/5xx).
       await putToR2(upload_url, file, file.type);
+      // Toda foto enviada entra no banco de referências (cópia em `refs/`, que
+      // o apagar-do-histórico não alcança) — a extra passa a apontar pra cópia.
+      // Se a adoção falhar, a chave original segue valendo pra gerar.
+      let finalKey: string = key;
+      try {
+        const ad = await fetch("/api/v1/images/refs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key }),
+        });
+        if (ad.ok) {
+          const j = await ad.json();
+          if (j?.key) finalKey = j.key;
+          onRefsChanged?.();
+        }
+      } catch {
+        /* adoção falhou: segue com a chave original */
+      }
       setRefs((prev) =>
-        prev.map((x) => (x.id === id ? { ...x, key, uploading: false } : x)),
+        prev.map((x) => (x.id === id ? { ...x, key: finalKey, uploading: false } : x)),
       );
     } catch (e) {
       // O upload vai do navegador DIRETO pro R2 (URL assinada) — sem este log

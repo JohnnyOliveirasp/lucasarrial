@@ -576,7 +576,9 @@
         "delete": "No se pudo borrar."
       },
       "current": "Referencia actual",
-      "currentTitle": "Esta es la foto de referencia en uso ahora"
+      "currentTitle": "Esta es la foto de referencia en uso ahora",
+      "addExtra": "Añadir como extra",
+      "inExtras": "Ya está en las extras"
     }
   },
   "misc": {

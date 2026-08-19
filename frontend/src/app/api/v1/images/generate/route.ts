@@ -52,7 +52,9 @@ import {
 // a geração morria com "Image fetch failed" JÁ COBRADA. R2 aceita até 7 dias.
 const PRESIGN_EXPIRES = 24 * 60 * 60;
 const PROMPT_MAX = 20_000; // limite do gpt-image-2
-const MAX_REFERENCE_IMAGES = 6; // gpt-image-2 aceita até 16; 6 cobre bem o caso de uso
+// gpt-image-2 aceita até 16; o fallback Seedream corta sozinho em 10 (a fixa
+// vai primeiro no array, então ela nunca fica de fora).
+const MAX_REFERENCE_IMAGES = 15;
 
 type Body = {
   // Aceita uma (input_image_key) ou várias (input_image_keys) — várias fotos da
@@ -91,7 +93,15 @@ export async function POST(request: NextRequest) {
   if (inputKeys.length > MAX_REFERENCE_IMAGES) {
     return badRequest(`Máximo de ${MAX_REFERENCE_IMAGES} fotos de referência`);
   }
-  if (inputKeys.some((k) => !k.startsWith(`${auth.user_id}/images/`))) {
+  // Duas áreas válidas: `images/` (inputs de upload) e `refs/` (referências
+  // salvas, 19/08 — a referência adotada mora lá e tem que poder gerar).
+  if (
+    inputKeys.some(
+      (k) =>
+        !k.startsWith(`${auth.user_id}/images/`) &&
+        !k.startsWith(`${auth.user_id}/refs/`),
+    )
+  ) {
     return badRequest("Imagem de referência inválida");
   }
 
