@@ -21,6 +21,7 @@ import { downloadFromUrl } from "@/components/image/download-file";
 import { AudioChoice, AudioPicker, ImageChoice, ImagePicker } from "./clone-pickers";
 import { CLONE_ANIM_CSS } from "./clone-anim";
 import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
+import { audioSemSinal } from "@/lib/video-clone/audio-silencio";
 
 const PILL =
   "inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-6 font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98] disabled:opacity-50";
@@ -147,6 +148,12 @@ export function CloneStudio({
     }
     if (seconds > CLONE_MAX_AUDIO_SECONDS) {
       setError(t("errors.tooLong", { n: Math.round(seconds), max: CLONE_MAX_AUDIO_SECONDS }));
+      return;
+    }
+    // Áudio mudo avisa AQUI, antes do upload (rajada da fcdnanda 18/08: MP3 de
+    // 44s de silêncio digital virou 3 jobs cobrados). Detalhes no módulo.
+    if (await audioSemSinal(file)) {
+      setError(t("errors.audioMudo"));
       return;
     }
     setUploading("audio");

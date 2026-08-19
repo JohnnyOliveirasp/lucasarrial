@@ -786,6 +786,7 @@
       "errors": {
         "readAudio": "No pudimos leer ese audio. Prueba con MP3 o WAV.",
         "tooLong": "El audio dura {n}s — el máximo es {max}s (1min30s).",
+        "audioMudo": "Ese archivo de audio no tiene sonido (está mudo) — no se puede generar el video con él. Reproduce el archivo antes de subirlo y elige uno con tu voz.",
         "upload": "Error en la subida",
         "start": "Falló el inicio de la generación",
         "failed": "La generación falló. Inténtalo de nuevo.",
