@@ -433,7 +433,9 @@
       "refs": {
         "label": "1. Tus fotos (referencia)",
         "hint": "Sube 1 o más fotos de la MISMA persona — cuantos más ángulos y expresiones, mejor el parecido. El resultado mantiene el rostro de estas fotos. Usa fotos nítidas y bien iluminadas.",
-        "dropzone": "Haz clic o arrastra tus fotos aquí",
+        "dropzone": "Haz clic o arrastra tus fotos aquí — se guardan en Imágenes de Referencia",
+        "bankUploading": "Subiendo {done} de {total} a Imágenes de Referencia…",
+        "bankSaved": "{count} foto(s) guardada(s) en Imágenes de Referencia — elige allí la principal y las extras.",
         "formats": "JPG, PNG o WEBP · hasta {max} fotos",
         "remove": "Quitar foto",
         "addMore": "Agregar más fotos",

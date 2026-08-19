@@ -34,6 +34,8 @@ export function ImageWorkspace({
   const [animateId, setAnimateId] = useState<string | null>(null);
   const [refRequest, setRefRequest] = useState<(FixedRef & { seq: number }) | null>(null);
   const [extraRequest, setExtraRequest] = useState<(FixedRef & { seq: number }) | null>(null);
+  // Foto apagada do banco: o studio tira ela do quadro (principal ou extra).
+  const [removeRequest, setRemoveRequest] = useState<{ key: string; seq: number } | null>(null);
   const studioRef = useRef<HTMLElement>(null);
 
   function useAsReference(key: string, url: string) {
@@ -45,6 +47,10 @@ export function ImageWorkspace({
   // subir nada de novo. Sem scroll — ela costuma adicionar várias em sequência.
   function addAsExtra(key: string, url: string) {
     setExtraRequest((prev) => ({ key, url, seq: (prev?.seq ?? 0) + 1 }));
+  }
+
+  function refDeleted(key: string) {
+    setRemoveRequest((prev) => ({ key, seq: (prev?.seq ?? 0) + 1 }));
   }
 
   return (
@@ -59,6 +65,7 @@ export function ImageWorkspace({
           userId={userId}
           refRequest={refRequest}
           extraRequest={extraRequest}
+          removeRequest={removeRequest}
           onFixedRefKey={setCurrentRefKey}
           onExtrasChange={setExtrasKeys}
           onRefsChanged={() => setRefsReloadKey((k) => k + 1)}
@@ -86,10 +93,10 @@ export function ImageWorkspace({
               type="button"
               onClick={() => setAba(tab.id)}
               aria-pressed={aba === tab.id}
-              className={`rounded-[var(--radius-sm)] border px-4 py-2 font-sans text-[14px] tracking-[-0.01em] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] ${
+              className={`rounded-[var(--radius-sm)] px-4 py-1.5 font-sans text-[13px] tracking-[-0.01em] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] ${
                 aba === tab.id
-                  ? "border-[var(--hairline-strong)] bg-[var(--surface-elevated)] font-semibold text-[var(--ink)] shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
-                  : "border-transparent font-medium text-[var(--mute)] hover:text-[var(--ink)]"
+                  ? "bg-[var(--pill-bg)] font-semibold text-[var(--pill-ink)]"
+                  : "font-medium text-[var(--mute)] hover:text-[var(--ink)]"
               }`}
             >
               {tab.label}
@@ -109,6 +116,7 @@ export function ImageWorkspace({
             extrasKeys={extrasKeys}
             onUseAsRef={useAsReference}
             onAddExtra={addAsExtra}
+            onDeleted={refDeleted}
           />
         )}
       </section>

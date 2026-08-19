@@ -433,7 +433,9 @@
       "refs": {
         "label": "1. Your photos (reference)",
         "hint": "Upload 1 or more photos of the SAME person — the more angles and expressions, the better the likeness. The result keeps the face from these photos. Use sharp, well-lit photos.",
-        "dropzone": "Click or drag your photos here",
+        "dropzone": "Click or drag your photos here — they are saved to Reference Images",
+        "bankUploading": "Uploading {done} of {total} to Reference Images…",
+        "bankSaved": "{count} photo(s) saved to Reference Images — pick the main one and the extras there.",
         "formats": "JPG, PNG or WEBP · up to {max} photos",
         "remove": "Remove photo",
         "addMore": "Add more photos",

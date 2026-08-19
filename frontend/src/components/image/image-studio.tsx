@@ -52,6 +52,7 @@ export function ImageStudio({
   userId,
   refRequest,
   extraRequest,
+  removeRequest,
   onGenerated,
   onAnimate,
   onFixedRefKey,
@@ -66,6 +67,8 @@ export function ImageStudio({
   refRequest?: (FixedRef & { seq: number }) | null;
   /** "Adicionar como extra" do banco de referências: entra nas fotos extras. */
   extraRequest?: (FixedRef & { seq: number }) | null;
+  /** Foto apagada do banco: sai do quadro também (principal ou extra). */
+  removeRequest?: { key: string; seq: number } | null;
   onGenerated?: () => void;
   /** Abre o painel "Animar" desta imagem no histórico (feature Vídeo). */
   onAnimate?: (imageId: string) => void;
@@ -92,6 +95,9 @@ export function ImageStudio({
   function persistFixedRef(next: FixedRef | null) {
     setFixedRef(next);
     onFixedRefKey?.(next?.key ?? null);
+    // Exclusividade (19/08, pedido do Johnny): a mesma foto NUNCA fica na
+    // principal E nas extras ao mesmo tempo — virou principal, sai das extras.
+    if (next) setRefs((prev) => prev.filter((x) => x.key !== next.key));
     // Adoção (19/08): toda referência passa por AQUI, então é aqui que ela é
     // copiada pra área "refs/" que o apagar-do-histórico não alcança. Antes, a
     // chave apontava pro input_* DENTRO de uma geração — apagar aquela geração
@@ -108,6 +114,7 @@ export function ImageStudio({
           if (!j?.key) return;
           setFixedRef((atual) => (atual?.key === next.key ? { key: j.key, url: j.url ?? atual.url } : atual));
           onFixedRefKey?.(j.key);
+          setRefs((prev) => prev.filter((x) => x.key !== j.key));
           onRefsChanged?.();
           try {
             if (localStorage.getItem(fixedRefStorageKey(userId)) === next.key) {
@@ -201,6 +208,15 @@ export function ImageStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extraRequest?.seq]);
 
+  // Foto apagada do banco sai do quadro também (principal ou extra) — senão a
+  // geração apontaria pra uma chave morta, o defeito que o banco existe pra curar.
+  useEffect(() => {
+    if (!removeRequest) return;
+    if (fixedRef?.key === removeRequest.key) persistFixedRef(null);
+    setRefs((prev) => prev.filter((x) => x.key !== removeRequest.key));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [removeRequest?.seq]);
+
   // A aba do banco marca quem já está nas extras — avisa a cada mudança.
   useEffect(() => {
     onExtrasChange?.(refs.filter((r) => r.key).map((r) => r.key as string));
@@ -258,7 +274,14 @@ export function ImageStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aspect, creditsTotal, unlimited]);
 
-  async function uploadOne(file: File, id: string) {
+  // Envio pro BANCO (19/08, pedido do Johnny): o upload em lote NUNCA preenche
+  // o quadro (nem a principal, nem as extras) — a foto cai em "Imagens de
+  // Referência" e a pessoa escolhe DE LÁ o que vai pro quadro.
+  const [bankUpload, setBankUpload] = useState<{ done: number; total: number } | null>(null);
+  const [bankSaved, setBankSaved] = useState(0);
+
+  /** Sobe 1 arquivo direto pro banco de referências (upload + adoção). */
+  async function uploadToBank(file: File): Promise<boolean> {
     try {
       const r = await fetch("/api/v1/images/upload-url", {
         method: "POST",
@@ -272,32 +295,23 @@ export function ImageStudio({
       const { key, upload_url } = await r.json();
       // PUT direto no R2 com retry em falha transitória (rede/5xx).
       await putToR2(upload_url, file, file.type);
-      // Toda foto enviada entra no banco de referências (cópia em `refs/`, que
-      // o apagar-do-histórico não alcança) — a extra passa a apontar pra cópia.
-      // Se a adoção falhar, a chave original segue valendo pra gerar.
-      let finalKey: string = key;
-      try {
-        const ad = await fetch("/api/v1/images/refs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key }),
-        });
-        if (ad.ok) {
-          const j = await ad.json();
-          if (j?.key) finalKey = j.key;
-          onRefsChanged?.();
-        }
-      } catch {
-        /* adoção falhou: segue com a chave original */
+      // Adoção = a cópia em `refs/` que o apagar-do-histórico não alcança.
+      const ad = await fetch("/api/v1/images/refs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+      if (!ad.ok) {
+        const j = await ad.json().catch(() => ({}));
+        throw new Error(j?.error?.message || t("errors.upload"));
       }
-      setRefs((prev) =>
-        prev.map((x) => (x.id === id ? { ...x, key: finalKey, uploading: false } : x)),
-      );
+      onRefsChanged?.();
+      return true;
     } catch (e) {
       // O upload vai do navegador DIRETO pro R2 (URL assinada) — sem este log
       // a falha não existe em lugar nenhum do nosso lado (caso VP, 19/08).
       clientLogger.error("image.upload_failed", {
-        stage: "extra",
+        stage: "bank",
         filename: file.name,
         type: file.type,
         size: file.size,
@@ -310,11 +324,7 @@ export function ImageStudio({
             ? e.message
             : t("errors.upload"),
       );
-      setRefs((prev) => {
-        const found = prev.find((x) => x.id === id);
-        if (found) URL.revokeObjectURL(found.preview);
-        return prev.filter((x) => x.id !== id);
-      });
+      return false;
     }
   }
 
@@ -350,7 +360,7 @@ export function ImageStudio({
       persistFixedRef({ key, url: preview });
     } catch (e) {
       URL.revokeObjectURL(preview);
-      // Mesmo motivo do uploadOne: falha navegador→R2 só existe se registrarmos.
+      // Mesmo motivo do uploadToBank: falha navegador→R2 só existe se registrarmos.
       clientLogger.error("image.upload_failed", {
         stage: "fixed",
         filename: file.name,
@@ -371,54 +381,36 @@ export function ImageStudio({
     }
   }
 
-  /** Arquivos novos: sem fixa → o 1º vira a fixa; o resto vira extra. */
+  /** Arquivos novos: TODOS vão pro banco de referências — nada entra no
+   *  quadro sozinho. A pessoa escolhe lá quem é a principal e as extras. */
   async function handleFiles(files: FileList | File[]) {
     setError(null);
+    setBankSaved(0);
     // HEIC do iPhone pode vir com MIME vazio — a extensao vale como imagem.
     const raw = Array.from(files).filter((f) => f.type.startsWith("image/") || isHeicFile(f));
     if (raw.length === 0) {
       clientLogger.warn("image.invalid_file", {
-        stage: "extras",
+        stage: "bank",
         files: Array.from(files).map((f) => ({ filename: f.name, type: f.type, size: f.size })),
       });
       setError(t("errors.invalidFiles"));
       return;
     }
     const imgs = await Promise.all(raw.map(ensureUploadableImage));
-    let queue = imgs;
-    if (!fixedRef) {
-      void uploadFixed(queue[0]);
-      queue = queue.slice(1);
-    }
-    if (queue.length === 0) {
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-    const room = MAX_EXTRAS - refs.length;
-    if (room <= 0) {
-      setError(t("errors.maxPhotos", { max: MAX_IMAGES }));
-      return;
-    }
-    const take = queue.slice(0, room);
-    if (take.length < queue.length) {
+    const take = imgs.slice(0, MAX_IMAGES);
+    if (take.length < imgs.length) {
       setError(t("errors.maxPhotosIgnored", { max: MAX_IMAGES }));
     }
-    const created = take.map((file) => ({
-      file,
-      id: crypto.randomUUID(),
-      preview: URL.createObjectURL(file),
-    }));
-    setRefs((prev) => [
-      ...prev,
-      ...created.map(({ id, preview }) => ({ id, preview, key: null, uploading: true })),
-    ]);
+    setBankUpload({ done: 0, total: take.length });
     // UMA POR VEZ: paralelo saturava o link de subida do aluno e derrubava
     // uploads aleatórios (incidente 5bb774b8 — "às vezes a 1ª, às vezes da 2ª").
-    void (async () => {
-      for (const c of created) {
-        await uploadOne(c.file, c.id);
-      }
-    })();
+    let ok = 0;
+    for (const f of take) {
+      if (await uploadToBank(f)) ok++;
+      setBankUpload((p) => (p ? { ...p, done: p.done + 1 } : p));
+    }
+    setBankUpload(null);
+    setBankSaved(ok);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -768,6 +760,24 @@ export function ImageStudio({
             </button>
           )}
         </div>
+
+        {/* Upload em lote vai pro BANCO — aqui só o andamento e o aviso. */}
+        {bankUpload && (
+          <div className="flex items-center gap-2 text-[var(--mute)]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span className="font-mono text-[11px]">
+              {t("refs.bankUploading", {
+                done: Math.min(bankUpload.done + 1, bankUpload.total),
+                total: bankUpload.total,
+              })}
+            </span>
+          </div>
+        )}
+        {!bankUpload && bankSaved > 0 && (
+          <p className="text-[12px] leading-snug text-[var(--silver)]">
+            {t("refs.bankSaved", { count: bankSaved })}
+          </p>
+        )}
       </div>
 
       {/* Coluna 2 — prompt + opções */}

@@ -21,6 +21,7 @@ export function ReferenciasSalvas({
   extrasKeys = [],
   onUseAsRef,
   onAddExtra,
+  onDeleted,
 }: {
   reloadKey?: number;
   /** Chave da referência EM USO: o card dela ganha a marca e trava o botão. */
@@ -30,6 +31,8 @@ export function ReferenciasSalvas({
   onUseAsRef?: (key: string, url: string) => void;
   /** Manda a foto pro quadro de fotos extras do gerador (sem upload novo). */
   onAddExtra?: (key: string, url: string) => void;
+  /** Foto apagada: o gerador tira ela do quadro (principal ou extra). */
+  onDeleted?: (key: string) => void;
 }) {
   const t = useTranslations("images.refs");
   const [refs, setRefs] = useState<Ref[]>([]);
@@ -65,6 +68,7 @@ export function ReferenciasSalvas({
       });
       if (!r.ok) throw new Error(t("errors.delete"));
       setRefs((prev) => prev.filter((x) => x.key !== key));
+      onDeleted?.(key);
     } catch (e) {
       setErro(e instanceof Error ? e.message : t("errors.delete"));
     } finally {
@@ -121,15 +125,15 @@ export function ReferenciasSalvas({
                 <Pin className="h-3 w-3 text-[var(--silver)]" />
                 {emUso ? t("current") : t("use")}
               </button>
-              {/* Quem está no quadro (atual OU extra) não se apaga daqui: o
-                  gerador ficaria apontando pra uma foto morta — o mesmo
-                  defeito que esta aba existe pra curar. Tire do quadro
-                  primeiro, depois apague. */}
+              {/* Apagar é SEMPRE permitido (pedido do Johnny 19/08 — ele não
+                  conseguia apagar a única foto): o onDeleted avisa o gerador,
+                  que tira a foto do quadro na hora — nada fica apontando pra
+                  chave morta. */}
               <button
                 type="button"
                 onClick={() => void apagar(r.key)}
-                disabled={apagando === r.key || emUso || nasExtras}
-                title={emUso ? t("currentTitle") : nasExtras ? t("inExtras") : t("delete")}
+                disabled={apagando === r.key}
+                title={t("delete")}
                 className="inline-flex h-[24px] w-[24px] items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline)] text-[var(--mute)] hover:text-[var(--status-error)] disabled:opacity-50"
               >
                 {apagando === r.key ? (

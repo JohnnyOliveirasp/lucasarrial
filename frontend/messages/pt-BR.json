@@ -433,8 +433,10 @@
       "refs": {
         "label": "1. Suas fotos (referência)",
         "hint": "Envie 1 ou mais fotos da MESMA pessoa — quanto mais ângulos e expressões, melhor a semelhança. O resultado mantém o rosto destas fotos. Use fotos nítidas e bem iluminadas.",
-        "dropzone": "Clique ou arraste suas fotos aqui",
-        "formats": "JPG, PNG ou WEBP · até {max} fotos",
+        "dropzone": "Clique ou arraste suas fotos aqui — elas ficam salvas em Imagens de Referência",
+        "formats": "JPG, PNG ou WEBP · até {max} fotos por vez",
+        "bankUploading": "Enviando {done} de {total} para Imagens de Referência…",
+        "bankSaved": "{count} foto(s) salva(s) em Imagens de Referência — escolha lá a principal e as extras.",
         "remove": "Remover foto",
         "addMore": "Adicionar mais fotos",
         "fixedLabel": "Imagem de referência",
