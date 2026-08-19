@@ -19,12 +19,19 @@ export async function GET(request: NextRequest) {
   if (!auth) return unauthorized();
 
   const admin = getAdmin();
+  // A amostra automática do treino (`${userId}/${voiceId}/sample.wav`, criada
+  // pelo finalize-training pro aluno OUVIR a voz) NÃO é insumo de vídeo: é uma
+  // frase fixa de ~10s ("Oi! Esta é a minha voz clonada..."). 65 alunos já
+  // fizeram lip-sync em cima dela achando que era áudio deles (caso itamar,
+  // 25-26/07) e o vídeo sai "ruim" sem nenhum erro no log. Filtro pelo PATH,
+  // não pelo name: o path é determinístico e o aluno consegue renomear a linha.
   const { data: gens, error } = await admin
     .from("generations")
     .select("id, voice_id, name, text_raw, duration_seconds, audio_path, created_at")
     .eq("user_id", auth.user_id)
     .eq("status", "ready")
     .not("duration_seconds", "is", null)
+    .not("audio_path", "like", "%/sample.wav")
     .lte("duration_seconds", MAX_AUDIO_SECONDS)
     .order("created_at", { ascending: false });
 

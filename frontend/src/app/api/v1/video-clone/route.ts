@@ -158,6 +158,16 @@ export async function POST(request: NextRequest) {
     if (!gen || gen.status !== "ready" || !gen.audio_path) {
       return badRequest("Esse áudio não está pronto.");
     }
+    // Amostra automática do treino: serve pra OUVIR a voz, não pra vídeo
+    // (frase fixa "Oi! Esta é a minha voz clonada..."). O seletor já não a
+    // oferece mais; esta trava pega aba antiga / chamada direta na API.
+    // 85 clones de 65 alunos saíram "ruins" por isso antes do filtro.
+    if (gen.audio_path.endsWith("/sample.wav")) {
+      return badRequest(
+        "Esse áudio é a amostra automática do treino da voz — ele serve só pra você ouvir como a voz ficou. " +
+          "Pro Vídeo Clone, gere um áudio com o SEU texto em Gerar Voz e selecione ele aqui.",
+      );
+    }
     audioPath = gen.audio_path;
     duration = gen.duration_seconds ?? 0;
   } else if (audioKey.startsWith(prefix)) {
