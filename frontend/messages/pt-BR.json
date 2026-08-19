@@ -753,7 +753,9 @@
         "tooLong": "Seu áudio tem {n}s — no Vídeo Vendas o máximo é {max}s.",
         "uploadFailed": "Falha ao enviar o áudio. Tente novamente.",
         "process": "Erro ao processar o áudio."
-      }
+      },
+      "noVoiceHint": "Prefere sem narração? O vídeo sai só com as cenas — você pode pôr a legenda depois.",
+      "noVoiceButton": "Seguir sem narração"
     }
   },
   "videoClone": {
@@ -1180,7 +1182,10 @@
       "generating": "Gerando…",
       "generatePending": "Gerar {n} imagem(ns)",
       "regenTitle": "Gerar novamente (1K, 12 créditos)",
-      "resolutionAria": "Resolução da cena {n}"
+      "resolutionAria": "Resolução da cena {n}",
+      "promptEditTitle": "Clique para editar a descrição desta cena",
+      "promptRegen": "Gerar com esta descrição",
+      "downloadTitle": "Baixar esta imagem"
     },
     "videoStage": {
       "loadFailed": "Falha ao carregar os vídeos",
@@ -1201,7 +1206,8 @@
       "genFailed": "Falha na geração",
       "regenTitle": "Regerar o vídeo ({cr} créditos)",
       "useMyPrompt": "Gerar com meu prompt",
-      "wandTitle": "Novo prompt com IA (Sonnet vê a imagem): 15 créditos + o vídeo"
+      "wandTitle": "Novo prompt com IA (Sonnet vê a imagem): 15 créditos + o vídeo",
+      "downloadClip": "Baixar este clipe"
     },
     "tiers": {
       "title": "Escolha o modelo de vídeo",

@@ -14,7 +14,7 @@ import { AudioLines, Upload, Loader2, AlertCircle, Mic2 } from "lucide-react";
 import { SALES_MAX_AUDIO_SECONDS } from "@/lib/video/config";
 
 type Voice = { id: string; name: string; status: string };
-type Phase = "idle" | "generating" | "uploading" | "attaching";
+type Phase = "idle" | "generating" | "uploading" | "attaching" | "sem-narracao";
 
 const MIN_TTS_CREDITS = 400;
 
@@ -115,6 +115,20 @@ export function SalesVoice({
       setError(e instanceof Error && e.message ? e.message : t("errors.generate"));
       setPhase("idle");
       setNote(null);
+    }
+  }
+
+  /** Segue sem voz: grava a ESCOLHA (não é o mesmo que "ainda não gravei") e
+   *  recarrega — o ProjectSwitch então manda pro wizard. */
+  async function seguirSemNarracao() {
+    setPhase("sem-narracao");
+    setError(null);
+    try {
+      await api(`/api/v1/videos/${projectId}/audio`, "POST", { sem_narracao: true });
+      window.location.reload();
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : t("errors.generic"));
+      setPhase("idle");
     }
   }
 
@@ -244,6 +258,17 @@ export function SalesVoice({
             if (f) handleUpload(f);
           }}
         />
+      </div>
+
+      {/* Narração é OPCIONAL desde 19/08: dá pra entregar só com legenda, ou
+          mudo pra a pessoa legendar depois. Fica por último e discreto — é a
+          saída, não o caminho principal. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] pt-4">
+        <span className="text-[13px] text-[var(--mute)]">{t("noVoiceHint")}</span>
+        <button type="button" onClick={seguirSemNarracao} disabled={busy} className={ghostBtnCls}>
+          {phase === "sem-narracao" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {t("noVoiceButton")}
+        </button>
       </div>
     </section>
   );

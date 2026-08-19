@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Loader2, Wand2, RefreshCw, AlertTriangle, Film, ServerCrash } from "lucide-react";
+import { Loader2, Wand2, RefreshCw, AlertTriangle, Film, ServerCrash, Download
+} from "lucide-react";
 import { getTier } from "@/lib/video/tiers";
 
 export type VideoScene = {
@@ -236,6 +237,18 @@ function SceneCard({
         <span className="absolute left-1 top-1 rounded-full bg-[var(--canvas)]/70 px-1.5 font-mono text-[10px] text-white">
           {scene.idx}
         </span>
+        {/* Baixar o clipe avulso: dá pra usar a cena solta, sem esperar a
+            montagem final (pedido do Johnny 19/08). */}
+        {scene.video_status === "ready" && scene.video_url && (
+          <a
+            href={scene.video_url}
+            download={`cena-${String(scene.idx).padStart(2, "0")}.mp4`}
+            title={t("downloadClip")}
+            className="absolute right-1 top-1 rounded-full bg-[var(--canvas)]/70 p-1.5 text-white hover:bg-[var(--canvas)]/90"
+          >
+            <Download className="h-3 w-3" />
+          </a>
+        )}
       </div>
 
       <textarea

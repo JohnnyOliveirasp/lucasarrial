@@ -12,7 +12,7 @@ import { R2_BUCKETS, imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 
 const SELECT =
-  "id, name, kind, status, source_generation_id, audio_path, audio_duration_seconds, script_text, aspect_ratio, scene_count, video_tier, final_video_path, error_message, created_at, product_image_paths, product_price, product_link, product_description, product_analysis, reference_image_paths";
+  "id, name, kind, status, source_generation_id, audio_path, audio_duration_seconds, script_text, aspect_ratio, scene_count, video_tier, final_video_path, error_message, created_at, product_image_paths, product_price, product_link, product_description, product_analysis, product_idea, sem_narracao, reference_image_paths";
 
 export async function GET(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await authenticate(request);

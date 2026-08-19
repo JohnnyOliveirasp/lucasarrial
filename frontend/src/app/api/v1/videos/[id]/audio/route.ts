@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     return badRequest("Este projeto já tem áudio definido.");
   }
 
-  let body: { generation_id?: unknown; uploaded_key?: unknown } = {};
+  let body: { generation_id?: unknown; uploaded_key?: unknown; sem_narracao?: unknown } = {};
   try {
     body = await request.json();
   } catch {
@@ -36,6 +36,22 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   }
   const generationId = typeof body.generation_id === "string" ? body.generation_id.trim() : "";
   const uploadedKey = typeof body.uploaded_key === "string" ? body.uploaded_key.trim() : "";
+  const semNarracao = body.sem_narracao === true;
+  // 19/08: narração virou OPCIONAL. Quem escolhe seguir sem ela grava a
+  // ESCOLHA — `audio_path` vazio sozinho não distingue "ainda não gravei" de
+  // "não quero narração", e a tela usa isso pra decidir pra onde ir (mig 84).
+  // O caminho de trás: gravar um áudio de silêncio só pra destravar — que é o
+  // que derrubou a geração da Fernanda em 18/08.
+  if (semNarracao) {
+    const { error } = await getAdmin()
+      .from("video_projects")
+      .update({ sem_narracao: true, audio_path: null, audio_duration_seconds: null })
+      .eq("id", id)
+      .eq("user_id", auth.user_id);
+    if (error) return serverError("Falha ao seguir sem narração");
+    return jsonOk({ ok: true, sem_narracao: true });
+  }
+
   if (!generationId && !uploadedKey) return badRequest("Informe o áudio.");
 
   const admin = getAdmin();

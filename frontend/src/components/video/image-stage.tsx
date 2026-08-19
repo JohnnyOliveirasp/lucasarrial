@@ -12,6 +12,7 @@ import {
   Wand2,
   ShieldAlert,
   AlertTriangle,
+  Download,
 } from "lucide-react";
 
 type Scene = {
@@ -55,6 +56,9 @@ export function ImageStage({
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [regenId, setRegenId] = useState<string | null>(null);
+  // Cena com o prompt aberto pra edição (só uma por vez).
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [rascunhoPrompt, setRascunhoPrompt] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -162,14 +166,16 @@ export function ImageStage({
     }
   }
 
-  async function regenerate(sceneId: string, resolution: string) {
+  /** Regera a imagem de uma cena. `promptPt` opcional: quando vem, a rota
+   *  troca o prompt antes de gerar (ela já aceitava — faltava a tela). */
+  async function regenerate(sceneId: string, resolution: string, promptPt?: string) {
     setRegenId(sceneId);
     setError(null);
     try {
       const res = await fetch(`/api/v1/videos/${projectId}/images/${sceneId}/regenerate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resolution }),
+        body: JSON.stringify(promptPt?.trim() ? { resolution, prompt_pt: promptPt.trim() } : { resolution }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.status === 402) {
@@ -321,8 +327,57 @@ export function ImageStage({
               )}
               <span className="absolute left-1 top-1 rounded-full bg-[var(--canvas)]/70 px-1.5 font-mono text-[10px] text-white">{s.idx}</span>
             </div>
-            <p className="line-clamp-2 text-[11px] leading-snug text-[var(--mute)]">{s.prompt_pt}</p>
+            {editandoId === s.id ? (
+              /* Editar o prompt e regerar: dá pra pedir a cena de outro jeito
+                 sem depender do que a IA escreveu (pedido do Johnny 19/08). */
+              <div className="flex flex-col gap-1.5">
+                <textarea
+                  value={rascunhoPrompt}
+                  onChange={(e) => setRascunhoPrompt(e.target.value)}
+                  rows={4}
+                  maxLength={1200}
+                  className="w-full rounded-[var(--radius-sm)] border border-[var(--hairline)] bg-[var(--surface-deep)] p-2 text-[11px] leading-snug text-[var(--ink)]"
+                />
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { setEditandoId(null); void regenerate(s.id, s.resolution || "1K", rascunhoPrompt); }}
+                    disabled={!rascunhoPrompt.trim() || regenId === s.id}
+                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] py-1.5 font-sans text-[11px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)] disabled:opacity-50"
+                  >
+                    <Wand2 className="h-3 w-3 text-[var(--silver)]" />
+                    {t("promptRegen")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditandoId(null)}
+                    className="rounded-[var(--radius)] border border-[var(--hairline)] px-2 font-sans text-[11px] text-[var(--mute)] hover:text-[var(--ink)]"
+                  >
+                    {tc("cancel")}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setEditandoId(s.id); setRascunhoPrompt(s.prompt_pt); }}
+                title={t("promptEditTitle")}
+                className="line-clamp-2 cursor-text text-left text-[11px] leading-snug text-[var(--mute)] hover:text-[var(--ink)]"
+              >
+                {s.prompt_pt}
+              </button>
+            )}
             <div className="flex items-center gap-1.5">
+              {s.image_url && (
+                <a
+                  href={s.image_url}
+                  download={`cena-${String(s.idx).padStart(2, "0")}.png`}
+                  title={t("downloadTitle")}
+                  className="inline-flex h-[26px] items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline)] bg-[var(--surface-deep)] px-2 text-[var(--mute)] hover:text-[var(--ink)]"
+                >
+                  <Download className="h-3 w-3" />
+                </a>
+              )}
               <button
                 type="button"
                 onClick={() => regenerate(s.id, "1K")}

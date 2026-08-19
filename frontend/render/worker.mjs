@@ -147,11 +147,15 @@ async function upload(bucket, key, file, contentType) {
 async function renderProject(projectId, userId) {
   const projects = await sbSelect(
     "video_projects",
-    `?id=eq.${projectId}&select=id,audio_path,script_text,subtitle_style,subtitle_position,subtitle_size&limit=1`,
+    `?id=eq.${projectId}&select=id,audio_path,script_text,subtitle_style,subtitle_position,subtitle_size,sem_narracao&limit=1`,
   );
   const project = projects?.[0];
   if (!project) throw new Error("projeto não encontrado");
-  if (!project.audio_path) throw new Error("projeto sem áudio");
+  // Narração virou OPCIONAL (19/08): o vídeo pode sair só com as cenas, pra
+  // a pessoa legendar depois. Sem a escolha registrada, áudio faltando ainda é
+  // erro — é projeto incompleto, não vídeo mudo de propósito.
+  const semNarracao = project.sem_narracao === true;
+  if (!project.audio_path && !semNarracao) throw new Error("projeto sem áudio");
 
   const scenes = await sbSelect(
     "video_scenes",
@@ -164,7 +168,7 @@ async function renderProject(projectId, userId) {
   try {
     // 1) Baixa áudio + clipes.
     const audioFile = join(dir, "audio.mp3");
-    await download(BUCKET_AUDIO, project.audio_path, audioFile);
+    if (!semNarracao) await download(BUCKET_AUDIO, project.audio_path, audioFile);
 
     const normalized = [];
     for (let i = 0; i < clips.length; i++) {
@@ -193,9 +197,12 @@ async function renderProject(projectId, userId) {
 
     // 4) Legenda: cronometra as palavras (Whisper/​proporcional) e gera um
     //    subs.ass NO diretório temp (nome simples → sem dor de escape no ffmpeg).
-    const audioDur = await audioDuration(audioFile);
+    // Sem narração não há fala pra cronometrar: o vídeo sai sem legenda
+    // queimada (a pessoa põe a dela depois, que foi o pedido).
+    const audioDur = semNarracao ? 0 : await audioDuration(audioFile);
     let assName = null;
     try {
+      if (semNarracao) throw new Error("sem narração: nada a legendar");
       const words = await getWordTimings(audioFile, project.script_text || "", audioDur);
       const ass = buildAss(words, project.subtitle_style, {
         position: project.subtitle_position,
@@ -217,16 +224,28 @@ async function renderProject(projectId, userId) {
     const filters = ["tpad=stop_mode=clone:stop_duration=30"];
     if (assName) filters.push(`ass=${assName}:fontsdir=${filterPath(FONTS_DIR)}`);
 
-    const args = [
-      "-y", "-i", "concat.mp4", "-i", "audio.mp3",
-      "-filter_complex", `[0:v]${filters.join(",")}[v]`,
-      "-map", "[v]", "-map", "1:a",
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", String(FPS),
-      "-c:a", "aac", "-b:a", "128k",
-      "-shortest",
-      "-movflags", "+faststart",
-      "final.mp4",
-    ];
+    // Com narração o ÁUDIO manda (tpad + -shortest). Sem ela não há o que
+    // esperar: os clipes já têm a duração final, então nada de padding nem de
+    // faixa de áudio — senão o -shortest cortaria o vídeo em zero.
+    const args = semNarracao
+      ? [
+          "-y", "-i", "concat.mp4",
+          ...(assName ? ["-vf", `ass=${assName}:fontsdir=${filterPath(FONTS_DIR)}`] : []),
+          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", String(FPS),
+          "-an",
+          "-movflags", "+faststart",
+          "final.mp4",
+        ]
+      : [
+          "-y", "-i", "concat.mp4", "-i", "audio.mp3",
+          "-filter_complex", `[0:v]${filters.join(",")}[v]`,
+          "-map", "[v]", "-map", "1:a",
+          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", String(FPS),
+          "-c:a", "aac", "-b:a", "128k",
+          "-shortest",
+          "-movflags", "+faststart",
+          "final.mp4",
+        ];
     await run("ffmpeg", args, { cwd: dir });
     const finalFile = join(dir, "final.mp4");
 

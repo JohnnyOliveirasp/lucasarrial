@@ -262,6 +262,7 @@ export type VideoProjectRow = {
   product_description: string | null;
   product_analysis: string | null;
   product_idea: string | null; // ideia escrita pela pessoa; origem do roteiro quando nao ha analise (mig 82)
+  sem_narracao: boolean; // a pessoa escolheu seguir sem voz (mig 84)
 };
 export type VideoProjectInsert = {
   id?: string;
@@ -285,6 +286,7 @@ export type VideoProjectInsert = {
   product_description?: string | null;
   product_analysis?: string | null;
   product_idea?: string | null;
+  sem_narracao?: boolean;
 };
 export type VideoProjectUpdate = Partial<VideoProjectRow>;
 

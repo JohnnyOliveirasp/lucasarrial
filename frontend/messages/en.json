@@ -753,7 +753,9 @@
         "tooLong": "Your audio is {n}s — in Sales Video the max is {max}s.",
         "uploadFailed": "Failed to upload the audio. Please try again.",
         "process": "Error processing the audio."
-      }
+      },
+      "noVoiceHint": "Rather go without narration? The video comes out with the scenes only — you can add captions later.",
+      "noVoiceButton": "Continue without narration"
     }
   },
   "videoClone": {
@@ -1180,7 +1182,10 @@
       "generating": "Generating…",
       "generatePending": "Generate {n} image(s)",
       "regenTitle": "Generate again (1K, 12 credits)",
-      "resolutionAria": "Scene {n} resolution"
+      "resolutionAria": "Scene {n} resolution",
+      "promptEditTitle": "Click to edit this scene's description",
+      "promptRegen": "Generate with this description",
+      "downloadTitle": "Download this image"
     },
     "videoStage": {
       "loadFailed": "Couldn't load the videos",
@@ -1201,7 +1206,8 @@
       "genFailed": "Generation failed",
       "regenTitle": "Regenerate the video ({cr} credits)",
       "useMyPrompt": "Generate with my prompt",
-      "wandTitle": "New AI prompt (Sonnet sees the image): 15 credits + the video"
+      "wandTitle": "New AI prompt (Sonnet sees the image): 15 credits + the video",
+      "downloadClip": "Download this clip"
     },
     "tiers": {
       "title": "Choose the video model",

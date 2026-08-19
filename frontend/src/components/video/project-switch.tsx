@@ -13,7 +13,7 @@ import { Loader2 } from "lucide-react";
 import { VideoWizard } from "@/components/video/video-wizard";
 import { SalesSetup } from "@/components/video/sales-setup";
 
-type Head = { kind: "story" | "sales"; audio_path: string | null };
+type Head = { kind: "story" | "sales"; audio_path: string | null; sem_narracao: boolean };
 
 export function ProjectSwitch({ projectId, locale }: { projectId: string; locale: string }) {
   const tc = useTranslations("videoWizard.common");
@@ -29,6 +29,7 @@ export function ProjectSwitch({ projectId, locale }: { projectId: string; locale
         setHead({
           kind: (json.project?.kind as Head["kind"]) ?? "story",
           audio_path: (json.project?.audio_path as string | null) ?? null,
+          sem_narracao: json.project?.sem_narracao === true,
         });
       } catch (e) {
         setError(e instanceof Error ? e.message : tc("error"));
@@ -48,7 +49,10 @@ export function ProjectSwitch({ projectId, locale }: { projectId: string; locale
     );
   }
 
-  if (head.kind === "sales" && !head.audio_path) {
+  // Sem áudio, o projeto fica na tela de montagem — a não ser que a pessoa
+  // tenha ESCOLHIDO seguir sem narração (19/08). São situações opostas que o
+  // `audio_path` vazio não separa: "ainda não gravei" × "não quero voz".
+  if (head.kind === "sales" && !head.audio_path && !head.sem_narracao) {
     return <SalesSetup locale={locale} projectId={projectId} />;
   }
   return <VideoWizard projectId={projectId} />;
