@@ -2082,5 +2082,14 @@
     "vazioAcervo": "O acervo compartilhado ainda está vazio.",
     "comVoce": "com você",
     "selecionadas": "{n} de {max} selecionadas"
+  },
+  "uploadErrors": {
+    "network": "Falha de rede ao enviar \"{file}\" — a conexão caiu ou está saturada. Tentamos 3 vezes; verifique sua internet e tente de novo.",
+    "tooLarge": "\"{file}\" é grande demais para o upload (HTTP 413). Reduza o tamanho do arquivo e tente de novo.",
+    "badFormat": "\"{file}\" foi recusado pelo formato ou pelo conteúdo do arquivo (HTTP {status}). Tente salvar como JPG ou PNG e envie de novo.",
+    "linkExpired": "O link de envio de \"{file}\" expirou ou foi recusado (HTTP 403). Recarregue a página e tente de novo.",
+    "server": "O servidor de arquivos falhou ao receber \"{file}\" (HTTP {status}). Tentamos 3 vezes; aguarde um instante e tente de novo.",
+    "rejected": "O envio de \"{file}\" foi recusado (HTTP {status}). Tente de novo; se persistir, fale com o suporte.",
+    "unknown": "Falha ao enviar \"{file}\". Tente de novo; se persistir, fale com o suporte."
   }
 }

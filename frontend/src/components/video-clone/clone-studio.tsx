@@ -21,6 +21,7 @@ import { downloadFromUrl } from "@/components/image/download-file";
 import { AudioChoice, AudioPicker, ImageChoice, ImagePicker } from "./clone-pickers";
 import { CLONE_ANIM_CSS } from "./clone-anim";
 import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
+import { putToR2, UploadError, uploadErrorText } from "@/lib/images/upload";
 import { audioSemSinal } from "@/lib/video-clone/audio-silencio";
 
 const PILL =
@@ -35,8 +36,9 @@ async function presignAndPut(kind: "image" | "audio", file: File): Promise<strin
   });
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(j?.error?.message || "");
-  const put = await fetch(j.upload_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
-  if (!put.ok) throw new Error("");
+  // PUT direto no R2 com retry em falha transitória (rede/5xx); lança
+  // UploadError — o caller traduz com uploadErrorText().
+  await putToR2(j.upload_url, file, file.type);
   return j.key as string;
 }
 
@@ -87,6 +89,7 @@ export function CloneStudio({
   onChanged: () => void;
 }) {
   const t = useTranslations("videoClone.studio");
+  const tUpload = useTranslations("uploadErrors");
   const [image, setImage] = useState<ImageChoice | null>(null);
   const [audio, setAudio] = useState<AudioChoice | null>(null);
   const [uploading, setUploading] = useState<"image" | "audio" | null>(null);
@@ -133,7 +136,13 @@ export function CloneStudio({
         setImage({ kind: "upload", key, preview });
       }
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : t("errors.upload"));
+      setError(
+        e instanceof UploadError
+          ? uploadErrorText(e, file, tUpload)
+          : e instanceof Error && e.message
+            ? e.message
+            : t("errors.upload"),
+      );
     } finally {
       setUploading(null);
     }
@@ -182,7 +191,13 @@ export function CloneStudio({
         })
         .catch(() => {});
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : t("errors.upload"));
+      setError(
+        e instanceof UploadError
+          ? uploadErrorText(e, file, tUpload)
+          : e instanceof Error && e.message
+            ? e.message
+            : t("errors.upload"),
+      );
     } finally {
       setUploading(null);
     }
