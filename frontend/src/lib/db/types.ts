@@ -152,6 +152,10 @@ export type GenerationRow = {
   sample_rate: number | null;
   duration_seconds: number | null;
   elapsed_seconds: number | null;
+  /** Fila (delayTime) e execução (executionTime) do RunPod em segundos,
+   *  gravados na FALHA — migration 82, incidente d3d8d1b2. */
+  delay_seconds: number | null;
+  execution_seconds: number | null;
   status: GenerationStatus;
   error_message: string | null;
   runpod_job_id: string | null;

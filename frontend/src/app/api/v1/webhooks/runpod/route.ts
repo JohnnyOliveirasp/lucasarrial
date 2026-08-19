@@ -20,7 +20,9 @@
 import type { NextRequest } from "next/server";
 import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { runpodGetStatus, inferenceEndpoint } from "@/lib/runpod/client";
 import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
+import { recordRunpodTiming } from "@/lib/generations/runpod-timing";
 import { finalizeTraining, type TrainOutput } from "@/lib/voices/finalize-training";
 import {
   finalizeStudioAudio,
@@ -53,6 +55,7 @@ type RunpodWebhookPayload = {
     duration_s?: number;
   };
   error?: string;
+  delayTime?: number;
   executionTime?: number;
 };
 
@@ -219,6 +222,24 @@ async function handleGenerationWebhook(
     .in("status", ["pending", "generating"])
     .select("id");
   if (claimed && claimed.length > 0) {
+    // Telemetria fila×execução (migration 82, incidente d3d8d1b2): delayTime
+    // separa "esperou na fila" de "rodou demais". Se o webhook não trouxer,
+    // busca o status AGORA — ele expira ~30min depois do job, sweep posterior
+    // chega tarde. Tudo best-effort: instrumentação NUNCA derruba o estorno.
+    let delayTimeMs = payload.delayTime;
+    let executionTimeMs = payload.executionTime;
+    if (typeof delayTimeMs !== "number") {
+      try {
+        const st = await runpodGetStatus(payload.id, inferenceEndpoint());
+        if (typeof st.delayTime === "number") delayTimeMs = st.delayTime;
+        if (typeof executionTimeMs !== "number" && typeof st.executionTime === "number") {
+          executionTimeMs = st.executionTime;
+        }
+      } catch {
+        // segue sem — o estorno não espera telemetria
+      }
+    }
+    await recordRunpodTiming(generationId, { delayTimeMs, executionTimeMs });
     await handleTechFailure({
       feature: "Geração de áudio (TTS)",
       userId,

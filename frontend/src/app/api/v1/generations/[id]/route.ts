@@ -19,6 +19,7 @@ import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { runpodGetStatus, inferenceEndpoint } from "@/lib/runpod/client";
 import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
+import { recordRunpodTiming } from "@/lib/generations/runpod-timing";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { GenerationStatus } from "@/lib/db/types";
 
@@ -37,6 +38,7 @@ async function failGeneration(
   jobId: string | null,
   rawError: string,
   executionTimeMs?: number,
+  delayTimeMs?: number,
 ): Promise<void> {
   // Grava o tempo de execução do RunPod também no caminho do POLL (incidente
   // d3d8d1b2, 18/08): poll e webhook correm pelo mesmo gate idempotente, e quem
@@ -61,6 +63,9 @@ async function failGeneration(
     .in("status", POLLING_STATUSES)
     .select("id");
   if (claimed && claimed.length > 0) {
+    // Telemetria fila×execução (migration 82) em UPDATE separado: se a coluna
+    // ainda não existir no banco, só a instrumentação falha — o estorno segue.
+    await recordRunpodTiming(generationId, { delayTimeMs, executionTimeMs });
     await handleTechFailure({
       feature: "Geração de áudio (TTS)",
       userId,
@@ -105,7 +110,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
           // Converte WAV->MP3 e marca ready (audio_path passa a apontar pro .mp3).
           await finalizeGenerationSuccess(id, gen.audio_path, out);
         } else {
-          await failGeneration(id, auth.user_id, gen.runpod_job_id, out.error ?? "unknown", resp.executionTime);
+          await failGeneration(id, auth.user_id, gen.runpod_job_id, out.error ?? "unknown", resp.executionTime, resp.delayTime);
         }
 
         const { data: refreshed } = await admin
@@ -117,7 +122,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
           .maybeSingle();
         if (refreshed) current = refreshed;
       } else if (resp.status === "FAILED" || resp.status === "CANCELLED" || resp.status === "TIMED_OUT") {
-        await failGeneration(id, auth.user_id, gen.runpod_job_id, `RunPod ${resp.status}: ${resp.error ?? ""}`, resp.executionTime);
+        await failGeneration(id, auth.user_id, gen.runpod_job_id, `RunPod ${resp.status}: ${resp.error ?? ""}`, resp.executionTime, resp.delayTime);
       }
     } catch {
       // ignora — devolve estado atual
