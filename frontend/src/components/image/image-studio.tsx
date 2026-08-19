@@ -9,6 +9,7 @@ import { PaywallModal } from "@/components/app/paywall-modal";
 import { AudioGeneratingIndicator } from "@/components/voice/audio-generating-indicator";
 import { FieldHint } from "@/components/image/field-hint";
 import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC, isHeicFile } from "@/lib/images/heic";
+import { clientLogger } from "@/lib/logger/client";
 import {
   ASPECT_RATIOS,
   RESOLUTIONS,
@@ -212,6 +213,15 @@ export function ImageStudio({
         prev.map((x) => (x.id === id ? { ...x, key, uploading: false } : x)),
       );
     } catch (e) {
+      // O upload vai do navegador DIRETO pro R2 (URL assinada) — sem este log
+      // a falha não existe em lugar nenhum do nosso lado (caso VP, 19/08).
+      clientLogger.error("image.upload_failed", {
+        stage: "extra",
+        filename: file.name,
+        type: file.type,
+        size: file.size,
+        message: e instanceof Error ? e.message : String(e),
+      });
       setError(e instanceof Error ? e.message : t("errors.upload"));
       setRefs((prev) => {
         const found = prev.find((x) => x.id === id);
@@ -225,6 +235,12 @@ export function ImageStudio({
   async function uploadFixed(rawFile: File) {
     const file = await ensureUploadableImage(rawFile); // iPhone .heic -> jpeg
     if (!file.type.startsWith("image/")) {
+      clientLogger.warn("image.invalid_file", {
+        stage: "fixed",
+        filename: rawFile.name,
+        type: rawFile.type,
+        size: rawFile.size,
+      });
       setError(t("errors.invalidFiles"));
       return;
     }
@@ -251,6 +267,14 @@ export function ImageStudio({
       persistFixedRef({ key, url: preview });
     } catch (e) {
       URL.revokeObjectURL(preview);
+      // Mesmo motivo do uploadOne: falha navegador→R2 só existe se registrarmos.
+      clientLogger.error("image.upload_failed", {
+        stage: "fixed",
+        filename: file.name,
+        type: file.type,
+        size: file.size,
+        message: e instanceof Error ? e.message : String(e),
+      });
       setError(e instanceof Error ? e.message : t("errors.upload"));
     } finally {
       setFixedUploading(false);
@@ -264,6 +288,10 @@ export function ImageStudio({
     // HEIC do iPhone pode vir com MIME vazio — a extensao vale como imagem.
     const raw = Array.from(files).filter((f) => f.type.startsWith("image/") || isHeicFile(f));
     if (raw.length === 0) {
+      clientLogger.warn("image.invalid_file", {
+        stage: "extras",
+        files: Array.from(files).map((f) => ({ filename: f.name, type: f.type, size: f.size })),
+      });
       setError(t("errors.invalidFiles"));
       return;
     }
@@ -774,7 +802,7 @@ export function ImageStudio({
           </div>
         )}
 
-        {error && <SupportError action={t("supportAction")} />}
+        {error && <SupportError action={t("supportAction")} message={error} />}
 
         <PaywallModal
           open={noCredits}

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-import { ensureUploadableImage, isHeicFile } from "@/lib/images/heic";
+import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC, isHeicFile } from "@/lib/images/heic";
 import {
   ImageIcon,
   Upload,
@@ -255,7 +255,10 @@ export function ImageStage({
               <span className="font-mono text-[10px]">{t("upload")}</span>
             </button>
           )}
-          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => addFiles(e.target.files)} />
+          {/* Lista explícita (não "image/*"): o seletor do celular já filtra
+              pro que o fluxo realmente aceita — HEIC incluso (convertido no
+              navegador por ensureUploadableImage). */}
+          <input ref={fileRef} type="file" accept={IMAGE_ACCEPT_WITH_HEIC} multiple hidden onChange={(e) => addFiles(e.target.files)} />
         </div>
 
         <label className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)] p-3 text-[13px] text-[var(--body)]">

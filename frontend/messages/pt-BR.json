@@ -409,7 +409,7 @@
         "prepareUpload": "Falha ao preparar upload",
         "sendImage": "Falha ao enviar a imagem",
         "upload": "Erro no upload",
-        "invalidFiles": "Envie arquivos de imagem (JPG, PNG ou WEBP).",
+        "invalidFiles": "Envie arquivos de imagem (JPG, PNG, WEBP ou HEIC de iPhone).",
         "maxPhotos": "Máximo de {max} fotos.",
         "maxPhotosIgnored": "Máximo de {max} fotos — algumas foram ignoradas.",
         "blockedFallback": "Conteúdo não permitido",
@@ -616,7 +616,8 @@
     "supportError": {
       "title": "Ops, algo deu errado",
       "defaultAction": "concluir a operação",
-      "body": "Não foi possível {action}. O erro foi registrado do nosso lado — tente de novo em alguns minutos.",
+      "body": "Não foi possível {action}.",
+      "retryHint": "Tente de novo em alguns minutos.",
       "contact": "Se continuar, fale com o suporte:"
     }
   },

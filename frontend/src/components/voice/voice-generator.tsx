@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AudioLines, Download, Loader2, AlertTriangle } from "lucide-react";
 import { formatDuration } from "@/lib/audio/duration";
+import { clientLogger } from "@/lib/logger/client";
 import { SupportError } from "@/components/ui/support-error";
 import { PaywallModal } from "@/components/app/paywall-modal";
 
@@ -189,6 +190,12 @@ export function VoiceGenerator({ voiceId }: Props) {
         ...prev,
       ]);
     } catch (e) {
+      // Falha de rede/cliente não passa pelo servidor — registra pra existir
+      // no nosso log (mesmo defeito do image-studio, caso VP 19/08).
+      clientLogger.error("voice.generate_start_failed", {
+        voiceId,
+        message: e instanceof Error ? e.message : String(e),
+      });
       setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setSubmitting(false);
@@ -265,7 +272,7 @@ export function VoiceGenerator({ voiceId }: Props) {
           </div>
         </div>
 
-        {error && <SupportError action={t("generator.supportAction")} />}
+        {error && <SupportError action={t("generator.supportAction")} message={error} />}
 
         <button type="submit" disabled={!canSubmit} className={`${PILL} w-fit`}>
           {submitting || inflight ? (

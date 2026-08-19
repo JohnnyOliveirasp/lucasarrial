@@ -20,8 +20,9 @@ export const IMAGE_ACCEPT_WITH_HEIC =
 
 /**
  * Converte HEIC→JPEG no navegador; qualquer outro arquivo passa direto.
- * Falhou a conversão? Devolve o original — a validação normal do fluxo
- * dá a mensagem de erro de sempre (não pior que hoje).
+ * Falhou a conversão? Devolve o original — a validação do fluxo recusa e,
+ * desde 19/08, o MOTIVO aparece na tela (o SupportError mostra a mensagem
+ * real em vez do banner genérico).
  */
 export async function ensureUploadableImage(file: File): Promise<File> {
   if (!isHeicFile(file)) return file;

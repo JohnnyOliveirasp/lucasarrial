@@ -409,7 +409,7 @@
         "prepareUpload": "Failed to prepare the upload",
         "sendImage": "Failed to upload the image",
         "upload": "Upload error",
-        "invalidFiles": "Upload image files (JPG, PNG, or WEBP).",
+        "invalidFiles": "Upload image files (JPG, PNG, WEBP, or iPhone HEIC).",
         "maxPhotos": "Maximum of {max} photos.",
         "maxPhotosIgnored": "Maximum of {max} photos — some were skipped.",
         "blockedFallback": "Content not allowed",
@@ -616,7 +616,8 @@
     "supportError": {
       "title": "Oops, something went wrong",
       "defaultAction": "complete the operation",
-      "body": "We couldn't {action}. The error was logged on our side — try again in a few minutes.",
+      "body": "We couldn't {action}.",
+      "retryHint": "Try again in a few minutes.",
       "contact": "If it keeps happening, contact support:"
     }
   },

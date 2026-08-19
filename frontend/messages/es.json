@@ -409,7 +409,7 @@
         "prepareUpload": "No se pudo preparar la subida",
         "sendImage": "No se pudo subir la imagen",
         "upload": "Error al subir",
-        "invalidFiles": "Sube archivos de imagen (JPG, PNG o WEBP).",
+        "invalidFiles": "Sube archivos de imagen (JPG, PNG, WEBP o HEIC de iPhone).",
         "maxPhotos": "Máximo de {max} fotos.",
         "maxPhotosIgnored": "Máximo de {max} fotos — algunas se ignoraron.",
         "blockedFallback": "Contenido no permitido",
@@ -616,7 +616,8 @@
     "supportError": {
       "title": "Ups, algo salió mal",
       "defaultAction": "completar la operación",
-      "body": "No pudimos {action}. El error quedó registrado de nuestro lado — intenta de nuevo en unos minutos.",
+      "body": "No pudimos {action}.",
+      "retryHint": "Intenta de nuevo en unos minutos.",
       "contact": "Si continúa, habla con soporte:"
     }
   },
