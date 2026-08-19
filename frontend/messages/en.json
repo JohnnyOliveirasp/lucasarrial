@@ -402,7 +402,8 @@
       "lockedBodyUnsubscribed": "You don't have an active plan. Generating images uses plan credits: subscribe to unlock 100,000 credits per month and create your images.",
       "buyCredits": "Buy credits",
       "subscribeNow": "Subscribe now",
-      "yourImages": "Your images"
+      "yourImages": "Created Images History",
+      "savedRefs": "Reference Images"
     },
     "studio": {
       "errors": {
@@ -563,6 +564,16 @@
           "label": "Gold",
           "blurb": "Top quality and fidelity."
         }
+      }
+    },
+    "refs": {
+      "loading": "Loading references…",
+      "empty": "No saved references yet. Every photo you use as a reference shows up here — and it won't disappear when you delete images from your history.",
+      "use": "Use as reference",
+      "delete": "Delete this reference",
+      "errors": {
+        "load": "Couldn't load references.",
+        "delete": "Couldn't delete."
       }
     }
   },

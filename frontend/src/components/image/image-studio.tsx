@@ -77,6 +77,29 @@ export function ImageStudio({
 
   function persistFixedRef(next: FixedRef | null) {
     setFixedRef(next);
+    // Adoção (19/08): toda referência passa por AQUI, então é aqui que ela é
+    // copiada pra área "refs/" que o apagar-do-histórico não alcança. Antes, a
+    // chave apontava pro input_* DENTRO de uma geração — apagar aquela geração
+    // matava a referência de todo mundo que dependia dela. Em segundo plano:
+    // a tela não espera; quando a cópia responde, a chave guardada troca.
+    if (next && !next.key.includes("/refs/")) {
+      void fetch("/api/v1/images/refs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: next.key }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => {
+          if (!j?.key) return;
+          setFixedRef((atual) => (atual?.key === next.key ? { key: j.key, url: j.url ?? atual.url } : atual));
+          try {
+            if (localStorage.getItem(fixedRefStorageKey(userId)) === next.key) {
+              localStorage.setItem(fixedRefStorageKey(userId), j.key);
+            }
+          } catch { /* sem localStorage, segue */ }
+        })
+        .catch(() => { /* adoção falhou: a referência original segue valendo */ });
+    }
     try {
       if (next) localStorage.setItem(fixedRefStorageKey(userId), next.key);
       else localStorage.removeItem(fixedRefStorageKey(userId));
@@ -120,7 +143,9 @@ export function ImageStudio({
         });
         if (!r.ok) throw new Error("ref-url");
         const { url } = await r.json();
-        if (!cancelled) setFixedRef({ key: stored!, url });
+        // persistFixedRef, não setFixedRef: é o que dispara a ADOÇÃO — este
+        // caminho (chave antiga no localStorage) é a migração dos ~570 alunos.
+        if (!cancelled) persistFixedRef({ key: stored!, url });
       } catch {
         // chave morta (imagem apagada) — limpa em silêncio
         try {

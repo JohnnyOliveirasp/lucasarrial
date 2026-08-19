@@ -402,7 +402,8 @@
       "lockedBodyUnsubscribed": "Você não tem um plano vigente. Gerar imagens consome créditos do plano: assine para liberar 100.000 créditos por mês e criar suas imagens.",
       "buyCredits": "Comprar créditos",
       "subscribeNow": "Assinar agora",
-      "yourImages": "Suas imagens"
+      "yourImages": "Histórico de Imagens criadas",
+      "savedRefs": "Imagens de Referência"
     },
     "studio": {
       "errors": {
@@ -563,6 +564,16 @@
           "label": "Gold",
           "blurb": "Máxima qualidade e fidelidade."
         }
+      }
+    },
+    "refs": {
+      "loading": "Carregando referências…",
+      "empty": "Nenhuma referência salva ainda. Toda foto que você usar como referência aparece aqui — e não some quando você apaga imagens do histórico.",
+      "use": "Usar como referência",
+      "delete": "Apagar esta referência",
+      "errors": {
+        "load": "Não foi possível carregar as referências.",
+        "delete": "Não foi possível apagar."
       }
     }
   },

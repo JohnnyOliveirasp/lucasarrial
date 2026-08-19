@@ -23,6 +23,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, VoiceStatus } from "@/lib/db/types";
 import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { buildRawAudioKey, createPresignedGet } from "@/lib/r2/presigned";
+import { adotarReferencia } from "@/lib/images/refs";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -264,6 +265,12 @@ export async function importImages(
         /* visão falhou → primeira foto */
       }
       referenceKey = allKeys[idx] ?? allKeys[0];
+      // Adota já no nascimento (19/08): a chave crua aponta pra dentro de uma
+      // geração — se o aluno apagar aquela linha do histórico, a referência
+      // morre. Em refs/ ela sobrevive ao histórico inteiro.
+      try {
+        referenceKey = await adotarReferencia(userId, referenceKey);
+      } catch { /* adoção falhou: fica a crua, o ref-default adota depois */ }
       await admin.from("profiles").update({ image_ref_key: referenceKey }).eq("id", userId);
     } else {
       referenceKey = (prof?.image_ref_key as string | null) ?? null;

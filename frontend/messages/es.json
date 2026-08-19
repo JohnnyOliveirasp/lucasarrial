@@ -402,7 +402,8 @@
       "lockedBodyUnsubscribed": "No tienes un plan vigente. Generar imágenes consume créditos del plan: suscríbete para desbloquear 100.000 créditos al mes y crear tus imágenes.",
       "buyCredits": "Comprar créditos",
       "subscribeNow": "Suscribirme ahora",
-      "yourImages": "Tus imágenes"
+      "yourImages": "Historial de Imágenes creadas",
+      "savedRefs": "Imágenes de Referencia"
     },
     "studio": {
       "errors": {
@@ -563,6 +564,16 @@
           "label": "Gold",
           "blurb": "Máxima calidad y fidelidad."
         }
+      }
+    },
+    "refs": {
+      "loading": "Cargando referencias…",
+      "empty": "Aún no hay referencias guardadas. Cada foto que uses como referencia aparece aquí — y no desaparece cuando borras imágenes del historial.",
+      "use": "Usar como referencia",
+      "delete": "Borrar esta referencia",
+      "errors": {
+        "load": "No se pudieron cargar las referencias.",
+        "delete": "No se pudo borrar."
       }
     }
   },

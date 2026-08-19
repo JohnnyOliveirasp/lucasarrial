@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { ImageStudio, type FixedRef } from "@/components/image/image-studio";
 import { ImageHistory } from "@/components/image/image-history";
+import { ReferenciasSalvas } from "@/components/image/referencias-salvas";
 
 /**
  * Compõe o Studio (gerador) + o Histórico na mesma tela. Quando o Studio
@@ -22,6 +23,7 @@ export function ImageWorkspace({
 }) {
   const t = useTranslations("images.page");
   const [reloadKey, setReloadKey] = useState(0);
+  const [aba, setAba] = useState<"criadas" | "refs">("criadas");
   // "Animar" na tela de resultado → abre o painel de vídeo da imagem no histórico.
   const [animateId, setAnimateId] = useState<string | null>(null);
   const [refRequest, setRefRequest] = useState<(FixedRef & { seq: number }) | null>(null);
@@ -49,14 +51,38 @@ export function ImageWorkspace({
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
-          {t("yourImages")}
-        </h2>
-        <ImageHistory
-          reloadKey={reloadKey}
-          openAnimateId={animateId}
-          onUseAsRef={useAsReference}
-        />
+        {/* Abas (19/08): "Imagens criadas" continua o histórico de sempre;
+            "Referências salvas" é a área que o apagar-do-histórico não toca —
+            nasceu do erro "uma das fotos de referência não existe mais". */}
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setAba("criadas")}
+            className={`font-sans text-xl font-semibold tracking-[-0.01em] transition-colors ${
+              aba === "criadas" ? "text-[var(--ink)]" : "text-[var(--ash)] hover:text-[var(--mute)]"
+            }`}
+          >
+            {t("yourImages")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setAba("refs")}
+            className={`font-sans text-xl font-semibold tracking-[-0.01em] transition-colors ${
+              aba === "refs" ? "text-[var(--ink)]" : "text-[var(--ash)] hover:text-[var(--mute)]"
+            }`}
+          >
+            {t("savedRefs")}
+          </button>
+        </div>
+        {aba === "criadas" ? (
+          <ImageHistory
+            reloadKey={reloadKey}
+            openAnimateId={animateId}
+            onUseAsRef={useAsReference}
+          />
+        ) : (
+          <ReferenciasSalvas reloadKey={reloadKey} onUseAsRef={useAsReference} />
+        )}
       </section>
     </div>
   );

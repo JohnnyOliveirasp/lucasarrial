@@ -13,6 +13,7 @@ import { authenticate } from "@/lib/api/auth";
 import { jsonOk, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { imagesBucket } from "@/lib/r2/client";
+import { adotarReferencia, ehReferenciaSalva } from "@/lib/images/refs";
 import { objectExists } from "@/lib/r2/exists";
 import { createPresignedGet } from "@/lib/r2/presigned";
 
@@ -36,7 +37,20 @@ export async function GET(request: NextRequest) {
     return jsonOk({ key: null });
   }
 
-  const url = await createPresignedGet(imagesBucket(), key, 3600).catch(() => null);
+  // Migração por adoção (19/08): chave que ainda mora na pasta de uma geração
+  // morre quando aquela geração for apagada do histórico. Copia pra `refs/` e
+  // regrava o profile — cada aluno migra sozinho no primeiro acesso.
+  let entregue = key;
+  if (!ehReferenciaSalva(auth.user_id, key)) {
+    try {
+      entregue = await adotarReferencia(auth.user_id, key);
+      await admin.from("profiles").update({ image_ref_key: entregue }).eq("id", auth.user_id);
+    } catch {
+      entregue = key; // adoção falhou: entrega a original — melhor que nada
+    }
+  }
+
+  const url = await createPresignedGet(imagesBucket(), entregue, 3600).catch(() => null);
   if (!url) return jsonOk({ key: null });
-  return jsonOk({ key, url });
+  return jsonOk({ key: entregue, url });
 }
