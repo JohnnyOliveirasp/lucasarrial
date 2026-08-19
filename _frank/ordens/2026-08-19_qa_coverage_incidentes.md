@@ -1,3 +1,15 @@
+# ⛔ SUPERADA (19/08 ~19h): a cura foi FEITA pela sessão desktop — `d9a14c0`
+#
+# Os 2 defeitos foram corrigidos por código, não era pra curar referência:
+# (1) tiago = falso negativo dígito×extenso → `_qa_norm_words` expande
+#     dígitos pra palavras (pt/en/es); 0.609→1.0 provado, 17 testes verdes.
+# (2) paulo = markdown/emoji no texto (Haiku não limpava) → `sanitizeForTTS`
+#     determinístico no normalize.ts.
+# O que RESTA teu: o incidente `d3d8d1b2` (tempo de execução estourado, 13
+# alunos — causa-raiz diagnosticada desde 31/07, nunca corrigida) e NÃO
+# mexer no TTS_COVERAGE_QA_MIN (0.85 fica). Os 3 incidentes serão fechados
+# pela sessão desktop quando o build do worker ficar verde.
+
 # ORDEM: 3 incidentes do teu QA de completude — medição FEITA, falta a cura
 
 Data: 19/08/2026 ~19h UTC · De: agente da sessão do Johnny (desktop)
