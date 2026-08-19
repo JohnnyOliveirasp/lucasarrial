@@ -574,7 +574,9 @@
       "errors": {
         "load": "Não foi possível carregar as referências.",
         "delete": "Não foi possível apagar."
-      }
+      },
+      "current": "Referência atual",
+      "currentTitle": "Esta é a foto de referência em uso agora"
     }
   },
   "misc": {

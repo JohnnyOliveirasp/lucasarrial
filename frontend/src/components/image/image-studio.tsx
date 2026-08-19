@@ -51,6 +51,7 @@ export function ImageStudio({
   refRequest,
   onGenerated,
   onAnimate,
+  onFixedRefKey,
 }: {
   creditsTotal: number;
   unlimited: boolean;
@@ -61,6 +62,8 @@ export function ImageStudio({
   onGenerated?: () => void;
   /** Abre o painel "Animar" desta imagem no histórico (feature Vídeo). */
   onAnimate?: (imageId: string) => void;
+  /** Avisa o pai qual é a chave da referência ATUAL (aba marca "em uso"). */
+  onFixedRefKey?: (key: string | null) => void;
 }) {
   const t = useTranslations("images.studio");
   const tUpload = useTranslations("uploadErrors");
@@ -77,6 +80,7 @@ export function ImageStudio({
 
   function persistFixedRef(next: FixedRef | null) {
     setFixedRef(next);
+    onFixedRefKey?.(next?.key ?? null);
     // Adoção (19/08): toda referência passa por AQUI, então é aqui que ela é
     // copiada pra área "refs/" que o apagar-do-histórico não alcança. Antes, a
     // chave apontava pro input_* DENTRO de uma geração — apagar aquela geração
@@ -92,6 +96,7 @@ export function ImageStudio({
         .then((j) => {
           if (!j?.key) return;
           setFixedRef((atual) => (atual?.key === next.key ? { key: j.key, url: j.url ?? atual.url } : atual));
+          onFixedRefKey?.(j.key);
           try {
             if (localStorage.getItem(fixedRefStorageKey(userId)) === next.key) {
               localStorage.setItem(fixedRefStorageKey(userId), j.key);

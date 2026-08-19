@@ -574,7 +574,9 @@
       "errors": {
         "load": "Couldn't load references.",
         "delete": "Couldn't delete."
-      }
+      },
+      "current": "Current reference",
+      "currentTitle": "This is the reference photo in use right now"
     }
   },
   "misc": {

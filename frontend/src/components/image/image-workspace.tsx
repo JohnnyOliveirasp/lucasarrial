@@ -24,6 +24,8 @@ export function ImageWorkspace({
   const t = useTranslations("images.page");
   const [reloadKey, setReloadKey] = useState(0);
   const [aba, setAba] = useState<"criadas" | "refs">("criadas");
+  // Chave da referência ATUAL — a aba marca o card dela como "em uso".
+  const [currentRefKey, setCurrentRefKey] = useState<string | null>(null);
   // "Animar" na tela de resultado → abre o painel de vídeo da imagem no histórico.
   const [animateId, setAnimateId] = useState<string | null>(null);
   const [refRequest, setRefRequest] = useState<(FixedRef & { seq: number }) | null>(null);
@@ -45,6 +47,7 @@ export function ImageWorkspace({
           unlimited={unlimited}
           userId={userId}
           refRequest={refRequest}
+          onFixedRefKey={setCurrentRefKey}
           onGenerated={() => setReloadKey((k) => k + 1)}
           onAnimate={(id) => setAnimateId(id)}
         />
@@ -81,7 +84,7 @@ export function ImageWorkspace({
             onUseAsRef={useAsReference}
           />
         ) : (
-          <ReferenciasSalvas reloadKey={reloadKey} onUseAsRef={useAsReference} />
+          <ReferenciasSalvas reloadKey={reloadKey} currentRefKey={currentRefKey} onUseAsRef={useAsReference} />
         )}
       </section>
     </div>

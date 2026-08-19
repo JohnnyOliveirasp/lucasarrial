@@ -17,9 +17,12 @@ type Ref = { key: string; url: string; size: number; at: string | null };
 
 export function ReferenciasSalvas({
   reloadKey = 0,
+  currentRefKey = null,
   onUseAsRef,
 }: {
   reloadKey?: number;
+  /** Chave da referência EM USO: o card dela ganha a marca e trava o botão. */
+  currentRefKey?: string | null;
   onUseAsRef?: (key: string, url: string) => void;
 }) {
   const t = useTranslations("images.refs");
@@ -44,7 +47,9 @@ export function ReferenciasSalvas({
 
   useEffect(() => {
     void load();
-  }, [load, reloadKey]);
+    // currentRefKey na dependência: quando uma foto nova é adotada (vira a
+    // atual), a lista recarrega e ela já aparece aqui com a marca.
+  }, [load, reloadKey, currentRefKey]);
 
   async function apagar(key: string) {
     setApagando(key);
@@ -80,30 +85,43 @@ export function ReferenciasSalvas({
     <div className="flex flex-col gap-3">
       {erro && <p className="text-[12px] text-[var(--status-error)]">{erro}</p>}
       <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-        {refs.map((r) => (
+        {refs.map((r) => {
+          const emUso = currentRefKey === r.key;
+          return (
           <li
             key={r.key}
-            className="group flex flex-col gap-1.5 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] p-2"
+            className={`group flex flex-col gap-1.5 rounded-[var(--radius)] border bg-[var(--surface-card)] p-2 ${
+              emUso ? "border-[var(--ink)]" : "border-[var(--hairline)]"
+            }`}
           >
             <div className="relative aspect-[3/4] overflow-hidden rounded-[var(--radius-sm)] bg-[var(--surface-deep)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={r.url} alt="" className="h-full w-full object-cover" />
+              {emUso && (
+                <span className="absolute left-1 top-1 rounded-full bg-[var(--canvas)]/80 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-white">
+                  {t("current")}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <button
                 type="button"
+                disabled={emUso}
                 onClick={() => onUseAsRef?.(r.key, r.url)}
-                title={t("use")}
-                className="inline-flex flex-1 items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] py-1 font-sans text-[11px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
+                title={emUso ? t("currentTitle") : t("use")}
+                className="inline-flex flex-1 items-center justify-center gap-1 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] py-1 font-sans text-[11px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)] disabled:opacity-60"
               >
                 <Pin className="h-3 w-3 text-[var(--silver)]" />
-                {t("use")}
+                {emUso ? t("current") : t("use")}
               </button>
+              {/* A ATUAL não se apaga daqui: o estúdio ficaria apontando pra
+                  uma foto morta — o mesmo defeito que esta aba existe pra
+                  curar. Troque a referência primeiro, depois apague. */}
               <button
                 type="button"
                 onClick={() => void apagar(r.key)}
-                disabled={apagando === r.key}
-                title={t("delete")}
+                disabled={apagando === r.key || emUso}
+                title={emUso ? t("currentTitle") : t("delete")}
                 className="inline-flex h-[24px] w-[24px] items-center justify-center rounded-[var(--radius-sm)] border border-[var(--hairline)] text-[var(--mute)] hover:text-[var(--status-error)] disabled:opacity-50"
               >
                 {apagando === r.key ? (
@@ -114,7 +132,8 @@ export function ReferenciasSalvas({
               </button>
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );
