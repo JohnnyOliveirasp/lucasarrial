@@ -831,3 +831,56 @@ Nas duas o sistema respondeu **exatamente o que eu perguntei** — a pergunta é
 que estava errada. Erro de consulta o script pega; **pergunta errada, não.**
 Quando o resultado for um zero que fecha o dia, gaste 30 segundos provando que
 a pergunta era possível de responder com "não-zero".
+
+---
+
+## X. Número do nosso banco não prova assinatura — pergunte pra fonte
+
+Nasceu em 19/08, matando o "problema mais grave aberto" da véspera.
+
+`prova_raio.cjs` contava *pagante com crédito e sem acesso* olhando só o nosso
+banco: `entitlements.status='active'` + saldo > 0 + `access_until` vencido.
+Deu **147** em 18/08 e **68** em 19/08. Conferido na Hotmart um por um:
+**0 eram pagantes trancados.** 22 tinham cancelado, 25 estavam inadimplentes,
+1 era trial que nunca pagou, e **20 eram só a virada das 12:00**.
+
+### As três armadilhas
+
+1. **`status` da linha ≠ status da assinatura.** Ninguém volta no
+   `entitlements` pra escrever `cancelled` quando a pessoa sai. `active` ali
+   quer dizer "essa linha foi criada", não "essa pessoa paga hoje".
+2. **`raw_event` é uma foto do último webhook.** `subscription.status=ACTIVE`
+   é o status **naquele dia**. Um aluno tinha ACTIVE guardado e, na Hotmart,
+   a cobrança do mês em `WAITING_PAYMENT`.
+3. **Métrica que vence à meia-noite (ou ao meio-dia) mede o lote, não o
+   problema.** `access_until` recebe a data da **próxima cobrança**, então
+   todo dia às 12:00 UTC um lote inteiro vence no mesmo segundo em que a
+   cobrança fica devida. Essa gente não está travada, está **na fronteira**.
+   Se a sua métrica balança 2x de um dia pro outro, desconfie dela antes de
+   desconfiar do sistema.
+
+### A regra
+
+**Quem paga é a Hotmart que sabe.** A prova é o histórico de cobranças:
+`GET /subscriptions/{code}/purchases` — última recorrência `APPROVED` ou
+`COMPLETE` + acesso vencido = aí sim é bug nosso e é dinheiro.
+
+Ferramenta pronta: **`ferramentas/pagante_trancado.cjs`** (use na varredura no
+lugar do `prova_raio.cjs`). Ela separa vítima de fronteira e **diz quantos não
+conseguiu provar** — desconfie de qualquer conta que não faça isso.
+
+### Dois detalhes que custam caro
+
+- **`/purchases` devolve ARRAY PURO**, não `{items:[...]}`. Ler `.items` traz
+  `undefined`, todo mundo cai em "sem cobrança" e o script imprime
+  **"0 pagantes trancados"** com confiança total. É o playbook W de novo, e eu
+  caí nele em 19/08. Só peguei porque uma saída crua anterior contradizia o
+  classificador. **Quando duas saídas suas discordam, a errada é a mais
+  bonitinha.**
+- A Hotmart usa **`APPROVED` e `COMPLETE`** pra pagamento aprovado. Filtrar só
+  `APPROVED` esconde justamente quem pagou.
+
+### Antes de chamar um número de "problema mais grave aberto"
+
+Pergunte: *"eu consigo apontar UMA pessoa que pagou e está sem acesso?"*
+Se não consegue nomear ninguém, você tem um **número**, não um **problema**.
