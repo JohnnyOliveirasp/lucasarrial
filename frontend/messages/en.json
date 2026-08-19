@@ -1685,5 +1685,14 @@
       "selectedVideo": "Video selected (Reel)",
       "change": "change"
     }
+  },
+  "uploadErrors": {
+    "network": "Network failure while uploading \"{file}\" — the connection dropped or is saturated. We tried 3 times; check your internet and try again.",
+    "tooLarge": "\"{file}\" is too large to upload (HTTP 413). Reduce the file size and try again.",
+    "badFormat": "\"{file}\" was rejected due to its format or content (HTTP {status}). Try saving it as JPG or PNG and upload again.",
+    "linkExpired": "The upload link for \"{file}\" expired or was refused (HTTP 403). Reload the page and try again.",
+    "server": "The file server failed to receive \"{file}\" (HTTP {status}). We tried 3 times; wait a moment and try again.",
+    "rejected": "The upload of \"{file}\" was refused (HTTP {status}). Try again; if it persists, contact support.",
+    "unknown": "Failed to upload \"{file}\". Try again; if it persists, contact support."
   }
 }

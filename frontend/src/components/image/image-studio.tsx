@@ -9,6 +9,7 @@ import { PaywallModal } from "@/components/app/paywall-modal";
 import { AudioGeneratingIndicator } from "@/components/voice/audio-generating-indicator";
 import { FieldHint } from "@/components/image/field-hint";
 import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC, isHeicFile } from "@/lib/images/heic";
+import { putToR2, UploadError, uploadErrorText } from "@/lib/images/upload";
 import {
   ASPECT_RATIOS,
   RESOLUTIONS,
@@ -61,6 +62,7 @@ export function ImageStudio({
   onAnimate?: (imageId: string) => void;
 }) {
   const t = useTranslations("images.studio");
+  const tUpload = useTranslations("uploadErrors");
   const [step, setStep] = useState<Step>("form");
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
@@ -185,17 +187,19 @@ export function ImageStudio({
         throw new Error(j?.error?.message || t("errors.prepareUpload"));
       }
       const { key, upload_url } = await r.json();
-      const put = await fetch(upload_url, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-      if (!put.ok) throw new Error(t("errors.sendImage"));
+      // PUT direto no R2 com retry em falha transitória (rede/5xx).
+      await putToR2(upload_url, file, file.type);
       setRefs((prev) =>
         prev.map((x) => (x.id === id ? { ...x, key, uploading: false } : x)),
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("errors.upload"));
+      setError(
+        e instanceof UploadError
+          ? uploadErrorText(e, file, tUpload)
+          : e instanceof Error
+            ? e.message
+            : t("errors.upload"),
+      );
       setRefs((prev) => {
         const found = prev.find((x) => x.id === id);
         if (found) URL.revokeObjectURL(found.preview);
@@ -225,16 +229,18 @@ export function ImageStudio({
         throw new Error(j?.error?.message || t("errors.prepareUpload"));
       }
       const { key, upload_url } = await r.json();
-      const put = await fetch(upload_url, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-      if (!put.ok) throw new Error(t("errors.sendImage"));
+      // PUT direto no R2 com retry em falha transitória (rede/5xx).
+      await putToR2(upload_url, file, file.type);
       persistFixedRef({ key, url: preview });
     } catch (e) {
       URL.revokeObjectURL(preview);
-      setError(e instanceof Error ? e.message : t("errors.upload"));
+      setError(
+        e instanceof UploadError
+          ? uploadErrorText(e, file, tUpload)
+          : e instanceof Error
+            ? e.message
+            : t("errors.upload"),
+      );
     } finally {
       setFixedUploading(false);
       if (replaceInputRef.current) replaceInputRef.current.value = "";
@@ -278,7 +284,13 @@ export function ImageStudio({
       ...prev,
       ...created.map(({ id, preview }) => ({ id, preview, key: null, uploading: true })),
     ]);
-    created.forEach((c) => void uploadOne(c.file, c.id));
+    // UMA POR VEZ: paralelo saturava o link de subida do aluno e derrubava
+    // uploads aleatórios (incidente 5bb774b8 — "às vezes a 1ª, às vezes da 2ª").
+    void (async () => {
+      for (const c of created) {
+        await uploadOne(c.file, c.id);
+      }
+    })();
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 

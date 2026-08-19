@@ -1685,5 +1685,14 @@
       "selectedVideo": "Video seleccionado (Reel)",
       "change": "cambiar"
     }
+  },
+  "uploadErrors": {
+    "network": "Fallo de red al subir \"{file}\" — la conexión se cayó o está saturada. Lo intentamos 3 veces; revisa tu internet e inténtalo de nuevo.",
+    "tooLarge": "\"{file}\" es demasiado grande para subir (HTTP 413). Reduce el tamaño del archivo e inténtalo de nuevo.",
+    "badFormat": "\"{file}\" fue rechazado por su formato o contenido (HTTP {status}). Guárdalo como JPG o PNG y súbelo de nuevo.",
+    "linkExpired": "El enlace de subida de \"{file}\" expiró o fue rechazado (HTTP 403). Recarga la página e inténtalo de nuevo.",
+    "server": "El servidor de archivos falló al recibir \"{file}\" (HTTP {status}). Lo intentamos 3 veces; espera un momento e inténtalo de nuevo.",
+    "rejected": "La subida de \"{file}\" fue rechazada (HTTP {status}). Inténtalo de nuevo; si persiste, contacta al soporte.",
+    "unknown": "No se pudo subir \"{file}\". Inténtalo de nuevo; si persiste, contacta al soporte."
   }
 }

@@ -22,6 +22,8 @@ ALLOWED_ORIGINS = [
     "http://localhost:3001",
     "http://localhost:3002",
     "https://aiverse.jcsolutionsus.com",
+    "https://fastcloner.com",
+    "https://www.fastcloner.com",
 ]
 
 CORS_RULES = {
@@ -51,6 +53,12 @@ def client():
 def main() -> int:
     s3 = client()
     buckets = [os.environ["R2_BUCKET_VOICES"], os.environ["R2_BUCKET_GENERATIONS"]]
+    # Bucket de imagens (upload presigned do browser) — opcional por env.
+    images_bucket = os.environ.get("R2_BUCKET_IMAGES")
+    if images_bucket:
+        buckets.append(images_bucket)
+    else:
+        print("[aviso] R2_BUCKET_IMAGES não setado — bucket de imagens PULADO")
 
     for bucket in buckets:
         s3.put_bucket_cors(Bucket=bucket, CORSConfiguration=CORS_RULES)
@@ -61,7 +69,7 @@ def main() -> int:
         print(f"[{bucket}] origins permitidos: {rules[0]['AllowedOrigins']}")
         print(f"[{bucket}] métodos: {rules[0]['AllowedMethods']}")
 
-    print("\nOK — CORS configurado nos 2 buckets")
+    print(f"\nOK — CORS configurado em {len(buckets)} bucket(s)")
     return 0
 
 

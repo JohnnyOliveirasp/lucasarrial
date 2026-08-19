@@ -21,6 +21,7 @@ import { downloadFromUrl } from "@/components/image/download-file";
 import { AudioChoice, AudioPicker, ImageChoice, ImagePicker } from "./clone-pickers";
 import { CLONE_ANIM_CSS } from "./clone-anim";
 import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
+import { putToR2, UploadError, uploadErrorText } from "@/lib/images/upload";
 
 const PILL =
   "inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-6 font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98] disabled:opacity-50";
@@ -34,8 +35,9 @@ async function presignAndPut(kind: "image" | "audio", file: File): Promise<strin
   });
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(j?.error?.message || "");
-  const put = await fetch(j.upload_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
-  if (!put.ok) throw new Error("");
+  // PUT direto no R2 com retry em falha transitória (rede/5xx); lança
+  // UploadError — o caller traduz com uploadErrorText().
+  await putToR2(j.upload_url, file, file.type);
   return j.key as string;
 }
 
@@ -86,6 +88,7 @@ export function CloneStudio({
   onChanged: () => void;
 }) {
   const t = useTranslations("videoClone.studio");
+  const tUpload = useTranslations("uploadErrors");
   const [image, setImage] = useState<ImageChoice | null>(null);
   const [audio, setAudio] = useState<AudioChoice | null>(null);
   const [uploading, setUploading] = useState<"image" | "audio" | null>(null);
@@ -132,7 +135,13 @@ export function CloneStudio({
         setImage({ kind: "upload", key, preview });
       }
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : t("errors.upload"));
+      setError(
+        e instanceof UploadError
+          ? uploadErrorText(e, file, tUpload)
+          : e instanceof Error && e.message
+            ? e.message
+            : t("errors.upload"),
+      );
     } finally {
       setUploading(null);
     }
@@ -175,7 +184,13 @@ export function CloneStudio({
         })
         .catch(() => {});
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : t("errors.upload"));
+      setError(
+        e instanceof UploadError
+          ? uploadErrorText(e, file, tUpload)
+          : e instanceof Error && e.message
+            ? e.message
+            : t("errors.upload"),
+      );
     } finally {
       setUploading(null);
     }
