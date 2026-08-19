@@ -754,7 +754,12 @@ def _qa_norm_words(s: str) -> list[str]:
 
 
 def _qa_transcribe_seg(seg, sample_rate, whisper_model, language, label):
-    """Transcreve um trecho de áudio pra QA. [] = falhou (não bloqueia)."""
+    """Transcreve um trecho de áudio pra QA e devolve as palavras normalizadas.
+
+    None = whisper FALHOU (inconclusivo — QA é rede de segurança, não bloqueia).
+    Lista VAZIA = whisper rodou e não ouviu fala — isso é informação REAL, não
+    falha: o QA de completude usa a diferença (caso Katia 19/08, chunk que saiu
+    praticamente mudo tem que reprovar, não passar como "inconclusivo")."""
     import tempfile
     try:
         from voice_pipeline import transcribe_file
@@ -767,14 +772,16 @@ def _qa_transcribe_seg(seg, sample_rate, whisper_model, language, label):
             tmp_path.unlink(missing_ok=True)
     except Exception as exc:
         _log("error", f"inference.{label}.error", error=str(exc))
-        return []
+        return None
 
 
-def _ref_echo_leak(seg, sample_rate, chunk_text, prompt_text, whisper_model, language):
+def _echo_leak_count(got, chunk_text, prompt_text):
     """QA anti-eco (caso Carlos "mesma coisa" 2026-07-29): o continuation do
     VoxCPM vaza frases da REF no meio/fim dos chunks — o QA de 1a palavra não
-    vê. Transcreve o chunk INTEIRO e procura bigramas que existem na ref mas
-    NÃO no texto pedido (palavras ≥3 letras — filtra "e a"/"de um").
+    vê. Recebe a transcrição NORMALIZADA do chunk inteiro (`got` — a MESMA
+    transcrição alimenta este QA e o de completude, uma chamada de whisper
+    serve as duas análises) e procura bigramas que existem na ref mas NÃO no
+    texto pedido (palavras ≥3 letras — filtra "e a"/"de um").
     Retorna o Nº de bigramas vazados (0 = limpo); None = inconclusivo/QA não
     aplicável (não bloqueia — rede de segurança, não gate).
     """
@@ -792,12 +799,125 @@ def _ref_echo_leak(seg, sample_rate, chunk_text, prompt_text, whisper_model, lan
     suspect = grams(ref_words) - grams(text_words)
     if not suspect:
         return None
-    if seg.size < int(sample_rate * 0.2):
-        return None
-    got = _qa_transcribe_seg(seg, sample_rate, whisper_model, language, "echo_qa")
     if not got:
         return None
     return len(grams(got) & suspect)
+
+
+def _chunk_coverage(got, chunk_text):
+    """QA de COMPLETUDE (caso Katia 19/08, incidente ce6e157d): fração (0..1)
+    das palavras do texto do chunk presentes NA ORDEM na transcrição do áudio
+    gerado. O echo QA só vê texto SOBRANDO (eco da ref); este vê texto
+    FALTANDO — áudio que começa no meio do chunk, ou chunk inteiro mudo,
+    passava limpo por todos os QAs e era entregue como [ready] e cobrado.
+
+    `got` é a MESMA transcrição usada pelo echo QA (não paga whisper 2x).
+    None = inconclusivo (whisper falhou, ou chunk sem palavras) — não bloqueia;
+    transcrição VAZIA de um chunk com texto é cobertura 0.0 (bloqueia).
+    """
+    import difflib
+
+    expected = _qa_norm_words(chunk_text)
+    if not expected:
+        return None
+    if got is None:
+        return None
+    if not got:
+        return 0.0
+    sm = difflib.SequenceMatcher(None, expected, got)
+    matched = sum(b.size for b in sm.get_matching_blocks())
+    return round(matched / len(expected), 3)
+
+
+def _run_chunk_qa(
+    seg,
+    idx: int,
+    chunk: str,
+    regen_fn,
+    sample_rate: int,
+    prompt_text,
+    qa_language: str,
+    start_qa_enabled: bool,
+    start_qa_retries: int,
+    start_qa_model: str,
+    echo_qa_enabled: bool,
+    echo_qa_retries: int,
+    echo_qa_model: str,
+    coverage_qa_enabled: bool,
+    coverage_qa_retries: int,
+    coverage_qa_min: float,
+    qa_stats: dict,
+):
+    """Laço de QA de UM chunk: reprovou → regenera (regen_fn); esgotou as
+    tentativas → devolve a MELHOR tentativa (menos eco; 1a palavra errada e
+    texto faltando pesam mais), não a última.
+
+    Devolve (melhor_seg, cobertura_da_melhor). O CHAMADOR decide o que fazer
+    quando a cobertura da melhor tentativa ficou abaixo do mínimo: falhar o
+    job explícito, nunca entregar incompleto em silêncio (caso Katia 19/08 —
+    ~30% do texto ausente saiu [ready] e custou 555 créditos).
+    """
+    attempt = 0
+    max_attempts = max(start_qa_retries, echo_qa_retries, coverage_qa_retries)
+    best_seg, best_score, best_coverage = seg, None, None
+    while attempt < max_attempts:
+        score = 0
+        coverage = None
+        # Caso Katia 19/08: o `idx == 0` que havia aqui limitava o QA de 1a
+        # palavra ao PRIMEIRO chunk — do 2o em diante o áudio podia começar no
+        # meio do texto sem ninguém conferir (foi exatamente onde quebrou: o
+        # chunk 0, único protegido, saiu perfeito). Roda em TODOS os chunks.
+        if start_qa_enabled and attempt < start_qa_retries:
+            ok = _start_word_ok(seg, sample_rate, chunk, start_qa_model, qa_language)
+            _log("info", "inference.start_qa", idx=idx, attempt=attempt, ok=ok)
+            if ok is False:
+                score += 100
+        # UMA transcrição do chunk inteiro alimenta echo QA E coverage QA —
+        # não multiplica o número de chamadas de whisper por chunk.
+        got = None
+        if (echo_qa_enabled and attempt < echo_qa_retries) or (
+            coverage_qa_enabled and attempt < coverage_qa_retries
+        ):
+            if seg.size >= int(sample_rate * 0.2):
+                got = _qa_transcribe_seg(seg, sample_rate, echo_qa_model, qa_language, "chunk_qa")
+            else:
+                # Áudio praticamente MUDO: "não ouvi nada" é informação real
+                # (chunk 3 da Katia), não falha de whisper — não vira None.
+                got = []
+        if echo_qa_enabled and attempt < echo_qa_retries:
+            leak = _echo_leak_count(got, chunk, prompt_text)
+            qa_stats["echo_checked"] += 1
+            if leak is None:
+                qa_stats["echo_none"] += 1
+            else:
+                _log("info", "inference.echo_qa", idx=idx, attempt=attempt, leak=leak)
+                if leak > 0:
+                    qa_stats["echo_flagged"] += 1
+                score += leak
+        if coverage_qa_enabled and attempt < coverage_qa_retries:
+            coverage = _chunk_coverage(got, chunk)
+            qa_stats["coverage_checked"] += 1
+            if coverage is None:
+                qa_stats["coverage_none"] += 1
+            else:
+                _log("info", "inference.coverage_qa", idx=idx, attempt=attempt, coverage=coverage)
+                if coverage < coverage_qa_min:
+                    qa_stats["coverage_flagged"] += 1
+                    # Penalidade proporcional ao que falta: entre duas
+                    # tentativas ruins, best_seg fica com a MAIS completa.
+                    score += 100 + int((coverage_qa_min - coverage) * 100)
+        if best_score is None or score < best_score:
+            best_seg, best_score, best_coverage = seg, score, coverage
+        if score == 0:
+            break
+        attempt += 1
+        if attempt >= max_attempts:
+            _log("error", "inference.qa.exhausted", idx=idx, best_score=best_score)
+            qa_stats["exhausted"] += 1
+            break
+        qa_stats["regens"] += 1
+        seg = regen_fn()
+    return best_seg, best_coverage
 
 
 def _crossfade_concat(wavs: list[np.ndarray], fade_samples: int) -> np.ndarray:
@@ -1011,9 +1131,10 @@ def _handle_inference(inp: dict) -> dict:
     )
     t0 = time.monotonic()
 
-    # QA do início (1o chunk): o continuation engole a 1a palavra quando a
-    # cauda da ref vaza (issue #272). Transcreve o começo do 1o chunk e regera
-    # se a 1a palavra esperada sumiu. Só roda em clonagem (com ref).
+    # QA do início: o continuation engole a 1a palavra quando a cauda da ref
+    # vaza (issue #272). Transcreve o começo do chunk e regera se a 1a palavra
+    # esperada sumiu. Roda em TODOS os chunks (caso Katia 19/08 — antes só o
+    # 1o era conferido). Só roda em clonagem (com ref).
     start_qa_enabled = os.environ.get("TTS_START_QA", "1") not in ("0", "false", "False", "")
     start_qa_retries = int(os.environ.get("TTS_START_QA_RETRIES", "2"))
     start_qa_model = os.environ.get("TTS_START_QA_WHISPER", "small")
@@ -1025,6 +1146,15 @@ def _handle_inference(inp: dict) -> dict:
     echo_qa_enabled = os.environ.get("TTS_ECHO_QA", "1") not in ("0", "false", "False", "")
     echo_qa_retries = int(os.environ.get("TTS_ECHO_QA_RETRIES", "3"))
     echo_qa_model = os.environ.get("TTS_ECHO_QA_WHISPER", "large-v3-turbo")
+    # QA de COMPLETUDE (caso Katia 19/08): chunk cujo áudio fala MENOS que o
+    # texto — começa no meio, ou sai praticamente mudo. O echo QA só vê texto
+    # SOBRANDO (eco da ref), não FALTANDO. Compara a transcrição do chunk
+    # inteiro (a MESMA do echo QA — não paga whisper 2x) com o texto pedido,
+    # na ordem. Abaixo do mínimo → regera; esgotou sem atingir → o job FALHA
+    # explícito (webhook estorna), nunca entrega incompleto como [ready].
+    coverage_qa_enabled = os.environ.get("TTS_COVERAGE_QA", "1") not in ("0", "false", "False", "")
+    coverage_qa_min = float(os.environ.get("TTS_COVERAGE_QA_MIN", "0.85"))
+    coverage_qa_retries = int(os.environ.get("TTS_COVERAGE_QA_RETRIES", "3"))
 
     def _gen_chunk(chunk_text: str) -> np.ndarray:
         # Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853).
@@ -1045,56 +1175,63 @@ def _handle_inference(inp: dict) -> dict:
 
     # Observabilidade do QA (29/07): devolvida no output do job — tira a
     # adivinhação por timing na hora de validar se o QA está mesmo agindo.
-    qa_stats = {"echo_checked": 0, "echo_flagged": 0, "echo_none": 0, "regens": 0, "exhausted": 0}
+    # coverage_* (19/08): mede se o remédio do caso Katia está pegando.
+    qa_stats = {
+        "echo_checked": 0, "echo_flagged": 0, "echo_none": 0,
+        "coverage_checked": 0, "coverage_flagged": 0, "coverage_none": 0,
+        "coverage_exhausted": 0,
+        "regens": 0, "exhausted": 0,
+    }
 
     pieces: list[np.ndarray] = []
+    coverage_failure: "dict | None" = None
     for idx, (chunk, ends_paragraph) in enumerate(chunks):
         ct0 = time.monotonic()
         seg = _gen_chunk(chunk)
         raw_samples = int(seg.size)
-        if trim_enabled:
+
+        def _trim(s: np.ndarray, i=idx) -> np.ndarray:
+            if not trim_enabled:
+                return s
             # 1o chunk ganha pad maior na borda pra não comer consoante fraca
             # de abertura (o "h" de "hoje" fica abaixo do threshold de -46dB).
-            pad = max(trim_pad_samples, int(sample_rate * 0.06)) if idx == 0 else trim_pad_samples
-            seg = _trim_silence(seg, threshold=trim_threshold, pad_samples=pad)
-        if prompt_wav_local and (start_qa_enabled or echo_qa_enabled):
-            # Reprovou -> regera; esgotou as tentativas -> fica com a MELHOR
-            # (menos eco; 1a palavra errada pesa mais), não com a última.
-            attempt = 0
-            max_attempts = max(start_qa_retries, echo_qa_retries)
-            best_seg, best_score = seg, None
-            while attempt < max_attempts:
-                score = 0
-                if idx == 0 and start_qa_enabled and attempt < start_qa_retries:
-                    ok = _start_word_ok(seg, sample_rate, chunk, start_qa_model, qa_language)
-                    _log("info", "inference.start_qa", attempt=attempt, ok=ok)
-                    if ok is False:
-                        score += 100
-                if echo_qa_enabled and attempt < echo_qa_retries:
-                    leak = _ref_echo_leak(seg, sample_rate, chunk, prompt_text, echo_qa_model, qa_language)
-                    qa_stats["echo_checked"] += 1
-                    if leak is None:
-                        qa_stats["echo_none"] += 1
-                    else:
-                        _log("info", "inference.echo_qa", idx=idx, attempt=attempt, leak=leak)
-                        if leak > 0:
-                            qa_stats["echo_flagged"] += 1
-                        score += leak
-                if best_score is None or score < best_score:
-                    best_seg, best_score = seg, score
-                if score == 0:
-                    break
-                attempt += 1
-                if attempt >= max_attempts:
-                    _log("error", "inference.qa.exhausted", idx=idx, best_score=best_score)
-                    qa_stats["exhausted"] += 1
-                    break
-                qa_stats["regens"] += 1
-                seg = _gen_chunk(chunk)
-                if trim_enabled:
-                    pad = max(trim_pad_samples, int(sample_rate * 0.06)) if idx == 0 else trim_pad_samples
-                    seg = _trim_silence(seg, threshold=trim_threshold, pad_samples=pad)
-            seg = best_seg
+            pad = max(trim_pad_samples, int(sample_rate * 0.06)) if i == 0 else trim_pad_samples
+            return _trim_silence(s, threshold=trim_threshold, pad_samples=pad)
+
+        seg = _trim(seg)
+        if prompt_wav_local and (start_qa_enabled or echo_qa_enabled or coverage_qa_enabled):
+            seg, best_coverage = _run_chunk_qa(
+                seg, idx, chunk,
+                regen_fn=lambda c=chunk, t=_trim: t(_gen_chunk(c)),
+                sample_rate=sample_rate,
+                prompt_text=prompt_text,
+                qa_language=qa_language,
+                start_qa_enabled=start_qa_enabled,
+                start_qa_retries=start_qa_retries,
+                start_qa_model=start_qa_model,
+                echo_qa_enabled=echo_qa_enabled,
+                echo_qa_retries=echo_qa_retries,
+                echo_qa_model=echo_qa_model,
+                coverage_qa_enabled=coverage_qa_enabled,
+                coverage_qa_retries=coverage_qa_retries,
+                coverage_qa_min=coverage_qa_min,
+                qa_stats=qa_stats,
+            )
+            if (
+                coverage_qa_enabled
+                and best_coverage is not None
+                and best_coverage < coverage_qa_min
+            ):
+                # Esgotou as regenerações e NEM A MELHOR tentativa contém o
+                # texto do chunk: entregar seria cobrar por áudio incompleto
+                # (caso Katia 19/08 — ~30% do texto ausente saiu [ready] e
+                # custou 555 créditos). Falha EXPLÍCITA: sem upload, o webhook
+                # cai no caminho de falha e estorna (handleTechFailure), igual
+                # às demais falhas técnicas. Não gasta GPU nos chunks
+                # seguintes — o job já morreu.
+                qa_stats["coverage_exhausted"] += 1
+                coverage_failure = {"chunk_idx": idx, "coverage": best_coverage}
+                break
         _log(
             "info", "inference.chunk", idx=idx, total=len(chunks),
             chars=len(chunk), samples_raw=raw_samples, samples_trim=int(seg.size),
@@ -1109,6 +1246,30 @@ def _handle_inference(inp: dict) -> dict:
         # esta desligado — senao o silencio dentro do overlap se autodestrui.
         if silence_samples > 0 and crossfade_samples == 0 and idx < len(chunks) - 1:
             pieces.append(np.zeros(silence_samples, dtype=np.float32))
+
+    if coverage_failure is not None:
+        # Falha explícita (caso Katia 19/08): NÃO sobe áudio, devolve `error`.
+        # O webhook (handleGenerationWebhook) só finaliza como ready quando
+        # `!out.error && out.uploaded` — com `error` presente ele marca failed
+        # e estorna via handleTechFailure. Texto do erro ESTÁVEL, sem número/ID
+        # no meio: a assinatura do incidente é derivada do texto do erro
+        # (lib/incidents/classify.ts) — os detalhes vão em campos próprios.
+        del model
+        _free_cuda()
+        _log(
+            "error", "inference.coverage.failed",
+            chunk_idx=coverage_failure["chunk_idx"],
+            coverage=coverage_failure["coverage"],
+            min_required=coverage_qa_min, qa=qa_stats,
+        )
+        return {
+            "error": "qa_coverage: audio gerado nao contem o texto completo apos esgotar regeneracoes",
+            "coverage_failed_chunk": coverage_failure["chunk_idx"],
+            "coverage_best": coverage_failure["coverage"],
+            "coverage_min": coverage_qa_min,
+            "elapsed_s": round(time.monotonic() - t0, 2),
+            "qa": qa_stats,
+        }
 
     # Concat: com crossfade quando ativo (default), senao concatena plano.
     if crossfade_samples > 0 and len(pieces) > 1:
