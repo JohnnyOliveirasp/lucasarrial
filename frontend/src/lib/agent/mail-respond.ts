@@ -141,9 +141,13 @@ async function openIncidentForSentinela(
    *  cego e alguém precisa abrir a caixa do suporte na mão (caso Claudia,
    *  14/08). */
   prints: string[] = [],
+  /** A Fast classificou como falha do produto? false = atendimento (cobrança,
+   *  cancelamento, reembolso, dúvida de conta). Os dois viram incidente desde
+   *  19/08 — muda o rótulo, não a existência. */
+  technical = true,
 ): Promise<void> {
   const admin = getAdmin();
-  const signature = `fast-email:${fromEmail}`;
+  const signature = `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`;
   const now = new Date().toISOString();
   const { data: existingRaw } = await admin
     .from("incidents" as never)
@@ -179,11 +183,13 @@ async function openIncidentForSentinela(
     cause: "reported",
     status: "open",
     signature,
-    title: `Fast (e-mail): ${reason.slice(0, 90)}`,
+    title: `Fast (e-mail${technical ? "" : ", atendimento"}): ${reason.slice(0, 90)}`,
     occurrences: 1,
     affected_emails: [fromEmail],
     sample_error: excerpt.slice(0, 1000),
-    description: `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`,
+    description: technical
+      ? `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`
+      : `Pedido de ATENDIMENTO por e-mail ao suporte@ (cobrança, cancelamento, reembolso ou dúvida de conta) — a Fast não resolve isso sozinha e prometeu ao aluno que a equipe verificaria. Resumo dela: ${reason}`,
     reported_by: "fast",
     attachment_path: prints.length ? prints.join(",") : null,
     first_seen_at: now,
@@ -369,19 +375,29 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     inReplyTo: messageId,
     bcc,
   });
-  // Erro técnico sem solução na hora → incidente aberto pro Sentinela resolver.
-  if (reason && technical) {
+  // TODA escalação abre incidente — técnica ou não (19/08).
+  //
+  // Antes era `reason && technical`: quando a Fast escalava algo que ela não
+  // classificava como técnico (cobrança, cancelamento, reembolso, dúvida de
+  // conta), não acontecia NADA além de um console.log. Nenhum incidente,
+  // ninguém avisado — só que a Fast já tinha dito ao aluno "a equipe vai
+  // verificar". A pessoa ficava esperando uma equipe que nunca soube dela.
+  // Foi o caso da Viviana, e ela voltou brava com razão.
+  //
+  // Se a Fast decidiu escalar, é porque ela não resolveu. O que muda entre
+  // técnico e não-técnico é o RÓTULO do incidente, nunca a existência dele.
+  if (reason) {
     try {
       // O print é a prova: guarda ANTES de abrir o incidente.
       const prints = await guardarPrints(mail.raw, { fromEmail, uid: mail.uid });
-      await openIncidentForSentinela(fromEmail, reason, text, prints);
+      await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
     } catch (e) {
       console.error("[agent/mail] falha ao abrir incidente:", e instanceof Error ? e.message : e);
     }
   }
   await markSeen(mail.uid);
   console.log(
-    `[agent/mail] respondido uid=${mail.uid} para=${fromEmail}${reason ? (technical ? " (INCIDENTE→Sentinela)" : " (ESCALADO)") : ""}`,
+    `[agent/mail] respondido uid=${mail.uid} para=${fromEmail}${reason ? (technical ? " (INCIDENTE técnico)" : " (INCIDENTE atendimento)") : ""}`,
   );
   return reason ? "escalated" : "replied";
 }
