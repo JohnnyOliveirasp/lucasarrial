@@ -413,6 +413,42 @@ ar e **ainda assim não media nada**. Antes de dizer que uma instrumentação
 está armada, consulte a coluna no banco de verdade; DDL commitado não é DDL
 aplicado.
 
+### P3. A variante mais bem disfarçada: PR aberto contra branch morta
+
+Em 19/08, no incidente do VP (upload de fotos). Desta vez tinha tudo o que P e
+P2 mandam ter: branch **existia no remoto**, commit **empurrado**, PR **aberto**,
+`tsc --noEmit` e `eslint` limpos, link do PR na nota. Passa em qualquer
+checagem das duas seções acima. E mesmo assim o fix **nunca chegaria no aluno**:
+o PR tinha base `dev`, e a `dev` estava 216 commits atrás da `main`, parada
+desde 10/08.
+
+O deploy é push na `main` (regra 1). **Merge em qualquer outra branch não é
+deploy.** E tinha uma armadilha a mais: os arquivos tocados divergiram ~1352
+linhas entre `dev` e `main` — mergear aquela branch na `main` teria
+**revertido 216 commits** nos arquivos dela. O fix que ia salvar o aluno ia
+derrubar um mês de trabalho junto.
+
+A checagem, 2 segundos, antes de confiar em qualquer PR:
+
+```bash
+gh pr view <n> --json baseRefName,headRefName,state
+git rev-list --count origin/<base>..origin/main   # commits que a main tem e a base não
+git rev-list --count origin/main..origin/<base>   # commits que só a base tem
+```
+
+- Primeiro número **alto** e segundo **zero** → a base está morta. O PR não
+  vira produção, e o merge anda pra trás. Refaça sobre `origin/main`.
+- **Refazer não é `git merge`.** A main já mudou embaixo: releia os arquivos na
+  `main` antes de reaplicar. No caso do VP, a `main` já tinha ganhado a
+  instrumentação `clientLogger.error("image.upload_failed")` que a versão da
+  `dev` não conhecia — copiar o arquivo da branch por cima teria apagado
+  justamente o log que faltava pra diagnosticar o incidente.
+
+**A regra que fecha as três:** a pergunta nunca é "o fix existe?". É **"por qual
+caminho exato este código chega no servidor, e esse caminho está aberto?"**.
+Commit sem push não chega. Push em branch morta não chega. Código que precisa
+de coluna nova chega e não funciona.
+
 ---
 
 ## Q. O incidente parado esperando uma prova que já evaporou
