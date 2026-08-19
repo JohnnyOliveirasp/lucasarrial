@@ -19,6 +19,14 @@ import { getInfiniteTalkStatus, runInfiniteTalk } from "@/lib/video-clone/runpod
 import { transcribeWords } from "@/lib/video/transcribe-words";
 import type { SubtitlePosition, SubtitleSize } from "@/lib/video/subtitle-presets";
 import { estiloTemLegenda, montarAss } from "./legenda";
+import {
+  friendlyHeygenError,
+  generateAvatarIV,
+  getVideoStatus,
+  uploadImageAsset,
+} from "@/lib/heygen/client";
+import { decryptApiKey } from "@/lib/heygen/crypto";
+import { getAdmin } from "@/lib/db/admin";
 import { montarReact, type LayoutMontagem } from "./montagem";
 
 const run = promisify(execFile);
@@ -182,6 +190,95 @@ export async function dispararClone(args: {
 
 export async function estadoClone(jobId: string) {
   return getInfiniteTalkStatus(jobId);
+}
+
+// ───────── Motor HeyGen (19/08) ─────────
+// Tudo abaixo REUSA o BYOK que já existe desde a mig 59: a chave é do PRÓPRIO
+// usuário (heygen_accounts, AES-256-GCM), conectada em /app/lab/video-heygen.
+// O Avatar IV anima a nossa foto preparada — que já vem com o fundo verde do
+// preparo — então o chromakey da montagem funciona igual ao dos outros motores.
+
+/** Prefixo que marca um job de clone como HeyGen no `clone_job_id`. */
+const HEYGEN_PREFIX = "heygen:";
+
+export function ehJobHeygen(jobId: string | null | undefined): boolean {
+  return Boolean(jobId?.startsWith(HEYGEN_PREFIX));
+}
+
+/** Chave HeyGen do usuário, ou erro amigável mandando conectar. */
+async function chaveHeygen(userId: string): Promise<string> {
+  const { data } = await getAdmin()
+    .from("heygen_accounts")
+    .select("api_key_encrypted, status")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const row = data as { api_key_encrypted: string; status: string } | null;
+  if (!row?.api_key_encrypted) {
+    throw new Error(
+      "Conecte sua conta HeyGen primeiro (menu Vídeo HeyGen) — o motor HeyGen usa os créditos da SUA conta lá.",
+    );
+  }
+  return decryptApiKey(row.api_key_encrypted);
+}
+
+/** Dispara o Avatar IV: foto preparada + fala → vídeo na conta HeyGen do usuário. */
+export async function dispararCloneHeygen(args: {
+  userId: string;
+  fotoKey: string;
+  audioKey: string;
+}): Promise<string> {
+  const apiKey = await chaveHeygen(args.userId);
+  // A foto sobe como asset na conta DELE (o av4 exige image_key, não URL).
+  const foto = await r2.send(
+    new GetObjectCommand({ Bucket: R2_BUCKETS.generations, Key: args.fotoKey }),
+  );
+  const bytes = await foto.Body!.transformToByteArray();
+  const tipo = args.fotoKey.toLowerCase().endsWith(".jpg") || args.fotoKey.toLowerCase().endsWith(".jpeg")
+    ? ("image/jpeg" as const)
+    : ("image/png" as const);
+  try {
+    const { image_key } = await uploadImageAsset(apiKey, bytes, tipo);
+    const audioUrl = await createPresignedGet(R2_BUCKETS.generations, args.audioKey, 60 * 60 * 3);
+    const { video_id } = await generateAvatarIV(apiKey, {
+      image_key,
+      audio_url: audioUrl,
+      title: "FastCloner React",
+    });
+    return `${HEYGEN_PREFIX}${video_id}`;
+  } catch (e) {
+    throw new Error(friendlyHeygenError(e));
+  }
+}
+
+/**
+ * Estado de um job HeyGen no MESMO formato do RunPod (COMPLETED/FAILED/…).
+ * Quando termina, TRANSFERE o mp4 pro bucket do worker na `cloneKey` — é de lá
+ * que a montagem baixa e é lá que o `cloneJaNoR2` procura na retomada; assim o
+ * resto do fluxo não precisa saber qual motor gerou.
+ */
+export async function estadoCloneHeygen(args: {
+  userId: string;
+  jobId: string;
+  cloneKey: string;
+}): Promise<{ status: string; error?: string | null }> {
+  // Já transferido (poll repetido/retomada)? Não pergunta de novo ao HeyGen.
+  if (await cloneJaNoR2(args.cloneKey)) return { status: "COMPLETED" };
+  const apiKey = await chaveHeygen(args.userId);
+  const st = await getVideoStatus(apiKey, args.jobId.slice(HEYGEN_PREFIX.length));
+  if (st.status === "failed") return { status: "FAILED", error: st.error ?? "HeyGen falhou" };
+  if (st.status !== "completed" || !st.video_url) return { status: "IN_PROGRESS" };
+  const res = await fetch(st.video_url);
+  if (!res.ok) return { status: "FAILED", error: `download do HeyGen: HTTP ${res.status}` };
+  const mp4 = Buffer.from(await res.arrayBuffer());
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: BUCKET_WORKER,
+      Key: args.cloneKey,
+      Body: mp4,
+      ContentType: "video/mp4",
+    }),
+  );
+  return { status: "COMPLETED" };
 }
 
 async function baixarDoR2(bucket: string, key: string, destino: string): Promise<void> {

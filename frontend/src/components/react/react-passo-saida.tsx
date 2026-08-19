@@ -210,7 +210,7 @@ export function ReactPassoSaida({
           ["Fala", `${palavras} palavras · ~${segundosFala}s`],
           ["Chamada final", draft.cta ? "sim" : "não"],
           ["Layout", draft.layout ?? "—"],
-          ["Motor", draft.motor === "480p-v2" ? "Turbo" : "Padrão 2.0"],
+          ["Motor", draft.motor === "heygen" ? "HeyGen" : draft.motor === "480p-v2" ? "Turbo" : "Padrão 2.0"],
           [
             "Divisão",
             draft.viral?.duracao_seg && segundosFala > Math.round(draft.viral.duracao_seg)

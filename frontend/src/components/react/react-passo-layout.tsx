@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 /**
  * R5 — como você aparece junto do viral.
  *
@@ -42,6 +44,16 @@ export function ReactPassoLayout({
   draft: ReactDraft;
   update: (m: Partial<ReactDraft>) => void;
 }) {
+  // Conexão HeyGen (BYOK): null = ainda checando; false = sem conta ligada.
+  const [heygenConectado, setHeygenConectado] = useState<boolean | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    fetch("/api/v1/heygen/account", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (vivo) setHeygenConectado(Boolean(j?.connected)); })
+      .catch(() => { if (vivo) setHeygenConectado(false); });
+    return () => { vivo = false; };
+  }, []);
   return (
     <div className="flex flex-col gap-3">
       <div>
@@ -82,27 +94,35 @@ export function ReactPassoLayout({
         <p className="mb-2 text-[11.5px] text-[var(--mute)]">
           Como a sua foto vira vídeo falando. Se sair com pouco movimento, tente o outro.
         </p>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-3">
           {(
             [
               { id: "480p-v3", titulo: "Padrão 2.0", corpo: "Nosso motor principal — 105 créditos por segundo." },
               { id: "480p-v2", titulo: "Turbo", corpo: "Mais rápido e mais barato — 80 créditos por segundo." },
+              { id: "heygen", titulo: "HeyGen", corpo: "Mais movimento — usa os créditos da SUA conta HeyGen." },
             ] as const
           ).map((m) => {
             const ativo = draft.motor === m.id;
+            // HeyGen só com a conta conectada: botão morto na tela já travou
+            // aluna (caso Ketty 18/08) — desabilitado COM o motivo escrito.
+            const bloqueado = m.id === "heygen" && heygenConectado === false;
             return (
               <button
                 key={m.id}
                 type="button"
+                disabled={bloqueado}
+                title={bloqueado ? "Conecte sua conta no menu Vídeo HeyGen primeiro" : ""}
                 onClick={() => update({ motor: m.id })}
                 className={`flex flex-col gap-1 rounded-[var(--radius-sm)] border p-3 text-left transition-colors ${
                   ativo
                     ? "border-[var(--ink)] bg-[var(--surface-deep)]"
                     : "border-[var(--hairline)] hover:border-[var(--hairline-strong)]"
-                }`}
+                } ${bloqueado ? "opacity-50" : ""}`}
               >
                 <span className="text-[13px] font-semibold text-[var(--ink)]">{m.titulo}</span>
-                <span className="text-[11.5px] leading-snug text-[var(--mute)]">{m.corpo}</span>
+                <span className="text-[11.5px] leading-snug text-[var(--mute)]">
+                  {bloqueado ? "Conecte sua conta no menu Vídeo HeyGen para usar." : m.corpo}
+                </span>
               </button>
             );
           })}

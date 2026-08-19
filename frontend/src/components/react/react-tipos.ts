@@ -68,8 +68,8 @@ export type ReactDraft = {
   audioUrl: string | null;
   audioGenId: string | null;
   layout: LayoutReact | null;
-  /** Motor da animação: Padrão 2.0 (480p-v3) ou Turbo (480p-v2) — 19/08. */
-  motor: "480p-v3" | "480p-v2";
+  /** Motor da animação (19/08): Padrão 2.0, Turbo, ou HeyGen (BYOK do usuário). */
+  motor: "480p-v3" | "480p-v2" | "heygen";
   /** Legenda queimada — os MESMOS presets do editor de vídeo (pedido do Johnny
    *  14/08). "none" = vídeo limpo. */
   legendaEstilo: string;

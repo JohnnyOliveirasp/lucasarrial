@@ -17,6 +17,9 @@ import { baixarViral, marcarDownload } from "@/lib/virais/download";
 import { marcarUsado } from "@/lib/virais/pessoal";
 import {
   dispararClone,
+  dispararCloneHeygen,
+  ehJobHeygen,
+  estadoCloneHeygen,
   duracaoDeUrl,
   estadoClone,
   cloneJaNoR2,
@@ -59,7 +62,7 @@ export async function POST(request: NextRequest) {
   const fundoUrl = typeof b.fundo_url === "string" && b.fundo_url ? b.fundo_url : null;
   // Motor da animação (19/08): Padrão 2.0 ou Turbo — mesmos ids do Vídeo
   // Clone. Valor desconhecido cai no Padrão, nunca em erro.
-  const motor = typeof b.motor === "string" && ["480p-v3", "480p-v2"].includes(b.motor) ? b.motor : "480p-v3";
+  const motor = typeof b.motor === "string" && ["480p-v3", "480p-v2", "heygen"].includes(b.motor) ? b.motor : "480p-v3";
   // Legenda: mesmos presets do editor de vídeo (validados pela lista oficial).
   const legendaEstilo =
     typeof b.legenda_estilo === "string" && SUBTITLE_PRESET_IDS.includes(b.legenda_estilo)
@@ -193,7 +196,11 @@ export async function POST(request: NextRequest) {
     }
 
     const cloneKey = `${userId}/react/${jobId}/clone.mp4`;
-    const cloneJob = await dispararClone({ fotoKey, audioKey, saidaKey: cloneKey, segundos, tierId: motor });
+    // HeyGen usa a conta BYOK do próprio usuário; os outros vão pro RunPod.
+    const cloneJob =
+      motor === "heygen"
+        ? await dispararCloneHeygen({ userId, fotoKey, audioKey })
+        : await dispararClone({ fotoKey, audioKey, saidaKey: cloneKey, segundos, tierId: motor });
 
     await admin
       .from("react_jobs")
@@ -351,7 +358,13 @@ export async function GET(request: NextRequest) {
       const noR2 = data.clone_r2_key ? await cloneJaNoR2(data.clone_r2_key) : false;
       const st: { status: string; error?: string | null } = noR2
         ? { status: "COMPLETED" }
-        : await estadoClone(data.clone_job_id);
+        : ehJobHeygen(data.clone_job_id)
+          ? await estadoCloneHeygen({
+              userId: gate.auth.user_id,
+              jobId: data.clone_job_id,
+              cloneKey: data.clone_r2_key!,
+            })
+          : await estadoClone(data.clone_job_id);
       if (st.status === "COMPLETED") {
         await admin
           .from("react_jobs")
