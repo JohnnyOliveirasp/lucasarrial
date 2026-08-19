@@ -15,6 +15,7 @@ Nenhum deles cobra crédito do aluno. Os que alteram dados só agem com
 | `consertar_referencia.cjs --confirmar` | Acha `profiles.image_ref_key` apontando pra arquivo inexistente e troca por uma foto real. | sim |
 | `limpar_fantasmas.cjs --confirmar` | Apaga voz "uploading" com **zero** áudio no R2 e 45min+. Reconfere o R2 antes de cada exclusão. | sim |
 | `enviar_email.cjs <dest> "<assunto>" <corpo.html> [--bcc x@y]` | **O jeito preferido de falar com aluno.** Node puro, roda da sua máquina, sem SSH — fala SMTP direto (587+STARTTLS) com a senha do `.env.local`. | envia e-mail |
+| `ler_caixa.cjs --de <email> \| --ultimos N \| --enviados --para <email> \| --fila \| --caixas` | Lê a caixa do suporte@ **sem atropelar a Fast**: `EXAMINE` (read-only no protocolo) + `BODY.PEEK`, busca só `SEEN` — da fila de não-lidos (que é dela) sai apenas a contagem. Anexo: só nome/tamanho. Ordem: `_frank/ordens/2026-08-19_ler_caixa.md`. | não |
 | `enviar_email.sh <dest> <assunto> <corpo.html>` | Mesma coisa em bash+curl, pra rodar **no servidor**. | envia e-mail |
 | `_comum.cjs` | Base compartilhada (credenciais, Supabase, R2). Não roda sozinho. | — |
 
