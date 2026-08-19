@@ -44,6 +44,8 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 | Como saber se "já pagou" (migration 79) | `2026-08-18_migration_ja_pagou.md` |
 | Canal, conta de teste e prioridade | `2026-08-18_ddl_pelo_git_e_prioridade.md` |
 | DDL aprovado + achados da prova | `2026-08-19_ddl_aprovado_e_achados.md` |
+| 🖼️ Imagens: refactor de hoje + branch STALE (não mergear `feat/fix-image-upload-retry`) | `2026-08-19_imagens_refatoradas_branch_stale.md` |
+| 🔊 Incidentes do QA de completude: medição pronta, falta curar 2 vozes | `2026-08-19_qa_coverage_incidentes.md` |
 
 ## Superadas (leia só pra entender o histórico)
 
