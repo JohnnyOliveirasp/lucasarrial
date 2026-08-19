@@ -58,6 +58,9 @@ export async function startSceneImage(args: {
       .update({
         image_status: "pending",
         image_kie_task_id: taskId,
+        // Marca do relogio desta tentativa: e daqui que o teto de espera conta
+        // (mig 83). Vale pro lote e pro refazer — os dois passam por aqui.
+        image_started_at: new Date().toISOString(),
         prompt_en: en,
         resolution,
         image_credits_cost: creditsCost,

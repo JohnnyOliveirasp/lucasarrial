@@ -299,6 +299,9 @@ export type VideoSceneRow = {
   resolution: string;
   image_credits_cost: number;
   image_error: string | null;
+  /** Inicio da tentativa ATUAL de gerar a imagem (mig 83). Base do teto de
+   *  espera: sem isso, cena antiga mandada refazer estouraria na hora. */
+  image_started_at: Timestamp | null;
   video_path: string | null;
   video_status: ImageGenerationStatus | null;
   video_kie_task_id: string | null;

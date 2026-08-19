@@ -10,6 +10,7 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { failSceneImage } from "@/lib/video/image-sync";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { getBalance, debitCredits } from "@/lib/credits/service";
 import { imageCreditCost, resolveResolutionForAspect } from "@/lib/kie/config";
@@ -20,7 +21,11 @@ import { syncSceneImage } from "@/lib/video/image-sync";
 import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 
-const SELECT = "id, idx, prompt_pt, image_status, image_path, resolution, image_error";
+const SELECT =
+  "id, idx, prompt_pt, image_status, image_path, resolution, image_error, image_started_at, created_at";
+/** Teto de espera de UMA imagem. A Kie costuma levar 1-3 min; passou disso
+ *  sem resposta, a cena vira falha pra pessoa poder refazer (18/08). */
+const SCENE_IMAGE_TIMEOUT_MINUTES = 10;
 const BATCH_RESOLUTION = "1K";
 
 type SceneRow = {
@@ -31,6 +36,8 @@ type SceneRow = {
   image_path: string | null;
   resolution: string;
   image_error: string | null;
+  image_started_at: string | null;
+  created_at: string | null;
 };
 
 async function listScenes(projectId: string) {
@@ -82,10 +89,35 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
 
   const scenes = await listScenes(id);
   // Poll das que estão em andamento.
+  //
+  // ⏱️ TETO DE ESPERA (18/08, caso Johnny — cena 5 girando há 20 min enquanto
+  // as outras 11 ficaram prontas). O `catch` abaixo engole a falha do poll de
+  // propósito (uma cena não pode derrubar as outras), só que sem um teto isso
+  // vira espera infinita: se a Kie perde a task ou nunca muda de estado, a
+  // cena fica "gerando" para sempre e a pessoa não tem o que fazer — não há
+  // botão porque a UI só oferece refazer no estado de falha.
+  //
+  // Passado o teto, a cena vira `failed` com o motivo. Isso já faz o botão de
+  // refazer aparecer sozinho (`regenerate` não exige estado nenhum) e, se
+  // houve cobrança, o estorno segue o mesmo caminho de qualquer falha.
   await Promise.all(
     scenes
       .filter((s) => (s.image_status === "pending" || s.image_status === "generating") && s.image_kie_task_id)
-      .map((s) => syncSceneImage(s.id, auth.user_id, id, s.image_kie_task_id as string).catch(() => {})),
+      .map(async (s) => {
+        try {
+          await syncSceneImage(s.id, auth.user_id, id, s.image_kie_task_id as string);
+        } catch {
+          /* poll falhou nesta cena — as outras seguem; o teto abaixo resolve */
+        }
+        const desde = s.image_started_at ?? s.created_at;
+        const minutos = desde ? (Date.now() - new Date(desde).getTime()) / 60000 : 0;
+        if (minutos > SCENE_IMAGE_TIMEOUT_MINUTES) {
+          await failSceneImage(
+            s.id,
+            `A geração passou de ${SCENE_IMAGE_TIMEOUT_MINUTES} minutos sem resposta e foi encerrada. Clique em refazer para tentar de novo.`,
+          ).catch(() => {});
+        }
+      }),
   );
   const fresh = await listScenes(id);
 
