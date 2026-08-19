@@ -580,7 +580,8 @@
       "current": "Referência atual",
       "currentTitle": "Esta é a foto de referência em uso agora",
       "addExtra": "Adicionar como extra",
-      "inExtras": "Já está nas extras"
+      "inExtras": "Já está nas extras",
+      "extraBadge": "Nas extras"
     }
   },
   "misc": {

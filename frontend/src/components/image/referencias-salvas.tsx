@@ -113,6 +113,12 @@ export function ReferenciasSalvas({
                   {t("current")}
                 </span>
               )}
+              {/* Mesmo selo da atual, pra quem está no quadro como extra. */}
+              {!emUso && nasExtras && (
+                <span className="absolute left-1 top-1 rounded-full bg-[var(--canvas)]/80 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-white">
+                  {t("extraBadge")}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <button
