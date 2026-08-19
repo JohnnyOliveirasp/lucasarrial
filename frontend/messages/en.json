@@ -721,7 +721,12 @@
         "script": "Script error",
         "wand": "Magic wand error",
         "save": "Error saving"
-      }
+      },
+      "optional": "optional",
+      "ideaLabel": "Video idea",
+      "ideaPlaceholder": "E.g. knee pain cream, for people over 50 who struggle with stairs. The hook is showing someone climbing stairs pain-free.",
+      "ideaHint": "Say what the product is, who it's for and what the hook is. It's the starting point for the script — use this or run the analysis.",
+      "scriptLocked": "Write the video idea or run the product analysis before generating the script."
     },
     "voice": {
       "title": "5 · The narrating voice (max {max}s)",

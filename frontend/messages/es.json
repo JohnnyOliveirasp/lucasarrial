@@ -721,7 +721,12 @@
         "script": "Error en el guion",
         "wand": "Error en la varita",
         "save": "Error al guardar"
-      }
+      },
+      "optional": "opcional",
+      "ideaLabel": "Idea del video",
+      "ideaPlaceholder": "Ej.: crema para el dolor de rodilla, para mayores de 50 que sufren al subir escaleras. El gancho es mostrar a la persona subiendo sin dolor.",
+      "ideaHint": "Di qué es el producto, para quién es y cuál es el gancho. Es el punto de partida del guion — usa esto o ejecuta el análisis.",
+      "scriptLocked": "Escribe la idea del video o ejecuta el análisis del producto antes de generar el guion."
     },
     "voice": {
       "title": "5 · La voz que narra (máx. {max}s)",

@@ -721,7 +721,12 @@
         "script": "Erro no roteiro",
         "wand": "Erro na varinha",
         "save": "Erro ao salvar"
-      }
+      },
+      "optional": "opcional",
+      "ideaLabel": "Ideia do vídeo",
+      "ideaPlaceholder": "Ex.: creme para dor no joelho, para quem tem mais de 50 anos e sofre pra subir escada. O gancho é mostrar a pessoa subindo escada sem dor.",
+      "ideaHint": "Diga o que é o produto, para quem é e qual o gancho. Serve de ponto de partida para o roteiro — use isto ou rode a análise.",
+      "scriptLocked": "Escreva a ideia do vídeo ou rode a análise do produto antes de gerar o roteiro."
     },
     "voice": {
       "title": "5 · A voz que narra (máx. {max}s)",

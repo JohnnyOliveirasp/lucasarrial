@@ -38,6 +38,7 @@ type Project = {
   product_price: string | null;
   product_link: string | null;
   product_description: string | null;
+  product_idea: string | null;
   product_analysis: string | null;
   product_image_paths: string[] | null;
   reference_image_paths: string[] | null;
@@ -81,10 +82,12 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
   const [price, setPrice] = useState("");
   const [link, setLink] = useState("");
   const [description, setDescription] = useState("");
+  // Ideia do produto: desde 18/08 a análise é opcional, e o roteiro precisa
+  // de um ponto de partida — é ideia OU análise (migration 82).
+  const [idea, setIdea] = useState("");
   const [personPhotos, setPersonPhotos] = useState<LocalPhoto[]>([]);
   const [consent, setConsent] = useState(false);
   const [savedProduct, setSavedProduct] = useState(0);
-  const [savedPerson, setSavedPerson] = useState(0);
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [script, setScript] = useState<string | null>(null);
   const [scriptDirty, setScriptDirty] = useState(false);
@@ -103,10 +106,10 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
         setPrice(p.product_price ?? "");
         setLink(p.product_link ?? "");
         setDescription(p.product_description ?? "");
+        setIdea(p.product_idea ?? "");
         setAnalysis(p.product_analysis);
         setScript(p.script_text);
         setSavedProduct(p.product_image_paths?.length ?? 0);
-        setSavedPerson(p.reference_image_paths?.length ?? 0);
         // F5/reabertura: re-hidrata as MINIATURAS com URLs assinadas do R2.
         setProductPhotos((p.product_images ?? []).map((x) => ({ key: x.key, previewUrl: x.url })));
         setPersonPhotos((p.reference_images ?? []).map((x) => ({ key: x.key, previewUrl: x.url })));
@@ -180,6 +183,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
         price,
         link,
         description,
+        idea,
       });
       setSavedProduct(productPhotos.length);
     }
@@ -188,24 +192,23 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
         keys: personPhotos.map((p) => p.key),
         consent: true,
       });
-      setSavedPerson(personPhotos.length);
     }
     return pid;
   }
 
   const hasProduct = productPhotos.length > 0 || savedProduct > 0;
-  const hasPerson = personPhotos.length > 0 || savedPerson > 0;
   const personConsentOk = personPhotos.length === 0 || consent;
-  const canAnalyze = hasProduct && hasPerson && personConsentOk;
+  // 18/08: só o PRODUTO é obrigatório. A análise virou opcional e não exige
+  // mais a foto de quem apresenta — dá pra fazer vídeo só do produto.
+  const canAnalyze = hasProduct && personConsentOk;
+  const hasIdea = idea.trim().length > 0;
+  /** O roteiro precisa de UMA origem: a ideia escrita ou a análise. */
+  const canScript = hasProduct && (hasIdea || Boolean(analysis));
 
   async function runAnalyze() {
     setError(null);
     if (!hasProduct) {
       setError(t("errors.needProduct"));
-      return;
-    }
-    if (!hasPerson) {
-      setError(t("errors.needPerson"));
       return;
     }
     if (!personConsentOk) {
@@ -355,6 +358,20 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
           onChange={(e) => setDescription(e.target.value)}
           maxLength={1000}
         />
+        {/* Ideia: com a análise opcional (18/08), é daqui que o roteiro parte. */}
+        <div className="flex flex-col gap-2">
+          <label className="font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--ash)]">
+            {t("ideaLabel")}
+          </label>
+          <textarea
+            className={`${inputCls} h-auto min-h-[88px] py-2`}
+            placeholder={t("ideaPlaceholder")}
+            value={idea}
+            onChange={(e) => setIdea(e.target.value)}
+            maxLength={1000}
+          />
+          <p className="text-[12px] text-[var(--mute)]">{t("ideaHint")}</p>
+        </div>
       </section>
 
       {/* 2 — Quem apresenta */}
@@ -362,6 +379,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
         <div className="flex items-center gap-2">
           <UserRound className="h-5 w-5 text-[var(--silver)]" />
           <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">{t("personTitle")}</h2>
+          <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ash)]">{t("optional")}</span>
           <span className="font-mono text-[11px] text-[var(--ash)]">{t("photosCount", { n: personPhotos.length, max: 6 })}</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -413,6 +431,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-[var(--silver)]" />
             <h2 className="font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">{t("analysisTitle")}</h2>
+            <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--ash)]">{t("optional")}</span>
           </div>
           <button
             type="button"
@@ -437,7 +456,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
       </section>
 
       {/* 4 — Roteiro */}
-      {analysis && (
+      {canScript && (
         <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -451,7 +470,7 @@ export function SalesSetup({ locale, projectId }: { locale: string; projectId?: 
                   {t("wand", { cost: SALES_AI_COST })}
                 </button>
               )}
-              <button type="button" onClick={runScript} disabled={busy !== null} className={btnCls}>
+              <button type="button" onClick={runScript} disabled={busy !== null || !canScript} title={canScript ? "" : t("scriptLocked")} className={btnCls}>
                 {busy === "script" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
                 {script ? t("redo", { cost: SALES_AI_COST }) : t("generateScript", { cost: SALES_AI_COST })}
               </button>
