@@ -19,6 +19,7 @@ export type SalesProject = {
   product_link: string | null;
   product_description: string | null;
   product_analysis: string | null;
+  product_idea: string | null;
   reference_image_paths: string[] | null;
 };
 
@@ -27,7 +28,7 @@ export async function loadSalesProject(id: string, userId: string): Promise<Sale
   const { data } = await getAdmin()
     .from("video_projects")
     .select(
-      "id, status, script_text, product_image_paths, product_price, product_link, product_description, product_analysis, reference_image_paths",
+      "id, status, script_text, product_image_paths, product_price, product_link, product_description, product_analysis, product_idea, reference_image_paths",
     )
     .eq("id", id)
     .eq("user_id", userId)

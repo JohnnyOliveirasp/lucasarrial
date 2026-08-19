@@ -15,7 +15,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   if (!auth) return unauthorized();
   const { id } = await ctx.params;
 
-  let body: { keys?: unknown; price?: unknown; link?: unknown; description?: unknown } = {};
+  let body: { keys?: unknown; price?: unknown; link?: unknown; description?: unknown; idea?: unknown } = {};
   try {
     body = await request.json();
   } catch {
@@ -34,6 +34,9 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   const price = typeof body.price === "string" ? body.price.trim().slice(0, 60) : "";
   const link = typeof body.link === "string" ? body.link.trim().slice(0, 300) : "";
   const description = typeof body.description === "string" ? body.description.trim().slice(0, 1000) : "";
+  // Ideia do produto: ponto de partida do roteiro quando a analise (opcional
+  // desde 18/08) nao foi feita. Ver migration 82.
+  const idea = typeof body.idea === "string" ? body.idea.trim().slice(0, 1000) : "";
   if (link && !/^https?:\/\/\S+$/i.test(link)) {
     return badRequest("Link inválido — use uma URL completa (https://…).");
   }
@@ -46,6 +49,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       product_price: price || null,
       product_link: link || null,
       product_description: description || null,
+      product_idea: idea || null,
     })
     .eq("id", id)
     .eq("user_id", auth.user_id)

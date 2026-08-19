@@ -20,8 +20,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   const project = await loadSalesProject(id, auth.user_id);
   if (!project) return notFound("Video project");
-  if (!project.product_analysis) {
-    return badRequest("Rode a análise do produto antes de gerar o roteiro.");
+  // 18/08: a análise virou opcional, então o roteiro passou a aceitar duas
+  // origens — a ideia escrita pela pessoa OU a análise. Uma das duas tem que
+  // existir: sem nenhuma, a LLM escreveria um roteiro genérico sobre nada.
+  if (!project.product_analysis && !project.product_idea?.trim()) {
+    return badRequest(
+      "Escreva a ideia do produto (o que é, para quem, qual o gancho) ou rode a análise — o roteiro precisa de um ponto de partida.",
+    );
   }
 
   const { billed, deny } = await gateSalesAI(auth);
@@ -29,7 +34,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   try {
     const script = await generateSalesScript(
-      project.product_analysis,
+      { analysis: project.product_analysis, idea: project.product_idea },
       {
         price: project.product_price,
         link: project.product_link,

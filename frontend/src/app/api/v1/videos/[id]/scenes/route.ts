@@ -9,7 +9,7 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { sceneCountForDuration } from "@/lib/video/config";
+import { sceneCountForDuration, spokenSecondsFromScript } from "@/lib/video/config";
 import { generateScenes } from "@/lib/video/generate-scenes";
 
 const SCENE_SELECT = "id, idx, prompt_pt, prompt_en, script_excerpt, created_at";
@@ -65,7 +65,14 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const script = (project.script_text ?? "").trim();
   if (!script) return serverError("Projeto sem roteiro");
 
-  const n = project.scene_count ?? sceneCountForDuration(project.audio_duration_seconds ?? 0);
+  // Quantas cenas: pela duração do áudio quando existe narração. Desde 18/08 a
+  // narração é OPCIONAL (dá pra fazer vídeo só com legenda, ou sem nada e a
+  // pessoa põe a legenda dela depois) — sem áudio, o tamanho vem do próprio
+  // roteiro, na mesma régua de fala do TTS. Sem isso o projeto mudo caía em
+  // `sceneCountForDuration(0)` e nascia com UMA cena só.
+  const n =
+    project.scene_count ??
+    sceneCountForDuration(project.audio_duration_seconds ?? spokenSecondsFromScript(script));
 
   let generated;
   try {

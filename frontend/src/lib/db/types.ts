@@ -257,6 +257,7 @@ export type VideoProjectRow = {
   product_link: string | null;
   product_description: string | null;
   product_analysis: string | null;
+  product_idea: string | null; // ideia escrita pela pessoa; origem do roteiro quando nao ha analise (mig 82)
 };
 export type VideoProjectInsert = {
   id?: string;
@@ -279,6 +280,7 @@ export type VideoProjectInsert = {
   product_link?: string | null;
   product_description?: string | null;
   product_analysis?: string | null;
+  product_idea?: string | null;
 };
 export type VideoProjectUpdate = Partial<VideoProjectRow>;
 

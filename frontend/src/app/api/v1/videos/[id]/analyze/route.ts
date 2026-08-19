@@ -27,11 +27,10 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (productKeys.length === 0) {
     return badRequest("Envie as fotos do produto antes da análise.");
   }
-  // A pessoa influencia a análise (tom/energia/cenários) e é obrigatória nas
-  // cenas mais à frente — trava aqui também (defesa além do botão na UI).
-  if ((project.reference_image_paths ?? []).length === 0) {
-    return badRequest("Envie a foto de quem vai apresentar antes da análise.");
-  }
+  // 18/08: "quem apresenta" virou OPCIONAL (ordem do Johnny — o único passo
+  // obrigatório é o produto). Sem foto de pessoa a análise olha só o produto:
+  // `analyzeProductAndPerson` já aceita `personUrl` nulo, e as cenas mais à
+  // frente saem sem pessoa. A trava antiga barrava vídeo de produto puro.
 
   const { billed, deny } = await gateSalesAI(auth);
   if (deny) return deny;

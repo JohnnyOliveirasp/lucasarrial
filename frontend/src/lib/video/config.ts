@@ -51,3 +51,20 @@ export function sceneCountForDuration(durationSeconds: number): number {
   const count = remainder >= SECONDS_PER_SCENE / 2 ? full + 1 : full;
   return Math.max(1, count);
 }
+
+/** Ritmo de fala usado pra estimar duração sem áudio (pt-BR, narração de vídeo curto). */
+const WORDS_PER_MINUTE = 150;
+
+/**
+ * Quanto tempo esse roteiro duraria falado, em segundos.
+ *
+ * Serve pro caso sem narração: desde 18/08 a voz é OPCIONAL no Vídeo Vendas
+ * (dá pra entregar só com legenda, ou mudo pra pessoa legendar depois), e sem
+ * áudio não há `audio_duration_seconds` pra dizer quantas cenas gerar. É a
+ * mesma régua que o roteiro já usa do outro lado — ~140 palavras ≈ 55s.
+ */
+export function spokenSecondsFromScript(script: string): number {
+  const words = script.trim().split(/\s+/).filter(Boolean).length;
+  if (words === 0) return 0;
+  return (words / WORDS_PER_MINUTE) * 60;
+}
