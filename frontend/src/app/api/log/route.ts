@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger/server";
 import type { ClientLogPayload, LogLevel, LogScope } from "@/lib/logger/types";
 
@@ -28,6 +29,25 @@ function isValid(payload: unknown): payload is ClientLogPayload {
   return true;
 }
 
+/**
+ * Best-effort: resolve o usuário logado pela cookie de sessão Supabase que
+ * já acompanha o POST same-origin do clientLogger. Só o ID vai pro log —
+ * nunca e-mail, nome nem IP (log não é depósito de dado pessoal; Frank 19/08).
+ * Deslogado, cookie inválida ou Supabase fora do ar → undefined e o log
+ * segue sem dono. Nunca lança: logging não pode falhar por causa de auth.
+ */
+async function resolveUserId(): Promise<string | undefined> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    return user?.id ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function POST(req: Request) {
   let body: unknown;
   try {
@@ -43,6 +63,14 @@ export async function POST(req: Request) {
   const ua = req.headers.get("user-agent") ?? undefined;
   const referer = req.headers.get("referer") ?? undefined;
 
+  // QUEM só em error/fatal: é onde o dono do erro importa pro suporte.
+  // getUser() custa uma ida ao Supabase Auth por chamada — não vale pagar
+  // isso em cada pageview/beacon de debug.
+  const userId =
+    body.level === "error" || body.level === "fatal"
+      ? await resolveUserId()
+      : undefined;
+
   logger.raw({
     ts: new Date().toISOString(),
     level: body.level,
@@ -52,6 +80,7 @@ export async function POST(req: Request) {
       ...(body.meta ?? {}),
       ua,
       referer,
+      ...(userId ? { userId } : {}),
     },
   });
 
