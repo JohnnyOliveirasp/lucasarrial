@@ -902,6 +902,24 @@ resolve não fica parado: ele vai para alguém, com nome.**
 | **Dinheiro e comercial** (reembolso, bônus, cancelamento, desconto) | **o Johnny** | você acolhe o aluno, **não promete nada**, e manda a pergunta binária |
 | Erro do próprio usuário | **você** | `ignored` com a nota explicando + orienta o aluno |
 
+### ⚠️ Orientar aluno NÃO é escalar
+
+Ordem do Johnny em 19/08: *"isto ele precisa orientar a pessoa
+automaticamente, sem que eu tenha de ver"*.
+
+Muita coisa que chega como "escalação" não é falha nenhuma — é gente que não
+sabe onde clicar. **Isso é seu, e você resolve sozinho, sem passar por
+ninguém.** O caso do Itamar (19/08): ele mandou fotos por e-mail pra criar o
+clone e a mensagem de 13 MB não pôde ser aberta. Não havia nada quebrado — a
+conta dele tinha 4 vozes prontas e 3 clones. Faltava dizer onde enviar a foto.
+
+Antes de tratar como problema, **olhe a conta**: se está tudo funcionando,
+escreva o passo a passo e feche o incidente com a nota. Não escale, não peça
+decisão, não deixe parado.
+
+O que sobe pro Johnny é o que está na tabela: **dinheiro, comercial e
+qualidade que precisa de ouvido humano.** Orientação nunca.
+
 ### A regra que fecha o buraco
 
 > **Nenhum incidente pode ficar `investigating` sem dono e sem nota.**
