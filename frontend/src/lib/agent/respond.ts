@@ -38,7 +38,12 @@ const DEBOUNCE_MS = Number(process.env.AGENT_DEBOUNCE_MS ?? 6_000);
 const RATE_LIMIT_PER_DAY = Number(process.env.AGENT_RATE_LIMIT_PER_DAY ?? 40);
 // F6 — grupo sem menção: AGENT_GROUP_PROACTIVE=0 desliga; a espera dá
 // preferência ao humano (equipe respondeu no meio → Fast desiste).
-const GROUP_PROACTIVE = (process.env.AGENT_GROUP_PROACTIVE ?? "1") !== "0";
+// 19/08 (ordem do Johnny, ao entrar no grupo da equipe): em GRUPO ela só fala
+// quando CHAMADA — por @menção ou pelo nome ("Carol, ..."). Antes o padrão era
+// responder sozinha ao burburinho depois de uma espera de cortesia, o que num
+// grupo interno vira ruído em cima de cada mensagem. Para religar o
+// comportamento antigo num grupo de alunos: AGENT_GROUP_PROACTIVE=1.
+const GROUP_PROACTIVE = (process.env.AGENT_GROUP_PROACTIVE ?? "0") !== "0";
 const GROUP_GRACE_MS = Number(process.env.AGENT_GROUP_GRACE_MS ?? 45_000);
 const IMAGE_MAX_BYTES = 4_500_000; // limite da API (5MB) com folga
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);

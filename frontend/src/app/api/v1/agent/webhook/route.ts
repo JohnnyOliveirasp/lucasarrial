@@ -37,15 +37,41 @@ type WahaMessagePayload = {
   _data?: { notifyName?: string; Info?: { PushName?: string } };
 };
 
-/** A mensagem marca (@) o número do suporte? Olha o corpo, a lista de
- *  menções normalizada E o payload cru (GOWS aninha o contextInfo fundo). */
+/**
+ * Nomes que CHAMAM a agente num grupo, além da menção @número.
+ *
+ * Em grupo ninguém marca o número: as pessoas escrevem "Carol, dá uma olhada
+ * nisso". Sem isso, a única forma de chamá-la seria o @, e a alternativa era
+ * ela responder sozinha ao burburinho — que é justamente o que não pode
+ * acontecer num grupo interno da equipe (ordem do Johnny, 19/08).
+ */
+const AGENT_NAMES = (process.env.AGENT_NAMES ?? "carol,fast")
+  .split(",")
+  .map((n) => n.trim().toLowerCase())
+  .filter(Boolean);
+
+/** O texto chama a agente pelo nome? Casa palavra inteira, em qualquer lugar
+ *  da frase, com ou sem @ na frente ("Carol", "@carol", "ei carol,"). */
+function callsAgentByName(body: string): boolean {
+  if (!body || AGENT_NAMES.length === 0) return false;
+  const texto = body.toLowerCase();
+  return AGENT_NAMES.some((nome) =>
+    new RegExp(`(^|[^\p{L}\p{N}])@?${nome}([^\p{L}\p{N}]|$)`, "u").test(texto),
+  );
+}
+
+/** A mensagem marca (@) o número do suporte, ou chama pelo nome? Olha o corpo,
+ *  a lista de menções normalizada E o payload cru (GOWS aninha o contextInfo
+ *  fundo). */
 function mentionsAgent(p: WahaMessagePayload): boolean {
+  const body = p.body ?? "";
+  // Nome vale como chamado — é assim que gente chama alguém num grupo.
+  if (callsAgentByName(body)) return true;
   const selfIds = (process.env.AGENT_SELF_IDS ?? "")
     .split(",")
     .map((s) => s.replace(/\D/g, ""))
     .filter(Boolean);
   if (selfIds.length === 0) return false;
-  const body = p.body ?? "";
   if (selfIds.some((id) => body.includes(`@${id}`))) return true;
   const mentioned = (p.mentionedIds ?? []).map((j) => j.replace(/\D/g, ""));
   if (mentioned.some((d) => selfIds.includes(d))) return true;
