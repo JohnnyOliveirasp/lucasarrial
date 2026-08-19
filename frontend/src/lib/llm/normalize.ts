@@ -78,12 +78,35 @@ function keepsOriginalWords(original: string, out: string): boolean {
 }
 
 /**
+ * Limpeza DETERMINÍSTICA pós-LLM (caso paulogmarinho 19/08): markdown e emoji
+ * não se falam — "**experiente**" e "👉" passavam pelo Haiku intactos (nada no
+ * prompt mandava limpar), chegavam ao VoxCPM e o chunk saía quebrado
+ * (coverage 0.222 no QA). Roda SEMPRE, inclusive quando o LLM é pulado/falha —
+ * por isso é código, não instrução de prompt.
+ */
+export function sanitizeForTTS(text: string): string {
+  return text
+    // negrito/itálico/código do markdown: cai o marcador, fica a palavra
+    .replace(/[*`~]+/g, " ")
+    .replace(/(^|\s)_+|_+(\s|$)/g, "$1 $2")
+    // títulos "## Foo" e citações "> foo" no começo da linha
+    .replace(/^[#>]+\s*/gm, "")
+    // emoji e pictogramas (setas, mãozinhas…) não têm fala
+    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{1F1E6}-\u{1F1FF}]/gu, " ")
+    // espaço que sobrou da limpeza (inclusive antes de pontuação)
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ +([?!.,;:])/g, "$1")
+    .replace(/ ?\n ?/g, "\n")
+    .trim();
+}
+
+/**
  * Retorna o texto normalizado para fala, ou o texto original em caso de
  * ausência de API key / erro / timeout.
  */
 export async function normalizeTextForTTS(text: string): Promise<string> {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return text; // normalização desativada sem key
+  if (!key) return sanitizeForTTS(text); // normalização desativada sem key
 
   try {
     const res = await fetch(ANTHROPIC_API, {
@@ -103,7 +126,7 @@ export async function normalizeTextForTTS(text: string): Promise<string> {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
 
-    if (!res.ok) return text;
+    if (!res.ok) return sanitizeForTTS(text);
 
     const data = (await res.json()) as { content?: AnthropicBlock[] };
     const out = (data.content ?? [])
@@ -113,9 +136,9 @@ export async function normalizeTextForTTS(text: string): Promise<string> {
       .replace(/<\/?texto_tts>/g, "")
       .trim();
 
-    if (!out || !keepsOriginalWords(text, out)) return text;
-    return out;
+    if (!out || !keepsOriginalWords(text, out)) return sanitizeForTTS(text);
+    return sanitizeForTTS(out);
   } catch {
-    return text; // timeout, rede, parse — sempre cai pro texto cru
+    return sanitizeForTTS(text); // timeout, rede, parse — sempre cai pro texto cru
   }
 }

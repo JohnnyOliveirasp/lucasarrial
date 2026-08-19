@@ -218,5 +218,42 @@ class SplitParityTest(unittest.TestCase):
             self.assertEqual(handler._chunk_coverage(words, c), 1.0)
 
 
+class DigitosViramPalavrasTest(unittest.TestCase):
+    """Caso pestanatiago 19/08 (incidentes 2949257c/37bacb68/c4b892e9): o texto
+    do TTS chega por extenso ("E trinta e seis") e o whisper devolve dígitos
+    ("E36") — a comparação palavra a palavra reprovava áudio PERFEITO
+    (coverage_best 0.609 medido em produção, 2 estornos de graça)."""
+
+    CHUNK = ("Estás a pensar comprar um E trinta e seis como primeiro carro? "
+             "Eu adoro o E trinta e seis, mas não o recomendo.")
+    WHISPER = ("Estás a pensar comprar um E36 como primeiro carro? "
+               "Eu adoro o E36, mas não o recomendo.")
+
+    def test_audio_perfeito_com_numero_em_digito_da_cobertura_total(self):
+        got = handler._qa_norm_words(self.WHISPER, "pt")
+        self.assertEqual(handler._chunk_coverage(got, self.CHUNK, "pt"), 1.0)
+
+    def test_audio_pela_metade_continua_reprovando(self):
+        metade = "Estás a pensar comprar um E36 como primeiro carro?"
+        got = handler._qa_norm_words(metade, "pt")
+        self.assertLess(handler._chunk_coverage(got, self.CHUNK, "pt"), 0.85)
+
+    def test_expansao_por_idioma(self):
+        self.assertEqual(handler._digits_to_words("36", "pt"), ["trinta", "e", "seis"])
+        self.assertEqual(handler._digits_to_words("42", "en"), ["forty", "two"])
+        self.assertEqual(handler._digits_to_words("36", "es"), ["treinta", "y", "seis"])
+
+    def test_letra_colada_no_digito_separa(self):
+        # "e36" precisa virar ["e", "trinta", "e", "seis"], não um token opaco
+        self.assertEqual(
+            handler._qa_norm_words("E36", "pt"), ["e", "trinta", "e", "seis"],
+        )
+
+    def test_numero_gigante_soletra_digito_a_digito(self):
+        words = handler._digits_to_words("11987654321", "pt")
+        self.assertEqual(words[:2], ["um", "um"])
+        self.assertIn("nove", words)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

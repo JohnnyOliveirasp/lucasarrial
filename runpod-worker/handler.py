@@ -730,7 +730,7 @@ def _start_word_ok(
     """
     import difflib
 
-    expected = _qa_norm_words(expected_text)
+    expected = _qa_norm_words(expected_text, language)
     if not expected:
         return True
     head = seg[: int(sample_rate * 4)]
@@ -745,12 +745,119 @@ def _start_word_ok(
     )
 
 
-def _qa_norm_words(s: str) -> list[str]:
-    """Palavras minúsculas sem acento/pontuação (comparação de QA)."""
+def _num_pt(n: int) -> list[str]:
+    """36 -> ["trinta","e","seis"] (sem acento — casa com o _qa_norm_words)."""
+    U = ["zero", "um", "dois", "tres", "quatro", "cinco", "seis", "sete",
+         "oito", "nove", "dez", "onze", "doze", "treze", "quatorze", "quinze",
+         "dezesseis", "dezessete", "dezoito", "dezenove"]
+    T = ["", "", "vinte", "trinta", "quarenta", "cinquenta", "sessenta",
+         "setenta", "oitenta", "noventa"]
+    C = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos",
+         "seiscentos", "setecentos", "oitocentos", "novecentos"]
+    if n < 20:
+        return [U[n]]
+    if n < 100:
+        t, r = divmod(n, 10)
+        return [T[t]] + (["e", U[r]] if r else [])
+    if n == 100:
+        return ["cem"]
+    if n < 1000:
+        c, r = divmod(n, 100)
+        return [C[c]] + (["e"] + _num_pt(r) if r else [])
+    if n < 1_000_000:
+        m, r = divmod(n, 1000)
+        head = ["mil"] if m == 1 else _num_pt(m) + ["mil"]
+        return head + (["e"] + _num_pt(r) if r else [])
+    m, r = divmod(n, 1_000_000)
+    head = ["um", "milhao"] if m == 1 else _num_pt(m) + ["milhoes"]
+    return head + (["e"] + _num_pt(r) if r else [])
+
+
+def _num_en(n: int) -> list[str]:
+    U = ["zero", "one", "two", "three", "four", "five", "six", "seven",
+         "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen",
+         "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
+    T = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy",
+         "eighty", "ninety"]
+    if n < 20:
+        return [U[n]]
+    if n < 100:
+        t, r = divmod(n, 10)
+        return [T[t]] + ([U[r]] if r else [])
+    if n < 1000:
+        h, r = divmod(n, 100)
+        return [U[h], "hundred"] + (_num_en(r) if r else [])
+    if n < 1_000_000:
+        m, r = divmod(n, 1000)
+        return _num_en(m) + ["thousand"] + (_num_en(r) if r else [])
+    m, r = divmod(n, 1_000_000)
+    return _num_en(m) + ["million"] + (_num_en(r) if r else [])
+
+
+def _num_es(n: int) -> list[str]:
+    U = ["cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete",
+         "ocho", "nueve", "diez", "once", "doce", "trece", "catorce",
+         "quince", "dieciseis", "diecisiete", "dieciocho", "diecinueve",
+         "veinte", "veintiuno", "veintidos", "veintitres", "veinticuatro",
+         "veinticinco", "veintiseis", "veintisiete", "veintiocho",
+         "veintinueve"]
+    T = ["", "", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta",
+         "setenta", "ochenta", "noventa"]
+    C = ["", "ciento", "doscientos", "trescientos", "cuatrocientos",
+         "quinientos", "seiscientos", "setecientos", "ochocientos",
+         "novecientos"]
+    if n < 30:
+        return [U[n]]
+    if n < 100:
+        t, r = divmod(n, 10)
+        return [T[t]] + (["y", U[r]] if r else [])
+    if n == 100:
+        return ["cien"]
+    if n < 1000:
+        c, r = divmod(n, 100)
+        return [C[c]] + (_num_es(r) if r else [])
+    if n < 1_000_000:
+        m, r = divmod(n, 1000)
+        head = ["mil"] if m == 1 else _num_es(m) + ["mil"]
+        return head + (_num_es(r) if r else [])
+    m, r = divmod(n, 1_000_000)
+    head = ["un", "millon"] if m == 1 else _num_es(m) + ["millones"]
+    return head + (_num_es(r) if r else [])
+
+
+def _digits_to_words(tok: str, language: str) -> list[str]:
+    """Token só de dígitos vira as palavras faladas no idioma do job."""
+    if len(tok) > 9:
+        # gigante (telefone, CPF): fala-se dígito a dígito
+        return [w for d in tok for w in _digits_to_words(d, language)]
+    n = int(tok)
+    lang = (language or "pt").lower()
+    if lang.startswith("en"):
+        return _num_en(n)
+    if lang.startswith("es"):
+        return _num_es(n)
+    return _num_pt(n)
+
+
+def _qa_norm_words(s: str, language: str = "pt") -> list[str]:
+    """Palavras minúsculas sem acento/pontuação (comparação de QA).
+
+    Dígitos viram PALAVRAS no idioma do job (caso pestanatiago 19/08): o texto
+    do TTS chega por extenso ("E trinta e seis") e o whisper devolve dígitos
+    ("E36") — sem expandir, todo texto com número perdia cobertura em áudio
+    PERFEITO e o coverage QA reprovava de graça (0.609 medido, 2 estornos).
+    Expande dos DOIS lados (esperado e transcrito), então texto cru com dígito
+    (fallback sem normalizador) também casa."""
     import unicodedata
     s = unicodedata.normalize("NFD", (s or "").lower())
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    return [w for w in re.sub(r"[^a-z0-9\s]", " ", s).split() if w]
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    # "e36" / "36kg" -> "e 36" / "36 kg": separa letra de dígito antes de expandir
+    s = re.sub(r"(?<=[a-z])(?=[0-9])|(?<=[0-9])(?=[a-z])", " ", s)
+    out: list[str] = []
+    for w in s.split():
+        out.extend(_digits_to_words(w, language) if w.isdigit() else [w])
+    return out
 
 
 def _qa_transcribe_seg(seg, sample_rate, whisper_model, language, label):
@@ -767,7 +874,7 @@ def _qa_transcribe_seg(seg, sample_rate, whisper_model, language, label):
             tmp_path = Path(tmp.name)
         sf.write(str(tmp_path), seg, sample_rate)
         try:
-            return _qa_norm_words(transcribe_file(tmp_path, model_name=whisper_model, language=language))
+            return _qa_norm_words(transcribe_file(tmp_path, model_name=whisper_model, language=language), language)
         finally:
             tmp_path.unlink(missing_ok=True)
     except Exception as exc:
@@ -775,7 +882,7 @@ def _qa_transcribe_seg(seg, sample_rate, whisper_model, language, label):
         return None
 
 
-def _echo_leak_count(got, chunk_text, prompt_text):
+def _echo_leak_count(got, chunk_text, prompt_text, language: str = "pt"):
     """QA anti-eco (caso Carlos "mesma coisa" 2026-07-29): o continuation do
     VoxCPM vaza frases da REF no meio/fim dos chunks — o QA de 1a palavra não
     vê. Recebe a transcrição NORMALIZADA do chunk inteiro (`got` — a MESMA
@@ -787,8 +894,8 @@ def _echo_leak_count(got, chunk_text, prompt_text):
     """
     if not prompt_text:
         return None
-    ref_words = _qa_norm_words(prompt_text)
-    text_words = _qa_norm_words(chunk_text)
+    ref_words = _qa_norm_words(prompt_text, language)
+    text_words = _qa_norm_words(chunk_text, language)
 
     def grams(words: list[str]) -> set[tuple[str, str]]:
         return {
@@ -804,7 +911,7 @@ def _echo_leak_count(got, chunk_text, prompt_text):
     return len(grams(got) & suspect)
 
 
-def _chunk_coverage(got, chunk_text):
+def _chunk_coverage(got, chunk_text, language: str = "pt"):
     """QA de COMPLETUDE (caso Katia 19/08, incidente ce6e157d): fração (0..1)
     das palavras do texto do chunk presentes NA ORDEM na transcrição do áudio
     gerado. O echo QA só vê texto SOBRANDO (eco da ref); este vê texto
@@ -817,7 +924,7 @@ def _chunk_coverage(got, chunk_text):
     """
     import difflib
 
-    expected = _qa_norm_words(chunk_text)
+    expected = _qa_norm_words(chunk_text, language)
     if not expected:
         return None
     if got is None:
@@ -885,7 +992,7 @@ def _run_chunk_qa(
                 # (chunk 3 da Katia), não falha de whisper — não vira None.
                 got = []
         if echo_qa_enabled and attempt < echo_qa_retries:
-            leak = _echo_leak_count(got, chunk, prompt_text)
+            leak = _echo_leak_count(got, chunk, prompt_text, qa_language)
             qa_stats["echo_checked"] += 1
             if leak is None:
                 qa_stats["echo_none"] += 1
@@ -895,7 +1002,7 @@ def _run_chunk_qa(
                     qa_stats["echo_flagged"] += 1
                 score += leak
         if coverage_qa_enabled and attempt < coverage_qa_retries:
-            coverage = _chunk_coverage(got, chunk)
+            coverage = _chunk_coverage(got, chunk, qa_language)
             qa_stats["coverage_checked"] += 1
             if coverage is None:
                 qa_stats["coverage_none"] += 1
