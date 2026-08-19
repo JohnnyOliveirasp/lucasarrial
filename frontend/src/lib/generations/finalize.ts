@@ -22,7 +22,52 @@ export type GenerationOutput = {
 };
 
 /**
+ * Teto FÍSICO de letras por segundo. Acima disso o áudio não contém o texto —
+ * ninguém fala tão rápido.
+ *
+ * Medido na própria base (2.189 gerações em 30 dias): a média real é ~16,5
+ * letras/s e o pior caso legítimo bate em ~31. O corte em 28 pega o áudio
+ * truncado sem encostar em quem fala rápido; na prática, 4 gerações em 2.189
+ * (0,18%) ficaram acima disso — e duas eram a mesma frase da mesma aluna.
+ *
+ * O padrão é o modelo PARAR CEDO DEMAIS, e acontece quase só em texto curto:
+ * nos textos de até 39 letras o pior caso chegou a 62,9 letras/s (o dobro de
+ * qualquer outra faixa). Com frase curta o modelo tem pouca informação pra
+ * acertar onde parar de falar. Caso Katia, 18/08: "Bem-vinda ao Portal da
+ * Morgana" (30 letras) saiu com 0,477s — deveria dar ~1,8s.
+ */
+const MAX_LETRAS_POR_SEGUNDO = 28;
+
+/**
+ * O áudio é curto demais pro texto que deveria conter?
+ *
+ * Só decide quando tem os dois números; sem duração ou sem texto, não opina —
+ * `false` aqui significa "não sei", e entregar é melhor que recusar às cegas.
+ * Texto muito curto (< 12 letras) fica de fora: "Oi!" legitimamente dá uma
+ * fração de segundo e a razão explode sem haver problema.
+ */
+export function audioCurtoDemais(texto: string | null, duracaoSegundos: number | null): boolean {
+  if (!texto || !duracaoSegundos || duracaoSegundos <= 0) return false;
+  const letras = texto.trim().length;
+  if (letras < 12) return false;
+  return letras / duracaoSegundos > MAX_LETRAS_POR_SEGUNDO;
+}
+
+/** Texto que a geração deveria conter (o normalizado é o que foi falado). */
+async function textoDaGeracao(generationId: string): Promise<string | null> {
+  const { data } = await getAdmin()
+    .from("generations")
+    .select("text_normalized, text_raw")
+    .eq("id", generationId)
+    .maybeSingle();
+  const row = data as { text_normalized: string | null; text_raw: string | null } | null;
+  return row?.text_normalized ?? row?.text_raw ?? null;
+}
+
+/**
  * Converte o áudio pra MP3 e marca a geração como ready.
+ * Devolve `null` quando o áudio saiu CURTO DEMAIS pro texto — nesse caso nada
+ * é marcado como ready e o chamador deve tratar como falha (com estorno).
  * @param wavAudioPath valor atual de generations.audio_path (chave R2 do WAV).
  * @returns a chave final em uso (mp3 quando a conversão deu certo).
  */
@@ -31,6 +76,21 @@ export async function finalizeGenerationSuccess(
   wavAudioPath: string | null,
   out: GenerationOutput,
 ): Promise<string | null> {
+  // ✂️ ÁUDIO CORTADO NÃO É ENTREGA (19/08). O worker devolve COMPLETED mesmo
+  // quando o modelo parou cedo e o áudio não contém o texto todo — a aluna
+  // recebia meio segundo de som, era cobrada, e a gente só descobria se ela
+  // reclamasse. Aqui a gente pega antes de marcar ready: devolve `null`, o
+  // chamador trata como falha, e o estorno segue o caminho normal.
+  const texto = await textoDaGeracao(generationId);
+  if (audioCurtoDemais(texto, out.duration_s ?? null)) {
+    logger.warn("api", "generation.audio.truncado", {
+      generationId,
+      letras: texto?.trim().length ?? 0,
+      duracaoSegundos: out.duration_s ?? null,
+    });
+    return null;
+  }
+
   let audioPath = wavAudioPath;
 
   if (audioPath && audioPath.toLowerCase().endsWith(".wav")) {

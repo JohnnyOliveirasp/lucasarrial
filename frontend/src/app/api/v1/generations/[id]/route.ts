@@ -106,11 +106,24 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       if (resp.status === "COMPLETED") {
         const out = (resp.output ?? {}) as { uploaded?: boolean; error?: string; sample_rate?: number; duration_s?: number; elapsed_s?: number };
         const ok = out.uploaded && !out.error;
-        if (ok) {
-          // Converte WAV->MP3 e marca ready (audio_path passa a apontar pro .mp3).
-          await finalizeGenerationSuccess(id, gen.audio_path, out);
+        // `finalizeGenerationSuccess` devolve null quando o áudio saiu CURTO
+        // DEMAIS pro texto (modelo parou cedo). O job "deu certo" pro RunPod,
+        // mas não pra pessoa — cai no mesmo caminho de falha, que estorna.
+        const truncado =
+          ok && (await finalizeGenerationSuccess(id, gen.audio_path, out)) === null;
+        if (ok && !truncado) {
+          // marcado ready dentro do finalize (audio_path aponta pro .mp3)
         } else {
-          await failGeneration(id, auth.user_id, gen.runpod_job_id, out.error ?? "unknown", resp.executionTime, resp.delayTime);
+          await failGeneration(
+            id,
+            auth.user_id,
+            gen.runpod_job_id,
+            truncado
+              ? "O áudio saiu incompleto (mais curto que o texto). Refaça — os créditos foram devolvidos."
+              : out.error ?? "unknown",
+            resp.executionTime,
+            resp.delayTime,
+          );
         }
 
         const { data: refreshed } = await admin

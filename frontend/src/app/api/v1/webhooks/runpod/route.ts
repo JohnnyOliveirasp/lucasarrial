@@ -187,13 +187,21 @@ async function handleGenerationWebhook(
 ) {
   const out = payload.output ?? {};
 
+  let truncado = false;
   if (payload.status === "COMPLETED" && !out.error && out.uploaded) {
     // Converte WAV->MP3 e marca ready (audio_path passa a apontar pro .mp3).
-    await finalizeGenerationSuccess(generationId, audioPath, out);
-    return;
+    const finalizado = await finalizeGenerationSuccess(generationId, audioPath, out);
+    if (finalizado !== null) return;
+    // `null` = áudio saiu curto demais pro texto (o modelo parou cedo). O job
+    // "deu certo" pro RunPod, mas não pra aluna: cai no caminho de falha
+    // abaixo, que já estorna e avisa. Ver `audioCurtoDemais` em
+    // lib/generations/finalize.ts.
+    truncado = true;
   }
 
-  const rawError = out.error || payload.error || `RunPod ${payload.status}`;
+  const rawError = truncado
+    ? "O áudio saiu incompleto (mais curto que o texto). Refaça — os créditos foram devolvidos."
+    : out.error || payload.error || `RunPod ${payload.status}`;
   // Grava o tempo de execução que o RunPod já manda no webhook (incidente
   // d3d8d1b2, 18/08): o log do worker expira ~30min depois do job, então toda
   // investigação de "tempo de execução estourado" chegava tarde e batia em 404.
