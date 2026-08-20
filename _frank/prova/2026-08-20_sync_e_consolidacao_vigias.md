@@ -141,3 +141,53 @@ some, mas a verificação não: o run de `aae3ba5` estava `in_progress` às 11:0
 `generations` com `created_at > 11:01 UTC` depois que o run ficar verde. Antes
 disso qualquer número é da régua velha. Nenhum aluno está travado no intervalo,
 então dá pra esperar o dado em vez de chutar.
+
+---
+
+## SEGUNDA CORREÇÃO (11:25 UTC) — o 11,1% também estava errado
+
+Virei a medição em ferramenta (`_frank/ferramentas/qa_coverage.cjs`) e ela
+achou mais um erro meu, no mesmo relatório:
+
+| dia | eu reportei | o número certo |
+|---|---|---|
+| 19/08 | 4,4% | **4,5%** (110 gerações de aluno, 5 falhas) |
+| 20/08 | **11,1%** | **7,7%** (39 gerações de aluno, 3 falhas) |
+
+Inflei o de hoje porque contei a conta do **próprio Johnny** como falha de
+aluno. Conta de admin/sócio não debita crédito e não é indicador — é a regra do
+`bypassesBilling`, que eu conheço e não apliquei. Errar pra mais custa o mesmo
+que errar pra menos: 11% soa emergência, 7,7% soa acompanhar.
+
+### E o defeito atinge mais gente do que eu disse
+
+Falei em "2 alunos". São **6 alunos distintos** em dois dias:
+
+```
+19/08 18:11 | pestanatiago2008      |  464ch | 145s
+19/08 18:14 | pestanatiago2008      |  464ch | 140s
+19/08 18:47 | allysoncruz.nutri     | 1600ch | 153s
+19/08 18:51 | estudioelianeguedes   |  414ch | 154s
+19/08 19:05 | nucleartstudio        |  137ch |  39s
+20/08 00:35 | dirceu.walber64       | 2000ch | 226s
+20/08 08:39 | serescastro6          | 1080ch | 142s
+20/08 10:09 | serescastro6          | 1080ch | 146s
+```
+
+**Mata de vez a minha teoria de "texto longo":** o `nucleartstudio` falhou com
+**137 caracteres**. E nenhum `elapsed_seconds` é anormal (39s a 226s), então
+nada disso é hang — é reprovação do QA mesmo, o que separa este caso do
+incidente de timeout `d3d8d1b2`.
+
+### Depois da régua nova: ainda não dá pra dizer
+
+4 gerações desde as 11:01, 0 falhas. A ferramenta **se recusa a concluir** com
+n abaixo de 20, e está certa: com n=4, uma falha a mais viraria 25%. Por isso
+virou rotina diária (`7 11 * * *`) em vez de resposta de hoje.
+
+### Lição que fica
+
+Fiz três afirmações erradas sobre o mesmo assunto em uma manhã: régua velha,
+taxa inflada e número de alunos subestimado. Todas por medir na mão, com
+recorte improvisado, sob pressa. A correção não é "prestar mais atenção" — é a
+ferramenta com as armadilhas escritas dentro dela, que foi o que fiz.
