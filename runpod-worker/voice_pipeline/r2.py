@@ -37,18 +37,49 @@ def download_to_dir(
 
 
 def _stream_to(url: str, target: Path, chunk_size: int, timeout: int) -> None:
+    """Baixa `url` para `target` e SÓ aceita o arquivo INTEIRO.
+
+    ⚠️ Incidente 910ea757 (20/08): sem a conferência de tamanho, uma conexão
+    que morria no meio deixava um arquivo TRUNCADO no disco e o download era
+    dado como sucesso. Em .m4a de celular o metadado (`moov`) fica no FIM do
+    arquivo — truncar corta justamente ele, e o ffmpeg seguinte falhava com
+    "Output file #0 does not contain any stream". O aluno recebia
+    "seu arquivo chegou corrompido, envie de novo" (mensagem falsa, e
+    impossível de cumprir para quem veio do onboarding e nunca enviou nada):
+    4 alunos pagantes travados por até 7 dias, e o mesmo defeito já tinha sido
+    dado como resolvido 2× (29/07 e 31/07) porque ninguém olhou o TAMANHO.
+
+    Agora: `Content-Length` é comparado com o que foi escrito; divergiu, o
+    arquivo truncado é apagado e a tentativa conta como falha (entra no retry).
+    Servidor sem Content-Length (raro em R2) segue o caminho antigo — a
+    conferência é uma trava a mais, nunca um bloqueio novo.
+    """
     last_err: Exception | None = None
     for attempt in range(3):
         try:
             with requests.get(url, stream=True, timeout=timeout) as r:
                 r.raise_for_status()
+                esperado = r.headers.get("Content-Length")
+                esperado = int(esperado) if esperado and esperado.isdigit() else None
+                escrito = 0
                 with target.open("wb") as f:
                     for chunk in r.iter_content(chunk_size=chunk_size):
                         if chunk:
+                            escrito += len(chunk)
                             f.write(chunk)
+            if esperado is not None and escrito != esperado:
+                raise IOError(
+                    f"download truncado: {escrito} de {esperado} bytes "
+                    f"({escrito * 100 // max(1, esperado)}%)"
+                )
             return
         except Exception as exc:  # noqa: BLE001
             last_err = exc
+            # Não deixa meio-arquivo no disco: a próxima etapa leria o truncado.
+            try:
+                target.unlink(missing_ok=True)
+            except Exception:  # noqa: BLE001
+                pass
             time.sleep(1.5 * (attempt + 1))
     raise RuntimeError(f"Failed to download {url}: {last_err}")
 
