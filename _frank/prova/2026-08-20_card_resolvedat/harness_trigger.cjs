@@ -1,7 +1,7 @@
 /**
- * PROVA DO TRIGGER (scripts/85_incidents_resolved_guard.sql) num Postgres
+ * PROVA DO TRIGGER (scripts/86_incidents_resolved_guard.sql) num Postgres
  * REAL e ISOLADO (PGlite em memória — nada de produção): aplica a migration
- * 47 (tabela incidents) + a 85 (trigger) e reproduz a FORMA EXATA de escrita
+ * 47 (tabela incidents) + a 86 (trigger) e reproduz a FORMA EXATA de escrita
  * de CADA caminho de fechamento encontrado no card 20/08, provando que
  * resolved_at/resolved_by saem preenchidos em todos — inclusive nas formas
  * que HOJE produzem fechamento cego.
@@ -26,14 +26,14 @@ async function main() {
   const { PGlite } = require(PGLITE);
   const db = new PGlite();
 
-  // Migration 47 (só a parte da tabela incidents) + 85 (o trigger, byte a byte
+  // Migration 47 (só a parte da tabela incidents) + 86 (o trigger, byte a byte
   // do arquivo que vai pro Johnny aprovar — não uma cópia digitada).
   const m47 = fs
     .readFileSync(path.join(RAIZ, "frontend", "scripts", "47_incidents_agent_state.sql"), "utf8")
     .split("-- Liga cada falha crua")[0]; // até antes de incident_occurrences
-  const m85 = fs.readFileSync(path.join(RAIZ, "scripts", "85_incidents_resolved_guard.sql"), "utf8");
+  const m86 = fs.readFileSync(path.join(RAIZ, "scripts", "86_incidents_resolved_guard.sql"), "utf8");
   await db.exec(m47.replace(/alter table [^;]*enable row level security;/g, ""));
-  await db.exec(m85);
+  await db.exec(m86);
 
   let falhas = 0;
   const ok = (cond, rotulo, extra) => {
@@ -99,12 +99,28 @@ async function main() {
     JSON.stringify(r),
   );
 
-  console.log("\n== Não-regressão A: reabertura mantém o histórico ==");
+  console.log("\n== Regra nova A: reabertura LIMPA resolved_at/resolved_by (card 261b295b) ==");
   await db.query(`update incidents set status='open' where id=$1`, [c5]);
   r = await le(c5);
   ok(
-    r.status === "open" && r.resolved_by === "frank" && r.resolved_at != null,
-    "fixed→open não apaga resolved_* (padrão que o detector já usa, caso ce6e157d)",
+    r.status === "open" && r.resolved_by == null && r.resolved_at == null,
+    "fixed→open zera resolved_* (carimbo velho mentiria pra próxima medição do detector)",
+    JSON.stringify(r),
+  );
+
+  console.log("\n== Regra nova A2: reabertura com valor EXPLÍCITO do chamador preserva o que ele mandou ==");
+  await db.query(
+    `update incidents set status='fixed', resolved_by='frank', resolved_at='2026-08-20T21:00:00Z' where id=$1`,
+    [c5],
+  );
+  await db.query(
+    `update incidents set status='open', resolved_at='2026-08-19T00:00:00Z' where id=$1`,
+    [c5],
+  );
+  r = await le(c5);
+  ok(
+    new Date(r.resolved_at).toISOString() === "2026-08-19T00:00:00.000Z" && r.resolved_by == null,
+    "campo que o chamador mexeu fica; campo que ele não mexeu é limpo",
     JSON.stringify(r),
   );
 

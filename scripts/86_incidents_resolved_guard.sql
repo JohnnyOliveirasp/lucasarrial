@@ -1,5 +1,6 @@
--- 85: trava no banco — nenhum incidente entra ou permanece fechado
+-- 86: trava no banco — nenhum incidente entra ou permanece fechado
 -- (status 'fixed'/'ignored') sem resolved_at/resolved_by preenchidos.
+-- (Era 85; renumerada — o 85 já está reservado pela PR #18, trial-expiry-v2.)
 --
 -- POR QUE TRIGGER (e não default nem CHECK):
 --   · default de coluna só age em INSERT sem o campo e não pode depender do
@@ -21,10 +22,11 @@
 --   · valores mandados pelo chamador NUNCA são sobrescritos
 --   · update qualquer (bump de ocorrência, renota) numa linha JÁ fechada sem
 --     data NÃO é carimbado — seria inventar data de um fechamento antigo, e
---     data inventada é pior que campo vazio (os 2 casos históricos de 21/07
---     ficam nulos de propósito, marcados como "data desconhecida").
---   · reabertura (fixed/ignored → open/...) não é tocada: resolved_at fica
---     como histórico do último fechamento (padrão já usado pelo detector).
+--     data inventada é pior que campo vazio.
+--   · reabertura (fixed/ignored → open/...) LIMPA resolved_at/resolved_by
+--     (card 261b295b: o carimbo velho mente pra próxima medição do detector)
+--     — MAS só quando o chamador não mexeu nos campos nesse mesmo update;
+--     valor mandado explicitamente pelo chamador nunca é sobrescrito.
 --
 -- NÃO APLICAR SEM AVAL DO JOHNNY (regra dura 21). Depois de aplicada,
 -- registrar aqui a data, como nas migrations anteriores.
@@ -41,6 +43,17 @@ begin
     end if;
     if new.resolved_by is null or btrim(new.resolved_by) = '' then
       new.resolved_by := 'nao-informado (trigger)';
+    end if;
+  elsif tg_op = 'UPDATE'
+     and new.status not in ('fixed', 'ignored')
+     and old.status in ('fixed', 'ignored') then
+    -- Reabertura: limpa o carimbo do fechamento antigo, a menos que o
+    -- chamador tenha mandado um valor próprio nesse mesmo update.
+    if new.resolved_at is not distinct from old.resolved_at then
+      new.resolved_at := null;
+    end if;
+    if new.resolved_by is not distinct from old.resolved_by then
+      new.resolved_by := null;
     end if;
   end if;
   return new;

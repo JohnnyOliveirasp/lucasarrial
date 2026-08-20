@@ -98,6 +98,11 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
         .from("incidents" as never)
         .update({
           status: reopened ? "open" : existing.status,
+          // Reabrir LIMPA resolved_at/resolved_by (card 261b295b): o carimbo
+          // do fechamento antigo mentiria pra próxima medição do detector.
+          // Bump que mantém o status (userError fechado) NÃO passa por aqui —
+          // re-carimbaria a data histórica.
+          ...(reopened ? closureFields("open", "system") : {}),
           occurrences: (existing.occurrences ?? 1) + 1,
           affected_emails: [...emails],
           last_seen_at: f.at,

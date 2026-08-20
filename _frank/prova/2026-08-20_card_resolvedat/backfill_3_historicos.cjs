@@ -14,7 +14,7 @@
  *    SEM evidência: nenhuma agent_note, resolution_note nula, sem updated_at
  *    na tabela, nada nos _frank/prova da época. → resolved_at FICA NULO e a
  *    linha ganha nota explícita "data de fechamento desconhecida" (o trigger
- *    da migration 85 não carimba linha já fechada, de propósito).
+ *    da migration 86 não carimba linha já fechada, de propósito).
  *
  * Sem --confirmar, SIMULA. Releitura após gravar; conta linhas afetadas.
  */

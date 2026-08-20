@@ -22,14 +22,21 @@ test("ignored TAMBÉM grava resolved_by e resolved_at (o bug era só 'fixed' gra
   assert.ok(f.resolved_at);
 });
 
-test("status não-fechado não adiciona campo nenhum", () => {
+test("status não-fechado LIMPA os campos (reabrir zera resolved_at/resolved_by — card 261b295b)", () => {
   for (const status of ["open", "investigating", "fixing"]) {
-    assert.deepEqual(closureFields(status, "agent"), {}, `status ${status}`);
+    assert.deepEqual(
+      closureFields(status, "agent"),
+      { resolved_by: null, resolved_at: null },
+      `status ${status}`,
+    );
   }
 });
 
-test("status desconhecido não adiciona campo nenhum (defensivo)", () => {
-  assert.deepEqual(closureFields("banana", "agent"), {});
+test("status desconhecido também limpa (defensivo: nunca carimba fechamento por engano)", () => {
+  assert.deepEqual(closureFields("banana", "agent"), {
+    resolved_by: null,
+    resolved_at: null,
+  });
 });
 
 test("`at` explícito é respeitado (incidente que nasce fechado usa o momento da ocorrência)", () => {
