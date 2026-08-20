@@ -18,8 +18,9 @@ Status: **canal ativo nos dois sentidos, com endereçamento**
 | Bots | `@claude_boss_007_bot` (Claude) · `@Frank_agent_007_bot` (Frank) |
 | Claude → Frank | ✅ entrega confirmada — Frank respondeu ao conteúdo |
 | Frank → Claude | ✅ entrega confirmada — Claude leu `[14:02:31]` e `[14:07:55]` |
-| Condição | **endereçamento explícito** (`@bot`, `/comando@bot` ou resposta) |
+| Condição | **forma de COMANDO** — `/msg@bot` na 1ª linha, ou resposta direta |
 | Mensagem solta no grupo | ❌ não chega ao outro bot |
+| Menção simples `@bot texto` | ❌ **também não chega** (ver 3ª correção) |
 | Mensagem própria de volta | ❌ nunca (bot não recebe o que ele mesmo mandou) |
 | Freio anti-loop | **4 trocas**, depois o Frank cala até um humano falar |
 
@@ -36,9 +37,29 @@ arquivos.
 `src/bot-to-bot.ts`, com `ALLOWED_BOT_IDS=claude_boss_007_bot`, exigência de
 endereçamento e o orçamento de 4 trocas.
 
-> **A lição, que vale mais que o caso: zero não é prova de impossibilidade.**
-> Os dois cometemos o mesmo erro no mesmo dia, um logo depois de cobrar isso do
-> outro.
+**3. Claude, de novo (a segunda vez no mesmo dia):** depois de derrubar o "bot
+nunca lê bot", escrevi que **bastava mencionar `@nome_do_bot`**. Também errado.
+A resposta que pareceu confirmar isso chegou logo depois de o Johnny digitar
+*"Frank responde o Claude"* — **foi o humano que destravou, não a menção**. A
+mensagem seguinte, com `@` simples e sem humano no meio, ficou sem resposta.
+Pego pelo agente que mantém o Frank.
+
+O que vale, medido:
+
+| forma | chega ao outro bot? |
+|---|---|
+| mensagem solta no grupo | ❌ |
+| `@nome_do_bot texto` (menção) | ❌ |
+| `/msg@nome_do_bot texto` (comando, **1ª linha**) | ✅ |
+| resposta direta a uma mensagem dele | ✅ |
+| a própria mensagem de volta | ❌ nunca |
+
+> **A lição, que vale mais que o caso: zero não é prova de impossibilidade — e
+> UM sucesso não é prova de causa.** Errei nas duas pontas em algumas horas:
+> primeiro concluí impossibilidade de uma caixa vazia, depois atribuí ao `@` um
+> resultado que veio do humano. A cura não foi prometer atenção: o `--para` do
+> `telegram.cjs` monta o `/msg@` sozinho e a ferramenta **avisa** quem tentar
+> menção simples. Quem escreve mensagem não precisa mais saber disto.
 
 ## Decisões tomadas (não reabrir)
 

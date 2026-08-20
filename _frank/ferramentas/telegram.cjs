@@ -7,21 +7,31 @@
  * exatamente o que deu errado com o DDL em 18/08. Agora os dois agentes falam
  * no MESMO grupo, e ele lê a conversa em vez de repassá-la.
  *
- * ⚠️ BOT FALA COM BOT, SIM — mas só com ENDEREÇAMENTO EXPLÍCITO.
- * Eu escrevi aqui que "o Telegram não entrega a um bot as mensagens de outro
- * bot". ERRADO, e provado errado em 20/08 14:02Z: o Frank e eu somos bots
- * diferentes e nos lemos. O que enganou foi o `--diagnostico` marcar 0
- * mensagens de bot — tirei conclusão grande de um zero, que é exatamente o
- * erro que este repo vive cobrando.
+ * ⚠️ BOT FALA COM BOT — mas só em FORMA DE COMANDO. Este bloco já foi reescrito
+ * três vezes em um dia; leia como registro de medição, não como lei.
  *
- * O que vale de verdade:
- *   - mensagem SOLTA no grupo NÃO chega ao outro bot;
- *   - chega quando é endereçada: `@nome_do_bot` no texto, ou `/comando@bot`,
- *     ou resposta a uma mensagem dele — e com Bot-to-Bot Mode ligado no
- *     BotFather;
- *   - o bot continua não recebendo as PRÓPRIAS mensagens de volta.
- * Então: SEMPRE inclua `@destino_bot` quando estiver falando com o outro
- * agente. Sem o @, você está falando sozinho e achando que conversou.
+ *   1ª versão: "bot nunca lê bot, é limite da plataforma".  ERRADO.
+ *      Base: `--diagnostico` deu 0 mensagens de bot. Era caixa vazia (o Frank
+ *      ainda não tinha postado), não impossibilidade. Conclusão grande de um
+ *      zero — o erro que este repo vive cobrando, cometido por mim E por ele
+ *      no mesmo dia.
+ *
+ *   2ª versão: "basta mencionar `@nome_do_bot`".  TAMBÉM ERRADO.
+ *      Base: o Frank respondeu depois de uma mensagem minha com `@`. Só que a
+ *      resposta veio logo após o Johnny digitar "Frank responde o Claude" — foi
+ *      o HUMANO que destravou, não a menção. A mensagem seguinte, com `@`
+ *      simples, ficou sem resposta.
+ *
+ *   3ª versão (o que está valendo):
+ *      - mensagem solta no grupo .......... NÃO chega ao outro bot
+ *      - `@nome_do_bot texto` (menção) .... NÃO chega
+ *      - `/msg@nome_do_bot texto` ......... CHEGA (comando endereçado)
+ *      - resposta direta a uma mensagem dele ... CHEGA
+ *      - a própria mensagem de volta ...... NUNCA chega (bot não se ouve)
+ *
+ * O comando tem que estar na PRIMEIRA linha — comando no meio do texto não é
+ * comando. Por isso `--para` monta o prefixo sozinho: ninguém deveria precisar
+ * lembrar disto na hora de escrever.
  *
  * ⚠️ ORÇAMENTO ANTI-LOOP: o lado do Frank corta a conversa depois de 4 trocas
  * e fica calado até um humano falar. É proposital (dois bots conversando pra
@@ -31,7 +41,9 @@
  * de propósito — o agente não precisa (nem pode) abrir o .env de pagamento.
  *
  * USO (de qualquer pasta):
- *   node _frank/ferramentas/telegram.cjs --arquivo msg.txt        # RECOMENDADO
+ *   node _frank/ferramentas/telegram.cjs --arquivo msg.txt --para frank
+ *        ^ RECOMENDADO. `--para` monta /msg@<bot>, que e o unico formato que
+ *          o outro AGENTE recebe. Sem ele voce fala so pro Johnny.
  *   node _frank/ferramentas/telegram.cjs --enviar "texto" [--quem claude|frank]
  *   node _frank/ferramentas/telegram.cjs --ler                    # o que chegou depois
  *   node _frank/ferramentas/telegram.cjs --ler --tudo             # tudo, do log local
@@ -86,7 +98,12 @@ function credenciais({ exigeChat = true } = {}) {
         `  Mande uma mensagem no grupo e rode --diagnostico: ele imprime o id.`,
     );
   }
-  return { token, chat, remetente: env.TELEGRAM_REMETENTE || "claude" };
+  return {
+    token,
+    chat,
+    remetente: env.TELEGRAM_REMETENTE || "claude",
+    destino: env.TELEGRAM_BOT_DESTINO || "",
+  };
 }
 
 /** Chama a Bot API. NUNCA deixa o token vazar na mensagem de erro. */
@@ -105,14 +122,44 @@ async function api(token, metodo, corpo) {
 }
 
 // ── enviar ──────────────────────────────────────────────────────────────────
-function montar(texto, quem) {
+/**
+ * ⚠️ MENÇÃO SIMPLES NÃO ENTREGA. Terceira revisão deste comentário em um dia,
+ * então vai o que foi MEDIDO, não o que é elegante:
+ *
+ *   `@Frank_agent_007_bot texto`      -> NÃO chegou (mandei 14:1x, sem resposta)
+ *   `/msg@Frank_agent_007_bot texto`  -> forma de comando endereçado
+ *   resposta direta a uma mensagem dele -> também vale
+ *
+ * A "resposta" que eu achei que tinha funcionado com menção simples veio depois
+ * do Johnny digitar "Frank responde o Claude" — foi o humano, não o @.
+ *
+ * Por isso o prefixo é AUTOMÁTICO aqui: quem escreve mensagem não pode ter que
+ * lembrar disso. `--para frank` monta `/msg@<bot>` na PRIMEIRA linha (comando
+ * fora do início não é comando).
+ */
+function montar(texto, quem, paraBot) {
   const nome = IDENTIDADE[quem] || quem;
-  return `${nome}\n${texto}`;
+  const cabeca = paraBot ? `/msg@${paraBot}\n` : "";
+  return `${cabeca}${nome}\n${texto}`;
 }
 
-async function enviar(texto, quem, seco) {
-  const { token, chat, remetente } = credenciais();
-  const corpo = montar(texto, quem || remetente);
+async function enviar(texto, quem, seco, paraBot) {
+  const { token, chat, remetente, destino } = credenciais();
+  const alvo = paraBot === true ? destino : paraBot || null;
+  if (paraBot && !alvo) {
+    throw new Error(
+      "--para pedido mas TELEGRAM_BOT_DESTINO está vazio no .env.telegram.\n" +
+        "  Ponha o username do outro bot, sem @ (ex.: Frank_agent_007_bot).",
+    );
+  }
+  // Rede: menção simples no texto sem o comando é o erro de 20/08.
+  if (!alvo && /@[A-Za-z0-9_]+_bot\b/.test(texto)) {
+    console.error(
+      "⚠️  O texto menciona um bot com @ mas você não passou --para.\n" +
+        "    Menção simples NÃO é entregue a outro bot. Use --para frank.",
+    );
+  }
+  const corpo = montar(texto, quem || remetente, alvo);
   if (seco) {
     console.log("--- ENSAIO (nada foi enviado) ---");
     console.log(`para chat_id: ${chat}`);
@@ -360,12 +407,16 @@ const tem = (nome) => process.argv.includes(nome);
     if (tem("--diagnostico")) return await diagnostico();
     if (tem("--pendentes")) return await pendentes();
     if (tem("--ler")) return await ler({ tudo: tem("--tudo") });
+    const para = tem("--para") ? (arg("--para") || true) : null;
+    const alvo = para === "frank" || para === true ? true : para;
     const arquivo = arg("--arquivo");
     if (arquivo) {
-      return await enviar(fs.readFileSync(arquivo, "utf8"), arg("--quem"), tem("--seco"));
+      return await enviar(
+        fs.readFileSync(arquivo, "utf8"), arg("--quem"), tem("--seco"), alvo,
+      );
     }
     const texto = arg("--enviar");
-    if (texto) return await enviar(texto, arg("--quem"), tem("--seco"));
+    if (texto) return await enviar(texto, arg("--quem"), tem("--seco"), alvo);
     console.log(fs.readFileSync(__filename, "utf8").split("*/")[0].split("/**")[1] || "");
   } catch (e) {
     console.error(`ERRO: ${e.message}`);
