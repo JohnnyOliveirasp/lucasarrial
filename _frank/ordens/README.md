@@ -26,6 +26,13 @@ seguida.
 > **Nunca no Telegram:** segredo (token, chave, senha), bloco de código ou
 > saída de comando, e dado que identifique aluno sem necessidade.
 
+## ⛔ ENCERRADO — regra de crédito (20/08)
+
+**`2026-08-20_REGRA_FINAL_CREDITO.md`** — *"Aluno pagou, tem créditos. Parou de
+pagar, não terá mais créditos novos e usa os que tem até acabar."* Dita pelo
+Johnny, assunto **fechado**. Aplique e feche; não escale, não refine, não
+reabra.
+
 ## ⭐ LEIA ESTA PRIMEIRO (20/08)
 
 **`2026-08-20_dono_da_fila_e_fila_zerada.md`** — você é o DONO da fila (regra
@@ -51,7 +58,7 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 | 🌙 Rotina das Falhas 24h (turno da noite) | `2026-08-20_decisoes_55_trancadas_e_turno_noite.md` (item 2) |
 | 🔴 Correções da ronda de 20/08 (janela do QA, worktree) | `2026-08-20_correcoes_da_ronda.md` |
 | 💬 Canal: Telegram + git, e como ligar o teu lado | `2026-08-20_canal_telegram.md` |
-| Crédito: quem perde, quem mantém | `2026-08-18_regra_final_pagou_fica.md` ⚠️ **não confunda com `2026-08-18_cancelar_credito_no_vencimento.md`, que ela substitui** |
+| **Crédito: quem perde, quem mantém** | ⭐ `2026-08-20_REGRA_FINAL_CREDITO.md` — substitui TODAS as anteriores do assunto |
 | Gate das telas (Roteiro, Edição, Settings) | `2026-08-18_gate_por_credito.md` |
 | Congelar a lista + trial × venda | `2026-08-18_ok_para_executar.md` (itens 1 e 3) |
 | Vigia noturno | `2026-08-18_vigia_noturno.md` |
