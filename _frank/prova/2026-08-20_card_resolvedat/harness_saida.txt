@@ -1,0 +1,31 @@
+== Caminho 1: aba Falhas (admin PATCH), forma ANTIGA de 'ignorar': só {status, resolution_note} ==
+✓  ignored sem campos → trigger preencheu — {"status":"ignored","resolved_at":"2026-08-20T20:45:36.131Z","resolved_by":"nao-informado (trigger)","resolved_commit":null}
+
+== Caminho 2: /agent/actions set_status, forma ANTIGA de 'ignored': só {status} ==
+✓  ignored via agente → preenchido — {"status":"ignored","resolved_at":"2026-08-20T20:45:36.134Z","resolved_by":"nao-informado (trigger)","resolved_commit":null}
+
+== Caminho 3: script ad-hoc de ronda (forma que produziu o 9b7cc261): {status:'fixed', resolution_note} ==
+✓  fixed ad-hoc sem campos → preenchido — {"status":"fixed","resolved_at":"2026-08-20T20:45:36.136Z","resolved_by":"nao-informado (trigger)","resolved_commit":null}
+
+== Caminho 4: ingest.ts, nasce 'ignored' (regra 17/08) — forma ANTIGA: resolved_at SEM resolved_by ==
+✓  insert nascido fechado → resolved_by preenchido e resolved_at do chamador PRESERVADO — {"status":"ignored","resolved_at":"2026-08-20T12:00:00.000Z","resolved_by":"nao-informado (trigger)"}
+
+== Caminho 5: fechamento correto (código novo / fechar_incidente.cjs): manda tudo ==
+✓  valores do chamador NUNCA são sobrescritos — {"status":"fixed","resolved_at":"2026-08-20T21:00:00.000Z","resolved_by":"frank","resolved_commit":"abc1234"}
+
+== Não-regressão A: reabertura mantém o histórico ==
+✓  fixed→open não apaga resolved_* (padrão que o detector já usa, caso ce6e157d) — {"status":"open","resolved_at":"2026-08-20T21:00:00.000Z","resolved_by":"frank","resolved_commit":"abc1234"}
+
+== Não-regressão B: update qualquer em incidente fechado não mexe nos campos ==
+✓  bump de ocorrência não altera resolved_at já gravado — Thu Aug 20 2026 16:45:36 GMT-0400 (Eastern Daylight Time) == Thu Aug 20 2026 16:45:36 GMT-0400 (Eastern Daylight Time)
+
+== Não-regressão C: incidente aberto segue sem resolved_* ==
+✓  open não ganha campo nenhum — {"status":"open","resolved_at":null,"resolved_by":null,"resolved_commit":null}
+
+== Não-regressão D: linha JÁ fechada e cega (caso 72055f75/bee2fb8b) não ganha data inventada ==
+✓  bump em fechada-cega NÃO inventa resolved_at (data inventada é pior que campo vazio) — {"status":"ignored","resolved_at":null,"resolved_by":null,"resolved_commit":null}
+
+== Não-regressão E: reabrir e RE-fechar carimba de novo (transição real) ==
+✓  open→fixed depois de reaberta → carimbado — {"status":"fixed","resolved_at":"2026-08-20T20:45:36.169Z","resolved_by":"nao-informado (trigger)","resolved_commit":null}
+
+TODOS OS CENÁRIOS PASSARAM

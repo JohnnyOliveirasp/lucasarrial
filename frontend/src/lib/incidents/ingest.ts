@@ -10,6 +10,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { classifyCause, errorSignature, incidentTitle } from "./classify";
+import { closureFields } from "./closure";
 import { logger } from "@/lib/logger/server";
 
 type RawFailure = {
@@ -124,7 +125,9 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
                   "Fechado automaticamente (regra 17/08): erro do usuário no material enviado — " +
                   "créditos estornados e mensagem explicativa mostrada na tela. " +
                   "Aluno travado (repetição sem nenhuma voz pronta) abre incidente próprio.",
-                resolved_at: f.at,
+                // Fechamento completo: sem resolved_by a coluna fica nula e o
+                // fechamento deixa de ser auditável (card 20/08).
+                ...closureFields("ignored", "sync:user-error", f.at),
               }
             : {}),
           first_seen_at: f.at,

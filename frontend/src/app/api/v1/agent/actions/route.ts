@@ -11,6 +11,7 @@ import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { agentTokenOk } from "@/lib/incidents/agent-auth";
+import { closureFields } from "@/lib/incidents/closure";
 import { sendEmail } from "@/lib/email/resend";
 import { logger } from "@/lib/logger/server";
 
@@ -53,13 +54,11 @@ export async function POST(request: NextRequest) {
       if (!incident_id || !VALID_STATUS.has(status)) {
         return badRequest("set_status requires incident_id and valid status");
       }
-      const update: Record<string, unknown> = { status };
+      // "ignored" também é fechamento: sem resolved_at o incidente fica
+      // invisível pro detector de zumbi (bug medido em 20/08).
+      const update: Record<string, unknown> = { status, ...closureFields(status, "agent") };
       if (typeof resolution_note === "string") update.resolution_note = resolution_note.slice(0, 1000);
       if (typeof resolved_commit === "string") update.resolved_commit = resolved_commit.slice(0, 64);
-      if (status === "fixed") {
-        update.resolved_by = "agent";
-        update.resolved_at = new Date().toISOString();
-      }
       await admin
         .from("incidents" as never)
         .update(update as never)

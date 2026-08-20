@@ -10,6 +10,7 @@
 import { getAdmin } from "@/lib/db/admin";
 import { addExtraCredits } from "@/lib/credits/service";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
+import { closureFields } from "@/lib/incidents/closure";
 
 export const SUPPORT_EMAIL = "suporte@fastcloner.com";
 
@@ -243,7 +244,9 @@ async function openBurstIncident(a: {
           resolution_note:
             "Fechado automaticamente (regra 17/08): moderação de conteúdo bloqueou o pedido — " +
             "o produto funcionou como devia. Fica só como registro.",
-          resolved_at: now,
+          // Fechamento completo: sem resolved_by a coluna fica nula e o
+          // fechamento deixa de ser auditável (card 20/08).
+          ...closureFields("ignored", "burst-rule:moderacao", now),
         }
       : {}),
     first_seen_at: now,
