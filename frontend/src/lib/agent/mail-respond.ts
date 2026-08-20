@@ -20,6 +20,7 @@ import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
 import { buildAccountContext } from "./account";
 import { extractEscalation } from "./escalate";
+import { classifyComplaint, incidentSignature } from "./mail-incident";
 import { agentEnabled } from "./respond";
 import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
 import { sendSupportMail } from "./mail-smtp";
@@ -141,8 +142,18 @@ export type MailSweepSummary = {
 /**
  * Erro técnico que a Fast NÃO resolve → vira INCIDENTE (aba Falhas do /admin),
  * que é exatamente a fila que o Sentinela varre na ronda dele (pedido Johnny
- * 03/08). Dedupe por aluno: reclamação repetida soma ocorrência no mesmo
- * incidente em vez de abrir outro.
+ * 03/08).
+ *
+ * Dedupe por QUEIXA, não só por aluno (correção 20/08, caso Katia — ver
+ * mail-incident.ts): a assinatura carrega a CLASSE da queixa, então queixa
+ * NOVA do mesmo aluno abre chamado NOVO em vez de virar "ocorrência 2" de um
+ * card sobre OUTRO defeito, e a MESMA queixa repetida continua somando
+ * ocorrência num card só (o dedupe legítimo não se perde).
+ *
+ * O que acontece DEPOIS da assinatura (incrementar, reabrir card fechado,
+ * limpar o carimbo de fechamento, preservar o título anterior quando o
+ * assunto muda) é de `lib/incidents/reportar.ts` — porta única desde 22/08,
+ * compartilhada com o WhatsApp. Aqui a gente só entrega a chave certa.
  */
 async function openIncidentForSentinela(
   fromEmail: string,
@@ -159,9 +170,10 @@ async function openIncidentForSentinela(
 ): Promise<number | null> {
   // O corpo vive em lib/incidents/reportar.ts desde 22/08 — o WhatsApp precisa
   // do MESMO caminho, e duas cópias é como o zap ficou sem chamado até hoje.
+  const classe = classifyComplaint(reason, excerpt);
   return abrirChamadoReportado({
-    signature: `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`,
-    title: `Fast (e-mail${technical ? "" : ", atendimento"}): ${reason.slice(0, 90)}`,
+    signature: incidentSignature(technical, fromEmail, classe),
+    title: `Fast (e-mail${technical ? "" : ", atendimento"}${classe ? `, ${classe}` : ""}): ${reason.slice(0, 90)}`,
     description: technical
       ? `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`
       : `Pedido de ATENDIMENTO por e-mail ao suporte@ (cobrança, cancelamento, reembolso ou dúvida de conta) — a Fast não resolve isso sozinha e prometeu ao aluno que a equipe verificaria. Resumo dela: ${reason}`,
