@@ -70,4 +70,42 @@ function urlAssinada(bucket, key, segundos = 3600) {
 const minutos = (seg) => (seg ? `${Math.round(seg / 60)}min` : "?");
 const idadeHoras = (iso) => (Date.now() - new Date(iso).getTime()) / 3600000;
 
-module.exports = { supa, r2, s3, BUCKETS, listar, existe, urlAssinada, minutos, idadeHoras, RAIZ };
+/* ------------------------------------------------------------------ */
+/* Fechamento de incidentes — FUNÇÃO ÚNICA (20/08).                     */
+/* O app já garante resolved_at/resolved_by nos caminhos dele           */
+/* (closureFields / 513f518 + 34b8e6a). Esta é a mesma trava para       */
+/* TODO script NOSSO que escreva incidents.status por fora do app.      */
+/* Regra: nunca monte o patch de status na mão — passe por aqui.        */
+/* ------------------------------------------------------------------ */
+
+const STATUS_FECHADO = ["fixed", "ignored"];
+
+/**
+ * Normaliza um patch de incidents que mexe em `status`:
+ *  - fechamento (fixed/ignored): OBRIGA resolved_at + resolved_by.
+ *    `by` identifica quem fechou (ex.: "frank/rotina-falhas", "vigia",
+ *    "frank/coder"). Sem responsável => throw, não grava capado.
+ *  - status vivo (open/investigating): limpa resolved_at/resolved_by,
+ *    espelhando o app (reabertura não pode carregar data de fechamento
+ *    residual — caso ce6e157d).
+ *  - patch sem `status`: devolve intocado (nota não mexe em fechamento).
+ */
+function fechamento(patch, by) {
+  if (!patch || patch.status === undefined) return patch;
+  if (STATUS_FECHADO.includes(patch.status)) {
+    const quem = patch.resolved_by ?? by;
+    if (!quem) {
+      throw new Error(
+        "fechamento sem responsável: informe `by` (ex.: 'frank/rotina-falhas') — resolved_by é obrigatório ao fechar",
+      );
+    }
+    patch.resolved_at = patch.resolved_at ?? new Date().toISOString();
+    patch.resolved_by = quem;
+  } else {
+    patch.resolved_at = null;
+    patch.resolved_by = null;
+  }
+  return patch;
+}
+
+module.exports = { supa, r2, s3, BUCKETS, listar, existe, urlAssinada, minutos, idadeHoras, RAIZ, fechamento, STATUS_FECHADO };
