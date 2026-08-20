@@ -29,6 +29,13 @@ const A = 1920;
 
 /** Verde do preparo da foto (mesmo tom que o prompt pede). */
 const VERDE = "0x00B140";
+/**
+ * A MESMA cor em "R, G, B" — formato que o ComfyUI quer no `pad_color` do nó
+ * 171 do InfiniteTalk. Vive aqui de propósito: se o chromakey mudar de tom e
+ * o pad do clone não mudar junto, a sobra do enquadramento deixa de ser
+ * comida pelo chromakey e vira moldura visível no vídeo.
+ */
+export const VERDE_RGB = "0, 177, 64";
 /** Tolerâncias que funcionaram no teste de 14/08. */
 const SIMILARIDADE = 0.16;
 const SUAVIDADE = 0.04;

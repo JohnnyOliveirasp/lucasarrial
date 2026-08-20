@@ -27,7 +27,7 @@ import {
 } from "@/lib/heygen/client";
 import { decryptApiKey } from "@/lib/heygen/crypto";
 import { getAdmin } from "@/lib/db/admin";
-import { montarReact, type LayoutMontagem } from "./montagem";
+import { montarReact, VERDE_RGB, type LayoutMontagem } from "./montagem";
 
 const run = promisify(execFile);
 /** Os TTFs viajam no deploy (public/assets) — o libass só precisa da pasta. */
@@ -181,6 +181,14 @@ export async function dispararClone(args: {
     s3Key: args.saidaKey,
     tier: TIER,
     durationSeconds: args.segundos,
+    // ⚠️ 20/08 — o corte dos braços nascia AQUI, não na montagem. O template
+    // encaixa a foto 3:4 no 480×832 do tier cortando a largura pelo centro, e
+    // leva junto os dois braços. `pad` encaixa a pessoa INTEIRA e preenche a
+    // sobra com o verde do chromakey — que a montagem come depois, então na
+    // tela não sobra borda: aparece a pessoa inteira, um pouco menor.
+    // Campo EXCLUSIVO do React; Vídeo Clone e Estúdio não passam nada e
+    // seguem com o template intocado.
+    enquadrar: { modo: "pad", corPad: VERDE_RGB },
   });
   const { jobId } = await runInfiniteTalk(workflow, {
     executionTimeoutMs: cloneExecutionTimeoutMs(TIER, args.segundos),
