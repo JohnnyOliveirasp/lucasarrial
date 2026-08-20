@@ -11,6 +11,7 @@
  * reconciliado quando o usuário aparecer (reconcileUserEntitlements).
  */
 import { getAdmin } from "@/lib/db/admin";
+import { pickAccessEntitlement } from "@/lib/payments/access-rules";
 import type {
   EntitlementStatus,
   EntitlementUpdate,
@@ -123,7 +124,9 @@ async function findUserIdByEmail(email: string): Promise<string | null> {
 /**
  * Recalcula o cache de acesso no profile a partir dos entitlements do usuário.
  * Tem acesso quem possui ≥1 entitlement 'active' não expirado
- * (access_until NULL = vitalício).
+ * (access_until NULL = vitalício) OU 'canceled' com access_until no futuro
+ * (cancelou depois de pagar: o acesso vale até o fim do período já pago —
+ * regra em access-rules.ts, que é onde ela é testada).
  */
 async function recomputeProfileAccess(userId: string): Promise<void> {
   const admin = getAdmin();
@@ -134,11 +137,7 @@ async function recomputeProfileAccess(userId: string): Promise<void> {
     .select("provider, status, access_until")
     .eq("user_id", userId);
 
-  const active = (ents ?? []).find(
-    (e) =>
-      e.status === "active" &&
-      (e.access_until === null || e.access_until > nowIso),
-  );
+  const active = pickAccessEntitlement(ents ?? [], nowIso);
 
   await admin
     .from("profiles")
