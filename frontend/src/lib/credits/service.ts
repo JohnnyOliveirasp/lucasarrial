@@ -6,6 +6,7 @@
  * Usar SEMPRE no servidor (service_role). NUNCA no client.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { destravarAvisoDeCredito } from "@/lib/voices/destravar-aviso-credito";
 
 export type Balance = {
   subscription: number;
@@ -88,6 +89,9 @@ export async function grantSubscriptionCredits(args: {
   });
   if (error) return { ok: false, balance: 0 };
   const r = (data ?? {}) as RpcResult;
+  // ⚠️ O aviso de "você tem 0" fica gravado na voz e NAO se atualiza sozinho.
+  // Aqui e o unico instante em que ele pode ter virado mentira. Nao lanca.
+  if (r.ok) await destravarAvisoDeCredito(args.userId, r.balance ?? 0);
   return { ok: r.ok, balance: r.balance ?? 0 };
 }
 
@@ -106,5 +110,7 @@ export async function addExtraCredits(args: {
   });
   if (error) return { ok: false, balance: 0 };
   const r = (data ?? {}) as RpcResult;
+  // Mesma limpeza do grant: recarga/estorno tambem torna o aviso obsoleto.
+  if (r.ok) await destravarAvisoDeCredito(args.userId, r.balance ?? 0);
   return { ok: r.ok, balance: r.balance ?? 0 };
 }
