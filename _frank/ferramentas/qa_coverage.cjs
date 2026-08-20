@@ -8,12 +8,21 @@
  * denominador na mao.
  *
  * USO:
- *   node _frank/ferramentas/qa_coverage.cjs [--desde 2026-08-19] [--corte 2026-08-20T11:01:00Z]
+ *   node _frank/ferramentas/qa_coverage.cjs [--desde 2026-08-19] [--corte auto|<ISO>]
  *
  *   --desde  primeiro dia a considerar (default: 3 dias atras)
- *   --corte  instante em que a regua nova entrou no ar (o TERMINO do build verde
- *            do runpod-worker, nao o horario do commit). Se informado, o script
- *            separa "antes do corte" e "depois do corte".
+ *   --corte  instante em que a regua nova entrou no ar. O DEFAULT e "auto": o
+ *            script descobre sozinho, perguntando ao GitHub quando o job
+ *            `deploy-runpod` TERMINOU no ultimo run verde.
+ *
+ * A JANELA E O ERRO MAIS FACIL DE COMETER AQUI, e eu ja cometi:
+ *   Em 20/08 usei 11:01Z como corte. 11:01 e a hora do PUSH. O worker so troca
+ *   quando o job `deploy-runpod` termina de apontar o template e reciclar os
+ *   workers - naquele run, 11:41:58Z. Quarenta minutos de geracoes que eu contei
+ *   como "regua nova" eram da regua VELHA.
+ *   REGRA: no runpod-worker vale a hora em que o deploy-runpod TERMINOU, NUNCA a
+ *   do push nem a do inicio do build. Por isso o script pergunta sozinho - pra
+ *   nao depender de eu lembrar.
  *
  * ARMADILHAS JA PAGAS, nao repita:
  *  - `generations` NAO tem user_email. As colunas sao: id, user_id, status,
@@ -21,9 +30,42 @@
  *  - `profiles` NAO tem full_name. Tem: id, email, display_name, access_until.
  *  - O PostgREST corta em 1000 linhas: pagina com .range().
  *  - Consulta que devolve zero pode ser consulta quebrada: o erro CRU e impresso.
+ *  - Conta de admin/socio nao debita credito (bypassesBilling): fora da conta.
  */
 const path = require("path");
+const { execFileSync } = require("child_process");
 const c = require(path.join(__dirname, "_comum.cjs"));
+
+/**
+ * Descobre quando a regua que esta NO AR entrou no ar de verdade.
+ * Fonte: o job `deploy-runpod` do ultimo run VERDE de runpod-worker.yml.
+ * Devolve { corte, sha, run } ou null se nao der pra saber (e ai o script
+ * avisa em vez de inventar uma janela).
+ */
+function descobrirCorte() {
+  const gh = (args) =>
+    execFileSync("gh", args, { cwd: __dirname, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    const runs = JSON.parse(
+      gh(["run", "list", "--workflow=runpod-worker.yml", "--limit", "10",
+          "--json", "databaseId,conclusion,headSha,createdAt"])
+    );
+    for (const r of runs) {
+      if (r.conclusion !== "success") continue;
+      const jobs = JSON.parse(
+        gh(["api", `repos/{owner}/{repo}/actions/runs/${r.databaseId}/jobs`, "--jq", ".jobs"])
+      );
+      const dep = jobs.find((j) => j.name === "deploy-runpod");
+      if (dep && dep.conclusion === "success" && dep.completed_at) {
+        return { corte: dep.completed_at, sha: r.headSha.slice(0, 7), run: r.databaseId };
+      }
+    }
+    return null;
+  } catch (e) {
+    console.log("AVISO: nao consegui perguntar ao GitHub quando o deploy terminou:", e.message);
+    return null;
+  }
+}
 
 // Contas que nao entram na conta: admin/socio nao debitam credito (bypassesBilling)
 // e portanto nao sao indicador de nada.
@@ -70,7 +112,21 @@ function resume(linhas, rotulo) {
 (async () => {
   const cli = typeof c.supa === "function" ? c.supa() : c.supa;
   const desde = arg("--desde", new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10));
-  const corte = arg("--corte", null);
+
+  // Janela: por padrao o script DESCOBRE sozinho quando o deploy terminou.
+  // Passar --corte na mao so pra investigar um run antigo.
+  let corte = arg("--corte", "auto");
+  if (corte === "auto") {
+    const d = descobrirCorte();
+    if (d) {
+      corte = d.corte;
+      console.log(`corte AUTOMATICO: deploy-runpod do sha ${d.sha} terminou em ${corte}`);
+      console.log("(e o termino do deploy, NAO a hora do push - foi esse o erro de 20/08)\n");
+    } else {
+      corte = null;
+      console.log("AVISO: sem corte. Nao afirme nada sobre 'antes x depois' da regua nova.\n");
+    }
+  }
 
   const gens = await paginar(
     cli,
