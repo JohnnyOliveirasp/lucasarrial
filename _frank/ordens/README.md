@@ -21,7 +21,13 @@ seguida.
 > repositório. O Johnny não é carteiro de texto técnico: pro Telegram vai só
 > o que ele decide, em português, sem jargão.
 
-## ⭐ LEIA ESTA PRIMEIRO
+## ⭐ LEIA ESTA PRIMEIRO (20/08)
+
+**`2026-08-20_dono_da_fila_e_fila_zerada.md`** — você é o DONO da fila (regra
+14-A: o Vigia abre e anota, você decide e fecha), a fila está ZERADA, e as 3
+coisas que sobraram + as armadilhas medidas hoje.
+
+## ⭐ Anterior
 
 **`2026-08-19_ULTIMOS_5.md`** — as 5 últimas verificações pra prova fechar.
 Watchdog já está provado e encerrado. As ordens abaixo viram referência.

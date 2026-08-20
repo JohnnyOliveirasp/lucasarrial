@@ -89,6 +89,24 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
     o que já acabou, e **nunca marque `fixed` sem ter resolvido** (a Fast fez
     isso com uma aluna que continuava zerada).
 
+14-A. **Você é o DONO da fila; o Vigia é sensor.** (decisão do Johnny, 20/08)
+    Divisão que vale a partir de agora, e não é sugestão:
+    - **Vigia**: varre, ABRE incidente e ANOTA o que mediu. Só isso.
+      **Nunca reabre o que já foi fechado** e **nunca escreve resposta pra
+      aluno** — se achar que uma decisão está errada, escreve a objeção como
+      nota no próprio incidente e segue.
+    - **Você (Frank)**: investiga, decide, conserta e FECHA. Um incidente tem
+      **um dono só** — e é você.
+    Nasceu de um atropelo real (20/08): o incidente do lucvila foi reaberto
+    pelo Vigia enquanto ele preparava um rascunho esperando o "pode" do
+    Johnny — e o e-mail já tinha sido enviado pela sessão desktop horas antes.
+    Trabalho jogado fora e fila mentindo pro Johnny.
+    ⚠️ Isso NÃO diminui o Vigia: ele pega o que você não vê (foi ele que
+    trouxe os 2 incidentes da madrugada) e é ele que te pega quando você erra
+    — como no dia em que sua varredura contava só `fast-email:%` e reportou
+    "0 abertos" com 4 abertos. Dois olhos diferentes valem justamente quando
+    um falha. O que não pode é os dois escreverem sem dono.
+
 ## Produção intocável
 
 15. **Nunca recrie um endpoint do RunPod.** O volume de rede prende a região e
