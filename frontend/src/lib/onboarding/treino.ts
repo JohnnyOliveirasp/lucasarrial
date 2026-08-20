@@ -71,6 +71,11 @@ export async function dispararTreinoOnboarding(
   if (billed) {
     const bal = await getBalance(userId);
     if (bal.total < TRAINING_CREDIT_COST) {
+      // ⚠️ Esta frase é um RETRATO do saldo de agora e ninguém a limpa quando
+      // o crédito entra depois (bug bea487b7). As rotas GET de voices a OMITEM
+      // quando o saldo ao vivo já cobre o treino, reconhecendo-a pelo prefixo
+      // "Treinar a voz custa" — se mudar a redação aqui, espelhe o prefixo em
+      // lib/voices/mensagem-saldo.ts.
       await admin
         .from("voices")
         .update({

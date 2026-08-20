@@ -17,6 +17,10 @@ import {
 } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { createUploadSlots, isAllowedAudioMime } from "@/lib/r2/presigned";
+import {
+  ehMensagemDeSaldo,
+  saldoVivoCobreTreino,
+} from "@/lib/voices/mensagem-saldo";
 
 const MAX_FILES_PER_VOICE = 20;
 const MAX_NAME_LENGTH = 80;
@@ -153,5 +157,20 @@ export async function GET(request: NextRequest) {
     .order("created_at", { ascending: false });
 
   if (error) return serverError("Failed to list voices");
-  return jsonOk({ voices: data ?? [] });
+
+  // Bug bea487b7: mensagem de saldo insuficiente do onboarding é um retrato
+  // do saldo VELHO — só sai pro cliente se o saldo AO VIVO ainda não cobrir o
+  // treino (critério em lib/voices/mensagem-saldo.ts). Uma checagem cobre a
+  // lista inteira (mesmo usuário); nada é escrito no banco.
+  let voices = data ?? [];
+  if (
+    voices.some((v) => ehMensagemDeSaldo(v.error_message)) &&
+    (await saldoVivoCobreTreino(auth.user_id, auth.email))
+  ) {
+    voices = voices.map((v) =>
+      ehMensagemDeSaldo(v.error_message) ? { ...v, error_message: null } : v,
+    );
+  }
+
+  return jsonOk({ voices });
 }
