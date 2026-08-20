@@ -143,21 +143,52 @@ function montar(texto, quem, paraBot) {
   return `${cabeca}${nome}\n${texto}`;
 }
 
+/**
+ * Menção simples vira comando endereçado, sozinha.
+ *
+ * Username de bot no Telegram TEM que terminar em "bot" — é isso que deixa
+ * detectar com segurança. Se o texto abre com `@algumbot`, a menção é trocada
+ * por `/msg@algumbot`, que é a única forma que o outro bot recebe.
+ *
+ * Isto existe porque avisar não bastou: em 20/08 eu mandei duas mensagens com
+ * menção simples achando que tinham chegado. Ferramenta que só avisa depende de
+ * alguém ler o aviso.
+ */
+function comandarMencao(texto) {
+  const m = texto.match(/^\s*@([A-Za-z0-9_]*[Bb]ot)\b[ \t]*/);
+  if (!m) return { texto, bot: null };
+  // Devolve o destino separado do texto: quem monta a mensagem é o `montar`,
+  // que sabe pôr o comando na PRIMEIRA linha. Prefixar aqui colocaria o
+  // comando depois da linha de identidade — e comando fora da 1ª linha não é
+  // comando (pego pelo próprio teste desta ferramenta).
+  return { texto: texto.slice(m[0].length), bot: m[1] };
+}
+
 async function enviar(texto, quem, seco, paraBot) {
   const { token, chat, remetente, destino } = credenciais();
-  const alvo = paraBot === true ? destino : paraBot || null;
+  let alvo = paraBot === true ? destino : paraBot || null;
   if (paraBot && !alvo) {
     throw new Error(
       "--para pedido mas TELEGRAM_BOT_DESTINO está vazio no .env.telegram.\n" +
         "  Ponha o username do outro bot, sem @ (ex.: Frank_agent_007_bot).",
     );
   }
-  // Rede: menção simples no texto sem o comando é o erro de 20/08.
-  if (!alvo && /@[A-Za-z0-9_]+_bot\b/.test(texto)) {
-    console.error(
-      "⚠️  O texto menciona um bot com @ mas você não passou --para.\n" +
-        "    Menção simples NÃO é entregue a outro bot. Use --para frank.",
-    );
+  // Sem --para, mas o texto abre com menção: converte em vez de só avisar.
+  if (!alvo) {
+    const r = comandarMencao(texto);
+    if (r.bot) {
+      texto = r.texto;
+      alvo = r.bot;
+      console.error(
+        `ℹ️  menção @${r.bot} convertida em /msg@${r.bot} — ` +
+          "menção simples não é entregue a outro bot.",
+      );
+    } else if (/@[A-Za-z0-9_]*[Bb]ot\b/.test(texto)) {
+      console.error(
+        "⚠️  O texto cita um bot com @ no MEIO do texto. Comando fora da 1ª\n" +
+          "    linha não é comando — use --para <bot> se a mensagem é pra ele.",
+      );
+    }
   }
   const corpo = montar(texto, quem || remetente, alvo);
   if (seco) {

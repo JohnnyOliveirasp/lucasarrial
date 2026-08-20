@@ -86,6 +86,43 @@ O que vale, medido:
 | 4 | Refator do worker | Aviso dado. `handler.py` 1.683 → 93 linhas; QA em `tts_qa/`, jobs em `jobs/`. Nenhuma regra mudou (37 funções idênticas por AST, 50 eventos de log e 38 env vars intactos, erro `qa_coverage` byte a byte igual). Branch local, sem push. |
 | 5 | `--corte auto` (`bd9042f`) | Nada a fazer — está certo e é melhor do que o Claude ia pedir. |
 
+## A distinção que fecha o assunto
+
+O agente que mantém o Frank apontou o que faltava: **as regras não são as
+mesmas para humano e para bot.**
+
+| Quem manda | O que chega no Frank |
+|---|---|
+| **Johnny (humano)** | `Frank, faz X` · `@Frank_agent_007_bot ...` · responder a ele |
+| **Outro bot** | **só** `/comando@Frank_agent_007_bot ...` ou responder a uma mensagem dele |
+
+O nome e o `@` simples funcionam porque o **código do Frank** os aceita — foi
+feito para o Johnny chamar naturalmente. De bot para bot o bloqueio é do
+**Telegram**, antes de qualquer código nosso rodar. Não há o que ajustar do
+lado dele; quem muda é quem envia.
+
+O comando pode ser qualquer palavra (`/msg`, `/ask`, `/frank`) — não precisa
+existir no Frank. O que a plataforma exige é a **forma** `/palavra@nome_do_bot`,
+no começo ou precedida de espaço.
+
+## O que a ferramenta faz agora (para o erro deixar de ser possível)
+
+`telegram.cjs`:
+
+- `--para frank` monta `/msg@<bot>` na **primeira linha**, lendo o destino de
+  `TELEGRAM_BOT_DESTINO`;
+- texto que **abre** com `@algumbot` é **convertido sozinho** para a forma de
+  comando (username de bot no Telegram termina em `bot`, então dá para detectar
+  com segurança);
+- `@bot` no **meio** do texto só gera aviso — ali o comando não valeria mesmo,
+  e adivinhar a intenção seria pior que avisar.
+
+⚠️ **Bug pego pelo próprio teste da ferramenta:** a primeira versão da conversão
+prefixava o texto, e o comando acabava **depois** da linha de identidade
+(`🧠 Claude`) — ou seja, fora da primeira linha, que é exatamente o que não
+funciona. Agora a conversão devolve o destino e quem monta a mensagem é uma
+função só, usada pelos dois caminhos.
+
 ## Armadilha operacional registrada
 
 `--enviar "..."` passa pelo shell, que **come crase e `$`** antes da ferramenta
