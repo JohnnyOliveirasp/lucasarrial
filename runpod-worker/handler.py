@@ -314,7 +314,17 @@ def _handle_train(inp: dict) -> dict:
         # Solução simples: ffmpeg → WAV stereo 44.1k temp; Demucs lê; depois normaliza pra mono 16k.
         stereo_wav = vocals_dir / f"{src.stem}_in.wav"
         stereo_wav.parent.mkdir(parents=True, exist_ok=True)
-        _run_ffmpeg_stereo_44k(src, stereo_wav)
+        # Arquivo SEM faixa de áudio (foto da pasta do Drive que entrou na
+        # lista — incidente 910ea757) não pode derrubar o treino inteiro: PULA
+        # e segue com os que prestam. Só falha o job se NENHUM arquivo servir
+        # (aí a mensagem ao aluno é verdadeira). O fix de raiz está no import
+        # do onboarding; esta é a rede de baixo.
+        try:
+            _run_ffmpeg_stereo_44k(src, stereo_wav)
+        except RuntimeError as exc:
+            _log("error", "train.preprocess.skipped", file=src.name, error=str(exc)[:200])
+            preprocess_stats.append({"file": src.name, "skipped": "sem faixa de audio"})
+            continue
 
         vocals_wav = separate_vocals_demucs(stereo_wav, vocals_dir, log=lambda m: _log("info", "demucs", detail=m))
         normalized = norm_dir / f"{src.stem}_mono16k.wav"

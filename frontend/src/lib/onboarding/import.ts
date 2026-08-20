@@ -365,7 +365,25 @@ export async function importTrainingAudios(
     const fileId = fileIds[i];
     try {
       const file = await downloadDriveFile(fileId, MAX_AUDIO_BYTES);
+      // Só ÁUDIO entra na lista do treino (incidente 910ea757, 20/08): a pasta
+      // do Drive do aluno costuma misturar as FOTOS com os áudios, e todo
+      // arquivo virava `raw_audio_paths`. No treino, o ffmpeg de conversão
+      // topava um .jpg e devolvia "Output file #0 does not contain any
+      // stream" — o job inteiro falhava e o aluno recebia "seu arquivo chegou
+      // corrompido, envie de novo" (mensagem falsa: ele nunca enviou nada,
+      // veio da planilha). Medido: 4 vozes travadas, uma delas com 9 de 9
+      // arquivos sendo foto. Não-áudio agora é "ignorado", não derruba a voz.
       const ext = pickExtension(file.filename, file.contentType, "mp3");
+      const ehAudio =
+        (file.contentType || "").toLowerCase().startsWith("audio/") ||
+        /^(mp3|m4a|wav|aac|ogg|opus|flac|wma|amr|mp4|mov|webm|mkv)$/i.test(ext);
+      if (!ehAudio) {
+        result.ignored!.push({
+          id: fileId,
+          reason: `não é áudio (${file.contentType || ext}) — provavelmente foto na pasta do Drive`,
+        });
+        continue;
+      }
       const safeId = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
       // Chave determinística por fileId — re-rodar sobrescreve o mesmo objeto.
       const key = buildRawAudioKey(userId, voiceId, i, `onboarding_${safeId}.${ext}`);
