@@ -134,16 +134,65 @@ async function enviar(texto, quem, seco) {
 }
 
 // ── ler ─────────────────────────────────────────────────────────────────────
-function lerOffset() {
+/**
+ * ⚠️ POR QUE ISTO É MAIS COMPLICADO DO QUE PARECE (bug real, 20/08):
+ * a versão anterior guardava UM ponteiro só e avançava ele para o último update
+ * BAIXADO — inclusive os que o filtro de chat descartava. Resultado: mensagem do
+ * Frank chegou, o ponteiro passou por cima, e o `--ler` seguinte disse "nada
+ * novo". Ele tinha respondido e eu reportei silêncio.
+ *
+ * Pior: `getUpdates` com offset CONFIRMA no servidor do Telegram, e update
+ * confirmado é APAGADO da fila. Ponteiro errado não perde só a vez — perde a
+ * mensagem pra sempre.
+ *
+ * Agora são DOIS ponteiros e um log local:
+ *   baixado  — até onde já pedimos ao Telegram (evita repetir download)
+ *   mostrado — até onde já foi impresso pra quem lê
+ * e TODO update baixado é gravado em `.env.telegram.log` antes de qualquer
+ * filtro. Se o filtro errar, a mensagem continua no disco.
+ */
+const LOG = path.join(RAIZ, ".env.telegram.log");
+
+function lerPonteiros() {
   try {
-    return Number(fs.readFileSync(OFFSET, "utf8").trim()) || 0;
+    const p = JSON.parse(fs.readFileSync(OFFSET, "utf8"));
+    return { baixado: p.baixado || 0, mostrado: p.mostrado || 0 };
   } catch {
-    return 0;
+    // formato antigo: um número só
+    try {
+      const n = Number(fs.readFileSync(OFFSET, "utf8").trim()) || 0;
+      return { baixado: n, mostrado: 0 };
+    } catch {
+      return { baixado: 0, mostrado: 0 };
+    }
   }
 }
 
-function gravarOffset(v) {
-  fs.writeFileSync(OFFSET, String(v), "utf8");
+function gravarPonteiros(p) {
+  fs.writeFileSync(OFFSET, JSON.stringify(p), "utf8");
+}
+
+/** Grava no disco ANTES de filtrar — filtro errado não pode apagar mensagem. */
+function arquivar(updates) {
+  if (!updates.length) return;
+  fs.appendFileSync(
+    LOG,
+    updates.map((u) => JSON.stringify(u)).join("\n") + "\n",
+    "utf8",
+  );
+}
+
+/** Releitura do log local (não gasta a fila do Telegram). */
+function doLog() {
+  try {
+    return fs
+      .readFileSync(LOG, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
+  } catch {
+    return [];
+  }
 }
 
 function descreve(u) {
@@ -166,29 +215,49 @@ function descreve(u) {
 
 async function ler({ tudo }) {
   const { token, chat } = credenciais({ exigeChat: false });
-  const offset = tudo ? 0 : lerOffset();
-  const updates = await api(token, "getUpdates", {
-    offset: offset ? offset + 1 : undefined,
+  const p = lerPonteiros();
+
+  // 1. baixa o que ainda não baixamos e ARQUIVA antes de olhar
+  const novos = await api(token, "getUpdates", {
+    offset: p.baixado ? p.baixado + 1 : undefined,
     timeout: 0,
     allowed_updates: ["message", "edited_message", "channel_post"],
   });
-  if (!updates.length) {
-    console.log("nada novo.");
-    return;
-  }
-  const doGrupo = [];
-  for (const u of updates) {
-    const d = descreve(u);
-    if (!d) continue;
-    if (chat && String(d.chat_id) !== String(chat)) continue;
-    doGrupo.push(d);
-  }
-  for (const d of doGrupo) {
+  arquivar(novos);
+  if (novos.length) p.baixado = novos[novos.length - 1].update_id;
+
+  // 2. mostra do LOG (sobrevive a filtro errado e à fila do Telegram sumir)
+  const desde = tudo ? 0 : p.mostrado;
+  const mostrar = doLog()
+    .filter((u) => u.update_id > desde)
+    .map(descreve)
+    .filter((d) => d && (!chat || String(d.chat_id) === String(chat)));
+
+  for (const d of mostrar) {
     console.log(`\n[${d.quando}] ${d.de} (chat ${d.chat})`);
     console.log(d.texto);
   }
-  if (!doGrupo.length) console.log("nada novo neste chat.");
-  gravarOffset(updates[updates.length - 1].update_id);
+  if (!mostrar.length) console.log("nada novo.");
+
+  // 3. só avança o ponteiro do que foi REALMENTE mostrado
+  if (mostrar.length) p.mostrado = Math.max(...mostrar.map((d) => d.update_id));
+  gravarPonteiros(p);
+}
+
+/** Só o que o outro AGENTE falou e ainda não foi respondido. */
+async function pendentes() {
+  const { chat } = credenciais({ exigeChat: false });
+  await ler({ tudo: true }).catch(() => {});
+  const meus = Object.values(IDENTIDADE);
+  const deles = doLog()
+    .map(descreve)
+    .filter((d) => d && (!chat || String(d.chat_id) === String(chat)))
+    .filter((d) => d.is_bot && !meus.some((n) => d.texto.startsWith(n)));
+  console.log(`\n=== ${deles.length} mensagens de OUTRO agente no log ===`);
+  for (const d of deles.slice(-5)) {
+    console.log(`\n[${d.quando}] ${d.de}`);
+    console.log(d.texto.slice(0, 800));
+  }
 }
 
 // ── diagnóstico ─────────────────────────────────────────────────────────────
@@ -290,6 +359,7 @@ const tem = (nome) => process.argv.includes(nome);
   try {
     if (tem("--achar-grupo")) return await acharGrupo();
     if (tem("--diagnostico")) return await diagnostico();
+    if (tem("--pendentes")) return await pendentes();
     if (tem("--ler")) return await ler({ tudo: tem("--tudo") });
     const arquivo = arg("--arquivo");
     if (arquivo) {
