@@ -36,10 +36,17 @@ resolved_at (20/08 03:29) > last_seen_at (19/08 19:19) e não aparece — as 14
 ocorrências enquanto ignored (17→19/08) estão mascaradas. Idem 902a1c85 e
 88eef8aa, re-fechados nas últimas 24h.
 
-Pelo histórico de notas `REINCIDÊNCIA` (que o ingest grava ao reabrir): **9
-incidentes já reabriram automático** (31 reaberturas no total). Ou seja, o
-mecanismo de reabertura EXISTE e funciona (ingest.ts, failure-alert.ts e
-mail-respond.ts reabrem fechado que volta a disparar). A brecha é estreita e
+Pelo histórico de notas `REINCIDÊNCIA` canônicas (texto de ingest.ts:93,
+`by='system'`): **8 incidentes já reabriram automático, 25 notas no total**.
+Número reprodutível por `_frank/ferramentas/2026-08-20_contagem_reincidencia.cjs`
+(o "9/31" da primeira versão deste relatório veio de consulta ad-hoc não
+persistida e NÃO reproduz — corrigido após a revisão do gerente; a variante
+larga, qualquer nota contendo "REINCID" de qualquer autor, dá 10/62, mas mistura
+menção manual com reabertura). ESCOPO da contagem: só ingest.ts grava essa nota;
+failure-alert.ts e mail-respond.ts também reabrem (flip de status) mas SEM nota,
+então contar por nota SUBESTIMA as reaberturas desses dois caminhos — o 8/25 é
+piso, não total. Ou seja, o mecanismo de reabertura EXISTE e funciona nos três
+caminhos, ainda que só um deixe rastro contável. A brecha é estreita e
 específica: **as classes que por desenho NÃO reabrem** — `user_dataset` (regra
 17/08, ingest.ts:~70) e bloqueio de moderação (failure-alert.ts) — bumpam
 `occurrences`/`last_seen_at` em silêncio. Foi por essa porta que o 8d370ef5
