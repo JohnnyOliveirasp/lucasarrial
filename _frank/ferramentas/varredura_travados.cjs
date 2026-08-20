@@ -14,12 +14,21 @@ const arg = (nome, padrao) => {
 const HORAS = arg("horas", 1);
 
 /**
- * tabela, estados suspeitos, "demais" (horas), campo de nome, coluna de data.
+ * tabela, estados suspeitos, "demais" (horas), campo de nome, coluna de data,
+ * modo (opcional): "aviso" = estado LEGÍTIMO de espera — lista à parte
+ * ("AGUARDANDO AÇÃO DO ALUNO"), NÃO conta como preso; só o recorte
+ * pagante parado (regra 3 do _frank/03_ROTINA.md) ganha 🚩 e conta.
  * ⚠️ `react_jobs` é a única em português: a data é `criado_em`.
  */
 const ALVOS = [
   ["voices", ["uploading", "validating"], 0.5, "name", "created_at"],
   ["voices", ["training"], 1.5, "name", "created_at"],
+  // awaiting_training = esperando o aluno acionar o treino (crédito é o único
+  // gate — treino.ts:10 / start-training/route.ts:93). Voz de quem não pagou
+  // fica aqui DE PROPÓSITO; só é problema se for pagante com crédito, áudio
+  // no R2 e ZERO voz ready. Antes de 20/08 esse estado era invisível (27
+  // vozes, algumas há 36 dias, e a varredura dizia "0 presos").
+  ["voices", ["awaiting_training"], 24, "name", "created_at", "aviso"],
   ["training_jobs", ["queued", "running"], 1.5, null, "created_at"],
   ["generations", ["pending", "processing"], 0.5, null, "created_at"],
   ["image_generations", ["pending"], 0.5, "name", "created_at"],
@@ -27,24 +36,81 @@ const ALVOS = [
   ["react_jobs", ["fila", "baixando", "clonando", "montando"], 1, null, "criado_em"],
 ];
 
+/** Mesmo custo do app (frontend/src/lib/credits/config.ts TRAINING_CREDIT_COST). */
+const CUSTO_TREINO = 10_000;
+
 (async () => {
   const db = supa();
   const corte = new Date(Date.now() - HORAS * 3600000).toISOString();
   let total = 0;
 
-  for (const [tabela, estados, limiteHoras, campoNome, colData] of ALVOS) {
+  for (const [tabela, estados, limiteHoras, campoNome, colData, modo] of ALVOS) {
     const cols = ["id", "user_id", "status", colData, campoNome].filter(Boolean).join(", ");
-    const { data, error } = await db
+    const { data, error, count } = await db
       .from(tabela)
-      .select(cols)
+      .select(cols, { count: "exact" })
       .in("status", estados)
       .lt(colData, corte)
       .order(colData, { ascending: true })
-      .limit(50);
+      .limit(modo === "aviso" ? 200 : 50);
     if (error) {
       console.log(`⚠️  ${tabela}: ${error.message}`);
       continue;
     }
+
+    // Estado de espera legítima: seção informativa, sem alarme falso.
+    if (modo === "aviso") {
+      const velhos = (data ?? []).filter((r) => idadeHoras(r[colData]) > limiteHoras);
+      if (velhos.length === 0) continue;
+      console.log(
+        `\n🕗 AGUARDANDO AÇÃO DO ALUNO — ${tabela}: ${count ?? (data ?? []).length} em ` +
+          `[${estados.join("/")}], listando ${velhos.length} com mais de ${limiteHoras}h ` +
+          `(espera legítima: o treino só dispara quando o aluno aciona E tem crédito)`,
+      );
+      if ((count ?? 0) > (data ?? []).length) {
+        console.log(`   ⚠️ listagem cortada: ${count} no total, mostrando ${(data ?? []).length}`);
+      }
+      let suspeitos = 0;
+      for (const r of velhos) {
+        const { data: p } = await db
+          .from("profiles")
+          .select("email, access_until, credits_subscription, credits_extra")
+          .eq("id", r.user_id)
+          .maybeSingle();
+        const ativo = p?.access_until && new Date(p.access_until) > new Date();
+        const saldo = (p?.credits_subscription ?? 0) + (p?.credits_extra ?? 0);
+        // Pagante parado (regra 3): acesso ativo + crédito pro treino +
+        // áudio no R2 + NENHUMA voz ready. Esse merece 🚩 e conta como preso.
+        let flag = "";
+        if (ativo && saldo >= CUSTO_TREINO) {
+          const { count: prontas, error: eReady } = await db
+            .from("voices")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", r.user_id)
+            .eq("status", "ready");
+          if (!eReady && (prontas ?? 0) === 0) {
+            const audio = await listar(BUCKETS.vozes(), `${r.user_id}/${r.id}/`);
+            if (audio.length > 0) {
+              flag = " 🚩 PAGANTE PARADO — acesso ativo, crédito e áudio no R2, zero voz ready";
+              suspeitos++;
+              total++;
+            }
+          }
+        }
+        console.log(
+          `   ${String(r[colData]).slice(0, 16)} (${(idadeHoras(r[colData]) / 24).toFixed(1)}d) ` +
+            `${p?.email ?? r.user_id} ${r[campoNome] ? `"${r[campoNome]}"` : ""}` +
+            (ativo ? " · ATIVO" : "") + ` · saldo ${saldo}` + flag,
+        );
+      }
+      console.log(
+        suspeitos === 0
+          ? `   ✔ nenhum pagante parado nesse grupo (todos sem acesso/sem crédito, ou já têm voz ready)`
+          : `   🚩 ${suspeitos} pagante(s) parado(s) de verdade — investigue (regra 3 do 03_ROTINA)`,
+      );
+      continue;
+    }
+
     const presos = (data ?? []).filter((r) => idadeHoras(r[colData]) > limiteHoras);
     if (presos.length === 0) continue;
 
