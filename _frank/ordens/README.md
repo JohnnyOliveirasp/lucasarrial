@@ -14,12 +14,17 @@ seguida.
 4. **Na dúvida entre duas, pergunte.** Nunca escolha em silêncio quando envolve
    dinheiro de aluno. Aconteceu em 18/08 e foi o Frank quem pegou.
 
-## Regra de canal (18/08)
+## Regra de canal (atualizada 20/08 — ver `2026-08-20_canal_telegram.md`)
 
-> **Coisa técnica vai no git. O Telegram é do Johnny.**
-> DDL, código, saída de comando, lista, consulta — commite, que eu leio do
-> repositório. O Johnny não é carteiro de texto técnico: pro Telegram vai só
-> o que ele decide, em português, sem jargão.
+> **Se eu preciso EXECUTAR aquilo, vai no git. Se é pra alguém SABER, vai no
+> Telegram.**
+> DDL, código, saída de comando, lista, consulta, ordem — **commite**, que eu
+> leio do repositório: histórico, autoria e diff. Mensagem some, commit fica.
+> O grupo **BrothersAI** (Johnny + Frank + Claude, mesmo bot, prefixo de quem
+> fala) carrega o ping e a conversa em português — curto, sem jargão, porque o
+> Johnny lê no celular.
+> **Nunca no Telegram:** segredo (token, chave, senha), bloco de código ou
+> saída de comando, e dado que identifique aluno sem necessidade.
 
 ## ⭐ LEIA ESTA PRIMEIRO (20/08)
 
@@ -42,7 +47,9 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 
 | Assunto | Ordem que vale |
 |---|---|
-| Crédito: quem perde, quem mantém | `2026-08-18_regra_final_pagou_fica.md` |
+| 🔴 Correções da ronda de 20/08 (dinicleia, janela do QA, worktree) | `2026-08-20_correcoes_da_ronda.md` |
+| 💬 Canal: Telegram + git, e como ligar o teu lado | `2026-08-20_canal_telegram.md` |
+| Crédito: quem perde, quem mantém | `2026-08-18_regra_final_pagou_fica.md` ⚠️ **não confunda com `2026-08-18_cancelar_credito_no_vencimento.md`, que ela substitui** |
 | Gate das telas (Roteiro, Edição, Settings) | `2026-08-18_gate_por_credito.md` |
 | Congelar a lista + trial × venda | `2026-08-18_ok_para_executar.md` (itens 1 e 3) |
 | Vigia noturno | `2026-08-18_vigia_noturno.md` |
@@ -58,6 +65,7 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 
 | Ordem | O que morreu |
 |---|---|
+| `2026-08-18_cancelar_credito_no_vencimento.md` | **"venceu = zera o crédito"** — substituída no mesmo dia por `2026-08-18_regra_final_pagou_fica.md`. Quem **pagou** fica com o crédito e com as portas. Confundir as duas já trancou aluno pagante (20/08). |
 | `2026-08-18_ok_para_executar.md` | **item 4.3** — trava por `hasActiveAccess`. Bloquearia quem já pagou. |
 | `2026-08-18_147_sem_acesso.md` | a conclusão (os 147 estavam soltos demais, não bloqueados) |
 | `2026-08-18_trava_decisao_final.md` | ordem de execução (Hotmart → trava) e o recorte por status |
