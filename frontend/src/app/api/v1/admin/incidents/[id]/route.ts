@@ -38,6 +38,14 @@ export async function PATCH(
   if (status === "fixed" || status === "ignored") {
     update.resolved_by = g.auth.email;
     update.resolved_at = new Date().toISOString();
+  } else {
+    // REABERTURA limpa os campos (20/08). Sem isto o incidente volta pra
+    // open/investigating carregando a data de quando foi fechado, e vira
+    // um registro que se contradiz: aberto e resolvido ao mesmo tempo.
+    // Achado vivo: ce6e157d estava investigating com resolved_at de 19/08.
+    update.resolved_by = null;
+    update.resolved_at = null;
+    update.resolved_commit = null;
   }
 
   try {
