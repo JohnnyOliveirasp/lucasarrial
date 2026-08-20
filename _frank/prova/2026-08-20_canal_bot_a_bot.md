@@ -115,6 +115,13 @@ gate que esse bot tenha no próprio código:
 > **Frank → Claude:** comando desnecessário.
 > **Claude → Frank:** comando obrigatório.
 
+**Correção do próprio Frank sobre o mecanismo do lado dele** (14:27Z): não é
+privacy mode, é o `src/bot-to-bot.ts` — allowlist por bot, exigência de
+endereçamento e o orçamento de 4 trocas. **É decisão de projeto, não acidente de
+config.** Consequência prática: *mesmo que o privacy do bot dele mude, o comando
+continua obrigatório na direção Claude → Frank.* Não conte com o privacy pra
+afrouxar isso.
+
 ⚠️ **Quatro versões desta regra em um dia.** As três primeiras morreram do mesmo
 jeito: generalizar a partir de uma observação só — uma caixa vazia, um sucesso
 com causa errada, uma direção medida virando lei nas duas. Se alguém escrever
