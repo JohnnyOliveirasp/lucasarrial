@@ -121,7 +121,7 @@ class RunChunkQATest(unittest.TestCase):
         with mock.patch.object(
             handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: next(transcripts)
         ):
-            best, cov = handler._run_chunk_qa(
+            best, cov, _lac = handler._run_chunk_qa(
                 seg_ruim, 1, CHUNK, regen_fn=lambda: seg_bom,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -138,7 +138,7 @@ class RunChunkQATest(unittest.TestCase):
         stats = fresh_stats()
         transcriber = mock.Mock()
         with mock.patch.object(handler, "_qa_transcribe_seg", transcriber):
-            _best, cov = handler._run_chunk_qa(
+            _best, cov, _lac = handler._run_chunk_qa(
                 seg_mudo, 3, CHUNK, regen_fn=lambda: seg_mudo,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -158,7 +158,7 @@ class RunChunkQATest(unittest.TestCase):
         with mock.patch.object(
             handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: next(it)
         ):
-            _best, cov = handler._run_chunk_qa(
+            _best, cov, _lac = handler._run_chunk_qa(
                 make_seg(), 2, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -197,7 +197,7 @@ class RunChunkQATest(unittest.TestCase):
         # Transcrição None (whisper FALHOU) = inconclusivo → entrega sem regen.
         stats = fresh_stats()
         with mock.patch.object(handler, "_qa_transcribe_seg", return_value=None):
-            _best, cov = handler._run_chunk_qa(
+            _best, cov, _lac = handler._run_chunk_qa(
                 make_seg(), 1, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -316,7 +316,7 @@ class IntrusionLoopTest(unittest.TestCase):
         with mock.patch.object(
             handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: next(it)
         ):
-            best, cov = handler._run_chunk_qa(
+            best, cov, _lac = handler._run_chunk_qa(
                 seg_sujo, 0, CHUNK, regen_fn=lambda: seg_limpo,
                 qa_stats=stats, **qa_kwargs(intrusion_qa_enabled=True),
             )
@@ -330,7 +330,7 @@ class IntrusionLoopTest(unittest.TestCase):
         suja = handler._qa_norm_words("Por menos, " + CHUNK)
         stats = fresh_stats()
         with mock.patch.object(handler, "_qa_transcribe_seg", return_value=suja):
-            _best, cov = handler._run_chunk_qa(
+            _best, cov, _lac = handler._run_chunk_qa(
                 make_seg(), 0, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(intrusion_qa_enabled=True),
             )
@@ -340,6 +340,85 @@ class IntrusionLoopTest(unittest.TestCase):
         # intrusão melhora a escolha, nunca vira estorno em massa.
         self.assertIsNotNone(cov)
         self.assertGreaterEqual(cov, 0.85)
+
+
+class MaiorLacunaTest(unittest.TestCase):
+    """_maior_lacuna: a régua que separa DEFEITO de TEXTO-QUE-NAO-SE-FALA.
+
+    A cobertura sozinha reprovava áudio PERFEITO toda vez que o texto tinha
+    algo não falado (número por extenso, markdown, emoji, rótulo de locutor) —
+    3 variações medidas em 24h, cada uma custando o áudio de um aluno. O que
+    diferencia é a FORMA do buraco: defeito real some um trecho CONTÍNUO;
+    markup some em palavras SOLTAS."""
+
+    def _lacuna(self, chunk, falado):
+        return handler._maior_lacuna(handler._qa_norm_words(falado, "pt"), chunk, "pt")
+
+    # ── áudio BOM (falso negativo antigo): buraco pequeno e espalhado ──
+    def test_rotulo_de_dialogo_da_buraco_de_1(self):
+        c = "Seres: Freud, me explica uma coisa..."
+        self.assertEqual(self._lacuna(c, "Freud, me explica uma coisa..."), 1)
+
+    def test_variacao_de_escrita_do_whisper_da_buraco_pequeno(self):
+        c = "Bem-vinda ao seu portal e ao caminho de volta para voce"
+        self.assertLessEqual(self._lacuna(c, "Bem vinda ao seu portal e ao caminho de volta pra voce"), 2)
+
+    def test_numero_por_extenso_nao_abre_buraco(self):
+        c = "comprar um E trinta e seis como primeiro carro"
+        self.assertEqual(self._lacuna(c, "comprar um E36 como primeiro carro"), 0)
+
+    # ── áudio RUIM (defeito real): buraco grande e contínuo ──
+    def test_audio_que_comeca_no_meio_da_buraco_grande(self):
+        self.assertGreaterEqual(self._lacuna(CHUNK, " ".join(HALF_WORDS)), 6)
+
+    def test_chunk_mudo_e_o_chunk_inteiro(self):
+        esperado = len(handler._qa_norm_words(CHUNK))
+        self.assertEqual(handler._maior_lacuna([], CHUNK), esperado)
+
+    def test_pedaco_comido_no_meio_da_buraco_grande(self):
+        c = "um dois tres quatro cinco seis sete oito nove dez onze doze"
+        self.assertGreaterEqual(self._lacuna(c, "um dois tres doze"), 6)
+
+    # ── guardas ──
+    def test_whisper_falhou_e_inconclusivo(self):
+        self.assertIsNone(handler._maior_lacuna(None, CHUNK))
+
+    def test_chunk_sem_palavras_e_inconclusivo(self):
+        self.assertIsNone(handler._maior_lacuna(CHUNK_WORDS, "..."))
+
+
+class DecisaoDeReprovarTest(unittest.TestCase):
+    """A decisão final: só derruba o job com cobertura baixa E buraco contínuo
+    grande. Espelha o bloco de _handle_inference (limite = max(6, 20% do
+    chunk)) — se mudar lá, muda aqui."""
+
+    GAP_MIN = 6
+
+    def _reprova(self, chunk, falado):
+        got = handler._qa_norm_words(falado, "pt")
+        cov = handler._chunk_coverage(got, chunk, "pt")
+        lac = handler._maior_lacuna(got, chunk, "pt")
+        n = len(handler._qa_norm_words(chunk, "pt"))
+        limite = max(self.GAP_MIN, int(n * 0.20))
+        return cov is not None and cov < 0.85 and (lac is None or lac >= limite)
+
+    def test_audio_bom_com_rotulo_NAO_reprova_mais(self):
+        # Caso serescastro6 real: cobertura 0.833 (abaixo do minimo) mas o
+        # buraco e 1 palavra -> tem que ENTREGAR.
+        c = "Seres: Freud, me explica uma coisa..."
+        self.assertFalse(self._reprova(c, "Freud, me explica uma coisa..."))
+
+    def test_audio_que_comeca_no_meio_CONTINUA_reprovando(self):
+        self.assertTrue(self._reprova(CHUNK, " ".join(HALF_WORDS)))
+
+    def test_chunk_mudo_CONTINUA_reprovando(self):
+        self.assertTrue(self._reprova(CHUNK, ""))
+
+    def test_chunk_curto_nao_cai_por_buraco_proporcional(self):
+        # Chunk de 5 palavras com 1 faltando: 20% de 5 = 1, mas o piso de 6
+        # protege — chunk curto nao pode ser derrubado por buraco minusculo.
+        c = "hoje eu quero falar disso"
+        self.assertFalse(self._reprova(c, "hoje eu quero falar"))
 
 
 if __name__ == "__main__":

@@ -999,6 +999,44 @@ def _chunk_intrusions(got, chunk_text, language="pt"):
     return intrusoes
 
 
+def _maior_lacuna(got, chunk_text, language="pt"):
+    """Maior TRECHO CONTÍNUO do texto que sumiu do áudio (em palavras).
+
+    ⚠️ Por que isto existe (20/08): a cobertura sozinha é uma régua RUIM pra
+    decidir reprovar. Ela conta palavra faltando sem olhar ONDE — e o texto do
+    aluno está cheio de coisa que NINGUÉM FALA em voz alta: número por extenso
+    virando dígito na transcrição, **markdown**, emoji, rótulo de locutor
+    ("Seres:" num roteiro de diálogo), URL, "[pausa]". Cada uma dessas derruba
+    a cobertura alguns pontos e reprovava ÁUDIO PERFEITO — 3 casos medidos em
+    24h, cada um custando o áudio de um aluno, e sempre aparece uma variação
+    nova. Tapar buraco com lista de exceção é corrida perdida.
+
+    A DIFERENÇA REAL entre os dois mundos é a FORMA do buraco:
+      • defeito de verdade (caso Katia): o modelo pula um PEDAÇÃO — chunk mudo,
+        ou áudio que começa no meio. Some um trecho CONTÍNUO e longo.
+      • falso negativo (markup): somem palavras SOLTAS, espalhadas, de 1 em 1.
+
+    Então medimos o maior buraco contínuo em vez de só contar o que falta.
+    Isso não depende de saber QUAIS símbolos não se fala — funciona pra
+    variação que ainda nem apareceu.
+    """
+    import difflib
+
+    expected = _qa_norm_words(chunk_text, language)
+    if not expected:
+        return None
+    if got is None:
+        return None
+    if not got:
+        return len(expected)  # chunk inteiro mudo: buraco = tudo
+    sm = difflib.SequenceMatcher(None, expected, got)
+    maior = 0
+    for tag, i1, i2, _j1, _j2 in sm.get_opcodes():
+        if tag in ("delete", "replace"):
+            maior = max(maior, i2 - i1)
+    return maior
+
+
 def _run_chunk_qa(
     seg,
     idx: int,
@@ -1034,9 +1072,11 @@ def _run_chunk_qa(
         start_qa_retries, echo_qa_retries, coverage_qa_retries, intrusion_qa_retries
     )
     best_seg, best_score, best_coverage = seg, None, None
+    best_lacuna = None
     while attempt < max_attempts:
         score = 0
         coverage = None
+        lacuna_desta = None
         # Caso Katia 19/08: o `idx == 0` que havia aqui limitava o QA de 1a
         # palavra ao PRIMEIRO chunk — do 2o em diante o áudio podia começar no
         # meio do texto sem ninguém conferir (foi exatamente onde quebrou: o
@@ -1070,16 +1110,21 @@ def _run_chunk_qa(
                 score += leak
         if coverage_qa_enabled and attempt < coverage_qa_retries:
             coverage = _chunk_coverage(got, chunk, qa_language)
+            lacuna = _maior_lacuna(got, chunk, qa_language)
             qa_stats["coverage_checked"] += 1
             if coverage is None:
                 qa_stats["coverage_none"] += 1
             else:
-                _log("info", "inference.coverage_qa", idx=idx, attempt=attempt, coverage=coverage)
+                _log(
+                    "info", "inference.coverage_qa", idx=idx, attempt=attempt,
+                    coverage=coverage, maior_lacuna=lacuna,
+                )
                 if coverage < coverage_qa_min:
                     qa_stats["coverage_flagged"] += 1
                     # Penalidade proporcional ao que falta: entre duas
                     # tentativas ruins, best_seg fica com a MAIS completa.
                     score += 100 + int((coverage_qa_min - coverage) * 100)
+            lacuna_desta = lacuna
         if intrusion_qa_enabled and attempt < intrusion_qa_retries:
             intrusoes = _chunk_intrusions(got, chunk, qa_language)
             qa_stats["intrusion_checked"] += 1
@@ -1097,6 +1142,7 @@ def _run_chunk_qa(
                     score += 50 * intrusoes
         if best_score is None or score < best_score:
             best_seg, best_score, best_coverage = seg, score, coverage
+            best_lacuna = lacuna_desta
         if score == 0:
             break
         attempt += 1
@@ -1106,7 +1152,7 @@ def _run_chunk_qa(
             break
         qa_stats["regens"] += 1
         seg = regen_fn()
-    return best_seg, best_coverage
+    return best_seg, best_coverage, best_lacuna
 
 
 def _crossfade_concat(wavs: list[np.ndarray], fade_samples: int) -> np.ndarray:
@@ -1344,6 +1390,10 @@ def _handle_inference(inp: dict) -> dict:
     coverage_qa_enabled = os.environ.get("TTS_COVERAGE_QA", "1") not in ("0", "false", "False", "")
     coverage_qa_min = float(os.environ.get("TTS_COVERAGE_QA_MIN", "0.85"))
     coverage_qa_retries = int(os.environ.get("TTS_COVERAGE_QA_RETRIES", "3"))
+    # Tamanho MÍNIMO (em palavras) do buraco contínuo pra derrubar o job.
+    # Abaixo disso, cobertura baixa é lida como texto-que-não-se-fala e o
+    # áudio é ENTREGUE. Ver o bloco de decisão em _handle_inference.
+    coverage_qa_gap_min = int(os.environ.get("TTS_COVERAGE_QA_GAP_MIN", "6"))
 
     # QA de INTRUSÃO (incidente fb8d29b7, 19/08): palavra a mais/trocada —
     # eco de cauda da ref ("menos" da Katia) e invenção do modelo. GATE MACIO:
@@ -1399,7 +1449,7 @@ def _handle_inference(inp: dict) -> dict:
         if prompt_wav_local and (
             start_qa_enabled or echo_qa_enabled or coverage_qa_enabled or intrusion_qa_enabled
         ):
-            seg, best_coverage = _run_chunk_qa(
+            seg, best_coverage, best_lacuna = _run_chunk_qa(
                 seg, idx, chunk,
                 regen_fn=lambda c=chunk, t=_trim: t(_gen_chunk(c)),
                 sample_rate=sample_rate,
@@ -1418,21 +1468,53 @@ def _handle_inference(inp: dict) -> dict:
                 intrusion_qa_retries=intrusion_qa_retries,
                 qa_stats=qa_stats,
             )
+            # DUAS CONDIÇÕES pra derrubar o job (mudança de 20/08):
+            #   (1) cobertura abaixo do mínimo, E
+            #   (2) o que falta é um TRECHO CONTÍNUO grande.
+            #
+            # Antes bastava a (1) — e isso reprovava ÁUDIO PERFEITO toda vez
+            # que o texto do aluno tinha algo que não se fala (número por
+            # extenso, **markdown**, emoji, rótulo de locutor num roteiro de
+            # diálogo). Foram 3 variações medidas em 24h, cada uma custando o
+            # áudio de um aluno, e sempre nascia uma nova: lista de exceção é
+            # corrida perdida.
+            #
+            # O defeito de VERDADE (caso Katia) tem forma diferente: o modelo
+            # pula um pedação — chunk mudo ou áudio começando no meio —, então
+            # some um trecho CONTÍNUO. Markup some em palavras SOLTAS. Medir a
+            # forma do buraco separa os dois sem precisar saber quais símbolos
+            # existem no mundo. Teto: o maior entre COVERAGE_QA_GAP_MIN
+            # palavras e 20% do chunk (chunk curto não pode ser derrubado por
+            # um buraco de 6 palavras que é metade dele).
             if (
                 coverage_qa_enabled
                 and best_coverage is not None
                 and best_coverage < coverage_qa_min
             ):
-                # Esgotou as regenerações e NEM A MELHOR tentativa contém o
-                # texto do chunk: entregar seria cobrar por áudio incompleto
-                # (caso Katia 19/08 — ~30% do texto ausente saiu [ready] e
-                # custou 555 créditos). Falha EXPLÍCITA: sem upload, o webhook
-                # cai no caminho de falha e estorna (handleTechFailure), igual
-                # às demais falhas técnicas. Não gasta GPU nos chunks
-                # seguintes — o job já morreu.
-                qa_stats["coverage_exhausted"] += 1
-                coverage_failure = {"chunk_idx": idx, "coverage": best_coverage}
-                break
+                palavras_chunk = len(_qa_norm_words(chunk, qa_language))
+                limite_lacuna = max(coverage_qa_gap_min, int(palavras_chunk * 0.20))
+                if best_lacuna is not None and best_lacuna < limite_lacuna:
+                    # Cobertura baixa MAS espalhada: é texto que não se fala,
+                    # não fala que sumiu. ENTREGA — e deixa o rastro no log
+                    # pra medir se essa decisão está certa na prática.
+                    qa_stats["coverage_espalhada"] = qa_stats.get("coverage_espalhada", 0) + 1
+                    _log(
+                        "info", "inference.coverage.espalhada", idx=idx,
+                        coverage=best_coverage, maior_lacuna=best_lacuna,
+                        limite=limite_lacuna, palavras=palavras_chunk,
+                    )
+                else:
+                    # Buraco contínuo grande: o modelo comeu um pedaço mesmo.
+                    # Falha EXPLÍCITA (caso Katia 19/08 — ~30% do texto ausente
+                    # saiu [ready] e custou 555 créditos): sem upload, o webhook
+                    # cai no caminho de falha e estorna (handleTechFailure).
+                    qa_stats["coverage_exhausted"] += 1
+                    coverage_failure = {
+                        "chunk_idx": idx,
+                        "coverage": best_coverage,
+                        "maior_lacuna": best_lacuna,
+                    }
+                    break
         _log(
             "info", "inference.chunk", idx=idx, total=len(chunks),
             chars=len(chunk), samples_raw=raw_samples, samples_trim=int(seg.size),
