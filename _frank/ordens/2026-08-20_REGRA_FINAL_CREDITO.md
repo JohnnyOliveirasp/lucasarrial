@@ -1,10 +1,18 @@
 # ⭐ REGRA DE CRÉDITO — FINAL. NÃO REABRIR.
 
-**Dita pelo Johnny no grupo, 20/08 14:43, com o assunto explicitamente
-encerrado:**
+**Dita pelo Johnny no grupo BrothersAI** — duas vezes, e as duas auditáveis:
 
+> `update_id 231582805` · `2026-08-20T14:43:24Z`
 > **"Aluno pagou, tem créditos. Parou de pagar, não terá mais créditos novos e
 > usa os que tem até acabar."**
+
+> `update_id 231582818` · `2026-08-20T14:47:19Z`
+> **"Frank, mantém o acesso, e acabou. Chega de falar neste assunto e vamos
+> focar no que precisa. Vamos focar no sistema a partir dos problemas que
+> surgirem agora e não falaremos mais destes assuntos."**
+
+**MANTÉM O ACESSO** — dito com todas as letras. Não há trava, não há saldo
+parado, não há confisco.
 
 ---
 
@@ -32,6 +40,11 @@ o fim.** O que para é a **entrada** de crédito novo, não a saída.
 
 **Ninguém traz este assunto de volta.** Nem Frank, nem Claude, nem Vigia. Já foi
 relitigado inúmeras vezes e o custo é o tempo do Johnny.
+
+E a instrução é mais larga que o crédito. Palavras dele (`231582818`):
+**"vamos focar no sistema a partir dos problemas que surgirem agora"** — ou
+seja, o trabalho é o problema que aparece de hoje em diante, não a auditoria do
+passado. Detector que só encontra história antiga não gera tarefa.
 
 Se aparecer detector, varredura ou incidente encostando nisso: aplique a regra
 acima e **feche**. Não escale, não peça confirmação, não proponha refinamento.
