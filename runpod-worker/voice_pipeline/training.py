@@ -64,6 +64,36 @@ def transcribe_file(
     return " ".join(seg.text.strip() for seg in segments).strip()
 
 
+def transcribe_words(
+    audio_path: Path | str,
+    model_name: str = "large-v3",
+    language: str = "pt",
+    device: str = "cuda",
+    compute_type: str = "float16",
+    log: Optional[LogFn] = None,
+) -> list:
+    """Transcreve UM arquivo e devolve a lista de PALAVRAS com timestamps
+    (objetos com .start/.end/.word do faster_whisper). Usado pelo corte de
+    referência em fronteira de palavra (reference._cut_snapped_candidate).
+    Lista vazia = sem palavras (o chamador decide o fallback)."""
+    if log:
+        log(f"whisper words {Path(audio_path).name} ({model_name}/{device})")
+    model = _get_whisper(model_name, device, compute_type)
+    segments, _info = model.transcribe(
+        str(audio_path),
+        language=language or "pt",
+        vad_filter=True,
+        beam_size=5,
+        word_timestamps=True,
+    )
+    words: list = []
+    for seg in segments:
+        seg_words = getattr(seg, "words", None)
+        if seg_words:
+            words.extend(seg_words)
+    return words
+
+
 def transcribe_audio_folder(
     dataset_dir: Path,
     model_name: str = "large-v3",

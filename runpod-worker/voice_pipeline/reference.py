@@ -81,7 +81,7 @@ def _audio_duration_seconds(path: Path) -> float:
         return 0.0
 
 
-def _slice_window(src: Path, dst: Path, offset: float, seconds: int) -> bool:
+def _slice_window(src: Path, dst: Path, offset: float, seconds: float) -> bool:
     """Corta [offset, offset+seconds] de src -> dst (mono 16k). True se ok."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -91,6 +91,130 @@ def _slice_window(src: Path, dst: Path, offset: float, seconds: int) -> bool:
     ]
     r = subprocess.run(cmd, capture_output=True, text=True)
     return r.returncode == 0 and dst.exists() and dst.stat().st_size > 0
+
+
+# ── Corte em FRONTEIRA DE PALAVRA (caso Katia 2026-08) ─────────────────────
+# O corte por tempo arbitrario acima decapita palavras nas DUAS pontas da
+# referencia (~1 em 3 vozes novas nasce com farelo de palavra na borda) e o
+# VoxCPM ecoa esse farelo nas geracoes. A cura provada manualmente: recortar em
+# palavra completa. Aqui automatizamos com word_timestamps do faster_whisper —
+# NUNCA heuristica de energia/silencio (testada e reprovada 2x).
+
+# Folga do recorte alem da janela desejada, p/ a 1a/ultima palavra da regiao
+# nao ser decapitada pelo proprio corte da janela folgada.
+_WINDOW_SLACK_SECONDS = 1.5
+# Respiro antes do ataque da 1a consoante / depois da ultima (nao come fonema).
+_EDGE_PAD_SECONDS = 0.06
+# Clipe ajustado menor que isso (fracao de ref_seconds) nao serve de referencia:
+# descarta a candidata e segue pra proxima do ranking.
+_MIN_SNAPPED_FRACTION = 0.6
+
+
+def _word_field(w, name: str):
+    """Le start/end/word de um objeto Word do faster_whisper OU de um dict."""
+    if isinstance(w, dict):
+        return w.get(name)
+    return getattr(w, name, None)
+
+
+def _snap_bounds_to_words(
+    words: list,
+    region_start: float,
+    region_end: float,
+    pad: float = _EDGE_PAD_SECONDS,
+) -> "tuple[float, float, str] | None":
+    """Ajusta [region_start, region_end] p/ fronteiras de PALAVRA COMPLETA.
+
+    `words`: lista de palavras com .start/.end/.word (ou dicts), tempos no
+    MESMO relogio de region_start/region_end. Escolhe a 1a palavra que COMECA
+    dentro da regiao e a ultima que TERMINA dentro dela — palavra atravessando
+    qualquer borda fica de fora. Devolve (start, end, transcript) ou None se
+    nenhuma palavra inteira couber.
+    """
+    eps = 1e-6
+    inside = []
+    for w in sorted(words or [], key=lambda w: _word_field(w, "start") or 0.0):
+        ws, we = _word_field(w, "start"), _word_field(w, "end")
+        if ws is None or we is None:
+            continue
+        if ws >= region_start - eps and we <= region_end + eps:
+            inside.append(w)
+    if not inside:
+        return None
+    transcript = " ".join(
+        (_word_field(w, "word") or "").strip() for w in inside
+    ).strip()
+    transcript = re.sub(r"\s+", " ", transcript)
+    if not transcript:
+        return None
+    start = max(0.0, float(_word_field(inside[0], "start")) - pad)
+    end = float(_word_field(inside[-1], "end")) + pad
+    return (start, end, transcript)
+
+
+# Status do recorte por palavra: decide o que o laco de candidatas faz.
+_SNAP_OK = "ok"                    # clipe recortado em palavra + transcript exato
+_SNAP_DISCARD = "discard"          # ficou curto demais / sem palavra inteira -> proxima candidata
+_SNAP_UNAVAILABLE = "unavailable"  # sem words (erro/modelo antigo) -> corte por tempo de hoje
+
+
+def _cut_snapped_candidate(
+    primary: Path,
+    clip: Path,
+    offset: float,
+    ref_seconds: int,
+    duration: float,
+    transcribe_words_fn: "Callable[[Path], list | None]",
+    log: Callable[..., None],
+) -> "tuple[str, str | None]":
+    """Corta a candidata em FRONTEIRA DE PALAVRA. Devolve (status, transcript).
+
+    Passos: corta uma janela FOLGADA (offset±slack), transcreve com timestamps
+    de palavra, acha a 1a/ultima palavra inteiramente dentro da regiao desejada
+    e re-corta nesses limites. O transcript devolvido e EXATAMENTE as palavras
+    do clipe (sem 2a passada de whisper).
+    """
+    win_start = max(0.0, offset - _WINDOW_SLACK_SECONDS)
+    win_end = offset + ref_seconds + _WINDOW_SLACK_SECONDS
+    if duration > 0:
+        win_end = min(duration, win_end)
+    padded = clip.with_name(clip.stem + "_padded.wav")
+    try:
+        if not _slice_window(primary, padded, win_start, win_end - win_start):
+            log(level="error", event="reference.snap.pad_slice_failed", offset=offset)
+            return (_SNAP_UNAVAILABLE, None)
+        try:
+            words = transcribe_words_fn(padded)
+        except Exception as exc:  # whisper nunca derruba o treino por isso
+            log(level="error", event="reference.snap.words_error",
+                offset=offset, error=str(exc))
+            words = None
+        if not words:
+            log(level="info", event="reference.snap.no_words", offset=offset)
+            return (_SNAP_UNAVAILABLE, None)
+        # Tempos do whisper sao relativos ao clipe folgado; a regiao desejada
+        # [offset, offset+ref_seconds] vira [offset-win_start, ...] nesse relogio.
+        rel_start = offset - win_start
+        snapped = _snap_bounds_to_words(words, rel_start, rel_start + ref_seconds)
+        if snapped is None:
+            log(level="info", event="reference.snap.no_full_word", offset=offset)
+            return (_SNAP_DISCARD, None)
+        start, end, transcript = snapped
+        if end - start < ref_seconds * _MIN_SNAPPED_FRACTION:
+            log(level="info", event="reference.snap.too_short",
+                offset=offset, snapped_seconds=round(end - start, 2))
+            return (_SNAP_DISCARD, None)
+        if not _slice_window(padded, clip, start, end - start):
+            log(level="error", event="reference.snap.cut_failed", offset=offset)
+            return (_SNAP_UNAVAILABLE, None)
+        log(level="info", event="reference.snap.ok", offset=offset,
+            snapped_seconds=round(end - start, 2), words=len(transcript.split()))
+        return (_SNAP_OK, transcript)
+    finally:
+        try:
+            padded.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _candidate_offsets(duration: float, ref_seconds: int, max_candidates: int) -> list[float]:
@@ -123,10 +247,15 @@ def select_reference_candidates(
     language: str = "pt",
     max_candidates: int = 6,
     log: Callable[..., None] = lambda **k: None,
+    transcribe_words_fn: "Callable[[Path], list | None] | None" = None,
 ) -> "list[tuple[Path, str]]":
     """Como select_reference_clip, mas devolve TODAS as candidatas válidas
     RANQUEADAS (melhor primeiro). Usado pelo QA pós-treino: se a amostra sair
     contaminada com a 1ª referência, o handler tenta a 2ª, a 3ª…
+
+    Com `transcribe_words_fn` (palavras com .start/.end/.word), cada candidata
+    é recortada em FRONTEIRA DE PALAVRA em vez de tempo arbitrário — ver
+    _cut_snapped_candidate. Sem words disponíveis, cai no corte por tempo.
     """
     files = [f for f in norm_files if f and f.exists()]
     if not files:
@@ -139,10 +268,22 @@ def select_reference_candidates(
     scored: "list[tuple[float, Path, str]]" = []
     for i, off in enumerate(offsets):
         clip = work_dir / f"ref_cand_{i}_{int(off)}s.wav"
-        if not _slice_window(primary, clip, off, ref_seconds):
-            log(level="error", event="reference.candidate.slice_failed", offset=off)
-            continue
-        transcript = (transcribe_fn(clip) or "").strip()
+        transcript: "str | None" = None
+        if transcribe_words_fn is not None:
+            status, snapped = _cut_snapped_candidate(
+                primary, clip, off, ref_seconds, duration,
+                transcribe_words_fn, log,
+            )
+            if status == _SNAP_DISCARD:
+                continue  # curta demais / sem palavra inteira: proxima candidata
+            if status == _SNAP_OK:
+                transcript = snapped
+            # _SNAP_UNAVAILABLE: cai no corte por tempo abaixo (fallback).
+        if transcript is None:
+            if not _slice_window(primary, clip, off, ref_seconds):
+                log(level="error", event="reference.candidate.slice_failed", offset=off)
+                continue
+            transcript = (transcribe_fn(clip) or "").strip()
         if not transcript:
             log(level="info", event="reference.candidate.empty", offset=off)
             continue
