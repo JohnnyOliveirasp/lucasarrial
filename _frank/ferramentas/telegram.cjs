@@ -7,23 +7,36 @@
  * exatamente o que deu errado com o DDL em 18/08. Agora os dois agentes falam
  * no MESMO grupo, e ele lê a conversa em vez de repassá-la.
  *
- * ⚠️ LIMITE DA PLATAFORMA, leia antes de desenhar qualquer coisa em cima:
- * o Telegram NÃO entrega a um bot as mensagens escritas por outro bot. Se o
- * Frank e o Claude forem bots diferentes, cada um fala para o Johnny e nenhum
- * ouve o outro. Duas saídas, nesta ordem:
- *   1. os dois agentes usam O MESMO bot (um token só) e se identificam pelo
- *      prefixo — é o que esta ferramenta faz por padrão;
- *   2. mesmo assim um bot não recebe as PRÓPRIAS mensagens de volta em
- *      getUpdates, então agente->agente NÃO viaja pelo Telegram. O Telegram é
- *      a JANELA (o Johnny vê tudo); o FIO é `_frank/mensagens/` no git.
- * Rode `--diagnostico` depois de montar o grupo: ele mede isso de verdade em
- * vez de acreditar neste comentário.
+ * ⚠️ BOT FALA COM BOT, SIM — mas só com ENDEREÇAMENTO EXPLÍCITO.
+ * Eu escrevi aqui que "o Telegram não entrega a um bot as mensagens de outro
+ * bot". ERRADO, e provado errado em 20/08 14:02Z: o Frank e eu somos bots
+ * diferentes e nos lemos. O que enganou foi o `--diagnostico` marcar 0
+ * mensagens de bot — tirei conclusão grande de um zero, que é exatamente o
+ * erro que este repo vive cobrando.
+ *
+ * O que vale de verdade:
+ *   - mensagem SOLTA no grupo NÃO chega ao outro bot;
+ *   - chega quando é endereçada: `@nome_do_bot` no texto, ou `/comando@bot`,
+ *     ou resposta a uma mensagem dele — e com Bot-to-Bot Mode ligado no
+ *     BotFather;
+ *   - o bot continua não recebendo as PRÓPRIAS mensagens de volta.
+ * Então: SEMPRE inclua `@destino_bot` quando estiver falando com o outro
+ * agente. Sem o @, você está falando sozinho e achando que conversou.
+ *
+ * ⚠️ ORÇAMENTO ANTI-LOOP: o lado do Frank corta a conversa depois de 4 trocas
+ * e fica calado até um humano falar. É proposital (dois bots conversando pra
+ * sempre gastam dinheiro). Escreva MENSAGEM DENSA, não pingue-pongue.
  *
  * CREDENCIAIS: `.env.telegram` na raiz do repo (gitignored). Arquivo separado
  * de propósito — o agente não precisa (nem pode) abrir o .env de pagamento.
  *
  * USO (de qualquer pasta):
  *   node _frank/ferramentas/telegram.cjs --enviar "texto" [--quem claude|frank]
+ *   node _frank/ferramentas/telegram.cjs --arquivo msg.txt   # texto de arquivo
+ *
+ * ⚠️ Prefira `--arquivo` para texto longo. Em `--enviar "..."` o shell come
+ * crase e `$` antes da ferramenta ver (já aconteceu: uma palavra virou
+ * "command not found" e sumiu da mensagem).
  *   node _frank/ferramentas/telegram.cjs --ler            # mensagens novas
  *   node _frank/ferramentas/telegram.cjs --achar-grupo    # acha o grupo e grava o id
  *   node _frank/ferramentas/telegram.cjs --diagnostico    # quem sou, o que vejo
@@ -278,6 +291,10 @@ const tem = (nome) => process.argv.includes(nome);
     if (tem("--achar-grupo")) return await acharGrupo();
     if (tem("--diagnostico")) return await diagnostico();
     if (tem("--ler")) return await ler({ tudo: tem("--tudo") });
+    const arquivo = arg("--arquivo");
+    if (arquivo) {
+      return await enviar(fs.readFileSync(arquivo, "utf8"), arg("--quem"), tem("--seco"));
+    }
     const texto = arg("--enviar");
     if (texto) return await enviar(texto, arg("--quem"), tem("--seco"));
     console.log(fs.readFileSync(__filename, "utf8").split("*/")[0].split("/**")[1] || "");
