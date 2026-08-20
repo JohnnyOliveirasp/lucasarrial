@@ -88,23 +88,55 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
   const summary: OrphanSweepSummary = { orphans: 0, invited: 0, reminded: 0, errors: 0 };
   const admin = getAdmin();
 
-  const [{ data: approved }, { data: profiles }] = await Promise.all([
-    admin.from("payment_events").select("buyer_email, received_at, payload").eq("event_type", "PURCHASE_APPROVED"),
-    admin.from("profiles").select("email"),
-  ]);
-  const hasAccount = new Set(
-    ((profiles ?? []) as { email: string | null }[]).map((p) => (p.email ?? "").toLowerCase()),
-  );
+  // ⚠️ Teto silencioso do PostgREST: .select() sem .range() devolve NO MÁXIMO
+  // 1000 linhas. payment_events já tem 1099 PURCHASE_APPROVED (19/08), então
+  // sem paginação compradores somem da varredura em silêncio. Paginar sempre,
+  // com ordem estável (id), até a página vir incompleta.
+  const approved: ApprovedRow[] = [];
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await admin
+      .from("payment_events")
+      .select("buyer_email, received_at, payload")
+      .eq("event_type", "PURCHASE_APPROVED")
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`[orphan-outreach] payment_events falhou: ${error.message}`);
+    approved.push(...((data ?? []) as ApprovedRow[]));
+    if (!data || data.length < PAGE) break;
+  }
 
   // Última compra aprovada por comprador (produto da plataforma, sem testes).
   const buyers = new Map<string, { at: string; name: string }>();
-  for (const row of (approved ?? []) as ApprovedRow[]) {
+  for (const row of approved) {
     const email = (row.buyer_email ?? "").toLowerCase();
     const d = row.payload?.data;
     if (isTestEmail(email) || String(d?.product?.id ?? "") !== PRODUCT_ID) continue;
     const cur = buyers.get(email);
     if (!cur || row.received_at > cur.at) {
       buyers.set(email, { at: row.received_at, name: (d?.buyer?.name ?? "").split(" ")[0] });
+    }
+  }
+
+  // Guarda que decide quem é "órfão". NUNCA puxar a tabela profiles inteira:
+  // o teto de 1000 do PostgREST foi exatamente o que mandou "crie sua conta"
+  // pra 105 clientes ATIVOS (incidente 72a4c9db, 04–19/08; profiles tinha 1293
+  // linhas e o Set só conhecia 1000). Consultamos SÓ os e-mails dos compradores,
+  // em blocos de 500 pra não estourar o tamanho da URL do .in().
+  // Premissa verificada em produção (20/08): profiles.email é sempre minúsculo
+  // (Supabase Auth normaliza no signup) e as chaves de buyers já são minúsculas,
+  // então o .in() case-sensitive bate; a comparação segue em lowercase.
+  // Se a consulta da guarda falhar, ABORTA — seguir com Set incompleto é o que
+  // transforma cliente ativo em "órfão".
+  const hasAccount = new Set<string>();
+  const buyerEmails = [...buyers.keys()];
+  const CHUNK = 500;
+  for (let i = 0; i < buyerEmails.length; i += CHUNK) {
+    const chunk = buyerEmails.slice(i, i + CHUNK);
+    const { data, error } = await admin.from("profiles").select("email").in("email", chunk);
+    if (error) throw new Error(`[orphan-outreach] guarda hasAccount falhou: ${error.message}`);
+    for (const p of (data ?? []) as { email: string | null }[]) {
+      if (p.email) hasAccount.add(p.email.toLowerCase());
     }
   }
 
