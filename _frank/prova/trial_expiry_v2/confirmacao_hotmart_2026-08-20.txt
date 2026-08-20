@@ -1,0 +1,107 @@
+
+======================================================================
+itabenke@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-02
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+lineucastilho22@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-05
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+ddfleury@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-07
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+tatyalvesdubai@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-10
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+charlesangio@hotmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-12
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+jemaaz@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-16
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+pedrovale2v2@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-17
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+edersolucaoid@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-17
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+erciliaadv8@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-20
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+casatumca@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-21
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+clinicanutrisecrets@gmail.com
+  NUNCA PAGOU | assinaturas: 2 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 CANCELLED        
+    rec#1 R$    0 COMPLETE         2026-07-21
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+renildoephb@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-07
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+azevedoadvogadocriminalista@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-09
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+tikomuscl@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-07-23
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga
+
+======================================================================
+warleysantosfranca@gmail.com
+  NUNCA PAGOU | assinaturas: 1 | PURCHASE_APPROVED>0 no nosso banco: 0
+    rec#1 R$    0 COMPLETE         2026-08-09
+    rec#2 R$   97 OVERDUE             <-- cobranca EXISTE mas NAO foi paga

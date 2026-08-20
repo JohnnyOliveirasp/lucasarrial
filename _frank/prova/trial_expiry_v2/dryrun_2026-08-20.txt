@@ -1,0 +1,35 @@
+DRY-RUN expire_trial_credits v2 — 2026-08-20T13:54:08.204Z — grace 10 dias — SOMENTE LEITURA, nada foi alterado
+eventos lidos: 1924 | trials distintos: 742 | pagos distintos: 311 | marcadores existentes: 328
+
+resumo por decisão:
+  allowlist                    1
+  fora_do_prazo                234
+  ja_resolvido                 328
+  marcaria_paid                15
+  marcaria_zeroed_sem_saldo    1
+  pulado_entitlement_ativo     126
+  sem_conta                    22
+  zeraria                      15
+
+SERIAM ZERADOS (debito real): 15 pessoas / 1.416.584 créditos
+teto da v2 (default 20 débitos reais): não estoura
+
+e-mail                                        trial_start     zeraria  extra(intocado)
+itabenke@gmail.com                            2026-07-02      100.000               12
+lineucastilho22@gmail.com                     2026-07-05      100.000                0
+ddfleury@gmail.com                            2026-07-07      100.000          243.468
+tatyalvesdubai@gmail.com                      2026-07-10      100.000                0
+charlesangio@hotmail.com                      2026-07-12      100.000                0
+jemaaz@gmail.com                              2026-07-16      100.000                0
+pedrovale2v2@gmail.com                        2026-07-17      100.000                0
+edersolucaoid@gmail.com                       2026-07-17      100.000                0
+erciliaadv8@gmail.com                         2026-07-20      100.000                0
+casatumca@gmail.com                           2026-07-21      100.000           40.000
+clinicanutrisecrets@gmail.com                 2026-07-21      100.000                0
+renildoephb@gmail.com                         2026-07-07       95.380              525
+azevedoadvogadocriminalista@gmail.com         2026-07-09       89.600                0
+tikomuscl@gmail.com                           2026-07-23       71.574                0
+warleysantosfranca@gmail.com                  2026-08-09       60.030              525
+
+confirmação individual antes de religar (regra 9-A):
+node _frank/ferramentas/pagou_de_verdade.cjs itabenke@gmail.com lineucastilho22@gmail.com ddfleury@gmail.com tatyalvesdubai@gmail.com charlesangio@hotmail.com jemaaz@gmail.com pedrovale2v2@gmail.com edersolucaoid@gmail.com erciliaadv8@gmail.com casatumca@gmail.com clinicanutrisecrets@gmail.com renildoephb@gmail.com azevedoadvogadocriminalista@gmail.com tikomuscl@gmail.com warleysantosfranca@gmail.com
