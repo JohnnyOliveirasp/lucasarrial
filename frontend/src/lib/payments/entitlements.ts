@@ -134,11 +134,37 @@ async function recomputeProfileAccess(userId: string): Promise<void> {
     .select("provider, status, access_until")
     .eq("user_id", userId);
 
-  const active = (ents ?? []).find(
-    (e) =>
-      e.status === "active" &&
-      (e.access_until === null || e.access_until > nowIso),
-  );
+  // ⚠️ "canceled" NAO e o mesmo que "sem acesso" (corrigido 20/08).
+  //
+  // Ate aqui so "active" contava. So que o proprio webhook, ao cancelar uma
+  // assinatura, grava de proposito o access_until do periodo JA PAGO no
+  // entitlement ("cancelamento de assinatura mantem o acesso ate o fim do
+  // periodo") - e esta funcao jogava esse valor fora no segundo seguinte,
+  // zerando profiles.access_until. Quem cancelava perdia na hora o que tinha
+  // comprado, que e o oposto da regra "quem pagou fica".
+  //
+  // A regra, por status:
+  //   active    -> access_until NULL (vitalicio) OU futuro
+  //   canceled  -> SO com data futura. NULL aqui e "acabou", nao "vitalicio":
+  //                cancelamento sem periodo pago restante nao da acesso.
+  //   refunded / chargeback / expired -> NUNCA. O dinheiro voltou ou nao entrou.
+  const valeAcesso = (e: { status: string; access_until: string | null }) => {
+    if (e.status === "active") return e.access_until === null || e.access_until > nowIso;
+    if (e.status === "canceled") return e.access_until !== null && e.access_until > nowIso;
+    return false;
+  };
+
+  // Entre varios, o melhor: "active" ganha de "canceled"; empatado, a data mais
+  // longe (vitalicio = infinito). Sem isto, um entitlement velho poderia
+  // encurtar o acesso de quem tem outro mais novo.
+  const active = (ents ?? [])
+    .filter(valeAcesso)
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "active" ? -1 : 1;
+      const va = a.access_until === null ? Infinity : new Date(a.access_until).getTime();
+      const vb = b.access_until === null ? Infinity : new Date(b.access_until).getTime();
+      return vb - va;
+    })[0];
 
   await admin
     .from("profiles")
