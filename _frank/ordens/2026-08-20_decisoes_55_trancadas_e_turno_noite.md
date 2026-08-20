@@ -1,4 +1,17 @@
-# ORDEM — As 55 trancadas e o turno da noite (20/08, decisões do Johnny)
+# ORDEM — As 55 trancadas e o turno da noite (20/08)
+
+> ## ⛔ ITEM 1 ENCERRADO — NÃO REABRIR
+> **Decisão do Johnny, 20/08:** o assunto "quem pagou / quem não pagou / quem
+> destrava" está **fechado**. Nada muda: ninguém é destravado, ninguém é
+> zerado, status quo para as 55. **Não trazer de volta** — nem o Frank, nem o
+> Claude, nem o Vigia. Se o Johnny quiser reabrir, ele levanta.
+>
+> Fica registrado só o que foi MEDIDO (serve de referência, não de tarefa), e o
+> furo de raciocínio que o Frank pegou: ler `pagou_fica` ao pé da letra faz uma
+> mensalidade valer acesso permanente — R$97 viraria vitalício. O Claude
+> escreveu ordem em cima disso sem testar a regra contra o absurdo.
+>
+> **O item 2 (turno da noite) continua valendo e está em execução.**
 
 Duas decisões dadas pelo Johnny depois do card `3e259b71` fechar. Ambas
 **autorizadas**, com guarda.

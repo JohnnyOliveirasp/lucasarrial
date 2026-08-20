@@ -47,7 +47,9 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 
 | Assunto | Ordem que vale |
 |---|---|
-| 🔴 Correções da ronda de 20/08 (dinicleia, janela do QA, worktree) | `2026-08-20_correcoes_da_ronda.md` |
+| 🗺️ **O FLUXO: quem olha o quê e como se chama socorro** | `2026-08-20_fluxo_quem_olha_o_que.md` |
+| 🌙 Rotina das Falhas 24h (turno da noite) | `2026-08-20_decisoes_55_trancadas_e_turno_noite.md` (item 2) |
+| 🔴 Correções da ronda de 20/08 (janela do QA, worktree) | `2026-08-20_correcoes_da_ronda.md` |
 | 💬 Canal: Telegram + git, e como ligar o teu lado | `2026-08-20_canal_telegram.md` |
 | Crédito: quem perde, quem mantém | `2026-08-18_regra_final_pagou_fica.md` ⚠️ **não confunda com `2026-08-18_cancelar_credito_no_vencimento.md`, que ela substitui** |
 | Gate das telas (Roteiro, Edição, Settings) | `2026-08-18_gate_por_credito.md` |
@@ -65,6 +67,7 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 
 | Ordem | O que morreu |
 |---|---|
+| `2026-08-20_decisoes_55_trancadas_e_turno_noite.md` **item 1** | ⛔ **assunto ENCERRADO pelo Johnny em 20/08.** Ninguém destrava, ninguém zera, status quo nas 55. **Não reabrir.** O item 2 (turno da noite) segue valendo. |
 | `2026-08-18_cancelar_credito_no_vencimento.md` | **"venceu = zera o crédito"** — substituída no mesmo dia por `2026-08-18_regra_final_pagou_fica.md`. Quem **pagou** fica com o crédito e com as portas. Confundir as duas já trancou aluno pagante (20/08). |
 | `2026-08-18_ok_para_executar.md` | **item 4.3** — trava por `hasActiveAccess`. Bloquearia quem já pagou. |
 | `2026-08-18_147_sem_acesso.md` | a conclusão (os 147 estavam soltos demais, não bloqueados) |
