@@ -1,0 +1,10 @@
+9b7cc261 ANTES: status=fixed resolved_at=null resolved_by=null
+  linhas afetadas: 1 {"id":"9b7cc261-c9b0-4b9b-a7db-b858627209ef","status":"fixed","resolved_at":"2026-08-18T12:27:30.204+00:00","resolved_by":"agent"}
+72055f75 (generation:unknown:tensor size mismatch) ANTES: status=ignored resolved_at=null
+  linhas afetadas: 1 (resolved_at segue ? — de propósito)
+bee2fb8b (training:user_dataset:insufficient_audio) ANTES: status=ignored resolved_at=null
+  linhas afetadas: 1 (resolved_at segue ? — de propósito)
+
+FECHADOS SEM resolved_at AGORA: 2 de 63 fechados | linhas gravadas nesta execução: 3
+  72055f75 [ignored] generation:unknown:the expanded size of the tensor (#) must 
+  bee2fb8b [ignored] training:user_dataset:insufficient_audio

@@ -1,0 +1,15 @@
+ALVO: d6b4154b-014c-41dd-aba7-b8bcb5706f77
+  [open] teste:card-resolvedat:apagar-em-seguida
+  TESTE DO CARD resolved_at (Frank 20/08) — linha temporária, será apagada nesta mesma execução
+
+PATCH: {
+  "status": "ignored",
+  "resolved_by": "frank",
+  "resolved_at": "2026-08-20T20:46:41.533Z",
+  "resolution_note": "Prova de aceite do card resolved_at 20/08: fechamento via ferramenta canônica tem que sair com resolved_at e resolved_by…"
+}
+
+RELEITURA (banco):
+  status=ignored resolved_at=2026-08-20T20:46:41.533+00:00 resolved_by=frank commit=null
+
+✓ Fechado com auditoria completa.
