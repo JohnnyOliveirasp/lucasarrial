@@ -125,6 +125,10 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
                   "créditos estornados e mensagem explicativa mostrada na tela. " +
                   "Aluno travado (repetição sem nenhuma voz pronta) abre incidente próprio.",
                 resolved_at: f.at,
+                // ⚠️ resolved_by junto (20/08): sem ele o incidente fica com data
+                // de fechamento e ninguem responsavel, e toda auditoria de "quem
+                // fechou isso?" da em branco. Eram 6 assim quando isto foi escrito.
+                resolved_by: "sistema (regra 17/08: erro do usuario)",
               }
             : {}),
           first_seen_at: f.at,
