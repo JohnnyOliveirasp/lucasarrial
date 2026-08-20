@@ -86,6 +86,15 @@ function keepsOriginalWords(original: string, out: string): boolean {
  */
 export function sanitizeForTTS(text: string): string {
   return text
+    // RÓTULO DE LOCUTOR em linha própria (caso serescastro6, 20/08): roteiro
+    // de diálogo vem como "Seres:\nFreud, me explica..." — ninguém quer ouvir
+    // "Seres dois pontos". O modelo (com razão) não lê o rótulo, mas o QA de
+    // completude contava como texto FALTANDO e reprovava áudio PERFEITO:
+    // 0,833 de cobertura contra o mínimo 0,85, medido e reproduzido igual.
+    // Só cai a linha que é SÓ o rótulo (≤4 palavras, ≤40 caracteres, nada
+    // depois dos dois-pontos) — "Atenção: isso importa" segue intacto porque
+    // tem texto na mesma linha.
+    .replace(/^[ \t]*[^\s:]{1,20}(?:[ \t][^\s:]{1,20}){0,3}:[ \t]*$/gm, "")
     // negrito/itálico/código do markdown: cai o marcador, fica a palavra
     .replace(/[*`~]+/g, " ")
     .replace(/(^|\s)_+|_+(\s|$)/g, "$1 $2")
