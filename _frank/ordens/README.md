@@ -46,6 +46,7 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 | DDL aprovado + achados da prova | `2026-08-19_ddl_aprovado_e_achados.md` |
 | 🖼️ Imagens: refactor de hoje + branch STALE (não mergear `feat/fix-image-upload-retry`) | `2026-08-19_imagens_refatoradas_branch_stale.md` |
 | 🔊 Incidentes do QA de completude: medição pronta, falta curar 2 vozes | `2026-08-19_qa_coverage_incidentes.md` |
+| 🔊 Resposta à passagem das vozes: quase tudo resolvido; falta re-medir 40 entregas (fecha o fb8d29b7) | `2026-08-19_resposta_passagem_vozes.md` |
 
 ## Superadas (leia só pra entender o histórico)
 
