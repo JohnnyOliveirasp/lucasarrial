@@ -61,6 +61,7 @@
  *        ^ RECOMENDADO. `--para` monta /msg@<bot>, que e o unico formato que
  *          o outro AGENTE recebe. Sem ele voce fala so pro Johnny.
  *   node _frank/ferramentas/telegram.cjs --enviar "texto" [--quem claude|frank]
+ *   node _frank/ferramentas/telegram.cjs --espiar                 # avisa SEM consumir
  *   node _frank/ferramentas/telegram.cjs --ler                    # o que chegou depois
  *   node _frank/ferramentas/telegram.cjs --ler --tudo             # tudo, do log local
  *   node _frank/ferramentas/telegram.cjs --pendentes              # só o OUTRO agente
@@ -337,6 +338,37 @@ async function ler({ tudo }) {
   gravarPonteiros(p);
 }
 
+/**
+ * Baixa e arquiva SEM consumir: avança só o ponteiro `baixado`, nunca o
+ * `mostrado`. Imprime uma linha por mensagem nova de gente/bot (nada de corpo).
+ *
+ * Existe porque o monitor do grupo usava `--ler`, que MOSTRA e portanto marca
+ * como visto — o alerta chegava e o conteúdo já tinha sido consumido antes de
+ * alguém ler. Quem vigia não pode ser quem consome.
+ */
+async function espiar() {
+  const { token, chat } = credenciais({ exigeChat: false });
+  const p = lerPonteiros();
+  const novos = await api(token, "getUpdates", {
+    offset: p.baixado ? p.baixado + 1 : undefined,
+    timeout: 0,
+    allowed_updates: ["message", "edited_message", "channel_post"],
+  });
+  arquivar(novos);
+  if (novos.length) {
+    p.baixado = novos[novos.length - 1].update_id;
+    gravarPonteiros(p);          // `mostrado` fica onde está — de propósito
+  }
+  const naoVistas = doLog()
+    .filter((u) => u.update_id > p.mostrado)
+    .map(descreve)
+    .filter((d) => d && (!chat || String(d.chat_id) === String(chat)))
+    .filter((d) => !d.texto.startsWith("⚙️"));   // ruído de status
+  for (const d of naoVistas) {
+    console.log(`${d.quando}  ${d.de}: ${d.texto.replace(/\s+/g, " ").slice(0, 110)}`);
+  }
+}
+
 /** Só o que o outro AGENTE falou e ainda não foi respondido. */
 async function pendentes() {
   const { chat } = credenciais({ exigeChat: false });
@@ -452,6 +484,7 @@ const tem = (nome) => process.argv.includes(nome);
   try {
     if (tem("--achar-grupo")) return await acharGrupo();
     if (tem("--diagnostico")) return await diagnostico();
+    if (tem("--espiar")) return await espiar();
     if (tem("--pendentes")) return await pendentes();
     if (tem("--ler")) return await ler({ tudo: tem("--tudo") });
     const para = tem("--para") ? (arg("--para") || true) : null;
