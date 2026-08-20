@@ -9,7 +9,7 @@ Nenhum deles cobra crédito do aluno. Os que alteram dados só agem com
 
 | Script | O que faz | Altera algo? |
 |---|---|---|
-| `varredura_travados.cjs` | A varredura diária: tudo parado em estado intermediário + incidentes abertos. Comece o dia por ele. | não |
+| `varredura_travados.cjs` | A varredura diária: tudo parado em estado intermediário + incidentes abertos. Comece o dia por ele. Tem a seção "AGUARDANDO AÇÃO DO ALUNO" (`voices/awaiting_training` >24h): espera legítima NÃO conta como preso; só ganha 🚩 (e conta) o pagante parado da regra 3 — acesso ativo + crédito pro treino + áudio no R2 + zero voz ready. | não |
 | `aluno.cjs <email>` | Raio-x completo de um aluno: conta, compra, créditos, vozes, produção e erros. **Rode isto antes de responder qualquer reclamação.** Se não achar a conta, procura contas/compras parecidas (caso "duas contas"). | não |
 | `resgatar_voz.cjs <voiceId> --confirmar` | Voz parada em "uploading" com áudio no R2: restaura e dispara o treino **por conta da casa** (não cobra). | sim |
 | `consertar_referencia.cjs --confirmar` | Acha `profiles.image_ref_key` apontando pra arquivo inexistente e troca por uma foto real. | sim |
