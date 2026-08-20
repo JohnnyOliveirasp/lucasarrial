@@ -157,12 +157,51 @@ tem cobrador, e é assim que ela dorme.
 5. **Estrutural** — voz `failed` não volta pra fila; o aluno lê "tente treinar
    novamente" e o produto não deixa. Vira card quando aprovar a direção.
 
-## 8. Fim de ronda — passo fixo
+## 8. Fim de ronda — passo fixo, e o que ele achou
 
 ```
-git fetch origin && git log --oneline origin/main..HEAD   -> (conferido, ver abaixo)
-git branch / git rev-list main..<branch>                   -> nenhum fix preso
+git push origin main            -> dc3fa7a..90cb630
+git fetch origin && git log --oneline origin/main..HEAD   -> VAZIO ✅
 ```
+
+**Nenhum fix de aluno preso em branch.** O que está fora da main é PR do coder
+aguardando revisão, não conserto pendente. Três achados que valem registro:
+
+1. ✅ **`feat/ref-corte-em-palavra` está publicada no `origin`.** A ordem
+   `2026-08-20_correcoes_da_ronda.md` item 4 registrava que ela *"não existe no
+   repo do Johnny, nem local nem no origin — só na cópia da rede"*. **Conferido
+   agora: `refs/remotes/origin/feat/ref-corte-em-palavra` existe** (`93f9b3b`). O
+   coder deu o push. O trabalho não está mais em risco de sumir com a máquina.
+   Ela ataca o item 2 do "o que sobra de verdade" (referência cortada no meio da
+   palavra) **pelo caminho aprovado** — `word_timestamps` do Whisper, não
+   heurística por energia, que foi reprovada duas vezes. **Não mergeei**: é área
+   do worker/Claude e está 39 commits atrás da main.
+
+2. ⚠️ **`feat/acesso-cancelado-com-periodo-pago` está STALE — não mergear.** É a
+   versão do coder para o **mesmo** conserto que já está na main como `a9e33ae`.
+   Está **33 commits atrás** e o diff contra a main marca **4.311 deleções em 42
+   arquivos**: mergear reverteria um dia inteiro de trabalho. Mesmo padrão de
+   `feat/fix-image-upload-retry`, que a ordem de 19/08 já mandou não mergear.
+   **Vale salvar uma coisa dela**: traz `access-rules.ts` + `access-rules.test.ts`
+   (95 linhas de teste da regra de acesso) que a main **não** tem. Cherry-pick do
+   teste, não merge da branch.
+
+3. ⚠️ **Duas branches para o mesmo `261b295b`, as duas com migration.**
+   `feat/incidents-resolved-guard` (migration 85) está contida em
+   `feat/incidents-resolved-at` (migration 85→86) — a primeira é redundante. As
+   duas adicionam uma trava no BANCO (CHECK recusando status fechado com
+   `resolved_at` nulo). **Isso não é urgente**: o `261b295b` já está `fixed` pelas
+   duas camadas que estão na main (app em `981f2fb`/`ce25390`, scripts em
+   `2443719`), e a medição desta ronda confirma **0 fechados cegos**. A terceira
+   camada é endurecimento, e **migration precisa do OK do Johnny** — não toquei.
+   Lembrete do passo fixo: **DDL commitado não é DDL aplicado**; se essa PR
+   entrar, conferir a constraint no banco antes de dizer que fechou.
+
+**Branches que só existem nesta máquina** (não estão no `origin`; se a cópia se
+perder, perdem junto): `fix/fast-email-dedupe-por-queixa`,
+`prova/2026-08-20-pagante-trancado`, `feat/incidents-resolved-guard` (redundante)
+e `chore/gitattributes`. As duas primeiras são trabalho de verdade — vale pedir o
+push ao coder.
 
 ## 9. Ferramentas desta ronda
 
