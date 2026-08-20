@@ -56,7 +56,12 @@ export async function POST(request: NextRequest) {
       const update: Record<string, unknown> = { status };
       if (typeof resolution_note === "string") update.resolution_note = resolution_note.slice(0, 1000);
       if (typeof resolved_commit === "string") update.resolved_commit = resolved_commit.slice(0, 64);
-      if (status === "fixed") {
+      // ⚠️ "ignored" TAMBEM e fechamento (20/08, incidente do detector de zumbi).
+      // So o "fixed" gravava a data, entao todo incidente fechado como ignored
+      // ficava sem resolved_at e sumia de qualquer consulta que filtra por data
+      // de fechamento. Quem fecha nao pode precisar LEMBRAR de gravar o campo -
+      // no dia 20/08 quem sabia do incidente esqueceu assim mesmo.
+      if (status === "fixed" || status === "ignored") {
         update.resolved_by = "agent";
         update.resolved_at = new Date().toISOString();
       }

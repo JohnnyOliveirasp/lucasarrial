@@ -30,7 +30,12 @@ export async function PATCH(
   if (typeof body.resolved_commit === "string") {
     update.resolved_commit = body.resolved_commit.slice(0, 64);
   }
-  if (status === "fixed") {
+  // ⚠️ "ignored" TAMBEM e fechamento (20/08, incidente do detector de zumbi).
+  // So o "fixed" gravava a data, entao todo incidente fechado como ignored
+  // ficava sem resolved_at e sumia de qualquer consulta que filtra por data
+  // de fechamento. Quem fecha nao pode precisar LEMBRAR de gravar o campo -
+  // no dia 20/08 quem sabia do incidente esqueceu assim mesmo.
+  if (status === "fixed" || status === "ignored") {
     update.resolved_by = g.auth.email;
     update.resolved_at = new Date().toISOString();
   }
