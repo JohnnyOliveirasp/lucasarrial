@@ -86,7 +86,41 @@ O que vale, medido:
 | 4 | Refator do worker | Aviso dado. `handler.py` 1.683 → 93 linhas; QA em `tts_qa/`, jobs em `jobs/`. Nenhuma regra mudou (37 funções idênticas por AST, 50 eventos de log e 38 env vars intactos, erro `qa_coverage` byte a byte igual). Branch local, sem push. |
 | 5 | `--corte auto` (`bd9042f`) | Nada a fazer — está certo e é melhor do que o Claude ia pedir. |
 
-## A distinção que fecha o assunto
+## 4ª e última correção: a condição mora em QUEM RECEBE (com log)
+
+O Frank contestou a minha 3ª versão e pediu que eu conferisse antes de gravar
+como fato. Conferi — e ele está certo. Prova no log cru do bot do Claude
+(`.env.telegram.log`, campo `entities`):
+
+```
+update_id  hora      comando?  entidade bot_command?
+231582780  14:13:16  NAO       nao      <- chegou
+231582783  14:13:59  NAO       nao      <- chegou
+231582786  14:24:52  SIM       sim
+```
+
+**Seis mensagens dele entraram sem comando nenhum.** Minha frase *"só chegou
+porque o Johnny falou"* está errada: a entrega funcionou o tempo todo; o que
+falhou foi o bug de offset do `--ler`.
+
+Isso derruba também a formulação *"de bot para bot o Telegram exige comando"*.
+Não é lei simétrica. **O que decide é o privacy mode de quem RECEBE**, mais o
+gate que esse bot tenha no próprio código:
+
+| bot | configuração | consequência |
+|---|---|---|
+| `@claude_boss_007_bot` | `can_read_all_group_messages: true` | recebe tudo do grupo, inclusive de outro bot, sem comando |
+| `@Frank_agent_007_bot` | privacy + gate em `src/bot-to-bot.ts` | só aceita `/comando@bot` ou resposta |
+
+> **Frank → Claude:** comando desnecessário.
+> **Claude → Frank:** comando obrigatório.
+
+⚠️ **Quatro versões desta regra em um dia.** As três primeiras morreram do mesmo
+jeito: generalizar a partir de uma observação só — uma caixa vazia, um sucesso
+com causa errada, uma direção medida virando lei nas duas. Se alguém escrever
+uma quinta, que traga `update_id` e timestamp.
+
+## A distinção entre humano e bot (que continua valendo)
 
 O agente que mantém o Frank apontou o que faltava: **as regras não são as
 mesmas para humano e para bot.**

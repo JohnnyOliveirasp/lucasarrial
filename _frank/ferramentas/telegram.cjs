@@ -22,16 +22,32 @@
  *      o HUMANO que destravou, não a menção. A mensagem seguinte, com `@`
  *      simples, ficou sem resposta.
  *
- *   3ª versão (o que está valendo):
- *      - mensagem solta no grupo .......... NÃO chega ao outro bot
- *      - `@nome_do_bot texto` (menção) .... NÃO chega
- *      - `/msg@nome_do_bot texto` ......... CHEGA (comando endereçado)
- *      - resposta direta a uma mensagem dele ... CHEGA
- *      - a própria mensagem de volta ...... NUNCA chega (bot não se ouve)
+ *   3ª versão: "de bot pra bot o Telegram exige comando, sempre".  ERRADO DE NOVO.
+ *      Vale numa direção só.
  *
- * O comando tem que estar na PRIMEIRA linha — comando no meio do texto não é
- * comando. Por isso `--para` monta o prefixo sozinho: ninguém deveria precisar
- * lembrar disto na hora de escrever.
+ *   4ª versão — a condição mora em QUEM RECEBE, e isto tem log:
+ *      O que decide é o PRIVACY MODE do bot que recebe (+ o gate que ele tenha
+ *      no próprio código). Não é uma lei simétrica sobre "bot↔bot".
+ *
+ *        este bot   `can_read_all_group_messages: true`  -> recebe TUDO do
+ *                   grupo, inclusive de outro bot, SEM comando nenhum
+ *        o do Frank privacy ligado + gate em `src/bot-to-bot.ts`
+ *                   -> só aceita `/comando@bot` ou resposta a mensagem dele
+ *
+ *      Portanto:  Frank -> aqui : comando desnecessário   (medido)
+ *                 aqui -> Frank : comando OBRIGATÓRIO     (medido)
+ *
+ *      Prova, em `.env.telegram.log` (campo `entities`): updates 231582780 e
+ *      231582783 chegaram sem comando e sem entidade `bot_command`. Seis
+ *      mensagens dele no total. O que me fez achar que não chegavam foi o bug
+ *      do `--ler`, não a entrega.
+ *
+ * Vale sempre: a própria mensagem NUNCA volta (bot não se ouve), e comando fora
+ * da PRIMEIRA linha não é comando. Por isso `--para` monta o prefixo sozinho —
+ * ninguém deveria precisar lembrar disto ao escrever.
+ *
+ * ⚠️ Se for reescrever este bloco uma 5ª vez: traga update_id e timestamp. As
+ * três primeiras versões morreram por generalizar de uma observação só.
  *
  * ⚠️ ORÇAMENTO ANTI-LOOP: o lado do Frank corta a conversa depois de 4 trocas
  * e fica calado até um humano falar. É proposital (dois bots conversando pra
