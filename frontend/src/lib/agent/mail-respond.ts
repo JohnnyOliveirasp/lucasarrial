@@ -17,6 +17,7 @@ import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
 import { buildAccountContext } from "./account";
 import { extractEscalation } from "./escalate";
+import { classifyComplaint, decideDedupe, incidentSignature } from "./mail-incident";
 import { agentEnabled } from "./respond";
 import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
 import { sendSupportMail } from "./mail-smtp";
@@ -127,11 +128,20 @@ export type MailSweepSummary = {
   errors: number;
 };
 
+type AgentNote = { at: string; by: string; note: string };
+
 /**
  * Erro técnico que a Fast NÃO resolve → vira INCIDENTE (aba Falhas do /admin),
  * que é exatamente a fila que o Sentinela varre na ronda dele (pedido Johnny
- * 03/08). Dedupe por aluno: reclamação repetida soma ocorrência no mesmo
- * incidente em vez de abrir outro.
+ * 03/08).
+ *
+ * Dedupe por QUEIXA, não só por aluno (correção 20/08, caso Katia — ver
+ * mail-incident.ts): a assinatura carrega a classe da queixa, então queixa
+ * NOVA do mesmo aluno abre incidente NOVO, e a MESMA queixa repetida soma
+ * ocorrência no mesmo incidente. Incidente fechado que recebe ocorrência da
+ * mesma classe REABRE com nota de reincidência; se a queixa não classificar
+ * (formato legado, chave = só remetente), card fechado NUNCA absorve — nasce
+ * incidente novo apontando pro antigo.
  */
 async function openIncidentForSentinela(
   fromEmail: string,
@@ -147,11 +157,12 @@ async function openIncidentForSentinela(
   technical = true,
 ): Promise<void> {
   const admin = getAdmin();
-  const signature = `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`;
+  const classe = classifyComplaint(reason, excerpt);
+  const signature = incidentSignature(technical, fromEmail, classe);
   const now = new Date().toISOString();
   const { data: existingRaw } = await admin
     .from("incidents" as never)
-    .select("id, status, occurrences, affected_emails")
+    .select("id, status, occurrences, affected_emails, agent_notes")
     .eq("signature", signature)
     .order("last_seen_at", { ascending: false })
     .limit(1)
@@ -161,29 +172,62 @@ async function openIncidentForSentinela(
     status: string;
     occurrences: number;
     affected_emails: string[];
+    agent_notes: AgentNote[] | null;
   } | null;
 
-  if (existing) {
-    const reopened = existing.status === "fixed" || existing.status === "ignored";
+  const action = decideDedupe(existing?.status ?? null, classe);
+
+  if (existing && action !== "new") {
+    const notes: AgentNote[] = Array.isArray(existing.agent_notes) ? existing.agent_notes : [];
+    if (action === "reopen") {
+      notes.push({
+        at: now,
+        by: "fast",
+        note: `REINCIDÊNCIA (classe ${classe}): queixa da mesma classe voltou após status "${existing.status}" — incidente reaberto. Resumo novo: ${reason.slice(0, 300)}`,
+      });
+    } else {
+      // A description é sobrescrita a cada ocorrência — a nota preserva o
+      // histórico do que cada ocorrência dizia (a queixa 2 da Katia apagou a 1).
+      notes.push({
+        at: now,
+        by: "fast",
+        note: `Ocorrência ${(existing.occurrences ?? 1) + 1}: ${reason.slice(0, 300)}`,
+      });
+    }
     await admin
       .from("incidents" as never)
       .update({
-        status: reopened ? "open" : existing.status,
+        status: action === "reopen" ? "open" : existing.status,
         occurrences: (existing.occurrences ?? 1) + 1,
         last_seen_at: now,
         sample_error: excerpt.slice(0, 1000),
         description: reason,
+        agent_notes: notes,
         ...(prints.length ? { attachment_path: prints.join(",") } : {}),
       } as never)
       .eq("id", existing.id);
     return;
   }
+
+  // Sem classe e o mais recente com essa chave está FECHADO: nasce card novo
+  // com referência ao antigo — nunca incrementa card fechado em silêncio.
+  const notaCardAntigo: AgentNote[] =
+    existing && action === "new"
+      ? [
+          {
+            at: now,
+            by: "fast",
+            note: `Queixa nova (não classificada) do mesmo remetente; o incidente anterior com esta chave (${existing.id}) está "${existing.status}" e NÃO foi reaberto porque não dá pra provar que é a mesma queixa.`,
+          },
+        ]
+      : [];
+
   await admin.from("incidents" as never).insert({
     kind: "reported",
     cause: "reported",
     status: "open",
     signature,
-    title: `Fast (e-mail${technical ? "" : ", atendimento"}): ${reason.slice(0, 90)}`,
+    title: `Fast (e-mail${technical ? "" : ", atendimento"}${classe ? `, ${classe}` : ""}): ${reason.slice(0, 90)}`,
     occurrences: 1,
     affected_emails: [fromEmail],
     sample_error: excerpt.slice(0, 1000),
@@ -192,6 +236,7 @@ async function openIncidentForSentinela(
       : `Pedido de ATENDIMENTO por e-mail ao suporte@ (cobrança, cancelamento, reembolso ou dúvida de conta) — a Fast não resolve isso sozinha e prometeu ao aluno que a equipe verificaria. Resumo dela: ${reason}`,
     reported_by: "fast",
     attachment_path: prints.length ? prints.join(",") : null,
+    ...(notaCardAntigo.length ? { agent_notes: notaCardAntigo } : {}),
     first_seen_at: now,
     last_seen_at: now,
   } as never);
