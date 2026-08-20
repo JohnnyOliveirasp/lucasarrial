@@ -101,3 +101,43 @@ existe pra impedir.
 **O que não foi medido e eu não vou fingir que foi:** quantas regenerações o
 portão tenta antes de desistir, e se aumentar esse número resolveria sozinho.
 Isso é olhar o handler, não o banco.
+
+---
+
+## CORREÇÃO (11:06 UTC, mesmo dia) — a régua mudou no meio da minha medição
+
+Escrevi a seção acima sem saber que o Johnny tinha subido `aae3ba5`
+*"fix(voz): parar de reprovar audio BOM — a régua passa a medir a FORMA do
+buraco"* às **11:01 UTC**. Foi esse commit que fez meu push ser rejeitado; eu
+rebaseei em cima dele e não olhei o que ele era. Erro meu.
+
+**Todas as 5 falhas que eu tabelei são de ANTES das 11:01** (00:35, 02:58,
+08:39, 10:09, e o `ready` das 10:15). Ou seja: **medi a régua velha e apresentei
+como se fosse o estado atual.**
+
+O que continua valendo, porque é observação e não inferência:
+
+- os 2 alunos reais foram estornados e voltaram a gerar;
+- o mesmo texto de 1080 chars falhou 2× e passou na 3ª — sob a régua velha o
+  resultado era não-determinístico. Isso é fato medido.
+
+O que **não** vale mais como conclusão: dizer que "sobra outro bicho" e que
+falta re-medir. Não falta — o Johnny já atacou exatamente isso, e a régua nova
+mede a FORMA do buraco em vez de exigir lista de exceção pra número, markdown e
+rótulo de locutor.
+
+### Sobre o deploy, que aqui é diferente do resto do repo
+
+`runpod-worker/handler.py` **não** vai pro ar com push na main — mas neste repo
+o caminho existe e é completo (`.github/workflows/runpod-worker.yml`): build →
+GHCR com **tag imutável do sha** → `saveTemplate` apontando o template pra essa
+imagem → recicla os workers 0→N, **sem recriar o endpoint** (lição InfiniteTalk
+de 07/07 anotada no próprio workflow).
+
+Então, ao contrário do app, aqui **Action verde é deploy de verdade**. A ressalva
+some, mas a verificação não: o run de `aae3ba5` estava `in_progress` às 11:06.
+
+**Próximo passo, e é medição, não opinião:** contar `qa_coverage` em
+`generations` com `created_at > 11:01 UTC` depois que o run ficar verde. Antes
+disso qualquer número é da régua velha. Nenhum aluno está travado no intervalo,
+então dá pra esperar o dado em vez de chutar.
