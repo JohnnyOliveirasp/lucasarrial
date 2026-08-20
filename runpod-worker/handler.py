@@ -936,6 +936,59 @@ def _chunk_coverage(got, chunk_text, language: str = "pt"):
     return round(matched / len(expected), 3)
 
 
+def _chunk_intrusions(got, chunk_text, language="pt"):
+    """QA de INTRUSÃO (incidente fb8d29b7, 19/08): palavra A MAIS ou TROCADA no
+    áudio — o inverso do coverage (que só vê palavra FALTANDO). Caso medido:
+    23 de 40 entregas recentes com palavra inventada/trocada, 21 passando no
+    portão; o mecanismo dominante é o VoxCPM vazar a CAUDA da referência entre
+    frases (a ref da Katia termina em "por menos" → "Menos." brotava nas
+    junções de chunk).
+
+    Método: alinha `expected` × `got` (SequenceMatcher) e olha os opcodes de
+    insert/replace do lado do `got`. Palavra inserida SÓ conta como intrusão
+    quando NÃO é parecida (ratio < 0.7) com nenhuma palavra esperada do
+    replace correspondente ou vizinha — senão "quatorze" falado "catorze"
+    (variação de Whisper/sotaque) viraria falso positivo. Palavra com menos de
+    3 letras não conta (ruído de transcrição: "e", "a", "o").
+
+    Retorna o Nº de intrusões (0 = limpo); None = inconclusivo (não bloqueia —
+    rede de segurança, não gate).
+    """
+    import difflib
+
+    expected = _qa_norm_words(chunk_text, language)
+    if not expected or not got:
+        return None
+
+    def parecida(w, candidatas):
+        for c in candidatas:
+            if difflib.SequenceMatcher(None, w, c).ratio() >= 0.7:
+                return True
+            # Whisper separa/junta palavra composta ("autoconhecimento" →
+            # "auto conhecimento"): pedaço-prefixo/sufixo da vizinha não é
+            # intrusão. Só vale com pedaço ≥3 (senão tudo casa com tudo).
+            if len(w) >= 3 and len(c) >= 3 and (
+                c.startswith(w) or c.endswith(w) or w.startswith(c) or w.endswith(c)
+            ):
+                return True
+        return False
+
+    sm = difflib.SequenceMatcher(None, expected, got)
+    intrusoes = 0
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag not in ("insert", "replace"):
+            continue
+        # Vizinhança APERTADA: as palavras do replace + 1 de cada lado. Janela
+        # de 2 deixava intrusão real escapar por parentesco acidental — no caso
+        # medido, o "menos" vazado da ref casava com "mesmos" duas posições
+        # antes (ratio 0.73) e a tomada 1 da Katia passava limpa.
+        vizinhas = expected[max(0, i1 - 1) : min(len(expected), i2 + 1)]
+        for w in got[j1:j2]:
+            if len(w) >= 3 and not parecida(w, vizinhas):
+                intrusoes += 1
+    return intrusoes
+
+
 def _run_chunk_qa(
     seg,
     idx: int,
@@ -953,6 +1006,8 @@ def _run_chunk_qa(
     coverage_qa_enabled: bool,
     coverage_qa_retries: int,
     coverage_qa_min: float,
+    intrusion_qa_enabled: bool,
+    intrusion_qa_retries: int,
     qa_stats: dict,
 ):
     """Laço de QA de UM chunk: reprovou → regenera (regen_fn); esgotou as
@@ -965,7 +1020,9 @@ def _run_chunk_qa(
     ~30% do texto ausente saiu [ready] e custou 555 créditos).
     """
     attempt = 0
-    max_attempts = max(start_qa_retries, echo_qa_retries, coverage_qa_retries)
+    max_attempts = max(
+        start_qa_retries, echo_qa_retries, coverage_qa_retries, intrusion_qa_retries
+    )
     best_seg, best_score, best_coverage = seg, None, None
     while attempt < max_attempts:
         score = 0
@@ -984,7 +1041,7 @@ def _run_chunk_qa(
         got = None
         if (echo_qa_enabled and attempt < echo_qa_retries) or (
             coverage_qa_enabled and attempt < coverage_qa_retries
-        ):
+        ) or (intrusion_qa_enabled and attempt < intrusion_qa_retries):
             if seg.size >= int(sample_rate * 0.2):
                 got = _qa_transcribe_seg(seg, sample_rate, echo_qa_model, qa_language, "chunk_qa")
             else:
@@ -1013,6 +1070,21 @@ def _run_chunk_qa(
                     # Penalidade proporcional ao que falta: entre duas
                     # tentativas ruins, best_seg fica com a MAIS completa.
                     score += 100 + int((coverage_qa_min - coverage) * 100)
+        if intrusion_qa_enabled and attempt < intrusion_qa_retries:
+            intrusoes = _chunk_intrusions(got, chunk, qa_language)
+            qa_stats["intrusion_checked"] += 1
+            if intrusoes is None:
+                qa_stats["intrusion_none"] += 1
+            else:
+                _log("info", "inference.intrusion_qa", idx=idx, attempt=attempt, intrusions=intrusoes)
+                if intrusoes > 0:
+                    qa_stats["intrusion_flagged"] += 1
+                    # GATE MACIO (deliberado): intrusão regenera e escolhe a
+                    # tentativa mais limpa, mas NUNCA falha o job no esgotamento
+                    # — 23 de 40 entregas recentes têm o defeito (fb8d29b7);
+                    # gate duro agora viraria tempestade de falha+estorno como
+                    # a de 19/08. Peso 50: acima do eco, abaixo do coverage.
+                    score += 50 * intrusoes
         if best_score is None or score < best_score:
             best_seg, best_score, best_coverage = seg, score, coverage
         if score == 0:
@@ -1263,6 +1335,13 @@ def _handle_inference(inp: dict) -> dict:
     coverage_qa_min = float(os.environ.get("TTS_COVERAGE_QA_MIN", "0.85"))
     coverage_qa_retries = int(os.environ.get("TTS_COVERAGE_QA_RETRIES", "3"))
 
+    # QA de INTRUSÃO (incidente fb8d29b7, 19/08): palavra a mais/trocada —
+    # eco de cauda da ref ("menos" da Katia) e invenção do modelo. GATE MACIO:
+    # regenera e escolhe a tentativa mais limpa, mas NUNCA falha o job (23/40
+    # entregas recentes têm o defeito; gate duro = tempestade de estorno).
+    intrusion_qa_enabled = os.environ.get("TTS_INTRUSION_QA", "1") not in ("0", "false", "False", "")
+    intrusion_qa_retries = int(os.environ.get("TTS_INTRUSION_QA_RETRIES", "3"))
+
     def _gen_chunk(chunk_text: str) -> np.ndarray:
         # Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853).
         seg = model.generate(
@@ -1287,6 +1366,7 @@ def _handle_inference(inp: dict) -> dict:
         "echo_checked": 0, "echo_flagged": 0, "echo_none": 0,
         "coverage_checked": 0, "coverage_flagged": 0, "coverage_none": 0,
         "coverage_exhausted": 0,
+        "intrusion_checked": 0, "intrusion_flagged": 0, "intrusion_none": 0,
         "regens": 0, "exhausted": 0,
     }
 
@@ -1306,7 +1386,9 @@ def _handle_inference(inp: dict) -> dict:
             return _trim_silence(s, threshold=trim_threshold, pad_samples=pad)
 
         seg = _trim(seg)
-        if prompt_wav_local and (start_qa_enabled or echo_qa_enabled or coverage_qa_enabled):
+        if prompt_wav_local and (
+            start_qa_enabled or echo_qa_enabled or coverage_qa_enabled or intrusion_qa_enabled
+        ):
             seg, best_coverage = _run_chunk_qa(
                 seg, idx, chunk,
                 regen_fn=lambda c=chunk, t=_trim: t(_gen_chunk(c)),
@@ -1322,6 +1404,8 @@ def _handle_inference(inp: dict) -> dict:
                 coverage_qa_enabled=coverage_qa_enabled,
                 coverage_qa_retries=coverage_qa_retries,
                 coverage_qa_min=coverage_qa_min,
+                intrusion_qa_enabled=intrusion_qa_enabled,
+                intrusion_qa_retries=intrusion_qa_retries,
                 qa_stats=qa_stats,
             )
             if (

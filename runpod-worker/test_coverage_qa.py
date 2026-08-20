@@ -69,6 +69,8 @@ def qa_kwargs(**over):
         coverage_qa_enabled=True,
         coverage_qa_retries=3,
         coverage_qa_min=0.85,
+        intrusion_qa_enabled=False,
+        intrusion_qa_retries=3,
     )
     base.update(over)
     return base
@@ -79,6 +81,7 @@ def fresh_stats() -> dict:
         "echo_checked": 0, "echo_flagged": 0, "echo_none": 0,
         "coverage_checked": 0, "coverage_flagged": 0, "coverage_none": 0,
         "coverage_exhausted": 0,
+        "intrusion_checked": 0, "intrusion_flagged": 0, "intrusion_none": 0,
         "regens": 0, "exhausted": 0,
     }
 
@@ -253,6 +256,90 @@ class DigitosViramPalavrasTest(unittest.TestCase):
         words = handler._digits_to_words("11987654321", "pt")
         self.assertEqual(words[:2], ["um", "um"])
         self.assertIn("nove", words)
+
+
+class ChunkIntrusionsTest(unittest.TestCase):
+    """_chunk_intrusions (incidente fb8d29b7): palavra A MAIS ou TROCADA no
+    áudio — o inverso do coverage. Fixtures do caso REAL da Katia 19/08: a ref
+    da voz termina em "por menos" e o VoxCPM soltava "Menos." nas junções."""
+
+    TEXTO = ("Por isso eu criei o Portal da Morgana para te guiar em uma "
+             "jornada profunda de autoconhecimento e despertar")
+
+    def test_audio_limpo_e_zero(self):
+        got = handler._qa_norm_words(self.TEXTO)
+        self.assertEqual(handler._chunk_intrusions(got, self.TEXTO), 0)
+
+    def test_eco_de_cauda_da_ref_e_intrusao(self):
+        # Caso real: "Por menos, por isso eu criei..." (tomada 1 da Katia).
+        got = handler._qa_norm_words("Por menos, " + self.TEXTO)
+        self.assertGreaterEqual(handler._chunk_intrusions(got, self.TEXTO), 1)
+
+    def test_palavra_inventada_no_meio_e_intrusao(self):
+        got = handler._qa_norm_words(
+            self.TEXTO.replace("para te guiar", "para menos te guiar"))
+        self.assertGreaterEqual(handler._chunk_intrusions(got, self.TEXTO), 1)
+
+    def test_variacao_de_whisper_nao_e_intrusao(self):
+        # "quatorze" falado/ouvido "catorze": substituição PARECIDA (ratio
+        # >= 0.7) é sotaque/grafia do Whisper, não defeito.
+        texto = "ela completou quatorze anos em março"
+        got = handler._qa_norm_words("ela completou catorze anos em março")
+        self.assertEqual(handler._chunk_intrusions(got, texto), 0)
+
+    def test_substituicao_real_e_intrusao(self):
+        # Palavra TROCADA por outra sem parentesco conta.
+        texto = "a jornada exige coragem e persistencia"
+        got = handler._qa_norm_words("a jornada exige dinheiro e persistencia")
+        self.assertGreaterEqual(handler._chunk_intrusions(got, texto), 1)
+
+    def test_palavra_curta_nao_conta(self):
+        # "e"/"a"/"o" a mais é ruído de transcrição, não intrusão.
+        got = handler._qa_norm_words(self.TEXTO.replace("para te", "para e te"))
+        self.assertEqual(handler._chunk_intrusions(got, self.TEXTO), 0)
+
+    def test_inconclusivo_nao_bloqueia(self):
+        self.assertIsNone(handler._chunk_intrusions(None, self.TEXTO))
+        self.assertIsNone(handler._chunk_intrusions([], self.TEXTO))
+
+
+class IntrusionLoopTest(unittest.TestCase):
+    """O laço com o QA de intrusão: regenera, escolhe a tentativa limpa, e no
+    esgotamento NÃO derruba o job (gate macio — coverage devolvida é a boa)."""
+
+    def test_intrusao_regenera_e_escolhe_a_limpa(self):
+        suja = handler._qa_norm_words("Por menos, " + CHUNK)
+        limpa = CHUNK_WORDS
+        it = iter([suja, limpa])
+        stats = fresh_stats()
+        seg_sujo, seg_limpo = make_seg(), make_seg(2.0)
+        with mock.patch.object(
+            handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: next(it)
+        ):
+            best, cov = handler._run_chunk_qa(
+                seg_sujo, 0, CHUNK, regen_fn=lambda: seg_limpo,
+                qa_stats=stats, **qa_kwargs(intrusion_qa_enabled=True),
+            )
+        self.assertEqual(stats["intrusion_flagged"], 1)
+        self.assertEqual(stats["regens"], 1)
+        self.assertIs(best, seg_limpo)
+        # Cobertura da entregue é total — o chamador NÃO falha o job.
+        self.assertEqual(cov, 1.0)
+
+    def test_intrusao_persistente_esgota_mas_nao_derruba(self):
+        suja = handler._qa_norm_words("Por menos, " + CHUNK)
+        stats = fresh_stats()
+        with mock.patch.object(handler, "_qa_transcribe_seg", return_value=suja):
+            _best, cov = handler._run_chunk_qa(
+                make_seg(), 0, CHUNK, regen_fn=make_seg,
+                qa_stats=stats, **qa_kwargs(intrusion_qa_enabled=True),
+            )
+        self.assertEqual(stats["exhausted"], 1)
+        # A transcrição CONTÉM o texto todo (só tem palavra a mais): cobertura
+        # segue >= mínimo → o gate do chamador NÃO falha o job. É o desenho:
+        # intrusão melhora a escolha, nunca vira estorno em massa.
+        self.assertIsNotNone(cov)
+        self.assertGreaterEqual(cov, 0.85)
 
 
 if __name__ == "__main__":
