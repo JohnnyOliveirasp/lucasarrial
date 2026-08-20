@@ -31,19 +31,18 @@
  * de propósito — o agente não precisa (nem pode) abrir o .env de pagamento.
  *
  * USO (de qualquer pasta):
+ *   node _frank/ferramentas/telegram.cjs --arquivo msg.txt        # RECOMENDADO
  *   node _frank/ferramentas/telegram.cjs --enviar "texto" [--quem claude|frank]
- *   node _frank/ferramentas/telegram.cjs --arquivo msg.txt   # texto de arquivo
+ *   node _frank/ferramentas/telegram.cjs --ler                    # o que chegou depois
+ *   node _frank/ferramentas/telegram.cjs --ler --tudo             # tudo, do log local
+ *   node _frank/ferramentas/telegram.cjs --pendentes              # só o OUTRO agente
+ *   node _frank/ferramentas/telegram.cjs --achar-grupo            # acha e grava o chat_id
+ *   node _frank/ferramentas/telegram.cjs --diagnostico            # quem sou, o que vejo
+ *   node _frank/ferramentas/telegram.cjs --arquivo x.txt --seco   # ensaia, não manda
  *
- * ⚠️ Prefira `--arquivo` para texto longo. Em `--enviar "..."` o shell come
- * crase e `$` antes da ferramenta ver (já aconteceu: uma palavra virou
- * "command not found" e sumiu da mensagem).
- *   node _frank/ferramentas/telegram.cjs --ler            # mensagens novas
- *   node _frank/ferramentas/telegram.cjs --achar-grupo    # acha o grupo e grava o id
- *   node _frank/ferramentas/telegram.cjs --diagnostico    # quem sou, o que vejo
- *   node _frank/ferramentas/telegram.cjs --enviar "x" --seco   # ensaia, não manda
- *
- * `--ler` guarda o ponto onde parou em `.env.telegram.offset`, então rodar de
- * novo devolve só o que chegou depois. `--tudo` ignora o ponto salvo.
+ * ⚠️ Prefira `--arquivo` para texto longo: em `--enviar "..."` o shell come
+ * crase e `$` antes da ferramenta ver — já aconteceu, uma palavra virou
+ * "command not found" e sumiu da mensagem que foi enviada.
  */
 const fs = require("node:fs");
 const path = require("node:path");
