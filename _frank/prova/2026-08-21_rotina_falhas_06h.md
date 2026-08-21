@@ -192,7 +192,31 @@ os ARQUIVOS antes de olhar worker/ffmpeg; paginar e imprimir `error` cru):
 **Nesta ronda: nenhum e-mail enviado, nenhuma GPU gasta, nenhum crédito mexido, nenhum acesso
 alterado, nenhuma migration, nenhuma mensagem no grupo.**
 
-## 13. Passo fixo de fim de ronda
+## 13. Passo fixo de fim de ronda — e o que ele pegou
 
-`git fetch` + `origin/main..HEAD` vazio + conferência de fix preso em branch: registrados no
-commit desta prova.
+- ✅ `git fetch` + **`origin/main..HEAD` vazio**. Este log foi direto na main.
+- ✅ **Nenhum fix de aluno preso em branch.** Cruzei os 30 branches locais com os 14 PRs
+  abertos, um por um.
+- ✅ **Os 2 branches que pareciam log perdido não são:** `prova/2026-08-20-pagante-trancado`
+  e `rescue/relatorio-noturno-7e02e90` têm commits fora da main, mas **todos os arquivos
+  deles já existem na main**. Nada invisível. Conferi arquivo por arquivo em vez de deduzir
+  pelo nome do branch.
+
+### 🟡 O que o passo pegou: código real sem PR
+
+`feat/incidents-resolved-at` (2 commits) **não está na main e não tem PR**: a ferramenta
+`fechar_incidente.cjs`, a trava de 3 camadas do `resolved_at` e a `scripts/86_*.sql`.
+Confirmado que `fechar_incidente.cjs` **não existe na main**.
+
+E tem um gêmeo velho: `feat/incidents-resolved-guard`, mesma coisa numerada como
+**`85_incidents_resolved_guard.sql`** — **número que o PR #18 (`85_trial_expiry_v2.sql`) já
+usa**. A colisão **já foi resolvida** por quem renumerou para 86 no branch mais novo; o
+`-guard` é o superado e só serve para alguém aplicar o 85 errado. **Sugiro apagá-lo** (não
+apaguei: branch alheio, e apagar não é reversível como abrir PR).
+
+**Por que não tratei como urgente, honestamente:** `fechados_sem_resolved_at = 0`, a coluna
+`resolved_at` já existe no banco, e o caminho de fechamento em uso é o `anotar_incidente.cjs`.
+Ou seja, não há sintoma hoje — é dívida parada, não incêndio. Fica para o relatório da noite.
+
+**Estado das migrations:** a main está na **84**. A 85 (PR #18) e a 86 (sem PR) seguem
+**não aplicadas** — e vale a regra: DDL commitado não é DDL aplicado.
