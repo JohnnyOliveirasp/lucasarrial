@@ -170,3 +170,54 @@ O gatilho do "na hora" (pagante travado sem solução) **já foi honrado na rond
 Johnny já sabe dos 2 pagantes. O que descobri hoje não muda **o que** ele precisa decidir, muda
 **o conteúdo do texto** que ele vai aprovar — e o prazo mais curto é de ~101h. Ping a cada ronda
 mata o sinal que a regra existe para proteger. Vai como **item de abertura do relatório da noite**.
+
+## 12. Passo fixo de fim de ronda — e o que ele pegou
+
+- ✅ `git fetch` + **`origin/main..HEAD` vazio**. Este log foi direto na **main** (`abdb41f`).
+- ✅ Estou na `main`, não em branch de feature.
+- ✅ Cruzei **todos** os branches locais com os PRs abertos, um por um.
+
+### 🟡 Sete branches sem PR — e uma correção ao meu próprio susto
+
+Primeiro escrevi que havia código "não publicado". **Está errado e corrijo antes de reportar:**
+`git ls-remote` devolveu SHA para os três que importam — eles **estão no `origin`**. Não há
+risco de perda. O problema não é sumiço, é **invisibilidade**: sem PR, ninguém revisa e ninguém
+mergeia. É a mesma classe do fix que ficou 9h preso em 19/08, só que por outro caminho.
+
+| branch | commits | no origin? | o que é |
+|---|---|---|---|
+| `fix/fast-email-dedupe-por-queixa` | 1 | **sim** | 🔴 fix de aluno — **PR #23 aberto nesta ronda** |
+| `feat/incidents-resolved-at` | 2 | sim | `fechar_incidente.cjs` + trava do `resolved_at` + `86_*.sql` |
+| `feat/vigia-noturno` | 1 | sim | espinha do vigia noturno (6 arquivos, `64_night_watch.sql`) |
+| `feat/incidents-resolved-guard` | 1 | sim | gêmeo superado do `-resolved-at`, numerado **85** (colide com o PR #18) |
+| `chore/gitattributes` | 1 | **não** | só `.gitattributes`; local, trivial |
+| `prova/2026-08-20-pagante-trancado` | 1 | sim | conferido às 06h: arquivos já existem na main |
+| `rescue/relatorio-noturno-7e02e90` | 1 | sim | idem |
+
+### 🔴 O que estava invisível e era de aluno: PR #23
+
+`fix/fast-email-dedupe-por-queixa`, meu, empurrado em **20/08 16:00** e **sem PR desde então**.
+A assinatura do incidente era `fast-email:{tec|atend}:{email}`, então **queixa nova do mesmo
+aluno virava "ocorrência 2" de um card fechado sobre outro defeito e sumia**. É exatamente o que
+aconteceu com a Katia em 20/08: a queixa de **pacing** entrou no `ce6e157d`, que é de **eco** e
+já estava corrigido — ela perguntou 3× em 3 dias e a última pergunta ficou horas sem resposta.
+
+O commit traz teste de aceite com os textos **reais** de produção (11/11 em `node --test`) e
+prova ao vivo read-only. **Abri o PR #23 e NÃO mergeei** — abrir PR é reversível e não deploya;
+o que não podia continuar era o fix existir e ninguém poder vê-lo. Declarei no corpo do PR que
+**não rodei typecheck/lint nesta ronda** — a prova é a do commit de 20/08.
+
+**Por que isto importa para a fila de hoje:** o defeito que o PR #23 corrige é o mecanismo que
+faz uma queixa nova se esconder dentro de um card fechado. É irmão do que achei na seção 1
+(sweep que muda estado sem avisar) e do zumbi `acf8acd6` (card fechado que escondeu 14
+ocorrências de bug nosso). **Três formas diferentes do mesmo defeito de operação: a coisa muda
+de estado e ninguém do outro lado fica sabendo.**
+
+### Sugestão que não executei
+
+`feat/incidents-resolved-guard` é o gêmeo **superado** do `-resolved-at` e numera a migration
+como **85**, número que o PR #18 já usa. Só serve para alguém aplicar o 85 errado. **Sugiro
+apagar** — não apaguei porque apagar branch não é reversível como abrir PR. Fica para o Johnny.
+
+**Estado das migrations:** main na **84**. A 85 (PR #18) e a 86 (`feat/incidents-resolved-at`,
+agora sem PR) seguem **não aplicadas**. DDL commitado não é DDL aplicado.
