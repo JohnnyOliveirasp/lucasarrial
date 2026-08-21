@@ -12,7 +12,36 @@
  */
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-haiku-4-5"; // rápido e barato — ideal pra normalização
+const OPENAI_API = "https://api.openai.com/v1/chat/completions";
+
+/**
+ * MOTOR PRINCIPAL: gpt-4.1 (decisão do Johnny, 21/08).
+ *
+ * ⚠️ ESCOLHIDO POR MEDIÇÃO, não por preferência. O problema: o normalizador
+ * JUNTA frases ("...essencial. A confiança" -> "...essencial: a confiança"),
+ * e cada ponto que some é uma pausa que some — o worker corta o áudio nas
+ * fronteiras de frase. Roteiro de aluno com 25 frases, 3 rodadas por modelo,
+ * mesmo prompt:
+ *
+ *   modelo             frases (alvo 25)   fidelidade   tempo
+ *   gpt-4.1                25 / 25 / 24       99,2%     2,6s   <- escolhido
+ *   claude-haiku-4-5       20 / 20 / 20       99,2%     2,4s   <- era este
+ *   gpt-4o                 24 / 20 / 20       99,2%     3,9s
+ *   claude-sonnet-5        18 /  0 / 21       65,2%    31,6s
+ *
+ * O Sonnet foi DESCARTADO apesar de parecer o mais "forte": numa das rodadas
+ * devolveu zero frases e a fidelidade média ficou em 65% — perdeu um terço das
+ * palavras do aluno. Modelo grande não é sinônimo de resposta estável quando a
+ * tarefa é copiar texto com pequenas trocas.
+ */
+const MODEL = "gpt-4.1";
+
+/**
+ * RESERVA: se a OpenAI falhar, cai no Haiku em vez de devolver o texto cru.
+ * 20 de 25 frases é pior que 25, e MUITO melhor que normalização nenhuma —
+ * sem normalizar, "R$ 50,90" e "14/03" vão pro TTS como estão.
+ */
+const MODEL_RESERVA = "claude-haiku-4-5";
 const TIMEOUT_MS = 15_000;
 
 const SYSTEM = `Você normaliza texto para síntese de voz (TTS). O texto chega
@@ -134,41 +163,78 @@ export function sanitizeForTTS(text: string): string {
  * Retorna o texto normalizado para fala, ou o texto original em caso de
  * ausência de API key / erro / timeout.
  */
-export async function normalizeTextForTTS(text: string): Promise<string> {
+/** Limpa o que qualquer motor pode devolver a mais (tags, espaços). */
+function limpaSaida(bruto: string): string {
+  return bruto.replace(/<\/?texto_tts>/g, "").trim();
+}
+
+/** Motor principal: OpenAI. Devolve null se não deu (o chamador tenta a reserva). */
+async function viaOpenAI(text: string): Promise<string | null> {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return null;
+  const res = await fetch(OPENAI_API, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [
+        { role: "system", content: SYSTEM },
+        { role: "user", content: `<texto_tts>\n${text}\n</texto_tts>` },
+      ],
+    }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  return limpaSaida(data.choices?.[0]?.message?.content ?? "") || null;
+}
+
+/** Reserva: Anthropic. Mesmo prompt, modelo menor. */
+async function viaAnthropic(text: string): Promise<string | null> {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return sanitizeForTTS(text); // normalização desativada sem key
+  if (!key) return null;
+  const res = await fetch(ANTHROPIC_API, {
+    method: "POST",
+    headers: {
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL_RESERVA,
+      max_tokens: 2048,
+      // system estável + cache_control (prefix caching quando crescer)
+      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: `<texto_tts>\n${text}\n</texto_tts>` }],
+    }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { content?: AnthropicBlock[] };
+  return (
+    limpaSaida(
+      (data.content ?? [])
+        .filter((b) => b.type === "text" && typeof b.text === "string")
+        .map((b) => b.text as string)
+        .join(""),
+    ) || null
+  );
+}
 
-  try {
-    const res = await fetch(ANTHROPIC_API, {
-      method: "POST",
-      headers: {
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 2048,
-        // system estável + cache_control (prefix caching quando crescer)
-        system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: `<texto_tts>\n${text}\n</texto_tts>` }],
-      }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-
-    if (!res.ok) return sanitizeForTTS(text);
-
-    const data = (await res.json()) as { content?: AnthropicBlock[] };
-    const out = (data.content ?? [])
-      .filter((b) => b.type === "text" && typeof b.text === "string")
-      .map((b) => b.text as string)
-      .join("")
-      .replace(/<\/?texto_tts>/g, "")
-      .trim();
-
-    if (!out || !keepsOriginalWords(text, out)) return sanitizeForTTS(text);
-    return sanitizeForTTS(out);
-  } catch {
-    return sanitizeForTTS(text); // timeout, rede, parse — sempre cai pro texto cru
+export async function normalizeTextForTTS(text: string): Promise<string> {
+  // Cada motor é tentado em separado: se o principal cair, a reserva ainda
+  // roda. A guarda anti-conversa (`keepsOriginalWords`) vale pros DOIS — foi
+  // ela que pegou o caso Anderson, em que o modelo respondeu ao texto do aluno
+  // em vez de normalizar, e ela é a razão de não confiar em modelo nenhum.
+  for (const motor of [viaOpenAI, viaAnthropic]) {
+    try {
+      const out = await motor(text);
+      if (out && keepsOriginalWords(text, out)) return sanitizeForTTS(out);
+    } catch {
+      /* timeout, rede, parse — tenta o próximo motor */
+    }
   }
+  return sanitizeForTTS(text); // nenhum motor respondeu: o texto cru vai inteiro
 }
