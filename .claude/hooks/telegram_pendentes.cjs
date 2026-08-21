@@ -17,9 +17,66 @@
  */
 const { execFile } = require("node:child_process");
 const path = require("node:path");
+const fs = require("node:fs");
 
 const RAIZ = path.resolve(__dirname, "..", "..");
 const FERRAMENTA = path.join(RAIZ, "_frank", "ferramentas", "telegram.cjs");
+const LOG = path.join(RAIZ, ".env.telegram.log");
+
+/** Quantas trocas anteriores relembrar, e quanto de cada uma. */
+const LEMBRAR = 6;
+const CORTE = 260;
+
+/**
+ * O QUE JÁ FOI CONVERSADO — lido do log local, não da fila.
+ *
+ * ⚠️ POR QUE EXISTE (21/08): o `--espiar` mostra só o que está PENDENTE. Quando
+ * a fila está vazia — ou depois que alguém consome — eu acordava sem lembrar de
+ * NADA que já tinha sido dito, mesmo com o histórico inteiro no disco. Aconteceu
+ * comigo neste dia: consumi a fila e passei a afirmar que "não houve conversa
+ * hoje", com 130 mensagens gravadas aqui do lado.
+ *
+ * A fila é o que falta responder; o log é a memória. São coisas diferentes e
+ * a sessão precisa das duas.
+ *
+ * Corta cada mensagem em ~260 chars de propósito: o log tem 196 KB e isso entra
+ * em TODA sessão. Memória cara ninguém mantém ligada.
+ */
+function ultimasTrocas() {
+  let linhas;
+  try {
+    linhas = fs.readFileSync(LOG, "utf8").split("\n").filter(Boolean);
+  } catch {
+    return null; // sem log ainda: primeira sessão da vida
+  }
+
+  const trocas = [];
+  for (let i = linhas.length - 1; i >= 0 && trocas.length < LEMBRAR; i--) {
+    let u;
+    try {
+      u = JSON.parse(linhas[i]);
+    } catch {
+      continue;
+    }
+    const m = u && u.message;
+    const texto = String((m && m.text) || "").trim();
+    if (!texto) continue;
+    // ruído do terminal do Frank — não é conversa
+    if (/^(⚙️|🔄|✓)\s/.test(texto)) continue;
+
+    const quem = m.from
+      ? m.from.is_bot
+        ? (m.from.first_name || "bot")
+        : (m.from.first_name || "humano")
+      : "?";
+    const quando = m.date
+      ? new Date(m.date * 1000).toISOString().slice(5, 16).replace("T", " ")
+      : "";
+    const corpo = texto.replace(/\s+/g, " ").slice(0, CORTE);
+    trocas.push(`  [${quando}] ${quem}: ${corpo}${texto.length > CORTE ? "…" : ""}`);
+  }
+  return trocas.length ? trocas.reverse().join("\n") : null;
+}
 
 const sair = (contexto) => {
   if (contexto) {
@@ -45,10 +102,26 @@ execFile(process.execPath, [FERRAMENTA, "--espiar"], { timeout: 15000 }, (err, s
     "⚠️ 1 assunto = 1 mensagem. Duplicata no canal é o começo do ruído que faz parar de ler.\n" +
     "⛔ Agente não autoriza agente: dinheiro e acesso são decisão do Johnny.\n";
 
-  if (!texto) return sair(cabecalho + "\nFila VAZIA agora — nada pendente para ler.\n");
+  const memoria = ultimasTrocas();
+  const relembrar = memoria
+    ? "\n## 🧠 O QUE JÁ FOI CONVERSADO (do log local — pode já ter sido respondido)\n" +
+      "Você não lembra disto sozinho: a sessão anterior morreu. Não repita o que já foi dito,\n" +
+      "e não afirme que 'não houve conversa' sem olhar aqui.\n\n" +
+      memoria +
+      "\n"
+    : "";
+
+  if (!texto) {
+    return sair(
+      cabecalho +
+      relembrar +
+      "\nFila VAZIA agora — nada pendente para responder.\n",
+    );
+  }
 
   sair(
     cabecalho +
+    relembrar +
     "\n🔔 TEM MENSAGEM ESPERANDO (chegou enquanto a sessão anterior estava fechada).\n" +
     "Leia isto antes de responder o Johnny — pode conter ordem, incidente ou erro em produção:\n\n" +
     texto +
