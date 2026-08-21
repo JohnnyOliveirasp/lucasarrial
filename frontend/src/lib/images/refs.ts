@@ -74,15 +74,26 @@ export async function apagarStagingAdotado(
   if (!original.startsWith(`${userId}/images/`)) return false;
   if (ehReferenciaSalva(userId, original)) return false;
 
-  // Suspensório: a chave não pode estar em nenhuma geração — nem na coluna
-  // singular (`input_image_path`) nem no array (`input_image_paths`).
-  const [umPath, muitosPaths] = await Promise.all([
+  // Suspensório: a chave não pode estar referenciada em LUGAR NENHUM.
+  //
+  // ⚠️ SÃO QUATRO CONSULTAS, E ISSO CUSTOU CARO (21/08). A primeira versão
+  // olhava só `image_generations` e eu rodei a limpeza em massa com ela: 27
+  // arquivos que `video_projects` referenciava foram apagados, quebrando 15
+  // projetos de vídeo de 8 alunos. Deu pra restaurar tudo (a cópia vivia em
+  // `refs/`), mas a lição é a trava: uma foto pode ser insumo de uma GERAÇÃO
+  // DE IMAGEM **ou** de um PROJETO DE VÍDEO, e as duas tabelas guardam a
+  // chave em colunas diferentes. Conferir uma e esquecer a outra é apagar
+  // arquivo em uso achando que está limpando lixo.
+  const [umPath, muitosPaths, refVideo, prodVideo] = await Promise.all([
     admin.from("image_generations").select("id").eq("input_image_path", original).limit(1),
     admin.from("image_generations").select("id").contains("input_image_paths", [original]).limit(1),
+    admin.from("video_projects").select("id").contains("reference_image_paths", [original]).limit(1),
+    admin.from("video_projects").select("id").contains("product_image_paths", [original]).limit(1),
   ]);
   // Erro de consulta não é "não tem referência": na dúvida, não apaga.
-  if (umPath.error || muitosPaths.error) return false;
-  if ((umPath.data?.length ?? 0) > 0 || (muitosPaths.data?.length ?? 0) > 0) return false;
+  const consultas = [umPath, muitosPaths, refVideo, prodVideo];
+  if (consultas.some((c) => c.error)) return false;
+  if (consultas.some((c) => (c.data?.length ?? 0) > 0)) return false;
 
   await r2.send(new DeleteObjectCommand({ Bucket: imagesBucket(), Key: original }));
   return true;

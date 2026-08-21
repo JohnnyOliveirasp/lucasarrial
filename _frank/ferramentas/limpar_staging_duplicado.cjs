@@ -19,8 +19,10 @@
  * POR ISSO SÓ APAGA COM AS TRÊS CONDIÇÕES:
  *  1. a chave está em `<uid>/images/` (nunca toca em `refs/`);
  *  2. existe uma cópia em `<uid>/refs/` com o MESMO tamanho em bytes;
- *  3. NENHUMA geração referencia a chave — conferido nas duas colunas
- *     (`input_image_path` singular e `input_image_paths` array).
+ *  3. NADA referencia a chave — QUATRO consultas: `image_generations`
+ *     (`input_image_path` + `input_image_paths`) E `video_projects`
+ *     (`reference_image_paths` + `product_image_paths`). Ver `referenciada()`
+ *     abaixo pro erro que essa quarta consulta existe pra impedir.
  * Erro de consulta NÃO é "não tem referência": na dúvida, não apaga.
  *
  * Uso:
@@ -42,14 +44,26 @@ function nomeBase(key) {
     .replace(/^[0-9a-f]{8}_/, ""); // refs:    <hash8>_NOME
 }
 
-/** A MESMA checagem do apagarStagingAdotado() em lib/images/refs.ts. */
+/**
+ * A MESMA checagem do apagarStagingAdotado() em lib/images/refs.ts.
+ *
+ * ⚠️ QUATRO CONSULTAS, e a lição custou caro (21/08): a primeira versão
+ * olhava só `image_generations`. Rodei a limpeza com ela e apaguei 27 arquivos
+ * que `video_projects` referenciava — 15 projetos de vídeo de 8 alunos
+ * quebrados. Restaurei tudo (a cópia vivia em `refs/`), mas a foto pode ser
+ * insumo de uma GERAÇÃO DE IMAGEM **ou** de um PROJETO DE VÍDEO, em colunas
+ * diferentes de tabelas diferentes. Conferir uma e esquecer a outra é apagar
+ * arquivo em uso achando que é lixo.
+ */
 async function referenciada(key) {
-  const [a, b] = await Promise.all([
+  const r = await Promise.all([
     db.from("image_generations").select("id").eq("input_image_path", key).limit(1),
     db.from("image_generations").select("id").contains("input_image_paths", [key]).limit(1),
+    db.from("video_projects").select("id").contains("reference_image_paths", [key]).limit(1),
+    db.from("video_projects").select("id").contains("product_image_paths", [key]).limit(1),
   ]);
-  if (a.error || b.error) return true; // erro => trata como referenciada
-  return (a.data?.length ?? 0) > 0 || (b.data?.length ?? 0) > 0;
+  if (r.some((x) => x.error)) return true; // erro => trata como referenciada
+  return r.some((x) => (x.data?.length ?? 0) > 0);
 }
 
 (async () => {
