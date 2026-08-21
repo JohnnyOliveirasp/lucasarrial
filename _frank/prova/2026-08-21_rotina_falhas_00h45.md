@@ -217,3 +217,65 @@ tally do `ja_pagou`), `arquivos.cjs` (**`raw_audio_paths` × `HeadObject` no R2*
 Reusei, sem alterar: `_frank/ferramentas/_comum.cjs`,
 `_frank/ferramentas/backfill_acesso_pago.cjs` (**só leitura do código**, nem ensaio),
 `_frank/ferramentas/telegram.cjs --espiar` (não consome update).
+
+---
+
+## 11. Passo fixo de fim de ronda — e o que ele pegou
+
+`git fetch && git log --oneline origin/main..HEAD` → **vazio**. O log desta ronda
+está na main.
+
+Fiz também a segunda metade do passo (`git branch` + `git rev-list main..<branch>`),
+que é a que existe por causa do fix de aluno que ficou 9h preso em 19/08.
+**17 branches têm commit fora da main**; cruzei com os **13 PRs abertos** e sobraram
+**8 sem PR**. Fui olhar uma por uma.
+
+### 11.1 Suspeitei de um `fixed` falso — e eu estava ERRADO
+
+`feat/incidents-resolved-at` carrega o guard de `resolved_at` em 3 camadas
+(`frontend/src/lib/incidents/closure.ts` + migration 86) e **não tem PR**. Como o
+`261b295b` está `fixed` e toda ronda repete *"fechados sem resolved_at: 0"*, isso
+tinha exatamente o formato de "done falso": incidente fechado com o fix preso em
+branch.
+
+**Conferi antes de acusar, e a acusação não se sustenta.** Li o `origin/main`:
+os dois caminhos de fechamento — `api/v1/admin/incidents/[id]/route.ts` e
+`api/v1/agent/actions/route.ts` — **gravam `resolved_at` e `resolved_by` em `fixed` e
+em `ignored`**, e **limpam os dois** quando o incidente volta pra status vivo. Está
+no ar. O fix subiu como `981f2fb` + `ce25390` (app) e `2443719` (nossos scripts),
+numa implementação mais leve que a da branch. **O `fixed` é legítimo e o meu "0
+fechados sem resolved_at" tem guarda viva por trás, não só backfill manual.**
+
+Registro o erro de propósito: a hipótese era boa, a verificação é que decide.
+
+### 11.2 O que sobrou de verdade
+
+1. ⚠️ **Colisão de número de migration.** `feat/incidents-resolved-guard` (só local)
+   traz `scripts/85_incidents_resolved_guard.sql` e o **PR#18** (`feat/trial-expiry-v2`,
+   aberto) traz `scripts/85_trial_expiry_v2.sql`. **Duas migrations 85 diferentes.**
+   Na prática o risco é baixo, porque as duas branches do guard são **trabalho morto**
+   (o fix já subiu por outra via, ver 11.1) — mas enquanto elas existirem, o 85 e o 86
+   parecem ocupados por algo que nunca vai entrar. **Sugiro aposentar as duas**
+   (`feat/incidents-resolved-guard` e `feat/incidents-resolved-at`). Não apaguei:
+   branch dos outros, e área do Claude.
+2. ✅ **`prova/2026-08-20-pagante-trancado`** — cheguei a achar que era log preso em
+   branch (o defeito que a ordem manda evitar). **Não é:** conferi e o
+   `_frank/prova/2026-08-20_pagante_trancado.md` **já está na main**. Branch é só
+   sobra.
+3. 🔴 **`fix/fast-email-dedupe-por-queixa` estava só na cópia local** — sem PR e
+   **sem existir no `origin`**. `frontend/src/lib/agent/mail-incident.ts` **não existe
+   na main**, ou seja o fix (dedupe de incidente por QUEIXA e não só por remetente,
+   nascido do caso Katia) não chegou a lugar nenhum. É a mesma situação que a ordem
+   `2026-08-20_correcoes_da_ronda.md` item 4 descreve para a `feat/ref-corte-em-palavra`:
+   *"se aquela cópia se perder, perde junto"*.
+   **Publiquei a branch no `origin`** (`git push origin fix/fast-email-dedupe-por-queixa`).
+   **Só push:** nenhum PR aberto, nada mergeado, `origin/main..HEAD` conferido vazio
+   depois. Isso não deploya nada — só tira o trabalho do risco de sumir. Abrir PR e
+   decidir se entra é de quem escreveu.
+4. Branches locais restantes sem PR e sem urgência: `chore/gitattributes` e
+   `feat/vigia-noturno` (esta já está no `origin`).
+
+**O que isto vale pra próxima ronda:** o passo fixo não é só `origin/main..HEAD`.
+Cruzar branches × PRs abertos é o que separa "branch parada" de "fix de aluno
+esquecido", e nesta ronda a diferença apareceu nas duas direções — um alarme falso
+(11.1) e um achado real (11.2.3).
