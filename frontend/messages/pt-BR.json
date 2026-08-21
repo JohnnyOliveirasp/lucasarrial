@@ -437,6 +437,8 @@
         "formats": "JPG, PNG ou WEBP · até {max} fotos por vez",
         "bankUploading": "Enviando {done} de {total} para Imagens de Referência…",
         "bankSaved": "{count} foto(s) salva(s) em Imagens de Referência — escolha lá a principal e as extras.",
+        "usingNow": "{extras, plural, =0 {Nesta geração entra só a foto principal do quadro.} one {Nesta geração entram a foto principal do quadro e 1 foto extra.} other {Nesta geração entram a foto principal do quadro e # fotos extras.}}",
+        "savedNotInBoard": "{pending, plural, one {A foto que você acabou de enviar foi salva em Imagens de Referência, mas NÃO entra nesta geração. Para usar essa foto, escolha ela em Imagens de Referência antes de gerar.} other {As # fotos que você acabou de enviar foram salvas em Imagens de Referência, mas NÃO entram nesta geração. Para usar essas fotos, escolha elas em Imagens de Referência antes de gerar.}}",
         "remove": "Remover foto",
         "addMore": "Adicionar mais fotos",
         "fixedLabel": "Imagem de referência",

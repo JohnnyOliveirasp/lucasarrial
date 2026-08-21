@@ -214,6 +214,8 @@ export function ImageStudio({
     if (!removeRequest) return;
     if (fixedRef?.key === removeRequest.key) persistFixedRef(null);
     setRefs((prev) => prev.filter((x) => x.key !== removeRequest.key));
+    // Foto apagada do banco também sai do aviso "ficou de fora da geração".
+    setBankKeys((prev) => prev.filter((k) => k !== removeRequest.key));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [removeRequest?.seq]);
 
@@ -279,6 +281,15 @@ export function ImageStudio({
   // Referência" e a pessoa escolhe DE LÁ o que vai pro quadro.
   const [bankUpload, setBankUpload] = useState<{ done: number; total: number } | null>(null);
   const [bankSaved, setBankSaved] = useState(0);
+  // Chaves (já adotadas em refs/) das fotos que entraram no banco NESTA sessão.
+  // É por elas que o aviso ao lado do Gerar sabe se a foto nova ficou de fora
+  // da geração (incidente 8379549c: aluno subia a foto, gerava com a referência
+  // velha e pagava crédito por uma imagem que nunca viu a foto dele).
+  const [bankKeys, setBankKeys] = useState<string[]>([]);
+  // Fotos salvas no banco nesta sessão que NÃO estão no quadro (nem principal,
+  // nem extras): a geração não vai usá-las e a tela precisa dizer isso.
+  const bankPendingCount = bankKeys.filter((k) => !readyKeys.includes(k)).length;
+  const extrasCount = refs.filter((r) => r.key).length;
 
   /** Sobe 1 arquivo direto pro banco de referências (upload + adoção). */
   async function uploadToBank(file: File): Promise<boolean> {
@@ -304,6 +315,13 @@ export function ImageStudio({
       if (!ad.ok) {
         const j = await ad.json().catch(() => ({}));
         throw new Error(j?.error?.message || t("errors.upload"));
+      }
+      // Guarda a chave ADOTADA (refs/...): é ela que o quadro passa a usar se a
+      // pessoa escolher a foto no banco — só assim o aviso sabe comparar.
+      const adopted = (await ad.json().catch(() => null)) as { key?: unknown } | null;
+      if (adopted && typeof adopted.key === "string" && adopted.key) {
+        const nova = adopted.key;
+        setBankKeys((prev) => (prev.includes(nova) ? prev : [...prev, nova]));
       }
       onRefsChanged?.();
       return true;
@@ -919,6 +937,21 @@ export function ImageStudio({
 
         {/* Gerar */}
         <div className="flex flex-col gap-2">
+          {/* Aviso PERSISTENTE (não é toast): a pessoa subiu foto pro banco
+              nesta sessão e ela NÃO está no quadro — a geração sai sem ela.
+              Some sozinho quando a foto entra no quadro (principal ou extra). */}
+          {bankPendingCount > 0 && (
+            <div
+              role="status"
+              className="flex items-start gap-2.5 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-card)] px-3.5 py-3"
+            >
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-warn)]" />
+              <p className="text-[13px] leading-snug text-[var(--body)]">
+                {fixedRef && <>{t("refs.usingNow", { extras: extrasCount })} </>}
+                {t("refs.savedNotInBoard", { pending: bankPendingCount })}
+              </p>
+            </div>
+          )}
           <button type="button" onClick={handleGenerate} disabled={!canSubmit} className={PILL}>
             <Wand2 className="h-4 w-4" />
             {hasMinCredits ? t("submit.generate", { cost }) : t("submit.insufficient")}

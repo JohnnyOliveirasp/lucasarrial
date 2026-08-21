@@ -436,6 +436,8 @@
         "dropzone": "Click or drag your photos here — they are saved to Reference Images",
         "bankUploading": "Uploading {done} of {total} to Reference Images…",
         "bankSaved": "{count} photo(s) saved to Reference Images — pick the main one and the extras there.",
+        "usingNow": "{extras, plural, =0 {This generation will use only the main photo on the board.} one {This generation will use the main photo on the board plus 1 extra photo.} other {This generation will use the main photo on the board plus # extra photos.}}",
+        "savedNotInBoard": "{pending, plural, one {The photo you just uploaded was saved to Reference Images, but it will NOT be part of this generation. To use it, pick the photo in Reference Images before generating.} other {The # photos you just uploaded were saved to Reference Images, but they will NOT be part of this generation. To use them, pick the photos in Reference Images before generating.}}",
         "formats": "JPG, PNG or WEBP · up to {max} photos",
         "remove": "Remove photo",
         "addMore": "Add more photos",
