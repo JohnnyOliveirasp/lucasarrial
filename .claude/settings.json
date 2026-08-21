@@ -14,6 +14,18 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/telegram_pendentes.cjs\"",
+            "timeout": 20,
+            "statusMessage": "Lendo o canal do Telegram (BrothersAI)"
+          }
+        ]
+      }
     ]
   }
 }
