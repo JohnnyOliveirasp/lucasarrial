@@ -208,6 +208,10 @@ Ordenado por relógio.
 3. **Ia reportar "parado há 63h" para os 2.** Era o `updated_at` reescrito pelo lote.
    A espera real é 26 e 21 dias — **20× maior**. Corrigi o detector para contar do
    `created_at` antes de publicar o número.
+4. 🔴 **O pior: reescrevi um arquivo que já tinha PR aberto, sem olhar antes.** Ver a
+   seção 12.1. Fiz o cruzamento branches × PRs **no fim** da ronda, que é onde o passo
+   fixo manda — mas o passo fixo é tarde demais para quem vai **editar** arquivo. Vira
+   regra minha: **antes de tocar em qualquer arquivo, `gh pr list` naquele caminho.**
 
 Os **4 writes** desta ronda (1 insert + 3 updates de nota): **1 linha afetada cada**, com
 `.select()`, **relidos do banco depois de gravar**. Os 3 incidentes anotados continuam
@@ -244,8 +248,48 @@ Reusado sem alterar: `_comum.cjs`, `backfill_acesso_pago.cjs` (**só ensaio**),
 
 ## 12. Passo fixo de fim de ronda
 
-`git fetch origin && git log --oneline origin/main..HEAD` → **vazio** (registrado abaixo,
-depois do commit). `git branch` + `git rev-list main..<branch>` conferidos: nada de fix de
-aluno preso em branch nesta ronda. Os achados de branch da ronda anterior (migrations 85
-duplicadas, `fix/fast-email-dedupe-por-queixa` publicada no origin) continuam válidos e
-**sem mudança** — não são meus para mergear.
+`git fetch origin && git log --oneline origin/main..HEAD` → **vazio**, conferido depois do
+push dos 2 commits (`7ee785f` ferramenta, `1b4ad92` este log). `git branch` +
+`git rev-list main..<branch>`: **20 branches** com commit fora da main, cruzadas com
+**13 PRs abertos**.
+
+### 12.1 🔴 O passo fixo pegou um erro meu — e é o erro que este repo mais cobra
+
+**Existe um PR aberto para o mesmo arquivo que eu acabei de mexer: o #15,
+`feat/varredura-awaiting-training`, aberto em 20/08 01:35** — o card que o relatório
+noturno deu como *"aberto pro coder ontem, ainda não feito"*. **Estava feito.** Estava
+parado em PR, que é a definição do problema que a ordem manda evitar: trabalho pronto e
+invisível. Só que desta vez **eu** fui o segundo a escrever, e ainda commitei na main.
+
+**O PR #15 vai conflitar com a main por minha causa.** Comentei nele assumindo o erro
+([#15 comment](https://github.com/JohnnyOliveirasp/lucasarrial/pull/15#issuecomment-5364233001)).
+Não mergeei, não fechei e não toquei na branch — é de quem escreveu.
+
+**Comparação honesta, porque não é "o meu é melhor":**
+
+| | PR #15 (coder) | main `7ee785f` (meu) |
+|---|---|---|
+| corte de vítima | só quem passa por `awaiting_training` | **status-agnóstico** — pega `failed`, `rejected_too_short` e o que existir amanhã |
+| acharia os 2 do `b9c5a0d1`? | **não** (estão em `rejected_too_short`) | sim |
+| seção "AGUARDANDO AÇÃO DO ALUNO" | **tem** (separa espera legítima de item preso) | **não tem** — perdi a visibilidade das 28 |
+| confere áudio no R2 | **confere** | não confere |
+| avisa listagem cortada (`count: exact`) | **avisa** | não avisa |
+
+**Ou seja: cada lado tem o que falta no outro.** O certo é o #15 rebasear mantendo a
+seção de aviso, a conferência de R2 e o aviso de corte, e ficar com o corte de vítima
+status-agnóstico. Sugeri isso no comentário e disse que topo o caminho inverso também —
+desde que o corte de vítima **deixe de depender de lista de status**, senão os 2 do
+`b9c5a0d1` voltam a ser invisíveis.
+
+**O achado do #15 não se perdeu:** o `celsopinto@gmail.com` que ele flagrou (e a premissa
+"0 presos hoje" era falsa mesmo, o coder estava certo) virou o `aabfa1e5`, destravado em
+20/08 14:45 com o `dafd7fd`. Conferi nesta ronda: 0 vozes com mensagem mentindo sobre
+crédito. **O PR já pagou o próprio custo mesmo sem ter sido mergeado.**
+
+### 12.2 O resto das branches
+
+Os achados da ronda anterior continuam válidos e **sem mudança**: as duas migrations 85
+duplicadas (`feat/incidents-resolved-guard` × PR#18) e a
+`fix/fast-email-dedupe-por-queixa`, publicada no origin em 00h45 e ainda **sem PR**. Não
+são minhas para mergear. Apareceu também `rescue/relatorio-noturno-7e02e90` — sobra do
+relatório noturno, cujo conteúdo **já está na main** (`6fafddb`), conferido.
