@@ -199,6 +199,78 @@ export async function POST(request: NextRequest) {
       return jsonOk({ ok: true, sent_to: TEAM_GROUP_JID, has_link: Boolean(link) });
     }
 
+    /**
+     * tell_frank — o único canal das rotinas para o FRANK.
+     *
+     * POR QUE EXISTE (medido 21/08). As três ações que o Vigia e o Executor
+     * tinham apontavam TODAS pro Johnny: `notify` manda e-mail pro endereço
+     * cravado aqui em cima, `PushNotification` vai pro celular dele e
+     * `ask_humans` vai pro grupo de humanos. Naquele dia o Executor acionou 3
+     * vezes (04:23, 11:23, 12:26) e NENHUMA chegou ao Frank — que é quem
+     * conserta. Com o Johnny na estrada a partir de 24/08, ele é exatamente
+     * quem não pode ser o destinatário.
+     *
+     * FAZ AS DUAS COISAS DE PROPÓSITO (decisão do Johnny, 21/08):
+     *  B) grava em `agent_state` (`para_frank_*`) — durável, entra na ronda
+     *     dele, não se perde se o Telegram falhar ou a mensagem rolar pra cima;
+     *  A) manda no Telegram — tempo real, no canal onde ele já lê e onde dá
+     *     pra RESPONDER. Testado ponta a ponta em 21/08 13:05: ida e volta em
+     *     1 minuto.
+     * Não são alternativas: A é o canal, B é a garantia.
+     *
+     * ⚠️ O `/msg@Frank_agent_007_bot` na PRIMEIRA linha é obrigatório — é o
+     * formato que o bot dele aceita.
+     *
+     * ⚠️ Se o token do Telegram não estiver no servidor, a ação NÃO falha:
+     * grava em B e devolve `telegram:false`. Recado que chega tarde é melhor
+     * que recado perdido — e o campo diz a verdade sobre o que aconteceu.
+     */
+    if (body.action === "tell_frank") {
+      const { subject, message, incident_id } = body;
+      if (!subject || !message) {
+        return badRequest("tell_frank requires subject and message");
+      }
+
+      // B) durável primeiro: se o Telegram falhar depois, o recado já existe.
+      const key = `para_frank_${String(incident_id ?? Date.now()).slice(0, 8)}`;
+      await admin.from("agent_state" as never).upsert({
+        key,
+        value: {
+          at: new Date().toISOString(),
+          subject: String(subject).slice(0, 200),
+          message: String(message).slice(0, 8000),
+          incident_id: incident_id ?? null,
+          from: "rotina",
+        },
+        updated_at: new Date().toISOString(),
+      } as never);
+
+      // A) tempo real. Sem credencial no servidor, segue sem quebrar.
+      let telegram = false;
+      const tgToken = process.env.TELEGRAM_BOT_TOKEN;
+      const tgChat = process.env.TELEGRAM_CHAT_ID;
+      if (tgToken && tgChat) {
+        const texto =
+          `/msg@Frank_agent_007_bot\n` +
+          `🤖 ${String(subject).slice(0, 200)}\n\n` +
+          `${String(message).slice(0, 3500)}\n\n` +
+          `_(recado gravado em \`${key}\`${incident_id ? `, incidente ${String(incident_id).slice(0, 8)}` : ""})_`;
+        try {
+          const r = await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: tgChat, text: texto }),
+          });
+          telegram = r.ok;
+        } catch {
+          telegram = false; // B já garantiu; a ronda dele pega.
+        }
+      }
+
+      logger.info("audit", "agent.tell_frank", { key, telegram });
+      return jsonOk({ ok: true, key, telegram });
+    }
+
     return badRequest(`unknown action '${body.action}'`);
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "agent action failed");

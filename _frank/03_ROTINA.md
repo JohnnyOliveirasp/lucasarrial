@@ -64,6 +64,29 @@ git am /caminho/do.patch
 de `origin/main` no momento da rodada. Rebase em cima do main de agora e siga —
 se conflitar de verdade, recuse e anote, não remende no escuro.
 
+## 1-C. Recado de rotina esperando (`tell_frank`)
+
+O Vigia e o Executor rodam sozinhos, mas até 21/08 **não tinham como falar com
+você**: `notify` ia por e-mail pro Johnny, `PushNotification` pro celular dele.
+Em 21/08 o Executor acionou 3× (04:23, 11:23, 12:26) e **nenhuma chegou aqui**.
+Com o Johnny na estrada, ele é exatamente quem não pode receber.
+
+Agora eles usam `tell_frank`, que grava o recado **e** te chama no Telegram.
+O Telegram é o aviso; isto aqui é a garantia de que nada se perde:
+
+```sql
+select key, updated_at, value->>'subject' as assunto,
+       value->>'incident_id' as incidente, value->>'message' as recado
+from agent_state
+where key like 'para\_frank\_%'
+order by updated_at desc;
+```
+
+Tratou? Apague a chave (`set_state` com value null) pra não reprocessar amanhã.
+
+⚠️ Se o recado citar incidente, responda **no incidente**, não só no Telegram —
+o grupo rola e some; o incidente fica.
+
 ## 2. Filas que não andam
 
 O sintoma de tudo é o mesmo: registro parado num estado intermediário.

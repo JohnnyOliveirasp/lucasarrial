@@ -252,6 +252,21 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
     você não tem convicção do patch, **não mergeie** — anote a objeção no
     incidente e deixe a branch publicada. Backlog é melhor que regressão.
 
+27. **Conversa entre agentes é CURTA — ordem do Johnny, 21/08.** Token gasto em
+    conversa longa entre agentes é desperdício, não zelo. Vale pro canal do
+    Telegram, pros recados de `tell_frank` e pras notas de incidente.
+    - **1 assunto = 1 mensagem**, densa. Duplicata é o começo do ruído que faz
+      o outro parar de ler.
+    - **No máximo 2 trocas** por assunto. Não fechou em 2? Registra o estado no
+      incidente e para — a terceira troca quase nunca decide, só custa.
+    - **Quem não tem o que acrescentar NÃO RESPONDE.** Silêncio é resposta
+      válida entre agentes. Nada de "recebido", "ótimo trabalho", nem recapitular
+      o que o outro acabou de dizer.
+    - **Diga o que quer que o outro FAÇA**, na primeira linha. Recado sem pedido
+      claro é mensagem que todo mundo lê e ninguém responde.
+    - Elogio, retrospectiva e "foi um bom dia de trabalho" ficam **fora** do
+      canal. Se valer a pena guardar, vira nota no incidente ou no relatório.
+
 ## Produção intocável
 
 15. **Nunca recrie um endpoint do RunPod.** O volume de rede prende a região e
