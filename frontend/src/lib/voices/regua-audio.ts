@@ -256,9 +256,14 @@ export function mensagemEnvioIncompleto(
 ): string {
   const faltando = Math.max(0, esperados - chegaram);
   const tem = minutosExibidos(totalSegundos);
+  // Concordância no singular: com UM arquivo perdido a frase virava
+  // "1 não chegaram até nós". Achado em 21/08 no backfill do `2c5bab42` — a voz
+  // `99379e28` (4 de 5) leria exatamente isso. É a frase em que a casa admite a
+  // própria falha; escrita errada, soa automática e perde o peso.
+  const chegou = faltando === 1 ? "não chegou" : "não chegaram";
   return (
     `Recebemos apenas ${chegaram} dos ${esperados} arquivos que você enviou — ` +
-    `${faltando} não chegaram até nós (o envio foi interrompido no meio, ` +
+    `${faltando} ${chegou} até nós (o envio foi interrompido no meio, ` +
     `normalmente quando a aba fecha ou a internet oscila). ` +
     `O que chegou soma ~${tem}min, por isso o treino não pôde começar. ` +
     `Não é que você gravou pouco — a MESMA gravação serve. Envie de novo e, ` +
