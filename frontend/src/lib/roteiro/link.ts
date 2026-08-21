@@ -190,7 +190,17 @@ export async function transcribeFromLink(rawUrl: string): Promise<LinkSource> {
       "--no-warnings",
       "--no-progress",
       "--restrict-filenames",              // some com nome de arquivo criativo (CVE-2026-50023)
-      "--match-filter", `duration < ${LINK_MAX_SECONDS}`,
+      // ⚠️ O `?` depois do operador aceita o item quando o campo NÃO EXISTE.
+      // MEDIDO em produção (21/08): o Instagram devolve `duration = NA` em
+      // post de Reel — `duration < 180` então DESCARTA o vídeo antes de
+      // baixar, e o aluno via "pode ser maior que 3 minutos ou exigir login",
+      // que eram as duas causas erradas. O vídeo abria normalmente: cookie
+      // bom, post público, 44s de duração real.
+      // Sem duração conhecida a porta fica aberta, e quem a fecha é o
+      // `--max-filesize` aqui embaixo (download) + a checagem de
+      // `durationSeconds` DEPOIS da transcrição, que usa a duração real do
+      // áudio em vez da que o site diz ter.
+      "--match-filter", `duration<?${LINK_MAX_SECONDS}`,
       "--max-filesize", MAX_FILESIZE,
       "-f", "bestaudio/best",
       "-x", "--audio-format", "mp3",
@@ -222,9 +232,14 @@ export async function transcribeFromLink(rawUrl: string): Promise<LinkSource> {
     try {
       bytes = await fs.readFile(mp3);
     } catch {
-      // Sem arquivo = o filtro de duração/tamanho barrou antes de baixar.
+      // Sem arquivo e sem erro do yt-dlp: o filtro barrou antes de baixar.
+      // ⚠️ NÃO chute a causa aqui. A mensagem antiga dizia "pode ser maior que
+      // 3 minutos ou exigir login" e, no caso que motivou este comentário
+      // (21/08), as DUAS estavam erradas — o vídeo tinha 44s, era público e o
+      // cookie estava bom. Culpar o aluno por um filtro nosso é o mesmo modo
+      // de falha do "áudio insuficiente" no treino de voz.
       throw new LinkError(
-        `Não consegui pegar o áudio desse vídeo. Ele pode ser maior que ${LINK_MAX_SECONDS / 60} minutos ou exigir login.`,
+        "Não consegui ler esse vídeo. Tente outro link, ou descreva a ideia com suas palavras — nada foi cobrado.",
         "failed",
       );
     }
@@ -235,6 +250,18 @@ export async function transcribeFromLink(rawUrl: string): Promise<LinkSource> {
       .catch(() => null);
 
     const { text, durationSeconds } = await transcribeAudioBuffer(bytes, "audio.mp3");
+
+    // O teto de duração de verdade mora AQUI, não no --match-filter. Quando o
+    // site não informa `duration` (o Instagram não informa), o filtro deixa
+    // passar de propósito e a duração REAL só aparece depois de transcrever.
+    // Sem esta checagem, o `?` lá em cima viraria um buraco por onde entra
+    // vídeo de qualquer tamanho que caiba em 30 MB.
+    if (durationSeconds && durationSeconds > LINK_MAX_SECONDS) {
+      throw new LinkError(
+        `Esse vídeo é longo demais. O limite é de ${LINK_MAX_SECONDS / 60} minutos.`,
+        "too_long",
+      );
+    }
     if (text.length < 20) {
       throw new LinkError("Esse vídeo quase não tem fala pra eu aproveitar como ideia.", "failed");
     }
