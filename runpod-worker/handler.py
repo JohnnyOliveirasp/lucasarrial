@@ -265,6 +265,7 @@ def _handle_train(inp: dict) -> dict:
         run_training,
         select_reference_candidates,
     )
+    from voice_pipeline.pacing import measure_natural_pause_ms
 
     voice_id = inp.get("voice_id") or "anonymous"
     audio_urls = inp.get("audio_urls") or []
@@ -574,10 +575,25 @@ def _handle_train(inp: dict) -> dict:
             _log("error", "train.sample.crashed", error=str(exc))
             sample_info["sample_error"] = str(exc)[:300]
 
+    # ── Pausa natural da pessoa → vira o `tts_silence_ms` DESTA voz ─────────
+    # O default do worker é silence_ms=0: nenhuma pausa entre os pedaços de
+    # texto, ou seja fala emendada. Era a queixa "áudio muito corrido", e ela
+    # atingia 749 das 750 vozes prontas (todas com o campo NULO). Medir aqui
+    # faz a voz NASCER com o ritmo de quem gravou, em vez de depender de
+    # alguém notar e ajustar na mão. Um valor fixo pra todos estaria errado:
+    # a pausa natural do acervo varia ~9x de pessoa pra pessoa.
+    # None = não deu pra medir com confiança → o backend não grava nada e a voz
+    # se comporta exatamente como se comportaria hoje.
+    reference_pause_ms = measure_natural_pause_ms(
+        sorted(norm_dir.glob("*_mono16k.wav")),
+        log=lambda **k: _log(k.pop("level", "info"), k.pop("event", "train.pacing"), **k),
+    )
+
     elapsed = time.monotonic() - t0
     return {
         "voice_id": voice_id,
         "lora_uploaded": True,
+        "reference_pause_ms": reference_pause_ms,
         "elapsed_seconds": round(elapsed, 2),
         "steps": max_steps,
         "trainer_returncode": 0,

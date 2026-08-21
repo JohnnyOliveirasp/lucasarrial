@@ -23,6 +23,12 @@ export type TrainOutput = {
   lora_uploaded?: boolean;
   reference_uploaded?: boolean;
   reference_transcript?: string | null;
+  /**
+   * Pausa natural medida no áudio de quem gravou (worker: voice_pipeline.pacing).
+   * Vira o `tts_silence_ms` da voz. `null`/ausente = não deu pra medir com
+   * confiança → não gravamos nada e a voz se comporta como antes.
+   */
+  reference_pause_ms?: number | null;
   lora_alpha?: number;
   elapsed_seconds?: number;
   steps?: number;
@@ -179,6 +185,20 @@ export async function finalizeTraining(args: {
   }
   if (success && typeof out.lora_alpha === "number") {
     update.lora_alpha = out.lora_alpha;
+  }
+  // ── Ritmo: a voz nasce com a pausa de quem gravou ────────────────────────
+  // O worker monta o áudio inserindo `tts_silence_ms` entre os pedaços; sem
+  // valor ele cai no default 0 = nenhuma pausa, e a fala sai emendada. Era a
+  // queixa "áudio muito corrido", e atingia 749 das 750 vozes prontas (todas
+  // com o campo NULO). Gravar aqui faz a voz nova já sair no ritmo certo, em
+  // vez de depender de alguém notar e ajustar na mão — como foi o caso Katia.
+  // ⚠️ SÓ vozes novas, por decisão do dono (21/08): as antigas não são tocadas.
+  if (success && typeof out.reference_pause_ms === "number" && out.reference_pause_ms > 0) {
+    update.tts_silence_ms = out.reference_pause_ms;
+    // O crossfade padrão do worker é 60ms e ele COME a pausa que acabamos de
+    // inserir (funde o fim de um pedaço com o começo do outro). Zerar junto é
+    // o que foi medido funcionando na Katia: 220/0, e depois 466/0.
+    update.tts_crossfade_ms = 0;
   }
   if (success && typeof out.language === "string" && out.language) {
     // Idioma detectado no treino — a geração/QA passam a rodar no idioma certo.
