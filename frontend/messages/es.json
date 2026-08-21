@@ -436,6 +436,8 @@
         "dropzone": "Haz clic o arrastra tus fotos aquí — se guardan en Imágenes de Referencia",
         "bankUploading": "Subiendo {done} de {total} a Imágenes de Referencia…",
         "bankSaved": "{count} foto(s) guardada(s) en Imágenes de Referencia — elige allí la principal y las extras.",
+        "usingNow": "{extras, plural, =0 {En esta generación entra solo la foto principal del tablero.} one {En esta generación entran la foto principal del tablero y 1 foto extra.} other {En esta generación entran la foto principal del tablero y # fotos extras.}}",
+        "savedNotInBoard": "{pending, plural, one {La foto que acabas de subir se guardó en Imágenes de Referencia, pero NO entra en esta generación. Para usarla, elige la foto en Imágenes de Referencia antes de generar.} other {Las # fotos que acabas de subir se guardaron en Imágenes de Referencia, pero NO entran en esta generación. Para usarlas, elige las fotos en Imágenes de Referencia antes de generar.}}",
         "formats": "JPG, PNG o WEBP · hasta {max} fotos",
         "remove": "Quitar foto",
         "addMore": "Agregar más fotos",
