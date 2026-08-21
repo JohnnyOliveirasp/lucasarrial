@@ -185,7 +185,27 @@ export function VoiceCreator() {
   const meetsMinimum = totalDuration >= MIN_DURATION_SECONDS && !overMaximum;
   const missing = Math.max(0, MIN_DURATION_SECONDS - totalDuration);
 
-  const addFiles = useCallback(async (incoming: File[]) => {
+  // Quantos nomes de arquivo descartado mostramos por extenso na mensagem;
+  // acima disso a mensagem viraria um parágrafo (pasta com dezenas de fotos).
+  const NOMES_DESCARTADOS_EXIBIDOS = 5;
+
+  const msgDescartados = useCallback(
+    (descartados: File[]): string | null => {
+      if (descartados.length === 0) return null;
+      const nomes = descartados
+        .slice(0, NOMES_DESCARTADOS_EXIBIDOS)
+        .map((f) => f.name)
+        .join(", ");
+      const sufixo = descartados.length > NOMES_DESCARTADOS_EXIBIDOS ? "…" : "";
+      return t("errors.unsupportedSkipped", {
+        count: descartados.length,
+        names: nomes + sufixo,
+      });
+    },
+    [t],
+  );
+
+  const addFiles = useCallback(async (incoming: File[], descartados: File[] = []) => {
     // Dedup contra arquivos já na lista — ver `assinaturaAudio` (nome+tamanho;
     // `lastModified` ficou de fora de propósito, era ele que deixava o mesmo
     // áudio entrar duas vezes).
@@ -207,25 +227,29 @@ export function VoiceCreator() {
     const accepted = unique.slice(0, available);
     const overLimit = unique.length - accepted.length;
 
+    const avisoDescartados = msgDescartados(descartados);
+
     if (accepted.length === 0) {
-      if (duplicates > 0 && overLimit === 0) {
-        setError(t("errors.allDuplicates"));
-      } else {
-        setError(t("errors.tooMany", { max: MAX_FILES }));
-      }
+      const base =
+        duplicates > 0 && overLimit === 0
+          ? t("errors.allDuplicates")
+          : t("errors.tooMany", { max: MAX_FILES });
+      setError(avisoDescartados ? `${base}. ${avisoDescartados}` : base);
       return;
     }
 
-    // Mensagens informativas (mas não bloqueia)
+    // Mensagens informativas (mas não bloqueia) — combinadas, nunca uma
+    // sobrescrevendo a outra
+    const partes: string[] = [];
     if (overLimit > 0 && duplicates > 0) {
-      setError(t("errors.partialAddBoth", { duplicates, ignored: overLimit }));
+      partes.push(t("errors.partialAddBoth", { duplicates, ignored: overLimit }));
     } else if (overLimit > 0) {
-      setError(t("errors.partialOver", { ignored: overLimit, max: MAX_FILES }));
+      partes.push(t("errors.partialOver", { ignored: overLimit, max: MAX_FILES }));
     } else if (duplicates > 0) {
-      setError(t("errors.partialDup", { duplicates }));
-    } else {
-      setError(null);
+      partes.push(t("errors.partialDup", { duplicates }));
     }
+    if (avisoDescartados) partes.push(avisoDescartados);
+    setError(partes.length > 0 ? partes.join(". ") : null);
 
     const additions: LocalFile[] = accepted.map((file: File) => ({
       id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()
@@ -247,7 +271,7 @@ export function VoiceCreator() {
         );
       });
     }
-  }, [files.length, t]);
+  }, [files.length, t, msgDescartados]);
 
   function removeFile(id: string) {
     setFiles((prev) => prev.filter((f) => f.id !== id));
@@ -262,27 +286,29 @@ export function VoiceCreator() {
 
   function onDropzoneFiles(list: FileList | null) {
     if (!list) return;
-    const arr = filterAudioFiles(Array.from(list));
-    if (arr.length === 0) {
-      setError(t("errors.invalidType"));
+    const { aceitos, descartados } = filterAudioFiles(Array.from(list));
+    if (aceitos.length === 0) {
+      // Nada aproveitável: se sabemos O QUE foi descartado, diz quantos e
+      // quais — nunca um sumiço em silêncio (caso .amr de pasta inteira).
+      setError(msgDescartados(descartados) ?? t("errors.invalidType"));
       return;
     }
     // Ordena por nome (estável quando vem de pasta com vários arquivos)
-    arr.sort((a, b) => {
+    aceitos.sort((a, b) => {
       const pa = (a as File & { webkitRelativePath?: string }).webkitRelativePath || a.name;
       const pb = (b as File & { webkitRelativePath?: string }).webkitRelativePath || b.name;
       return pa.localeCompare(pb);
     });
-    addFiles(arr);
+    addFiles(aceitos, descartados);
   }
 
   async function onDropItems(items: DataTransferItemList) {
-    const arr = await gatherAudioFromDataTransfer(items);
-    if (arr.length === 0) {
-      setError(t("errors.invalidType"));
+    const { aceitos, descartados } = await gatherAudioFromDataTransfer(items);
+    if (aceitos.length === 0) {
+      setError(msgDescartados(descartados) ?? t("errors.invalidType"));
       return;
     }
-    addFiles(arr);
+    addFiles(aceitos, descartados);
   }
 
   async function startUpload() {

@@ -148,6 +148,7 @@
         "partialOver": "Limit of {max} files — {ignored} were ignored",
         "partialDup": "{duplicates} file(s) were already in the list and ignored",
         "partialAddBoth": "{duplicates} duplicate(s) + {ignored} over the limit were ignored",
+        "unsupportedSkipped": "{count} file(s) were left out because they are not a recognized audio format: {names}",
         "network": "Network failure. Check your connection.",
         "uploadFailed": "{count} file(s) failed to upload. Try again.",
         "generic": "Something went wrong. Try again."

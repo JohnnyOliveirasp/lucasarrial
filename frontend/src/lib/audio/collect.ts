@@ -15,19 +15,46 @@ export function isAudioFile(file: File): boolean {
   return AUDIO_EXT_RE.test(file.name);
 }
 
-export function filterAudioFiles(files: File[]): File[] {
-  return files.filter(isAudioFile);
+/**
+ * Resultado da coleta: o que entra na lista e o que foi deixado de fora
+ * por não ser um formato de áudio reconhecido. Os descartados NUNCA somem
+ * em silêncio — a UI avisa quantos e quais foram ignorados (caso .amr de
+ * gravador Android numa pasta inteira, 21/08).
+ */
+export interface AudioColeta {
+  aceitos: File[];
+  descartados: File[];
+}
+
+export function filterAudioFiles(files: File[]): AudioColeta {
+  const aceitos: File[] = [];
+  const descartados: File[] = [];
+  for (const f of files) {
+    (isAudioFile(f) ? aceitos : descartados).push(f);
+  }
+  return { aceitos, descartados };
+}
+
+function ordenaPorPath(files: File[]): void {
+  files.sort((a, b) => {
+    const pa =
+      (a as File & { webkitRelativePath?: string }).webkitRelativePath || a.name;
+    const pb =
+      (b as File & { webkitRelativePath?: string }).webkitRelativePath || b.name;
+    return pa.localeCompare(pb);
+  });
 }
 
 /**
  * Lê uma DataTransferItemList (de um drop event) recursivamente.
  * Se algum item é uma pasta, desce em todos os subdiretórios.
- * Filtra automaticamente só áudios.
+ * Separa áudios (aceitos) de todo o resto (descartados).
  */
 export async function gatherAudioFromDataTransfer(
   items: DataTransferItemList,
-): Promise<File[]> {
-  const out: File[] = [];
+): Promise<AudioColeta> {
+  const aceitos: File[] = [];
+  const descartados: File[] = [];
 
   // Some browsers expose webkitGetAsEntry; if not, fall back to .getAsFile().
   const tasks: Promise<void>[] = [];
@@ -37,23 +64,18 @@ export async function gatherAudioFromDataTransfer(
     }).webkitGetAsEntry?.();
 
     if (entry) {
-      tasks.push(traverseEntry(entry, out));
+      tasks.push(traverseEntry(entry, aceitos, descartados));
     } else {
       const file = item.getAsFile();
-      if (file && isAudioFile(file)) out.push(file);
+      if (file) (isAudioFile(file) ? aceitos : descartados).push(file);
     }
   }
 
   await Promise.all(tasks);
   // Ordena por path/nome pra ordem determinística
-  out.sort((a, b) => {
-    const pa =
-      (a as File & { webkitRelativePath?: string }).webkitRelativePath || a.name;
-    const pb =
-      (b as File & { webkitRelativePath?: string }).webkitRelativePath || b.name;
-    return pa.localeCompare(pb);
-  });
-  return out;
+  ordenaPorPath(aceitos);
+  ordenaPorPath(descartados);
+  return { aceitos, descartados };
 }
 
 type FsFileEntry = FileSystemEntry & { file: (cb: (f: File) => void, err?: (e: unknown) => void) => void };
@@ -61,7 +83,11 @@ type FsDirEntry = FileSystemEntry & {
   createReader: () => { readEntries: (cb: (entries: FileSystemEntry[]) => void, err?: (e: unknown) => void) => void };
 };
 
-async function traverseEntry(entry: FileSystemEntry, out: File[]): Promise<void> {
+async function traverseEntry(
+  entry: FileSystemEntry,
+  aceitos: File[],
+  descartados: File[],
+): Promise<void> {
   if (entry.isFile) {
     const file = await new Promise<File | null>((resolve) => {
       (entry as FsFileEntry).file(
@@ -69,7 +95,7 @@ async function traverseEntry(entry: FileSystemEntry, out: File[]): Promise<void>
         () => resolve(null),
       );
     });
-    if (file && isAudioFile(file)) out.push(file);
+    if (file) (isAudioFile(file) ? aceitos : descartados).push(file);
     return;
   }
   if (entry.isDirectory) {
@@ -83,7 +109,7 @@ async function traverseEntry(entry: FileSystemEntry, out: File[]): Promise<void>
           () => resolve([]),
         );
       });
-      await Promise.all(batch.map((e) => traverseEntry(e, out)));
+      await Promise.all(batch.map((e) => traverseEntry(e, aceitos, descartados)));
     } while (batch.length > 0);
   }
 }
