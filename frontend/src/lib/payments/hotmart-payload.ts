@@ -90,3 +90,27 @@ export function extractNextChargeIso(data: Record<string, unknown>): string | nu
   if (typeof raw !== "number" || raw <= 0) return null;
   return new Date(raw < 1e11 ? raw * 1000 : raw).toISOString();
 }
+
+/** Status de revogação (espelha EntitlementStatus sem 'active'/'past_due'). */
+export type RevokeStatus = "canceled" | "refunded" | "chargeback" | "expired";
+
+/** Evento da Hotmart → status de revogação do entitlement (null = não revoga). */
+export function mapRevokeStatus(eventType: string): RevokeStatus | null {
+  if (eventType === "SUBSCRIPTION_CANCELLATION") return "canceled";
+  if (eventType === "PURCHASE_REFUNDED") return "refunded";
+  if (eventType.includes("CHARGEBACK") || eventType === "PURCHASE_PROTEST") return "chargeback";
+  if (eventType === "PURCHASE_EXPIRED" || eventType === "PURCHASE_CANCELED") return "expired";
+  return null;
+}
+
+/**
+ * Dinheiro VOLTOU pro comprador? (refund/chargeback/protesto)
+ * Regra do Johnny 18/08: SÓ nesses casos o crédito de mensalidade zera.
+ *  - pagou e cancelou → 'canceled' → false (mantém o crédito)
+ *  - expirou/cancelou compra → 'expired' → false (trial é da mig 80/81)
+ *  - estorno/chargeback/protesto → true (zera credits_subscription;
+ *    credits_extra NUNCA — dívida nossa com o aluno)
+ */
+export function isMoneyReturnedStatus(status: RevokeStatus | null): boolean {
+  return status === "refunded" || status === "chargeback";
+}
