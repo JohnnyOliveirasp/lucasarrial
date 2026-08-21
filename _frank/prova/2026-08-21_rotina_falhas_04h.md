@@ -208,6 +208,22 @@ migration.**
 
 ---
 
+### 3.1 Reparo aplicado (depois de escrever o resto deste log)
+
+Reparei os 3 campos com a própria ferramenta: o texto que sobreviveu foi preservado **na
+íntegra** como nota legada e o campo voltou a ser array. **O conteúdo dos 21 objetos
+originais continua perdido** — não estou dizendo que recuperei, estou dizendo que parei o
+sangramento e que a próxima anotação não compõe o estrago.
+
+Conferido depois de gravar: **71 incidentes, 71 arrays, 0 strings corrompidas** (era 68/3).
+
+⚠️ **Isso volta a acontecer em ~2h se o Vigia continuar anotando com script solto.** O
+reparo não conserta o script dele — só o campo. **Handoff:** o Vigia precisa passar a usar
+`_frank/ferramentas/anotar_incidente.cjs`. Deixei a instrução escrita dentro da própria nota
+dos 3 incidentes, que é onde ele vai ler.
+
+---
+
 ## 8. Passo fixo de fim de ronda
 
 `git fetch` + `origin/main..HEAD` vazio + varredura de fix preso em branch: registrados no
