@@ -25,6 +25,7 @@ import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { buildRawAudioKey, createPresignedGet } from "@/lib/r2/presigned";
 import { adotarReferencia } from "@/lib/images/refs";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
+import { MIN_TOTAL_SECONDS, mensagemCurtoDemais } from "@/lib/voices/regua-audio";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,8 +43,7 @@ const MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024; // streaming pra disco — taman
 const MAX_AUDIO_BYTES = 400 * 1024 * 1024; // 400MB por take (1h WAV cabe)
 const MAX_IMAGES = 20;
 const MAX_AUDIOS = 20; // mesmo teto do MAX_FILES_PER_VOICE
-/** Mesma régua do uploads-complete (20min brutos). */
-const MIN_TOTAL_SECONDS = 20 * 60;
+/* A régua de 20min brutos vive em @/lib/voices/regua-audio (importada acima). */
 /** Nome da voz criada pelo onboarding — âncora da idempotência. */
 export const ONBOARDING_VOICE_NAME = "Minha Voz";
 
@@ -421,7 +421,7 @@ export async function importTrainingAudios(
     nextStatus = "awaiting_training";
   } else if (totalSec < MIN_TOTAL_SECONDS) {
     nextStatus = "rejected_too_short";
-    errorMessage = `Áudio total ${Math.round(totalSec / 60)}min < mínimo de ${MIN_TOTAL_SECONDS / 60}min`;
+    errorMessage = mensagemCurtoDemais(totalSec);
   } else {
     nextStatus = "awaiting_training";
   }

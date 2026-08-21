@@ -14,6 +14,7 @@ import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { bypassesBilling } from "@/lib/credits/access";
 import { escalateStuckUser } from "@/lib/support/failure-alert";
 import type { VoiceStatus, VoiceUpdate } from "@/lib/db/types";
+import { MIN_TOTAL_SECONDS } from "@/lib/voices/regua-audio";
 
 const SUPPORT_EMAIL = "suporte@fastcloner.com";
 
@@ -92,10 +93,17 @@ function friendlyTrainError(out: TrainOutput, rawError: string): string {
       typeof out.useful_seconds === "number"
         ? `apenas ~${useful}min serviram para o treino (mínimo: ${min}min de fala limpa)`
         : `não sobrou fala limpa suficiente para o treino`;
+    // ⚠️ 07745f61: esta mensagem citava SÓ o mínimo do TREINO (10min de fala
+    // limpa) e mandava "tente de novo". Quem obedecia gravava 12–15min e batia
+    // na PORTA do upload, que exige 20min BRUTOS — e as duas mensagens nunca se
+    // mencionavam. Por isso o alvo da porta agora vem junto do diagnóstico.
+    const porta = MIN_TOTAL_SECONDS / 60;
     return (
       `Do áudio enviado, ${numbers}. ` +
       `Seus créditos foram devolvidos. Grave num ambiente silencioso, falando continuamente ` +
-      `e próximo ao microfone, e tente de novo com essa gravação nova.`
+      `e próximo ao microfone. Importante: para enviar de novo, a gravação precisa somar ` +
+      `pelo menos ${porta}min no total — é dessa folga que saem os ${min}min de fala limpa, ` +
+      `depois que tiramos pausas e ruído.`
     );
   }
   // Falha técnica: culpa NOSSA, não do usuário — o estorno é automático.

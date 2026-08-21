@@ -20,9 +20,8 @@ import { r2, R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 import type { VoiceStatus } from "@/lib/db/types";
+import { MIN_TOTAL_SECONDS, mensagemCurtoDemais } from "@/lib/voices/regua-audio";
 
-/** Mesma régua do uploads-complete. */
-const MIN_TOTAL_SECONDS = 20 * 60;
 /** Só olha o que está parado há bastante tempo — upload grande demora. */
 const STUCK_AFTER_MS = 30 * 60 * 1000;
 /**
@@ -112,8 +111,7 @@ export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
         status = "awaiting_training";
       } else if (total < MIN_TOTAL_SECONDS) {
         status = "rejected_too_short";
-        erro =
-          `Áudio total ${Math.round(total / 60)}min < mínimo de ${MIN_TOTAL_SECONDS / 60}min`;
+        erro = mensagemCurtoDemais(total);
       } else {
         status = "awaiting_training";
       }

@@ -21,14 +21,13 @@ import {
 } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import type { VoiceStatus } from "@/lib/db/types";
+import { MIN_TOTAL_SECONDS, mensagemCurtoDemais } from "@/lib/voices/regua-audio";
 
 type Ctx = { params: Promise<{ id: string }> };
 type Body = {
   uploaded_keys: string[];
   client_durations?: number[];
 };
-
-const MIN_TOTAL_SECONDS = 20 * 60; // 20 minutos
 
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -78,7 +77,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     nextStatus = "validating";
   } else if (totalSec < MIN_TOTAL_SECONDS) {
     nextStatus = "rejected_too_short";
-    errorMessage = `Áudio total ${Math.round(totalSec / 60)}min < mínimo de ${MIN_TOTAL_SECONDS / 60}min`;
+    errorMessage = mensagemCurtoDemais(totalSec);
   } else {
     nextStatus = "awaiting_training";
   }
