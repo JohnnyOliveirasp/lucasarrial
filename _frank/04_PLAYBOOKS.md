@@ -165,6 +165,34 @@ já não existe estorno com esse mesmo par (o estorno é idempotente por
 contagem). Depois **avise o aluno por e-mail** dizendo o que houve, quanto
 voltou e que a causa foi corrigida.
 
+> ### ⚠️ Como CONFERIR se já houve estorno (me pegou em 21/08 08h)
+>
+> A regra que todo mundo decorou é *"estorno se confere por `ref_type`, nunca
+> por `kind`"*. Ela está certa **na metade que fala do `kind`** e é uma
+> armadilha na outra metade: a ordem de 20/08 escreveu o exemplo como
+> `ref_type='generation_refund'`, e quem filtrar só por esse valor recebe
+> **zero** com toda a confiança.
+>
+> **São SETE `ref_type` de estorno, não um** (a tabela completa está na seção
+> "As origens, por volume", mais abaixo). Contados no banco em 21/08:
+> `image_video_refund` 71 · `voice_train_refund` 66 · `generation_refund` 46 ·
+> mais `video_clone_refund`, `image_refund`, `support_refund`,
+> `studio_scene_refund`. **Falha de treino estorna com `voice_train_refund`** —
+> procurar `generation_refund` numa voz é o mesmo falso negativo que quase
+> pagou em dobro para 13 alunos, entrando por outra porta.
+>
+> **Faça assim:** case o `ref_id` com o id do objeto que falhou e some o
+> **sinal** do `amount` (débito negativo + estorno positivo = 0 → está quitado).
+> Não presuma qual `ref_type` é o certo para aquela superfície. E **pagine**:
+> `credit_transactions` tem 15k linhas e o teto de 1000 do PostgREST corta em
+> silêncio.
+>
+> **Cobertura das ferramentas:** `estorno_confere.cjs` está correto, mas só
+> cobre `generations` — 1 das 4 superfícies de falha. `image_generations`,
+> `video_clones` e `voices` não têm ferramenta e precisam ser conferidas na
+> mão. Reconciliação completa rodada em 21/08 08h: 208 falhas nas 4
+> superfícies, **0 pendurado**.
+
 **A causa desse caso já está fechada** (873ed1f): a rota do treino agora
 reserva a voz de forma atômica, e o botão trava por ref síncrono. Se
 aparecer cobrança dupla em OUTRO fluxo, procure o mesmo padrão: rota que
