@@ -8,6 +8,7 @@
  * depois dela o real medido. Sem isso o lucro acumulado sairia inflado.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { fetchAllPages } from "@/lib/db/paginate";
 import { computeChurn, type ChurnDay } from "./churn";
 import {
   PLAN_PRICE_BRL,
@@ -69,13 +70,33 @@ export async function getTotalSummary(): Promise<TotalSummary> {
   const firstReadAt = ((firstRead.data ?? []) as unknown as { at: string }[])[0]?.at;
   const preUntil = firstReadAt ?? until;
 
-  const [fRes, preMetrics, preClones, spendRes, courtesyRes, churn] = await Promise.all([
+  const [fRes, preMetrics, preClones, spendRows, courtesyRows, churn] = await Promise.all([
     admin.rpc("admin_finance", { p_since: since, p_until: until }),
     // Jobs ANTES da 1ª leitura → estimativa (mesma régua de queries.ts)
     admin.rpc("admin_metrics", { p_since: since, p_until: preUntil }),
     admin.rpc("admin_video_clones", { p_since: since, p_until: preUntil }),
-    admin.from("runpod_spend_log").select("balance_usd").order("at", { ascending: true }),
-    admin.from("courtesy_grants").select("amount"),
+    // ⚠️ Teto de 1000 do PostgREST (incidente 72a4c9db): runpod_spend_log
+    // cresce ~1 leitura/dia (622 em 20/08). Sem paginar, ao passar de 1000 as
+    // leituras mais novas sumiriam em silêncio, o gasto real de GPU cairia da
+    // conta e o LUCRO acumulado do /admin sairia inflado. PK é `at` → ordem
+    // estável; falha aborta (nunca somar custo em cima de lista incompleta).
+    fetchAllPages("runpod_spend_log acumulado", (from, to) =>
+      admin
+        .from("runpod_spend_log")
+        .select("balance_usd")
+        .order("at", { ascending: true })
+        .range(from, to),
+    ),
+    // Mesmo teto: campanha de cortesia grande passa de 1000 grants e o KPI
+    // "dado" encolheria em silêncio. Ordem estável = PK (campaign_id, email).
+    fetchAllPages("courtesy_grants acumulado", (from, to) =>
+      admin
+        .from("courtesy_grants")
+        .select("amount")
+        .order("campaign_id", { ascending: true })
+        .order("email", { ascending: true })
+        .range(from, to),
+    ),
     computeChurn(admin),
   ]);
 
@@ -95,7 +116,7 @@ export async function getTotalSummary(): Promise<TotalSummary> {
     genCostBrl(preM.gens_chars_period ?? 0) +
     trainCostBrl(preM.trainings_period ?? 0) +
     videoClonesCostBrl(((preClones.data ?? []) as ByTier));
-  const readings = (spendRes.data ?? []) as { balance_usd: number }[];
+  const readings = spendRows as { balance_usd: number }[];
   let gpuRealUsd = 0;
   for (let i = 1; i < readings.length; i++) {
     // Recarga faz o saldo SUBIR → par negativo → ignorado (max 0).
@@ -121,7 +142,7 @@ export async function getTotalSummary(): Promise<TotalSummary> {
   const expenses = fee + gpuCost + imageCost + videoCost + infra + refunds;
   const profit = revenue - expenses;
 
-  const courtesyCredits = ((courtesyRes.data ?? []) as { amount: number }[]).reduce(
+  const courtesyCredits = (courtesyRows as { amount: number }[]).reduce(
     (s, g) => s + g.amount,
     0,
   );
