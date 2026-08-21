@@ -111,3 +111,119 @@ export function mensagemFalaLimpaInsuficiente(
     `saem os ${alvoLimpo}min de fala limpa, depois que tiramos pausas e ruído.`
   );
 }
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ * ENVIO INCOMPLETO: o aluno mandou N arquivos e só M chegaram no R2.
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Medido em 21/08 (incidente 2c5bab42), na base inteira e paginada:
+ *
+ *   status                 vozes   com buraco na numeração
+ *   rejected_too_short        24   17  (70,8%)
+ *   awaiting_training         28    5  (17,9%)
+ *   failed                    51    2  ( 3,9%)
+ *   ready                    722    2  ( 0,3%)
+ *
+ * 70,8% contra 0,3% não é coincidência: quase toda voz recusada por "áudio
+ * curto" é, na verdade, um ENVIO PELA METADE que a gente aceitou calado.
+ *
+ * DE ONDE VEM O BURACO (a causa foi corrigida de rota em 21/08 — a primeira
+ * leitura culpava o `uploads-complete`, e ela está ERRADA):
+ *
+ *   - `voice-creator.tsx` manda `slots.map(s => s.key)` — TODAS as chaves,
+ *     nunca um subconjunto — e ainda aborta antes de chamar o
+ *     `uploads-complete` se qualquer PUT falhar. Esse caminho **não
+ *     consegue** produzir buraco, e é assim desde o commit 727d461.
+ *   - Quem produz o buraco é o RESGATE (`rescue-stuck-uploads.ts`): quando a
+ *     aba fecha no meio do envio, a voz fica em `uploading` e o sweep lista o
+ *     bucket e grava **o que encontrou lá**. Se 3 de 7 arquivos não subiram,
+ *     ele grava 4 e soma só esses 4 — e a soma cai abaixo da porta.
+ *
+ * O estrago é a FRASE: o aluno lia "Áudio total 10min < mínimo de 20min",
+ * que o acusa de ter gravado pouco quando ele gravou o dobro e o nosso envio
+ * é que perdeu metade no caminho. Mandar esse aluno "gravar mais" é mandar
+ * ele repetir o que já fez.
+ *
+ * O índice do slot está DENTRO da chave (`.../raw/NNN_arquivo.mp3`, ver
+ * `buildRawAudioKey`), então o buraco é detectável sem migration e sem
+ * persistir contagem nenhuma: se a maior numeração é 006, foram emitidos 7
+ * slots.
+ */
+
+/** Extrai o índice do slot de uma chave `.../raw/NNN_arquivo.ext`. */
+const RX_SLOT = /\/raw\/(\d{3})_/;
+
+export type ContagemEnvio = {
+  /** Quantos slots foram emitidos (maior índice + 1). 0 se não deu pra ler. */
+  esperados: number;
+  /** Quantas chaves utilizáveis chegaram. */
+  chegaram: number;
+  /** Quantos slots ficaram sem arquivo utilizável. */
+  faltando: number;
+};
+
+/**
+ * Conta slots emitidos × chegados a partir das chaves.
+ *
+ * `todasAsChaves` deve ser TUDO que existe no prefixo do R2 (inclusive o que
+ * foi filtrado por tamanho/extensão) e `utilizaveis` só o que passou no
+ * filtro. A diferença entre as duas importa: arquivo que chegou truncado
+ * (PUT cortado no meio) existe no bucket com poucos bytes e é descartado —
+ * pro aluno o efeito é o mesmo, mas não é o mesmo defeito, então quem chamar
+ * consegue distinguir.
+ *
+ * Sem numeração legível (import antigo, caminho do Drive) devolve zeros —
+ * quem chama trata como "não sei", nunca como "não faltou nada".
+ */
+export function contarSlotsDoEnvio(
+  utilizaveis: string[],
+  todasAsChaves: string[] = utilizaveis,
+): ContagemEnvio {
+  const indice = (k: string): number | null => {
+    const m = RX_SLOT.exec(k);
+    return m ? Number.parseInt(m[1], 10) : null;
+  };
+
+  const todos = todasAsChaves
+    .map(indice)
+    .filter((i): i is number => i !== null);
+  const bons = new Set(
+    utilizaveis.map(indice).filter((i): i is number => i !== null),
+  );
+
+  if (todos.length === 0 && bons.size === 0) {
+    return { esperados: 0, chegaram: 0, faltando: 0 };
+  }
+
+  const maior = Math.max(-1, ...todos, ...bons);
+  const esperados = maior + 1;
+  return {
+    esperados,
+    chegaram: bons.size,
+    faltando: Math.max(0, esperados - bons.size),
+  };
+}
+
+/**
+ * A recusa quando o envio chegou pela metade. Não pede pra gravar mais —
+ * pede pra REENVIAR, que é a única coisa que resolve. E diz de quem é a
+ * culpa, porque é nossa.
+ */
+export function mensagemEnvioIncompleto(
+  totalSegundos: number,
+  chegaram: number,
+  esperados: number,
+): string {
+  const faltando = Math.max(0, esperados - chegaram);
+  const tem = minutosExibidos(totalSegundos);
+  return (
+    `Recebemos apenas ${chegaram} dos ${esperados} arquivos que você enviou — ` +
+    `${faltando} não chegaram até nós (o envio foi interrompido no meio, ` +
+    `normalmente quando a aba fecha ou a internet oscila). ` +
+    `O que chegou soma ~${tem}min, por isso o treino não pôde começar. ` +
+    `Não é que você gravou pouco — a MESMA gravação serve. Envie de novo e, ` +
+    `desta vez, deixe a aba aberta até a barra de envio chegar ao fim. ` +
+    `Nada foi cobrado.`
+  );
+}

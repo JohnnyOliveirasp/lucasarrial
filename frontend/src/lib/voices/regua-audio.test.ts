@@ -14,7 +14,9 @@ import assert from "node:assert/strict";
 import {
   MIN_TOTAL_SECONDS,
   MIN_USEFUL_SECONDS,
+  contarSlotsDoEnvio,
   mensagemCurtoDemais,
+  mensagemEnvioIncompleto,
   mensagemFalaLimpaInsuficiente,
   minutosExibidos,
 } from "./regua-audio.ts";
@@ -121,4 +123,53 @@ test("a recusa do treino também aponta a PORTA de 20min", () => {
   const msg = mensagemFalaLimpaInsuficiente(594.2, 600);
   assert.ok(msg.includes("20min no total"), msg);
   assert.ok(msg.includes("créditos foram devolvidos"), msg);
+});
+
+/* ───────────────────────── envio incompleto (2c5bab42) ───────────────────
+ * As chaves vêm de casos REAIS medidos em 21/08: jrfengenhariadf tinha 4 de
+ * 7 slots e leu "Áudio total 10min < mínimo de 20min"; leandro.fitoway tinha
+ * 6 de 14 e leu a MESMA frase, pela terceira vez.
+ * ------------------------------------------------------------------------ */
+
+const chave = (i: number) => `u/v/raw/${String(i).padStart(3, "0")}_a.mp3`;
+
+test("conta slots emitidos pela numeração da chave, sem persistir nada", () => {
+  // jrfengenhariadf, voz 1858c53b: chegaram 4, o maior índice é 006 → 7 slots.
+  const c = contarSlotsDoEnvio([0, 1, 3, 6].map(chave));
+  assert.deepEqual(c, { esperados: 7, chegaram: 4, faltando: 3 });
+});
+
+test("envio COMPLETO não acusa buraco", () => {
+  const c = contarSlotsDoEnvio([0, 1, 2, 3].map(chave));
+  assert.deepEqual(c, { esperados: 4, chegaram: 4, faltando: 0 });
+});
+
+test("arquivo truncado (no bucket, fora do filtro) conta como faltando", () => {
+  // 002 existe no R2 mas com poucos bytes: não vira treino. Pro aluno o
+  // efeito é o mesmo, e o total precisa refletir isso.
+  const c = contarSlotsDoEnvio([0, 1, 3].map(chave), [0, 1, 2, 3].map(chave));
+  assert.deepEqual(c, { esperados: 4, chegaram: 3, faltando: 1 });
+});
+
+test("sem numeração legível devolve zeros — nunca 'não faltou nada'", () => {
+  // Caminho do Drive / import antigo: chave sem o prefixo NNN_.
+  const c = contarSlotsDoEnvio(["u/v/raw/audio.mp3", "u/v/outro.mp3"]);
+  assert.deepEqual(c, { esperados: 0, chegaram: 0, faltando: 0 });
+});
+
+test("a recusa por envio incompleto NÃO manda o aluno gravar mais", () => {
+  // O estrago do 2c5bab42: mandar "grave mais" pra quem já gravou o dobro e
+  // teve metade perdida no NOSSO envio.
+  const msg = mensagemEnvioIncompleto(617, 4, 7);
+  assert.ok(msg.includes("4 dos 7"), msg);
+  assert.ok(/envie de novo/i.test(msg), msg);
+  // Nao prometer retomada: o produto NAO tem resume, o aluno recria a voz.
+  assert.ok(!/de onde parou|retoma/i.test(msg), msg);
+  assert.ok(msg.includes("Não é que você gravou pouco"), msg);
+  assert.ok(!/grave mais|adicione mais gravação/i.test(msg), msg);
+});
+
+test("o minuto do envio incompleto também arredonda pra BAIXO", () => {
+  // Mesmo compromisso da porta: nunca exibir um número que se contradiz.
+  assert.ok(mensagemEnvioIncompleto(1174, 6, 14).includes("~19min"));
 });
