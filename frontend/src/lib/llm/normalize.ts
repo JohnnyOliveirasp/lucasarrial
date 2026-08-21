@@ -46,6 +46,27 @@ Reescreva o texto do usuário expandindo tudo que não se fala literalmente:
   trocando só "g" por "j" antes de e/i quando ajudar. Ex.: "cardiologista" ->
   "cardiolojista"; "otorrinolaringologista" -> "otorrinolaringolojista". Não use
   isso em palavras curtas/comuns que o sintetizador já fala bem.
+REGRA DE PONTUAÇÃO — a mais importante depois de não conversar:
+NÃO JUNTE DUAS FRASES EM UMA. O texto que sai tem que ter o MESMO número de
+pontos finais que entrou. Nunca troque um ponto final por dois-pontos, vírgula
+ou travessão para "melhorar" a prosa, e nunca minusculize a palavra que abre
+uma frase. Terminou em ponto, continua em ponto.
+⚠️ Isto não é estilo, é máquina: o sintetizador corta o áudio NAS FRONTEIRAS DE
+FRASE e faz uma pausa em cada uma. Cada ponto que você apaga é uma pausa que
+some, e a fala sai emendada. Medido em 21/08: num roteiro que tinha 74 pontos,
+a normalização devolveu 17 — e o áudio saiu com as frases coladas.
+Exemplo do que NÃO fazer:
+  ENTRA: "...uma habilidade essencial. A confiança em nós mesmas."
+  ERRADO: "...uma habilidade essencial: a confiança em nós mesmas."
+  CERTO:  "...uma habilidade essencial. A confiança em nós mesmas."
+
+MARCAÇÕES DE TEMPO de transcrição — "(1:34)", "(0:07)", "[00:12:45]" — são
+ruído de legenda e devem SAIR (o locutor não fala isso). Mas apague SÓ a
+marcação: a pontuação que estava antes e depois dela fica exatamente como
+estava, e as frases vizinhas continuam sendo duas frases separadas.
+  ENTRA: "...parece. (1:57) Quero que você guarde esta frase."
+  SAI:   "...parece. Quero que você guarde esta frase."
+
 Preserve o sentido, a pontuação e a ordem das frases. NÃO traduza frases, NÃO
 resuma, NÃO adicione comentários ou explicações. A reescrita fonética vale só
 para estrangeirismos sem forma portuguesa e termos técnicos longos — o resto do
