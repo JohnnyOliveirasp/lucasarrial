@@ -25,7 +25,11 @@ import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { buildRawAudioKey, createPresignedGet } from "@/lib/r2/presigned";
 import { adotarReferencia } from "@/lib/images/refs";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
-import { MIN_TOTAL_SECONDS, mensagemCurtoDemais } from "@/lib/voices/regua-audio";
+import {
+  MIN_TOTAL_SECONDS,
+  RX_EXT_AUDIO_NUA,
+  mensagemCurtoDemais,
+} from "@/lib/voices/regua-audio";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -374,9 +378,13 @@ export async function importTrainingAudios(
       // veio da planilha). Medido: 4 vozes travadas, uma delas com 9 de 9
       // arquivos sendo foto. Não-áudio agora é "ignorado", não derruba a voz.
       const ext = pickExtension(file.filename, file.contentType, "mp3");
+      // A lista vem da régua (fonte única). Manter cópia aqui já custou caro:
+      // este filtro aceitava `mov|mkv|wma|amr` e a régua não, então o arquivo
+      // era gravado e depois descartado por ela — a casa perdia o áudio do
+      // aluno e o recusava por "áudio insuficiente" (medido em 21/08).
       const ehAudio =
         (file.contentType || "").toLowerCase().startsWith("audio/") ||
-        /^(mp3|m4a|wav|aac|ogg|opus|flac|wma|amr|mp4|mov|webm|mkv)$/i.test(ext);
+        RX_EXT_AUDIO_NUA.test(ext);
       if (!ehAudio) {
         result.ignored!.push({
           id: fileId,

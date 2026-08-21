@@ -155,11 +155,37 @@ export function mensagemFalaLimpaInsuficiente(
 const RX_SLOT = /\/raw\/(\d{3})_/;
 
 /**
- * As extensões que o treino aceita. Fonte única: o `rescue-stuck-uploads`
- * importa daqui em vez de manter cópia própria — duas listas divergentes
- * fazem a contagem de slot discordar do filtro que a produziu.
+ * As extensões que o treino aceita. Fonte única: o `rescue-stuck-uploads` e o
+ * `onboarding/import` importam daqui em vez de manter cópia própria — duas
+ * listas divergentes fazem a contagem de slot discordar do filtro que a
+ * produziu.
+ *
+ * ⚠️ ELAS JÁ DIVERGIRAM, e o estrago era do tipo mais caro (medido em 21/08,
+ * no backfill do `2c5bab42`): o `import.ts` aceitava `mov|mkv|wma|amr` e
+ * gravava o arquivo, mas esta régua não os reconhecia como áudio. O resultado
+ * era a casa jogar fora um arquivo que o próprio aluno mandou e depois
+ * recusá-lo por "áudio insuficiente" — exatamente a classe do `2c5bab42`, por
+ * outra porta. Três vozes carregavam `.mov` de importação do Drive
+ * (`b2477da4`, `b6c6ba25`, `799edf73`); nenhuma de pagante, por sorte.
+ *
+ * Consequência dupla da divergência, pra não voltar: o arquivo saía de
+ * `utilizaveis` (a duração dele não era somada) E o slot dele virava
+ * "ignorado" em `contarSlotsDoEnvio` — então um arquivo REALMENTE perdido no
+ * mesmo envio ficava mascarado.
+ *
+ * Quem mexer aqui: `.mov`/`.mkv` são contêineres de vídeo de onde o ffmpeg
+ * extrai a faixa de áudio, igual ao `.mp4` que já estava na lista.
  */
-export const RX_EXT_AUDIO = /\.(mp3|wav|m4a|aac|ogg|opus|webm|mp4|flac)$/i;
+export const EXTENSOES_AUDIO = [
+  "mp3", "wav", "m4a", "aac", "ogg", "opus", "flac",
+  "wma", "amr", "mp4", "mov", "webm", "mkv",
+] as const;
+
+/** Casa a extensão no fim da CHAVE (`.../raw/000_x.mp3`). */
+export const RX_EXT_AUDIO = new RegExp(`\\.(${EXTENSOES_AUDIO.join("|")})$`, "i");
+
+/** Casa a extensão NUA, já extraída (`mp3`), como o import do Drive usa. */
+export const RX_EXT_AUDIO_NUA = new RegExp(`^(${EXTENSOES_AUDIO.join("|")})$`, "i");
 
 export type ContagemEnvio = {
   /**

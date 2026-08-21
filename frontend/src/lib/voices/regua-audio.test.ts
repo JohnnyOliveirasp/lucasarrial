@@ -12,8 +12,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  EXTENSOES_AUDIO,
   MIN_TOTAL_SECONDS,
   MIN_USEFUL_SECONDS,
+  RX_EXT_AUDIO,
+  RX_EXT_AUDIO_NUA,
   contarSlotsDoEnvio,
   mensagemCurtoDemais,
   mensagemEnvioIncompleto,
@@ -218,4 +221,42 @@ test("UM arquivo perdido concorda no singular", () => {
 test("mais de um arquivo perdido continua no plural", () => {
   const msg = mensagemEnvioIncompleto(617, 4, 7);
   assert.ok(msg.includes("3 não chegaram até nós"), msg);
+});
+
+// ---------------------------------------------------------------------------
+// A divergência de listas de extensão — medida em 21/08 no backfill do
+// `2c5bab42`. O import do Drive aceitava `mov|mkv|wma|amr` e a régua não, então
+// a casa gravava o arquivo do aluno e depois o descartava como "não é áudio".
+// ---------------------------------------------------------------------------
+
+test("os contêineres que o import do Drive aceita são áudio para a régua", () => {
+  // `.mov` é o caso real: 3 vozes de importação do Drive carregavam um.
+  for (const ext of ["mov", "mkv", "wma", "amr", "mp4"]) {
+    assert.ok(RX_EXT_AUDIO.test(`u/v/raw/000_x.${ext}`), `chave .${ext}`);
+    assert.ok(RX_EXT_AUDIO_NUA.test(ext), `extensão nua ${ext}`);
+  }
+});
+
+test("foto e PDF continuam fora — o filtro do 910ea757 não afrouxou", () => {
+  for (const ext of ["jpg", "jpeg", "png", "pdf", "txt", "heic"]) {
+    assert.ok(!RX_EXT_AUDIO.test(`u/v/raw/000_x.${ext}`), `chave .${ext}`);
+    assert.ok(!RX_EXT_AUDIO_NUA.test(ext), `extensão nua ${ext}`);
+  }
+});
+
+test("as duas regex saem da MESMA lista — não dá pra divergirem de novo", () => {
+  for (const ext of EXTENSOES_AUDIO) {
+    assert.ok(RX_EXT_AUDIO.test(`u/v/raw/000_a.${ext}`), ext);
+    assert.ok(RX_EXT_AUDIO_NUA.test(ext), ext);
+  }
+});
+
+test("um .mov perdido no envio conta como buraco, não como slot ignorado", () => {
+  // Antes: o .mov saía de `utilizaveis` e ainda virava "ignorado", o que
+  // ENCOLHIA `esperados` e mascarava o arquivo realmente perdido do mesmo lote.
+  const c = contarSlotsDoEnvio(
+    ["u/v/raw/000_a.mov", "u/v/raw/002_c.mov"],
+    ["u/v/raw/000_a.mov", "u/v/raw/002_c.mov"],
+  );
+  assert.deepEqual(c, { esperados: 3, chegaram: 2, faltando: 1, ignorados: 0 });
 });
