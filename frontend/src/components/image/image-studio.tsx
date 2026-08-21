@@ -32,12 +32,19 @@ const IDEA_MAX = 600;
 // vai primeiro no array — então 15 é seguro nos dois motores (pedido 19/08).
 const MAX_IMAGES = 15;
 const MAX_EXTRAS = MAX_IMAGES - 1; // 1 fixa + 14 extras
+// Trava do incidente 8379549c: foto que entrou no banco nas últimas 24h e não
+// está no quadro trava o Gerar até a pessoa decidir (usar as novas / seguir).
+// 24h cobre com folga o padrão medido (todas as 15 ocorrências: upload ≤15min
+// antes de gerar) e não incomoda quem guarda foto antiga no banco de propósito.
+const STALE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Referência FIXA (29/07): persiste entre gerações e sessões (localStorage). */
 export type FixedRef = { key: string; url: string };
 const fixedRefStorageKey = (userId: string) => `fc:image-ref:${userId}`;
 
 type RefImage = { id: string; preview: string; key: string | null; uploading: boolean };
+/** Item da aba "Imagens de Referência" como o GET /api/v1/images/refs devolve. */
+type ReferenciaDoBanco = { key: string; url: string; at: string | null };
 type Step = "form" | "submitting" | "polling" | "done" | "error";
 type ImageDto = {
   id: string;
@@ -290,6 +297,54 @@ export function ImageStudio({
   // nem extras): a geração não vai usá-las e a tela precisa dizer isso.
   const bankPendingCount = bankKeys.filter((k) => !readyKeys.includes(k)).length;
   const extrasCount = refs.filter((r) => r.key).length;
+
+  // Trava CROSS-SESSION (incidente 8379549c): o aviso acima só enxerga o que
+  // subiu NESTA sessão (bankKeys é estado React — morre no reload). O caso que
+  // seguiu sangrando depois do aviso (jcnclaudio, 21/08 14:11 UTC, 1h após o
+  // deploy do aviso) prova que texto passivo não segura o clique. Aqui a
+  // verdade vem do SERVIDOR na hora do Gerar: foto nova no banco fora do
+  // quadro → modal bloqueante, a pessoa decide com os olhos abertos.
+  const [staleNew, setStaleNew] = useState<ReferenciaDoBanco[] | null>(null);
+  const staleBypassRef = useRef(false); // "gerar mesmo assim" vale pra UM clique
+
+  /** Fotos do banco (últimas 24h, qualquer sessão) mais novas que TODAS as do
+   *  quadro e fora dele. Consulta falhou → [] (fail-open: a trava protege, não
+   *  pode derrubar a geração de quem está com o quadro certo). */
+  async function fotosNovasForaDoQuadro(): Promise<ReferenciaDoBanco[]> {
+    try {
+      const r = await fetch("/api/v1/images/refs", { cache: "no-store" });
+      if (!r.ok) return [];
+      const { refs: banco } = (await r.json()) as { refs?: ReferenciaDoBanco[] };
+      if (!Array.isArray(banco) || banco.length === 0) return [];
+      const usadas = banco.filter((b) => readyKeys.includes(b.key));
+      const maisNovaUsada = Math.max(0, ...usadas.map((b) => (b.at ? Date.parse(b.at) : 0)));
+      const agora = Date.now();
+      return banco.filter((b) => {
+        if (readyKeys.includes(b.key)) return false;
+        const ts = b.at ? Date.parse(b.at) : 0;
+        return ts > maisNovaUsada && agora - ts <= STALE_WINDOW_MS;
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  /** Escolha "usar as fotos novas": a mais nova vira a principal, as demais
+   *  viram as extras (substituindo o quadro — é o que a pessoa quis dizer ao
+   *  subir as fotos). NÃO gera sozinho: ela revê o quadro e clica Gerar. */
+  function usarFotosNovas() {
+    if (!staleNew?.length) return;
+    // listarReferencias devolve da mais nova pra mais velha.
+    const [principal, ...resto] = staleNew;
+    setRefs(
+      resto
+        .slice(0, MAX_EXTRAS)
+        .map((b) => ({ id: crypto.randomUUID(), preview: b.url, key: b.key, uploading: false })),
+    );
+    persistFixedRef({ key: principal.key, url: principal.url });
+    setStaleNew(null);
+  }
+
 
   /** Sobe 1 arquivo direto pro banco de referências (upload + adoção).
    *  Devolve a foto ADOTADA (chave em `refs/` + URL) ou null se falhou — o
@@ -558,6 +613,18 @@ export function ImageStudio({
     setError(null);
     setBlocked(null);
     setNoCredits(false);
+    // Trava 8379549c: antes de cobrar, confere no SERVIDOR se tem foto nova
+    // fora do quadro. "Gerar mesmo assim" (staleBypassRef) pula UMA vez.
+    if (staleBypassRef.current) {
+      staleBypassRef.current = false;
+    } else {
+      const fora = await fotosNovasForaDoQuadro();
+      if (fora.length > 0) {
+        setStaleNew(fora);
+        setStep("form");
+        return;
+      }
+    }
     try {
       const r = await fetch("/api/v1/images/generate", {
         method: "POST",
@@ -973,6 +1040,62 @@ export function ImageStudio({
           action={t("paywallAction")}
           detail={paywallDetail}
         />
+
+        {/* Trava do incidente 8379549c: foto nova no banco fora do quadro.
+            Bloqueia o Gerar até a pessoa decidir — o aviso passivo acima não
+            segurou o clique (ocorrência 1h depois do deploy dele). */}
+        {staleNew && staleNew.length > 0 && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="stale-refs-title"
+          >
+            <div className="relative flex w-full max-w-md flex-col gap-5 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
+              <div className="flex items-center gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)]">
+                  <ShieldAlert className="h-5 w-5 text-[var(--status-warn)]" />
+                </span>
+                <h2
+                  id="stale-refs-title"
+                  className="font-sans text-xl font-semibold tracking-[-0.02em] text-[var(--ink)]"
+                >
+                  {t("refs.staleTitle")}
+                </h2>
+              </div>
+              <p className="text-sm leading-relaxed text-[var(--body)]">
+                {t("refs.staleBody", { count: staleNew.length })}
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                {staleNew.slice(0, 8).map((b) => (
+                  <div
+                    key={b.key}
+                    className="relative aspect-square overflow-hidden rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={b.url} alt="" className="h-full w-full object-cover" />
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-col gap-2 pt-1">
+                <button type="button" onClick={usarFotosNovas} className={PILL}>
+                  {t("refs.staleUseNew", { count: staleNew.length })}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    staleBypassRef.current = true;
+                    setStaleNew(null);
+                    void handleGenerate();
+                  }}
+                  className={SECONDARY}
+                >
+                  {t("refs.staleKeepOld")}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Gerar */}
         <div className="flex flex-col gap-2">
