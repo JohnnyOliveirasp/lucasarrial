@@ -148,15 +148,62 @@ Débito sem entrega e sem estorno. Confira quem falhou nas últimas 24h
 veja se existe o estorno correspondente em `credit_transactions`. O estorno
 automático é **idempotente por contagem** — devolve uma vez por débito.
 
-## 7. Fecho do dia
+## 7. Fecho do dia — e o que você POSTA durante o dia
 
-**Varra de manhã, relate à noite** (decidido 18/08, porque o Johnny dirige o
-dia inteiro e só lê quando para). Assim o problema é corrigido cedo e ele
-recebe uma mensagem só, já com o resultado. Formato em
-`06_RELATORIO_E_LIMITES.md`.
+⚠️ **MUDOU EM 21/08 (ordem do Johnny). A regra antiga era "varra de manhã,
+relate à noite" — silêncio o dia inteiro.** Ela existia pra não interromper o
+Johnny dirigindo. O efeito colateral foi outro: ele abria o canal, via silêncio,
+e não tinha como saber se você estava trabalhando ou parado. Dezesseis rondas
+num dia e nenhuma mensagem.
 
-Mande **mesmo quando não houve nada**. Silêncio não pode ser confundido com
-saúde — foi exatamente essa confusão que deixou 43 vozes paradas por semanas.
+**Agora você POSTA NO GRUPO, na hora, quando:**
+- **fechou** um incidente — uma linha: o que era, o que fez, quem foi afetado;
+- **subiu um fix pra produção** — uma linha: o que corrigiu e o PR;
+- **escreveu pra um aluno** — uma linha: quem e sobre o quê.
+
+**NÃO poste ronda vazia, progresso parcial nem log de terminal.** Só fato
+consumado. Num dia como o de 21/08 isso teriam sido ~3 mensagens, não 16 — e o
+grupo agora tem o Lucas dentro. Ruído faz as pessoas pararem de ler, e aí o
+canal morre pra valer (regra 27).
+
+**O relatório da noite continua**, como consolidado. Mande mesmo quando não
+houve nada: silêncio não pode ser confundido com saúde — foi essa confusão que
+deixou 43 vozes paradas por semanas. Formato em `06_RELATORIO_E_LIMITES.md`.
+
+**Avise na hora, sem esperar:** aluno pagante travado sem solução, dinheiro
+cobrado errado, produção fora do ar, ou algo irreversível que você fez.
+
+## 8. ELIMINAR O BACKLOG — um de cada vez, até o fim
+
+⚠️ **Ordem direta do Johnny, 21/08.** A fila estava com 6 abertos, todos com
+nota sua recente, e **nenhum fechado**. Trabalhar em seis ao mesmo tempo é o que
+mantém os seis abertos.
+
+**O método, e ele é serial de propósito:**
+
+1. **Pegue UM.** O mais antigo com aluno afetado ganha; empate, o que tem mais
+   gente sofrendo.
+2. **Leve até o fim.** Corrigir o código NÃO é o fim. Acabou quando: o fix está
+   em produção, o aluno afetado foi avisado, o crédito indevido foi devolvido, e
+   o incidente está `fixed` com nota e commit.
+3. **NÃO abra o próximo antes de fechar esse.** Única exceção: produção fora do
+   ar ou dinheiro sendo cobrado errado agora.
+4. **Travou? Diga em que passo.** Não deixe "investigando" sem dizer o que falta:
+   - precisa de gente pra ouvir/ver → `ask_humans` (regra 9-D), e siga pro próximo;
+   - precisa de dinheiro acima do teto → `notify` pro Johnny (regra 9-B), e siga;
+   - precisa que o aluno responda → mande o e-mail, anote a data, e siga.
+   **Esperar resposta não é estar travado.** Escreveu e anotou, o item saiu do
+   seu colo — vá pro próximo.
+5. **Fechou? Poste a linha no grupo** (regra 7) e pegue o próximo.
+
+⚠️ **Mandar e-mail pra aluno você decide sozinho** — individual, sobre um caso
+que você está tratando, pelo SMTP do `suporte@`. O que precisa do Johnny é
+**e-mail em massa**. Não segure a resposta de um aluno esperando permissão.
+
+⚠️ **A regra 14 continua inteira: nunca marque `fixed` sem ter resolvido.**
+Isto aqui é pra você fechar MAIS, não pra fechar mais rápido do que resolve. Se
+o backlog não baixar porque os casos são difíceis, isso é uma resposta legítima
+— escreva no relatório qual passo emperrou em cada um.
 
 ## ⚠️ Duas armadilhas que já custaram caro numa varredura
 
