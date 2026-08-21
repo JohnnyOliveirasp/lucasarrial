@@ -16,6 +16,7 @@ import { getAdmin } from "@/lib/db/admin";
 import {
   adotarReferencia,
   apagarReferencia,
+  apagarStagingAdotado,
   listarReferencias,
 } from "@/lib/images/refs";
 import { imagesBucket } from "@/lib/r2/client";
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  let body: { key?: unknown };
+  let body: { key?: unknown; staging?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -42,9 +43,26 @@ export async function POST(request: NextRequest) {
   }
   const key = typeof body.key === "string" ? body.key.trim() : "";
   if (!key) return badRequest("Faltou a chave da foto.");
+  // `staging: true` = veio do upload novo (uploadToBank), onde o original é um
+  // arquivo recém-criado que ninguém mais usa. A adoção de foto do HISTÓRICO
+  // (image-studio.tsx:107) NÃO manda a flag — lá o original é o input de uma
+  // geração e apagar quebraria o histórico do aluno.
+  const staging = body.staging === true;
   try {
     const nova = await adotarReferencia(auth.user_id, key);
     const url = await createPresignedGet(imagesBucket(), nova, 3600);
+    // Limpa o staging duplicado (incidente c82c77e4: 788 pares idênticos, 57
+    // alunos, 1,5 GB em 44h). A própria função reconfere que nenhuma geração
+    // usa a chave — a flag do cliente é a INTENÇÃO, a checagem no banco é a
+    // segurança. Falhar aqui não afeta o aluno: a referência dele já está
+    // salva e o pior caso é o arquivo órfão que já existe hoje.
+    if (staging) {
+      try {
+        await apagarStagingAdotado(getAdmin(), auth.user_id, key);
+      } catch {
+        /* órfão sobrando é o custo de hoje; nunca falhar a adoção por isso */
+      }
+    }
     return jsonOk({ key: nova, url });
   } catch (e) {
     return badRequest(e instanceof Error ? e.message : "Não foi possível salvar a referência.");

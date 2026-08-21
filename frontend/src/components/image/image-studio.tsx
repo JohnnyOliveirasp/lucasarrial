@@ -309,10 +309,16 @@ export function ImageStudio({
       // PUT direto no R2 com retry em falha transitória (rede/5xx).
       await putToR2(upload_url, file, file.type);
       // Adoção = a cópia em `refs/` que o apagar-do-histórico não alcança.
+      // `staging: true`: este original acabou de ser criado por ESTE upload e
+      // não é input de geração nenhuma — o servidor pode apagá-lo depois de
+      // copiar (e reconfere no banco antes). Sem isso ficavam DOIS arquivos
+      // por foto enviada: 788 pares idênticos, 1,5 GB em 44h (c82c77e4).
+      // ⚠️ A adoção de foto vinda do HISTÓRICO (persistFixedRef, acima) NÃO
+      // manda esta flag: lá o original É o input de uma geração antiga.
       const ad = await fetch("/api/v1/images/refs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key }),
+        body: JSON.stringify({ key, staging: true }),
       });
       if (!ad.ok) {
         const j = await ad.json().catch(() => ({}));

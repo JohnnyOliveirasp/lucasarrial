@@ -29,6 +29,10 @@ import {
 import { imagesBucket, r2 } from "@/lib/r2/client";
 import { objectExists } from "@/lib/r2/exists";
 import { createPresignedGet } from "@/lib/r2/presigned";
+import type { getAdmin } from "@/lib/db/admin";
+
+/** O cliente admin do Supabase, sem arrastar os types gerados pra cá. */
+type SupabaseLike = ReturnType<typeof getAdmin>;
 
 export function refsPrefix(userId: string): string {
   return `${userId}/refs/`;
@@ -43,6 +47,47 @@ export function ehReferenciaSalva(userId: string, key: string): boolean {
  * Idempotente: chave que já mora em refs/ volta como está (se existir).
  * @throws se a origem não pertence ao usuário ou não existe mais.
  */
+/**
+ * Apaga o ORIGINAL depois que a cópia em `refs/` já existe — o staging de
+ * `<uid>/images/<uuid>/input_*` que ninguém mais usa.
+ *
+ * ⚠️ SÓ CHAME COM AS DUAS CONDIÇÕES SATISFEITAS (incidente c82c77e4):
+ *  1. a chave é staging recém-criado pelo upload (o cliente diz `staging`), e
+ *  2. NENHUMA geração referencia a chave.
+ *
+ * O conserto "óbvio" — apagar o original sempre que a adoção der certo — foi
+ * MEDIDO em 21/08 e quebra produção: mesmo depois da mudança de 19/08, 31
+ * payloads de geração ainda apontam direto pro original. Apagar ali apagaria
+ * a foto de entrada do histórico desses alunos, que é exatamente o defeito
+ * que a pasta `refs/` foi criada pra curar. Seria trocar 1,5 GB de disco por
+ * histórico quebrado de aluno.
+ *
+ * Falhar aqui NÃO é erro do usuário: a referência dele já está salva. Se o
+ * delete falhar, sobra um arquivo órfão — o mesmo custo de hoje, nada pior.
+ */
+export async function apagarStagingAdotado(
+  admin: SupabaseLike,
+  userId: string,
+  original: string,
+): Promise<boolean> {
+  // Cinto: nunca apagar dentro de refs/ (é o destino, não a origem).
+  if (!original.startsWith(`${userId}/images/`)) return false;
+  if (ehReferenciaSalva(userId, original)) return false;
+
+  // Suspensório: a chave não pode estar em nenhuma geração — nem na coluna
+  // singular (`input_image_path`) nem no array (`input_image_paths`).
+  const [umPath, muitosPaths] = await Promise.all([
+    admin.from("image_generations").select("id").eq("input_image_path", original).limit(1),
+    admin.from("image_generations").select("id").contains("input_image_paths", [original]).limit(1),
+  ]);
+  // Erro de consulta não é "não tem referência": na dúvida, não apaga.
+  if (umPath.error || muitosPaths.error) return false;
+  if ((umPath.data?.length ?? 0) > 0 || (muitosPaths.data?.length ?? 0) > 0) return false;
+
+  await r2.send(new DeleteObjectCommand({ Bucket: imagesBucket(), Key: original }));
+  return true;
+}
+
 export async function adotarReferencia(userId: string, key: string): Promise<string> {
   const limpa = key.trim();
   if (!limpa.startsWith(`${userId}/`)) throw new Error("essa foto não é sua");
