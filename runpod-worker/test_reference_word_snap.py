@@ -12,6 +12,8 @@ Estes testes provam que agora:
   2. lista de words vazia / whisper falhando → FALLBACK pro corte por tempo de
      hoje (a melhoria nunca quebra o treino);
   3. clipe ajustado curto demais → candidata DESCARTADA (segue pro ranking);
+     e se TODAS descartam, o laço refaz com o corte por TEMPO da main — a
+     função nunca devolve lista vazia por causa do snap;
   4. o transcript devolvido é EXATAMENTE as palavras do clipe;
   5. sem `transcribe_words_fn` o comportamento antigo segue intacto (compat).
 
@@ -259,14 +261,39 @@ class TestSelectReferenceCandidatesIntegration(unittest.TestCase):
         self.assertTrue(ranked)
         self.assertEqual(ranked[0][1], "fallback por tempo.")
 
-    def test_todas_descartadas_cai_no_ref_fallback(self):
-        # Nenhuma palavra inteira em candidata nenhuma → todas discard →
-        # sobra o ref_fallback antigo (corte 0s por tempo).
+    def test_todas_descartadas_cai_no_corte_por_tempo(self):
+        # Nenhuma palavra inteira em candidata NENHUMA → todas _SNAP_DISCARD.
+        # A função NÃO pode devolver []: refaz o laço com o corte por TEMPO
+        # da main (mesmas offsets), não o ref_fallback de 0s.
         words = [W(0.0, 40.0, " zumbido")]
         ranked, _ = self._run(transcribe_words_fn=lambda p: words)
+        self.assertTrue(ranked)          # nunca lista vazia
+        self.assertEqual(len(ranked), 2)  # as 2 candidatas por tempo
+        for clip, transcript in ranked:
+            self.assertEqual(transcript, "fallback por tempo.")
+            self.assertIn("_time", clip.name)
+            self.assertNotIn("ref_fallback", clip.name)
+
+    def test_todas_descartadas_transcreve_de_verdade_no_retry(self):
+        # No retry por tempo o transcript vem do transcribe_fn REAL (2ª
+        # passada), nunca das words que falharam no snap.
+        words = [W(0.0, 40.0, " zumbido")]
+        seen = []
+
+        def real_transcribe(p):
+            seen.append(Path(p).name)
+            return "texto do corte por tempo."
+
+        ranked, calls = self._run(
+            transcribe_words_fn=lambda p: words, transcribe_fn=real_transcribe,
+        )
         self.assertTrue(ranked)
-        self.assertEqual(len(ranked), 1)
-        self.assertIn("ref_fallback", ranked[0][0].name)
+        self.assertEqual(ranked[0][1], "texto do corte por tempo.")
+        self.assertEqual(len(seen), 2)  # transcreveu as 2 candidatas do retry
+        # e o retry cortou nas MESMAS offsets espaçadas, não em 0s:
+        time_cuts = [c for c in calls if "_time" in c[1]]
+        self.assertEqual(len(time_cuts), 2)
+        self.assertTrue(all(seconds == 30 for *_x, seconds in time_cuts))
 
     def test_sem_transcribe_words_fn_comportamento_antigo(self):
         ranked, calls = self._run(transcribe_words_fn=None)

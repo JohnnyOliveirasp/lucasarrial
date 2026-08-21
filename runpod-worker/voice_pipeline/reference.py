@@ -265,32 +265,46 @@ def select_reference_candidates(
     offsets = _candidate_offsets(duration, ref_seconds, max_candidates)
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    scored: "list[tuple[float, Path, str]]" = []
-    for i, off in enumerate(offsets):
-        clip = work_dir / f"ref_cand_{i}_{int(off)}s.wav"
-        transcript: "str | None" = None
-        if transcribe_words_fn is not None:
-            status, snapped = _cut_snapped_candidate(
-                primary, clip, off, ref_seconds, duration,
-                transcribe_words_fn, log,
-            )
-            if status == _SNAP_DISCARD:
-                continue  # curta demais / sem palavra inteira: proxima candidata
-            if status == _SNAP_OK:
-                transcript = snapped
-            # _SNAP_UNAVAILABLE: cai no corte por tempo abaixo (fallback).
-        if transcript is None:
-            if not _slice_window(primary, clip, off, ref_seconds):
-                log(level="error", event="reference.candidate.slice_failed", offset=off)
+    def _rank_pass(
+        words_fn: "Callable[[Path], list | None] | None",
+        name_suffix: str = "",
+    ) -> "list[tuple[float, Path, str]]":
+        ranked: "list[tuple[float, Path, str]]" = []
+        for i, off in enumerate(offsets):
+            clip = work_dir / f"ref_cand_{i}_{int(off)}s{name_suffix}.wav"
+            transcript: "str | None" = None
+            if words_fn is not None:
+                status, snapped = _cut_snapped_candidate(
+                    primary, clip, off, ref_seconds, duration,
+                    words_fn, log,
+                )
+                if status == _SNAP_DISCARD:
+                    continue  # curta demais / sem palavra inteira: proxima candidata
+                if status == _SNAP_OK:
+                    transcript = snapped
+                # _SNAP_UNAVAILABLE: cai no corte por tempo abaixo (fallback).
+            if transcript is None:
+                if not _slice_window(primary, clip, off, ref_seconds):
+                    log(level="error", event="reference.candidate.slice_failed", offset=off)
+                    continue
+                transcript = (transcribe_fn(clip) or "").strip()
+            if not transcript:
+                log(level="info", event="reference.candidate.empty", offset=off)
                 continue
-            transcript = (transcribe_fn(clip) or "").strip()
-        if not transcript:
-            log(level="info", event="reference.candidate.empty", offset=off)
-            continue
-        score = score_reference_transcript(transcript, language=language)
-        log(level="info", event="reference.candidate", offset=off, score=score,
-            transcript_len=len(transcript))
-        scored.append((score, clip, transcript))
+            score = score_reference_transcript(transcript, language=language)
+            log(level="info", event="reference.candidate", offset=off, score=score,
+                transcript_len=len(transcript))
+            ranked.append((score, clip, transcript))
+        return ranked
+
+    scored = _rank_pass(transcribe_words_fn)
+    if not scored and transcribe_words_fn is not None:
+        # TODAS as candidatas morreram no snap por palavra (ex.: audio sem
+        # nenhuma palavra inteira nas janelas). A melhoria NUNCA pode quebrar
+        # o treino: refaz o laco inteiro com o corte por TEMPO da main.
+        log(level="warning", event="reference.snap.all_discarded_time_retry",
+            candidates=len(offsets))
+        scored = _rank_pass(None, name_suffix="_time")
 
     if scored:
         scored.sort(key=lambda t: t[0])
