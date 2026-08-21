@@ -51,12 +51,41 @@ export function isAllowedImageMime(mime: string): boolean {
 }
 
 /** Chave da imagem de REFERÊNCIA (foto enviada pelo usuário). */
+/**
+ * Extensões que SÃO JPEG mas quebram no Kie. O `.jfif` é o padrão do Windows
+ * ao salvar imagem de alguns navegadores, e do WhatsApp Web — chega direto do
+ * computador do aluno sem ele nunca ter escolhido esse formato.
+ *
+ * ⚠️ MEDIDO (21/08, incidente edc50dc6): a aluna Ketty ficou 3 dias com TODOS
+ * os projetos de Vídeo História travados. As 27 cenas, dos 3 projetos, tinham
+ * o mesmo erro: `Kie createTask sem taskId (code=500, msg=File type not
+ * supported)`. Os arquivos eram `input_apres1.jfif`, `input_3.0.jfif` etc. Li
+ * os primeiros bytes no R2: `FFD8FFE0...` — é JPEG de verdade. O Kie recusa
+ * pela EXTENSÃO, não pelo conteúdo.
+ *
+ * Nós aceitávamos no upload (o browser manda `image/jpeg` no MIME, então a
+ * validação passava) e o Kie rejeitava depois, na hora de gerar — longe do
+ * upload, sem nada na tela ligando uma coisa à outra.
+ */
+const EXTENSOES_JPEG_PROBLEMATICAS = new Set(["jfif", "jfi", "jif", "jpe"]);
+
+/** Troca a extensão por `.jpg` quando o arquivo já é JPEG por dentro. */
+export function normalizarNomeDeImagem(filename: string): string {
+  const i = filename.lastIndexOf(".");
+  if (i <= 0) return filename;
+  const ext = filename.slice(i + 1).toLowerCase();
+  if (!EXTENSOES_JPEG_PROBLEMATICAS.has(ext)) return filename;
+  return `${filename.slice(0, i)}.jpg`;
+}
+
 export function buildInputImageKey(
   userId: string,
   imageId: string,
   filename: string,
 ): string {
-  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+  const safe = normalizarNomeDeImagem(filename)
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .slice(-80);
   return `${userId}/images/${imageId}/input_${safe}`;
 }
 
