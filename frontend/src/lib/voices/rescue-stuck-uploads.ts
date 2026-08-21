@@ -20,9 +20,13 @@ import { r2, R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 import type { VoiceStatus } from "@/lib/db/types";
+import {
+  MIN_TOTAL_SECONDS,
+  contarSlotsDoEnvio,
+  mensagemCurtoDemais,
+  mensagemEnvioIncompleto,
+} from "@/lib/voices/regua-audio";
 
-/** Mesma régua do uploads-complete. */
-const MIN_TOTAL_SECONDS = 20 * 60;
 /** Só olha o que está parado há bastante tempo — upload grande demora. */
 const STUCK_AFTER_MS = 30 * 60 * 1000;
 /**
@@ -47,18 +51,33 @@ export type RescueSummary = {
   errors: number;
 };
 
-/** Chaves de áudio que o browser subiu, na ordem do upload (prefixo NNN_). */
-async function audiosNoR2(userId: string, voiceId: string): Promise<string[]> {
+/**
+ * O que existe no R2 pra esta voz.
+ *
+ * Devolve as DUAS listas de propósito: `utilizaveis` (o que vira treino) e
+ * `todas` (tudo que está no prefixo, inclusive o que o filtro descartou).
+ * A diferença é o que separa "o arquivo nunca chegou" de "o arquivo chegou
+ * truncado e foi descartado por tamanho" — os dois viram buraco na
+ * numeração, mas não são o mesmo defeito.
+ */
+async function audiosNoR2(
+  userId: string,
+  voiceId: string,
+): Promise<{ utilizaveis: string[]; todas: string[] }> {
   const out = await r2.send(
     new ListObjectsV2Command({
       Bucket: R2_BUCKETS.voices,
       Prefix: `${userId}/${voiceId}/`,
     }),
   );
-  return (out.Contents ?? [])
-    .filter((o) => (o.Size ?? 0) > MIN_BYTES && EXT_AUDIO.test(o.Key ?? ""))
-    .map((o) => o.Key as string)
-    .sort();
+  const contents = out.Contents ?? [];
+  return {
+    utilizaveis: contents
+      .filter((o) => (o.Size ?? 0) > MIN_BYTES && EXT_AUDIO.test(o.Key ?? ""))
+      .map((o) => o.Key as string)
+      .sort(),
+    todas: contents.map((o) => o.Key as string).sort(),
+  };
 }
 
 export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
@@ -83,7 +102,10 @@ export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
   }[]) {
     resumo.checked += 1;
     try {
-      const chaves = await audiosNoR2(voz.user_id, voz.id);
+      const { utilizaveis: chaves, todas } = await audiosNoR2(
+        voz.user_id,
+        voz.id,
+      );
       if (chaves.length === 0) {
         // O aluno nunca chegou a subir nada — não há o que resgatar. Velha o
         // bastante = apaga (senão volta pra fila pra sempre e trava o teto).
@@ -105,6 +127,12 @@ export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
       const est = await estimateSpeechSeconds(urls);
       const total = est.reliable ? est.totalSeconds : 0;
 
+      // O envio pode ter chegado pela metade: aqui a gente grava o que ACHOU
+      // no bucket, então um arquivo que não subiu vira silenciosamente "menos
+      // áudio" e o aluno leva a culpa. O índice do slot está na chave, então
+      // dá pra saber quantos foram emitidos sem persistir contagem nenhuma.
+      const envio = contarSlotsDoEnvio(chaves, todas);
+
       let status: VoiceStatus;
       let erro: string | null = null;
       if (!est.reliable) {
@@ -112,10 +140,24 @@ export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
         status = "awaiting_training";
       } else if (total < MIN_TOTAL_SECONDS) {
         status = "rejected_too_short";
+        // Faltou arquivo E o total não fecha a porta: a causa provável é o
+        // nosso envio, não a gravação dele. Dizer "grave mais" aqui é mandar
+        // o aluno repetir o que já fez.
         erro =
-          `Áudio total ${Math.round(total / 60)}min < mínimo de ${MIN_TOTAL_SECONDS / 60}min`;
+          envio.faltando > 0
+            ? mensagemEnvioIncompleto(total, envio.chegaram, envio.esperados)
+            : mensagemCurtoDemais(total);
       } else {
         status = "awaiting_training";
+      }
+
+      // Buraco na numeração é defeito NOSSO mesmo quando o aluno passa na
+      // porta assim mesmo — sem este log ele só aparece se alguém for medir
+      // a numeração à mão, que foi como o 2c5bab42 ficou 1 mês invisível.
+      if (envio.faltando > 0) {
+        console.warn(
+          `[rescue-uploads] ENVIO INCOMPLETO voz ${voz.id}: chegaram ${envio.chegaram} de ${envio.esperados} slots (faltam ${envio.faltando}) → ${status}`,
+        );
       }
 
       const { error } = await admin

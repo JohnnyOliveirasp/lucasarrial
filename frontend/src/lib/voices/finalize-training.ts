@@ -14,6 +14,7 @@ import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { bypassesBilling } from "@/lib/credits/access";
 import { escalateStuckUser } from "@/lib/support/failure-alert";
 import type { VoiceStatus, VoiceUpdate } from "@/lib/db/types";
+import { mensagemFalaLimpaInsuficiente } from "@/lib/voices/regua-audio";
 
 const SUPPORT_EMAIL = "suporte@fastcloner.com";
 
@@ -86,17 +87,14 @@ function friendlyTrainError(out: TrainOutput, rawError: string): string {
     );
   }
   if (isDatasetError(out.error) || isDatasetError(rawError)) {
-    const useful = Math.round((out.useful_seconds ?? 0) / 60);
-    const min = Math.round((out.min_required_seconds ?? 600) / 60);
-    const numbers =
-      typeof out.useful_seconds === "number"
-        ? `apenas ~${useful}min serviram para o treino (mínimo: ${min}min de fala limpa)`
-        : `não sobrou fala limpa suficiente para o treino`;
-    return (
-      `Do áudio enviado, ${numbers}. ` +
-      `Seus créditos foram devolvidos. Grave num ambiente silencioso, falando continuamente ` +
-      `e próximo ao microfone, e tente de novo com essa gravação nova.`
-    );
+    // ⚠️ 07745f61 + acf8acd6: esta mensagem citava SÓ o mínimo do TREINO (10min
+    // de fala limpa) e mandava "tente de novo" — quem obedecia gravava 12–15min
+    // e batia na PORTA do upload, que exige 20min BRUTOS. E arredondava com
+    // `Math.round` nos dois lados, produzindo a frase impossível
+    // "apenas ~10min serviram (mínimo: 10min)" pra quem parou a 1,5s do corte.
+    // As duas regras (arredondar pra baixo, dizer o alvo da porta) moram na
+    // régua, não aqui — era a duplicação que deixava os dois lados divergirem.
+    return mensagemFalaLimpaInsuficiente(out.useful_seconds, out.min_required_seconds);
   }
   // Falha técnica: culpa NOSSA, não do usuário — o estorno é automático.
   return (
