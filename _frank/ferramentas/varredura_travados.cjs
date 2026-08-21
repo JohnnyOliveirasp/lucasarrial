@@ -86,6 +86,95 @@ const ALVOS = [
     );
   }
 
+  // ── PONTO CEGO FECHADO EM 21/08 ────────────────────────────────────────────
+  // PAGANTE QUE TENTOU E NÃO TEM NENHUMA VOZ PRONTA.
+  //
+  // Por que esta seção existe, e por que ela NÃO lista estados ruins:
+  // até hoje a classe "pagante sem voz" só era medida com `status='failed'`
+  // (foi assim que nasceu o incidente 5c3f1f8b, com 3 alunos). Na ronda das
+  // 02h de 21/08 a mesma pergunta feita sem filtro de status devolveu **5**:
+  // os 2 que faltavam estavam em `rejected_too_short`, um estado terminal que
+  // não é `failed` e que **nenhum detector olhava** — `jrfengenhariadf`
+  // (100.000 créditos) e `leandro.fitoway` (97.620), parados desde julho, sem
+  // nunca terem sido contatados.
+  //
+  // A lição é a regra desta seção: **não enumere os estados ruins, afirme o
+  // estado bom.** Enumerar exige adivinhar a lista completa e vai cega no dia
+  // em que alguém cria um status novo. Aqui a pergunta é sempre a mesma —
+  // "esse pagante tem produto?" — e ela sobrevive a status que ainda nem
+  // existem.
+  //
+  // Ficam de fora de propósito: quem nunca subiu voz (não é vítima, é quem não
+  // tentou) e quem não tem crédito para treinar (aí o gate é o crédito, não um
+  // defeito nosso). `awaiting_training` também não entra em ALVOS lá em cima:
+  // é espera legítima pelo clique do aluno (`lib/onboarding/treino.ts`), e
+  // jogar os 28 de hoje na varredura a entupiria de falso positivo todo dia.
+  const CUSTO_TREINO = 10000; // = TRAINING_CREDIT_COST em lib/credits/config.ts
+  let semVoz = 0;
+  {
+    const pagina = async (tabela, cols) => {
+      let acc = [];
+      for (let de = 0; ; de += 1000) {
+        const { data, error } = await db.from(tabela).select(cols).range(de, de + 999);
+        if (error) throw new Error(`${tabela}: ${error.message}`);
+        acc = acc.concat(data);
+        if (data.length < 1000) return acc; // ⚠️ PostgREST corta em 1000: sem paginar, some gente
+      }
+    };
+    try {
+      const vozes = await pagina(
+        "voices",
+        "id, user_id, status, created_at, updated_at, error_message",
+      );
+      const perfis = await pagina(
+        "profiles",
+        "id, email, access_until, credits_subscription, credits_extra",
+      );
+      const porDono = new Map();
+      for (const v of vozes) {
+        if (!porDono.has(v.user_id)) porDono.set(v.user_id, []);
+        porDono.get(v.user_id).push(v);
+      }
+      const vitimas = [];
+      for (const p of perfis) {
+        if (!(p.access_until && new Date(p.access_until) > new Date())) continue;
+        if ((p.credits_subscription ?? 0) + (p.credits_extra ?? 0) < CUSTO_TREINO) continue;
+        const minhas = porDono.get(p.id) ?? [];
+        if (minhas.length === 0) continue; // nunca tentou
+        if (minhas.some((v) => v.status === "ready")) continue; // tem produto
+        // ⚠️ a espera se conta pela PRIMEIRA tentativa (`created_at`), não pelo
+        // `updated_at`: uma varredura em lote reescreve o `updated_at` de todo
+        // mundo e faz 3 semanas de espera parecerem 63h (aconteceu em 18/08).
+        const maisVelha = minhas
+          .slice()
+          .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
+        vitimas.push({ p, minhas, maisVelha });
+      }
+      vitimas.sort((a, b) => new Date(a.maisVelha.created_at) - new Date(b.maisVelha.created_at));
+      if (vitimas.length) {
+        console.log(`\n🚨 PAGANTE COM CRÉDITO E SEM NENHUMA VOZ PRONTA: ${vitimas.length}`);
+        for (const { p, minhas, maisVelha } of vitimas) {
+          const credito = (p.credits_subscription ?? 0) + (p.credits_extra ?? 0);
+          console.log(
+            `   ${p.email} · ${credito} créditos · sem voz desde ` +
+              `${String(maisVelha.created_at).slice(0, 10)} (${(idadeHoras(maisVelha.created_at) / 24).toFixed(0)} dias)` +
+              ` · acesso até ${String(p.access_until).slice(0, 10)}`,
+          );
+          for (const v of minhas) {
+            console.log(
+              `      voz ${v.id.slice(0, 8)} [${v.status}] "${(v.error_message ?? "").slice(0, 80)}"`,
+            );
+          }
+          semVoz++;
+        }
+      }
+    } catch (e) {
+      // erro cru na cara: zero silencioso aqui já custou 2 alunos esquecidos
+      console.log(`⚠️  detector "pagante sem voz" FALHOU: ${e.message}`);
+    }
+  }
+  total += semVoz;
+
   // Incidentes abertos
   const { data: inc } = await db
     .from("incidents")
