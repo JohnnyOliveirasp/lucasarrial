@@ -15,6 +15,7 @@ import {
   MIN_TOTAL_SECONDS,
   MIN_USEFUL_SECONDS,
   mensagemCurtoDemais,
+  mensagemFalaLimpaInsuficiente,
   minutosExibidos,
 } from "./regua-audio.ts";
 
@@ -59,4 +60,65 @@ test("diz o alvo e que nada foi cobrado", () => {
   const msg = mensagemCurtoDemais(900);
   assert.ok(msg.includes("20min"), msg);
   assert.ok(msg.includes("nada foi cobrado"), msg);
+});
+
+/* ---- o outro mínimo: fala limpa do treino (incidente acf8acd6) ---------- */
+
+test("NUNCA gera a frase impossível '~10min serviram (mínimo: 10min)'", () => {
+  // Casos REAIS de training_jobs.useful_seconds, mínimo 600s.
+  // dirceu.moura.cruz78 tentou 3x; a 2ª parou a 1,5 SEGUNDO do corte.
+  for (const s of [594.2, 598.5, 591.1]) {
+    const msg = mensagemFalaLimpaInsuficiente(s, 600);
+    assert.ok(msg.includes("~9min"), `${s}s -> ${msg}`);
+    assert.ok(!msg.includes("~10min serviram"), `${s}s -> ${msg}`);
+  }
+});
+
+test("o número exibido é sempre MENOR que o mínimo quando recusa", () => {
+  for (let s = 0; s < MIN_USEFUL_SECONDS; s += 3) {
+    const msg = mensagemFalaLimpaInsuficiente(s, MIN_USEFUL_SECONDS);
+    assert.ok(
+      msg.includes(`~${minutosExibidos(s)}min serviram`),
+      `${s}s exibiu algo diferente de ${minutosExibidos(s)}min: ${msg}`,
+    );
+    assert.ok(minutosExibidos(s) < MIN_USEFUL_SECONDS / 60, `${s}s`);
+  }
+});
+
+test("quem falhou por segundos lê que faltou pouco, não regrava do zero", () => {
+  assert.ok(mensagemFalaLimpaInsuficiente(598.5, 600).includes("menos de 1min"));
+  assert.ok(mensagemFalaLimpaInsuficiente(591.1, 600).includes("menos de 1min"));
+  // 6min úteis (caso ivanildezuca) não é quase-lá: tem que dizer o tamanho real.
+  assert.ok(mensagemFalaLimpaInsuficiente(360, 600).includes("Faltaram ~4min"));
+});
+
+test("sem número do worker, não inventa número", () => {
+  const msg = mensagemFalaLimpaInsuficiente(null, 600);
+  assert.ok(msg.includes("não sobrou fala limpa suficiente"), msg);
+  assert.ok(!msg.includes("~"), `não podia ter número aproximado: ${msg}`);
+});
+
+test("a mensagem continua classificável como user_dataset", () => {
+  // `classifyCause` (lib/incidents/classify.ts) casa a MENSAGEM AMIGÁVEL, não o
+  // código do worker. Se estes marcadores sumirem do texto, a falha de dataset
+  // vira "unknown" e passa a pagear o suporte como se fosse defeito nosso —
+  // exatamente o gap 4eed0e0d. Reescrever a frase sem isto é regressão.
+  for (const msg of [
+    mensagemFalaLimpaInsuficiente(594.2, 600),
+    mensagemFalaLimpaInsuficiente(null, 600),
+  ]) {
+    const e = msg.toLowerCase();
+    assert.ok(
+      e.includes("fala limpa") || e.includes("serviram para o treino"),
+      `perdeu o marcador de user_dataset: ${msg}`,
+    );
+  }
+});
+
+test("a recusa do treino também aponta a PORTA de 20min", () => {
+  // O erro do 07745f61: mandar "grave de novo" sem dizer que a porta é 20
+  // brutos faz o aluno gravar 12-15min e ser recusado de novo.
+  const msg = mensagemFalaLimpaInsuficiente(594.2, 600);
+  assert.ok(msg.includes("20min no total"), msg);
+  assert.ok(msg.includes("créditos foram devolvidos"), msg);
 });

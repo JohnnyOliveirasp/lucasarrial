@@ -52,3 +52,62 @@ export function mensagemCurtoDemais(totalSegundos: number): string {
     `e envie de novo — nada foi cobrado.`
   );
 }
+
+/**
+ * A recusa do TREINO (fala limpa insuficiente), com o mesmo compromisso da
+ * porta: o número do aluno arredonda pra BAIXO e a frase diz quanto falta.
+ *
+ * Por que existe (medido em 21/08, incidente acf8acd6 — o balde estava
+ * `fixed` desde 09/08 e voltou a disparar 6x depois disso):
+ *
+ * `finalize-training` usava `Math.round` nos dois lados da comparação, então
+ * quem parava a um passo do mínimo lia a frase impossível
+ * "apenas ~10min serviram para o treino (mínimo: 10min de fala limpa)" —
+ * o mesmo defeito aritmético que a porta tinha, no outro mínimo.
+ *
+ * Casos reais, do `training_jobs.useful_seconds`:
+ *   dirceu.moura.cruz78  594,2s · **598,5s** · 591,1s   (mínimo 600s)
+ *   lauriane20           3 tentativas, todas exibindo "~10min vs 10min"
+ *
+ * Os dois tentaram TRÊS vezes seguidas. O `598,5s` do dirceu é **1,5 segundo**
+ * abaixo do corte: a mensagem afirmava que ele tinha exatamente o mínimo e
+ * mesmo assim o recusava, sem dizer o que mudar. Nada a fazer com essa frase
+ * a não ser tentar de novo às cegas — foi o que os dois fizeram.
+ */
+export function mensagemFalaLimpaInsuficiente(
+  usefulSegundos: number | null | undefined,
+  minUsefulSegundos?: number | null,
+): string {
+  const min =
+    typeof minUsefulSegundos === "number" && minUsefulSegundos > 0
+      ? minUsefulSegundos
+      : MIN_USEFUL_SECONDS;
+  const alvoLimpo = Math.ceil(min / 60);
+  const porta = MIN_TOTAL_SECONDS / 60;
+
+  // Sem número do worker não dá pra prometer precisão — não invente um.
+  const diagnostico =
+    typeof usefulSegundos === "number"
+      ? `apenas ~${minutosExibidos(usefulSegundos)}min serviram para o treino ` +
+        `(mínimo: ${alvoLimpo}min de fala limpa)`
+      : `não sobrou fala limpa suficiente para o treino`;
+
+  // O quase-lá merece frase própria: quem falhou por segundos precisa saber
+  // que faltou pouco, senão regrava do zero achando que errou tudo.
+  const faltouSeg =
+    typeof usefulSegundos === "number" ? Math.max(0, min - usefulSegundos) : null;
+  const quantoFalta =
+    faltouSeg === null
+      ? ""
+      : faltouSeg < 60
+        ? ` Faltou muito pouco — menos de 1min de fala limpa.`
+        : ` Faltaram ~${Math.ceil(faltouSeg / 60)}min de fala limpa.`;
+
+  return (
+    `Do áudio enviado, ${diagnostico}.${quantoFalta} ` +
+    `Seus créditos foram devolvidos. Grave num ambiente silencioso, falando ` +
+    `continuamente e próximo ao microfone. Importante: para enviar de novo, a ` +
+    `gravação precisa somar pelo menos ${porta}min no total — é dessa folga que ` +
+    `saem os ${alvoLimpo}min de fala limpa, depois que tiramos pausas e ruído.`
+  );
+}
