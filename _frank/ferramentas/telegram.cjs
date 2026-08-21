@@ -303,7 +303,14 @@ function descreve(u) {
     de,
     is_bot: Boolean(m.from?.is_bot),
     quando,
-    texto: (m.text || m.caption || "(sem texto)").slice(0, 1500),
+    // ⚠️ FOTO NÃO PODE SUMIR EM SILÊNCIO (21/08). Antes, mensagem só com
+    // imagem aparecia como "(sem texto)" e ninguém sabia que existia uma foto
+    // esperando — o Lucas mandou um print no grupo às 15:52 e ele ficou
+    // invisível pros dois agentes. Mesmo modo de falha do anexo de e-mail que
+    // a Fast perdia. Agora a linha AVISA, e `--baixar-fotos` traz pro disco.
+    texto:
+      (m.text || m.caption || (m.photo ? "🖼️ FOTO (use --baixar-fotos)" : "(sem texto)")).slice(0, 1500),
+    tem_foto: Boolean(m.photo),
   };
 }
 
@@ -473,6 +480,96 @@ async function acharGrupo() {
   console.log(`\nGravado: TELEGRAM_CHAT_ID=${id}  (${nome})`);
 }
 
+/**
+ * --baixar-fotos — traz pro disco as imagens que chegaram no grupo.
+ *
+ * POR QUE EXISTE (21/08): o Lucas mandou um print no grupo às 15:52 e ele
+ * ficou INVISÍVEL. A ferramenta lia só `text`/`caption`, então a mensagem
+ * aparecia como "(sem texto)" — nem eu nem o Frank sabíamos que existia uma
+ * imagem esperando análise. É o mesmo modo de falha do anexo de e-mail que a
+ * Fast perdia: a evidência chega, o sistema não mostra, e alguém responde
+ * sem olhar (regra 11: não responder reclamação sem ver a evidência).
+ *
+ * Lê do LOG local, não da fila: baixar print não pode consumir mensagem de
+ * quem for tratar o caso depois. Pega a maior resolução (último item de
+ * `photo`, que o Telegram já entrega ordenado).
+ *
+ * Uso:
+ *   node _frank/ferramentas/telegram.cjs --baixar-fotos        # últimas 5
+ *   node _frank/ferramentas/telegram.cjs --baixar-fotos --n 20
+ */
+async function baixarFotos() {
+  const { token } = credenciais({ exigeChat: false });
+  const N = Number(arg("--n") || 5);
+  const DESTINO = path.join(RAIZ, "_Bugs", "telegram_fotos");
+
+  let linhas = [];
+  try {
+    linhas = fs.readFileSync(LOG, "utf8").split("\n").filter(Boolean);
+  } catch {
+    console.log("sem log local ainda — nada pra baixar.");
+    return;
+  }
+
+  const fotos = [];
+  for (let i = linhas.length - 1; i >= 0 && fotos.length < N; i--) {
+    let u;
+    try {
+      u = JSON.parse(linhas[i]);
+    } catch {
+      continue;
+    }
+    const m = u.message || u.edited_message || u.channel_post;
+    if (!m || !Array.isArray(m.photo) || !m.photo.length) continue;
+    fotos.push({ m, maior: m.photo[m.photo.length - 1] });
+  }
+
+  if (!fotos.length) {
+    console.log("nenhuma foto no log local.");
+    return;
+  }
+
+  fs.mkdirSync(DESTINO, { recursive: true });
+  console.log(`${fotos.length} foto(s) encontrada(s):\n`);
+
+  for (const { m, maior } of fotos.reverse()) {
+    const quem = (m.from?.first_name || "alguem").replace(/\W+/g, "");
+    const quando = new Date((m.date || 0) * 1000).toISOString().slice(0, 16).replace(/[:T]/g, "");
+    const nome = `${quando}_${quem}.jpg`;
+    const destino = path.join(DESTINO, nome);
+
+    if (fs.existsSync(destino)) {
+      console.log(`  ${nome}  (já estava aqui)`);
+      continue;
+    }
+
+    let info;
+    try {
+      info = await api(token, "getFile", { file_id: maior.file_id });
+    } catch (e) {
+      console.error(`  FALHOU getFile de ${quem}: ${e.message}`);
+      continue;
+    }
+    if (!info?.file_path) {
+      console.error(`  ${nome}: o Telegram não devolveu file_path (foto velha demais?)`);
+      continue;
+    }
+
+    const r = await fetch(`https://api.telegram.org/file/bot${token}/${info.file_path}`);
+    if (!r.ok) {
+      console.error(`  ${nome}: download HTTP ${r.status}`);
+      continue;
+    }
+    fs.writeFileSync(destino, Buffer.from(await r.arrayBuffer()));
+    const kb = (fs.statSync(destino).size / 1024).toFixed(0);
+    console.log(`  ${nome}  ${maior.width}x${maior.height}  ${kb} KB`);
+    if (m.caption) console.log(`      legenda: ${m.caption.slice(0, 120)}`);
+  }
+
+  console.log(`\nem: ${DESTINO}`);
+  console.log("Agora ABRA a imagem antes de responder — regra 11.");
+}
+
 // ── cli ─────────────────────────────────────────────────────────────────────
 function arg(nome) {
   const i = process.argv.indexOf(nome);
@@ -485,6 +582,7 @@ const tem = (nome) => process.argv.includes(nome);
     if (tem("--achar-grupo")) return await acharGrupo();
     if (tem("--diagnostico")) return await diagnostico();
     if (tem("--espiar")) return await espiar();
+    if (tem("--baixar-fotos")) return await baixarFotos();
     if (tem("--pendentes")) return await pendentes();
     if (tem("--ler")) return await ler({ tudo: tem("--tudo") });
     const para = tem("--para") ? (arg("--para") || true) : null;
