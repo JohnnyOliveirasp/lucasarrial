@@ -22,6 +22,7 @@ import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 import type { VoiceStatus } from "@/lib/db/types";
 import {
   MIN_TOTAL_SECONDS,
+  RX_EXT_AUDIO,
   contarSlotsDoEnvio,
   mensagemCurtoDemais,
   mensagemEnvioIncompleto,
@@ -39,7 +40,13 @@ const GHOST_AFTER_MS = 45 * 60 * 1000;
 /** Teto por rodada: medir áudio custa CPU; o cron roda a cada 5min. */
 const MAX_POR_RODADA = 3;
 const MIN_BYTES = 10_000;
-const EXT_AUDIO = /\.(mp3|wav|m4a|aac|ogg|opus|webm|mp4|flac)$/i;
+/**
+ * A lista de extensões mora na régua (`RX_EXT_AUDIO`) e é importada, não
+ * copiada: a `contarSlotsDoEnvio` decide o que é "slot ignorado de propósito"
+ * por essa mesma regex, e duas cópias divergentes fariam o filtro daqui
+ * discordar da contagem de lá.
+ */
+const EXT_AUDIO = RX_EXT_AUDIO;
 
 export type RescueSummary = {
   checked: number;
@@ -156,7 +163,7 @@ export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
       // a numeração à mão, que foi como o 2c5bab42 ficou 1 mês invisível.
       if (envio.faltando > 0) {
         console.warn(
-          `[rescue-uploads] ENVIO INCOMPLETO voz ${voz.id}: chegaram ${envio.chegaram} de ${envio.esperados} slots (faltam ${envio.faltando}) → ${status}`,
+          `[rescue-uploads] ENVIO INCOMPLETO voz ${voz.id}: chegaram ${envio.chegaram} de ${envio.esperados} slots de áudio (faltam ${envio.faltando}; ${envio.ignorados} slot(s) não-áudio ignorados) → ${status}`,
         );
       }
 

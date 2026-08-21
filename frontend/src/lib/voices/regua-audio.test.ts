@@ -136,25 +136,59 @@ const chave = (i: number) => `u/v/raw/${String(i).padStart(3, "0")}_a.mp3`;
 test("conta slots emitidos pela numeração da chave, sem persistir nada", () => {
   // jrfengenhariadf, voz 1858c53b: chegaram 4, o maior índice é 006 → 7 slots.
   const c = contarSlotsDoEnvio([0, 1, 3, 6].map(chave));
-  assert.deepEqual(c, { esperados: 7, chegaram: 4, faltando: 3 });
+  assert.deepEqual(c, { esperados: 7, chegaram: 4, faltando: 3, ignorados: 0 });
 });
 
 test("envio COMPLETO não acusa buraco", () => {
   const c = contarSlotsDoEnvio([0, 1, 2, 3].map(chave));
-  assert.deepEqual(c, { esperados: 4, chegaram: 4, faltando: 0 });
+  assert.deepEqual(c, { esperados: 4, chegaram: 4, faltando: 0, ignorados: 0 });
 });
 
 test("arquivo truncado (no bucket, fora do filtro) conta como faltando", () => {
   // 002 existe no R2 mas com poucos bytes: não vira treino. Pro aluno o
   // efeito é o mesmo, e o total precisa refletir isso.
   const c = contarSlotsDoEnvio([0, 1, 3].map(chave), [0, 1, 2, 3].map(chave));
-  assert.deepEqual(c, { esperados: 4, chegaram: 3, faltando: 1 });
+  assert.deepEqual(c, { esperados: 4, chegaram: 3, faltando: 1, ignorados: 0 });
 });
 
 test("sem numeração legível devolve zeros — nunca 'não faltou nada'", () => {
   // Caminho do Drive / import antigo: chave sem o prefixo NNN_.
   const c = contarSlotsDoEnvio(["u/v/raw/audio.mp3", "u/v/outro.mp3"]);
-  assert.deepEqual(c, { esperados: 0, chegaram: 0, faltando: 0 });
+  assert.deepEqual(c, { esperados: 0, chegaram: 0, faltando: 0, ignorados: 0 });
+});
+
+/* --------------------------------------------------------------------------
+ * SLOT COM FOTO NÃO É BURACO — regressão do falso positivo MEDIDO em 21/08
+ * na voz 8aca0126 (csitya100). O import do Drive numera TODO arquivo da
+ * pasta, inclusive as fotos/PDFs que o `910ea757` mandou ignorar. Antes
+ * deste fix a recusa dizia "recebemos apenas 7 dos 20 arquivos — 13 não
+ * chegaram até nós": a casa se acusando de perder 6 JPEG + 7 PDF que nunca
+ * foram áudio, e mandando o aluno reenviar foto.
+ * ------------------------------------------------------------------------ */
+
+const chaveExt = (i: number, ext: string) =>
+  `u/v/raw/${String(i).padStart(3, "0")}_a.${ext}`;
+
+test("slot ocupado por FOTO/PDF sai da conta — não é arquivo perdido", () => {
+  // A voz REAL do csitya100: 000 mp3 · 001-006 jpeg · 007-012 mp4 · 013-019 pdf.
+  const todas = [
+    chaveExt(0, "mp3"),
+    ...[1, 2, 3, 4, 5, 6].map((i) => chaveExt(i, "jpeg")),
+    ...[7, 8, 9, 10, 11, 12].map((i) => chaveExt(i, "mp4")),
+    ...[13, 14, 15, 16, 17, 18, 19].map((i) => chaveExt(i, "pdf")),
+  ];
+  const utilizaveis = todas.filter((k) => /\.(mp3|mp4)$/.test(k));
+  const c = contarSlotsDoEnvio(utilizaveis, todas);
+  // 20 slots - 13 não-áudio = 7 esperados, e os 7 chegaram: ZERO buraco.
+  assert.deepEqual(c, { esperados: 7, chegaram: 7, faltando: 0, ignorados: 13 });
+});
+
+test("foto ignorada NÃO esconde o áudio que sumiu de verdade", () => {
+  // 000 mp3 ok · 001 jpeg (ignorado) · 002 mp3 NUNCA chegou · 003 mp3 ok.
+  const todas = [chaveExt(0, "mp3"), chaveExt(1, "jpeg"), chaveExt(3, "mp3")];
+  const utilizaveis = [chaveExt(0, "mp3"), chaveExt(3, "mp3")];
+  const c = contarSlotsDoEnvio(utilizaveis, todas);
+  assert.deepEqual(c, { esperados: 3, chegaram: 2, faltando: 1, ignorados: 1 });
 });
 
 test("a recusa por envio incompleto NÃO manda o aluno gravar mais", () => {

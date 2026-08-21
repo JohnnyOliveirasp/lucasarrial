@@ -154,13 +154,29 @@ export function mensagemFalaLimpaInsuficiente(
 /** Extrai o índice do slot de uma chave `.../raw/NNN_arquivo.ext`. */
 const RX_SLOT = /\/raw\/(\d{3})_/;
 
+/**
+ * As extensões que o treino aceita. Fonte única: o `rescue-stuck-uploads`
+ * importa daqui em vez de manter cópia própria — duas listas divergentes
+ * fazem a contagem de slot discordar do filtro que a produziu.
+ */
+export const RX_EXT_AUDIO = /\.(mp3|wav|m4a|aac|ogg|opus|webm|mp4|flac)$/i;
+
 export type ContagemEnvio = {
-  /** Quantos slots foram emitidos (maior índice + 1). 0 se não deu pra ler. */
+  /**
+   * Quantos slots foram emitidos PARA ÁUDIO: maior índice + 1, MENOS os
+   * slots ocupados por arquivo que a gente descarta de propósito. 0 se não
+   * deu pra ler.
+   */
   esperados: number;
   /** Quantas chaves utilizáveis chegaram. */
   chegaram: number;
-  /** Quantos slots ficaram sem arquivo utilizável. */
+  /** Quantos slots de áudio ficaram sem arquivo utilizável. */
   faltando: number;
+  /**
+   * Slots ocupados por arquivo NÃO-ÁUDIO (foto/PDF da pasta do Drive).
+   * **Não são buraco** — a gente ignora de propósito desde o `910ea757`.
+   */
+  ignorados: number;
 };
 
 /**
@@ -175,6 +191,19 @@ export type ContagemEnvio = {
  *
  * Sem numeração legível (import antigo, caminho do Drive) devolve zeros —
  * quem chama trata como "não sei", nunca como "não faltou nada".
+ *
+ * ⚠️ SLOT COM FOTO NÃO É BURACO (medido em 21/08 na voz `8aca0126`,
+ * csitya100). O import do Drive numera **todo** arquivo da pasta, inclusive
+ * as fotos e os PDFs que o `910ea757` mandou ignorar. Contar esses slots
+ * como "não chegou" fazia a recusa dizer *"recebemos apenas 7 dos 20
+ * arquivos, 13 não chegaram até nós"* quando os 13 eram 6 JPEG + 7 PDF que
+ * a gente descarta de propósito — a gente se acusava de perder o que nunca
+ * era áudio, e ainda mandava o aluno reenviar as fotos. Slot ocupado por
+ * não-áudio sai da conta de `esperados` e vai pra `ignorados`.
+ *
+ * Continua contando como buraco o slot que **existe** com extensão de áudio
+ * mas foi descartado por tamanho (PUT cortado no meio): esse o aluno mandou
+ * de verdade e reenviar resolve.
  */
 export function contarSlotsDoEnvio(
   utilizaveis: string[],
@@ -193,15 +222,25 @@ export function contarSlotsDoEnvio(
   );
 
   if (todos.length === 0 && bons.size === 0) {
-    return { esperados: 0, chegaram: 0, faltando: 0 };
+    return { esperados: 0, chegaram: 0, faltando: 0, ignorados: 0 };
   }
 
+  // Slots que existem no bucket e NÃO são áudio: descarte proposital, não
+  // perda. Um slot que também aparece em `utilizaveis` nunca entra aqui.
+  const naoAudio = new Set(
+    todasAsChaves
+      .filter((k) => !RX_EXT_AUDIO.test(k))
+      .map(indice)
+      .filter((i): i is number => i !== null && !bons.has(i)),
+  );
+
   const maior = Math.max(-1, ...todos, ...bons);
-  const esperados = maior + 1;
+  const esperados = Math.max(0, maior + 1 - naoAudio.size);
   return {
     esperados,
     chegaram: bons.size,
     faltando: Math.max(0, esperados - bons.size),
+    ignorados: naoAudio.size,
   };
 }
 
