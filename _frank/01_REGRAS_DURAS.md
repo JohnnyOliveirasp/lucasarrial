@@ -69,6 +69,118 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
      vive no código do app; função no banco não passa por lá — foi assim que
      o sócio foi zerado.
 
+9-B. **PLANTÃO AUTÔNOMO — o que você decide sozinho (Johnny na estrada, a
+   partir de 24/08).** O Johnny vai estar dirigindo e **sem condição de olhar
+   código, ouvir áudio ou aprovar merge**. Ele definiu os limites abaixo em
+   21/08. O princípio que resume tudo:
+
+   > **Devolver ao aluno o que já era dele → você faz. Tirar dele, ou dar o
+   > que nunca foi dele → para e chama o Johnny.**
+
+   | situação | quem decide |
+   |---|---|
+   | Estorno de falha nossa, **até 20.000 cr por caso** | **você**, sozinho |
+   | Estorno **acima de 20.000 cr** num caso | 🔴 para e chama |
+   | **100.000 cr/dia** somando TODAS as devoluções | 🔴 congela e chama |
+   | Restaurar acesso **já pago** (backfill) | **você** |
+   | **Cancelar assinatura** que o aluno pediu | **você** (ver 9-C) |
+   | **Retirar/zerar** crédito, qualquer valor | 🔴 sempre o Johnny (9-A) |
+   | Corrigir bug de código | **você** revisa e mergeia (ver 14-B) |
+   | Retreino que dependa de **ouvir ou ver** | **você**, só depois de 9-D |
+
+   **De onde vêm os números** (medido em 21/08, não chutado): o estorno real
+   de falha (`ref_type` = `generation_refund`) tem **mediana de 456 cr** e o
+   **maior da história é 11.776**. O teto de 20.000 cobre 49 dos 50 casos
+   reais com folga. Já o teto **diário** é o que importa de verdade: em
+   18/08 o zeramento indevido moveu **1.407.935 cr num dia** — com teto de
+   100k, a PRIMEIRA conta já teria travado tudo, e a perda teria sido 100 mil
+   em vez de 1,35 milhão. Cada devolução isolada parecia legítima; o que
+   denuncia incidente sistêmico é o **volume no dia**. Quando o teto diário
+   bate, a resposta certa **não é devolver mais, é parar** — porque devolver
+   em massa é sintoma de bug em produção, e o conserto é o bug.
+
+   ⚠️ **A 9-A continua valendo inteira.** Ela trata do lado que TIRA saldo, e
+   ali nada mudou: detector propõe e nunca executa, em nenhum valor. A 9-B só
+   abre o lado que DEVOLVE. A assimetria é de propósito: devolver demais é um
+   prejuízo pequeno e recuperável; tirar indevidamente tranca aluno pagante e
+   já aconteceu uma vez.
+
+   ⚠️ **Conte o dia inteiro, não a sua rodada.** O teto de 100k é a soma de
+   tudo que foi devolvido no dia, por qualquer um — some do banco antes de
+   creditar, não da sua memória da ronda.
+
+9-C. **Cancelamento de assinatura é AUTOMÁTICO** (decisão do Johnny, 21/08).
+   Se o aluno pediu pra cancelar, cancele — é o pedido do titular, e nós nem
+   temos acesso ao painel da Hotmart pra fazer na mão. O resto do fluxo
+   (reembolso, garantia de 7 dias) é entre ele e a Hotmart.
+   ```bash
+   # ENSAIO primeiro (só consulta, nada é enviado):
+   node _frank/ferramentas/cancelar_assinatura.cjs --aluno maria@exemplo.com
+   # valendo:
+   node _frank/ferramentas/cancelar_assinatura.cjs --aluno maria@exemplo.com      --incidente <id> --confirmar
+   ```
+
+   A ferramenta já faz a salvaguarda sozinha, e ela **não consulta o Johnny**:
+   resolve o e-mail NO BANCO (perfil + entitlement), consulta a Hotmart, e
+   **RECUSA** se algo não bate — sem perfil nosso, sem entitlement, ou mais de
+   uma assinatura ativa. Ensaiada em 21/08 nos três caminhos: já cancelado
+   (idempotente), ativo (mostra o que faria) e e-mail que não existe (recusa).
+   - ⚠️ **Nunca confie no e-mail escrito no card.** Resolva no banco. Já
+     existiram duas contas "csitya" e a errada existe (falha silenciosa) —
+     cancelar a assinatura da pessoa errada é o único jeito de transformar um
+     pedido banal em incidente grave.
+   - ⚠️ **Não tem desfazer.** Rode sem `--confirmar` primeiro, sempre, e
+     passe `--incidente` pra ficar o rastro de que foi você e por quê.
+   - ⚠️ **Erro de consulta não é "não tem assinatura".** Se a API da Hotmart
+     falhar, a ferramenta aborta em vez de concluir que não há nada — zero
+     nunca é resposta até você saber que a pergunta chegou.
+   - ⚠️ Cancelar a recorrência **não apaga o crédito já pago** — regra 9. Quem
+     pagou continua usando até acabar o período.
+
+9-D. **O que depende de OUVIR ou de VER não é você que julga.** Você não ouve
+   áudio nem enxerga imagem, e o Johnny está na estrada — ele também não vai
+   ouvir. Antes de gastar GPU com retreino, ou de dizer que uma voz/imagem
+   está boa ou ruim, **peça a uma pessoa no grupo**:
+
+   ```bash
+   node -e "fetch('https://fastcloner.com/api/v1/agent/actions',{
+     method:'POST',
+     headers:{'x-agent-token':process.env.AGENT_MONITOR_TOKEN,'Content-Type':'application/json'},
+     body:JSON.stringify({
+       action:'ask_humans',
+       subject:'Voz saindo com letras cortadas',
+       student:'maria@exemplo.com',
+       checked:'treino concluiu ok; referência tem 38 min; houve estorno',
+       question:'este áudio está aceitável?',
+       audio_key:'<chave no R2>',      // vira link assinado de 24h sozinho
+       incident_id:'<id completo>'
+     })}).then(r=>r.text()).then(console.log)"
+   ```
+
+   ⚠️ **Use a ROTA `ask_humans`, NÃO o `avisar_grupo.cjs`.** Medido em 21/08:
+   a WAHA só escuta em **127.0.0.1 no Hetzner**, e você roda em outra máquina —
+   o script morre com "WAHA ausente nesta máquina" fora do servidor. A rota faz
+   o envio de dentro do app, que já vive no mesmo host da WAHA, e você só
+   precisa do token que já usa pro resto. O `avisar_grupo.cjs` continua válido
+   **só se você estiver rodando no próprio Hetzner**.
+
+   ⚠️ **Passe `audio_key`, não um link montado à mão.** A rota assina sozinha,
+   com 24h de validade. Link curto demais expira antes de alguém acordar; sem
+   link nenhum a mensagem morre no grupo — ninguém vai atrás de um pedido que
+   não dá pra abrir. A rota devolve `has_link` — se vier `false`, você esqueceu
+   a chave e o pedido nasceu cego.
+
+   ⚠️ **Espere alguém responder antes de queimar GPU.** O pedido também fica
+   gravado no incidente, então a próxima ronda vê que já foi perguntado e não
+   pergunta de novo.
+
+   **Por que existe:** o áudio do **Marcelo** eram DUAS pessoas conversando e o
+   pipeline não tem diarização — retreinar teria feito "o clone de uma pessoa
+   que não existe". "Existe e tem 43MB" teria passado no seu teste; foi conferir
+   O QUE TEM DENTRO que salvou a GPU. E a **Claudia** teve retreino prometido
+   pela Fast **antes de qualquer um escutar** — a voz estava ótima, e a "cura"
+   piorou e foi revertida.
+
 ## Falar com aluno
 
 10. **E-mail pra aluno sai pelo SMTP do `suporte@fastcloner.com` (porta 587).**
@@ -106,6 +218,39 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
     — como no dia em que sua varredura contava só `fast-email:%` e reportou
     "0 abertos" com 4 abertos. Dois olhos diferentes valem justamente quando
     um falha. O que não pode é os dois escreverem sem dono.
+
+14-B. **O código do Vigia chega até você como PATCH — e VOCÊ é a segunda
+    opinião.** (decisão do Johnny, 21/08. Amplia a 14-A: o Vigia deixa de ser
+    só sensor para bug de código, mas continua sem dono de fila.)
+
+    **Por que não é ele que sobe:** o repo `lucasarrial` é PÚBLICO, então o
+    sandbox dele clona sem credencial nenhuma — e é por isso que ninguém
+    notou que **não existe credencial de escrita lá dentro**. Medido em
+    21/08: `git ls-remote --heads origin 'refs/heads/agent/*'` volta **vazio**.
+    Em um mês de operação ele **nunca** conseguiu subir uma linha. Na rodada
+    das 12:04 de 21/08 ele criou branch a partir de `origin/main`, escreveu o
+    fix do Valtermir, rodou `npm ci`, `tsc --noEmit` (**0 erros**) e `eslint`
+    (limpo), commitou — e **perdeu tudo** quando o sandbox morreu.
+
+    **O caminho:**
+    1. O Vigia grava o `git format-patch` via `set_state`, chave
+       `patch_<incidente>`. (`add_note` **não serve**: corta em 2.000 chars e
+       o diff é maior. `set_state` grava o `value` inteiro em jsonb — já
+       carrega valores de 20 KB hoje.)
+    2. Você lê a chave na ronda, aplica com `git am` numa branch
+       **`vigia/<incidente>`** — o prefixo é o que impede o trabalho dele de
+       se misturar com as outras branches em voo.
+    3. **Você LÊ o código como segunda opinião**, roda suas verificações, e só
+       então push + PR + merge.
+
+    ⚠️ **`tsc` verde não é revisão.** A correção de 19/08 passou verde e foi
+    ELA que criou a regressão que queimou crédito do Valtermir. Você está ali
+    pra ver o que o compilador não vê: o comportamento. Quem escreveu o código
+    não aprova o próprio código.
+
+    ⚠️ O Johnny **não vai revisar merge** (estrada, a partir de 24/08). Se
+    você não tem convicção do patch, **não mergeie** — anote a objeção no
+    incidente e deixe a branch publicada. Backlog é melhor que regressão.
 
 ## Produção intocável
 

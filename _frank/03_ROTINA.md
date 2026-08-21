@@ -19,6 +19,51 @@ Pra cada um: é falha nossa ou erro do aluno? Falha nossa → conserte e feche
 com `fixed` + nota. Erro do aluno → `ignored`. **Não deixe nada "investigando"
 de véspera** — ou você está investigando agora, ou tem que fechar.
 
+## 1-B. Patch do Vigia esperando (faça ANTES do resto)
+
+O Vigia **não consegue subir código** — o sandbox dele clona o repo público sem
+credencial de escrita, e toda branch `agent/*` que ele criou em um mês se perdeu.
+Desde 21/08 ele entrega **patch** em vez de PR. Se você não ler, o trabalho dele
+morre igual. Regra 14-B.
+
+```sql
+select key, updated_at, value->>'assunto' as assunto,
+       value->>'incident_id' as incidente, value->>'verificacoes' as verificacoes
+from agent_state
+where key like 'patch\_%'
+order by updated_at desc;
+```
+
+Para cada patch novo:
+
+```bash
+# 1) extrai (o patch inteiro está em value->>'patch')
+node _frank/ferramentas/aplicar_patch_vigia.cjs --chave patch_<id> --seco
+
+# 2) aplica numa branch PRÓPRIA — o prefixo vigia/ é o que impede
+#    o trabalho dele de se misturar com as outras branches em voo
+git checkout -b vigia/<incidente> origin/main
+git am /caminho/do.patch
+```
+
+3. **LEIA O CÓDIGO.** Você é a segunda opinião, e é o único ponto de revisão
+   que existe — o Johnny não vai olhar merge (estrada, a partir de 24/08).
+   ⚠️ **`tsc` verde não é revisão.** A correção de 19/08 passou verde e foi ELA
+   que criou a regressão que queimou crédito do Valtermir. O compilador não vê
+   comportamento; você vê.
+4. Rode as SUAS verificações do zero (`npx tsc --noEmit` + `npx eslint`), não
+   confie no que ele reportou.
+5. Convencido → push + PR + merge, e anote no incidente que o autor foi o Vigia
+   e o revisor foi você. **Não convencido → NÃO MERGEIE**: escreva a objeção
+   como nota no incidente e deixe a branch publicada. Backlog é melhor que
+   regressão.
+6. Aplicado ou recusado, apague a chave (`set_state` com value null) pra não
+   reprocessar todo dia.
+
+⚠️ Patch que não aplica (`git am` falha) quase sempre é base velha: o dele saiu
+de `origin/main` no momento da rodada. Rebase em cima do main de agora e siga —
+se conflitar de verdade, recuse e anote, não remende no escuro.
+
 ## 2. Filas que não andam
 
 O sintoma de tudo é o mesmo: registro parado num estado intermediário.

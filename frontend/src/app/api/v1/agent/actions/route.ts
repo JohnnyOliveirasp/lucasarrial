@@ -5,6 +5,7 @@
  *  - set_status  {incident_id, status, resolution_note?, resolved_commit?}
  *  - set_state   {key, value}                          → memória persistente do agente
  *  - notify      {subject, body}                       → e-mail pro admin (Johnny)
+ *  - ask_humans  {subject, question, ...}              → pede um olho humano no grupo
  * O agente NÃO tem ação de deploy nem escrita fora destas tabelas.
  */
 import type { NextRequest } from "next/server";
@@ -12,6 +13,9 @@ import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/respons
 import { getAdmin } from "@/lib/db/admin";
 import { agentTokenOk } from "@/lib/incidents/agent-auth";
 import { sendEmail } from "@/lib/email/resend";
+import { sendAgentText } from "@/lib/agent/provider";
+import { createPresignedGet } from "@/lib/r2/presigned";
+import { R2_BUCKETS, imagesBucket } from "@/lib/r2/client";
 import { logger } from "@/lib/logger/server";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +23,20 @@ export const dynamic = "force-dynamic";
 const ADMIN_NOTIFY_EMAIL = "johnny.oliveirasp@gmail.com";
 const VALID_STATUS = new Set(["open", "investigating", "fixing", "fixed", "ignored"]);
 
+/** Grupo interno da equipe (o mesmo do `_frank/ferramentas/avisar_grupo.cjs`). */
+const TEAM_GROUP_JID = process.env.AGENT_TEAM_GROUP_JID || "120363428193217427@g.us";
+
+/** Quanto tempo o link do áudio/imagem vive. Curto demais e ninguém chega a
+ *  tempo de ouvir; o pedido fica no grupo esperando alguém acordar. */
+const ASK_LINK_TTL = 24 * 3600;
+
 type AgentNote = { at: string; by: string; note: string };
+
+function bucketByName(name: unknown): string {
+  if (name === "generations") return R2_BUCKETS.generations;
+  if (name === "images") return imagesBucket();
+  return R2_BUCKETS.voices;
+}
 
 export async function POST(request: NextRequest) {
   if (!agentTokenOk(request)) return unauthorized();
@@ -103,6 +120,83 @@ export async function POST(request: NextRequest) {
       });
       logger.info("audit", "agent.notify", { subject: String(subject).slice(0, 120) });
       return jsonOk({ ok: true });
+    }
+
+    /**
+     * ask_humans — o agente não OUVE e não ENXERGA. Quando a decisão depende
+     * de escutar um áudio ou olhar uma imagem, ele para e pede a uma pessoa,
+     * no grupo da equipe.
+     *
+     * POR QUE É UMA ROTA e não um script (medido 21/08): a WAHA só escuta em
+     * 127.0.0.1 no Hetzner, e o Frank roda em OUTRA máquina. O
+     * `avisar_grupo.cjs` morre com "WAHA ausente nesta máquina" fora do
+     * servidor. Aqui o envio acontece dentro do app, que já vive no mesmo
+     * host da WAHA — o agente só precisa do token que ele já tem.
+     *
+     * POR QUE EXISTE (regra 9-D do Frank): o áudio do Marcelo eram DUAS
+     * pessoas conversando e o pipeline não tem diarização — retreinar teria
+     * gerado "o clone de uma pessoa que não existe", e "existe e tem 43MB"
+     * teria passado em qualquer checagem automática. A Claudia teve retreino
+     * prometido ANTES de alguém escutar: a voz estava ótima e a "cura" piorou.
+     *
+     * `audio_key` vira link assinado aqui dentro. Sem link a mensagem morre
+     * no grupo: ninguém vai atrás de um pedido que não dá pra abrir.
+     */
+    if (body.action === "ask_humans") {
+      const { subject, question, checked, incident_id, student, audio_key } = body;
+      if (!subject || !question) {
+        return badRequest("ask_humans requires subject and question");
+      }
+
+      let link: string | null = typeof body.link === "string" ? body.link : null;
+      if (!link && typeof audio_key === "string" && audio_key) {
+        link = await createPresignedGet(bucketByName(body.bucket), audio_key, ASK_LINK_TTL);
+      }
+
+      const linhas = [
+        "🔎 *Precisa de um olho humano*",
+        "",
+        `*${String(subject).slice(0, 200)}*`,
+        student ? `Aluno: ${String(student).slice(0, 120)}` : null,
+        checked ? `Já conferi: ${String(checked).slice(0, 600)}` : null,
+        link ? `\nAbrir: ${link}` : null,
+        "",
+        `❓ ${String(question).slice(0, 600)}`,
+        "",
+        "_Responda aqui mesmo — o agente lê a resposta e segue._",
+        incident_id ? `_(incidente ${String(incident_id).slice(0, 8)})_` : null,
+      ].filter((l) => l !== null);
+
+      await sendAgentText(TEAM_GROUP_JID, linhas.join("\n"));
+
+      // O pedido tem que ficar NO incidente também: grupo rola e some, e sem
+      // rastro a próxima ronda pergunta de novo a mesma coisa.
+      if (typeof incident_id === "string" && incident_id) {
+        const { data: row } = await admin
+          .from("incidents" as never)
+          .select("agent_notes")
+          .eq("id", incident_id)
+          .maybeSingle();
+        const notes = ((row as unknown as { agent_notes: AgentNote[] } | null)?.agent_notes ??
+          []) as AgentNote[];
+        notes.push({
+          at: new Date().toISOString(),
+          by: "agent",
+          note: `PEDIDO DE OLHO HUMANO no grupo: ${String(question).slice(0, 300)}${
+            link ? " (com link)" : " (SEM LINK — ninguém vai conseguir abrir)"
+          }`,
+        });
+        await admin
+          .from("incidents" as never)
+          .update({ agent_notes: notes } as never)
+          .eq("id", incident_id);
+      }
+
+      logger.info("audit", "agent.ask_humans", {
+        incident_id: incident_id ?? null,
+        has_link: Boolean(link),
+      });
+      return jsonOk({ ok: true, sent_to: TEAM_GROUP_JID, has_link: Boolean(link) });
     }
 
     return badRequest(`unknown action '${body.action}'`);
