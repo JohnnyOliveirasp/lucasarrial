@@ -32,6 +32,37 @@ const ASK_LINK_TTL = 24 * 3600;
 
 type AgentNote = { at: string; by: string; note: string };
 
+/**
+ * Aceita o chamado pelo NÚMERO (`42`, `#42`) ou pelo uuid — e devolve sempre o
+ * uuid, que continua sendo a chave.
+ *
+ * ⚠️ POR QUE ACEITAR OS DOIS (pedido do Johnny, 21/08): ninguém fala
+ * "2c5bab42-9e79-4ed5-9975-fbcb5f4a99df" no telefone nem digita isso num grupo.
+ * Na prática todo mundo usava os 8 primeiros caracteres, que é um apelido sem
+ * garantia de ser único. Agora o chamado tem número curto (migration 87) e é
+ * por ele que se conversa.
+ *
+ * Tolerante à migration ainda não aplicada: se a coluna `numero` não existe, a
+ * consulta falha, a função devolve o valor original e o comportamento é o de
+ * antes. Assim código e migration podem subir em qualquer ordem.
+ */
+async function resolverIncidente(
+  admin: ReturnType<typeof getAdmin>,
+  valor: unknown,
+): Promise<string | null> {
+  if (typeof valor === "number" || (typeof valor === "string" && /^#?\d+$/.test(valor.trim()))) {
+    const n = Number(String(valor).replace("#", "").trim());
+    const { data, error } = await admin
+      .from("incidents" as never)
+      .select("id")
+      .eq("numero", n)
+      .maybeSingle();
+    if (error) return typeof valor === "string" ? valor : null; // coluna ainda não existe
+    return (data as unknown as { id: string } | null)?.id ?? null;
+  }
+  return typeof valor === "string" && valor ? valor : null;
+}
+
 function bucketByName(name: unknown): string {
   if (name === "generations") return R2_BUCKETS.generations;
   if (name === "images") return imagesBucket();
@@ -46,8 +77,10 @@ export async function POST(request: NextRequest) {
 
   try {
     if (body.action === "add_note") {
-      const { incident_id, note } = body;
-      if (!incident_id || !note) return badRequest("add_note requires incident_id and note");
+      const { incident_id: refNota, note } = body;
+      if (!refNota || !note) return badRequest("add_note requires incident_id and note");
+      const incident_id = await resolverIncidente(admin, refNota);
+      if (!incident_id) return badRequest(`incidente ${String(refNota)} nao encontrado`);
       const { data: incRaw } = await admin
         .from("incidents" as never)
         .select("agent_notes")
@@ -66,10 +99,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === "set_status") {
-      const { incident_id, status, resolution_note, resolved_commit } = body;
-      if (!incident_id || !VALID_STATUS.has(status)) {
+      const { incident_id: refStatus, status, resolution_note, resolved_commit } = body;
+      if (!refStatus || !VALID_STATUS.has(status)) {
         return badRequest("set_status requires incident_id and valid status");
       }
+      const incident_id = await resolverIncidente(admin, refStatus);
+      if (!incident_id) return badRequest(`incidente ${String(refStatus)} nao encontrado`);
       const update: Record<string, unknown> = { status };
       if (typeof resolution_note === "string") update.resolution_note = resolution_note.slice(0, 1000);
       if (typeof resolved_commit === "string") update.resolved_commit = resolved_commit.slice(0, 64);
@@ -171,11 +206,12 @@ export async function POST(request: NextRequest) {
 
       // O pedido tem que ficar NO incidente também: grupo rola e some, e sem
       // rastro a próxima ronda pergunta de novo a mesma coisa.
-      if (typeof incident_id === "string" && incident_id) {
+      const alvoIncidente = await resolverIncidente(admin, incident_id);
+      if (alvoIncidente) {
         const { data: row } = await admin
           .from("incidents" as never)
           .select("agent_notes")
-          .eq("id", incident_id)
+          .eq("id", alvoIncidente)
           .maybeSingle();
         const notes = ((row as unknown as { agent_notes: AgentNote[] } | null)?.agent_notes ??
           []) as AgentNote[];
@@ -189,7 +225,7 @@ export async function POST(request: NextRequest) {
         await admin
           .from("incidents" as never)
           .update({ agent_notes: notes } as never)
-          .eq("id", incident_id);
+          .eq("id", alvoIncidente);
       }
 
       logger.info("audit", "agent.ask_humans", {
