@@ -16,6 +16,10 @@ import { getAdmin } from "@/lib/db/admin";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { deleteByPrefix, deleteKeys } from "@/lib/r2/delete";
 import { syncTrainingJob } from "@/lib/runpod/sync";
+import {
+  ehMensagemDeSaldo,
+  saldoVivoCobreTreino,
+} from "@/lib/voices/mensagem-saldo";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -39,6 +43,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
 
   // Slice 3 fallback: enquanto não tem webhook (Slice 4), polling-pull do RunPod.
   // Se status="training" e tem runpod_job_id, consulta RunPod e atualiza local.
+  let voice = data;
   if (data.status === "training" && data.runpod_job_id) {
     try {
       const synced = await syncTrainingJob(data.id, data.runpod_job_id, auth.user_id);
@@ -50,14 +55,25 @@ export async function GET(request: NextRequest, ctx: Ctx) {
           )
           .eq("id", id)
           .maybeSingle();
-        if (refreshed) return jsonOk({ voice: refreshed });
+        if (refreshed) voice = refreshed;
       }
     } catch {
       // ignora — devolve o estado antigo
     }
   }
 
-  return jsonOk({ voice: data });
+  // Bug bea487b7: mensagem de saldo insuficiente do onboarding é um retrato
+  // do saldo VELHO — só sai pro cliente se o saldo AO VIVO ainda não cobrir o
+  // treino (critério em lib/voices/mensagem-saldo.ts). Filtro de leitura,
+  // nada é escrito no banco.
+  if (
+    ehMensagemDeSaldo(voice.error_message) &&
+    (await saldoVivoCobreTreino(auth.user_id, auth.email))
+  ) {
+    voice = { ...voice, error_message: null };
+  }
+
+  return jsonOk({ voice });
 }
 
 /**
