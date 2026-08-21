@@ -207,3 +207,15 @@ test("o minuto do envio incompleto também arredonda pra BAIXO", () => {
   // Mesmo compromisso da porta: nunca exibir um número que se contradiz.
   assert.ok(mensagemEnvioIncompleto(1174, 6, 14).includes("~19min"));
 });
+
+test("UM arquivo perdido concorda no singular", () => {
+  // Caso real: voz `99379e28` (catarinacouras), 4 de 5 — lia "1 não chegaram".
+  const msg = mensagemEnvioIncompleto(1080, 4, 5);
+  assert.ok(msg.includes("1 não chegou até nós"), msg);
+  assert.ok(!msg.includes("não chegaram"), msg);
+});
+
+test("mais de um arquivo perdido continua no plural", () => {
+  const msg = mensagemEnvioIncompleto(617, 4, 7);
+  assert.ok(msg.includes("3 não chegaram até nós"), msg);
+});
