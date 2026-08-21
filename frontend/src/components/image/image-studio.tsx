@@ -291,8 +291,10 @@ export function ImageStudio({
   const bankPendingCount = bankKeys.filter((k) => !readyKeys.includes(k)).length;
   const extrasCount = refs.filter((r) => r.key).length;
 
-  /** Sobe 1 arquivo direto pro banco de referências (upload + adoção). */
-  async function uploadToBank(file: File): Promise<boolean> {
+  /** Sobe 1 arquivo direto pro banco de referências (upload + adoção).
+   *  Devolve a foto ADOTADA (chave em `refs/` + URL) ou null se falhou — o
+   *  chamador precisa dela pra encher o quadro quando ele está vazio. */
+  async function uploadToBank(file: File): Promise<{ key: string; url: string } | null> {
     try {
       const r = await fetch("/api/v1/images/upload-url", {
         method: "POST",
@@ -318,13 +320,21 @@ export function ImageStudio({
       }
       // Guarda a chave ADOTADA (refs/...): é ela que o quadro passa a usar se a
       // pessoa escolher a foto no banco — só assim o aviso sabe comparar.
-      const adopted = (await ad.json().catch(() => null)) as { key?: unknown } | null;
+      const adopted = (await ad.json().catch(() => null)) as {
+        key?: unknown;
+        url?: unknown;
+      } | null;
+      let saida: { key: string; url: string } | null = null;
       if (adopted && typeof adopted.key === "string" && adopted.key) {
         const nova = adopted.key;
         setBankKeys((prev) => (prev.includes(nova) ? prev : [...prev, nova]));
+        saida = {
+          key: nova,
+          url: typeof adopted.url === "string" ? adopted.url : URL.createObjectURL(file),
+        };
       }
       onRefsChanged?.();
-      return true;
+      return saida;
     } catch (e) {
       // O upload vai do navegador DIRETO pro R2 (URL assinada) — sem este log
       // a falha não existe em lugar nenhum do nosso lado (caso VP, 19/08).
@@ -342,7 +352,7 @@ export function ImageStudio({
             ? e.message
             : t("errors.upload"),
       );
-      return false;
+      return null;
     }
   }
 
@@ -423,12 +433,35 @@ export function ImageStudio({
     // UMA POR VEZ: paralelo saturava o link de subida do aluno e derrubava
     // uploads aleatórios (incidente 5bb774b8 — "às vezes a 1ª, às vezes da 2ª").
     let ok = 0;
+    let primeira: { key: string; url: string } | null = null;
     for (const f of take) {
-      if (await uploadToBank(f)) ok++;
+      const subida = await uploadToBank(f);
+      if (subida) {
+        ok++;
+        if (!primeira) primeira = subida;
+      }
       setBankUpload((p) => (p ? { ...p, done: p.done + 1 } : p));
     }
     setBankUpload(null);
     setBankSaved(ok);
+
+    // QUADRO VAZIO NÃO PODE CONTINUAR VAZIO DEPOIS DE SUBIR FOTO.
+    //
+    // ⚠️ Medido no caso da Joanna (21/08): `canSubmit` exige `fixedRef`, então
+    // com o quadro vazio o botão Gerar fica DESABILITADO — do lado dela o
+    // sintoma é "a plataforma não está deixando gerar imagem". Ela subiu a
+    // mesma foto três vezes seguidas (15:15, 15:17, 15:18), acumulou 24 fotos
+    // no banco e gerou ZERO: cada upload ia pro banco e o quadro seguia vazio.
+    // A saída existia (escolher a foto no banco e promover), mas ninguém
+    // descobre isso sozinho — e o `image_ref_key` dela estava NULL, então nem
+    // o padrão do servidor salvava.
+    //
+    // A regra de 19/08 ("lote NUNCA preenche o quadro") continua valendo pra
+    // quem JÁ TEM uma referência — lá ela protege de trocar a âncora sem querer
+    // e o aviso do 8379549c cuida do resto. Aqui não há o que proteger: quadro
+    // vazio é aluno travado.
+    if (!fixedRef && primeira) persistFixedRef(primeira);
+
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
