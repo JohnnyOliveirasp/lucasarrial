@@ -429,11 +429,11 @@ export async function POST(request: NextRequest) {
     contaCriada: created,
     ok,
     etapaFalha,
-    motivo:
-      imagesResult.failed[0]?.error ??
-      imagesResult.ignored?.[0]?.reason ??
-      audiosResult.failed[0]?.error ??
-      (audioCurto ? "áudio soma menos de 20 minutos" : null),
+    // O MESMO motivo que vai pra planilha. Ficaram duas expressões quando
+    // criei o `motivoGeral`, e esta aqui era a antiga, sem o caso "abriu o
+    // link e não veio nada" — por isso as linhas 14, 22 e 32 gravaram
+    // `motivo: null` e o banco não sabia explicar a própria falha.
+    motivo: motivoGeral,
     erroDetalhe: JSON.stringify({
       imagens: { failed: imagesResult.failed, ignored: imagesResult.ignored ?? [] },
       audios: { failed: audiosResult.failed, training: audiosResult.training },
