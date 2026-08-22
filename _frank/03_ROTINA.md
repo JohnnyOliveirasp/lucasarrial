@@ -127,7 +127,16 @@ A resposta traz `sweep` (clones), `courtesy` e `voice_rescue` (vozes
 resgatadas). Se `errors` > 0 várias rodadas seguidas, algo quebrou.
 
 Outros: `/api/v1/agent/mail-sweep` (caixa do suporte),
-`/api/v1/agent/winback-sweep`.
+`/api/v1/agent/winback-sweep`, e `/api/v1/agent/reconcile-images`
+(incidente 69f0aec5: imagem presa em pending/generating >15min com
+kie_task_id — sem tela aberta e sem webhook, ninguém sincronizava; o sweep
+chama o `syncImageTask` e devolve `reconcile` com
+checked/ready/failed_refunded/still_running/errors). ⚠️ Precisa da entrada
+no cron do Hetzner (mesmo token, sugestão a cada 5min como o sweep-clones):
+
+```bash
+curl -sS -X POST http://localhost:3002/api/v1/agent/reconcile-images -H "x-agent-token: $T"
+```
 
 ⚠️ **Cron que morre é silencioso.** Em 08/08 a Fast ficou **2 dias muda** por
 causa de um anexo grande e ninguém soube. Se a caixa está estranhamente
