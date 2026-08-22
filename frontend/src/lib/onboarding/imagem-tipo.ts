@@ -1,0 +1,118 @@
+/**
+ * Que arquivo é este, DE VERDADE — pelos primeiros bytes, não pelo rótulo.
+ * Server-only.
+ *
+ * 22/08: 15 linhas da planilha morreram em "nenhuma foto aproveitável" tendo
+ * fotos perfeitas na pasta. O aluno mandou .HEIC (padrão do iPhone), o Drive
+ * serve HEIC como `application/octet-stream`, e o import olhava só o
+ * content-type: não começa com "image/" → "não é imagem" → o arquivo ia pro
+ * caminho de vídeo, onde o ffprobe estourava com `moov atom not found`.
+ * Cinco fotos boas viravam zero.
+ *
+ * É o mesmo veneno do .jfif (Kie recusando por EXTENSÃO) e do .mp4 que o Drive
+ * entrega como octet-stream: o rótulo mente, quem decide é o conteúdo.
+ *
+ * HEIC ainda precisa virar JPEG — nada no resto do sistema (R2, Kie, avatares)
+ * abre HEIC. A conversão sai do PRÓPRIO Drive: /thumbnail?sz=w4000 devolve a
+ * foto em JPEG na resolução original (medido: 3024x4032, 910KB). Sem lib nova,
+ * sem wasm no servidor — o `heic-to` do package.json só roda no navegador.
+ */
+
+/** Assinaturas de imagem que o sistema aceita. `heic` = precisa converter. */
+export type TipoImagem = { mime: string; ext: string; heic: boolean };
+
+const MARCAS_HEIF = new Set([
+  "heic", "heix", "heim", "heis", "hevc", "hevx", "hevm", "hevs",
+  "mif1", "msf1", "avif", "avis",
+]);
+
+/**
+ * Identifica a imagem pelos magic bytes. Devolve null quando NÃO é imagem —
+ * aí quem chama decide o que fazer (no import, tentar extrair frames de vídeo).
+ */
+export function sniffImagem(bytes: Buffer): TipoImagem | null {
+  if (bytes.length < 12) return null;
+
+  // JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { mime: "image/jpeg", ext: "jpg", heic: false };
+  }
+  // PNG: 89 "PNG" CR LF 1A LF
+  if (bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return { mime: "image/png", ext: "png", heic: false };
+  }
+  // GIF87a / GIF89a
+  if (bytes.subarray(0, 4).toString("latin1") === "GIF8") {
+    return { mime: "image/gif", ext: "gif", heic: false };
+  }
+  // WEBP: "RIFF" .... "WEBP"
+  if (
+    bytes.subarray(0, 4).toString("latin1") === "RIFF" &&
+    bytes.subarray(8, 12).toString("latin1") === "WEBP"
+  ) {
+    return { mime: "image/webp", ext: "webp", heic: false };
+  }
+  // BMP
+  if (bytes[0] === 0x42 && bytes[1] === 0x4d) {
+    return { mime: "image/bmp", ext: "bmp", heic: false };
+  }
+  // TIFF (little/big endian)
+  const tiff = bytes.subarray(0, 4);
+  if (
+    tiff.equals(Buffer.from([0x49, 0x49, 0x2a, 0x00])) ||
+    tiff.equals(Buffer.from([0x4d, 0x4d, 0x00, 0x2a]))
+  ) {
+    return { mime: "image/tiff", ext: "tiff", heic: false };
+  }
+  // HEIC/HEIF/AVIF: caixa "ftyp" no offset 4 + marca conhecida no offset 8.
+  if (bytes.subarray(4, 8).toString("latin1") === "ftyp") {
+    const marca = bytes.subarray(8, 12).toString("latin1").toLowerCase();
+    if (MARCAS_HEIF.has(marca)) {
+      return { mime: "image/heic", ext: "heic", heic: true };
+    }
+  }
+  return null;
+}
+
+/**
+ * HEIC → JPEG usando a conversão do próprio Drive (`/thumbnail?sz=w4000`),
+ * que devolve a foto na resolução original. `sz` é um TETO, não um alvo: uma
+ * foto menor volta no tamanho dela, sem esticar.
+ *
+ * Lança se a resposta não for um JPEG de verdade — de novo, conferindo os
+ * bytes, porque um erro do Drive também chega com HTTP 200.
+ */
+export async function heicParaJpegViaDrive(
+  fileId: string,
+  maxBytes: number,
+): Promise<Buffer> {
+  const url =
+    `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w4000`;
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) {
+    throw new Error(`Drive respondeu ${res.status} ao converter o HEIC ${fileId}`);
+  }
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (bytes.length === 0) {
+    throw new Error(`conversão do HEIC ${fileId} voltou vazia`);
+  }
+  if (bytes.length > maxBytes) {
+    throw new Error(
+      `HEIC ${fileId} convertido tem ${Math.round(bytes.length / 1e6)}MB ` +
+        `(teto ${Math.round(maxBytes / 1e6)}MB)`,
+    );
+  }
+  const tipo = sniffImagem(bytes);
+  if (!tipo || tipo.heic) {
+    throw new Error(
+      `conversão do HEIC ${fileId} não devolveu JPEG (veio ${tipo?.mime ?? "conteúdo irreconhecível"})`,
+    );
+  }
+  return bytes;
+}
+
+/** Troca a extensão do nome do arquivo (IMG_1616.HEIC → IMG_1616.jpg). */
+export function trocarExtensao(nome: string | null, ext: string): string | null {
+  if (!nome) return null;
+  return nome.replace(/\.[a-zA-Z0-9]{1,5}$/, "") + "." + ext;
+}

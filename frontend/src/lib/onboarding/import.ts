@@ -34,6 +34,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { downloadDriveFile, downloadDriveFileToPath, pickExtension } from "./drive";
+import { sniffImagem, heicParaJpegViaDrive, trocarExtensao } from "./imagem-tipo";
 import { extrairFramesDeArquivo } from "./video-frames";
 import { escolherReferenciaFrontal } from "./referencia";
 import { dispararTreinoOnboarding } from "./treino";
@@ -181,18 +182,34 @@ export async function importImages(
       }
 
       const file = await downloadDriveFile(fileId, MAX_IMAGE_BYTES);
-      if (!file.contentType.startsWith("image/")) {
+      // 22/08: quem decide é o CONTEÚDO, não o content-type. O Drive serve
+      // .HEIC do iPhone como application/octet-stream, e confiar no rótulo
+      // mandava 15 linhas da planilha pro caminho de vídeo (ffprobe: "moov
+      // atom not found") com a pasta cheia de foto boa. Ver imagem-tipo.ts.
+      const tipo = sniffImagem(file.bytes);
+      if (!tipo) {
         throw new Error(`não é imagem (${file.contentType})`);
       }
-      const ext = pickExtension(file.filename, file.contentType, "jpg");
+
+      let bytes = file.bytes;
+      let contentType = tipo.mime;
+      let filename = file.filename;
+      let ext = tipo.ext;
+      if (tipo.heic) {
+        // Nada no resto do sistema (R2, Kie, avatares) abre HEIC.
+        bytes = await heicParaJpegViaDrive(fileId, MAX_IMAGE_BYTES);
+        contentType = "image/jpeg";
+        ext = "jpg";
+        filename = trocarExtensao(filename, "jpg");
+      }
       const destKey = imageDestKey(userId, fileId, ext);
 
       await r2.send(
         new PutObjectCommand({
           Bucket: imagesBucket(),
           Key: destKey,
-          Body: file.bytes,
-          ContentType: file.contentType,
+          Body: bytes,
+          ContentType: contentType,
         }),
       );
 
@@ -200,7 +217,7 @@ export async function importImages(
       const { error: insertErr } = await admin.from("image_generations").insert({
         id: randomUUID(),
         user_id: userId,
-        name: file.filename?.replace(/\.[a-zA-Z0-9]{1,5}$/, "") || "Foto enviada",
+        name: filename?.replace(/\.[a-zA-Z0-9]{1,5}$/, "") || "Foto enviada",
         prompt: "",
         input_image_path: "",
         aspect_ratio: "auto",
