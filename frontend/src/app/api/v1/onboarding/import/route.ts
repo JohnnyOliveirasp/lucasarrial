@@ -37,7 +37,10 @@
  *   { email, password, name?, whatsapp?, images?: string[], audios?: string[], row? }
  *   images/audios = fileIds do Drive já tornados "qualquer um com link – leitor".
  */
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
@@ -51,9 +54,13 @@ import {
   dependeDoAluno,
   escalarNoGrupo,
 } from "@/lib/onboarding/avisos";
+import { abrirLink } from "@/lib/onboarding/links";
+import { registrarArquivoLocal } from "@/lib/onboarding/drive";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 
-export const maxDuration = 600; // vídeo de 600MB+ + áudios de treino (502 do caso A125)
+export const maxDuration = 600;
+/** Teto por link externo (zip de fotos + áudios). */
+const MAX_LINK_BYTES = 2 * 1024 * 1024 * 1024; // vídeo de 600MB+ + áudios de treino (502 do caso A125)
 
 type Body = {
   email?: unknown;
@@ -62,6 +69,15 @@ type Body = {
   whatsapp?: unknown;
   images?: unknown;
   audios?: unknown;
+  /**
+   * Link CRU das colunas J/K (22/08). Quando NÃO é Drive, o Apps Script não
+   * consegue listar fileIds — manda o link e o servidor abre (WeTransfer,
+   * Dropbox, OneDrive, zip…). lib/onboarding/links.ts.
+   */
+  images_link?: unknown;
+  audios_link?: unknown;
+  /** O que o Apps Script não conseguiu coletar ("imagens (J): não é um link (…)"). */
+  link_problems?: unknown;
   row?: unknown;
   /** Correção de conta importada no modelo antigo: re-escolhe a referência. */
   force_reference?: unknown;
@@ -143,6 +159,8 @@ export async function POST(request: NextRequest) {
   const whatsapp = typeof body.whatsapp === "string" ? body.whatsapp.trim() || null : null;
   const images = asFileIds(body.images);
   const audios = asFileIds(body.audios);
+  const imagesLink = typeof body.images_link === "string" ? body.images_link.trim() : "";
+  const audiosLink = typeof body.audios_link === "string" ? body.audios_link.trim() : "";
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return badRequest("E-mail inválido");
   if (password.length < 6) return badRequest("Senha precisa de 6+ caracteres");
@@ -195,6 +213,54 @@ export async function POST(request: NextRequest) {
     }
     await escalarNoGrupo({ linha: row, email, etapa, motivo, dependeDoAluno: doAluno });
   };
+
+  // ── Link que NÃO é Drive (22/08): o servidor abre. Os arquivos baixados
+  // entram no registro local e ganham um id determinístico (hash do link +
+  // nome), então os importadores abaixo rodam SEM saber de onde veio e a
+  // idempotência por id continua valendo. Sem fileIds E sem link = nada a
+  // fazer naquela etapa (linha sem imagens/áudio é válida).
+  const workDir = await mkdtemp(join(tmpdir(), "onb-links-"));
+  const abrir = async (link: string, etapa: "imagens" | "áudio", lista: string[]) => {
+    if (!link || lista.length > 0) return;
+    const r = await abrirLink(link, join(workDir, etapa === "imagens" ? "img" : "aud"), MAX_LINK_BYTES);
+    if (!r.ok) {
+      if (r.kind === "drive") return; // Drive sem fileIds = o Apps Script já falhou antes
+      await tratarErro(
+        etapa,
+        `${r.motivo} (${r.kind})`,
+        r.kind === "nao_suportado"
+          ? "Envie o material por Google Drive, WeTransfer ou Dropbox, com o link aberto para \"qualquer pessoa com o link\"."
+          : "Gere um link novo (o anterior expirou ou está inacessível) e cole na planilha.",
+      );
+      return;
+    }
+    const base = createHash("sha1").update(link).digest("hex").slice(0, 12);
+    for (const a of r.arquivos) {
+      const id = `lk_${base}_${a.filename.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40)}`;
+      registrarArquivoLocal(id, a.path, a.filename);
+      lista.push(id);
+    }
+    console.log(`[onboarding/import] ${etapa}: ${r.arquivos.length} arquivo(s) via ${r.kind}`);
+  };
+  await abrir(imagesLink, "imagens", images);
+  await abrir(audiosLink, "áudio", audios);
+
+  // O Apps Script já sabe o que não deu pra coletar (coluna sem link, Drive
+  // inacessível). Passa pela MESMA régua: depende do aluno → ele é avisado;
+  // sempre → grupo com linha + e-mail. Não derruba a outra coluna.
+  const linkProblems = Array.isArray(body.link_problems)
+    ? body.link_problems.filter((x): x is string => typeof x === "string" && x.trim() !== "")
+    : [];
+  for (const prob of linkProblems) {
+    const etapa = /^imagens/i.test(prob) ? "imagens" : "áudio";
+    await tratarErro(
+      etapa,
+      prob,
+      etapa === "imagens"
+        ? "Cole na planilha o LINK da pasta ou do arquivo das fotos (Google Drive, WeTransfer ou Dropbox), aberto para \"qualquer pessoa com o link\"."
+        : "Cole na planilha o LINK do áudio (Google Drive, WeTransfer ou Dropbox), aberto para \"qualquer pessoa com o link\".",
+    );
+  }
 
   const forceReference = body.force_reference === true;
   if (images.length > 0) await avisoProcessandoImagens(email);

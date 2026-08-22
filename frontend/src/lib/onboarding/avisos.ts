@@ -200,7 +200,7 @@ export function dependeDoAluno(motivo: string): boolean {
   const m = motivo.toLowerCase();
   return (
     /permiss|acesso negado|access denied|403|401|n[aã]o p[uú]blico|privad/.test(m) ||
-    /n[aã]o encontrado|not found|404|link inv[aá]lido|pasta vazia|sem arquivo|nenhum arquivo/.test(m) ||
+    /n[aã]o encontrado|not found|404|link inv[aá]lido|n[aã]o [eé] um link|pasta vazia|sem arquivo|nenhum arquivo|no item with the given id/.test(m) ||
     /curto demais|insuficiente|m[ií]nimo|menos de \d+ ?min|pelo menos \d+ ?min/.test(m) ||
     /corrompid|n[aã]o [eé] (imagem|[aá]udio)|formato/.test(m)
   );
