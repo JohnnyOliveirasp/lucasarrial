@@ -74,6 +74,40 @@ export async function debitCredits(args: {
   return { ok: false, reason, balance: r.balance ?? 0 };
 }
 
+/**
+ * Débito EXCLUSIVO do onboarding pela planilha — pode deixar o aluno NEGATIVO.
+ *
+ * Decisão do Johnny (21/08): a linha da planilha chega antes de o aluno
+ * assinar, e pela regra geral nada roda sem saldo. No onboarding a gente faz
+ * mesmo assim; a dívida cai em `credits_extra` (sobrevive ao reset da
+ * assinatura) e é descontada sozinha quando os 100k entrarem.
+ *
+ * ⚠️ NUNCA chamar fora de `lib/onboarding/`. A `debitCredits` normal mantém a
+ * trava — é ela que segura o resto do sistema. RPC: migration 88.
+ */
+export async function debitCreditsOnboarding(args: {
+  userId: string;
+  amount: number;
+  kind: "training" | "image";
+  refType?: string;
+  refId?: string;
+  note?: string;
+}): Promise<DebitResult & { wentNegative?: boolean }> {
+  const { data, error } = await getAdmin().rpc("debit_credits_onboarding" as never, {
+    p_user_id: args.userId,
+    p_amount: args.amount,
+    p_kind: args.kind,
+    p_ref_type: args.refType ?? null,
+    p_ref_id: args.refId ?? null,
+    p_note: args.note ?? null,
+  } as never);
+  if (error) return { ok: false, reason: "error", balance: 0 };
+
+  const r = (data ?? {}) as RpcResult & { went_negative?: boolean };
+  if (r.ok) return { ok: true, balance: r.balance ?? 0, wentNegative: r.went_negative === true };
+  return { ok: false, reason: r.reason === "no_profile" ? "no_profile" : "error", balance: r.balance ?? 0 };
+}
+
 /** Recarrega os créditos da assinatura (reset, não acumula). Chamar no ciclo aprovado. */
 export async function grantSubscriptionCredits(args: {
   userId: string;

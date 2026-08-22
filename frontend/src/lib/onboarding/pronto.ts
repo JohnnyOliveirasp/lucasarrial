@@ -9,7 +9,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/types";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
+import { hasActiveAccess } from "@/lib/credits/access";
 import { ONBOARDING_VOICE_NAME } from "./import";
+import { avisoOkMasAssine } from "./avisos";
 
 type Admin = SupabaseClient<Database>;
 
@@ -96,18 +98,28 @@ export async function verificarOnboardingPronto(admin: Admin, userId: string): P
       .update({ onboarding_ready_email_at: new Date().toISOString() })
       .eq("id", userId)
       .is("onboarding_ready_email_at", null)
-      .select("email");
+      .select("email, access_until");
     const email = claimed?.[0]?.email as string | undefined;
     if (!email) return; // outro webhook levou
 
+    // Johnny 21/08: a mensagem final depende de o aluno estar ATIVO. Com
+    // assinatura vigente → "tudo pronto". Sem assinatura (ou nunca entrou) →
+    // "seus arquivos estão ok, assine pra acessar". Nenhuma das duas fala de
+    // saldo — decisão dele.
+    const ativo = hasActiveAccess(email, claimed?.[0]?.access_until as string | null);
+
     try {
-      await sendSupportMail({
-        to: email,
-        subject: EMAIL_ASSUNTO,
-        text: EMAIL_TEXTO,
-        bcc: BCC_ADMINS,
-      });
-      console.log(`[onboarding/pronto] e-mail enviado: ${email}`);
+      if (ativo) {
+        await sendSupportMail({
+          to: email,
+          subject: EMAIL_ASSUNTO,
+          text: EMAIL_TEXTO,
+          bcc: BCC_ADMINS,
+        });
+      } else {
+        await avisoOkMasAssine(email);
+      }
+      console.log(`[onboarding/pronto] e-mail enviado (${ativo ? "pronto" : "assine"}): ${email}`);
     } catch (e) {
       // Falhou o envio → devolve o claim pra retry no próximo webhook/sweep.
       await admin

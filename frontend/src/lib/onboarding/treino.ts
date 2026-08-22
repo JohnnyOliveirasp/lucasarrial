@@ -4,13 +4,19 @@
  *
  * Réplica do core do POST /api/v1/voices/[id]/start-training SEM HTTP.
  * COBRA o aluno (correção Johnny 17/08 — antes era por conta da casa e o
- * estorno de treino falho ainda devolvia 10k nunca cobrados): mesmo custo,
- * mesma checagem de saldo e mesmo shape de débito do start-training — assim
- * o estorno automático do finalize-training funciona igual. Sem saldo, o
- * treino NÃO dispara (crédito é o único gate); a voz fica awaiting_training
- * e o aluno treina pelo app quando tiver créditos. Qualquer mudança de
- * receita lá (max_steps, timeout, chaves) deve espelhar aqui — comentários
- * cruzados nos dois arquivos.
+ * estorno de treino falho ainda devolvia 10k nunca cobrados): mesmo custo e
+ * mesmo shape de débito do start-training — assim o estorno automático do
+ * finalize-training funciona igual.
+ *
+ * ⚠️ DIFERENTE do start-training em UMA coisa (decisão Johnny 21/08): aqui NÃO
+ * há trava de saldo. O treino dispara mesmo com o aluno a zero e ele fica
+ * NEGATIVO até assinar (`debitCreditsOnboarding`, migration 88). Antes, sem
+ * saldo a voz ficava presa em awaiting_training e a linha da planilha
+ * travava — era o gargalo da fila. Só o onboarding tem essa exceção; o resto
+ * do sistema mantém "crédito é o único gate".
+ *
+ * Qualquer mudança de receita lá (max_steps, timeout, chaves) deve espelhar
+ * aqui — comentários cruzados nos dois arquivos.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/types";
@@ -24,7 +30,7 @@ import { R2_BUCKETS } from "@/lib/r2/client";
 import { runpodSubmitTrain, webhookUrlFor } from "@/lib/runpod/client";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 import { bypassesBilling } from "@/lib/credits/access";
-import { debitCredits, getBalance } from "@/lib/credits/service";
+import { debitCreditsOnboarding } from "@/lib/credits/service";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
 
 type Admin = SupabaseClient<Database>;
@@ -60,32 +66,16 @@ export async function dispararTreinoOnboarding(
   const paths = Array.isArray(voice.raw_audio_paths) ? voice.raw_audio_paths : [];
   if (paths.length === 0) return { ok: false, reason: "sem áudios" };
 
-  // Mesma cobrança do start-training (equipe/admin não paga). Saldo checado
-  // ANTES do despacho; o débito em si acontece depois, como lá.
+  // Mesmo custo do start-training (equipe/admin não paga) — mas SEM a trava de
+  // saldo. Decisão do Johnny (21/08): no onboarding o treino roda mesmo com o
+  // aluno a zero, e ele fica negativo até assinar (migration 88). Era a trava
+  // que deixava a linha presa em awaiting_training com "sem créditos" na nota.
   const { data: prof } = await admin
     .from("profiles")
     .select("email")
     .eq("id", userId)
     .maybeSingle();
   const billed = !bypassesBilling((prof as { email?: string } | null)?.email ?? null);
-  if (billed) {
-    const bal = await getBalance(userId);
-    if (bal.total < TRAINING_CREDIT_COST) {
-      await admin
-        .from("voices")
-        .update({
-          error_message:
-            `Treinar a voz custa ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos ` +
-            `e você tem ${bal.total.toLocaleString("pt-BR")}. Assine ou recarregue e ` +
-            `clique em Treinar.`,
-        })
-        .eq("id", voice.id);
-      return {
-        ok: false,
-        reason: `sem créditos (treino custa ${TRAINING_CREDIT_COST}, saldo ${bal.total})`,
-      };
-    }
-  }
 
   const loraKey = buildLoraKey(userId, voice.id);
   const referenceKey = buildAutoReferenceKey(userId, voice.id);
@@ -160,8 +150,9 @@ export async function dispararTreinoOnboarding(
 
   // Debita após o treino ser disparado com sucesso (mesmo shape do
   // start-training — o estorno do finalize-training casa com este débito).
+  // Versão do onboarding: pode deixar negativo (cai em credits_extra).
   if (billed) {
-    await debitCredits({
+    await debitCreditsOnboarding({
       userId,
       amount: TRAINING_CREDIT_COST,
       kind: "training",

@@ -13,9 +13,19 @@
  *   4. GERA 2-3 avatares do aluno com as fotos (COBRADO: 525 cr/avatar 1K).
  *   5. Importa os áudios do Drive e DISPARA O TREINO da voz (COBRADO:
  *      10.000 cr — correção Johnny 17/08; antes era por conta da casa).
- *      Sem saldo, o item não roda e o motivo vai na nota da planilha.
  *   (Correção Johnny 13/08, caso Vinicius — antes: foto no histórico +
  *   referência aleatória + voz parada esperando o aluno pagar.)
+ *
+ * ⚠️ SALDO (decisão Johnny 21/08): aqui — e SÓ aqui — a cobrança NÃO tem
+ * trava. Treino e avatares rodam mesmo com o aluno a zero e ele fica negativo
+ * até assinar (`debitCreditsOnboarding`, migration 88). Era a trava que
+ * deixava a fila presa: linha após linha em "Erro" com "sem créditos".
+ *
+ * A RÉGUA DE AVISOS (Johnny 21/08, lib/onboarding/avisos.ts): o aluno recebe
+ * "começamos" → "processando imagens" → "processando áudio" → final. Erro que
+ * DEPENDE dele (link sem acesso, áudio curto) → ele é avisado do que fazer;
+ * erro NOSSO → não. Todo erro vai pro grupo com LINHA + E-MAIL. Imagem e áudio
+ * são independentes: a falha de um não impede o outro de tentar.
  *
  * Segurança: header X-Onboarding-Secret contra ONBOARDING_WEBHOOK_SECRET,
  * comparação em tempo constante (mesmo padrão do webhook Hotmart).
@@ -33,6 +43,14 @@ import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/respons
 import { getAdmin } from "@/lib/db/admin";
 import { importImages, importTrainingAudios } from "@/lib/onboarding/import";
 import { gerarAvatares } from "@/lib/onboarding/avatares";
+import {
+  avisoComecamos,
+  avisoPrecisamosDeVoce,
+  avisoProcessandoAudio,
+  avisoProcessandoImagens,
+  dependeDoAluno,
+  escalarNoGrupo,
+} from "@/lib/onboarding/avisos";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 
 export const maxDuration = 600; // vídeo de 600MB+ + áudios de treino (502 do caso A125)
@@ -154,17 +172,64 @@ export async function POST(request: NextRequest) {
   // aluno que pagou. Idempotente e best-effort (nunca lança).
   await claimPurchasesOnLogin(userId, email);
 
+  const row = typeof body.row === "number" ? body.row : null;
+
+  // ── Régua de avisos: "começamos" — só na 1ª passagem desta linha. Numa
+  // reprocessagem (linha que estava em Erro) o aluno já recebeu este e-mail;
+  // mandar de novo é ruído. A marca é a conta ter sido criada AGORA.
+  if (created) await avisoComecamos(email, name);
+
+  // Erro que depende do aluno → ele é avisado do que fazer. Erro nosso → não.
+  // Nos dois casos o grupo recebe linha + e-mail (lib/onboarding/avisos.ts).
+  const tratarErro = async (etapa: "imagens" | "áudio", motivo: string, oQueFazer: string) => {
+    const doAluno = dependeDoAluno(motivo);
+    if (doAluno) {
+      await avisoPrecisamosDeVoce(
+        email,
+        etapa === "imagens" ? "Precisamos de você: suas imagens" : "Precisamos de você: seu áudio",
+        etapa === "imagens"
+          ? `Não conseguimos pegar as suas imagens. Motivo: ${motivo}.`
+          : `Não conseguimos usar o seu áudio. Motivo: ${motivo}.`,
+        oQueFazer,
+      );
+    }
+    await escalarNoGrupo({ linha: row, email, etapa, motivo, dependeDoAluno: doAluno });
+  };
+
   const forceReference = body.force_reference === true;
+  if (images.length > 0) await avisoProcessandoImagens(email);
   const imagesResult = await importImages(admin, userId, images, { forceReference }).catch((e) => {
     console.error("[onboarding/import] imagens:", e instanceof Error ? e.message : e);
     return {
       imported: 0,
       skipped: 0,
       failed: images.map((id) => ({ id, error: "falha geral" })),
+      ignored: [] as Array<{ id: string; reason: string }>,
       reference_key: null,
       all_keys: [] as string[],
     };
   });
+
+  // Regra do Johnny: basta PELO MENOS 1 imagem. Nenhuma aproveitável = erro da
+  // etapa (e o áudio segue mesmo assim — são independentes).
+  if (images.length > 0 && imagesResult.all_keys.length === 0) {
+    const motivo =
+      imagesResult.failed[0]?.error ??
+      imagesResult.ignored?.[0]?.reason ??
+      "nenhuma imagem aproveitável no link";
+    await tratarErro(
+      "imagens",
+      motivo,
+      "Confira se o link das fotos está aberto para \"qualquer pessoa com o link\" e se há pelo menos uma foto sua (pode ser um vídeo curto também).",
+    );
+  } else if (imagesResult.failed.length > 0) {
+    // Parcial: algumas subiram, outras não. Não é bloqueio, mas o grupo sabe.
+    await escalarNoGrupo({
+      linha: row, email, etapa: "imagens",
+      motivo: `${imagesResult.failed.length} de ${images.length} falharam: ${imagesResult.failed[0]?.error ?? "?"}`,
+      dependeDoAluno: false,
+    });
+  }
 
   // 2-3 avatares gerados com as fotos (cobrado do aluno; idempotente). Falha aqui
   // NÃO derruba o import — fica registrada na resposta pra nota da planilha.
@@ -173,6 +238,8 @@ export async function POST(request: NextRequest) {
     return { created: 0, skipped: 0, failed: [{ nome: "todos", error: "falha geral" }] };
   });
 
+  // ── Áudio: SEMPRE tenta, mesmo que a imagem tenha falhado (Johnny 21/08).
+  if (audios.length > 0) await avisoProcessandoAudio(email);
   let audiosResult;
   try {
     audiosResult = await importTrainingAudios(admin, userId, audios);
@@ -188,9 +255,32 @@ export async function POST(request: NextRequest) {
     };
   }
 
-  // "ok" = nada falhou → Apps Script marca Realizado; qualquer falha parcial →
-  // Erro na planilha com o detalhe (a idempotência deixa re-tentar de graça).
-  const ok = imagesResult.failed.length === 0 && audiosResult.failed.length === 0;
+  // Erro de áudio: nenhum arquivo baixou, ou a soma ficou abaixo de 20min.
+  // Os dois dependem do aluno (link fechado / gravar mais) → ele é avisado.
+  const audioCurto = audiosResult.voice_status === "rejected_too_short";
+  if (audios.length > 0 && (audiosResult.imported + audiosResult.skipped === 0 || audioCurto)) {
+    const motivo = audioCurto
+      ? `o áudio enviado soma menos de 20 minutos (${audiosResult.training ?? "mínimo não atingido"})`
+      : (audiosResult.failed[0]?.error ?? "nenhum áudio aproveitável no link");
+    await tratarErro(
+      "áudio",
+      motivo,
+      audioCurto
+        ? "Grave mais alguns minutos falando naturalmente (pode ser em vários arquivos) até somar pelo menos 20 minutos, e coloque na mesma pasta."
+        : "Confira se o link do áudio está aberto para \"qualquer pessoa com o link\" e se os arquivos estão mesmo na pasta.",
+    );
+  } else if (audiosResult.failed.length > 0) {
+    await escalarNoGrupo({
+      linha: row, email, etapa: "áudio",
+      motivo: `${audiosResult.failed.length} de ${audios.length} falharam: ${audiosResult.failed[0]?.error ?? "?"}`,
+      dependeDoAluno: false,
+    });
+  }
+
+  // "ok" = nada falhou → Apps Script marca Processando (vira Realizado quando
+  // voz + avatares terminam); qualquer falha → Erro na planilha com o detalhe
+  // (a idempotência deixa re-tentar de graça, e o que deu certo fica).
+  const ok = imagesResult.failed.length === 0 && audiosResult.failed.length === 0 && !audioCurto;
 
   return jsonOk({
     ok,
@@ -198,6 +288,6 @@ export async function POST(request: NextRequest) {
     images: imagesResult,
     avatars: avatarsResult,
     audios: audiosResult,
-    row: typeof body.row === "number" ? body.row : null,
+    row,
   });
 }
