@@ -303,10 +303,17 @@ export async function POST(request: NextRequest) {
       imagesResult.failed[0]?.error ??
       imagesResult.ignored?.[0]?.reason ??
       "nenhuma imagem aproveitável no link";
+    // Se o motivo já diz O QUE o aluno mandou ("é um PDF, não uma foto"), a
+    // orientação tem que falar disso — mandar ele "conferir se o link está
+    // aberto" não ajuda quem simplesmente mandou o arquivo errado (caso 24).
+    const mandouOutraCoisa = /não uma foto/.test(motivo);
     await tratarErro(
       "imagens",
       motivo,
-      "Confira se o link das fotos está aberto para \"qualquer pessoa com o link\" e se há pelo menos uma foto sua (pode ser um vídeo curto também).",
+      mandouOutraCoisa
+        ? "Precisamos de uma FOTO sua — JPG, PNG, ou a foto direto do celular " +
+          "(HEIC também serve). Um vídeo curto também vale: tiramos um quadro dele."
+        : "Confira se o link das fotos está aberto para \"qualquer pessoa com o link\" e se há pelo menos uma foto sua (pode ser um vídeo curto também).",
     );
   } else if (imagesResult.failed.length > 0) {
     // Parcial: algumas subiram, outras não. Não é bloqueio, mas o grupo sabe.

@@ -35,7 +35,13 @@ import { dirTemporario } from "./tmp";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { downloadDriveFile, downloadDriveFileToPath, pickExtension, ehArquivoLocal } from "./drive";
-import { sniffImagem, heicParaJpegViaDrive, heicParaJpegLocal, trocarExtensao } from "./imagem-tipo";
+import {
+  sniffImagem,
+  heicParaJpegViaDrive,
+  heicParaJpegLocal,
+  trocarExtensao,
+  descreverArquivo,
+} from "./imagem-tipo";
 import { extrairFramesDeArquivo } from "./video-frames";
 import { escolherReferenciaFrontal } from "./referencia";
 import { dispararTreinoOnboarding } from "./treino";
@@ -235,7 +241,15 @@ export async function importImages(
       // atom not found") com a pasta cheia de foto boa. Ver imagem-tipo.ts.
       const tipo = sniffImagem(file.bytes);
       if (!tipo) {
-        throw new Error(`não é imagem (${file.contentType})`);
+        // Diz O QUE é, não só "não é imagem": a linha 24 mandou um PDF e leu
+        // "não é imagem (application/octet-stream); frames: vídeo sem duração
+        // legível" — nada que ajudasse a consertar.
+        const oQueE = descreverArquivo(file.bytes);
+        throw new Error(
+          oQueE
+            ? `é ${oQueE}, não uma foto`
+            : `não é imagem (${file.contentType})`,
+        );
       }
 
       let bytes = file.bytes;
@@ -286,7 +300,10 @@ export async function importImages(
       const msg = e instanceof Error ? e.message : String(e);
       // Vídeo (ou arquivo grande) no lugar de foto: tenta extrair 3 frames
       // do vídeo — é o que o time fazia na mão (print do vídeo do aluno).
-      if (/teto \d+MB|não é imagem/.test(msg)) {
+      // "não uma foto" entra aqui porque a mensagem passou a dizer O QUE é o
+      // arquivo ("é um vídeo, não uma foto"). Sem isso, o caso MAIS COMUM — o
+      // aluno que manda vídeo no lugar da foto — deixaria de tentar os frames.
+      if (/teto \d+MB|não é imagem|não uma foto/.test(msg)) {
         try {
           const n = await importarFramesDoVideo(admin, userId, fileId, allKeys);
           if (n > 0) {

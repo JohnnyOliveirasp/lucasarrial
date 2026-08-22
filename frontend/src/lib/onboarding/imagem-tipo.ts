@@ -75,6 +75,54 @@ export function sniffImagem(bytes: Buffer): TipoImagem | null {
 }
 
 /**
+ * O que o aluno mandou, em PORTUGUÊS — pra mensagem de erro dizer a verdade.
+ *
+ * 22/08: a linha 24 recebeu "nenhuma foto aproveitável (não é imagem
+ * (application/octet-stream); frames: vídeo sem duração legível)". O aluno
+ * tinha mandado um **PDF**. A mensagem falava de octet-stream e de vídeo — nada
+ * que ajudasse alguém a consertar.
+ *
+ * O veredito continua o mesmo (PDF não vira foto de referência: seria a página
+ * de um documento, não o rosto). Muda só o que a pessoa lê.
+ */
+export function descreverArquivo(bytes: Buffer): string | null {
+  if (bytes.length < 8) return null;
+  const inicio = bytes.subarray(0, 8).toString("latin1");
+
+  if (inicio.startsWith("%PDF")) return "um PDF";
+  if (inicio.startsWith("PK\x03\x04")) return "um arquivo compactado (zip/docx/xlsx)";
+  if (inicio.startsWith("Rar!")) return "um arquivo .rar";
+  if (bytes.subarray(0, 4).toString("latin1") === "\x7fELF") return "um programa";
+  if (inicio.startsWith("\xd0\xcf\x11\xe0")) return "um documento do Office antigo";
+  if (inicio.startsWith("ID3") || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0)) {
+    return "um áudio MP3";
+  }
+  if (inicio.startsWith("OggS")) return "um áudio OGG";
+  if (inicio.startsWith("fLaC")) return "um áudio FLAC";
+  if (bytes.subarray(0, 4).toString("latin1") === "RIFF") return "um arquivo WAV/AVI";
+  // ⚠️ HEIC também tem "ftyp" — sem conferir a marca, foto de iPhone seria
+  // descrita como "um vídeo". No fluxo isso não chega aqui (sniffImagem pega
+  // o HEIC antes), mas a função tem que dizer a verdade sozinha.
+  if (bytes.subarray(4, 8).toString("latin1") === "ftyp") {
+    const marca = bytes.subarray(8, 12).toString("latin1").toLowerCase();
+    return MARCAS_HEIF.has(marca) ? "uma foto HEIC" : "um vídeo";
+  }
+  if (/^\s*<(!doctype|html)/i.test(bytes.subarray(0, 64).toString("latin1"))) {
+    return "uma página da internet, não um arquivo";
+  }
+  return null;
+}
+
+/** O que pedir ao aluno quando o que ele mandou não serve como foto. */
+export function comoMandarFoto(oQueMandou: string | null): string {
+  return oQueMandou
+    ? `Você enviou ${oQueMandou}. Precisamos de uma FOTO sua — JPG, PNG, ou a ` +
+      `foto direto do celular (HEIC também serve).`
+    : `O arquivo enviado não é uma foto. Precisamos de uma FOTO sua — JPG, PNG, ` +
+      `ou a foto direto do celular (HEIC também serve).`;
+}
+
+/**
  * HEIC → JPEG usando a conversão do próprio Drive (`/thumbnail?sz=w4000`),
  * que devolve a foto na resolução original. `sz` é um TETO, não um alvo: uma
  * foto menor volta no tamanho dela, sem esticar.
