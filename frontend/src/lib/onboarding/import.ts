@@ -27,9 +27,15 @@ import { adotarReferencia } from "@/lib/images/refs";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 import {
   MIN_TOTAL_SECONDS,
-  RX_EXT_AUDIO_NUA,
+  RX_EXT_AUDIO,
   mensagemCurtoDemais,
 } from "@/lib/voices/regua-audio";
+import {
+  sniffAudio,
+  ehPaginaWeb,
+  probeAudioDuracaoLocal,
+  motivoDownloadVeioPagina,
+} from "./audio-tipo";
 import { rm } from "node:fs/promises";
 import { dirTemporario } from "./tmp";
 import { tmpdir } from "node:os";
@@ -241,6 +247,13 @@ export async function importImages(
       // atom not found") com a pasta cheia de foto boa. Ver imagem-tipo.ts.
       const tipo = sniffImagem(file.bytes);
       if (!tipo) {
+        // 22/08 (gêmeo do caso OneDrive no áudio): página de login/erro no
+        // lugar da foto é DOWNLOAD que falhou, não "arquivo errado do aluno".
+        // Sem isto, a mensagem virava "é uma página da internet, não uma
+        // foto" + "Precisamos de uma FOTO sua" — culpando quem mandou certo.
+        if (ehPaginaWeb(file.bytes)) {
+          throw new Error(motivoDownloadVeioPagina("foto"));
+        }
         // Diz O QUE é, não só "não é imagem": a linha 24 mandou um PDF e leu
         // "não é imagem (application/octet-stream); frames: vídeo sem duração
         // legível" — nada que ajudasse a consertar.
@@ -480,6 +493,21 @@ export async function importTrainingAudios(
     const fileId = fileIds[i];
     try {
       const file = await downloadDriveFile(fileId, MAX_AUDIO_BYTES);
+      // 22/08: quem decide é o CONTEÚDO, não o rótulo — a versão de áudio da
+      // regra que o sniffImagem já aplica nas fotos. O caso que forçou isso:
+      // link do OneDrive devolvia a página de LOGIN da Microsoft (HTML de
+      // ~300KB), o nome não tinha extensão, o content-type era octet-stream, e
+      // o fallback "mp3" do pickExtension fazia o HTML passar no filtro e
+      // subir pro R2 como áudio. O worker não achava fala e o aluno lia
+      // "grave num ambiente silencioso" — culpado por um download NOSSO que
+      // falhou (marlonwsmuniz/voz 0e2f5726, lazevedo/voz 3d3c4da8).
+      if (ehPaginaWeb(file.bytes)) {
+        // Página de login/erro NUNCA é o arquivo do aluno: é download que
+        // falhou. Vai pra `failed` (não `ignored`) — a linha tem que virar
+        // Erro e o aluno tem que saber a verdade, não "grave de novo".
+        result.failed.push({ id: fileId, error: motivoDownloadVeioPagina("áudio") });
+        continue;
+      }
       // Só ÁUDIO entra na lista do treino (incidente 910ea757, 20/08): a pasta
       // do Drive do aluno costuma misturar as FOTOS com os áudios, e todo
       // arquivo virava `raw_audio_paths`. No treino, o ffmpeg de conversão
@@ -488,18 +516,35 @@ export async function importTrainingAudios(
       // corrompido, envie de novo" (mensagem falsa: ele nunca enviou nada,
       // veio da planilha). Medido: 4 vozes travadas, uma delas com 9 de 9
       // arquivos sendo foto. Não-áudio agora é "ignorado", não derruba a voz.
-      const ext = pickExtension(file.filename, file.contentType, "mp3");
+      const tipo = sniffAudio(file.bytes);
+      let ehAudio = tipo !== null;
+      if (!ehAudio) {
+        // Assinatura desconhecida mas o RÓTULO insiste que é áudio (ex.: mp3
+        // com lixo antes do primeiro frame): o ffprobe LOCAL dá o veredito —
+        // faixa de áudio com duração > 0. Sem o fallback "mp3" na conta: era
+        // ele que deixava qualquer conteúdo sem nome nem tipo passar por mp3.
+        const rotuloDizAudio =
+          (file.contentType || "").toLowerCase().startsWith("audio/") ||
+          RX_EXT_AUDIO.test(file.filename ?? "");
+        if (rotuloDizAudio) {
+          ehAudio = (await probeAudioDuracaoLocal(file.bytes)) !== null;
+        }
+      }
       // A lista vem da régua (fonte única). Manter cópia aqui já custou caro:
       // este filtro aceitava `mov|mkv|wma|amr` e a régua não, então o arquivo
       // era gravado e depois descartado por ela — a casa perdia o áudio do
       // aluno e o recusava por "áudio insuficiente" (medido em 21/08).
-      const ehAudio =
-        (file.contentType || "").toLowerCase().startsWith("audio/") ||
-        RX_EXT_AUDIO_NUA.test(ext);
+      // O fallback do pickExtension agora é o que o CONTEÚDO diz (tipo?.ext),
+      // não mais "mp3" às cegas.
+      const ext = pickExtension(file.filename, file.contentType, tipo?.ext ?? "mp3");
       if (!ehAudio) {
+        // Diz O QUE é, quando dá (mesma cortesia do caminho das fotos).
+        const oQueE = descreverArquivo(file.bytes);
         result.ignored!.push({
           id: fileId,
-          reason: `não é áudio (${file.contentType || ext}) — provavelmente foto na pasta do Drive`,
+          reason: oQueE
+            ? `não é áudio (é ${oQueE}) — provavelmente foto ou documento na pasta`
+            : `não é áudio (${file.contentType || ext}) — provavelmente foto na pasta do Drive`,
         });
         continue;
       }

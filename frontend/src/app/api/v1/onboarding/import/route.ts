@@ -248,7 +248,10 @@ export async function POST(request: NextRequest) {
       await tratarErro(
         etapa,
         `${r.motivo} (${r.kind})`,
-        r.kind === "nao_suportado"
+        r.kind === "nao_suportado" ||
+          // 22/08 (OneDrive): o link devolveu página de login — gerar "um link
+          // novo" no MESMO serviço daria na mesma. A saída é trocar de serviço.
+          /página da internet|não conseguimos baixar/i.test(r.motivo)
           ? "Envie o material por Google Drive, WeTransfer ou Dropbox, com o link aberto para \"qualquer pessoa com o link\"."
           : "Gere um link novo (o anterior expirou ou está inacessível) e cole na planilha.",
       );
@@ -307,13 +310,19 @@ export async function POST(request: NextRequest) {
     // orientação tem que falar disso — mandar ele "conferir se o link está
     // aberto" não ajuda quem simplesmente mandou o arquivo errado (caso 24).
     const mandouOutraCoisa = /não uma foto/.test(motivo);
+    // 22/08 (OneDrive): o download trouxe página de login no lugar do arquivo.
+    // A culpa NÃO é do material do aluno — a orientação é trocar o serviço do
+    // link, não a foto.
+    const downloadFalhou = /página da internet|não conseguimos baixar/i.test(motivo);
     await tratarErro(
       "imagens",
       motivo,
-      mandouOutraCoisa
-        ? "Precisamos de uma FOTO sua — JPG, PNG, ou a foto direto do celular " +
-          "(HEIC também serve). Um vídeo curto também vale: tiramos um quadro dele."
-        : "Confira se o link das fotos está aberto para \"qualquer pessoa com o link\" e se há pelo menos uma foto sua (pode ser um vídeo curto também).",
+      downloadFalhou
+        ? "O link que você colou abre uma página pedindo login, então não conseguimos baixar o arquivo. Envie as fotos por Google Drive, WeTransfer ou Dropbox, com o link aberto para \"qualquer pessoa com o link\", e cole o link novo na planilha."
+        : mandouOutraCoisa
+          ? "Precisamos de uma FOTO sua — JPG, PNG, ou a foto direto do celular " +
+            "(HEIC também serve). Um vídeo curto também vale: tiramos um quadro dele."
+          : "Confira se o link das fotos está aberto para \"qualquer pessoa com o link\" e se há pelo menos uma foto sua (pode ser um vídeo curto também).",
     );
   } else if (imagesResult.failed.length > 0) {
     // Parcial: algumas subiram, outras não. Não é bloqueio, mas o grupo sabe.
@@ -359,14 +368,21 @@ export async function POST(request: NextRequest) {
     // subiu 8,9GB não ajuda em nada — o link está aberto, o arquivo é que não
     // cabe. Casos reais 22/08: linha 529 (8.944MB) e 531 (3.932MB).
     const grande = /teto|passou de \d+|tem \d+ ?MB/i.test(motivo);
+    // 22/08 (OneDrive): o download trouxe a página de LOGIN no lugar do áudio.
+    // A gravação do aluno não tem nada de errado — mandar "grave de novo" ou
+    // "abra o link" é culpar quem mandou certo. A orientação é trocar o
+    // serviço do link (marlonwsmuniz e lazevedo leram a mensagem errada).
+    const downloadFalhou = /página da internet|não conseguimos baixar/i.test(motivo);
     await tratarErro(
       "áudio",
       motivo,
       audioCurto
         ? "Grave mais alguns minutos falando naturalmente (pode ser em vários arquivos) até somar pelo menos 20 minutos, e coloque na mesma pasta."
-        : grande
-          ? "O arquivo que você enviou é grande demais para o nosso limite. Se for um vídeo, envie só o áudio (MP3 ou M4A); se for áudio, pode dividir em partes menores na mesma pasta. Precisamos de 20 minutos de fala — não de qualidade de estúdio."
-          : "Confira se o link do áudio está aberto para \"qualquer pessoa com o link\" e se os arquivos estão mesmo na pasta.",
+        : downloadFalhou
+          ? "O link que você colou abre uma página pedindo login, então não conseguimos baixar o áudio — a sua gravação não tem problema nenhum. Envie o MESMO áudio por Google Drive, WeTransfer ou Dropbox, com o link aberto para \"qualquer pessoa com o link\", e cole o link novo na planilha."
+          : grande
+            ? "O arquivo que você enviou é grande demais para o nosso limite. Se for um vídeo, envie só o áudio (MP3 ou M4A); se for áudio, pode dividir em partes menores na mesma pasta. Precisamos de 20 minutos de fala — não de qualidade de estúdio."
+            : "Confira se o link do áudio está aberto para \"qualquer pessoa com o link\" e se os arquivos estão mesmo na pasta.",
     );
   } else if (audiosResult.failed.length > 0) {
     await escalarNoGrupo({

@@ -207,6 +207,11 @@ export function dependeDoAluno(motivo: string): boolean {
     // (8.944MB) e 531 (3.932MB) morreram no teto e o aluno nunca soube: o
     // grupo era avisado, ele não. Quem mandou 8,9GB precisa ser avisado, senão
     // manda de novo igual.
-    /teto|passa do teto|passou de \d+|tem \d+ ?mb|grande demais/.test(m)
+    /teto|passa do teto|passou de \d+|tem \d+ ?mb|grande demais/.test(m) ||
+    // 22/08 (OneDrive): o link devolveu página de login no lugar do arquivo.
+    // A falha é do NOSSO download, mas só o aluno resolve — mandando o link
+    // por um serviço que a gente abre (Drive/WeTransfer/Dropbox). Sem avisar,
+    // ele nunca fica sabendo e a linha morre calada.
+    /p[aá]gina da internet|n[aã]o conseguimos baixar/.test(m)
   );
 }
