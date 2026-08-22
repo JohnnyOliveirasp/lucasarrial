@@ -57,6 +57,7 @@ import {
 import { abrirLink } from "@/lib/onboarding/links";
 import { registrarArquivoLocal } from "@/lib/onboarding/drive";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
+import { registrarRun, arquivosDoResultado } from "@/lib/onboarding/registrar-run";
 
 export const maxDuration = 600;
 /** Teto por link externo (zip de fotos + áudios). */
@@ -328,12 +329,18 @@ export async function POST(request: NextRequest) {
     const motivo = audioCurto
       ? `o áudio enviado soma menos de 20 minutos (${audiosResult.training ?? "mínimo não atingido"})`
       : (audiosResult.failed[0]?.error ?? "nenhum áudio aproveitável no link");
+    // Arquivo gigante tem orientação PRÓPRIA: mandar "abra o link" pra quem
+    // subiu 8,9GB não ajuda em nada — o link está aberto, o arquivo é que não
+    // cabe. Casos reais 22/08: linha 529 (8.944MB) e 531 (3.932MB).
+    const grande = /teto|passou de \d+|tem \d+ ?MB/i.test(motivo);
     await tratarErro(
       "áudio",
       motivo,
       audioCurto
         ? "Grave mais alguns minutos falando naturalmente (pode ser em vários arquivos) até somar pelo menos 20 minutos, e coloque na mesma pasta."
-        : "Confira se o link do áudio está aberto para \"qualquer pessoa com o link\" e se os arquivos estão mesmo na pasta.",
+        : grande
+          ? "O arquivo que você enviou é grande demais para o nosso limite. Se for um vídeo, envie só o áudio (MP3 ou M4A); se for áudio, pode dividir em partes menores na mesma pasta. Precisamos de 20 minutos de fala — não de qualidade de estúdio."
+          : "Confira se o link do áudio está aberto para \"qualquer pessoa com o link\" e se os arquivos estão mesmo na pasta.",
     );
   } else if (audiosResult.failed.length > 0) {
     await escalarNoGrupo({
@@ -347,6 +354,41 @@ export async function POST(request: NextRequest) {
   // voz + avatares terminam); qualquer falha → Erro na planilha com o detalhe
   // (a idempotência deixa re-tentar de graça, e o que deu certo fica).
   const ok = imagesResult.failed.length === 0 && audiosResult.failed.length === 0 && !audioCurto;
+
+  // 22/08 (Johnny): "não é ler a nota, é entender o porquê no SISTEMA".
+  // Cada tentativa fica em onboarding_runs — motivo inteiro, sem o corte de
+  // ~300 caracteres da nota da célula. É o que permite responder "por que a
+  // linha 529 falhou" com uma consulta em vez de garimpo no Drive.
+  const etapaFalha: "imagens" | "audio" | null = !ok
+    ? (imagesResult.all_keys.length === 0 && images.length > 0 ? "imagens" : "audio")
+    : null;
+  await registrarRun(admin, {
+    linha: row,
+    email,
+    userId,
+    contaCriada: created,
+    ok,
+    etapaFalha,
+    motivo:
+      imagesResult.failed[0]?.error ??
+      imagesResult.ignored?.[0]?.reason ??
+      audiosResult.failed[0]?.error ??
+      (audioCurto ? "áudio soma menos de 20 minutos" : null),
+    erroDetalhe: JSON.stringify({
+      imagens: { failed: imagesResult.failed, ignored: imagesResult.ignored ?? [] },
+      audios: { failed: audiosResult.failed, training: audiosResult.training },
+      avatares: avatarsResult.failed ?? [],
+    }),
+    imagensPedidas: images.length,
+    audiosPedidos: audios.length,
+    imagesLink: imagesLink || null,
+    audiosLink: audiosLink || null,
+    arquivos: [
+      ...arquivosDoResultado(imagesResult, images),
+      ...arquivosDoResultado(audiosResult, audios),
+    ],
+    resultado: { images: imagesResult, avatars: avatarsResult, audios: audiosResult },
+  });
 
   return jsonOk({
     ok,

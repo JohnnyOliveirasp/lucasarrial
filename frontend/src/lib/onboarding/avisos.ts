@@ -202,6 +202,11 @@ export function dependeDoAluno(motivo: string): boolean {
     /permiss|acesso negado|access denied|403|401|n[aã]o p[uú]blico|privad/.test(m) ||
     /n[aã]o encontrado|not found|404|link inv[aá]lido|n[aã]o [eé] um link|pasta vazia|sem arquivo|nenhum arquivo|no item with the given id/.test(m) ||
     /curto demais|insuficiente|m[ií]nimo|menos de \d+ ?min|pelo menos \d+ ?min/.test(m) ||
-    /corrompid|n[aã]o [eé] (imagem|[aá]udio)|formato/.test(m)
+    /corrompid|n[aã]o [eé] (imagem|[aá]udio)|formato/.test(m) ||
+    // 22/08 (Johnny): arquivo gigante É erro real e É do aluno. As linhas 529
+    // (8.944MB) e 531 (3.932MB) morreram no teto e o aluno nunca soube: o
+    // grupo era avisado, ele não. Quem mandou 8,9GB precisa ser avisado, senão
+    // manda de novo igual.
+    /teto|passa do teto|passou de \d+|tem \d+ ?mb|grande demais/.test(m)
   );
 }
