@@ -47,16 +47,40 @@ export async function statusOnboarding(admin: Admin, userId: string): Promise<Pr
     .eq("idea", "onboarding_avatar");
   const lista = avatares ?? [];
 
-  const { data: voz } = await admin
+  // 22/08: amarrar a voz do onboarding pelo NOME é frágil — o aluno renomeia,
+  // ou treina outra por conta e a linha fica presa em "Em Andamento" PRA
+  // SEMPRE, mesmo com ele já usando a plataforma. Casos reais:
+  //   lucianodepinho — só tem "Luciano 1" (ready): não existe "Minha Voz"
+  //   kessulyl       — "Minha Voz" failed + "Voz Kess" (ready), feita por ela
+  // Os dois estavam prontos, assinantes ativos, e nunca receberam o e-mail.
+  // Agora: vale a voz do onboarding OU qualquer voz do aluno que esteja
+  // pronta — o que importa é ele TER voz funcionando, não o nome dela.
+  const { data: vozes } = await admin
     .from("voices")
-    .select("status, raw_audio_paths")
+    .select("status, raw_audio_paths, name")
     .eq("user_id", userId)
-    .eq("name", ONBOARDING_VOICE_NAME)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: true });
+  const lista_vozes = vozes ?? [];
+
+  // A marca confiável é o CAMINHO do áudio (`onboarding_...`), que o aluno não
+  // muda — não o nome, que ele muda à vontade. O nome só entra como reserva
+  // pra voz que ainda não tem áudio gravado.
+  const daImportacao =
+    lista_vozes.find((v) => JSON.stringify(v.raw_audio_paths ?? []).includes("onboarding_")) ??
+    lista_vozes.find((v) => v.name === ONBOARDING_VOICE_NAME) ??
+    null;
+
+  // Se a voz do onboarding falhou e o aluno treinou outra por conta, o que
+  // vale é ele TER voz pronta. Mas isto só conta pra quem realmente passou
+  // pelo onboarding (tem avatar ou voz de importação) — senão o e-mail
+  // "plataforma pronta" cairia em cima de aluno que nunca veio da planilha.
+  const veioDoOnboarding = lista.length > 0 || daImportacao !== null;
+  const qualquerPronta = veioDoOnboarding
+    ? lista_vozes.find((v) => v.status === "ready")
+    : undefined;
+
   const vozOnboarding =
-    voz && JSON.stringify(voz.raw_audio_paths ?? []).includes("onboarding_") ? voz : null;
+    daImportacao?.status === "ready" ? daImportacao : (qualquerPronta ?? daImportacao ?? null);
 
   const { data: prof } = await admin
     .from("profiles")
@@ -67,10 +91,18 @@ export async function statusOnboarding(admin: Admin, userId: string): Promise<Pr
   const prontos = lista.filter((a) => a.status === "ready").length;
   const pendentes = lista.filter((a) => a.status === "pending" || a.status === "generating").length;
   const onboarding = lista.length > 0 || vozOnboarding !== null;
+  // 22/08: exigir avatar pronto SEM NUNCA ter tentado gerar um trancava a
+  // linha pra sempre. Casos reais: fernao82, dmaggioni, namaiimoveis e
+  // thiagoabadio — voz treinada e funcionando, zero foto importada (o link de
+  // imagens falhou), zero avatar. A entrega principal — a VOZ — estava de pé,
+  // e a planilha dizia "Em Andamento" havia dias.
+  // Agora: se houve avatar, ele precisa ficar pronto; se nunca houve, a voz
+  // pronta basta pra fechar a linha.
+  const houveAvatar = lista.length > 0;
   const pronto =
     onboarding &&
-    prontos >= 1 &&
     pendentes === 0 &&
+    (houveAvatar ? prontos >= 1 : true) &&
     vozOnboarding?.status === "ready";
 
   return {
