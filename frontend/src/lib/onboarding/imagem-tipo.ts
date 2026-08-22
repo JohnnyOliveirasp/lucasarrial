@@ -175,22 +175,36 @@ export async function heicParaJpegViaDrive(
 export async function heicParaJpegLocal(bytes: Buffer): Promise<Buffer> {
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");
-  const { mkdtemp, writeFile, readFile, rm } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
+  const { writeFile, readFile, rm } = await import("node:fs/promises");
   const { join } = await import("node:path");
+  // ⚠️ `dirTemporario`, NUNCA tmpdir(): /tmp e /var/tmp do Hetzner são tmpfs,
+  // ou seja RAM. Eu já tinha tirado o download de lá e esqueci desta função,
+  // escrita depois — a linha 97 apareceu convertendo em /tmp/heic-knaTMi.
+  const { dirTemporario } = await import("./tmp");
   const exec = promisify(execFile);
 
-  const dir = await mkdtemp(join(tmpdir(), "heic-"));
+  const dir = await dirTemporario("heic-");
   try {
     const entrada = join(dir, "in.heic");
     const saida = join(dir, "out.jpg");
     await writeFile(entrada, bytes);
-    await exec("ffmpeg", ["-v", "error", "-i", entrada, "-frames:v", "1", "-y", saida], {
-      timeout: 60_000,
-    });
+    try {
+      await exec("ffmpeg", ["-v", "error", "-i", entrada, "-frames:v", "1", "-y", saida], {
+        timeout: 60_000,
+      });
+    } catch {
+      // O dump do ffmpeg ("moov atom not found", caminhos internos) virava a
+      // mensagem que o ALUNO lia. Ele não tem o que fazer com isso.
+      throw new Error(
+        "não conseguimos abrir sua foto HEIC — envie em JPG ou PNG " +
+          "(no iPhone: Ajustes → Câmera → Formatos → Mais Compatível)",
+      );
+    }
     const jpg = await readFile(saida);
     const tipo = sniffImagem(jpg);
-    if (!tipo || tipo.heic) throw new Error("ffmpeg não devolveu JPEG");
+    if (!tipo || tipo.heic) {
+      throw new Error("não conseguimos converter sua foto HEIC — envie em JPG ou PNG");
+    }
     return jpg;
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
