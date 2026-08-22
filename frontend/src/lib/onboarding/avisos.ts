@@ -30,12 +30,25 @@ const LOGIN_URL = "https://fastcloner.com/login";
 const ASSINAR_URL = "https://fastcloner.com/#planos";
 const ASSINATURA = "\n\n— Equipe FastCloner";
 
-/** Onde a Carol avisa a equipe (mesma env da escalação do WhatsApp). */
+/**
+ * Onde a Carol avisa a equipe: o GRUPO do WhatsApp do suporte.
+ *
+ * 22/08 (Johnny): *"tem um grupo de whatsapp, é pra falar no grupo"*. Até aqui
+ * isto lia AGENT_TEAM_WHATSAPP — 4 TELEFONES individuais, não o grupo — e
+ * ainda mandava o número cru, sem o sufixo do jid. O WAHA recusa `chatId`
+ * sem domínio, o `catch` abaixo era vazio e não logava: TODO aviso de erro do
+ * onboarding falhou em silêncio desde que a régua entrou. Ninguém no grupo
+ * soube de nenhuma das 46 linhas que deram erro.
+ */
+const GRUPO_SUPORTE = "120363428193217427@g.us"; // "FASTCLONER - Suporte"
+
 function grupoJids(): string[] {
-  return (process.env.AGENT_TEAM_WHATSAPP ?? "")
+  return (process.env.ONBOARDING_GRUPO_WHATSAPP || GRUPO_SUPORTE)
     .split(/[,\s]+/)
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    // número puro (formato antigo) ainda vale: vira jid de contato.
+    .map((j) => (j.includes("@") ? j : `${j.replace(/\D/g, "")}@s.whatsapp.net`));
 }
 
 async function mandar(to: string, subject: string, text: string): Promise<void> {
@@ -168,8 +181,9 @@ export async function escalarNoGrupo(erro: ErroOnboarding): Promise<void> {
   for (const jid of grupoJids()) {
     try {
       await sendAgentText(jid, texto);
-    } catch {
-      /* tenta o próximo */
+    } catch (e) {
+      // NUNCA engolir calado: foi assim que o aviso morreu sem ninguém notar.
+      console.error(`[onboarding/avisos] grupo ${jid}:`, e instanceof Error ? e.message : e);
     }
   }
 
