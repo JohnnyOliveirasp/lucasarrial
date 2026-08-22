@@ -80,6 +80,12 @@ export type ReactDraft = {
   /** Pedido em voo (react_jobs). Guardado pra tela reencontrar o job depois de
    *  um F5 — sem isso o vídeo só aparecia em "Vídeos gerados". */
   jobId: string | null;
+  /**
+   * O vídeo FICOU PRONTO. Regra do Johnny (22/08): depois de finalizado não se
+   * volta atrás — o caminho é começar um novo React. É por isso que o wizard
+   * esconde o "Voltar" a partir daqui.
+   */
+  finalizado: boolean;
 };
 
 export const DRAFT_VAZIO: ReactDraft = {
@@ -105,4 +111,5 @@ export const DRAFT_VAZIO: ReactDraft = {
   legendaTamanho: null,
   fundoFinal: null,
   jobId: null,
+  finalizado: false,
 };

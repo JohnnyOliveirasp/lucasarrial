@@ -3,6 +3,7 @@ import { redirect } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin/guard";
 import { ReactWizard } from "@/components/react/react-wizard";
+import { ReactMeusVideos } from "@/components/react/react-meus-videos";
 
 /**
  * 🧪 Lab · **Video React** — você na frente comentando um viral.
@@ -43,6 +44,8 @@ export default async function ReactPage({
         </p>
       </div>
       <ReactWizard />
+      {/* A lista do que já foi criado — pedido do Johnny 22/08. */}
+      <ReactMeusVideos />
     </div>
   );
 }
