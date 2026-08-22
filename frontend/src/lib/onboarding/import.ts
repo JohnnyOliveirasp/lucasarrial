@@ -34,8 +34,8 @@ import { rm } from "node:fs/promises";
 import { dirTemporario } from "./tmp";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { downloadDriveFile, downloadDriveFileToPath, pickExtension } from "./drive";
-import { sniffImagem, heicParaJpegViaDrive, trocarExtensao } from "./imagem-tipo";
+import { downloadDriveFile, downloadDriveFileToPath, pickExtension, ehArquivoLocal } from "./drive";
+import { sniffImagem, heicParaJpegViaDrive, heicParaJpegLocal, trocarExtensao } from "./imagem-tipo";
 import { extrairFramesDeArquivo } from "./video-frames";
 import { escolherReferenciaFrontal } from "./referencia";
 import { dispararTreinoOnboarding } from "./treino";
@@ -244,7 +244,11 @@ export async function importImages(
       let ext = tipo.ext;
       if (tipo.heic) {
         // Nada no resto do sistema (R2, Kie, avatares) abre HEIC.
-        bytes = await heicParaJpegViaDrive(fileId, MAX_IMAGE_BYTES);
+        // Arquivo que veio de WeTransfer/Dropbox NUNCA esteve no Drive: pedir
+        // a conversão de lá devolvia HTTP 400 e derrubava a linha (caso 97).
+        bytes = ehArquivoLocal(fileId)
+          ? await heicParaJpegLocal(bytes)
+          : await heicParaJpegViaDrive(fileId, MAX_IMAGE_BYTES);
         contentType = "image/jpeg";
         ext = "jpg";
         filename = trocarExtensao(filename, "jpg");
@@ -299,7 +303,9 @@ export async function importImages(
           const eSoTamanho = /teto|passou de|ENOSPC|no space left/i.test(
             e2 instanceof Error ? e2.message : String(e2),
           ) || /teto \d+MB/.test(msg);
-          if (eSoTamanho) {
+          // Arquivo de WeTransfer/Dropbox não está no Drive: pedir o thumbnail
+          // de lá só devolve HTTP 400 (mesma pedra do caso 97).
+          if (eSoTamanho && !ehArquivoLocal(fileId)) {
             try {
               const n = await importarThumbnailDoDrive(admin, userId, fileId, allKeys);
               if (n > 0) {

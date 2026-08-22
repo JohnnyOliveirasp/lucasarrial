@@ -111,6 +111,44 @@ export async function heicParaJpegViaDrive(
   return bytes;
 }
 
+/**
+ * HEIC → JPEG SEM o Drive, pro arquivo que veio de WeTransfer/Dropbox/OneDrive.
+ *
+ * 22/08: o fix do HEIC mandava TODO HEIC pro /thumbnail do Drive — inclusive os
+ * que nunca estiveram lá. Um arquivo de link (id com prefixo `lk_`) devolvia
+ * "Drive respondeu 400 ao converter o HEIC" e a linha caía (caso real: 97).
+ *
+ * Aqui o ffmpeg decodifica localmente. Vale saber: HEIC do iPhone costuma vir
+ * em GRADE de tiles 512×512 e o ffmpeg não remonta a grade — a imagem sai no
+ * tamanho de um tile. É pior que a conversão do Drive, e por isso só entra
+ * quando o Drive não é uma opção; ainda assim é uma foto de verdade, e a régua
+ * do Johnny é "basta PELO MENOS 1 imagem".
+ */
+export async function heicParaJpegLocal(bytes: Buffer): Promise<Buffer> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { mkdtemp, writeFile, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const exec = promisify(execFile);
+
+  const dir = await mkdtemp(join(tmpdir(), "heic-"));
+  try {
+    const entrada = join(dir, "in.heic");
+    const saida = join(dir, "out.jpg");
+    await writeFile(entrada, bytes);
+    await exec("ffmpeg", ["-v", "error", "-i", entrada, "-frames:v", "1", "-y", saida], {
+      timeout: 60_000,
+    });
+    const jpg = await readFile(saida);
+    const tipo = sniffImagem(jpg);
+    if (!tipo || tipo.heic) throw new Error("ffmpeg não devolveu JPEG");
+    return jpg;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /** Troca a extensão do nome do arquivo (IMG_1616.HEIC → IMG_1616.jpg). */
 export function trocarExtensao(nome: string | null, ext: string): string | null {
   if (!nome) return null;
