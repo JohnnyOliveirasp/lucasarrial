@@ -864,6 +864,10 @@ export type VideoCloneRow = {
   runpod_job_id: string | null;
   video_path: string | null;
   error_message: string | null;
+  /** Erro CRU do RunPod na falha (mig 90) — diagnóstico interno; o usuário vê error_message. */
+  raw_error: string | null;
+  /** executionTime do RunPod em segundos, gravado na falha (mig 90). */
+  elapsed_seconds: number | null;
   created_at: Timestamp;
 };
 export type VideoCloneInsert = {

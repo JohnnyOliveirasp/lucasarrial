@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
         const r = await finalizeVideoClone({
           cloneId: c.id, userId: c.user_id, jobId: c.runpod_job_id,
           runpodStatus: st.status, rawError: st.error,
+          executionTimeMs: st.executionTimeMs,
         });
         if (r.applied) {
           if (st.status === "COMPLETED") ready += 1;

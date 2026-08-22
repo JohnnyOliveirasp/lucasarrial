@@ -154,6 +154,7 @@ export async function POST(request: NextRequest) {
       jobId: payload.id,
       runpodStatus: payload.status,
       rawError: payload.output?.error || payload.error || null,
+      executionTimeMs: typeof payload.executionTime === "number" ? payload.executionTime : null,
     });
     return jsonOk({ handled: "video_clone" });
   }
