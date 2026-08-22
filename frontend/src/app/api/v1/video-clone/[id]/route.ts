@@ -47,6 +47,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
           jobId: current.runpod_job_id,
           runpodStatus: st.status,
           rawError: st.error,
+          executionTimeMs: st.executionTimeMs,
         });
       } else if (st.status === "IN_PROGRESS" && current.status === "pending") {
         await admin.from("video_clones").update({ status: "generating" }).eq("id", id);
