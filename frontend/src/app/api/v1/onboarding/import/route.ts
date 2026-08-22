@@ -209,7 +209,17 @@ export async function POST(request: NextRequest) {
 
   // Erro que depende do aluno → ele é avisado do que fazer. Erro nosso → não.
   // Nos dois casos o grupo recebe linha + e-mail (lib/onboarding/avisos.ts).
+  // 22/08: `tratarErro` avisava o aluno e o grupo mas NÃO contava como falha —
+  // o `ok` da resposta era calculado só pelas listas `failed`, que ficam vazias
+  // quando nada chegou a ser tentado. Resultado: linha com ZERO foto e ZERO
+  // áudio voltava `ok: true`, virava "Em Andamento" e ficava parada pra
+  // sempre, porque não existe voz nem avatar pra ficar pronto — e o aluno tinha
+  // recebido "deu tudo certo". Casos reais: linha 504 (WeTransfer we.tl),
+  // 525 (Drive) e 526 (Google Photos, que a gente nem suporta).
+  const falhas: string[] = [];
+
   const tratarErro = async (etapa: "imagens" | "áudio", motivo: string, oQueFazer: string) => {
+    falhas.push(`${etapa}: ${motivo}`);
     const doAluno = dependeDoAluno(motivo);
     if (doAluno) {
       await avisoPrecisamosDeVoce(
@@ -362,7 +372,22 @@ export async function POST(request: NextRequest) {
   // "ok" = nada falhou → Apps Script marca Processando (vira Realizado quando
   // voz + avatares terminam); qualquer falha → Erro na planilha com o detalhe
   // (a idempotência deixa re-tentar de graça, e o que deu certo fica).
-  const ok = imagesResult.failed.length === 0 && audiosResult.failed.length === 0 && !audioCurto;
+  // Entrou ALGUMA coisa? Linha que não rendeu nem uma foto nem um áudio nunca
+  // é sucesso — mesmo que nada tenha "falhado" formalmente. É o que separa
+  // "o aluno não tinha material" (a linha fica esperando, correto) de "o
+  // servidor não conseguiu abrir o que ele mandou" (erro, precisa de gente).
+  const entrouAlgo =
+    imagesResult.all_keys.length > 0 ||
+    audiosResult.imported + audiosResult.skipped > 0;
+  const tinhaLinkOuArquivo =
+    images.length > 0 || audios.length > 0 || !!imagesLink || !!audiosLink;
+
+  const ok =
+    imagesResult.failed.length === 0 &&
+    audiosResult.failed.length === 0 &&
+    !audioCurto &&
+    falhas.length === 0 &&
+    (entrouAlgo || !tinhaLinkOuArquivo);
 
   // 22/08 (Johnny): "não é ler a nota, é entender o porquê no SISTEMA".
   // Cada tentativa fica em onboarding_runs — motivo inteiro, sem o corte de
@@ -384,6 +409,10 @@ export async function POST(request: NextRequest) {
     audiosResult.failed[0]?.error ??
     (audioCurto
       ? `o áudio enviado soma menos de 20 minutos (${audiosResult.training ?? "mínimo não atingido"})`
+      : null) ??
+    falhas[0] ??
+    (tinhaLinkOuArquivo && !entrouAlgo
+      ? "o link foi aberto mas não veio nenhuma foto nem áudio aproveitável"
       : null);
 
   await registrarRun(admin, {
