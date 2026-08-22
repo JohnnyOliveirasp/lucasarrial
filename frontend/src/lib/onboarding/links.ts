@@ -31,7 +31,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 // Extensão explícita: deixa `node --test` rodar o links.test.ts sem build.
-import { ehPaginaWeb } from "./audio-tipo.ts";
+import { ehPaginaWeb, ehZipDeArquivos } from "./audio-tipo.ts";
 
 export type LinkKind = "drive" | "wetransfer" | "dropbox" | "onedrive" | "direto" | "nao_suportado";
 
@@ -275,7 +275,8 @@ export async function abrirLink(
   // octet-stream). Os primeiros bytes não mentem: se o que baixou é HTML,
   // o download FALHOU — dizer isso, e não deixar o arquivo seguir pra virar
   // ".mp3" no R2 ou "zip corrompido" na mensagem (as duas culpavam o aluno).
-  if (ehPaginaWeb(await lerInicio(destino))) {
+  const inicioBaixado = await lerInicio(destino);
+  if (ehPaginaWeb(inicioBaixado)) {
     return {
       ok: false,
       kind,
@@ -286,7 +287,11 @@ export async function abrirLink(
     };
   }
 
-  if (extname(destino).toLowerCase() === ".zip") {
+  // 22/08: quem decide se é pacote é o CONTEÚDO, não a extensão. O link do
+  // fb_teixeira baixou como token sem extensão, o `extname` deu "" e o unzip
+  // não rodou — 18MB de ZIP viraram ".mp3" no R2 e ele foi acusado de gravar
+  // mal. O `Audio IA.ogg` estava lá dentro o tempo todo.
+  if (extname(destino).toLowerCase() === ".zip" || ehZipDeArquivos(inicioBaixado)) {
     const pasta = join(workDir, "unzip");
     await mkdir(pasta, { recursive: true });
     try {

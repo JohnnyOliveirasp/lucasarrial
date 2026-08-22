@@ -114,6 +114,39 @@ export function ehPaginaWeb(bytes: Buffer): boolean {
 }
 
 /**
+ * É um ZIP com arquivos dentro (pacote de mídia), e não um DOCUMENTO?
+ *
+ * Por que existe (22/08, medido no R2): o `abrirLink` decidia extrair pela
+ * EXTENSÃO (`extname === ".zip"`) — o mesmo veneno do rótulo que este arquivo
+ * inteiro existe pra matar. O link do fb_teixeira baixou com nome de token
+ * (`ABCKC6LhbBddtGtwAVgWaNY`, sem extensão), então o unzip NUNCA rodou: os
+ * 18MB de ZIP subiram pro R2 como `.mp3`, o worker não achou fala e o aluno
+ * leu "grave num ambiente silencioso". O áudio dele estava DENTRO do zip
+ * (`Audio IA.ogg`) — ele mandou certo, nós é que não abrimos o pacote.
+ *
+ * docx/xlsx/pptx/odt também são ZIP por dentro, mas são DOCUMENTO: extrair
+ * daria uma pasta de XML e a mensagem "o zip veio vazio", que culpa o aluno
+ * por outra coisa. O primeiro item do pacote denuncia qual é qual.
+ */
+export function ehZipDeArquivos(bytes: Buffer): boolean {
+  // PK\x03\x04 = entrada normal; \x05\x06 = zip vazio; \x07\x08 = multi-volume.
+  if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) return false;
+  const terceiro = bytes[2];
+  const quarto = bytes[3];
+  const assinaturaZip =
+    (terceiro === 0x03 && quarto === 0x04) ||
+    (terceiro === 0x05 && quarto === 0x06) ||
+    (terceiro === 0x07 && quarto === 0x08);
+  if (!assinaturaZip) return false;
+  // OOXML abre com "[Content_Types].xml"; ODF abre com "mimetype" +
+  // "application/vnd.oasis...". Os dois aparecem nos primeiros bytes.
+  const cabeca = bytes.subarray(0, 2048).toString("latin1");
+  if (/\[Content_Types\]\.xml/.test(cabeca)) return false;
+  if (/mimetypeapplication\/vnd\.(oasis|openxmlformats)/.test(cabeca)) return false;
+  return true;
+}
+
+/**
  * Confirmação local com ffprobe: o conteúdo tem FAIXA DE ÁUDIO com duração
  * > 0? Devolve a duração em segundos, ou null se não for áudio legível.
  *

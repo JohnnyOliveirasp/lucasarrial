@@ -12,7 +12,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sniffAudio, ehPaginaWeb } from "./audio-tipo.ts";
+import { sniffAudio, ehPaginaWeb, ehZipDeArquivos } from "./audio-tipo.ts";
 
 // ── sniffAudio: formatos que a régua aceita têm assinatura reconhecida ─────
 
@@ -131,4 +131,47 @@ test("arquivo minúsculo/vazio não quebra nem vira áudio", () => {
   assert.equal(sniffAudio(Buffer.alloc(0)), null);
   assert.equal(sniffAudio(Buffer.from("oi")), null);
   assert.equal(ehPaginaWeb(Buffer.alloc(0)), false);
+});
+
+// ── ZIP: pacote de mídia x documento (caso fb_teixeira, 22/08) ─────────────
+
+test("zip de mídia é reconhecido pelo CONTEUDO, mesmo sem extensão", () => {
+  // O caso real: 18MB de ZIP baixados com nome de token e salvos como .mp3,
+  // com o "Audio IA.ogg" do aluno dentro. O unzip nunca rodou porque a
+  // decisão era por extname().
+  const zip = Buffer.concat([
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.alloc(26),
+    Buffer.from("Audio IA.ogg"),
+    Buffer.alloc(64),
+  ]);
+  assert.equal(ehZipDeArquivos(zip), true);
+  // e continua NÃO sendo áudio pro sniff — quem extrai é o abrirLink
+  assert.equal(sniffAudio(zip), null);
+});
+
+test("docx/xlsx/odt são ZIP por dentro mas NÃO são pacote de mídia", () => {
+  const docx = Buffer.concat([
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.alloc(26),
+    Buffer.from("[Content_Types].xml"),
+    Buffer.alloc(64),
+  ]);
+  assert.equal(ehZipDeArquivos(docx), false);
+  const odt = Buffer.concat([
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.alloc(26),
+    Buffer.from("mimetypeapplication/vnd.oasis.opendocument.text"),
+    Buffer.alloc(64),
+  ]);
+  assert.equal(ehZipDeArquivos(odt), false);
+});
+
+test("áudio e página web não são confundidos com zip", () => {
+  assert.equal(ehZipDeArquivos(Buffer.concat([Buffer.from("ID3"), Buffer.alloc(32)])), false);
+  assert.equal(ehZipDeArquivos(Buffer.concat([Buffer.from("OggS"), Buffer.alloc(32)])), false);
+  assert.equal(ehZipDeArquivos(Buffer.from("<!DOCTYPE html><html></html>")), false);
+  assert.equal(ehZipDeArquivos(Buffer.alloc(0)), false);
+  // "PK" seguido de lixo que não é assinatura de zip
+  assert.equal(ehZipDeArquivos(Buffer.concat([Buffer.from([0x50,0x4b,0x99,0x99]), Buffer.alloc(32)])), false);
 });
