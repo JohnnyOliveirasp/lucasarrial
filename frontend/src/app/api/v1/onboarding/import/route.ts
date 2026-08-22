@@ -371,6 +371,21 @@ export async function POST(request: NextRequest) {
   const etapaFalha: "imagens" | "audio" | null = !ok
     ? (imagesResult.all_keys.length === 0 && images.length > 0 ? "imagens" : "audio")
     : null;
+
+  // 22/08: o motivo PRECISA sair daqui pronto. O Apps Script monta a nota com
+  // `body.error.message || falhas(images) || falhas(audios) || "HTTP " + code`,
+  // e `falhas()` só olha a lista `failed`. Áudio curto tem `failed` VAZIO — o
+  // arquivo baixou bem, só é curto — então caía no fallback e a planilha
+  // recebia a nota inútil **"HTTP 200"**. Linhas 348, 352 e 353 ficaram assim,
+  // sendo que o motivo real era "áudio com menos de 20 minutos".
+  const motivoGeral =
+    imagesResult.failed[0]?.error ??
+    imagesResult.ignored?.[0]?.reason ??
+    audiosResult.failed[0]?.error ??
+    (audioCurto
+      ? `o áudio enviado soma menos de 20 minutos (${audiosResult.training ?? "mínimo não atingido"})`
+      : null);
+
   await registrarRun(admin, {
     linha: row,
     email,
@@ -401,6 +416,9 @@ export async function POST(request: NextRequest) {
 
   return jsonOk({
     ok,
+    // `error.message` é o PRIMEIRO campo que o Apps Script consulta pra montar
+    // a nota — mandando o motivo aqui, a planilha nunca mais escreve "HTTP 200".
+    ...(ok || !motivoGeral ? {} : { error: { message: motivoGeral } }),
     user: { id: userId, created },
     images: imagesResult,
     avatars: avatarsResult,

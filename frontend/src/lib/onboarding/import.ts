@@ -145,6 +145,52 @@ async function importarFramesDoVideo(
 }
 
 /**
+ * Foto tirada do THUMBNAIL do Drive — sem baixar o arquivo original.
+ *
+ * 22/08: o aluno manda um vídeo de 2,3GB na pasta de fotos. Baixar pra extrair
+ * frames estoura o teto (e antes ainda enchia o /tmp, que é RAM). Mas o Drive
+ * já tem um frame pronto e entrega em JPEG por /thumbnail — 437KB em vez de
+ * 2,3GB. Casos reais: linhas 373, 376, 388.
+ *
+ * Vale pra vídeo e pra foto: é a mesma porta que converte HEIC.
+ */
+async function importarThumbnailDoDrive(
+  admin: Admin,
+  userId: string,
+  fileId: string,
+  allKeys: string[],
+): Promise<number> {
+  const bytes = await heicParaJpegViaDrive(fileId, MAX_IMAGE_BYTES);
+  const safe = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const destKey = `${userId}/uploads/onboarding_${safe}.jpg`;
+
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: imagesBucket(),
+      Key: destKey,
+      Body: bytes,
+      ContentType: "image/jpeg",
+    }),
+  );
+  const { error: insertErr } = await admin.from("image_generations").insert({
+    id: randomUUID(),
+    user_id: userId,
+    name: "Foto do arquivo enviado",
+    prompt: "",
+    input_image_path: "",
+    aspect_ratio: "auto",
+    resolution: "original",
+    credits_cost: 0,
+    image_path: destKey,
+    status: "ready",
+    kie_model: "upload",
+  });
+  if (insertErr) throw new Error(insertErr.message);
+  allKeys.push(destKey);
+  return 1;
+}
+
+/**
  * Importa as fotos do Drive pro acervo do aluno e define a referência do
  * clone se ainda não houver (profiles.image_ref_key).
  */
@@ -245,6 +291,25 @@ export async function importImages(
           }
           result.ignored!.push({ id: fileId, reason: msg });
         } catch (e2) {
+          // ÚLTIMO RECURSO (22/08): baixar o vídeo falhou — grande demais pro
+          // teto, ou o disco encheu. O Drive já tem um frame pronto e serve em
+          // JPEG por /thumbnail, SEM baixar o arquivo. Resolve os vídeos de
+          // 2,3GB das linhas 373/376/388 e qualquer tamanho daqui pra frente:
+          // a régua do Johnny é "basta PELO MENOS 1 imagem".
+          const eSoTamanho = /teto|passou de|ENOSPC|no space left/i.test(
+            e2 instanceof Error ? e2.message : String(e2),
+          ) || /teto \d+MB/.test(msg);
+          if (eSoTamanho) {
+            try {
+              const n = await importarThumbnailDoDrive(admin, userId, fileId, allKeys);
+              if (n > 0) {
+                result.imported++;
+                continue;
+              }
+            } catch {
+              /* nem o thumbnail veio — cai no ignorado abaixo */
+            }
+          }
           result.ignored!.push({
             id: fileId,
             reason: `${msg}; frames: ${e2 instanceof Error ? e2.message : String(e2)}`,
