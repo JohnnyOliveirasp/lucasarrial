@@ -23,10 +23,11 @@
 import { getAdmin } from "@/lib/db/admin";
 import { buildAccountContext, ensureChatIdentity } from "@/lib/agent/account";
 import { buildAgentReply, type AgentImage } from "@/lib/agent/brain";
-import { fetchMediaBytes } from "@/lib/agent/provider";
+import { fetchMediaBytes, sendAgentText } from "@/lib/agent/provider";
 import { sendHumanized } from "@/lib/agent/humanize";
 import { abrirChamadoDaEscalacao, extractEscalation, notifyTeamEscalation } from "@/lib/agent/escalate";
 import { guardarPrintBytes } from "@/lib/support/prints";
+import { ehGrupoDoTime } from "@/lib/support/grupo";
 import { shouldAnswerUnprompted } from "@/lib/agent/classify";
 import { winbackContext, applyWinbackMarkers } from "@/lib/winback/conversation";
 import { WINBACK_MAX_PARTS } from "@/lib/winback/script";
@@ -275,6 +276,7 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
 
     const reply = await buildAgentReply(history, {
       group: msg.chat.kind === "group",
+      teamGroup: ehGrupoDoTime(msg.chat.wa_jid),
       unprompted,
       account,
       image,
@@ -328,7 +330,7 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
         const guardada = await guardarPrintBytes(Buffer.from(image.data, "base64"), image.mediaType, key);
         if (guardada) anexos.push(guardada);
       }
-      await abrirChamadoDaEscalacao({
+      const numero = await abrirChamadoDaEscalacao({
         chat: msg.chat,
         senderJid: msg.senderJid,
         reason,
@@ -336,6 +338,20 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
         lastUserText,
         attachments: anexos,
       });
+      // No grupo INTERNO quem marcou é colega, não aluno: "já já te respondem
+      // aqui" é frase pra quem comprou. O que o time precisa saber é que virou
+      // chamado E qual o número — é por ele que se fala do caso depois.
+      if (numero != null && ehGrupoDoTime(msg.chat.wa_jid)) {
+        try {
+          await sendAgentText(
+            msg.chat.wa_jid,
+            `📌 Abri o *chamado #${numero}* pro Frank investigar${anexos.length ? " (com a imagem)" : ""}.`,
+            { replyTo: msg.replyToId },
+          );
+        } catch (e) {
+          console.error("[agent] confirmação do chamado não saiu:", e instanceof Error ? e.message : e);
+        }
+      }
     }
   } catch (e) {
     console.error("[agent] resposta falhou:", e instanceof Error ? e.message : e);

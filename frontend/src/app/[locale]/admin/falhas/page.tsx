@@ -8,6 +8,9 @@ import { CAUSE_LABELS, KIND_LABELS, type IncidentCause } from "@/lib/incidents/c
 type AgentNote = { at: string; by: string; note: string };
 type Incident = {
   id: string;
+  /** Número curto do chamado (mig 87) — é por ele que as pessoas se referem
+   *  ao caso ("olha o #85"), e não pelo uuid. */
+  numero: number | null;
   kind: string;
   cause: IncidentCause;
   status: "open" | "investigating" | "fixing" | "fixed" | "ignored";
@@ -159,7 +162,12 @@ export default function FalhasPage() {
                     className="grid w-full grid-cols-[1fr_auto] items-center gap-3 bg-[var(--surface-card)] px-4 py-3 text-left transition-colors hover:bg-[var(--surface-elevated)] md:grid-cols-[1fr_150px_130px_120px_70px_24px]"
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-[13px] text-[var(--ink)]">{inc.title}</span>
+                      <span className="block truncate text-[13px] text-[var(--ink)]">
+                        {inc.numero != null && (
+                          <span className="mr-1.5 font-mono text-[11px] text-[var(--mute)]">#{inc.numero}</span>
+                        )}
+                        {inc.title}
+                      </span>
                       <span className="block truncate font-mono text-[10px] text-[var(--ash)]">
                         {KIND_LABELS[inc.kind] ?? inc.kind} · {CAUSE_LABELS[inc.cause] ?? inc.cause}
                         {inc.affected_emails.length > 0 && ` · ${inc.affected_emails.length} usuário(s)`}

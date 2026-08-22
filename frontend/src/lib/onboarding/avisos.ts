@@ -22,6 +22,7 @@
  * SMTP do suporte@ (pelo Resend sairia como "AI Clone Verse" — lição 10/08).
  */
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
+import { gruposDoTime } from "@/lib/support/grupo";
 import { sendAgentText } from "@/lib/agent/provider";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
@@ -31,25 +32,17 @@ const ASSINAR_URL = "https://fastcloner.com/#planos";
 const ASSINATURA = "\n\n— Equipe FastCloner";
 
 /**
- * Onde a Carol avisa a equipe: o GRUPO do WhatsApp do suporte.
+ * Onde a Carol avisa a equipe: o GRUPO do suporte (jid em lib/support/grupo.ts,
+ * um lugar só — já foi cópia em dois arquivos).
  *
  * 22/08 (Johnny): *"tem um grupo de whatsapp, é pra falar no grupo"*. Até aqui
  * isto lia AGENT_TEAM_WHATSAPP — 4 TELEFONES individuais, não o grupo — e
- * ainda mandava o número cru, sem o sufixo do jid. O WAHA recusa `chatId`
- * sem domínio, o `catch` abaixo era vazio e não logava: TODO aviso de erro do
+ * ainda mandava o número cru, sem o sufixo do jid. O WAHA recusa `chatId` sem
+ * domínio, o `catch` abaixo era vazio e não logava: TODO aviso de erro do
  * onboarding falhou em silêncio desde que a régua entrou. Ninguém no grupo
  * soube de nenhuma das 46 linhas que deram erro.
  */
-const GRUPO_SUPORTE = "120363428193217427@g.us"; // "FASTCLONER - Suporte"
-
-function grupoJids(): string[] {
-  return (process.env.ONBOARDING_GRUPO_WHATSAPP || GRUPO_SUPORTE)
-    .split(/[,\s]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    // número puro (formato antigo) ainda vale: vira jid de contato.
-    .map((j) => (j.includes("@") ? j : `${j.replace(/\D/g, "")}@s.whatsapp.net`));
-}
+const grupoJids = gruposDoTime;
 
 async function mandar(to: string, subject: string, text: string): Promise<void> {
   try {

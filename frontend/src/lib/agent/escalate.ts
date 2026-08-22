@@ -142,7 +142,7 @@ export async function abrirChamadoDaEscalacao(args: {
   technical?: boolean;
   /** Prints já guardados no R2 — o chamado nasce COM a imagem. */
   attachments?: string[];
-}): Promise<void> {
+}): Promise<number | null> {
   try {
     const grupo = args.chat.kind === "group";
     const technical = args.technical === true;
@@ -158,7 +158,7 @@ export async function abrirChamadoDaEscalacao(args: {
     const onde = grupo ? "grupo" : "privado";
     const excerpt = (args.lastUserText ?? "").slice(0, 1000);
 
-    await abrirChamadoReportado({
+    return await abrirChamadoReportado({
       signature: `wa-${onde}:${quem}:${assunto}`,
       title: grupo
         ? `Carol (grupo): ${args.reason.slice(0, 90)}`
@@ -174,5 +174,6 @@ export async function abrirChamadoDaEscalacao(args: {
     });
   } catch (e) {
     console.error("[agent/escalate] chamado não abriu:", e instanceof Error ? e.message : e);
+    return null;
   }
 }

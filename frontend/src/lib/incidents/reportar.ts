@@ -30,19 +30,22 @@ export type ChamadoReportado = {
   attachments?: string[];
 };
 
-export async function abrirChamadoReportado(c: ChamadoReportado): Promise<void> {
+/** Devolve o número curto do chamado (#85), que é como as pessoas se referem
+ *  a ele. null se a gravação falhou. */
+export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number | null> {
   const admin = getAdmin();
   const now = new Date().toISOString();
 
   const { data: existingRaw } = await admin
     .from("incidents" as never)
-    .select("id, status, occurrences, affected_emails")
+    .select("id, numero, status, occurrences, affected_emails")
     .eq("signature", c.signature)
     .order("last_seen_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   const existing = existingRaw as unknown as {
     id: string;
+    numero: number | null;
     status: string;
     occurrences: number;
     affected_emails: string[];
@@ -61,22 +64,27 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<void> 
         ...(c.attachments?.length ? { attachment_path: c.attachments.join(",") } : {}),
       } as never)
       .eq("id", existing.id);
-    return;
+    return existing.numero ?? null;
   }
 
-  await admin.from("incidents" as never).insert({
-    kind: "reported",
-    cause: "reported",
-    status: "open",
-    signature: c.signature,
-    title: c.title.slice(0, 120),
-    occurrences: 1,
-    affected_emails: c.affectedEmails ?? [],
-    sample_error: (c.sampleError ?? "").slice(0, 1000) || null,
-    description: c.description,
-    reported_by: c.reportedBy,
-    attachment_path: c.attachments?.length ? c.attachments.join(",") : null,
-    first_seen_at: now,
-    last_seen_at: now,
-  } as never);
+  const { data: criado } = await admin
+    .from("incidents" as never)
+    .insert({
+      kind: "reported",
+      cause: "reported",
+      status: "open",
+      signature: c.signature,
+      title: c.title.slice(0, 120),
+      occurrences: 1,
+      affected_emails: c.affectedEmails ?? [],
+      sample_error: (c.sampleError ?? "").slice(0, 1000) || null,
+      description: c.description,
+      reported_by: c.reportedBy,
+      attachment_path: c.attachments?.length ? c.attachments.join(",") : null,
+      first_seen_at: now,
+      last_seen_at: now,
+    } as never)
+    .select("numero")
+    .maybeSingle();
+  return (criado as unknown as { numero: number | null } | null)?.numero ?? null;
 }
