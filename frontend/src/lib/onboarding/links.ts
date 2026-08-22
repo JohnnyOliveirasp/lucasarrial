@@ -80,6 +80,19 @@ async function linkDiretoWeTransfer(link: string): Promise<{ url: string; filena
   if (!m) throw new Error("link do WeTransfer em formato que não reconheço");
   const [, transferId, recipientId, securityHash] = m;
 
+  // 22/08: a PRÓPRIA URL diz quando vence (t_exp, unix). Medido em 6 linhas da
+  // planilha: o transfer já tinha vencido e a API devolvia 403 "No download
+  // access to this Transfer" — que a gente traduzia como erro genérico de
+  // link, mandando o aluno "conferir se está aberto". Não estava aberto:
+  // estava VENCIDO, e a única saída é ele mandar um link novo.
+  const exp = Number((longo.match(/[?&]t_exp=(\d+)/) || [])[1]);
+  if (exp && Date.now() / 1000 > exp) {
+    throw new Error(
+      `o link do WeTransfer expirou em ${new Date(exp * 1000).toLocaleDateString("pt-BR")} — ` +
+        `os links gratuitos duram poucos dias`,
+    );
+  }
+
   const page = await fetch(longo, { headers: { "User-Agent": UA } });
   if (page.status === 404 || page.status === 410) {
     throw new Error("o link do WeTransfer expirou ou foi apagado");
@@ -104,7 +117,8 @@ async function linkDiretoWeTransfer(link: string): Promise<{ url: string; filena
   });
   if (!r.ok) {
     if (r.status === 403 || r.status === 404 || r.status === 410) {
-      throw new Error("o link do WeTransfer expirou ou foi apagado");
+      // 403 "No download access to this Transfer" = vencido, na prática.
+      throw new Error("o link do WeTransfer expirou — peça ao aluno um link novo");
     }
     throw new Error(`WeTransfer respondeu ${r.status}`);
   }

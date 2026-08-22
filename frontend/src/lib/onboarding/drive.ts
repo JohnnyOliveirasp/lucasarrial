@@ -85,7 +85,14 @@ export async function downloadDriveFile(
     `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}` +
     `&export=download&confirm=t`;
 
-  const res = await fetch(url, { redirect: "follow" });
+  const res = await fetch(url, {
+    redirect: "follow",
+    // 22/08: SEM o header Range o Drive devolve HTML pra arquivo grande, MESMO
+    // com confirm=t — e o código lia isso como "arquivo não está público",
+    // diagnóstico falso que mandava o aluno "liberar" um link já liberado
+    // (caso 527: 8,9GB, público, respondendo 206 com Range e HTML sem ele).
+    headers: { Range: "bytes=0-" },
+  });
   if (!res.ok) {
     throw new Error(`Drive respondeu ${res.status} pro arquivo ${fileId}`);
   }
@@ -141,7 +148,14 @@ export async function downloadDriveFileToPath(
   const url =
     `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}` +
     `&export=download&confirm=t`;
-  const res = await fetch(url, { redirect: "follow" });
+  const res = await fetch(url, {
+    redirect: "follow",
+    // 22/08: SEM o header Range o Drive devolve HTML pra arquivo grande, MESMO
+    // com confirm=t — e o código lia isso como "arquivo não está público",
+    // diagnóstico falso que mandava o aluno "liberar" um link já liberado
+    // (caso 527: 8,9GB, público, respondendo 206 com Range e HTML sem ele).
+    headers: { Range: "bytes=0-" },
+  });
   if (!res.ok || !res.body) {
     throw new Error(`Drive respondeu ${res.status} pro arquivo ${fileId}`);
   }
