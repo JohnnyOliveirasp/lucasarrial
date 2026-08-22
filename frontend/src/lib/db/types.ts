@@ -479,6 +479,8 @@ export type ViralVideoRow = {
   publicado_em: Timestamp | null;
   duracao_seg: number | null;
   thumb_url: string | null;
+  /** Cópia da miniatura no NOSSO R2 (mig 90). A thumb_url do TikTok é assinada e VENCE. */
+  thumb_r2_key: string | null;
   /** mp4 na CDN da rede: EXPIRA. Player e download sob demanda. */
   video_url: string | null;
   hashtags: string[] | null;
