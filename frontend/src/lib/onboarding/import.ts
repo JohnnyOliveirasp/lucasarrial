@@ -30,7 +30,8 @@ import {
   RX_EXT_AUDIO_NUA,
   mensagemCurtoDemais,
 } from "@/lib/voices/regua-audio";
-import { mkdtemp, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
+import { dirTemporario } from "./tmp";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { downloadDriveFile, downloadDriveFileToPath, pickExtension } from "./drive";
@@ -102,7 +103,7 @@ async function importarFramesDoVideo(
   // STREAMING pra disco (A248: 878MB — nada de Buffer gigante na RAM).
   // Sem filtro de content-type: o Drive serve .mp4/.mov como octet-stream;
   // o ffprobe decide — se não for vídeo, a extração lança e vira "ignorado".
-  const dir = await mkdtemp(join(tmpdir(), "onbdl-"));
+  const dir = await dirTemporario("onbdl-");
   let frames: Buffer[];
   try {
     const src = join(dir, "video.bin");
@@ -334,7 +335,12 @@ export async function importTrainingAudios(
   userId: string,
   fileIds: string[],
 ): Promise<AudioImportResult> {
-  const result: ImportResult = { imported: 0, skipped: 0, failed: [] };
+  // `ignored` PRECISA nascer aqui: a linha que empurra não-áudio faz
+  // `result.ignored!.push(...)`, e o `!` só engana o TypeScript — em runtime
+  // dava "Cannot read properties of undefined (reading 'push')" e derrubava o
+  // import inteiro. Justo no caso mais comum: o aluno joga foto e áudio na
+  // MESMA pasta do Drive. Casos reais 22/08: linhas 327 e 328.
+  const result: ImportResult = { imported: 0, skipped: 0, failed: [], ignored: [] };
   if (fileIds.length === 0) {
     return { ...result, voice_id: null, voice_status: null, training: null };
   }

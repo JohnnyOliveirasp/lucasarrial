@@ -58,6 +58,7 @@ import { abrirLink } from "@/lib/onboarding/links";
 import { registrarArquivoLocal } from "@/lib/onboarding/drive";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 import { registrarRun, arquivosDoResultado } from "@/lib/onboarding/registrar-run";
+import { faxinaOrfaos } from "@/lib/onboarding/tmp";
 
 export const maxDuration = 600;
 /** Teto por link externo (zip de fotos + áudios). */
@@ -165,6 +166,14 @@ export async function POST(request: NextRequest) {
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return badRequest("E-mail inválido");
   if (password.length < 6) return badRequest("Senha precisa de 6+ caracteres");
+
+  // 22/08: o `finally` que apaga o diretório de download NÃO roda quando o
+  // processo morre no meio — e o deploy (pm2 restart) faz exatamente isso. Seis
+  // pastas órfãs somando ~3GB deixaram o /tmp do Hetzner em 100%, e a linha 359
+  // morreu com ENOSPC. Nesse estado nada que precise de /tmp funciona, nem o
+  // onboarding nem o resto. Faxina antes de começar; só mexe no que tem nosso
+  // prefixo e mais de 30min (nenhum import passa dos 6min do Apps Script).
+  await faxinaOrfaos().catch(() => 0);
 
   const admin = getAdmin();
 
