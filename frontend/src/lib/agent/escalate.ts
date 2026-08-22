@@ -140,6 +140,8 @@ export async function abrirChamadoDaEscalacao(args: {
   reason: string;
   lastUserText: string | null;
   technical?: boolean;
+  /** Prints já guardados no R2 — o chamado nasce COM a imagem. */
+  attachments?: string[];
 }): Promise<void> {
   try {
     const grupo = args.chat.kind === "group";
@@ -168,6 +170,7 @@ export async function abrirChamadoDaEscalacao(args: {
           `Resumo dela: ${args.reason}`,
       reportedBy: grupo ? "carol-grupo" : "carol-zap",
       sampleError: excerpt,
+      attachments: args.attachments,
     });
   } catch (e) {
     console.error("[agent/escalate] chamado não abriu:", e instanceof Error ? e.message : e);

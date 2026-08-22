@@ -12,8 +12,7 @@
  * ⚠️ Só IMAGEM e só até o teto: a caixa do suporte não é canal de arquivo
  * (um anexo de 33MB já travou a Fast por 2 dias — ver mail-imap.ts).
  */
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { r2, R2_BUCKETS } from "@/lib/r2/client";
+import { guardarPrintBytes } from "@/lib/support/prints";
 
 /** Teto por imagem. Print de celular dá 200KB-2MB; 8MB é folga. */
 const MAX_IMAGEM_BYTES = 8 * 1024 * 1024;
@@ -72,15 +71,8 @@ export async function guardarPrints(
     const chaves: string[] = [];
     for (const [i, img] of imagens.entries()) {
       const key = `suporte/prints/${ctx.uid}-${i}-${img.nome}`;
-      await r2.send(
-        new PutObjectCommand({
-          Bucket: R2_BUCKETS.generations,
-          Key: key,
-          Body: img.bytes,
-          ContentType: img.tipo,
-        }),
-      );
-      chaves.push(key);
+      const guardada = await guardarPrintBytes(img.bytes, img.tipo, key);
+      if (guardada) chaves.push(guardada);
     }
     if (chaves.length) {
       console.log(`[agent/mail] ${chaves.length} print(s) guardado(s) de=${ctx.fromEmail} uid=${ctx.uid}`);

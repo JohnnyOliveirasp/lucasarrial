@@ -26,6 +26,7 @@ import { buildAgentReply, type AgentImage } from "@/lib/agent/brain";
 import { fetchMediaBytes } from "@/lib/agent/provider";
 import { sendHumanized } from "@/lib/agent/humanize";
 import { abrirChamadoDaEscalacao, extractEscalation, notifyTeamEscalation } from "@/lib/agent/escalate";
+import { guardarPrintBytes } from "@/lib/support/prints";
 import { shouldAnswerUnprompted } from "@/lib/agent/classify";
 import { winbackContext, applyWinbackMarkers } from "@/lib/winback/conversation";
 import { WINBACK_MAX_PARTS } from "@/lib/winback/script";
@@ -317,12 +318,23 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
       await pauseChatForHuman(msg.chat.id);
       const lastUserText = history[history.length - 1]?.content ?? msg.content;
       await notifyTeamEscalation({ chat: msg.chat, reason, technical, lastUserText });
+      // A foto que a pessoa mandou vai JUNTO no chamado. Sem isso o Frank lê
+      // "olha esse erro aqui" e não tem o print — o mesmo buraco que o e-mail
+      // já tinha fechado (caso Claudia, 14/08). Só a imagem desta mensagem: se
+      // mandaram várias, a última é a que motivou a escalação.
+      const anexos: string[] = [];
+      if (image) {
+        const key = `suporte/prints/zap-${msg.chat.id}-${msg.messageId}.${image.mediaType.split("/")[1] || "jpg"}`;
+        const guardada = await guardarPrintBytes(Buffer.from(image.data, "base64"), image.mediaType, key);
+        if (guardada) anexos.push(guardada);
+      }
       await abrirChamadoDaEscalacao({
         chat: msg.chat,
         senderJid: msg.senderJid,
         reason,
         technical,
         lastUserText,
+        attachments: anexos,
       });
     }
   } catch (e) {
