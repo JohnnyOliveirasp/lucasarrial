@@ -10,6 +10,7 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { r2, imagesBucket } from "@/lib/r2/client";
 import { buildImageResultKey } from "@/lib/r2/presigned";
 import { getAdmin } from "@/lib/db/admin";
+import { decidirFalhaSemClaim } from "@/lib/images/estorno-orfao";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 
 const CONTENT_TYPE_BY_EXT: Record<string, string> = {
@@ -88,7 +89,15 @@ export async function failImageGeneration(id: string, message: string): Promise<
     .in("status", ["pending", "generating"])
     .select("id, user_id");
   const row = (claimed ?? [])[0] as { id: string; user_id: string } | undefined;
-  if (!row) return; // já finalizada por outra via
+  if (!row) {
+    // Claim vazio tem DOIS motivos, e o antigo "return" cego tratava os dois
+    // igual (incidente 1970fcaa): row já finalizada por outra via (ok, nada a
+    // fazer) OU row APAGADA pelo aluno com a geração em voo — o DELETE do
+    // histórico hard-deleta e o débito ficava pendurado sem estorno, em
+    // silêncio. Separa os casos e estorna o órfão.
+    await estornarFalhaOrfa(id, message);
+    return;
+  }
 
   await handleTechFailure({
     feature: "Gerador de Imagem (Kie)",
@@ -98,4 +107,49 @@ export async function failImageGeneration(id: string, message: string): Promise<
     debitRefType: "image_generation",
     refundRefType: "image_refund",
   });
+}
+
+/**
+ * Falha reportada pra uma geração que ninguém conseguiu reivindicar: decide
+ * (decidirFalhaSemClaim) e, se a row sumiu com débito no extrato, estorna por
+ * ref_id via handleTechFailure — o mesmo caminho de sempre, cuja idempotência
+ * por contagem (débitos > estornos) garante que rodar isto duas vezes (corrida
+ * webhook × poll na row já apagada) devolve UMA vez só. Best-effort: nunca
+ * lança pro chamador.
+ */
+async function estornarFalhaOrfa(id: string, message: string): Promise<void> {
+  try {
+    const admin = getAdmin();
+    const { data: still } = await admin
+      .from("image_generations")
+      .select("id")
+      .eq("id", id)
+      .maybeSingle();
+    // Sem row não há como saber o dono: o débito original no extrato diz.
+    const { data: debits } = await admin
+      .from("credit_transactions")
+      .select("user_id")
+      .eq("ref_type", "image_generation")
+      .eq("ref_id", id)
+      .lt("amount", 0)
+      .limit(1);
+    const debitUserId = (debits as { user_id: string }[] | null)?.[0]?.user_id;
+
+    const destino = decidirFalhaSemClaim({
+      rowAindaExiste: !!still,
+      houveDebito: !!debitUserId,
+    });
+    if (destino !== "estornar_orfao" || !debitUserId) return;
+
+    await handleTechFailure({
+      feature: "Gerador de Imagem (Kie)",
+      userId: debitUserId,
+      refId: id,
+      rawError: `[geração apagada do histórico ainda em voo — estorno órfão] ${message}`,
+      debitRefType: "image_generation",
+      refundRefType: "image_refund",
+    });
+  } catch {
+    // contingência é best-effort: nunca propaga erro pro fluxo principal
+  }
 }

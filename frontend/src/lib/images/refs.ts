@@ -29,18 +29,16 @@ import {
 import { imagesBucket, r2 } from "@/lib/r2/client";
 import { objectExists } from "@/lib/r2/exists";
 import { createPresignedGet } from "@/lib/r2/presigned";
+import { ehReferenciaSalva, refsPrefix } from "@/lib/images/refs-pure";
 import type { getAdmin } from "@/lib/db/admin";
 
 /** O cliente admin do Supabase, sem arrastar os types gerados pra cá. */
 type SupabaseLike = ReturnType<typeof getAdmin>;
 
-export function refsPrefix(userId: string): string {
-  return `${userId}/refs/`;
-}
-
-export function ehReferenciaSalva(userId: string, key: string): boolean {
-  return key.startsWith(refsPrefix(userId));
-}
+// A parte pura (prefixo, guarda de refs/, filtro do DELETE em massa) mora em
+// refs-pure.ts — testável com `node --test`. Reexporta pra manter os call
+// sites de sempre.
+export { ehReferenciaSalva, refsPrefix, chavesApagaveisDoHistorico } from "@/lib/images/refs-pure";
 
 /**
  * Copia a foto para `refs/` e devolve a chave da cópia.

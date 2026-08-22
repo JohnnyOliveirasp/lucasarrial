@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { chavesApagaveisDoHistorico } from "@/lib/images/refs-pure";
 import { translatePromptTo } from "@/lib/llm/translate-image-prompt";
 import { imagesBucket } from "@/lib/r2/client";
 import { deleteKeys } from "@/lib/r2/delete";
@@ -134,16 +135,12 @@ export async function DELETE(request: NextRequest) {
   if (found.length === 0) return jsonOk({ deleted: 0 });
 
   try {
-    const keys = found
-      .flatMap((r) => [
-        // todas as refs (array novo) + a legada singular + o resultado + vídeo
-        ...(r.input_image_paths ?? []),
-        r.input_image_path,
-        r.image_path,
-        r.video_path,
-      ])
-      .filter((k): k is string => !!k);
-    if (keys.length) await deleteKeys(imagesBucket(), [...new Set(keys)]);
+    // Resultado + vídeo + inputs de staging, NUNCA `{user}/refs/` (incidente
+    // 1970fcaa 22/08: as gerações gravam como input a chave adotada em refs/,
+    // compartilhada por outras gerações e pela referência fixa do estúdio —
+    // apagar UMA geração do histórico matava a foto de todas as outras).
+    const keys = chavesApagaveisDoHistorico(auth.user_id, found);
+    if (keys.length) await deleteKeys(imagesBucket(), keys);
   } catch (e) {
     return serverError(e instanceof Error ? `R2: ${e.message}` : "R2 cleanup failed");
   }
