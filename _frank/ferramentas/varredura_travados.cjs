@@ -22,7 +22,11 @@ const ALVOS = [
   ["voices", ["training"], 1.5, "name", "created_at"],
   ["training_jobs", ["queued", "running"], 1.5, null, "created_at"],
   ["generations", ["pending", "processing"], 0.5, null, "created_at"],
-  ["image_generations", ["pending"], 0.5, "name", "created_at"],
+  // `generating` entrou em 22/08 (incidente 69f0aec5): a varredura só olhava
+  // `pending` e por isso ficou 28 dias cega pra 96b2f27a e 6 dias pra 1d9109a3,
+  // ambas presas em `generating`. Mesma lição do b9c5a0d1 — enumerar estado
+  // ruim erra por omissão.
+  ["image_generations", ["pending", "generating"], 0.5, "name", "created_at"],
   ["video_clones", ["pending", "generating"], 1, null, "created_at"],
   ["react_jobs", ["fila", "baixando", "clonando", "montando"], 1, null, "criado_em"],
 ];
