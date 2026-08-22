@@ -25,10 +25,13 @@
  */
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, readdir, stat } from "node:fs/promises";
+import { mkdir, open, readdir, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+
+// Extensão explícita: deixa `node --test` rodar o links.test.ts sem build.
+import { ehPaginaWeb, ehZipDeArquivos } from "./audio-tipo.ts";
 
 export type LinkKind = "drive" | "wetransfer" | "dropbox" | "onedrive" | "direto" | "nao_suportado";
 
@@ -137,10 +140,29 @@ function linkDiretoDropbox(link: string): string {
   return u.toString();
 }
 
-function linkDiretoOneDrive(link: string): string {
-  // 1drv.ms redireciona pra onedrive.live.com/...; trocar /redir por /download
-  // é o contorno documentado. Se já for onedrive.live.com, idem.
-  return link.replace(/\/redir\?/i, "/download?").replace(/\/view\.aspx\?/i, "/download.aspx?");
+export function linkDiretoOneDrive(link: string): string {
+  // 22/08: o replace antigo (/redir → /download) só cobria o formato VELHO de
+  // link. O formato atual (1drv.ms/..., onedrive.live.com/?id=...&cid=...)
+  // passava INTACTO, o fetch trazia a página de LOGIN da Microsoft (HTML de
+  // ~300KB, HTTP 200) e ela era gravada no R2 como .mp3 — o worker não achava
+  // fala e o aluno lia "grave num ambiente silencioso" por um download NOSSO
+  // que falhou (casos reais: marlonwsmuniz e lazevedo, vozes 0e2f5726 e
+  // 3d3c4da8). O caminho que funciona anônimo é a API de shares da própria
+  // Microsoft: o link vira token base64url com prefixo "u!" e /root/content
+  // redireciona pro arquivo (ou responde 4xx legível quando o link é privado —
+  // que o baixarPara transforma em erro, em vez de gravar HTML calado).
+  if (/sharepoint\.com/i.test(link)) {
+    // SharePoint (pessoal/empresa): baixar direto com download=1.
+    const u = new URL(link);
+    u.searchParams.set("download", "1");
+    return u.toString();
+  }
+  const token = Buffer.from(link.trim())
+    .toString("base64")
+    .replace(/=+$/, "")
+    .replace(/\//g, "_")
+    .replace(/\+/g, "-");
+  return `https://api.onedrive.com/v1.0/shares/u!${token}/root/content`;
 }
 
 // ── Download pro disco + unzip ────────────────────────────────────────────
@@ -148,10 +170,33 @@ function linkDiretoOneDrive(link: string): string {
 async function baixarPara(url: string, destino: string, maxBytes: number): Promise<number> {
   const r = await fetch(url, { redirect: "follow", headers: { "User-Agent": UA } });
   if (!r.ok || !r.body) throw new Error(`download respondeu ${r.status}`);
+  // 22/08 (OneDrive): página de login chega com HTTP 200 e content-type
+  // text/html. Isso NUNCA é o arquivo do aluno — falhar aqui, com a verdade,
+  // em vez de gravar HTML no disco com nome de áudio. (O drive.ts já fazia
+  // essa checagem no caminho do Drive; este é o gêmeo dela pro caminho de link.)
+  const ct = (r.headers.get("content-type") || "").toLowerCase();
+  if (ct.startsWith("text/html")) {
+    throw new Error(
+      "não conseguimos baixar seu arquivo a partir desse link — " +
+        "veio uma página da internet (provavelmente pedindo login) no lugar do arquivo",
+    );
+  }
   const len = Number(r.headers.get("content-length") || 0);
   if (len > maxBytes) throw new Error(`arquivo de ${Math.round(len / 1e6)} MB passa do teto de ${Math.round(maxBytes / 1e6)} MB`);
   await pipeline(Readable.fromWeb(r.body as never), createWriteStream(destino));
   return (await stat(destino)).size;
+}
+
+/** Primeiros bytes de um arquivo no disco (pro sniff de conteúdo, sem ler tudo). */
+async function lerInicio(path: string, tamanho = 2048): Promise<Buffer> {
+  const fd = await open(path, "r");
+  try {
+    const buf = Buffer.alloc(tamanho);
+    const { bytesRead } = await fd.read(buf, 0, tamanho, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await fd.close();
+  }
 }
 
 function run(cmd: string, args: string[]): Promise<void> {
@@ -218,10 +263,35 @@ export async function abrirLink(
     await baixarPara(url, destino, maxBytes);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, kind, motivo: msg, dependeDoAluno: /teto|passa do/i.test(msg) };
+    return {
+      ok: false,
+      kind,
+      motivo: msg,
+      dependeDoAluno: /teto|passa do|página da internet|conseguimos baixar/i.test(msg),
+    };
   }
 
-  if (extname(destino).toLowerCase() === ".zip") {
+  // 22/08: página de login também chega MENTINDO no content-type (200 +
+  // octet-stream). Os primeiros bytes não mentem: se o que baixou é HTML,
+  // o download FALHOU — dizer isso, e não deixar o arquivo seguir pra virar
+  // ".mp3" no R2 ou "zip corrompido" na mensagem (as duas culpavam o aluno).
+  const inicioBaixado = await lerInicio(destino);
+  if (ehPaginaWeb(inicioBaixado)) {
+    return {
+      ok: false,
+      kind,
+      motivo:
+        "não conseguimos baixar seu arquivo a partir desse link — " +
+        "veio uma página da internet (provavelmente pedindo login) no lugar do arquivo",
+      dependeDoAluno: true,
+    };
+  }
+
+  // 22/08: quem decide se é pacote é o CONTEÚDO, não a extensão. O link do
+  // fb_teixeira baixou como token sem extensão, o `extname` deu "" e o unzip
+  // não rodou — 18MB de ZIP viraram ".mp3" no R2 e ele foi acusado de gravar
+  // mal. O `Audio IA.ogg` estava lá dentro o tempo todo.
+  if (extname(destino).toLowerCase() === ".zip" || ehZipDeArquivos(inicioBaixado)) {
     const pasta = join(workDir, "unzip");
     await mkdir(pasta, { recursive: true });
     try {

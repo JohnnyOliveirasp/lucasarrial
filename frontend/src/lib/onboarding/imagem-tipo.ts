@@ -21,7 +21,7 @@
 /** Assinaturas de imagem que o sistema aceita. `heic` = precisa converter. */
 export type TipoImagem = { mime: string; ext: string; heic: boolean };
 
-const MARCAS_HEIF = new Set([
+export const MARCAS_HEIF = new Set([
   "heic", "heix", "heim", "heis", "hevc", "hevx", "hevm", "hevs",
   "mif1", "msf1", "avif", "avis",
 ]);
