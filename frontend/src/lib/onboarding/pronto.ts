@@ -36,6 +36,16 @@ export type ProntoStatus = {
   avatares_prontos: number;
   avatares_total: number;
   email_enviado: boolean;
+  /**
+   * 22/08: acabou de vez — não adianta a planilha continuar esperando.
+   * Sem isto, uma linha cuja voz JÁ falhou ficava "Em Andamento" segurando a
+   * fila até bater o prazo de 45min (caso 47, csitya100: voz `failed` às
+   * 15:08, linha presa até ~15:53). O prazo existe pra travamento, não pra
+   * caso já resolvido.
+   */
+  falhou: boolean;
+  /** Por que falhou de vez — vai direto pra nota da planilha. */
+  motivo: string | null;
 };
 
 /** Estado consolidado do onboarding de um usuário (usado também pela planilha). */
@@ -57,7 +67,7 @@ export async function statusOnboarding(admin: Admin, userId: string): Promise<Pr
   // pronta — o que importa é ele TER voz funcionando, não o nome dela.
   const { data: vozes } = await admin
     .from("voices")
-    .select("status, raw_audio_paths, name")
+    .select("status, raw_audio_paths, name, error_message")
     .eq("user_id", userId)
     .order("created_at", { ascending: true });
   const lista_vozes = vozes ?? [];
@@ -105,6 +115,31 @@ export async function statusOnboarding(admin: Admin, userId: string): Promise<Pr
     (houveAvatar ? prontos >= 1 : true) &&
     vozOnboarding?.status === "ready";
 
+  // ── Acabou de vez? Voz que falhou NÃO se recupera sozinha: continuar
+  // esperando é só desperdiçar o prazo da fila. Só vale quando nada está em
+  // andamento (nenhum avatar pendente e nenhuma voz ainda treinando), senão a
+  // gente derruba uma linha que ia dar certo.
+  // Os status da voz são: validating | awaiting_training | ready | failed |
+  // rejected_too_short. "validating" é a única em movimento de verdade.
+  // `awaiting_training` fica de fora de propósito: ela NÃO conta como morta
+  // (o treino ainda pode disparar), mas também não segura a fila pra sempre —
+  // quem cuida desse caso é o prazo de 45min.
+  const vozTreinando = lista_vozes.some((v) => v.status === "validating");
+  const vozMorta =
+    vozOnboarding?.status === "failed" || vozOnboarding?.status === "rejected_too_short";
+
+  const falhou =
+    onboarding && !pronto && pendentes === 0 && !vozTreinando && vozMorta;
+
+  const motivo = !falhou
+    ? null
+    : vozOnboarding?.status === "rejected_too_short"
+      ? "o áudio enviado não chegou aos 20 minutos necessários para treinar a voz"
+      : "o treino da voz falhou" +
+        (vozOnboarding && "error_message" in vozOnboarding && vozOnboarding.error_message
+          ? ": " + String(vozOnboarding.error_message).slice(0, 160)
+          : "");
+
   return {
     onboarding,
     pronto,
@@ -112,6 +147,8 @@ export async function statusOnboarding(admin: Admin, userId: string): Promise<Pr
     avatares_prontos: prontos,
     avatares_total: lista.length,
     email_enviado: Boolean(prof?.onboarding_ready_email_at),
+    falhou,
+    motivo,
   };
 }
 
