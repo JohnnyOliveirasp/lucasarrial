@@ -12,6 +12,7 @@
  * avisa que a equipe confirma; nunca resolve sozinha). "PULAR" = silêncio.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { guardarPrints } from "./mail-anexos";
 import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
@@ -146,55 +147,19 @@ async function openIncidentForSentinela(
    *  19/08 — muda o rótulo, não a existência. */
   technical = true,
 ): Promise<void> {
-  const admin = getAdmin();
-  const signature = `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`;
-  const now = new Date().toISOString();
-  const { data: existingRaw } = await admin
-    .from("incidents" as never)
-    .select("id, status, occurrences, affected_emails")
-    .eq("signature", signature)
-    .order("last_seen_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const existing = existingRaw as unknown as {
-    id: string;
-    status: string;
-    occurrences: number;
-    affected_emails: string[];
-  } | null;
-
-  if (existing) {
-    const reopened = existing.status === "fixed" || existing.status === "ignored";
-    await admin
-      .from("incidents" as never)
-      .update({
-        status: reopened ? "open" : existing.status,
-        occurrences: (existing.occurrences ?? 1) + 1,
-        last_seen_at: now,
-        sample_error: excerpt.slice(0, 1000),
-        description: reason,
-        ...(prints.length ? { attachment_path: prints.join(",") } : {}),
-      } as never)
-      .eq("id", existing.id);
-    return;
-  }
-  await admin.from("incidents" as never).insert({
-    kind: "reported",
-    cause: "reported",
-    status: "open",
-    signature,
+  // O corpo vive em lib/incidents/reportar.ts desde 22/08 — o WhatsApp precisa
+  // do MESMO caminho, e duas cópias é como o zap ficou sem chamado até hoje.
+  await abrirChamadoReportado({
+    signature: `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`,
     title: `Fast (e-mail${technical ? "" : ", atendimento"}): ${reason.slice(0, 90)}`,
-    occurrences: 1,
-    affected_emails: [fromEmail],
-    sample_error: excerpt.slice(0, 1000),
     description: technical
       ? `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`
       : `Pedido de ATENDIMENTO por e-mail ao suporte@ (cobrança, cancelamento, reembolso ou dúvida de conta) — a Fast não resolve isso sozinha e prometeu ao aluno que a equipe verificaria. Resumo dela: ${reason}`,
-    reported_by: "fast",
-    attachment_path: prints.length ? prints.join(",") : null,
-    first_seen_at: now,
-    last_seen_at: now,
-  } as never);
+    reportedBy: "fast",
+    affectedEmails: [fromEmail],
+    sampleError: excerpt,
+    attachments: prints,
+  });
 }
 
 // Pedido Johnny 05/08: cópia oculta SÓ pra ele (antes ia pra admin_emails inteira).

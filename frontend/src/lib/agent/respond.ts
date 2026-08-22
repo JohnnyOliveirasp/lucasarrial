@@ -25,7 +25,7 @@ import { buildAccountContext, ensureChatIdentity } from "@/lib/agent/account";
 import { buildAgentReply, type AgentImage } from "@/lib/agent/brain";
 import { fetchMediaBytes } from "@/lib/agent/provider";
 import { sendHumanized } from "@/lib/agent/humanize";
-import { extractEscalation, notifyTeamEscalation } from "@/lib/agent/escalate";
+import { abrirChamadoDaEscalacao, extractEscalation, notifyTeamEscalation } from "@/lib/agent/escalate";
 import { shouldAnswerUnprompted } from "@/lib/agent/classify";
 import { winbackContext, applyWinbackMarkers } from "@/lib/winback/conversation";
 import { WINBACK_MAX_PARTS } from "@/lib/winback/script";
@@ -309,14 +309,20 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
       .update({ last_message_at: new Date().toISOString() } as never)
       .eq("id", msg.chat.id);
 
-    // Escalou: pausa a IA nesta conversa e avisa a equipe (WhatsApp → e-mail).
+    // Escalou: pausa a IA nesta conversa, avisa a equipe (WhatsApp → e-mail)
+    // e ABRE CHAMADO pro Frank investigar (22/08). Avisar sem abrir chamado
+    // era o que fazia o pedido morrer no grupo: o zap some na rolagem, o
+    // chamado não.
     if (reason) {
       await pauseChatForHuman(msg.chat.id);
-      await notifyTeamEscalation({
+      const lastUserText = history[history.length - 1]?.content ?? msg.content;
+      await notifyTeamEscalation({ chat: msg.chat, reason, technical, lastUserText });
+      await abrirChamadoDaEscalacao({
         chat: msg.chat,
+        senderJid: msg.senderJid,
         reason,
         technical,
-        lastUserText: history[history.length - 1]?.content ?? msg.content,
+        lastUserText,
       });
     }
   } catch (e) {
