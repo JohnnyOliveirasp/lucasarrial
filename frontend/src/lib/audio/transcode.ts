@@ -10,7 +10,6 @@
  *
  * Idempotente: se o MP3 já existe, não reconverte.
  */
-import { spawn } from "node:child_process";
 import {
   GetObjectCommand,
   HeadObjectCommand,
@@ -18,9 +17,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
 import { deleteKeys } from "@/lib/r2/delete";
-
-const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
-const QSCALE = "2"; // 0 (melhor) .. 9 (pior); 2 ≈ 190 kbps VBR
+import { ffmpegWavToMp3 } from "./wav-to-mp3";
 
 /** Deriva a chave .mp3 a partir da .wav. Retorna a mesma chave se não for .wav. */
 export function mp3KeyFromWav(wavKey: string): string {
@@ -34,42 +31,6 @@ async function objectExists(bucket: string, key: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/** WAV buffer -> MP3 buffer via ffmpeg (pipe stdin->stdout, sem arquivo temp). */
-function ffmpegWavToMp3(wav: Buffer): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const args = [
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-y",
-      "-i",
-      "pipe:0",
-      "-codec:a",
-      "libmp3lame",
-      "-qscale:a",
-      QSCALE,
-      "-f",
-      "mp3",
-      "pipe:1",
-    ];
-    const proc = spawn(FFMPEG, args);
-    const out: Buffer[] = [];
-    const err: Buffer[] = [];
-    proc.stdout.on("data", (d: Buffer) => out.push(d));
-    proc.stderr.on("data", (d: Buffer) => err.push(d));
-    proc.on("error", reject);
-    proc.on("close", (code) => {
-      if (code === 0) resolve(Buffer.concat(out));
-      else reject(new Error(`ffmpeg exited ${code}: ${Buffer.concat(err).toString().slice(0, 300)}`));
-    });
-    proc.stdin.on("error", () => {
-      /* EPIPE se o ffmpeg morrer antes — o 'close' já reporta o erro real */
-    });
-    proc.stdin.write(wav);
-    proc.stdin.end();
-  });
 }
 
 /**
