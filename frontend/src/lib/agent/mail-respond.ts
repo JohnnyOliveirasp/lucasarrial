@@ -263,16 +263,27 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   const subject = header(raw, "Subject") || "(sem assunto)";
   const messageId = header(raw, "Message-ID") || null;
 
+  // Texto útil de uma mensagem oversized: o que o aluno ESCREVEU, buscado como
+  // parte MIME sozinha (mail-imap), sem baixar o anexo. Com ele, a Fast responde
+  // a pergunta de verdade em vez do "me reenvia menor" cego — antes disso, o
+  // texto de quem escrevia junto com anexo grande nunca era lido por ninguém
+  // (incidente 531b6529). Sem texto (aluno mandou SÓ o anexo, caso da Adriane)
+  // ou se a extração falhou, o comportamento antigo continua valendo.
+  const textoParcial = mail.oversized ? (mail.textoParcial ?? "").trim() : "";
+
   if (mail.oversized) {
     if (shouldSkip(raw, fromEmail) || !fromEmail.includes("@")) {
       await markSeen(mail.uid); // robô/plataforma com anexo: só destrava a fila
       return "skipped";
     }
-    return responderAnexoGrande(mail, fromEmail, subject, messageId, bcc);
+    if (textoParcial.length < 5) {
+      return responderAnexoGrande(mail, fromEmail, subject, messageId, bcc);
+    }
+    // tem texto de verdade → segue o fluxo normal abaixo, com ele como corpo
   }
 
   const skip = shouldSkip(raw, fromEmail);
-  const text = skip ? "" : mailText(raw);
+  const text = skip ? "" : mail.oversized ? textoParcial.slice(0, BODY_MAX) : mailText(raw);
   if (skip || text.length < 5) {
     await markSeen(mail.uid);
     return "skipped";
@@ -290,6 +301,19 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
       subject,
       corpo: text,
       motivo: `link de arquivo: ${linkArquivo[0].slice(0, 200)}`,
+    });
+  }
+
+  // Oversized com texto: o time também precisa saber que há um anexo esperando
+  // na caixa (mesma razão do responderAnexoGrande — a Fast responde o texto,
+  // mas o anexo em si ninguém abriu).
+  const anexoMb = Math.round((mail.sizeBytes ?? 0) / 1_000_000);
+  if (mail.oversized) {
+    await encaminharParaRevisao({
+      fromEmail,
+      subject,
+      corpo: `(anexo de ${anexoMb} MB não aberto — mensagem original na caixa do suporte@)\n\n--- texto do aluno ---\n${text}`,
+      motivo: `anexo de ${anexoMb} MB (texto lido, anexo não)`,
     });
   }
 
@@ -311,9 +335,17 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   // Sem isto ela atenderia como suporte comum, sem saber do cancelamento.
   const winback = await winbackContextByEmail(fromEmail);
 
+  // A Fast precisa AVISAR o aluno que o anexo não foi aberto — responder o
+  // texto fingindo que viu o anexo criaria a expectativa contrária.
+  const avisoAnexo = mail.oversized
+    ? `ANEXO NÃO ABERTO: este e-mail veio com anexo grande (~${anexoMb} MB) que a caixa do suporte não consegue abrir — você leu APENAS o texto que o aluno escreveu. Deixe claro na resposta que o anexo não pôde ser aberto e, se ele for essencial pra resolver, oriente a fazer upload direto na plataforma ou mandar um link (Google Drive, WeTransfer, YouTube não listado).`
+    : null;
+
   const replyRaw = await buildAgentReply(history, {
     account,
-    systemExtra: [mailSystemExtra(Boolean(account)), winback?.systemExtra].filter(Boolean).join("\n\n"),
+    systemExtra: [mailSystemExtra(Boolean(account)), avisoAnexo, winback?.systemExtra]
+      .filter(Boolean)
+      .join("\n\n"),
   });
   if (replyRaw.trim().toUpperCase() === "PULAR") {
     await markSeen(mail.uid);
@@ -362,7 +394,7 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   }
   await markSeen(mail.uid);
   console.log(
-    `[agent/mail] respondido uid=${mail.uid} para=${fromEmail}${reason ? (technical ? " (INCIDENTE técnico)" : " (INCIDENTE atendimento)") : ""}`,
+    `[agent/mail] respondido uid=${mail.uid} para=${fromEmail}${mail.oversized ? ` (texto parcial, anexo de ${anexoMb}MB não aberto)` : ""}${reason ? (technical ? " (INCIDENTE técnico)" : " (INCIDENTE atendimento)") : ""}`,
   );
   return reason ? "escalated" : "replied";
 }
