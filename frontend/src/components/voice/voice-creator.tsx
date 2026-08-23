@@ -14,7 +14,11 @@ const MIN_DURATION_SECONDS = 20 * 60; // 20 minutos
 const MAX_DURATION_SECONDS = 60 * 60;
 const REC_DURATION_SECONDS = 30 * 60; // 30 minutos
 const MAX_FILES = 20;
-const ACCEPT = ".mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4,.aac,.opus,audio/*";
+// Vídeo entra junto, de propósito — o worker extrai a faixa de áudio.
+// Ver AUDIO_EXT_RE em lib/audio/collect.ts. `.mov` (nativo do iPhone)
+// faltava aqui e no filtro, e era descartado como "não-áudio".
+const ACCEPT =
+  ".mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4,.mov,.aac,.opus,audio/*,video/*";
 
 type LocalFile = {
   id: string;

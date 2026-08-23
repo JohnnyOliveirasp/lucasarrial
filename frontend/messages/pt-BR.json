@@ -129,7 +129,7 @@
       },
       "dropzone": {
         "title": "Arraste arquivos ou uma pasta inteira",
-        "hint": "MP3, WAV, M4A, MP4, AAC, FLAC, OGG · até 20 arquivos · não-áudio é ignorado",
+        "hint": "Áudio ou vídeo — a gente extrai o áudio do vídeo · MP3, WAV, M4A, AAC, FLAC, OGG, MP4, MOV · até 20 arquivos",
         "pickFiles": "Escolher arquivos",
         "pickFolder": "Escolher pasta"
       },
