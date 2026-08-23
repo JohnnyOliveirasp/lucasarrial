@@ -147,3 +147,39 @@ não toquei**): `_frank/prova/lgpd/` (untracked, decisão consciente da rotina d
 
 Investigação desta ronda ficou em `_Bugs/kessuly/` (fora do git, como manda o
 README das ferramentas). Commitei **apenas este arquivo**, por caminho explícito.
+
+---
+
+## 8. ADENDO — o passo fixo de fim de ronda achou conserto preso, não log preso
+
+`git fetch && git log --oneline origin/main..HEAD` saiu **vazio** e o log desta
+ronda está na `main`. Mas a varredura de branches (`git rev-list main..<branch>`)
+achou coisa mais séria que log perdido: **os dois consertos que resolveriam os
+casos mais caros da fila estão em PR aberto, sem review e sem check.**
+
+| PR | o que é | aberto desde | review |
+|---|---|---|---|
+| **#16** `feat/ref-corte-em-palavra` | referência cortada em **fronteira de palavra** via `word_timestamps` | **20/08** (3 dias) | **nenhuma** |
+| **#29** `feat/resgate-voz-failed` | `resgatar_voz` aceitar voz `failed`, refiltrando `raw_audio_paths` + `ffprobe` | **21/08** (2 dias) | **nenhuma** |
+
+**O #16 é a cura do defeito que eu diagnostiquei hoje.** E é pelo caminho que a
+ordem manda: `word_timestamps` do whisper — **não** é a heurística por energia
+reprovada duas vezes. Tem `test_reference_word_snap` 20/20 e `test_coverage_qa`
+38/38, e o segundo commit fecha o buraco de "todas as candidatas descartadas"
+caindo pro corte por tempo de hoje, então **nunca rende menos que o
+comportamento atual**. A descrição do próprio PR diz: **1 em cada 3 vozes novas**
+nasce com a referência decapitada. Isso não é a Kessuly e a Kátia — é **1/3 de
+tudo que entra**, a cada dia que ele fica parado.
+
+**O #29 é o buraco da seção 4 da passagem de 21/08** (card `39028572`): hoje não
+existe como refazer um treino `failed` sem cobrar o aluno. É o que destrava
+**Cláudio** (parado 15/08) e **Marcelo** (parado 10/08).
+
+**Não mergei nenhum dos dois, de propósito.** Os dois mexem no `runpod-worker`
+(pipeline de voz na GPU): **merge na `main` não basta, o worker precisa ser
+redeployado** — "só a main deploya" não vale pro worker. Isso é decisão e deploy
+do Johnny, e mandei a pergunta pra ele no Telegram (`message_id 311`).
+
+Registro a lição: o passo de fim de ronda foi desenhado pra achar **log** preso
+em branch (19/08, 9h). Hoje ele achou **conserto** preso em PR há 3 dias. Vale
+mais como varredura de PR aberto do que de branch órfã.
