@@ -440,6 +440,12 @@ def _handle_train(inp: dict) -> dict:
                 transcribe_fn=lambda p: _transcribe_with_retry(
                     p, whisper_model, language, attempts=2
                 ),
+                # Corte em FRONTEIRA DE PALAVRA (caso Katia): timestamps de
+                # palavra do whisper. Se falhar/vier vazio, o seletor cai
+                # sozinho no corte por tempo de sempre — nunca quebra o treino.
+                transcribe_words_fn=lambda p: _transcribe_words_safe(
+                    p, whisper_model, language
+                ),
                 language=language,
                 log=lambda **k: _log(
                     k.pop("level", "info"), k.pop("event", "train.reference"), **k
@@ -647,6 +653,27 @@ def _transcribe_with_retry(
         except Exception as exc:
             _log("error", "ref.transcribe.error", attempt=i, attempts=attempts, error=str(exc))
     return None
+
+
+def _transcribe_words_safe(
+    wav_path: Path, whisper_model: str, language: str
+) -> "list | None":
+    """Palavras com timestamp (.start/.end/.word) p/ o corte de referência em
+    fronteira de palavra. NUNCA levanta: qualquer erro vira None e o seletor
+    cai no corte por tempo de hoje (a melhoria não pode quebrar o treino)."""
+    from voice_pipeline import transcribe_words
+
+    try:
+        words = transcribe_words(
+            str(wav_path),
+            model_name=whisper_model,
+            language=language,
+            log=lambda m: _log("info", "ref.whisper.words", detail=m),
+        )
+        return words or None
+    except Exception as exc:
+        _log("error", "ref.words.error", error=str(exc))
+        return None
 
 
 # Aspas (retas + tipograficas + guillemets) que aparecem no FIM de um trecho e
