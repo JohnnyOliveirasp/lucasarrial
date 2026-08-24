@@ -140,7 +140,9 @@ async function duracao(url) {
     new ListObjectsV2Command({ Bucket: B_VOICES, Prefix: `${voz.user_id}/${voz.id}/` }),
   );
   const chaves = (lista.Contents ?? [])
-    .filter((o) => o.Size > 10000 && /\.(mp3|wav|m4a|aac|ogg|webm|mp4|flac)$/i.test(o.Key))
+    // ⚠️ 24/08: o prefixo da voz também contém ref/auto.wav e sample — a Kessuly
+    // foi retreinada com a própria referência de 30s dentro do "áudio bruto".
+    .filter((o) => o.Size > 10000 && /\/raw\/[^/]+\.(mp3|wav|m4a|aac|ogg|webm|mp4|flac)$/i.test(o.Key))
     .map((o) => o.Key)
     .sort();
   if (chaves.length === 0) throw new Error("nenhum áudio no R2");
