@@ -28,6 +28,7 @@ import { sendHumanized } from "@/lib/agent/humanize";
 import { abrirChamadoDaEscalacao, extractEscalation, notifyTeamEscalation } from "@/lib/agent/escalate";
 import { guardarPrintBytes } from "@/lib/support/prints";
 import { ehGrupoDoTime } from "@/lib/support/grupo";
+import { reabrirPorRespostaDoAluno } from "@/lib/incidents/espera";
 import { shouldAnswerUnprompted } from "@/lib/agent/classify";
 import { winbackContext, applyWinbackMarkers } from "@/lib/winback/conversation";
 import { WINBACK_MAX_PARTS } from "@/lib/winback/script";
@@ -194,6 +195,14 @@ async function prepareImage(msg: IngestedMessage): Promise<AgentImage | null> {
 export async function maybeRespond(msg: IngestedMessage): Promise<void> {
   try {
     if (msg.fromMe) return;
+    // O aluno falou: se havia chamado esperando por ele, volta pra fila AGORA
+    // — antes de qualquer guard que possa nos fazer sair sem responder (chat
+    // em modo humano, agente desligada). A resposta dele não pode cair no
+    // vazio de novo (chamado #95).
+    void reabrirPorRespostaDoAluno({
+      telefone: msg.chat.wa_phone ?? null,
+      trecho: msg.content ?? null,
+    });
     if (msg.chat.mode !== "auto") return;
     if (!(await agentEnabled())) return; // botão geral "Desligada"
     // Grupo marcada/respondida: responde sempre. Sem menção: fluxo F6

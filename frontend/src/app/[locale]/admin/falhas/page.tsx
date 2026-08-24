@@ -13,7 +13,7 @@ type Incident = {
   numero: number | null;
   kind: string;
   cause: IncidentCause;
-  status: "open" | "investigating" | "fixing" | "fixed" | "ignored";
+  status: "open" | "investigating" | "fixing" | "aguardando_aluno" | "fixed" | "ignored";
   title: string;
   occurrences: number;
   affected_emails: string[];
@@ -33,12 +33,18 @@ const STATUS_META: Record<Incident["status"], { label: string; cls: string }> = 
   open: { label: "Aberto", cls: "text-[var(--status-error)]" },
   investigating: { label: "Investigando (agente)", cls: "text-amber-400" },
   fixing: { label: "Corrigindo", cls: "text-amber-400" },
+  // A bola está com o ALUNO. Regra do Johnny (24/08): "se já mandou pro aluno
+  // e está esperando resposta dele, não é mais caso aberto". Sai dos Ativos,
+  // mas NÃO vira "corrigido" — não foi resolvido, está em espera. Volta
+  // sozinho pra "Aberto" quando o aluno responder (lib/incidents/espera.ts).
+  aguardando_aluno: { label: "Aguardando o aluno", cls: "text-sky-400" },
   fixed: { label: "Corrigido", cls: "text-[var(--status-online)]" },
   ignored: { label: "Ignorado", cls: "text-[var(--ash)]" },
 };
 
 const FILTERS = [
   { key: "active", label: "Ativos" },
+  { key: "aguardando_aluno", label: "Aguardando o aluno" },
   { key: "fixed", label: "Corrigidos" },
   { key: "all", label: "Todos" },
 ] as const;
@@ -80,7 +86,11 @@ export default function FalhasPage() {
   }
 
   const shown = useMemo(() => {
-    if (filter === "active") return incidents.filter((i) => i.status !== "fixed" && i.status !== "ignored");
+    if (filter === "active")
+      return incidents.filter(
+        (i) => i.status !== "fixed" && i.status !== "ignored" && i.status !== "aguardando_aluno",
+      );
+    if (filter === "aguardando_aluno") return incidents.filter((i) => i.status === "aguardando_aluno");
     if (filter === "fixed") return incidents.filter((i) => i.status === "fixed");
     return incidents;
   }, [incidents, filter]);

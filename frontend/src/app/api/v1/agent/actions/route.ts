@@ -21,7 +21,7 @@ import { logger } from "@/lib/logger/server";
 export const dynamic = "force-dynamic";
 
 const ADMIN_NOTIFY_EMAIL = "johnny.oliveirasp@gmail.com";
-const VALID_STATUS = new Set(["open", "investigating", "fixing", "fixed", "ignored"]);
+const VALID_STATUS = new Set(["open", "investigating", "fixing", "aguardando_aluno", "fixed", "ignored"]);
 
 /** Grupo interno da equipe (o mesmo do `_frank/ferramentas/avisar_grupo.cjs`). */
 const TEAM_GROUP_JID = process.env.AGENT_TEAM_GROUP_JID || "120363428193217427@g.us";

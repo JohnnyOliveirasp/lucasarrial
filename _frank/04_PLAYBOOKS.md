@@ -115,6 +115,32 @@ Sintomas: aluno com fotos e sem voz, ou avatares que falharam.
 
 ---
 
+## I2. Quando o chamado fica "Aguardando o aluno" (status novo, 24/08)
+
+Regra do Johnny: *"se já mandou para o aluno e está esperando resposta dele,
+não é mais caso aberto"*. Chamado ABERTO tem que significar **trabalho NOSSO
+pendente** — senão o quadro mente sobre o tamanho da fila.
+
+**Use `aguardando_aluno` quando** a bola está com ele e não há nada que a gente
+possa fazer até responder: pedimos o link novo, pedimos o material, pedimos que
+teste e diga se resolveu, pedimos autorização.
+
+**NÃO use quando** a promessa é nossa. E cuidado, porque é o caso mais comum:
+"a Fast prometeu que a equipe verificaria", "o aluno aguarda há 6 dias resposta
+nossa", "aluno relatou bug e ninguém analisou", "quer assinar e ninguém
+respondeu". Isso é fila NOSSA — fechar como espera é esconder o atraso.
+> Medido em 24/08: dos 13 chamados abertos, **nenhum** era espera de aluno.
+> Todos eram promessa nossa. A regra é certa; o que ela revela é que a fila é
+> nossa mesmo.
+
+**Não é "corrigido".** Sai dos *Ativos* e ganha aba própria no /admin > Falhas.
+
+**A volta é automática.** Quando o aluno responder — por e-mail ou WhatsApp —
+o chamado volta pra *Aberto* sozinho, com uma nota do que ele disse
+(`lib/incidents/espera.ts`). Isso é o que torna a regra segura: sem o retorno,
+ela viraria o defeito do chamado #95 — caso fechado às 20:40 com "aguardando
+ele dizer o que quer", aluno respondeu às 22:57 e a resposta caiu no vazio.
+
 ## J. Como mandar e-mail pro aluno
 
 ```bash

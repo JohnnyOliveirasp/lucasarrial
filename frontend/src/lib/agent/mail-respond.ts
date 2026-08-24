@@ -13,6 +13,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
+import { reabrirPorRespostaDoAluno } from "@/lib/incidents/espera";
 import { guardarPrints } from "./mail-anexos";
 import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
@@ -277,6 +278,12 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     await markSeen(mail.uid);
     return "skipped";
   }
+
+  // O aluno respondeu: traz de volta o que estava "aguardando o aluno".
+  // Vem ANTES de gerar a resposta — se a Fast resolver sozinha, o time ainda
+  // precisa ver que ele voltou a falar (foi assim que a resposta do Luciano
+  // caiu no vazio 2h17 depois do fechamento, chamado #95).
+  void reabrirPorRespostaDoAluno({ email: fromEmail, trecho: text });
 
   // Link de arquivo (Drive & cia): a Fast não abre, o time abre. Encaminha o
   // e-mail inteiro pra quem vai olhar — ela ainda responde o aluno dizendo que
