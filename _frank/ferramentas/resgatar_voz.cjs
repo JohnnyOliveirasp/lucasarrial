@@ -8,6 +8,11 @@ if (process.argv.includes("--teste")) {
 }
 /**
  * 18/08 — RESGATE de voz parada em "uploading" com áudio JÁ no R2.
+ * 24/08 — + resgate de voz em "failed" (treino que falhou por culpa NOSSA):
+ *          a fonte vira raw_audio_paths REFILTRADO pra só arquivo de áudio de
+ *          verdade (o onboarding pode ter varrido o Drive e mandado jpeg/mp4/
+ *          pdf como se fosse áudio — caso Claudio 8aca0126). Reescrito em cima
+ *          da main (o 1340f5c da branch stale é só referência).
  * Réplica do POST /api/v1/voices/[id]/start-training (mesma receita:
  * max_steps 500, webhook de produção, timeout por duração) + o passo que
  * faltou (uploads-complete: raw_audio_paths/duration/status).
@@ -46,6 +51,19 @@ const SITE = "https://fastcloner.com"; // webhook de PRODUÇÃO (local é localh
 const TRAIN_EXPIRES = 2 * 60 * 60;
 const MAX_STEPS = 500;
 const CUSTO_TREINO = 10000;
+
+/** Modo "failed": só extensão que É áudio. De propósito MAIS ESTRITO que o
+ *  filtro do modo uploading (que aceita webm/mp4 porque gravador de celular
+ *  salva AAC em .mp4): no failed a lista veio de varredura cega do Drive,
+ *  então vídeo NÃO é prova da voz do aluno. Se um dia um mp4 for áudio
+ *  legítimo, a decisão de incluir é humana, não do filtro. */
+const EXT_AUDIO = /\.(mp3|m4a|wav|aac|ogg|flac)$/i;
+/** Espelha o mínimo de fala útil do runpod-worker (10 min). Abaixo disso a
+ *  reprovação do worker é matemática — nem adianta disparar. */
+const MIN_WORKER = 10 * 60;
+/** Porta de upload da produção (20 min BRUTOS). Entre 10 e 20 min o worker
+ *  ainda pode aprovar (ele mede fala útil) — então no failed só avisa. */
+const MIN_UPLOAD = 20 * 60;
 
 const supa = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -121,11 +139,14 @@ async function duracao(url) {
 (async () => {
   const { data: voz } = await supa
     .from("voices")
-    .select("id, user_id, name, status")
+    .select("id, user_id, name, status, raw_audio_paths")
     .eq("id", VOICE_ID)
     .maybeSingle();
   if (!voz) throw new Error("voz não encontrada");
-  if (voz.status !== "uploading") throw new Error(`status é '${voz.status}', não 'uploading'`);
+  if (voz.status !== "uploading" && voz.status !== "failed") {
+    throw new Error(`status é '${voz.status}', não 'uploading' nem 'failed'`);
+  }
+  const MODO = voz.status; // "uploading" | "failed"
 
   const { data: perfil } = await supa
     .from("profiles")
@@ -133,36 +154,85 @@ async function duracao(url) {
     .eq("id", voz.user_id)
     .maybeSingle();
   const saldo = (perfil?.credits_subscription ?? 0) + (perfil?.credits_extra ?? 0);
-  console.log(`voz "${voz.name}" de ${perfil?.email} · saldo ${saldo} (não será cobrado)`);
+  console.log(`voz "${voz.name}" (${MODO}) de ${perfil?.email} · saldo ${saldo} (não será cobrado)`);
 
-  // 1. Os áudios que estão no R2 (ordem = a mesma do upload, pelo prefixo NNN_)
-  const lista = await r2.send(
-    new ListObjectsV2Command({ Bucket: B_VOICES, Prefix: `${voz.user_id}/${voz.id}/` }),
-  );
-  const chaves = (lista.Contents ?? [])
-    // ⚠️ 24/08: o prefixo da voz também contém ref/auto.wav e sample — a Kessuly
-    // foi retreinada com a própria referência de 30s dentro do "áudio bruto".
-    .filter((o) => o.Size > 10000 && /\/raw\/[^/]+\.(mp3|wav|m4a|aac|ogg|webm|mp4|flac)$/i.test(o.Key))
-    .map((o) => o.Key)
-    .sort();
-  if (chaves.length === 0) throw new Error("nenhum áudio no R2");
+  // 1. A lista de áudios pro treino — a FONTE muda com o modo.
+  let chaves;
+  if (MODO === "uploading") {
+    // Upload nunca completou: raw_audio_paths está vazio, a fonte é o que
+    // chegou no R2 (ordem = a mesma do upload, pelo prefixo NNN_).
+    const lista = await r2.send(
+      new ListObjectsV2Command({ Bucket: B_VOICES, Prefix: `${voz.user_id}/${voz.id}/` }),
+    );
+    chaves = (lista.Contents ?? [])
+      // ⚠️ 24/08: o prefixo da voz também contém ref/auto.wav e sample — a Kessuly
+      // foi retreinada com a própria referência de 30s dentro do "áudio bruto".
+      .filter((o) => o.Size > 10000 && /\/raw\/[^/]+\.(mp3|wav|m4a|aac|ogg|webm|mp4|flac)$/i.test(o.Key))
+      .map((o) => o.Key)
+      .sort();
+    if (chaves.length === 0) throw new Error("nenhum áudio no R2");
+  } else {
+    // Treinou e FALHOU: a fonte é raw_audio_paths (o que a produção usaria),
+    // refiltrada pra só áudio — o onboarding pode ter mandado jpeg/mp4/pdf.
+    const brutos = Array.isArray(voz.raw_audio_paths) ? voz.raw_audio_paths : [];
+    if (brutos.length === 0) {
+      throw new Error("raw_audio_paths vazio — no modo failed a fonte é essa lista; confira a voz");
+    }
+    const mantidos = [];
+    const descartados = [];
+    for (const k of brutos) (EXT_AUDIO.test(k) ? mantidos : descartados).push(k);
+    console.log(`raw_audio_paths: ${brutos.length} arquivo(s) → ${mantidos.length} de áudio, ${descartados.length} descartado(s)`);
+    for (const k of descartados) console.log(`  ✗ descartado (extensão não é áudio): ${path_.basename(k)}`);
+    if (mantidos.length === 0) {
+      throw new Error("ZERO arquivos de áudio depois do filtro — não há o que treinar; o aluno precisa enviar áudio de verdade");
+    }
+    chaves = mantidos;
+  }
 
+  // Duração arquivo a arquivo (ffprobe LOCAL — ver duracao()). No modo failed,
+  // arquivo que mede 0 (não abre / não é áudio de verdade) também é descartado.
   const urls = [];
+  const validas = [];
   let total = 0;
   for (const k of chaves) {
     const u = await getUrl(B_VOICES, k);
+    const d = await duracao(u);
+    if (MODO === "failed") {
+      if (d === 0) {
+        console.log(`  ✗ descartado (duração 0 — não abre ou não é áudio): ${path_.basename(k)}`);
+        continue;
+      }
+      console.log(`  ✓ mantido: ${path_.basename(k)} (${(d / 60).toFixed(1)} min)`);
+      validas.push(k);
+    }
     urls.push(u);
-    total += await duracao(u);
+    total += d;
+  }
+  if (MODO === "failed") {
+    chaves = validas;
+    if (chaves.length === 0) {
+      throw new Error("ZERO arquivos de áudio válidos depois do ffprobe — não há o que treinar");
+    }
   }
   console.log(`${chaves.length} áudio(s), ${(total / 60).toFixed(1)} min no total`);
-  if (total < 20 * 60) throw new Error(`só ${(total / 60).toFixed(1)} min — mínimo 20`);
+  if (MODO === "uploading") {
+    if (total < MIN_UPLOAD) throw new Error(`só ${(total / 60).toFixed(1)} min — mínimo 20`);
+  } else {
+    if (total < MIN_WORKER) {
+      throw new Error(`só ${(total / 60).toFixed(1)} min — o worker exige ${MIN_WORKER / 60} min de fala ÚTIL, reprovação é matemática`);
+    }
+    if (total < MIN_UPLOAD) {
+      console.log(`⚠️ ${(total / 60).toFixed(1)} min brutos < porta de upload (${MIN_UPLOAD / 60} min) — o worker mede fala útil e pode reprovar; decisão é sua`);
+    }
+  }
 
   if (!CONFIRMAR) {
     console.log("\n(simulação — nada foi alterado. rode com --confirmar pra executar)");
     return;
   }
 
-  // 2. O passo que faltou (uploads-complete)
+  // 2. uploads-complete (uploading: o passo que faltou; failed: persiste a
+  //    lista REFILTRADA — senão a produção e o worker seguem vendo jpeg/mp4/pdf)
   const { error: e1 } = await supa
     .from("voices")
     .update({
