@@ -292,19 +292,45 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     return bounce.tipo === "falha" && bounce.alunos.length > 0 ? "bounce" : "skipped";
   }
 
+  let text: string;
+  let anexoNaoBaixadoMb = 0; // >0 = oversized cujo TEXTO foi lido (anexo não)
+
   if (mail.oversized) {
     if (shouldSkip(raw, fromEmail) || !fromEmail.includes("@")) {
       await markSeen(mail.uid); // robô/plataforma com anexo: só destrava a fila
       return "skipped";
     }
-    return responderAnexoGrande(mail, fromEmail, subject, messageId, bcc);
-  }
-
-  const skip = shouldSkip(raw, fromEmail);
-  const text = skip ? "" : mailText(raw);
-  if (skip || text.length < 5) {
-    await markSeen(mail.uid);
-    return "skipped";
+    // Mensagem grande é grande POR CAUSA DO ANEXO: quando o mail-imap conseguiu
+    // buscar a parte MIME de texto sozinha (BODY.PEEK[n]), a Fast LÊ o que o
+    // aluno escreveu e responde de verdade — antes ela mandava o genérico
+    // "reenvia menor" sem ninguém NUNCA ter lido a mensagem (incidente
+    // 531b6529: 4 alunos escreveram texto real que foi descartado, uma aluna
+    // ficou 62h sem resposta útil).
+    const textoParte = mail.bodyText
+      ? (mail.bodyTextHtml ? stripHtml(mail.bodyText) : mail.bodyText.replace(/\s+/g, " ").trim()).slice(0, BODY_MAX)
+      : "";
+    if (textoParte.length < 5) {
+      // Sem parte de texto aproveitável (ex.: aluno mandou SÓ o anexo, caso
+      // Adriane) → o caminho antigo continua valendo, intacto.
+      return responderAnexoGrande(mail, fromEmail, subject, messageId, bcc);
+    }
+    text = textoParte;
+    anexoNaoBaixadoMb = Math.max(1, Math.round((mail.sizeBytes ?? 0) / 1_000_000));
+    // O anexo continua na caixa sem ninguém abrir — o time precisa saber que
+    // existe material esperando (mesma garantia do responderAnexoGrande).
+    await encaminharParaRevisao({
+      fromEmail,
+      subject,
+      corpo: text,
+      motivo: `anexo de ${anexoNaoBaixadoMb} MB não baixado — a Fast leu e respondeu só o texto`,
+    });
+  } else {
+    const skip = shouldSkip(raw, fromEmail);
+    text = skip ? "" : mailText(raw);
+    if (skip || text.length < 5) {
+      await markSeen(mail.uid);
+      return "skipped";
+    }
   }
 
   // O aluno respondeu: traz de volta o que estava "aguardando o aluno".
@@ -348,7 +374,15 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
 
   const replyRaw = await buildAgentReply(history, {
     account,
-    systemExtra: [mailSystemExtra(Boolean(account)), winback?.systemExtra].filter(Boolean).join("\n\n"),
+    systemExtra: [
+      mailSystemExtra(Boolean(account)),
+      anexoNaoBaixadoMb
+        ? `ANEXO NÃO ABERTO: o e-mail veio com um anexo de ~${anexoNaoBaixadoMb} MB que NÃO foi baixado — você leu APENAS o texto que o aluno escreveu. Se a resposta depender do conteúdo do anexo, diga com sinceridade que não conseguiu abrir o arquivo (a equipe já foi avisada e vai olhar) e sugira upload direto na plataforma ou um link (Google Drive, WeTransfer). NUNCA finja que viu o anexo.`
+        : null,
+      winback?.systemExtra,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
   });
   if (replyRaw.trim().toUpperCase() === "PULAR") {
     await markSeen(mail.uid);
