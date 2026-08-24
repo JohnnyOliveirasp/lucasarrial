@@ -288,3 +288,8 @@ class TranscritoFielTest(unittest.TestCase):
             t = tref.transcricao_fiel(Path("x.wav"), "Tudo certo, sabe", "large-v3", "pt")
         self.assertEqual(t, "Tudo certo, sabe?")
 
+    def test_virgula_final_vira_ponto(self):
+        with mock.patch.object(tref, "transcribe_with_retry", return_value="pra gente fazer o teste, e aí se precisar,"):
+            t = tref.transcricao_fiel(Path("x.wav"), "x", "large-v3", "pt")
+        self.assertEqual(t, "pra gente fazer o teste, e aí se precisar.")
+

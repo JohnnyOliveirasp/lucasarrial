@@ -7,6 +7,8 @@ referencia — e aqui trocamos a referencia pela proxima candidata.
 """
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -107,7 +109,10 @@ def transcricao_fiel(clip: Path, texto_previsto: "str | None", whisper_model: st
     except Exception as exc:  # nunca derruba o treino
         _log("error", "train.reference.transcript_recheck_error", error=str(exc))
     texto = real or (texto_previsto or "").strip()
-    if texto and texto[-1].isalnum():
+    # Fecha a frase: sem pontuacao, ou terminando em virgula/ponto-e-virgula/
+    # dois-pontos (whisper corta em ',' quando o clipe acaba no meio) -> '.'.
+    texto = re.sub(r"[,;:\-\s]+$", "", texto)
+    if texto and texto[-1] not in ".!?…":
         texto += "."
     if real and texto_previsto and real.split()[-1:] != (texto_previsto or "").split()[-1:]:
         _log("info", "train.reference.transcript_fixed",
