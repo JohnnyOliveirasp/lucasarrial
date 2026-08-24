@@ -83,7 +83,8 @@ async function uma(prefixo) {
   const depois = medir(nova);
   console.log(`DEPOIS: ${depois.lufs} LUFS · pico ${depois.pico} dBTP · LRA ${depois.lra}`);
   if (!CONFIRMAR) { console.log("\n(simulação — nada foi alterado. rode com --confirmar)"); return; }
-  const stamp = new Date().toISOString().slice(0, 10);
+  // data+hora: dois backups no mesmo dia nao podem se sobrescrever (24/08: apagou o backup da ref de 03/08 do Negrini)
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
   const bak = v.reference_audio_path.replace(/\.wav$/, `.bak-${stamp}.wav`);
   await c.r2().send(new c.s3.CopyObjectCommand({ Bucket: bucket, CopySource: `${bucket}/${v.reference_audio_path}`, Key: bak }));
   await c.r2().send(new c.s3.PutObjectCommand({ Bucket: bucket, Key: v.reference_audio_path, Body: fs.readFileSync(nova), ContentType: "audio/wav" }));
