@@ -42,7 +42,7 @@ export const CLONE_TIERS: readonly CloneTier[] = [
     id: "480p-v3",
     label: "Padrão 2.0",
     blurb:
-      "Novo motor padrão: resultado consistente — a mesma foto com o mesmo áudio gera sempre o mesmo vídeo.",
+      "Novo motor padrão: repetível — a mesma foto com o mesmo áudio gera sempre o mesmo vídeo. Em áudios longos (acima de ~40s) o rosto pode se afastar da foto ao longo do vídeo: prefira vídeos curtos.",
     flow: "v3",
     creditsPerSecond: 105,
     width: 480,
