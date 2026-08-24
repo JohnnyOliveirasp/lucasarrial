@@ -8,6 +8,7 @@
  * (regras extras: dataset vs técnico, bypassesBilling, custo fixo).
  */
 import { getAdmin } from "@/lib/db/admin";
+import { inserirChamadoUnico } from "@/lib/incidents/gravar";
 import { addExtraCredits } from "@/lib/credits/service";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 
@@ -216,7 +217,7 @@ async function openBurstIncident(a: {
       .eq("id", existing.id);
     return;
   }
-  await admin.from("incidents" as never).insert({
+  await inserirChamadoUnico(admin, {
     kind: "reported",
     cause: "reported",
     status: userError ? "ignored" : "open",
@@ -248,7 +249,7 @@ async function openBurstIncident(a: {
       : {}),
     first_seen_at: now,
     last_seen_at: now,
-  } as never);
+  });
 }
 
 /**
