@@ -76,6 +76,7 @@ def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
         return ref
 
     clip, transcript = escolhida
+    transcript = transcricao_fiel(clip, transcript, whisper_model, language)
     upload_file_to_presigned_url(clip, reference_upload_url, content_type="audio/wav")
     ref.uploaded = True
     ref.transcript = transcript
@@ -83,6 +84,35 @@ def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
     _log("info", "train.reference.done", seconds=REFERENCE_SECONDS,
          transcript_len=len(transcript))
     return ref
+
+
+def transcricao_fiel(clip: Path, texto_previsto: "str | None", whisper_model: str,
+                     language: str) -> str:
+    """O transcript gravado no banco tem que ser o que o AUDIO CORTADO contem.
+
+    Caso Negrini (#124, 24/08): o corte por palavra escolhe as palavras pelos
+    timestamps do whisper e corta o audio nos limites delas — mas timestamp de
+    palavra curta na borda e impreciso: o 'O' final ficou NO TEXTO e FORA do
+    audio ('...se precisar O' x audio terminando em 'precisar'). O VoxCPM
+    continua o TEXTO da referencia, entao ecoou 'Ou' no comeco de CADA frase
+    gerada. Cura manual reescrevendo o transcript resolveu 100% — isto e a
+    mesma cura, automatica, no treino: 2a passada de whisper no clipe FINAL.
+    Se o whisper falhar, fica o texto previsto (comportamento de antes).
+    Fecha com '.' quando o audio termina sem pontuacao: o modelo entende que a
+    frase acabou e nao emenda a fala nova na cauda da referencia.
+    """
+    real = None
+    try:
+        real = (transcribe_with_retry(clip, whisper_model, language, attempts=2) or "").strip()
+    except Exception as exc:  # nunca derruba o treino
+        _log("error", "train.reference.transcript_recheck_error", error=str(exc))
+    texto = real or (texto_previsto or "").strip()
+    if texto and texto[-1].isalnum():
+        texto += "."
+    if real and texto_previsto and real.split()[-1:] != (texto_previsto or "").split()[-1:]:
+        _log("info", "train.reference.transcript_fixed",
+             cauda_prevista=(texto_previsto or "")[-40:], cauda_real=texto[-40:])
+    return texto
 
 
 def transcrever_palavras_seguro(wav_path: Path, whisper_model: str, language: str):
@@ -132,7 +162,7 @@ def gerar_amostra_com_qa(inp: dict, dirs, ref: Referencia, lora_path: Path,
                 # Promove a candidata: substitui a referencia OFICIAL (mesma
                 # chave R2) e o transcript que vai pro banco via webhook.
                 upload_file_to_presigned_url(clip, reference_upload_url, content_type="audio/wav")
-                ref.clip, ref.transcript = clip, texto
+                ref.clip, ref.transcript = clip, transcricao_fiel(clip, texto, whisper_model, language)
                 _log("info", "train.sample.qa.ref_swapped", attempt=tentativa)
 
             info = generate_training_sample(

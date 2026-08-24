@@ -208,7 +208,9 @@ class TreinoTest(TrainBase):
         self.assertEqual(r["dataset_chunks"], 48)      # 2 arquivos x 24 chunks
         self.assertEqual(r["useful_seconds"], 1440.0)
         self.assertTrue(r["reference_uploaded"])
-        self.assertEqual(r["reference_transcript"], "primeira candidata.")
+        # 24/08 (#124): o transcript gravado e a 2a passada de whisper no clipe FINAL
+        # ("transcricao" e o que o stub ouve), nao o texto previsto pelo seletor.
+        self.assertEqual(r["reference_transcript"], "transcricao.")
         self.assertEqual(r["language"], "pt")
         self.assertIsNone(r["reference_error"])
 
@@ -244,7 +246,7 @@ class AmostraTest(TrainBase):
             r = train.handle_train(_job(sample_upload_url="https://r2/s.wav?sig=x",
                                         reference_upload_url="https://r2/ref.wav?sig=x"))
         self.assertEqual(r["sample_qa"], "retried_passed")
-        self.assertEqual(r["reference_transcript"], "segunda candidata.")
+        self.assertEqual(r["reference_transcript"], "transcricao.")  # 2a passada no clipe promovido
 
     def test_todas_reprovando_marca_failed_sem_derrubar(self):
         with mock.patch.object(tref, "sample_qa_similarity", return_value=0.10):
@@ -263,3 +265,26 @@ class AmostraTest(TrainBase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TranscritoFielTest(unittest.TestCase):
+    """Caso Negrini (#124, 24/08): o texto gravado tem que ser o que o AUDIO
+    cortado contem. O seletor previu '...precisar O' (timestamp impreciso do
+    'O' na borda), o audio terminava em 'precisar', e o VoxCPM ecoou 'Ou' no
+    comeco de cada frase. A 2a passada de whisper no clipe final e a cura."""
+
+    def test_palavra_fantasma_na_cauda_e_removida(self):
+        with mock.patch.object(tref, "transcribe_with_retry", return_value="Pra gente fazer o teste E aí se precisar"):
+            t = tref.transcricao_fiel(Path("x.wav"), "Pra gente fazer o teste E aí se precisar O", "large-v3", "pt")
+        self.assertEqual(t, "Pra gente fazer o teste E aí se precisar.")
+
+    def test_whisper_falhando_mantem_o_previsto(self):
+        with mock.patch.object(tref, "transcribe_with_retry", return_value=None):
+            t = tref.transcricao_fiel(Path("x.wav"), "texto previsto", "large-v3", "pt")
+        self.assertEqual(t, "texto previsto.")
+
+    def test_pontuacao_existente_e_preservada(self):
+        with mock.patch.object(tref, "transcribe_with_retry", return_value="Tudo certo, sabe?"):
+            t = tref.transcricao_fiel(Path("x.wav"), "Tudo certo, sabe", "large-v3", "pt")
+        self.assertEqual(t, "Tudo certo, sabe?")
+
