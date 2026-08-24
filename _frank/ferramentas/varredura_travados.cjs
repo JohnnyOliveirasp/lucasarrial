@@ -180,23 +180,43 @@ const ALVOS = [
   total += semVoz;
 
   // Incidentes abertos
-  const { data: inc } = await db
+  //
+  // ⚠️ Dois zeros silenciosos moravam aqui (medido em 23/08):
+  //  1. `.limit(15)` cortava a lista E o cabeçalho imprimia `inc.length`, ou
+  //     seja, "INCIDENTES ABERTOS: 15" com 20 abertos no banco. O número que
+  //     eu levava pro relatório era o teto do limit, não a realidade — e o
+  //     relatório noturno é justamente o lugar onde silêncio vira "saúde".
+  //  2. O `error` da consulta era descartado. Consulta que erra volta com
+  //     `data: null`, o `if (inc?.length)` não entra, e o script fecha com
+  //     "✅ Nada preso, nada aberto" — o mesmo acidente de 18/08.
+  // Agora: contagem exata separada da lista, e erro na cara.
+  const {
+    data: inc,
+    error: errInc,
+    count: totalInc,
+  } = await db
     .from("incidents")
-    .select("status, title, occurrences, last_seen_at")
+    .select("status, title, occurrences, last_seen_at", { count: "exact" })
     .in("status", ["open", "investigating"])
     .order("last_seen_at", { ascending: false })
-    .limit(15);
-  if (inc?.length) {
-    console.log(`\n📋 INCIDENTES ABERTOS: ${inc.length}`);
-    for (const i of inc) {
+    .limit(50);
+  if (errInc) {
+    // nunca deixe isso virar zero: zero aqui é indistinguível de saúde
+    console.log(`\n⚠️  consulta de INCIDENTES FALHOU: ${errInc.message}`);
+    console.log("    NÃO trate esta rodada como limpa — o número de abertos é DESCONHECIDO.");
+  } else if (totalInc) {
+    const mostrados = inc?.length ?? 0;
+    const corte = mostrados < totalInc ? ` (mostrando ${mostrados})` : "";
+    console.log(`\n📋 INCIDENTES ABERTOS: ${totalInc}${corte}`);
+    for (const i of inc ?? []) {
       console.log(`   [${i.status}] ${i.title} (${i.occurrences}x, ${i.last_seen_at.slice(0, 16)})`);
     }
   }
 
   console.log(
-    total === 0 && comAudio === 0 && !inc?.length
+    total === 0 && comAudio === 0 && !errInc && !totalInc
       ? "\n✅ Nada preso, nada aberto."
-      : `\n➡️  ${total} item(ns) preso(s). Vá pelo mais antigo — playbooks em _frank/04.`,
+      : `\n➡️  ${total} item(ns) preso(s) · ${errInc ? "?" : (totalInc ?? 0)} incidente(s) aberto(s). Vá pelo mais antigo — playbooks em _frank/04.`,
   );
 })().catch((e) => {
   console.error("FALHOU:", e.message);
