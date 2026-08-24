@@ -133,13 +133,30 @@ async function alvos(args) {
     .order("created_at", { ascending: false });
 
   if (args.geracao) {
-    const { data, error } = await cli.from("generations")
-      .select("id,user_id,audio_path,duration_seconds,created_at,status")
-      .like("id", `${args.geracao}%`);
-    if (error) throw new Error(`erro cru do Supabase: ${JSON.stringify(error)}`);
-    if (!data.length) throw new Error(`nenhuma geracao com prefixo '${args.geracao}'`);
-    if (data.length > 1) throw new Error(`prefixo '${args.geracao}' e ambiguo (${data.length})`);
-    return data;
+    const SEL = "id,user_id,audio_path,duration_seconds,created_at,status";
+    const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const alvo = args.geracao.toLowerCase();
+
+    // ⚠️ `like` em coluna uuid NAO existe no Postgres: devolve
+    // `42883 operator does not exist: uuid ~~ unknown`. A versao anterior
+    // usava `.like("id", ...)` e por isso a flag --geracao NUNCA funcionou,
+    // nem com id completo — apesar de estar documentada no README. Quem
+    // precisou curar arquivo (a Katia, em 23/08) so conseguiu via --aluno.
+    if (RE_UUID.test(alvo)) {
+      const { data, error } = await cli.from("generations").select(SEL).eq("id", alvo);
+      if (error) throw new Error(`erro cru do Supabase: ${JSON.stringify(error)}`);
+      if (!data.length) throw new Error(`nenhuma geracao com id '${args.geracao}'`);
+      return data;
+    }
+
+    // Prefixo: o filtro tem que ser em JS, porque o banco nao aplica LIKE em
+    // uuid. Pagina (o corte de 1000 do PostgREST e silencioso) e resolve aqui.
+    const universo = await paginar(() => cli.from("generations").select(SEL)
+      .order("created_at", { ascending: false }));
+    const achados = universo.filter((g) => String(g.id).toLowerCase().startsWith(alvo));
+    if (!achados.length) throw new Error(`nenhuma geracao com prefixo '${args.geracao}'`);
+    if (achados.length > 1) throw new Error(`prefixo '${args.geracao}' e ambiguo (${achados.length})`);
+    return achados;
   }
   if (args.aluno) {
     const { data: u, error: eu } = await cli.from("profiles").select("id,email").eq("email", args.aluno);
