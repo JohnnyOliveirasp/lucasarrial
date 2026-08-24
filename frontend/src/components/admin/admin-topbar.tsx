@@ -3,24 +3,16 @@
 import Image from "next/image";
 import { ArrowUpRight } from "lucide-react";
 import { Link, usePathname } from "@/i18n/navigation";
-
-const NAV = [
-  { href: "/admin", label: "Visão geral", exact: true },
-  { href: "/admin/usuarios", label: "Usuários", exact: false },
-  { href: "/admin/falhas", label: "Falhas", exact: false },
-  { href: "/admin/campanhas", label: "Campanhas", exact: false },
-  { href: "/admin/cortesias", label: "Cortesias", exact: false },
-  { href: "/admin/agente", label: "Agente", exact: false },
-  { href: "/admin/historico", label: "Históricos", exact: false },
-  { href: "/admin/admins", label: "Admins", exact: false },
-] as const;
+import { navFor } from "@/lib/admin/nav";
+import type { AdminRole } from "@/lib/admin/guard";
 
 /**
  * Topbar do painel /admin. Marca + navegação + atalho de volta ao app.
  * Estilo: mesmo design system dark do FastCloner (hairlines, DM Sans).
  */
-export function AdminTopbar({ email }: { email: string }) {
+export function AdminTopbar({ email, role }: { email: string; role: AdminRole }) {
   const pathname = usePathname();
+  const nav = navFor(role);
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--hairline)] bg-[var(--canvas)]/[0.78] backdrop-blur-md">
@@ -34,12 +26,12 @@ export function AdminTopbar({ email }: { email: string }) {
               FastCloner
             </span>
             <span className="rounded-[var(--radius-full)] border border-[var(--hairline-strong)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[var(--silver)]">
-              Admin
+              {role === "suporte" ? "Suporte" : "Admin"}
             </span>
           </div>
 
           <nav className="hidden items-center gap-1 md:flex">
-            {NAV.map((item) => {
+            {nav.map((item) => {
               const active = item.exact
                 ? pathname === item.href
                 : pathname.startsWith(item.href);

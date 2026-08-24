@@ -3,7 +3,7 @@
  * primeiro), com a última mensagem de cada uma. Admin-only.
  */
 import type { NextRequest } from "next/server";
-import { gateAdmin } from "@/lib/admin/api";
+import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
 import { jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import type { AgentChatRow } from "@/lib/db/types";
@@ -11,7 +11,7 @@ import type { AgentChatRow } from "@/lib/db/types";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateAdmin(request, SUPORTE_OK);
   if ("res" in gate) return gate.res;
 
   const admin = getAdmin();

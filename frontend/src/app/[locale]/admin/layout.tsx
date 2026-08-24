@@ -1,12 +1,17 @@
 import { notFound } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
-import { isAdmin } from "@/lib/admin/guard";
+import { adminRole } from "@/lib/admin/guard";
 import { AdminTopbar } from "@/components/admin/admin-topbar";
+import { AdminRoleGate } from "@/components/admin/admin-role-gate";
 
 /**
  * Gate do /admin (server-side). Não-admin recebe 404 — o painel nem revela que
  * existe. Allowlist na tabela admin_emails (gerenciável) + fallback env.
+ *
+ * PAPEL (mig 95): quem é `suporte` entra, mas só enxerga Falhas e Agente — o
+ * menu vem filtrado e o AdminRoleGate barra a URL digitada na mão. A trava que
+ * vale é a das rotas de API (gateAdmin); esta camada é menu e recado.
  */
 export default async function AdminLayout({
   children,
@@ -24,13 +29,14 @@ export default async function AdminLayout({
   } = await supabase.auth.getUser();
 
   if (!user?.email) notFound();
-  if (!(await isAdmin(user.email))) notFound();
+  const role = await adminRole(user.email);
+  if (!role) notFound();
 
   return (
     <div className="min-h-svh bg-[var(--canvas)]">
-      <AdminTopbar email={user.email} />
+      <AdminTopbar email={user.email} role={role} />
       <main className="mx-auto w-full max-w-[1280px] px-6 py-8 md:px-10">
-        {children}
+        <AdminRoleGate role={role}>{children}</AdminRoleGate>
       </main>
     </div>
   );

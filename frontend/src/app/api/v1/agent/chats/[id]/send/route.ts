@@ -4,7 +4,7 @@
  * 'human' (IA cala até alguém devolver). Admin-only. F2.
  */
 import type { NextRequest } from "next/server";
-import { gateAdmin } from "@/lib/admin/api";
+import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
 import { badRequest, jsonOk, notFound, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { sendAgentText } from "@/lib/agent/provider";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(request: NextRequest, ctx: Ctx) {
-  const gate = await gateAdmin(request);
+  const gate = await gateAdmin(request, SUPORTE_OK);
   if ("res" in gate) return gate.res;
   const { id } = await ctx.params;
 
