@@ -60,6 +60,28 @@ def start_word_ok(
     )
 
 
+def transcribe_seg_autodetect(seg, sample_rate, whisper_model, label):
+    """Igual a `transcribe_seg`, mas DEIXA o whisper descobrir o idioma (PR #47).
+
+    Devolve (palavras_normalizadas, idioma, confianca) ou (None, None, 0.0).
+    As palavras sao normalizadas no idioma DETECTADO — e ele que manda na
+    expansao de digito ("36" -> "thirty six" em ingles, "trinta e seis" em pt).
+    """
+    try:
+        from voice_pipeline import transcribe_file_autodetect
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        sf.write(str(tmp_path), seg, sample_rate)
+        try:
+            texto, lang, prob = transcribe_file_autodetect(tmp_path, model_name=whisper_model)
+            return norm_words(texto, lang), lang, prob
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    except Exception as exc:
+        _log("error", f"inference.{label}.error", error=str(exc))
+        return None, None, 0.0
+
+
 def run_chunk_qa(
     seg,
     idx: int,
@@ -175,4 +197,31 @@ def run_chunk_qa(
             break
         qa_stats["regens"] += 1
         seg = regen_fn()
+    # SEGUNDA OPINIAO NO IDIOMA QUE O WHISPER OUVIU (PR #47, incidente 37bacb68).
+    # `qa_language` e o idioma da VOZ, nao do TEXTO. Texto em outro idioma faz o
+    # whisper forcado TRADUZIR: cobertura 0, buraco continuo, audio BOM reprovado.
+    # Roda SO no caminho de reprovacao e so adota a 2a leitura se for melhor —
+    # chunk mudo/comido continua mudo/comido em qualquer idioma (caso Katia).
+    if (
+        coverage_qa_enabled
+        and best_coverage is not None
+        and best_coverage < coverage_qa_min
+        and best_seg is not None
+        and best_seg.size >= int(sample_rate * 0.2)
+    ):
+        got2, lang2, prob2 = transcribe_seg_autodetect(
+            best_seg, sample_rate, echo_qa_model, "chunk_qa_autodetect"
+        )
+        if got2 is not None and lang2:
+            cov2 = chunk_coverage(got2, chunk, lang2)
+            lac2 = maior_lacuna(got2, chunk, lang2)
+            _log(
+                "info", "inference.coverage_qa.autodetect", idx=idx,
+                qa_language=qa_language, detectado=lang2, probabilidade=round(prob2, 3),
+                coverage_antes=best_coverage, coverage_depois=cov2,
+                lacuna_antes=best_lacuna, lacuna_depois=lac2,
+            )
+            if cov2 is not None and cov2 > best_coverage:
+                qa_stats["coverage_idioma_corrigido"] = qa_stats.get("coverage_idioma_corrigido", 0) + 1
+                best_coverage, best_lacuna = cov2, lac2
     return best_seg, best_coverage, best_lacuna

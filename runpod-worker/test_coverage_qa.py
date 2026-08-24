@@ -447,5 +447,115 @@ class DecisaoDeReprovarTest(unittest.TestCase):
         self.assertFalse(self._reprova(c, "hoje eu quero falar"))
 
 
+class SegundaOpiniaoIdiomaTest(unittest.TestCase):
+    """Texto num idioma != idioma da VOZ (incidente 37bacb68, medido 24/08).
+
+    `qa_language` vem de `voice.language` (generate/route.ts:209), não do texto.
+    Aluna com voz em pt que escreve em inglês faz o whisper do QA ser FORÇADO a
+    pt — e aí ele TRADUZ em vez de transcrever. Nenhuma palavra bate, o buraco
+    vira um bloco contínuo e o gate reprova ÁUDIO BOM, 3 vezes seguidas, sem
+    entregar nada. Vítimas reais: janetecasarotto2 (c5eb5cb4, 23/08) e
+    johnny.oliveirasp (dd4b98a3).
+
+    Medido com o MESMO áudio lido nos dois idiomas (_Bugs/qa-lang/prova_idioma.py):
+      whisper(pt)   -> "A interpretação ao vivo no lugar é brutalmente difícil"
+                       cobertura 0.0, lacuna 8  -> REPROVA
+      whisper(auto) -> texto exato, cobertura 1.0, lacuna 0 -> PASSA
+    """
+
+    EN = "Live interpretation on the spot is brutally hard."
+    # o que o whisper devolve quando forçado a pt: TRADUÇÃO, não transcrição
+    EN_TRADUZIDO = tts_qa.norm_words(
+        "A interpretacao ao vivo no lugar e brutalmente dificil.", "pt"
+    )
+    EN_CERTO = tts_qa.norm_words(EN, "en")
+
+    def test_idioma_errado_e_resgatado_pela_segunda_opiniao(self):
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: self.EN_TRADUZIDO
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect",
+            return_value=(self.EN_CERTO, "en", 0.99),
+        ) as auto:
+            _best, cov, lac = tts_qa.loop.run_chunk_qa(
+                seg, 0, self.EN, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        auto.assert_called_once()
+        self.assertEqual(cov, 1.0)   # a leitura no idioma certo cobre tudo
+        self.assertEqual(lac, 0)
+        self.assertEqual(stats["coverage_idioma_corrigido"], 1)
+        # e o chamador (_handle_inference) NÃO derruba mais o job:
+        self.assertGreaterEqual(cov, 0.85)
+
+    def test_chunk_realmente_comido_NAO_e_resgatado(self):
+        # A proteção do caso Katia continua de pé: trecho que o modelo comeu
+        # continua comido em QUALQUER idioma — a segunda opinião não salva.
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect",
+            return_value=(HALF_WORDS, "pt", 0.99),
+        ) as auto:
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        auto.assert_called_once()
+        self.assertLess(cov, 0.85)   # segue reprovando
+        self.assertEqual(stats.get("coverage_idioma_corrigido", 0), 0)
+
+    def test_audio_aprovado_nao_paga_segunda_opiniao(self):
+        # Custo: a 2a transcrição só existe no caminho de reprovação.
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: CHUNK_WORDS
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect"
+        ) as auto:
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        auto.assert_not_called()
+        self.assertEqual(cov, 1.0)
+
+    def test_segunda_opiniao_quebrada_nao_muda_o_veredito(self):
+        # whisper falhou na 2a leitura: mantém o veredito da 1a, não inventa.
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+        ):
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertIsNotNone(cov)
+        self.assertLess(cov, 0.85)
+
+    def test_pior_leitura_nao_substitui_a_melhor(self):
+        # Só adota a 2a opinião quando ela é MELHOR — nunca piora o veredito.
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=([], "en", 0.5)
+        ):
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertGreater(cov, 0.0)  # ficou com a leitura da 1a, não com 0.0
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
