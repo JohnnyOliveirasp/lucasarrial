@@ -19,7 +19,22 @@ export type GenerationOutput = {
   sample_rate?: number;
   duration_s?: number;
   elapsed_s?: number;
+  /** Telemetria do QA do worker (mig 94, #52): echo/coverage/intrusion/regens/rescue. */
+  qa?: Record<string, unknown>;
+  coverage_failed_chunk?: number;
+  coverage_best?: number;
+  coverage_min?: number;
 };
+
+/** O que vai pra `generations.qa` — o bloco `qa` + os campos coverage_* da falha. */
+export function qaTelemetria(out: GenerationOutput): Record<string, unknown> | null {
+  const extra: Record<string, unknown> = {};
+  if (typeof out.coverage_failed_chunk === "number") extra.coverage_failed_chunk = out.coverage_failed_chunk;
+  if (typeof out.coverage_best === "number") extra.coverage_best = out.coverage_best;
+  if (typeof out.coverage_min === "number") extra.coverage_min = out.coverage_min;
+  if (!out.qa && Object.keys(extra).length === 0) return null;
+  return { ...(out.qa ?? {}), ...extra };
+}
 
 /**
  * Teto FÍSICO de letras por segundo. Acima disso o áudio não contém o texto —
@@ -120,6 +135,7 @@ export async function finalizeGenerationSuccess(
       sample_rate: out.sample_rate ?? null,
       duration_seconds: out.duration_s ?? null,
       elapsed_seconds: out.elapsed_s ?? null,
+      qa: qaTelemetria(out),
       error_message: null,
     } as never)
     .eq("id", generationId);

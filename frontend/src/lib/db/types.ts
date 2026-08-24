@@ -152,6 +152,8 @@ export type GenerationRow = {
   sample_rate: number | null;
   duration_seconds: number | null;
   elapsed_seconds: number | null;
+  /** Telemetria do QA do worker — mig 94 (#52). */
+  qa: Record<string, unknown> | null;
   /** Fila (delayTime) e execução (executionTime) do RunPod em segundos,
    *  gravados na FALHA — migration 82, incidente d3d8d1b2. */
   delay_seconds: number | null;

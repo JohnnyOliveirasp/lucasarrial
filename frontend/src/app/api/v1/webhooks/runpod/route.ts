@@ -21,7 +21,7 @@ import type { NextRequest } from "next/server";
 import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { runpodGetStatus, inferenceEndpoint } from "@/lib/runpod/client";
-import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
+import { finalizeGenerationSuccess, qaTelemetria, type GenerationOutput } from "@/lib/generations/finalize";
 import { recordRunpodTiming } from "@/lib/generations/runpod-timing";
 import { finalizeTraining, type TrainOutput } from "@/lib/voices/finalize-training";
 import {
@@ -215,9 +215,13 @@ async function handleGenerationWebhook(
     status: "failed";
     error_message: string;
     elapsed_seconds?: number;
+    qa?: Record<string, unknown> | null;
   } = {
     status: "failed",
     error_message: rawError.slice(0, 500),
+    // Telemetria do QA (mig 94, #52): na falha é onde ela mais vale — o log
+    // do RunPod expira e a investigação chegava tarde.
+    qa: qaTelemetria(out as GenerationOutput),
   };
   if (typeof payload.executionTime === "number") {
     failUpdate.elapsed_seconds = payload.executionTime / 1000; // RunPod manda em ms

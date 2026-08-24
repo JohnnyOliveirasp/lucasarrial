@@ -1309,6 +1309,56 @@ def _run_chunk_qa(
     return best_seg, best_coverage, best_lacuna
 
 
+def _rescue_chunk_by_split(
+    chunk: str,
+    idx: int,
+    gen_fn,
+    trim_fn,
+    qa_kw: dict,
+    sample_rate: int,
+    qa_language: str,
+    coverage_qa_min: float,
+    coverage_qa_gap_min: int,
+    qa_stats: dict,
+):
+    """Chunk esgotou o QA com um buraco CONTÍNUO → parte nas frases e gera
+    cada uma com o mesmo QA (#52). Devolve o áudio concatenado, ou None se
+    não dá pra partir (frase única) ou se algum pedaço ainda vier comido —
+    aí o chamador falha o job como antes.
+    """
+    partes = [c for c, _ in _split_text_for_tts(chunk, max_chars=1)]
+    if len(partes) < 2:
+        _log("info", "inference.coverage.rescue.skip", idx=idx, motivo="frase_unica")
+        return None
+    qa_stats["coverage_rescue"] = qa_stats.get("coverage_rescue", 0) + 1
+    _log("info", "inference.coverage.rescue", idx=idx, partes=len(partes))
+    pedacos: list[np.ndarray] = []
+    for j, parte in enumerate(partes):
+        sub_idx = idx * 100 + j + 1  # rótulo único no log/heartbeat
+        seg = trim_fn(gen_fn(parte, sub_idx))
+        seg, cov, lacuna = _run_chunk_qa(
+            seg, sub_idx, parte,
+            regen_fn=lambda p=parte, i=sub_idx: trim_fn(gen_fn(p, i)),
+            sample_rate=sample_rate,
+            qa_stats=qa_stats,
+            **qa_kw,
+        )
+        if cov is not None and cov < coverage_qa_min:
+            palavras = len(_qa_norm_words(parte, qa_language))
+            limite = max(coverage_qa_gap_min, int(palavras * 0.20))
+            if lacuna is not None and lacuna >= limite:
+                _log(
+                    "error", "inference.coverage.rescue.failed", idx=idx, parte=j,
+                    coverage=cov, maior_lacuna=lacuna,
+                )
+                qa_stats["coverage_rescue_failed"] = qa_stats.get("coverage_rescue_failed", 0) + 1
+                return None
+        pedacos.append(seg)
+    qa_stats["coverage_rescued"] = qa_stats.get("coverage_rescued", 0) + 1
+    _log("info", "inference.coverage.rescued", idx=idx, partes=len(partes))
+    return np.concatenate(pedacos)
+
+
 def _crossfade_concat(wavs: list[np.ndarray], fade_samples: int) -> np.ndarray:
     """Concatena com fade linear no overlap de `fade_samples` entre wavs.
 
@@ -1628,6 +1678,21 @@ def _handle_inference(inp: dict) -> dict:
             # Fase "pai" do QA do chunk: os whispers do QA rodam aqui dentro e
             # um regen empilha inference.chunk.generate por cima (o heartbeat
             # mostra sempre o topo da pilha, com chunk e tentativa).
+            _run_chunk_qa_kw = dict(
+                prompt_text=prompt_text,
+                qa_language=qa_language,
+                start_qa_enabled=start_qa_enabled,
+                start_qa_retries=start_qa_retries,
+                start_qa_model=start_qa_model,
+                echo_qa_enabled=echo_qa_enabled,
+                echo_qa_retries=echo_qa_retries,
+                echo_qa_model=echo_qa_model,
+                coverage_qa_enabled=coverage_qa_enabled,
+                coverage_qa_retries=coverage_qa_retries,
+                coverage_qa_min=coverage_qa_min,
+                intrusion_qa_enabled=intrusion_qa_enabled,
+                intrusion_qa_retries=intrusion_qa_retries,
+            )
             with _phase("inference.chunk.qa", chunk=idx):
                 seg, best_coverage, best_lacuna = _run_chunk_qa(
                     seg, idx, chunk,
@@ -1685,16 +1750,35 @@ def _handle_inference(inp: dict) -> dict:
                     )
                 else:
                     # Buraco contínuo grande: o modelo comeu um pedaço mesmo.
-                    # Falha EXPLÍCITA (caso Katia 19/08 — ~30% do texto ausente
-                    # saiu [ready] e custou 555 créditos): sem upload, o webhook
-                    # cai no caminho de falha e estorna (handleTechFailure).
-                    qa_stats["coverage_exhausted"] += 1
-                    coverage_failure = {
-                        "chunk_idx": idx,
-                        "coverage": best_coverage,
-                        "maior_lacuna": best_lacuna,
-                    }
-                    break
+                    #
+                    # RESGATE POR SUBDIVISÃO (#52, 24/08). Medido em 36h: 7 de
+                    # 129 gerações (5,4%) morriam aqui — 1 em 18, 6 alunos
+                    # diferentes, a causa dominante de falha de áudio. Os que
+                    # falham são 1,6× maiores e 86% têm quebra de linha: são
+                    # chunks onde VÁRIAS frases foram coladas até 160 chars e
+                    # o modelo pulou uma delas. Regenerar o MESMO chunk 3×
+                    # cai no mesmo buraco. Em vez de falhar o job, parte o
+                    # chunk nas frases e gera cada uma com o mesmo QA — cada
+                    # pedaço curto re-ancora o modelo. Só falha se um pedaço
+                    # curto AINDA vier comido (ou se não houver como partir).
+                    resgate = _rescue_chunk_by_split(
+                        chunk, idx, _gen_chunk, _trim, _run_chunk_qa_kw,
+                        sample_rate, qa_language, coverage_qa_min,
+                        coverage_qa_gap_min, qa_stats,
+                    )
+                    if resgate is not None:
+                        seg = resgate
+                    else:
+                        # Falha EXPLÍCITA (caso Katia 19/08 — ~30% do texto
+                        # ausente saiu [ready] e custou 555 créditos): sem
+                        # upload, o webhook cai no caminho de falha e estorna.
+                        qa_stats["coverage_exhausted"] += 1
+                        coverage_failure = {
+                            "chunk_idx": idx,
+                            "coverage": best_coverage,
+                            "maior_lacuna": best_lacuna,
+                        }
+                        break
         _log(
             "info", "inference.chunk", idx=idx, total=len(chunks),
             chars=len(chunk), samples_raw=raw_samples, samples_trim=int(seg.size),
