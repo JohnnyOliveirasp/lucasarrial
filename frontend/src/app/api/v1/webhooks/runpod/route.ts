@@ -22,7 +22,7 @@ import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { runpodGetStatus, inferenceEndpoint } from "@/lib/runpod/client";
 import { finalizeGenerationSuccess, qaTelemetria, type GenerationOutput } from "@/lib/generations/finalize";
-import { preservaFaseCorrente } from "@/lib/generations/fase-telemetria";
+import { preservaFaseCorrente, errorMessageComFase } from "@/lib/generations/fase-telemetria";
 import { recordRunpodTiming } from "@/lib/generations/runpod-timing";
 import { finalizeTraining, type TrainOutput } from "@/lib/voices/finalize-training";
 import {
@@ -219,6 +219,9 @@ async function handleGenerationWebhook(
   // NUNCA concatenar esse dado no error_message: a assinatura do incidente é
   // derivada do texto do erro (src/lib/incidents/classify.ts) e identificador
   // alfanumérico não normaliza — já estilhaçou a mesma falha em 4 incidentes.
+  // ÚNICA exceção sancionada: o sufixo "[fase: ...]" (errorMessageComFase),
+  // de formato FIXO, que a assinatura REMOVE antes de assinar (stripFaseSuffix
+  // em classify.ts) — num timeout, a row passa a NOMEAR a fase pendurada.
   const failUpdate: {
     status: "failed";
     error_message: string;
@@ -226,7 +229,7 @@ async function handleGenerationWebhook(
     qa?: Record<string, unknown> | null;
   } = {
     status: "failed",
-    error_message: rawError.slice(0, 500),
+    error_message: errorMessageComFase(rawError, qaAtual),
     // Telemetria do QA (mig 94, #52): na falha é onde ela mais vale — o log
     // do RunPod expira e a investigação chegava tarde. preservaFaseCorrente:
     // num timeout o `out` vem vazio e este update REESCREVE a coluna qa — sem

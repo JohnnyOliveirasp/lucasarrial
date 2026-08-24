@@ -125,3 +125,81 @@ test("preservaFaseCorrente: sem fase gravada devolve o qa novo INTACTO (hoje)", 
   assert.equal(preservaFaseCorrente(null, "string-lixo"), null);
   assert.equal(preservaFaseCorrente(null, [1, 2]), null);
 });
+
+// ---------------------------------------------------------------------------
+// errorMessageComFase + estabilidade da assinatura de incidente (item 3 do
+// card: error_message NOMEIA a fase num timeout, SEM estilhaçar o d3d8d1b2)
+// ---------------------------------------------------------------------------
+import { errorMessageComFase } from "./fase-telemetria.ts";
+import {
+  errorSignature,
+  classifyCause,
+  incidentTitle,
+  stripFaseSuffix,
+} from "../incidents/classify.ts";
+
+const QA_COM_FASE = { coverage_best: 0.9, fase_corrente: FASE };
+
+test("errorMessageComFase: timeout + fase gravada = sufixo [fase: ...]", () => {
+  const msg = errorMessageComFase("executionTimeout exceeded", QA_COM_FASE);
+  assert.equal(msg, "executionTimeout exceeded [fase: inference.chunk.generate running_s=312]");
+});
+
+test("errorMessageComFase: cobre também a forma embrulhada do POLL", () => {
+  const msg = errorMessageComFase("RunPod TIMED_OUT: executionTimeout exceeded", QA_COM_FASE);
+  assert.ok(msg.endsWith("[fase: inference.chunk.generate running_s=312]"));
+});
+
+test("errorMessageComFase: timeout SEM fase gravada = texto de hoje, intacto", () => {
+  assert.equal(errorMessageComFase("executionTimeout exceeded", null), "executionTimeout exceeded");
+  assert.equal(errorMessageComFase("executionTimeout exceeded", { coverage_best: 0.9 }), "executionTimeout exceeded");
+  assert.equal(errorMessageComFase("executionTimeout exceeded", "lixo"), "executionTimeout exceeded");
+});
+
+test("errorMessageComFase: erro que NÃO é timeout não ganha sufixo", () => {
+  assert.equal(errorMessageComFase("CUDA out of memory", QA_COM_FASE), "CUDA out of memory");
+});
+
+test("errorMessageComFase: running_s ausente = sufixo só com a fase", () => {
+  const qa = { fase_corrente: { ...FASE, running_s: null } };
+  assert.equal(
+    errorMessageComFase("executionTimeout exceeded", qa),
+    "executionTimeout exceeded [fase: inference.chunk.generate]",
+  );
+});
+
+test("errorMessageComFase: colchetes no nome da fase são removidos (strip casa até o 1º ])", () => {
+  const qa = { fase_corrente: { ...FASE, fase: "chunk[3].gen]er" } };
+  const msg = errorMessageComFase("executionTimeout exceeded", qa);
+  assert.equal(msg, "executionTimeout exceeded [fase: chunk3.gener running_s=312]");
+  assert.equal(stripFaseSuffix(msg), "executionTimeout exceeded");
+});
+
+test("ASSINATURA: sufixo de fase NÃO muda a assinatura do incidente (anti-estilhaço)", () => {
+  const cru = "executionTimeout exceeded";
+  const decorado = errorMessageComFase(cru, QA_COM_FASE);
+  assert.notEqual(decorado, cru); // o sufixo existe de verdade
+  assert.equal(errorSignature("generation", decorado), errorSignature("generation", cru));
+  // fases DIFERENTES também caem na MESMA assinatura
+  const outraFase = { fase_corrente: { ...FASE, fase: "qa.whisper.load" } };
+  assert.equal(
+    errorSignature("generation", errorMessageComFase(cru, outraFase)),
+    errorSignature("generation", cru),
+  );
+  // e a forma embrulhada do poll com sufixo = a crua sem sufixo
+  assert.equal(
+    errorSignature("generation", errorMessageComFase(`RunPod TIMED_OUT: ${cru}`, QA_COM_FASE)),
+    errorSignature("generation", cru),
+  );
+});
+
+test("ASSINATURA: causa e título também ignoram o sufixo", () => {
+  const decorado = errorMessageComFase("executionTimeout exceeded", QA_COM_FASE);
+  assert.equal(classifyCause(decorado), "capacity");
+  assert.equal(incidentTitle("generation", decorado), incidentTitle("generation", "executionTimeout exceeded"));
+});
+
+test("stripFaseSuffix: sem sufixo devolve o texto como está", () => {
+  assert.equal(stripFaseSuffix("CUDA out of memory"), "CUDA out of memory");
+  assert.equal(stripFaseSuffix(""), "");
+});

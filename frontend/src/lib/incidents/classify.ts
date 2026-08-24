@@ -76,8 +76,22 @@ export function stripRunpodWrapper(error: string): string {
   return m && m[2].trim() ? m[2].trim() : error || "";
 }
 
+/**
+ * Remove o sufixo de telemetria "[fase: ...]" que `errorMessageComFase`
+ * (lib/generations/fase-telemetria.ts) concatena no error_message de falha por
+ * executionTimeout (incidente d3d8d1b2, #15). O nome da fase VARIA
+ * (geracao.chunk × qa.whisper × model.load...) e não é normalizado pelas regras
+ * numéricas abaixo — sem este strip, cada fase pendurada viraria um incidente
+ * NOVO e a mesma causa raiz se estilhaçaria (a patologia do "detector cego"
+ * medida em 24/08 no próprio d3d8d1b2). Mudou o formato do sufixo lá, muda o
+ * regex aqui — são gêmeos.
+ */
+export function stripFaseSuffix(error: string): string {
+  return (error || "").replace(/\s*\[fase:[^\]]*\]/gi, "").trim();
+}
+
 export function classifyCause(error: string): IncidentCause {
-  const e = stripRunpodWrapper(error).toLowerCase();
+  const e = stripRunpodWrapper(stripFaseSuffix(error)).toLowerCase();
   if (!e) return "unknown";
   if (
     e.includes("insufficient_audio") ||
@@ -128,7 +142,7 @@ export function errorSignature(kind: string, error: string): string {
   if (cause === "user_dataset") {
     return isCorruptFile(error) ? `${k}:${cause}:corrupt` : `${k}:${cause}`;
   }
-  const head = stripRunpodWrapper(error)
+  const head = stripRunpodWrapper(stripFaseSuffix(error))
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, "<url>")
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<id>")
@@ -143,7 +157,7 @@ export function errorSignature(kind: string, error: string): string {
 export function incidentTitle(kind: string, error: string): string {
   const cause = classifyCause(error);
   const k = KIND_LABELS[kind] ?? kind;
-  const detail = stripRunpodWrapper(error).split("\n")[0].slice(0, 80);
+  const detail = stripRunpodWrapper(stripFaseSuffix(error)).split("\n")[0].slice(0, 80);
   if (cause === "user_dataset") {
     return isCorruptFile(error)
       ? `${k}: arquivo enviado corrompido/incompleto`

@@ -99,3 +99,41 @@ export function preservaFaseCorrente(
   if (fase === undefined) return qaNovo;
   return { ...(qaNovo ?? {}), fase_corrente: fase };
 }
+
+/** Falha de timeout: cobre o erro cru do webhook ("executionTimeout exceeded")
+ * e o embrulhado do poll ("RunPod TIMED_OUT: ..."). */
+const TIMEOUT_RE = /executiontimeout|timed_out/i;
+
+/**
+ * error_message da falha com a última fase conhecida NO TEXTO, pro humano que
+ * abre a row (ex.: "executionTimeout exceeded [fase: geracao.chunk running_s=430]").
+ *
+ * REGRA que torna isto seguro: a assinatura de incidente
+ * (lib/incidents/classify.ts) REMOVE o sufixo "[fase: ...]" antes de assinar —
+ * sem isso, fases diferentes estilhaçariam o d3d8d1b2 em N incidentes (a
+ * patologia do "detector cego" medida em 24/08). Qualquer mudança no FORMATO
+ * do sufixo aqui exige a mudança gêmea no stripFaseSuffix de lá.
+ *
+ * Só decora timeout (a fase pendurada é a informação); nos demais erros o
+ * worker já disse o que quebrou. Sem fase gravada, devolve o texto de hoje.
+ */
+export function errorMessageComFase(rawError: string, qaAtual: unknown): string {
+  const base = (rawError || "").slice(0, 500);
+  try {
+    if (!TIMEOUT_RE.test(base)) return base;
+    const fase =
+      qaAtual && typeof qaAtual === "object" && !Array.isArray(qaAtual)
+        ? ((qaAtual as Record<string, unknown>).fase_corrente as FaseCorrente | undefined)
+        : undefined;
+    if (!fase || typeof fase.fase !== "string" || !fase.fase) return base;
+    // Sem "[" nem "]" dentro do sufixo: o strip da assinatura casa até o 1º "]".
+    const nome = fase.fase.replace(/[[\]]/g, "").slice(0, 80);
+    const running =
+      typeof fase.running_s === "number" && Number.isFinite(fase.running_s)
+        ? ` running_s=${Math.round(fase.running_s)}`
+        : "";
+    return `${base} [fase: ${nome}${running}]`;
+  } catch {
+    return base; // telemetria nunca derruba o caminho de falha/estorno
+  }
+}
