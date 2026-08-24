@@ -370,6 +370,22 @@ class MaiorLacunaTest(unittest.TestCase):
         c = "comprar um E trinta e seis como primeiro carro"
         self.assertEqual(self._lacuna(c, "comprar um E36 como primeiro carro"), 0)
 
+    def test_sigla_soletrada_nao_abre_buraco(self):
+        # Caso tulliojeronimo REAL (23/08, incidente 37bacb68): o roteiro
+        # SOLETRA a sigla e o whisper escreve junto. Sao 7 tokens de 1 letra
+        # CONTINUOS -> buraco 7 >= limite 6 -> reprovava audio bom.
+        # Ele mesmo provou que o audio estava certo: reescreveu foneticamente
+        # ("Be pe ce, loas") e a MESMA geracao saiu [ready] (8959506f, 19:43).
+        c = "B P C, L O A S. O que e e quem tem direito."
+        self.assertLess(self._lacuna(c, "BPC LOAS. O que e e quem tem direito."), 6)
+
+    def test_buraco_real_que_CONTEM_palavra_de_1_letra_continua_grande(self):
+        # Guarda contra afrouxar demais: trecho comido de verdade costuma ter
+        # atono no meio ("e", "a", "o"). Desconta-se o atono, mas as palavras
+        # de verdade continuam contando — o buraco segue grande.
+        c = "o gato subiu no telhado e comeu a racao toda da vizinha"
+        self.assertGreaterEqual(self._lacuna(c, "o gato da vizinha"), 6)
+
     # ── áudio RUIM (defeito real): buraco grande e contínuo ──
     def test_audio_que_comeca_no_meio_da_buraco_grande(self):
         self.assertGreaterEqual(self._lacuna(CHUNK, " ".join(HALF_WORDS)), 6)
@@ -410,6 +426,13 @@ class DecisaoDeReprovarTest(unittest.TestCase):
         # buraco e 1 palavra -> tem que ENTREGAR.
         c = "Seres: Freud, me explica uma coisa..."
         self.assertFalse(self._reprova(c, "Freud, me explica uma coisa..."))
+
+    def test_audio_bom_com_sigla_soletrada_NAO_reprova_mais(self):
+        # O caso que derrubou 2 geracoes do tulliojeronimo em 3 minutos
+        # (16c7626a 19:32 e 2b59e898 19:35, ambas com 1.829 creditos
+        # debitados e estornados). Antes: buraco contiguo de 7 -> REPROVA.
+        c = "B P C, L O A S. O que e e quem tem direito."
+        self.assertFalse(self._reprova(c, "BPC LOAS. O que e e quem tem direito."))
 
     def test_audio_que_comeca_no_meio_CONTINUA_reprovando(self):
         self.assertTrue(self._reprova(CHUNK, " ".join(HALF_WORDS)))

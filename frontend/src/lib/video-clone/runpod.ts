@@ -53,6 +53,9 @@ export async function runInfiniteTalk(
 export async function getInfiniteTalkStatus(jobId: string): Promise<{
   status: CloneJobStatus;
   error: string | null;
+  /** executionTime do RunPod em ms — evidência de falha (mig 90). O status
+   *  expira depois do job: quem não captura AGORA não captura mais. */
+  executionTimeMs: number | null;
 }> {
   const res = await fetch(`${BASE}/${endpointId()}/status/${jobId}`, {
     headers: { Authorization: `Bearer ${apiKey()}` },
@@ -64,11 +67,13 @@ export async function getInfiniteTalkStatus(jobId: string): Promise<{
   const json = (await res.json()) as {
     status?: CloneJobStatus;
     error?: string;
+    executionTime?: number;
     output?: { details?: string[] };
   };
   const detail = Array.isArray(json.output?.details) ? json.output.details.join(" ") : "";
   return {
     status: json.status ?? "IN_QUEUE",
     error: json.error ? `${json.error}${detail ? ` — ${detail.slice(0, 300)}` : ""}` : null,
+    executionTimeMs: typeof json.executionTime === "number" ? json.executionTime : null,
   };
 }

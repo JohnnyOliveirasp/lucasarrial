@@ -10,6 +10,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { handleTechFailure } from "@/lib/support/failure-alert";
+import { logger } from "@/lib/logger/server";
 
 export function friendlyCloneError(raw: string): string {
   const base = (() => {
@@ -30,6 +31,8 @@ export async function finalizeVideoClone(args: {
   jobId: string;
   runpodStatus: string;
   rawError?: string | null;
+  /** executionTime do RunPod em ms (webhook/status) — vira elapsed_seconds. */
+  executionTimeMs?: number | null;
 }): Promise<{ applied: boolean }> {
   const admin = getAdmin();
 
@@ -55,6 +58,42 @@ export async function finalizeVideoClone(args: {
     .in("status", ["pending", "generating"])
     .select("id");
   if (!claimed || claimed.length === 0) return { applied: false };
+
+  // ── Evidência da falha (mig 90, rajada agshortcut 22/08) ─────────────────
+  // O status do job expira no RunPod (~30min–2h → 404): o erro CRU e o tempo
+  // de execução têm que ser gravados AGORA ou somem pra sempre — foi por isso
+  // que 9 falhas de 22/08 ficaram sem causa atribuível. Mesmo padrão da
+  // geração de áudio (webhook runpod/route.ts, incidente d3d8d1b2).
+  //   raw_error: texto técnico, em coluna PRÓPRIA — NUNCA concatenar no
+  //   error_message: a assinatura do incidente deriva do texto do erro
+  //   (lib/incidents/classify.ts) e identificador alfanumérico não normaliza.
+  //   O aluno segue vendo só a frase amigável.
+  // UPDATE separado e best-effort, de propósito: enquanto a mig 90 não estiver
+  // aplicada, a telemetria falha SOZINHA — o gate acima já garantiu o failed e
+  // o estorno abaixo nunca espera instrumentação.
+  try {
+    const evidence: { raw_error: string; elapsed_seconds?: number } = {
+      raw_error: rawError.slice(0, 500),
+    };
+    if (typeof args.executionTimeMs === "number") {
+      evidence.elapsed_seconds = args.executionTimeMs / 1000; // RunPod manda em ms
+    }
+    const { error } = await admin
+      .from("video_clones")
+      .update(evidence as never)
+      .eq("id", args.cloneId);
+    if (error) {
+      logger.warn("api", "video_clone.raw_error.write_failed", {
+        cloneId: args.cloneId,
+        error: error.message,
+      });
+    }
+  } catch (e) {
+    logger.warn("api", "video_clone.raw_error.write_failed", {
+      cloneId: args.cloneId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
 
   await handleTechFailure({
     feature: "Vídeo Clone (lip-sync)",

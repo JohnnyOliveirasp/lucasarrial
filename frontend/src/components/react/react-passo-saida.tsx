@@ -52,7 +52,7 @@ export function ReactPassoSaida({
     return () => {
       vivo.current = false;
     };
-  }, []);
+  }, [update]);
 
   /**
    * Acompanha o pedido até acabar. ⚠️ É o GET que faz o job ANDAR (mesmo
@@ -70,6 +70,10 @@ export function ReactPassoSaida({
       if (j?.status) {
         setJob(j);
         ultimo = j;
+        // Avisa o wizard que acabou: a partir daqui o "Voltar" sai de cena e o
+        // caminho é começar um React novo (regra do Johnny, 22/08). Fica no
+        // rascunho pra sobreviver a recarregar a página.
+        if (j.status === "pronto" && j.video_url) update({ finalizado: true });
       }
       if (j?.status === "pronto" || j?.status === "erro") return ultimo;
       if (!vivo.current) return ultimo;
@@ -272,7 +276,7 @@ export function ReactPassoSaida({
             void downloadFromUrl(url, "video-react", "mp4").finally(() => setBaixando(false));
           }}
           onDeNovo={() => {
-            update({ jobId: null });
+            update({ jobId: null, finalizado: false });
             setJob(null);
           }}
           onApagar={apagar}

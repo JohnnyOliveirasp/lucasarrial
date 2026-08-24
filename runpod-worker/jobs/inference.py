@@ -21,7 +21,7 @@ from model_loader import free_cuda
 from tts_qa import norm_words, run_chunk_qa
 from tts_text import split_text_for_tts
 from worker_config import WORKSPACE
-from worker_log import log as _log
+from worker_log import log as _log, phase as _phase
 
 from .inference_setup import baixar_lora, carregar_modelo, preparar_referencia
 from .tts_settings import TtsSettings
@@ -67,6 +67,9 @@ class InferenceJob:
             "intrusion_checked": 0, "intrusion_flagged": 0, "intrusion_none": 0,
             "regens": 0, "exhausted": 0,
         }
+        # Instrumentação d3d8d1b2: tentativa POR CHUNK (1 = geração original,
+        # 2+ = regen do QA) — sem isso o heartbeat não distingue os dois.
+        self._chunk_attempts: dict[int, int] = {}
 
     # ── Orquestracao ───────────────────────────────────────────────────────
     def run(self) -> dict:
@@ -116,8 +119,15 @@ class InferenceJob:
         free_cuda()
 
     # ── Geracao ────────────────────────────────────────────────────────────
-    def _gerar(self, chunk_text: str) -> np.ndarray:
+    def _gerar(self, chunk_text: str, chunk_idx: int = -1) -> np.ndarray:
         """Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853)."""
+        attempt = self._chunk_attempts.get(chunk_idx, 0) + 1
+        self._chunk_attempts[chunk_idx] = attempt
+        with _phase("inference.chunk.generate", chunk=chunk_idx, attempt=attempt,
+                    chars=len(chunk_text)):
+            return self._gerar_bruto(chunk_text)
+
+    def _gerar_bruto(self, chunk_text: str) -> np.ndarray:
         seg = self.model.generate(
             text=chunk_text,
             prompt_wav_path=self.prompt_wav_local,
@@ -146,7 +156,7 @@ class InferenceJob:
         c = self.cfg
         return run_chunk_qa(
             seg, idx, chunk,
-            regen_fn=lambda: self._aparar(self._gerar(chunk), idx),
+            regen_fn=lambda: self._aparar(self._gerar(chunk, idx), idx),
             sample_rate=self.sample_rate,
             prompt_text=self.prompt_text,
             qa_language=c.qa_language,
@@ -204,20 +214,26 @@ class InferenceJob:
         pieces: list[np.ndarray] = []
         for idx, (chunk, ends_paragraph) in enumerate(chunks):
             ct0 = time.monotonic()
-            seg = self._gerar(chunk)
+            seg = self._gerar(chunk, idx)
             raw_samples = int(seg.size)   # ANTES do trim (o log compara os dois)
             seg = self._aparar(seg, idx)
 
             if self.prompt_wav_local and self.cfg.algum_qa_ligado:
-                seg, coverage, lacuna = self._rodar_qa(seg, idx, chunk)
+                # Fase "pai" do QA do chunk: os whispers rodam aqui dentro e um
+                # regen empilha inference.chunk.generate por cima.
+                with _phase("inference.chunk.qa", chunk=idx):
+                    seg, coverage, lacuna = self._rodar_qa(seg, idx, chunk)
                 if (self.cfg.coverage_qa_enabled and coverage is not None
                         and coverage < self.cfg.coverage_qa_min
                         and not self._entregar_mesmo_com_cobertura_baixa(
                             idx, chunk, coverage, lacuna)):
                     # Buraco continuo grande: o modelo comeu um pedaco mesmo.
-                    self.qa_stats["coverage_exhausted"] += 1
-                    return pieces, {"chunk_idx": idx, "coverage": coverage,
-                                    "maior_lacuna": lacuna}
+                    resgate = self._resgatar_por_subdivisao(chunk, idx)
+                    if resgate is None:
+                        self.qa_stats["coverage_exhausted"] += 1
+                        return pieces, {"chunk_idx": idx, "coverage": coverage,
+                                        "maior_lacuna": lacuna}
+                    seg = resgate
 
             _log(
                 "info", "inference.chunk", idx=idx, total=len(chunks),
@@ -235,6 +251,41 @@ class InferenceJob:
             if self.silence_samples > 0 and self.crossfade_samples == 0 and idx < len(chunks) - 1:
                 pieces.append(np.zeros(self.silence_samples, dtype=np.float32))
         return pieces, None
+
+    def _resgatar_por_subdivisao(self, chunk: str, idx: int):
+        """Chunk esgotou o QA com buraco CONTINUO -> parte nas frases e gera
+        cada uma com o mesmo QA (#52, 24/08).
+
+        Medido em 36h: 7 de 129 geracoes (5,4%) morriam aqui — 1 em 18, 6
+        alunos, a causa dominante de falha de audio. Os que falham sao 1,6x
+        maiores e 86% tem quebra de linha: chunks onde VARIAS frases foram
+        coladas ate 160 chars e o modelo pulou uma. Regenerar o MESMO chunk 3x
+        cai no mesmo buraco; cada pedaco curto re-ancora o modelo.
+
+        Devolve o audio concatenado, ou None se nao da pra partir (frase
+        unica) ou se algum pedaco ainda vier comido — ai o job cai como antes.
+        """
+        partes = [c for c, _ in split_text_for_tts(chunk, max_chars=1)]
+        if len(partes) < 2:
+            _log("info", "inference.coverage.rescue.skip", idx=idx, motivo="frase_unica")
+            return None
+        self.qa_stats["coverage_rescue"] = self.qa_stats.get("coverage_rescue", 0) + 1
+        _log("info", "inference.coverage.rescue", idx=idx, partes=len(partes))
+        pedacos: list[np.ndarray] = []
+        for j, parte in enumerate(partes):
+            sub_idx = idx * 100 + j + 1  # rotulo unico no log/heartbeat
+            seg = self._aparar(self._gerar(parte, sub_idx), idx)
+            seg, cov, lacuna = self._rodar_qa(seg, sub_idx, parte)
+            if (cov is not None and cov < self.cfg.coverage_qa_min
+                    and not self._entregar_mesmo_com_cobertura_baixa(sub_idx, parte, cov, lacuna)):
+                _log("error", "inference.coverage.rescue.failed", idx=idx, parte=j,
+                     coverage=cov, maior_lacuna=lacuna)
+                self.qa_stats["coverage_rescue_failed"] = self.qa_stats.get("coverage_rescue_failed", 0) + 1
+                return None
+            pedacos.append(seg)
+        self.qa_stats["coverage_rescued"] = self.qa_stats.get("coverage_rescued", 0) + 1
+        _log("info", "inference.coverage.rescued", idx=idx, partes=len(partes))
+        return np.concatenate(pedacos)
 
     # ── Saida ──────────────────────────────────────────────────────────────
     def _montar(self, pieces) -> np.ndarray:
@@ -290,5 +341,6 @@ class InferenceJob:
         out_path = WORKSPACE / f"gen_{int(time.time() * 1000)}.wav"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         sf.write(str(out_path), wav, self.sample_rate)
-        upload_file_to_presigned_url(out_path, self.output_upload_url, content_type="audio/wav")
+        with _phase("inference.upload"):
+            upload_file_to_presigned_url(out_path, self.output_upload_url, content_type="audio/wav")
         return {"uploaded": True, **comum}

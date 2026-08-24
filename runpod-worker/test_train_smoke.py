@@ -112,6 +112,13 @@ def _stub():
         (_toca(Path(work_dir) / "cand_2.wav"), "terceira candidata."),
     ]
     vp.detect_language = lambda p, model_name=None: ("pt", 0.99)
+    # Modulos que a main adicionou depois do refator (080dd74 pacing,
+    # 93f9b3b transcribe_words): o stub precisa conhece-los.
+    pac = types.ModuleType("voice_pipeline.pacing")
+    pac.measure_natural_pause_ms = lambda files, log=None: None
+    vp.pacing = pac
+    vp.transcribe_words = lambda *a, **k: None
+    sys.modules["voice_pipeline.pacing"] = pac
     sys.modules["voice_pipeline"] = vp
 
 

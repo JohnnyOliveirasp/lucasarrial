@@ -16,6 +16,8 @@
  *   node _Bugs/fast_emails_18-08/resgatar_voz.cjs <voiceId> --confirmar # executa
  */
 const path_ = require("node:path");
+const os_ = require("node:os");
+const fs_ = require("node:fs");
 const RAIZ_ = path_.resolve(__dirname, "..", "..");
 require(path_.join(RAIZ_, "frontend", "node_modules", "dotenv")).config({ path: path_.join(RAIZ_, "frontend", ".env.local") });
 const { createClient } = require(path_.join(RAIZ_, "frontend", "node_modules", "@supabase/supabase-js"));
@@ -59,17 +61,52 @@ const putUrl = (bucket, key, type) =>
     expiresIn: TRAIN_EXPIRES,
   });
 
+async function probe(alvo) {
+  const { stdout } = await run(
+    "ffprobe",
+    ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", alvo],
+    { timeout: 120000 },
+  );
+  const d = Number(String(stdout).trim());
+  return Number.isFinite(d) && d > 0 ? d : 0;
+}
+
+/**
+ * Duração do áudio.
+ *
+ * 22/08 — POR QUE ISTO BAIXA O ARQUIVO EM VEZ DE SÓ SONDAR A URL:
+ * o ffprobe desta máquina dá SEGMENTATION FAULT (exit 139) ao abrir URL https.
+ * A versão anterior chamava `ffprobe <url>` dentro de um try/catch que devolvia
+ * 0 no catch — ou seja, engolia o segfault EM SILÊNCIO e toda voz reprovava no
+ * "só 0.0 min — mínimo 20", independentemente do áudio. A ferramenta parecia
+ * recusar o áudio do aluno quando na verdade era o nosso probe que morria.
+ * Agora: tenta a URL; se vier 0, BAIXA pro /tmp e mede local (que funciona);
+ * e qualquer falha é IMPRESSA, nunca engolida.
+ */
 async function duracao(url) {
   try {
-    const { stdout } = await run(
-      "ffprobe",
-      ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", url],
-      { timeout: 120000 },
-    );
-    const d = Number(String(stdout).trim());
-    return Number.isFinite(d) ? d : 0;
-  } catch {
+    const d = await probe(url);
+    if (d > 0) return d;
+    console.log("   (probe pela URL devolveu 0 — vou baixar e medir local)");
+  } catch (e) {
+    console.log(`   (probe pela URL falhou: ${String(e.message).slice(0, 80)} — baixando)`);
+  }
+  const tmp = path_.join(os_.tmpdir(), `dur_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.log(`   ❌ download para medir falhou: HTTP ${resp.status}`);
+      return 0;
+    }
+    fs_.writeFileSync(tmp, Buffer.from(await resp.arrayBuffer()));
+    const d = await probe(tmp);
+    if (d === 0) console.log("   ❌ ffprobe local também não achou duração — arquivo pode não ser áudio");
+    return d;
+  } catch (e) {
+    console.log(`   ❌ medição local falhou: ${String(e.message).slice(0, 100)}`);
     return 0;
+  } finally {
+    try { fs_.unlinkSync(tmp); } catch {}
   }
 }
 

@@ -150,5 +150,14 @@ def maior_lacuna(got, chunk_text, language="pt"):
     maior = 0
     for tag, i1, i2, _j1, _j2 in sm.get_opcodes():
         if tag in ("delete", "replace"):
-            maior = max(maior, i2 - i1)
+            # CORREÇÃO 24/08 (incidente 37bacb68): buraco medido em palavras
+            # FALÁVEIS — token de 1 letra não conta. SIGLA SOLETRADA ("B P C,
+            # L O A S") normaliza pra 7 tokens de 1 letra e o whisper escreve
+            # "BPC LOAS": buraco contínuo de 7, indistinguível de parágrafo
+            # comido, e o gate reprovava ÁUDIO BOM (tulliojeronimo, 23/08:
+            # mesmo roteiro falhou 2x soletrado e passou escrito "Bê pê cê").
+            # Trecho realmente comido é feito de palavra de verdade — o
+            # desconto NÃO enfraquece a proteção do caso Katia.
+            faladas = sum(1 for w in expected[i1:i2] if len(w) >= 2)
+            maior = max(maior, faladas)
     return maior

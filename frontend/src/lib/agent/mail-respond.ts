@@ -12,6 +12,9 @@
  * avisa que a equipe confirma; nunca resolve sozinha). "PULAR" = silêncio.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { abrirChamadoReportado } from "@/lib/incidents/reportar";
+import { reabrirPorRespostaDoAluno } from "@/lib/incidents/espera";
+import { entregarAoTime } from "@/lib/incidents/entregar";
 import { guardarPrints } from "./mail-anexos";
 import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
@@ -145,56 +148,21 @@ async function openIncidentForSentinela(
    *  cancelamento, reembolso, dúvida de conta). Os dois viram incidente desde
    *  19/08 — muda o rótulo, não a existência. */
   technical = true,
-): Promise<void> {
-  const admin = getAdmin();
-  const signature = `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`;
-  const now = new Date().toISOString();
-  const { data: existingRaw } = await admin
-    .from("incidents" as never)
-    .select("id, status, occurrences, affected_emails")
-    .eq("signature", signature)
-    .order("last_seen_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const existing = existingRaw as unknown as {
-    id: string;
-    status: string;
-    occurrences: number;
-    affected_emails: string[];
-  } | null;
-
-  if (existing) {
-    const reopened = existing.status === "fixed" || existing.status === "ignored";
-    await admin
-      .from("incidents" as never)
-      .update({
-        status: reopened ? "open" : existing.status,
-        occurrences: (existing.occurrences ?? 1) + 1,
-        last_seen_at: now,
-        sample_error: excerpt.slice(0, 1000),
-        description: reason,
-        ...(prints.length ? { attachment_path: prints.join(",") } : {}),
-      } as never)
-      .eq("id", existing.id);
-    return;
-  }
-  await admin.from("incidents" as never).insert({
-    kind: "reported",
-    cause: "reported",
-    status: "open",
-    signature,
+): Promise<number | null> {
+  // O corpo vive em lib/incidents/reportar.ts desde 22/08 — o WhatsApp precisa
+  // do MESMO caminho, e duas cópias é como o zap ficou sem chamado até hoje.
+  return abrirChamadoReportado({
+    signature: `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`,
     title: `Fast (e-mail${technical ? "" : ", atendimento"}): ${reason.slice(0, 90)}`,
-    occurrences: 1,
-    affected_emails: [fromEmail],
-    sample_error: excerpt.slice(0, 1000),
     description: technical
       ? `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`
       : `Pedido de ATENDIMENTO por e-mail ao suporte@ (cobrança, cancelamento, reembolso ou dúvida de conta) — a Fast não resolve isso sozinha e prometeu ao aluno que a equipe verificaria. Resumo dela: ${reason}`,
-    reported_by: "fast",
-    attachment_path: prints.length ? prints.join(",") : null,
-    first_seen_at: now,
-    last_seen_at: now,
-  } as never);
+    reportedBy: "fast",
+    categoria: technical ? "tecnico" : "atendimento",
+    affectedEmails: [fromEmail],
+    sampleError: excerpt,
+    attachments: prints,
+  });
 }
 
 // Pedido Johnny 05/08: cópia oculta SÓ pra ele (antes ia pra admin_emails inteira).
@@ -313,6 +281,12 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     return "skipped";
   }
 
+  // O aluno respondeu: traz de volta o que estava "aguardando o aluno".
+  // Vem ANTES de gerar a resposta — se a Fast resolver sozinha, o time ainda
+  // precisa ver que ele voltou a falar (foi assim que a resposta do Luciano
+  // caiu no vazio 2h17 depois do fechamento, chamado #95).
+  void reabrirPorRespostaDoAluno({ email: fromEmail, trecho: text });
+
   // Link de arquivo (Drive & cia): a Fast não abre, o time abre. Encaminha o
   // e-mail inteiro pra quem vai olhar — ela ainda responde o aluno dizendo que
   // pediu análise (regra 6b do manual).
@@ -390,7 +364,12 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     try {
       // O print é a prova: guarda ANTES de abrir o incidente.
       const prints = await guardarPrints(mail.raw, { fromEmail, uid: mail.uid });
-      await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
+      const numero = await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
+      // ATENDIMENTO = precisa de gente, não de código (#82, Johnny 24/08):
+      // avisa o grupo e FECHA — a responsabilidade é do time, não do quadro.
+      if (numero != null && !technical) {
+        await entregarAoTime({ numero, canal: "e-mail", aluno: fromEmail, resumo: reason, texto: text });
+      }
     } catch (e) {
       console.error("[agent/mail] falha ao abrir incidente:", e instanceof Error ? e.message : e);
     }

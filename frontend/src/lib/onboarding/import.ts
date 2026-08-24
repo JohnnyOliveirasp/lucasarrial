@@ -27,13 +27,27 @@ import { adotarReferencia } from "@/lib/images/refs";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 import {
   MIN_TOTAL_SECONDS,
-  RX_EXT_AUDIO_NUA,
+  RX_EXT_AUDIO,
   mensagemCurtoDemais,
 } from "@/lib/voices/regua-audio";
-import { mkdtemp, rm } from "node:fs/promises";
+import {
+  sniffAudio,
+  ehPaginaWeb,
+  probeAudioDuracaoLocal,
+  motivoDownloadVeioPagina,
+} from "./audio-tipo";
+import { rm } from "node:fs/promises";
+import { dirTemporario } from "./tmp";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { downloadDriveFile, downloadDriveFileToPath, pickExtension } from "./drive";
+import { downloadDriveFile, downloadDriveFileToPath, pickExtension, ehArquivoLocal } from "./drive";
+import {
+  sniffImagem,
+  heicParaJpegViaDrive,
+  heicParaJpegLocal,
+  trocarExtensao,
+  descreverArquivo,
+} from "./imagem-tipo";
 import { extrairFramesDeArquivo } from "./video-frames";
 import { escolherReferenciaFrontal } from "./referencia";
 import { dispararTreinoOnboarding } from "./treino";
@@ -101,7 +115,7 @@ async function importarFramesDoVideo(
   // STREAMING pra disco (A248: 878MB — nada de Buffer gigante na RAM).
   // Sem filtro de content-type: o Drive serve .mp4/.mov como octet-stream;
   // o ffprobe decide — se não for vídeo, a extração lança e vira "ignorado".
-  const dir = await mkdtemp(join(tmpdir(), "onbdl-"));
+  const dir = await dirTemporario("onbdl-");
   let frames: Buffer[];
   try {
     const src = join(dir, "video.bin");
@@ -143,6 +157,52 @@ async function importarFramesDoVideo(
 }
 
 /**
+ * Foto tirada do THUMBNAIL do Drive — sem baixar o arquivo original.
+ *
+ * 22/08: o aluno manda um vídeo de 2,3GB na pasta de fotos. Baixar pra extrair
+ * frames estoura o teto (e antes ainda enchia o /tmp, que é RAM). Mas o Drive
+ * já tem um frame pronto e entrega em JPEG por /thumbnail — 437KB em vez de
+ * 2,3GB. Casos reais: linhas 373, 376, 388.
+ *
+ * Vale pra vídeo e pra foto: é a mesma porta que converte HEIC.
+ */
+async function importarThumbnailDoDrive(
+  admin: Admin,
+  userId: string,
+  fileId: string,
+  allKeys: string[],
+): Promise<number> {
+  const bytes = await heicParaJpegViaDrive(fileId, MAX_IMAGE_BYTES);
+  const safe = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const destKey = `${userId}/uploads/onboarding_${safe}.jpg`;
+
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: imagesBucket(),
+      Key: destKey,
+      Body: bytes,
+      ContentType: "image/jpeg",
+    }),
+  );
+  const { error: insertErr } = await admin.from("image_generations").insert({
+    id: randomUUID(),
+    user_id: userId,
+    name: "Foto do arquivo enviado",
+    prompt: "",
+    input_image_path: "",
+    aspect_ratio: "auto",
+    resolution: "original",
+    credits_cost: 0,
+    image_path: destKey,
+    status: "ready",
+    kie_model: "upload",
+  });
+  if (insertErr) throw new Error(insertErr.message);
+  allKeys.push(destKey);
+  return 1;
+}
+
+/**
  * Importa as fotos do Drive pro acervo do aluno e define a referência do
  * clone se ainda não houver (profiles.image_ref_key).
  */
@@ -181,18 +241,53 @@ export async function importImages(
       }
 
       const file = await downloadDriveFile(fileId, MAX_IMAGE_BYTES);
-      if (!file.contentType.startsWith("image/")) {
-        throw new Error(`não é imagem (${file.contentType})`);
+      // 22/08: quem decide é o CONTEÚDO, não o content-type. O Drive serve
+      // .HEIC do iPhone como application/octet-stream, e confiar no rótulo
+      // mandava 15 linhas da planilha pro caminho de vídeo (ffprobe: "moov
+      // atom not found") com a pasta cheia de foto boa. Ver imagem-tipo.ts.
+      const tipo = sniffImagem(file.bytes);
+      if (!tipo) {
+        // 22/08 (gêmeo do caso OneDrive no áudio): página de login/erro no
+        // lugar da foto é DOWNLOAD que falhou, não "arquivo errado do aluno".
+        // Sem isto, a mensagem virava "é uma página da internet, não uma
+        // foto" + "Precisamos de uma FOTO sua" — culpando quem mandou certo.
+        if (ehPaginaWeb(file.bytes)) {
+          throw new Error(motivoDownloadVeioPagina("foto"));
+        }
+        // Diz O QUE é, não só "não é imagem": a linha 24 mandou um PDF e leu
+        // "não é imagem (application/octet-stream); frames: vídeo sem duração
+        // legível" — nada que ajudasse a consertar.
+        const oQueE = descreverArquivo(file.bytes);
+        throw new Error(
+          oQueE
+            ? `é ${oQueE}, não uma foto`
+            : `não é imagem (${file.contentType})`,
+        );
       }
-      const ext = pickExtension(file.filename, file.contentType, "jpg");
+
+      let bytes = file.bytes;
+      let contentType = tipo.mime;
+      let filename = file.filename;
+      let ext = tipo.ext;
+      if (tipo.heic) {
+        // Nada no resto do sistema (R2, Kie, avatares) abre HEIC.
+        // Arquivo que veio de WeTransfer/Dropbox NUNCA esteve no Drive: pedir
+        // a conversão de lá devolvia HTTP 400 e derrubava a linha (caso 97).
+        bytes = ehArquivoLocal(fileId)
+          ? await heicParaJpegLocal(bytes)
+          : await heicParaJpegViaDrive(fileId, MAX_IMAGE_BYTES);
+        contentType = "image/jpeg";
+        ext = "jpg";
+        filename = trocarExtensao(filename, "jpg");
+      }
       const destKey = imageDestKey(userId, fileId, ext);
 
       await r2.send(
         new PutObjectCommand({
           Bucket: imagesBucket(),
           Key: destKey,
-          Body: file.bytes,
-          ContentType: file.contentType,
+          Body: bytes,
+          ContentType: contentType,
         }),
       );
 
@@ -200,7 +295,7 @@ export async function importImages(
       const { error: insertErr } = await admin.from("image_generations").insert({
         id: randomUUID(),
         user_id: userId,
-        name: file.filename?.replace(/\.[a-zA-Z0-9]{1,5}$/, "") || "Foto enviada",
+        name: filename?.replace(/\.[a-zA-Z0-9]{1,5}$/, "") || "Foto enviada",
         prompt: "",
         input_image_path: "",
         aspect_ratio: "auto",
@@ -218,7 +313,10 @@ export async function importImages(
       const msg = e instanceof Error ? e.message : String(e);
       // Vídeo (ou arquivo grande) no lugar de foto: tenta extrair 3 frames
       // do vídeo — é o que o time fazia na mão (print do vídeo do aluno).
-      if (/teto \d+MB|não é imagem/.test(msg)) {
+      // "não uma foto" entra aqui porque a mensagem passou a dizer O QUE é o
+      // arquivo ("é um vídeo, não uma foto"). Sem isso, o caso MAIS COMUM — o
+      // aluno que manda vídeo no lugar da foto — deixaria de tentar os frames.
+      if (/teto \d+MB|não é imagem|não uma foto/.test(msg)) {
         try {
           const n = await importarFramesDoVideo(admin, userId, fileId, allKeys);
           if (n > 0) {
@@ -227,6 +325,27 @@ export async function importImages(
           }
           result.ignored!.push({ id: fileId, reason: msg });
         } catch (e2) {
+          // ÚLTIMO RECURSO (22/08): baixar o vídeo falhou — grande demais pro
+          // teto, ou o disco encheu. O Drive já tem um frame pronto e serve em
+          // JPEG por /thumbnail, SEM baixar o arquivo. Resolve os vídeos de
+          // 2,3GB das linhas 373/376/388 e qualquer tamanho daqui pra frente:
+          // a régua do Johnny é "basta PELO MENOS 1 imagem".
+          const eSoTamanho = /teto|passou de|ENOSPC|no space left/i.test(
+            e2 instanceof Error ? e2.message : String(e2),
+          ) || /teto \d+MB/.test(msg);
+          // Arquivo de WeTransfer/Dropbox não está no Drive: pedir o thumbnail
+          // de lá só devolve HTTP 400 (mesma pedra do caso 97).
+          if (eSoTamanho && !ehArquivoLocal(fileId)) {
+            try {
+              const n = await importarThumbnailDoDrive(admin, userId, fileId, allKeys);
+              if (n > 0) {
+                result.imported++;
+                continue;
+              }
+            } catch {
+              /* nem o thumbnail veio — cai no ignorado abaixo */
+            }
+          }
           result.ignored!.push({
             id: fileId,
             reason: `${msg}; frames: ${e2 instanceof Error ? e2.message : String(e2)}`,
@@ -317,7 +436,12 @@ export async function importTrainingAudios(
   userId: string,
   fileIds: string[],
 ): Promise<AudioImportResult> {
-  const result: ImportResult = { imported: 0, skipped: 0, failed: [] };
+  // `ignored` PRECISA nascer aqui: a linha que empurra não-áudio faz
+  // `result.ignored!.push(...)`, e o `!` só engana o TypeScript — em runtime
+  // dava "Cannot read properties of undefined (reading 'push')" e derrubava o
+  // import inteiro. Justo no caso mais comum: o aluno joga foto e áudio na
+  // MESMA pasta do Drive. Casos reais 22/08: linhas 327 e 328.
+  const result: ImportResult = { imported: 0, skipped: 0, failed: [], ignored: [] };
   if (fileIds.length === 0) {
     return { ...result, voice_id: null, voice_status: null, training: null };
   }
@@ -369,6 +493,21 @@ export async function importTrainingAudios(
     const fileId = fileIds[i];
     try {
       const file = await downloadDriveFile(fileId, MAX_AUDIO_BYTES);
+      // 22/08: quem decide é o CONTEÚDO, não o rótulo — a versão de áudio da
+      // regra que o sniffImagem já aplica nas fotos. O caso que forçou isso:
+      // link do OneDrive devolvia a página de LOGIN da Microsoft (HTML de
+      // ~300KB), o nome não tinha extensão, o content-type era octet-stream, e
+      // o fallback "mp3" do pickExtension fazia o HTML passar no filtro e
+      // subir pro R2 como áudio. O worker não achava fala e o aluno lia
+      // "grave num ambiente silencioso" — culpado por um download NOSSO que
+      // falhou (marlonwsmuniz/voz 0e2f5726, lazevedo/voz 3d3c4da8).
+      if (ehPaginaWeb(file.bytes)) {
+        // Página de login/erro NUNCA é o arquivo do aluno: é download que
+        // falhou. Vai pra `failed` (não `ignored`) — a linha tem que virar
+        // Erro e o aluno tem que saber a verdade, não "grave de novo".
+        result.failed.push({ id: fileId, error: motivoDownloadVeioPagina("áudio") });
+        continue;
+      }
       // Só ÁUDIO entra na lista do treino (incidente 910ea757, 20/08): a pasta
       // do Drive do aluno costuma misturar as FOTOS com os áudios, e todo
       // arquivo virava `raw_audio_paths`. No treino, o ffmpeg de conversão
@@ -377,18 +516,35 @@ export async function importTrainingAudios(
       // corrompido, envie de novo" (mensagem falsa: ele nunca enviou nada,
       // veio da planilha). Medido: 4 vozes travadas, uma delas com 9 de 9
       // arquivos sendo foto. Não-áudio agora é "ignorado", não derruba a voz.
-      const ext = pickExtension(file.filename, file.contentType, "mp3");
+      const tipo = sniffAudio(file.bytes);
+      let ehAudio = tipo !== null;
+      if (!ehAudio) {
+        // Assinatura desconhecida mas o RÓTULO insiste que é áudio (ex.: mp3
+        // com lixo antes do primeiro frame): o ffprobe LOCAL dá o veredito —
+        // faixa de áudio com duração > 0. Sem o fallback "mp3" na conta: era
+        // ele que deixava qualquer conteúdo sem nome nem tipo passar por mp3.
+        const rotuloDizAudio =
+          (file.contentType || "").toLowerCase().startsWith("audio/") ||
+          RX_EXT_AUDIO.test(file.filename ?? "");
+        if (rotuloDizAudio) {
+          ehAudio = (await probeAudioDuracaoLocal(file.bytes)) !== null;
+        }
+      }
       // A lista vem da régua (fonte única). Manter cópia aqui já custou caro:
       // este filtro aceitava `mov|mkv|wma|amr` e a régua não, então o arquivo
       // era gravado e depois descartado por ela — a casa perdia o áudio do
       // aluno e o recusava por "áudio insuficiente" (medido em 21/08).
-      const ehAudio =
-        (file.contentType || "").toLowerCase().startsWith("audio/") ||
-        RX_EXT_AUDIO_NUA.test(ext);
+      // O fallback do pickExtension agora é o que o CONTEÚDO diz (tipo?.ext),
+      // não mais "mp3" às cegas.
+      const ext = pickExtension(file.filename, file.contentType, tipo?.ext ?? "mp3");
       if (!ehAudio) {
+        // Diz O QUE é, quando dá (mesma cortesia do caminho das fotos).
+        const oQueE = descreverArquivo(file.bytes);
         result.ignored!.push({
           id: fileId,
-          reason: `não é áudio (${file.contentType || ext}) — provavelmente foto na pasta do Drive`,
+          reason: oQueE
+            ? `não é áudio (é ${oQueE}) — provavelmente foto ou documento na pasta`
+            : `não é áudio (${file.contentType || ext}) — provavelmente foto na pasta do Drive`,
         });
         continue;
       }

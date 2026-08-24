@@ -26,13 +26,17 @@ import runpod
 from jobs import handle_inference, handle_train, handle_transcribe
 from model_loader import free_cuda
 from worker_disk import disk_percent, faxina
-from worker_log import log as _log
+from worker_log import log as _log, set_current_job, start_heartbeat
 
 
 def handler(event: dict) -> dict:
     inp = event.get("input") or {}
     job_type = inp.get("type", "inference")
     _log("info", "job.start", type=job_type, disk_pct=round(disk_percent(), 1))
+    # Instrumentação d3d8d1b2: heartbeat nomeia a fase corrente no log — num
+    # hang SIGKILLado pelo executionTimeout, é o único rastro que sobra.
+    set_current_job(job_type)
+    start_heartbeat()
     try:
         if job_type == "train":
             return handle_train(inp)
@@ -84,6 +88,7 @@ def handler(event: dict) -> dict:
         # derrubar o próximo aluno. Faxina no fim de TODO job, inclusive os que
         # falharam (job que estourou é justamente o que mais deixa sujeira).
         faxina(job_type)
+        set_current_job(None)  # silencia o heartbeat entre jobs
 
 
 

@@ -111,3 +111,10 @@ voxbr/tagarela/_train_final*.jsonl
 voxbr/tagarela/_work/
 voxbr/**/*.wav
 voxbr/**/*.safetensors
+
+# Dados pessoais de aluno (backup de exclusao LGPD) e exports da planilha:
+# NUNCA versionar. Em 23/08 commitei planilha.csv com 536 linhas e 2 colunas
+# de senha em texto puro e tive que reescrever o historico e force-push.
+_frank/prova/lgpd/
+*planilha*.csv
+*planilha*.xlsx

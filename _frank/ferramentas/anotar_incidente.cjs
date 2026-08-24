@@ -34,7 +34,7 @@
  * ⚠️ `--status fixed` sem ter resolvido de verdade viola a regra 14. A
  * ferramenta grava o que voce mandar; a honestidade da nota e sua.
  */
-const { supa } = require("./_comum.cjs");
+const { supa, STATUS_FECHADO } = require("./_comum.cjs");
 
 const STATUS_VALIDOS = ["open", "investigating", "fixed", "ignored", "fixing"];
 
@@ -130,9 +130,20 @@ function normalizarNotas(atual) {
   }
   if (status) {
     patch.status = status;
-    if (["fixed", "ignored"].includes(status) && !antes.resolved_at) {
-      patch.resolved_at = agora;
-      patch.resolved_by = por;
+    // Quem decide se carimba a data é o STATUS ANTERIOR, não o campo estar
+    // vazio. A guarda antiga (`!antes.resolved_at`) fazia um card REABERTO
+    // e fechado de novo guardar a data e o autor do fechamento ANTIGO —
+    // aconteceu no ce6e157d: fechado 18:41, reaberto 19:20 pela aluna,
+    // fechado de novo às 22h com outro commit, e o banco continuava dizendo
+    // 18:41. O relatório passa a mentir sobre quando o problema acabou.
+    // Ainda assim não re-carimba quem só re-anota um card JÁ fechado no
+    // mesmo status — nesse caso a data original é a verdadeira.
+    if (STATUS_FECHADO.includes(status)) {
+      const jaEstavaFechado = STATUS_FECHADO.includes(antes.status);
+      if (!jaEstavaFechado || !antes.resolved_at) {
+        patch.resolved_at = agora;
+        patch.resolved_by = por;
+      }
     }
   }
   if (commit) patch.resolved_commit = commit;

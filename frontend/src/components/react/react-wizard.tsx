@@ -56,7 +56,9 @@ export function ReactWizard() {
   }, []);
 
   function recomecar() {
-    if (!window.confirm("Começar um React do zero? O rascunho atual se perde.")) return;
+    // Depois de finalizado não há rascunho a perder: o vídeo já foi entregue e
+    // está na lista abaixo. Perguntar aí é só um passo a mais no caminho.
+    if (!draft.finalizado && !window.confirm("Começar um React do zero? O rascunho atual se perde.")) return;
     localStorage.removeItem(DRAFT_KEY);
     setDraft(DRAFT_VAZIO);
   }
@@ -124,14 +126,29 @@ export function ReactWizard() {
       </div>
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => update({ passo: Math.max(0, draft.passo - 1) })}
-          disabled={draft.passo === 0}
-          className="h-10 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-4 text-[13px] text-[var(--ink)] disabled:opacity-40"
-        >
-          Voltar
-        </button>
+        {/* Vídeo pronto = fim do caminho. Regra do Johnny (22/08): não se
+            volta atrás depois de finalizado — o que se faz é começar outro.
+            Manter o "Voltar" aqui só convida a mexer num React que já foi
+            gerado e cobrado. */}
+        {!draft.finalizado && (
+          <button
+            type="button"
+            onClick={() => update({ passo: Math.max(0, draft.passo - 1) })}
+            disabled={draft.passo === 0}
+            className="h-10 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-4 text-[13px] text-[var(--ink)] disabled:opacity-40"
+          >
+            Voltar
+          </button>
+        )}
+        {draft.finalizado && (
+          <button
+            type="button"
+            onClick={recomecar}
+            className="h-10 rounded-[var(--radius-sm)] bg-[var(--ink)] px-5 text-[14px] font-semibold text-[var(--surface-deep)]"
+          >
+            Criar outro React
+          </button>
+        )}
         {/* No último passo o botão de gerar é o da própria tela de Saída. */}
         {!ultimo && (
           <button

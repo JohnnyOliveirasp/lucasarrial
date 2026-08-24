@@ -83,6 +83,8 @@ export async function buildAgentReply(
   history: AgentMessageRow[],
   opts?: {
     group?: boolean;
+    /** Grupo INTERNO da equipe (não de alunos) — muda o tom e o que pode dizer. */
+    teamGroup?: boolean;
     /** F6: grupo SEM menção — a Fast entra por conta própria (tom humilde). */
     unprompted?: boolean;
     account?: string | null;
@@ -116,7 +118,12 @@ export async function buildAgentReply(
   let system = opts?.group
     ? opts?.unprompted
       ? `${buildAgentSystem()}\n\nCONTEXTO: você está DENTRO DE UM GRUPO de alunos (várias pessoas conversando — os nomes prefixam as mensagens). NINGUÉM te marcou: você está entrando por conta própria porque a última mensagem é claramente uma dúvida sobre a plataforma. Responda SÓ essa dúvida, direto ao ponto, sem se justificar por ter entrado. Se a equipe preferir responder, ótimo — você é o reforço, não a dona da conversa. Seja ainda mais curta que no privado. Dúvida longa/pessoal → convide a pessoa a te chamar no privado. IMPORTANTE: se ao ler a conversa você perceber que a dúvida é sobre OUTRA ferramenta (HeyGen, ElevenLabs etc.) ou não tiver CERTEZA de que é sobre o FastCloner, responda APENAS a palavra PULAR — nada mais (o sistema descarta e você fica em silêncio; como ninguém te chamou, silêncio é melhor que chute).`
-      : `${buildAgentSystem()}\n\nCONTEXTO: você está respondendo DENTRO DE UM GRUPO de alunos (várias pessoas conversando — os nomes prefixam as mensagens). Responda SÓ à última pessoa, que te marcou. Seja ainda mais curto que no privado. Dúvida longa/pessoal → convide a pessoa a te chamar no privado.`
+      : opts?.teamGroup
+        ? `${buildAgentSystem()}
+
+CONTEXTO: você está no GRUPO INTERNO DA EQUIPE do FastCloner (Johnny 22/08) — quem te marcou é COLEGA de trabalho, NÃO é aluno. Fale como colega: direta, sem "oi, tudo bem?", sem emoji de atendimento, sem convidar ninguém pro privado. Eles trazem CASOS DE ALUNOS pra você olhar (print de erro, linha da planilha, e-mail de alguém). Se souber resolver pelo manual, responda a resposta técnica direto. Se NÃO souber, ou se precisar de alguém mexendo no sistema/no banco/em dinheiro, escale (regra 3) — mas NUNCA diga "vou chamar alguém da equipe pra te ajudar": eles SÃO a equipe. Diga só que vai registrar pro time técnico olhar; o sistema responde logo depois com o NÚMERO do chamado.`
+        : `${buildAgentSystem()}\n\nCONTEXTO: você está respondendo DENTRO DE UM GRUPO de alunos (várias pessoas conversando — os nomes prefixam as mensagens). Responda SÓ à última pessoa, que te marcou. Seja ainda mais curto que no privado. Dúvida longa/pessoal → convide a pessoa a te chamar no privado.`
+
     : buildAgentSystem();
 
   // F4: conta identificada pelo TELEFONE do WhatsApp (nunca por e-mail dito

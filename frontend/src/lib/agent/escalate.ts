@@ -11,7 +11,10 @@
  * Johnny 2026-07-13: falha de sistema não aciona o resto da equipe.
  * Best-effort: aviso falhar nunca derruba a resposta ao aluno.
  */
+import { createHash } from "node:crypto";
+
 import { sendAgentText } from "@/lib/agent/provider";
+import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
 import type { AgentChatRow } from "@/lib/db/types";
@@ -115,5 +118,65 @@ export async function notifyTeamEscalation(args: {
     });
   } catch {
     /* best-effort */
+  }
+}
+
+/**
+ * Chamado pro Frank a partir do WhatsApp — inclusive do GRUPO.
+ *
+ * Pedido do Johnny 22/08: *"quando alguém marcar a Carol no grupo e pedir
+ * ajuda, ela precisa pegar o pedido da pessoa e abrir um chamado para que o
+ * Frank investigue"*. O gatilho é ela NÃO resolver sozinha (o marcador
+ * [ESCALAR] que ela já usa) — decisão dele: pergunta que morre no grupo não
+ * vira chamado, senão a fila do Frank enche de coisa já resolvida.
+ *
+ * Até aqui o zap só avisava e pausava a conversa; o chamado existia apenas no
+ * caminho do e-mail. Best-effort: falhar aqui nunca derruba o atendimento.
+ */
+export async function abrirChamadoDaEscalacao(args: {
+  chat: AgentChatRow;
+  /** Quem falou (participante, no grupo). */
+  senderJid: string | null;
+  reason: string;
+  lastUserText: string | null;
+  technical?: boolean;
+  /** Prints já guardados no R2 — o chamado nasce COM a imagem. */
+  attachments?: string[];
+}): Promise<number | null> {
+  try {
+    const grupo = args.chat.kind === "group";
+    const technical = args.technical === true;
+    const quem = grupo
+      ? (args.senderJid ?? "").replace(/\D/g, "") || "desconhecido"
+      : args.chat.wa_phone || args.chat.wa_jid;
+    // ⚠️ No grupo o chat é UM só. Assinar pelo chat faria TODO pedido cair no
+    // mesmo chamado eterno — a chave tem que ser quem pediu + o assunto.
+    const assunto = createHash("sha1")
+      .update(args.reason.toLowerCase().replace(/\s+/g, " ").trim())
+      .digest("hex")
+      .slice(0, 10);
+    const onde = grupo ? "grupo" : "privado";
+    const excerpt = (args.lastUserText ?? "").slice(0, 1000);
+
+    return await abrirChamadoReportado({
+      signature: `wa-${onde}:${quem}:${assunto}`,
+      title: grupo
+        ? `Carol (grupo): ${args.reason.slice(0, 90)}`
+        : `Carol (zap${technical ? "" : ", atendimento"}): ${args.reason.slice(0, 90)}`,
+      description: grupo
+        ? `Pedido feito no GRUPO do suporte e marcando a Carol — ela não resolve sozinha e escalou. ` +
+          `Quem pediu: ${args.chat.name || "grupo"} / participante ${quem}. Resumo dela: ${args.reason}`
+        : `Pedido por WhatsApp de ${args.chat.name || "aluno sem nome"} (${quem}) — a Carol escalou. ` +
+          `Resumo dela: ${args.reason}`,
+      reportedBy: grupo ? "carol-grupo" : "carol-zap",
+      // O marcador que ela já usa separa as filas: [ESCALAR-TECNICO] é falha
+      // da plataforma (tem conserto nosso); [ESCALAR] é conversa.
+      categoria: technical ? "tecnico" : "atendimento",
+      sampleError: excerpt,
+      attachments: args.attachments,
+    });
+  } catch (e) {
+    console.error("[agent/escalate] chamado não abriu:", e instanceof Error ? e.message : e);
+    return null;
   }
 }

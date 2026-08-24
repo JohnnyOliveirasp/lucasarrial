@@ -34,10 +34,13 @@ async function listarTudo(bucket, prefixo, minBytes = 1000) {
 const INICIO = "2026-08-19T15:10:33.173Z";
 const JANELA_MS = 15 * 60 * 1000;
 
-(async () => {
+/**
+ * Roda a medição e DEVOLVE { suspeitas, emails, estornos, gens, umaRef } —
+ * exportada pra que o script de ESTORNO use exatamente o mesmo critério,
+ * sem transcrever id na mão (transcrição já quase mandou e-mail errado, #876).
+ */
+async function medir(FIM = new Date().toISOString()) {
   const db = supa();
-  const ateArg = process.argv.indexOf("--ate");
-  const FIM = ateArg > -1 ? process.argv[ateArg + 1] : new Date().toISOString();
   console.log(`Janela: ${INICIO} -> ${FIM}`);
 
   // 1. todas as gerações da janela, PAGINADO, erro cru impresso
@@ -100,10 +103,13 @@ const JANELA_MS = 15 * 60 * 1000;
   const genIds = suspeitas.map((s) => s.g.id);
   const estornos = new Map();
   if (genIds.length) {
+    // Estorno de IMAGEM na plataforma é ref_type='image_refund' (finalize.ts:99).
+    // 'generation_refund' é a convenção do ÁUDIO — checa os dois pra não
+    // repetir o falso negativo do playbook (procurar o tipo errado = zero).
     const { data, error } = await db
       .from("credit_transactions")
       .select("id,ref_id,amount,created_at,ref_type")
-      .eq("ref_type", "generation_refund")
+      .in("ref_type", ["image_refund", "generation_refund"])
       .in("ref_id", genIds);
     if (error) { console.error("ERRO CRU (credit_transactions):", JSON.stringify(error)); process.exit(1); }
     for (const t of data) estornos.set(t.ref_id, t);
@@ -130,4 +136,16 @@ const JANELA_MS = 15 * 60 * 1000;
   for (const [em, a] of porAluno) console.log(`  ${em}  ${a.gens} gerações  ${a.cr} cr`);
   console.log(`\nTOTAL: ${suspeitas.length} gerações | ${porAluno.size} alunos | ${total} créditos`);
   console.log(`(denominador: ${gens.length} gerações na janela, ${umaRef.length} com 1 ref, ${porUser.size} usuários com R2 listado)`);
-})();
+
+  return { suspeitas, emails, estornos, gens, umaRef };
+}
+
+module.exports = { medir, INICIO };
+
+if (require.main === module) {
+  const ateArg = process.argv.indexOf("--ate");
+  medir(ateArg > -1 ? process.argv[ateArg + 1] : undefined).catch((e) => {
+    console.error("ERRO CRU:", e);
+    process.exit(1);
+  });
+}

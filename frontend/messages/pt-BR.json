@@ -449,6 +449,7 @@
         "fixedLabel": "Imagem de referência",
         "fixedBadge": "Referência fixa",
         "replace": "Trocar foto",
+        "remove": "Remover foto",
         "extrasLabel": "Fotos extras (opcional)",
         "promote": "Usar como referência",
         "historyTip": "Dica: em qualquer imagem do seu histórico, clique em “Usar como referência” para trazê-la para cá."
@@ -801,7 +802,7 @@
       "stepAudio": "2. Áudio com a fala (até {max}s)",
       "stepQuality": "3. Qualidade",
       "perSecond": "{n} créditos/segundo de áudio",
-      "tierNote": "Qual escolher? Os dois usam o novo motor, em 480p. O Padrão 2.0 é o recomendado: resultado consistente — repetir a mesma foto e o mesmo áudio gera sempre o mesmo vídeo. O Turbo é a opção econômica: mesma qualidade, corta o vídeo exatamente no fim do áudio e cada geração pode variar um pouco.",
+      "tierNote": "Qual escolher? Os dois usam o novo motor, em 480p. O Padrão 2.0 é o recomendado: repetível — a mesma foto com o mesmo áudio gera sempre o mesmo vídeo. Em áudios longos (acima de ~40s) o rosto pode se afastar da foto ao longo do vídeo — é limitação do modelo, nos dois modos: prefira vídeos curtos. O Turbo é a opção econômica: mesma qualidade, corta o vídeo exatamente no fim do áudio e cada geração pode variar um pouco.",
       "cost": "Custo: {seconds}s × {rate} = {cost} créditos",
       "costBalance": "(você tem {have})",
       "pickToSeeCost": "Escolha a foto e o áudio pra ver o custo",

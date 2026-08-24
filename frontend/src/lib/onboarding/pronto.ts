@@ -9,7 +9,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/types";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
+import { hasActiveAccess } from "@/lib/credits/access";
 import { ONBOARDING_VOICE_NAME } from "./import";
+import { avisoOkMasAssine } from "./avisos";
 
 type Admin = SupabaseClient<Database>;
 
@@ -34,6 +36,16 @@ export type ProntoStatus = {
   avatares_prontos: number;
   avatares_total: number;
   email_enviado: boolean;
+  /**
+   * 22/08: acabou de vez — não adianta a planilha continuar esperando.
+   * Sem isto, uma linha cuja voz JÁ falhou ficava "Em Andamento" segurando a
+   * fila até bater o prazo de 45min (caso 47, csitya100: voz `failed` às
+   * 15:08, linha presa até ~15:53). O prazo existe pra travamento, não pra
+   * caso já resolvido.
+   */
+  falhou: boolean;
+  /** Por que falhou de vez — vai direto pra nota da planilha. */
+  motivo: string | null;
 };
 
 /** Estado consolidado do onboarding de um usuário (usado também pela planilha). */
@@ -45,16 +57,40 @@ export async function statusOnboarding(admin: Admin, userId: string): Promise<Pr
     .eq("idea", "onboarding_avatar");
   const lista = avatares ?? [];
 
-  const { data: voz } = await admin
+  // 22/08: amarrar a voz do onboarding pelo NOME é frágil — o aluno renomeia,
+  // ou treina outra por conta e a linha fica presa em "Em Andamento" PRA
+  // SEMPRE, mesmo com ele já usando a plataforma. Casos reais:
+  //   lucianodepinho — só tem "Luciano 1" (ready): não existe "Minha Voz"
+  //   kessulyl       — "Minha Voz" failed + "Voz Kess" (ready), feita por ela
+  // Os dois estavam prontos, assinantes ativos, e nunca receberam o e-mail.
+  // Agora: vale a voz do onboarding OU qualquer voz do aluno que esteja
+  // pronta — o que importa é ele TER voz funcionando, não o nome dela.
+  const { data: vozes } = await admin
     .from("voices")
-    .select("status, raw_audio_paths")
+    .select("status, raw_audio_paths, name, error_message")
     .eq("user_id", userId)
-    .eq("name", ONBOARDING_VOICE_NAME)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: true });
+  const lista_vozes = vozes ?? [];
+
+  // A marca confiável é o CAMINHO do áudio (`onboarding_...`), que o aluno não
+  // muda — não o nome, que ele muda à vontade. O nome só entra como reserva
+  // pra voz que ainda não tem áudio gravado.
+  const daImportacao =
+    lista_vozes.find((v) => JSON.stringify(v.raw_audio_paths ?? []).includes("onboarding_")) ??
+    lista_vozes.find((v) => v.name === ONBOARDING_VOICE_NAME) ??
+    null;
+
+  // Se a voz do onboarding falhou e o aluno treinou outra por conta, o que
+  // vale é ele TER voz pronta. Mas isto só conta pra quem realmente passou
+  // pelo onboarding (tem avatar ou voz de importação) — senão o e-mail
+  // "plataforma pronta" cairia em cima de aluno que nunca veio da planilha.
+  const veioDoOnboarding = lista.length > 0 || daImportacao !== null;
+  const qualquerPronta = veioDoOnboarding
+    ? lista_vozes.find((v) => v.status === "ready")
+    : undefined;
+
   const vozOnboarding =
-    voz && JSON.stringify(voz.raw_audio_paths ?? []).includes("onboarding_") ? voz : null;
+    daImportacao?.status === "ready" ? daImportacao : (qualquerPronta ?? daImportacao ?? null);
 
   const { data: prof } = await admin
     .from("profiles")
@@ -65,11 +101,44 @@ export async function statusOnboarding(admin: Admin, userId: string): Promise<Pr
   const prontos = lista.filter((a) => a.status === "ready").length;
   const pendentes = lista.filter((a) => a.status === "pending" || a.status === "generating").length;
   const onboarding = lista.length > 0 || vozOnboarding !== null;
+  // 22/08: exigir avatar pronto SEM NUNCA ter tentado gerar um trancava a
+  // linha pra sempre. Casos reais: fernao82, dmaggioni, namaiimoveis e
+  // thiagoabadio — voz treinada e funcionando, zero foto importada (o link de
+  // imagens falhou), zero avatar. A entrega principal — a VOZ — estava de pé,
+  // e a planilha dizia "Em Andamento" havia dias.
+  // Agora: se houve avatar, ele precisa ficar pronto; se nunca houve, a voz
+  // pronta basta pra fechar a linha.
+  const houveAvatar = lista.length > 0;
   const pronto =
     onboarding &&
-    prontos >= 1 &&
     pendentes === 0 &&
+    (houveAvatar ? prontos >= 1 : true) &&
     vozOnboarding?.status === "ready";
+
+  // ── Acabou de vez? Voz que falhou NÃO se recupera sozinha: continuar
+  // esperando é só desperdiçar o prazo da fila. Só vale quando nada está em
+  // andamento (nenhum avatar pendente e nenhuma voz ainda treinando), senão a
+  // gente derruba uma linha que ia dar certo.
+  // Os status da voz são: validating | awaiting_training | ready | failed |
+  // rejected_too_short. "validating" é a única em movimento de verdade.
+  // `awaiting_training` fica de fora de propósito: ela NÃO conta como morta
+  // (o treino ainda pode disparar), mas também não segura a fila pra sempre —
+  // quem cuida desse caso é o prazo de 45min.
+  const vozTreinando = lista_vozes.some((v) => v.status === "validating");
+  const vozMorta =
+    vozOnboarding?.status === "failed" || vozOnboarding?.status === "rejected_too_short";
+
+  const falhou =
+    onboarding && !pronto && pendentes === 0 && !vozTreinando && vozMorta;
+
+  const motivo = !falhou
+    ? null
+    : vozOnboarding?.status === "rejected_too_short"
+      ? "o áudio enviado não chegou aos 20 minutos necessários para treinar a voz"
+      : "o treino da voz falhou" +
+        (vozOnboarding && "error_message" in vozOnboarding && vozOnboarding.error_message
+          ? ": " + String(vozOnboarding.error_message).slice(0, 160)
+          : "");
 
   return {
     onboarding,
@@ -78,6 +147,8 @@ export async function statusOnboarding(admin: Admin, userId: string): Promise<Pr
     avatares_prontos: prontos,
     avatares_total: lista.length,
     email_enviado: Boolean(prof?.onboarding_ready_email_at),
+    falhou,
+    motivo,
   };
 }
 
@@ -96,18 +167,28 @@ export async function verificarOnboardingPronto(admin: Admin, userId: string): P
       .update({ onboarding_ready_email_at: new Date().toISOString() })
       .eq("id", userId)
       .is("onboarding_ready_email_at", null)
-      .select("email");
+      .select("email, access_until");
     const email = claimed?.[0]?.email as string | undefined;
     if (!email) return; // outro webhook levou
 
+    // Johnny 21/08: a mensagem final depende de o aluno estar ATIVO. Com
+    // assinatura vigente → "tudo pronto". Sem assinatura (ou nunca entrou) →
+    // "seus arquivos estão ok, assine pra acessar". Nenhuma das duas fala de
+    // saldo — decisão dele.
+    const ativo = hasActiveAccess(email, claimed?.[0]?.access_until as string | null);
+
     try {
-      await sendSupportMail({
-        to: email,
-        subject: EMAIL_ASSUNTO,
-        text: EMAIL_TEXTO,
-        bcc: BCC_ADMINS,
-      });
-      console.log(`[onboarding/pronto] e-mail enviado: ${email}`);
+      if (ativo) {
+        await sendSupportMail({
+          to: email,
+          subject: EMAIL_ASSUNTO,
+          text: EMAIL_TEXTO,
+          bcc: BCC_ADMINS,
+        });
+      } else {
+        await avisoOkMasAssine(email);
+      }
+      console.log(`[onboarding/pronto] e-mail enviado (${ativo ? "pronto" : "assine"}): ${email}`);
     } catch (e) {
       // Falhou o envio → devolve o claim pra retry no próximo webhook/sweep.
       await admin

@@ -152,6 +152,8 @@ export type GenerationRow = {
   sample_rate: number | null;
   duration_seconds: number | null;
   elapsed_seconds: number | null;
+  /** Telemetria do QA do worker — mig 94 (#52). */
+  qa: Record<string, unknown> | null;
   /** Fila (delayTime) e execução (executionTime) do RunPod em segundos,
    *  gravados na FALHA — migration 82, incidente d3d8d1b2. */
   delay_seconds: number | null;
@@ -479,6 +481,8 @@ export type ViralVideoRow = {
   publicado_em: Timestamp | null;
   duracao_seg: number | null;
   thumb_url: string | null;
+  /** Cópia da miniatura no NOSSO R2 (mig 90). A thumb_url do TikTok é assinada e VENCE. */
+  thumb_r2_key: string | null;
   /** mp4 na CDN da rede: EXPIRA. Player e download sob demanda. */
   video_url: string | null;
   hashtags: string[] | null;
@@ -864,6 +868,10 @@ export type VideoCloneRow = {
   runpod_job_id: string | null;
   video_path: string | null;
   error_message: string | null;
+  /** Erro CRU do RunPod na falha (mig 90) — diagnóstico interno; o usuário vê error_message. */
+  raw_error: string | null;
+  /** executionTime do RunPod em segundos, gravado na falha (mig 90). */
+  elapsed_seconds: number | null;
   created_at: Timestamp;
 };
 export type VideoCloneInsert = {

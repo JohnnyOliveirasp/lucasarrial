@@ -22,7 +22,11 @@ const ALVOS = [
   ["voices", ["training"], 1.5, "name", "created_at"],
   ["training_jobs", ["queued", "running"], 1.5, null, "created_at"],
   ["generations", ["pending", "processing"], 0.5, null, "created_at"],
-  ["image_generations", ["pending"], 0.5, "name", "created_at"],
+  // `generating` entrou em 22/08 (incidente 69f0aec5): a varredura só olhava
+  // `pending` e por isso ficou 28 dias cega pra 96b2f27a e 6 dias pra 1d9109a3,
+  // ambas presas em `generating`. Mesma lição do b9c5a0d1 — enumerar estado
+  // ruim erra por omissão.
+  ["image_generations", ["pending", "generating"], 0.5, "name", "created_at"],
   ["video_clones", ["pending", "generating"], 1, null, "created_at"],
   ["react_jobs", ["fila", "baixando", "clonando", "montando"], 1, null, "criado_em"],
 ];
@@ -176,23 +180,43 @@ const ALVOS = [
   total += semVoz;
 
   // Incidentes abertos
-  const { data: inc } = await db
+  //
+  // ⚠️ Dois zeros silenciosos moravam aqui (medido em 23/08):
+  //  1. `.limit(15)` cortava a lista E o cabeçalho imprimia `inc.length`, ou
+  //     seja, "INCIDENTES ABERTOS: 15" com 20 abertos no banco. O número que
+  //     eu levava pro relatório era o teto do limit, não a realidade — e o
+  //     relatório noturno é justamente o lugar onde silêncio vira "saúde".
+  //  2. O `error` da consulta era descartado. Consulta que erra volta com
+  //     `data: null`, o `if (inc?.length)` não entra, e o script fecha com
+  //     "✅ Nada preso, nada aberto" — o mesmo acidente de 18/08.
+  // Agora: contagem exata separada da lista, e erro na cara.
+  const {
+    data: inc,
+    error: errInc,
+    count: totalInc,
+  } = await db
     .from("incidents")
-    .select("status, title, occurrences, last_seen_at")
+    .select("status, title, occurrences, last_seen_at", { count: "exact" })
     .in("status", ["open", "investigating"])
     .order("last_seen_at", { ascending: false })
-    .limit(15);
-  if (inc?.length) {
-    console.log(`\n📋 INCIDENTES ABERTOS: ${inc.length}`);
-    for (const i of inc) {
+    .limit(50);
+  if (errInc) {
+    // nunca deixe isso virar zero: zero aqui é indistinguível de saúde
+    console.log(`\n⚠️  consulta de INCIDENTES FALHOU: ${errInc.message}`);
+    console.log("    NÃO trate esta rodada como limpa — o número de abertos é DESCONHECIDO.");
+  } else if (totalInc) {
+    const mostrados = inc?.length ?? 0;
+    const corte = mostrados < totalInc ? ` (mostrando ${mostrados})` : "";
+    console.log(`\n📋 INCIDENTES ABERTOS: ${totalInc}${corte}`);
+    for (const i of inc ?? []) {
       console.log(`   [${i.status}] ${i.title} (${i.occurrences}x, ${i.last_seen_at.slice(0, 16)})`);
     }
   }
 
   console.log(
-    total === 0 && comAudio === 0 && !inc?.length
+    total === 0 && comAudio === 0 && !errInc && !totalInc
       ? "\n✅ Nada preso, nada aberto."
-      : `\n➡️  ${total} item(ns) preso(s). Vá pelo mais antigo — playbooks em _frank/04.`,
+      : `\n➡️  ${total} item(ns) preso(s) · ${errInc ? "?" : (totalInc ?? 0)} incidente(s) aberto(s). Vá pelo mais antigo — playbooks em _frank/04.`,
   );
 })().catch((e) => {
   console.error("FALHOU:", e.message);

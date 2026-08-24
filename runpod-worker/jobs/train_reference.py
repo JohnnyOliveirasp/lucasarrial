@@ -62,6 +62,10 @@ def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
         work_dir=dirs.job / "ref_candidates",
         ref_seconds=REFERENCE_SECONDS,
         transcribe_fn=lambda p: transcribe_with_retry(p, whisper_model, language, attempts=2),
+        # Corte em FRONTEIRA DE PALAVRA (caso Katia): timestamps de palavra do
+        # whisper. Se falhar/vier vazio, o seletor cai sozinho no corte por
+        # tempo de sempre — nunca quebra o treino.
+        transcribe_words_fn=lambda p: transcrever_palavras_seguro(p, whisper_model, language),
         language=language,
         log=lambda **k: _log(k.pop("level", "info"), k.pop("event", "train.reference"), **k),
     )
@@ -79,6 +83,22 @@ def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
     _log("info", "train.reference.done", seconds=REFERENCE_SECONDS,
          transcript_len=len(transcript))
     return ref
+
+
+def transcrever_palavras_seguro(wav_path: Path, whisper_model: str, language: str):
+    """Palavras com timestamp (.start/.end/.word) p/ o corte em fronteira de
+    palavra. NUNCA levanta: erro vira None e o seletor cai no corte por tempo."""
+    from voice_pipeline import transcribe_words
+
+    try:
+        words = transcribe_words(
+            str(wav_path), model_name=whisper_model, language=language,
+            log=lambda m: _log("info", "ref.whisper.words", detail=m),
+        )
+        return words or None
+    except Exception as exc:
+        _log("error", "ref.words.error", error=str(exc))
+        return None
 
 
 def gerar_amostra_com_qa(inp: dict, dirs, ref: Referencia, lora_path: Path,

@@ -115,6 +115,32 @@ Sintomas: aluno com fotos e sem voz, ou avatares que falharam.
 
 ---
 
+## I2. Quando o chamado fica "Aguardando o aluno" (status novo, 24/08)
+
+Regra do Johnny: *"se já mandou para o aluno e está esperando resposta dele,
+não é mais caso aberto"*. Chamado ABERTO tem que significar **trabalho NOSSO
+pendente** — senão o quadro mente sobre o tamanho da fila.
+
+**Use `aguardando_aluno` quando** a bola está com ele e não há nada que a gente
+possa fazer até responder: pedimos o link novo, pedimos o material, pedimos que
+teste e diga se resolveu, pedimos autorização.
+
+**NÃO use quando** a promessa é nossa. E cuidado, porque é o caso mais comum:
+"a Fast prometeu que a equipe verificaria", "o aluno aguarda há 6 dias resposta
+nossa", "aluno relatou bug e ninguém analisou", "quer assinar e ninguém
+respondeu". Isso é fila NOSSA — fechar como espera é esconder o atraso.
+> Medido em 24/08: dos 13 chamados abertos, **nenhum** era espera de aluno.
+> Todos eram promessa nossa. A regra é certa; o que ela revela é que a fila é
+> nossa mesmo.
+
+**Não é "corrigido".** Sai dos *Ativos* e ganha aba própria no /admin > Falhas.
+
+**A volta é automática.** Quando o aluno responder — por e-mail ou WhatsApp —
+o chamado volta pra *Aberto* sozinho, com uma nota do que ele disse
+(`lib/incidents/espera.ts`). Isso é o que torna a regra segura: sem o retorno,
+ela viraria o defeito do chamado #95 — caso fechado às 20:40 com "aguardando
+ele dizer o que quer", aluno respondeu às 22:57 e a resposta caiu no vazio.
+
 ## J. Como mandar e-mail pro aluno
 
 ```bash
@@ -173,13 +199,18 @@ voltou e que a causa foi corrigida.
 > `ref_type='generation_refund'`, e quem filtrar só por esse valor recebe
 > **zero** com toda a confiança.
 >
-> **São SETE `ref_type` de estorno, não um** (a tabela completa está na seção
-> "As origens, por volume", mais abaixo). Contados no banco em 21/08:
-> `image_video_refund` 71 · `voice_train_refund` 66 · `generation_refund` 46 ·
-> mais `video_clone_refund`, `image_refund`, `support_refund`,
-> `studio_scene_refund`. **Falha de treino estorna com `voice_train_refund`** —
+> **São NOVE `ref_type` de estorno, não um.** Recontados no banco em 23/08
+> (553 linhas): `image_refund` 157 · `video_clone_refund` 156 ·
+> `image_video_refund` 71 · `voice_train_refund` 69 · `generation_refund` 52 ·
+> `studio_scene_refund` 29 · `estorno_de_engano` 14 · `estorno` 3 ·
+> `support_refund` 2. **Falha de treino estorna com `voice_train_refund`** —
 > procurar `generation_refund` numa voz é o mesmo falso negativo que quase
 > pagou em dobro para 13 alunos, entrando por outra porta.
+>
+> ⚠️ **A pegadinha que sobra depois do conserto óbvio:** `estorno_de_engano` e
+> `estorno` (17 linhas) **NÃO terminam em `_refund`**. Trocar
+> `generation_refund` por `LIKE '%_refund'` continua cego para elas.
+> Lista única (e detector de tipo novo): `_frank/ferramentas/_estornos.cjs`.
 >
 > **Faça assim:** case o `ref_id` com o id do objeto que falhou e some o
 > **sinal** do `amount` (débito negativo + estorno positivo = 0 → está quitado).

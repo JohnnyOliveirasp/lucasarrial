@@ -6,7 +6,8 @@
  * ffmpeg já existe no servidor (mesmo binário do recorder-test/upload).
  */
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
+import { dirTemporario } from "./tmp";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,7 +29,7 @@ function run(cmd: string, args: string[]): Promise<string> {
 
 /** Extrai até 3 frames JPEG de um vídeo JÁ em disco (streaming — A248). */
 export async function extrairFramesDeArquivo(src: string): Promise<Buffer[]> {
-  const dir = await mkdtemp(join(tmpdir(), "onbvid-"));
+  const dir = await dirTemporario("onbvid-");
   try {
     const durStr = await run("ffprobe", [
       "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", src,
@@ -54,7 +55,7 @@ export async function extrairFramesDeArquivo(src: string): Promise<Buffer[]> {
 
 /** Compat: extrai frames de um Buffer (grava temp e delega). */
 export async function extrairFramesDeVideo(videoBytes: Buffer): Promise<Buffer[]> {
-  const dir = await mkdtemp(join(tmpdir(), "onbvidbuf-"));
+  const dir = await dirTemporario("onbvidbuf-");
   try {
     const src = join(dir, "video.bin");
     await writeFile(src, videoBytes);

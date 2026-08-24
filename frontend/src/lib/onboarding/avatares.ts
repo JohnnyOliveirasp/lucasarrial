@@ -4,7 +4,8 @@
  * avatares dele"). COBRADO do aluno (correção Johnny 17/08 — antes era por
  * conta da casa): mesmo preço e mesmo shape de débito do /images/generate,
  * então o estorno automático de falha do Kie (lib/images/finalize) funciona
- * igual. Sem saldo, o avatar NÃO é gerado (crédito é o único gate).
+ * igual. ⚠️ Sem trava de saldo (Johnny 21/08): gera mesmo a zero, aluno fica
+ * negativo até assinar — só no onboarding (migration 88).
  *
  * Usa o mesmo caminho do /api/v1/images/generate (pickImageRoute +
  * kieCreateImageTask + row pending); o webhook/poll do Kie finaliza sozinho
@@ -20,7 +21,7 @@ import { kieCreateImageTask, kieCallbackUrl } from "@/lib/kie/client";
 import { pickImageRoute } from "@/lib/kie/failover";
 import { imageCreditCost } from "@/lib/kie/config";
 import { bypassesBilling } from "@/lib/credits/access";
-import { debitCredits, getBalance } from "@/lib/credits/service";
+import { debitCreditsOnboarding } from "@/lib/credits/service";
 
 type Admin = SupabaseClient<Database>;
 
@@ -98,18 +99,12 @@ export async function gerarAvatares(
   const billed = !bypassesBilling((prof as { email?: string } | null)?.email ?? null);
   const creditCost = imageCreditCost("1K");
 
+  // Sem trava de saldo de propósito (decisão Johnny 21/08): no onboarding o
+  // avatar é gerado mesmo com o aluno a zero e ele fica negativo até assinar
+  // (`debitCreditsOnboarding`, migration 88). Só aqui; o /images/generate
+  // normal continua recusando sem saldo.
   for (const avatar of AVATARES) {
     try {
-      if (billed) {
-        const bal = await getBalance(userId);
-        if (bal.total < creditCost) {
-          result.failed.push({
-            nome: avatar.nome,
-            error: `sem créditos (avatar custa ${creditCost}, saldo ${bal.total})`,
-          });
-          continue;
-        }
-      }
       const { taskId } = await kieCreateImageTask(
         {
           prompt: avatar.promptEn,
@@ -141,7 +136,7 @@ export async function gerarAvatares(
       // Debita após criar a row (mesmo shape/ordem do /images/generate —
       // o estorno automático do finalize casa com este débito pelo refId).
       if (billed) {
-        await debitCredits({
+        await debitCreditsOnboarding({
           userId,
           amount: creditCost,
           kind: "image",

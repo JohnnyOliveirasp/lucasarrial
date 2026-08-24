@@ -43,15 +43,56 @@ function parseFilename(disposition: string | null): string | null {
  * (vai pro writeback de "Erro" na planilha) se o arquivo não for público,
  * não existir ou passar do teto de tamanho.
  */
+// ── Arquivos que NÃO vieram do Drive (WeTransfer, Dropbox, OneDrive…) ──────
+// lib/onboarding/links.ts já baixou pro disco. Registrar aqui faz os dois
+// downloaders abaixo servirem do disco quando o "fileId" for um id local —
+// e o importador (import.ts) não precisa saber de onde veio. O id local tem
+// prefixo `lk_` + hash do link + nome, determinístico: a chave R2 continua
+// idempotente e reprocessar não duplica.
+const locais = new Map<string, { path: string; filename: string }>();
+
+export function registrarArquivoLocal(id: string, path: string, filename: string): void {
+  locais.set(id, { path, filename });
+}
+
+export function ehArquivoLocal(id: string): boolean {
+  return locais.has(id);
+}
+
+/** MIME pelo nome — suficiente pra imagem/áudio/vídeo; o ffprobe decide o resto. */
+function mimeDoNome(filename: string): string {
+  const ext = filename.toLowerCase().split(".").pop() || "";
+  const tabela: Record<string, string> = {
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", heic: "image/heic", gif: "image/gif",
+    mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", aac: "audio/aac", ogg: "audio/ogg", flac: "audio/flac", opus: "audio/opus",
+    mp4: "video/mp4", mov: "video/quicktime", mkv: "video/x-matroska", webm: "video/webm",
+  };
+  return tabela[ext] || "application/octet-stream";
+}
+
 export async function downloadDriveFile(
   fileId: string,
   maxBytes: number,
 ): Promise<DriveFile> {
+  const local = locais.get(fileId);
+  if (local) {
+    const { readFile, stat } = await import("node:fs/promises");
+    const size = (await stat(local.path)).size;
+    if (size > maxBytes) throw new Error(`arquivo ${local.filename} de ${Math.round(size / 1e6)} MB passa do teto`);
+    return { bytes: await readFile(local.path), contentType: mimeDoNome(local.filename), filename: local.filename };
+  }
   const url =
     `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}` +
     `&export=download&confirm=t`;
 
-  const res = await fetch(url, { redirect: "follow" });
+  const res = await fetch(url, {
+    redirect: "follow",
+    // 22/08: SEM o header Range o Drive devolve HTML pra arquivo grande, MESMO
+    // com confirm=t — e o código lia isso como "arquivo não está público",
+    // diagnóstico falso que mandava o aluno "liberar" um link já liberado
+    // (caso 527: 8,9GB, público, respondendo 206 com Range e HTML sem ele).
+    headers: { Range: "bytes=0-" },
+  });
   if (!res.ok) {
     throw new Error(`Drive respondeu ${res.status} pro arquivo ${fileId}`);
   }
@@ -96,10 +137,25 @@ export async function downloadDriveFileToPath(
   destPath: string,
   maxBytes: number,
 ): Promise<{ contentType: string; bytes: number }> {
+  const local = locais.get(fileId);
+  if (local) {
+    const { copyFile, stat } = await import("node:fs/promises");
+    const size = (await stat(local.path)).size;
+    if (size > maxBytes) throw new Error(`arquivo ${local.filename} de ${Math.round(size / 1e6)} MB passa do teto`);
+    await copyFile(local.path, destPath);
+    return { contentType: mimeDoNome(local.filename), bytes: size };
+  }
   const url =
     `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}` +
     `&export=download&confirm=t`;
-  const res = await fetch(url, { redirect: "follow" });
+  const res = await fetch(url, {
+    redirect: "follow",
+    // 22/08: SEM o header Range o Drive devolve HTML pra arquivo grande, MESMO
+    // com confirm=t — e o código lia isso como "arquivo não está público",
+    // diagnóstico falso que mandava o aluno "liberar" um link já liberado
+    // (caso 527: 8,9GB, público, respondendo 206 com Range e HTML sem ele).
+    headers: { Range: "bytes=0-" },
+  });
   if (!res.ok || !res.body) {
     throw new Error(`Drive respondeu ${res.status} pro arquivo ${fileId}`);
   }

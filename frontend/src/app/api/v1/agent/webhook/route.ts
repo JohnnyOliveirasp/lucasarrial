@@ -9,6 +9,7 @@
 import type { NextRequest } from "next/server";
 import { jsonError, jsonOk } from "@/lib/api/responses";
 import { ingestMessage, type EvolutionMessage } from "@/lib/agent/ingest";
+import { escolherMidia, type WahaMessagePayload } from "@/lib/agent/waha-payload";
 import { maybeRespond, pauseChatForHuman } from "@/lib/agent/respond";
 import { phoneFromJid } from "@/lib/agent/account";
 import { winbackByPhone } from "@/lib/winback/targets";
@@ -20,21 +21,6 @@ type EvolutionWebhook = {
   /** WAHA: { event: "message", session, payload: {...} } */
   session?: string;
   payload?: WahaMessagePayload;
-};
-
-type WahaMessagePayload = {
-  id?: string;
-  from?: string;
-  to?: string;
-  fromMe?: boolean;
-  /** "api" = enviado pelo nosso sistema · "app" = digitado no celular/web. */
-  source?: string;
-  participant?: string | null;
-  body?: string;
-  hasMedia?: boolean;
-  media?: { url?: string; mimetype?: string } | null;
-  mentionedIds?: string[];
-  _data?: { notifyName?: string; Info?: { PushName?: string } };
 };
 
 /**
@@ -84,11 +70,12 @@ function mentionsAgent(p: WahaMessagePayload): boolean {
 }
 
 /** Converte o payload da WAHA (webjs/gows) pro shape Evolution/Baileys do ingest. */
-function wahaToEvolution(p: WahaMessagePayload): { m: EvolutionMessage; mediaUrl: string | null } {
+function wahaToEvolution(p: WahaMessagePayload): { m: EvolutionMessage; mediaUrl: string | null; mediaType: string | null } {
   const norm = (jid: string | null | undefined) =>
     (jid ?? "").replace(/@c\.us$/, "@s.whatsapp.net");
-  const mime = p.media?.mimetype ?? "";
-  const messageType = !p.hasMedia
+  const { midia, temMidia } = escolherMidia(p);
+  const mime = midia?.mimetype ?? "";
+  const messageType = !temMidia
     ? "conversation"
     : mime.startsWith("audio")
       ? "audioMessage"
@@ -112,7 +99,8 @@ function wahaToEvolution(p: WahaMessagePayload): { m: EvolutionMessage; mediaUrl
       messageType,
       message: { conversation: p.body || undefined },
     },
-    mediaUrl: p.media?.url ?? null,
+    mediaUrl: midia?.url ?? null,
+    mediaType: midia?.mimetype ?? null,
   };
 }
 
@@ -138,10 +126,10 @@ export async function POST(request: NextRequest) {
     // já gravou a mensagem — descarta (e o dedupe segura qualquer corrida).
     if (p.fromMe && p.source === "api") return jsonOk({ handled: "api_echo" });
 
-    const { m, mediaUrl } = wahaToEvolution(p);
+    const { m, mediaUrl, mediaType } = wahaToEvolution(p);
     const ingested = await ingestMessage(m, {
       mediaUrl,
-      mediaType: p.media?.mimetype ?? null,
+      mediaType,
       mentioned: mentionsAgent(p),
       replyToId: p.id ?? null,
     });

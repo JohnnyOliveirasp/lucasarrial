@@ -56,6 +56,7 @@ class TrainJob:
         self.t0 = 0.0
         self.dataset_chunks = 0
         self.useful_seconds = 0.0
+        self.reference_pause_ms = None
 
     # ── Orquestracao ───────────────────────────────────────────────────────
     def run(self) -> dict:
@@ -75,6 +76,11 @@ class TrainJob:
             return falta
 
         self.language = idioma_do_audio(self.dirs.dataset, self.whisper_model, self.language)
+        # Pausa natural da pessoa -> vira o `tts_silence_ms` DESTA voz (080dd74).
+        # Default do worker e silence_ms=0 (fala emendada) e 749/750 vozes
+        # tinham o campo NULO. Medir aqui faz a voz NASCER com o ritmo de quem
+        # gravou; None = nao deu pra medir -> o backend nao grava nada.
+        self.reference_pause_ms = self._medir_pausa_natural()
         ref = escolher_e_subir(self.inp, self.dirs, self.dirs.norm,
                                self.whisper_model, self.language)
 
@@ -126,6 +132,14 @@ class TrainJob:
             "min_required_seconds": minimo,
             "dataset_chunks": self.dataset_chunks,
         }
+
+    def _medir_pausa_natural(self):
+        from voice_pipeline.pacing import measure_natural_pause_ms
+
+        return measure_natural_pause_ms(
+            sorted(self.dirs.norm.glob("*_mono16k.wav")),
+            log=lambda **k: _log(k.pop("level", "info"), k.pop("event", "train.pacing"), **k),
+        )
 
     def _transcrever_dataset(self) -> None:
         from voice_pipeline import transcribe_audio_folder
@@ -190,6 +204,7 @@ class TrainJob:
             "reference_uploaded": ref.uploaded,
             "reference_transcript": ref.transcript,
             "reference_error": ref.error,
+            "reference_pause_ms": self.reference_pause_ms,
             "language": self.language,
             "lora_alpha": TRAIN_LORA_ALPHA,
             "lora_rank": LORA_RANK,

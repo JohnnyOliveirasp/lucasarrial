@@ -10,7 +10,7 @@ import { logger } from "@/lib/logger/server";
 
 export const dynamic = "force-dynamic";
 
-const VALID_STATUS = new Set(["open", "investigating", "fixing", "fixed", "ignored"]);
+const VALID_STATUS = new Set(["open", "investigating", "fixing", "aguardando_aluno", "fixed", "ignored"]);
 
 export async function PATCH(
   request: NextRequest,

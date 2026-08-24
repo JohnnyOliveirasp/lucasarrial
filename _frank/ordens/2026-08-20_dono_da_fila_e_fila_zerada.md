@@ -48,6 +48,14 @@ abertos" com 4 abertos).
 - **Estorno se confere por `ref_type`, NUNCA por `kind`** (o estorno grava
   `kind='extra_purchase'` + `ref_type='generation_refund'`). Filtrando por
   `kind` parece que 13 alunos não foram estornados — quase pagamos em dobro.
+  > ⚠️ **CORREÇÃO 23/08 (chamado #113).** A metade "nunca por `kind`" está
+  > certa. O exemplo `ref_type='generation_refund'` está INCOMPLETO e erra na
+  > MESMA direção do acidente que esta ordem quer evitar: faz o aluno **já
+  > estornado parecer não estornado**. São **NOVE** `ref_type` de estorno;
+  > `generation_refund` é 52 de 553 = **9,4%** (medido 23/08). E cuidado com o
+  > "conserto" óbvio: `estorno_de_engano` e `estorno` **não terminam em
+  > `_refund`**, então `LIKE '%_refund'` ainda deixa 17 de fora.
+  > Lista única em `_frank/ferramentas/_estornos.cjs`.
 - **Débito órfão no extrato é NORMAL**: o DELETE do histórico apaga row + R2 e
   deixa o ref pendurado. Não é detector de bug enquanto não houver soft-delete.
 - **Treino que falha: liste os ARQUIVOS da voz primeiro**
