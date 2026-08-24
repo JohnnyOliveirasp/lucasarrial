@@ -1,3 +1,11 @@
+// --teste (24/08): manda o job pro endpoint ISOLADO de teste (imagem da dev),
+// nunca pra producao. Setado ANTES do dotenv (dotenv nao sobrescreve env ja
+// definida). Ver memoria project-runpod-endpoint-teste-dev.
+if (process.argv.includes("--teste")) {
+  process.env.RUNPOD_ENDPOINT_TRAIN_ID = "vtfxcwcb0ohvdn";
+  process.env.RUNPOD_ENDPOINT_INFERENCE_ID = "vtfxcwcb0ohvdn";
+  console.log("⚠️  MODO TESTE: endpoint vtfxcwcb0ohvdn (fast_cloner_TESTE_dev)");
+}
 /**
  * 19/08 — REFAZER uma geração de áudio POR CONTA DA CASA (sem cobrar).
  *

@@ -1,4 +1,12 @@
-﻿/**
+// --teste (24/08): manda o job pro endpoint ISOLADO de teste (imagem da dev),
+// nunca pra producao. Setado ANTES do dotenv (dotenv nao sobrescreve env ja
+// definida). Ver memoria project-runpod-endpoint-teste-dev.
+if (process.argv.includes("--teste")) {
+  process.env.RUNPOD_ENDPOINT_TRAIN_ID = "vtfxcwcb0ohvdn";
+  process.env.RUNPOD_ENDPOINT_INFERENCE_ID = "vtfxcwcb0ohvdn";
+  console.log("⚠️  MODO TESTE: endpoint vtfxcwcb0ohvdn (fast_cloner_TESTE_dev)");
+}
+/**
  * 18/08 — RESGATE de voz parada em "uploading" com áudio JÁ no R2.
  * Réplica do POST /api/v1/voices/[id]/start-training (mesma receita:
  * max_steps 500, webhook de produção, timeout por duração) + o passo que
