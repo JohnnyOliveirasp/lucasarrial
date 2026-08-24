@@ -43,6 +43,9 @@ type Props = {
   subscribed: boolean;
   /** É admin (allowlist)? Mostra o atalho pro painel /admin. */
   isAdmin: boolean;
+  /** Entra no /admin com QUALQUER papel (admin ou suporte, mig 95). Só decide
+   *  se o link do painel aparece — a pré-produção continua presa a isAdmin. */
+  podeAbrirPainel?: boolean;
   /** Tem ≥1 voz pronta? Libera "Gerar Áudio". */
   hasReadyVoice: boolean;
   /** Liberação individual do Publicador (social/access.ts) — mostra o grupo
@@ -54,6 +57,7 @@ export function Sidebar({
   creditsTotal,
   unlimited,
   isAdmin,
+  podeAbrirPainel = false,
   hasReadyVoice,
   publisherAllowed,
 }: Props) {
@@ -350,6 +354,20 @@ export function Sidebar({
           {/* Liberação individual do Publicador (13/08): não-admin com o gate
               liberado vê o grupo Instagram/TikTok aqui, fora da pré-produção. */}
           {!isAdmin && publisherAllowed && publisherGroup}
+
+          {/* Papel `suporte` (mig 95): não vê pré-produção, mas precisa do
+              caminho pro painel — senão só chega no /admin digitando a URL. */}
+          {!isAdmin && podeAbrirPainel && (
+            <li className="mt-2 border-t border-[var(--hairline)] pt-2">
+              <NavLeaf
+                href="/admin"
+                icon={ShieldCheck}
+                label={tShell("admin")}
+                active={pathname.includes("/admin")}
+                bare
+              />
+            </li>
+          )}
 
           {isAdmin && (
             <li className="mt-2 border-t border-[var(--hairline)] pt-2">

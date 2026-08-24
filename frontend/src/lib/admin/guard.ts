@@ -44,9 +44,18 @@ export async function adminRole(email: string | null | undefined): Promise<Admin
   return (data as { role?: string }).role === "suporte" ? "suporte" : "admin";
 }
 
-/** Entra no /admin? (qualquer papel). Autorização fina é por papel. */
+/**
+ * ADMIN CHEIO — mantém o significado que sempre teve.
+ *
+ * ⚠️ NÃO troque por `adminRole(...) !== null`. Esta função não guarda só o
+ * /admin: ela guarda os recursos admin-only do PRODUTO (lab/react, lab/virais,
+ * gravador-celular, estúdio, edição, tier admin do video-clone, publicador
+ * social) — vários deles gastam dinheiro por clique. Papel `suporte` não entra
+ * em nada disso; quem quer "qualquer papel" chama `adminRole` direto, como faz
+ * o layout do /admin.
+ */
 export async function isAdmin(email: string | null | undefined): Promise<boolean> {
-  return (await adminRole(email)) !== null;
+  return (await adminRole(email)) === "admin";
 }
 
 /**
