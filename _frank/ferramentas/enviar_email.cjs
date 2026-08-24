@@ -126,6 +126,82 @@ class Smtp {
   }
 }
 
+/**
+ * IMAP mínimo só pro APPEND: depois do envio, grava a cópia na pasta de
+ * enviados. Sem isso a Sent fica VAZIA (conferido 19/08) e ninguém consegue
+ * responder "esse aluno já foi avisado?" — a resolution_note do caso
+ * katiasalvador32 afirmou um envio que ninguém pôde confirmar.
+ * Descoberta da pasta = mesma receita do ler_caixa.cjs (atributo \Sent).
+ */
+class Imap {
+  constructor() { this.buf = Buffer.alloc(0); this.seq = 0; this.sock = null; }
+  connect() {
+    return new Promise((ok, err) => {
+      const s = tls.connect({ host: HOST, port: 993, servername: HOST }, () => ok());
+      s.on("error", err);
+      s.setTimeout(30000, () => { s.destroy(); err(new Error("IMAP timeout")); });
+      s.on("data", (c) => { this.buf = Buffer.concat([this.buf, c]); });
+      this.sock = s;
+    }).then(() => this.wait(/^\* OK/m));
+  }
+  wait(re, ms = 30000) {
+    return new Promise((ok, err) => {
+      const t0 = Date.now();
+      const tick = () => {
+        const cauda = this.buf.subarray(Math.max(0, this.buf.length - 4096)).toString("latin1");
+        if (re.test(cauda)) return ok(this.buf.toString("latin1"));
+        if (Date.now() - t0 > ms) return err(new Error("IMAP demorou"));
+        setTimeout(tick, 50);
+      };
+      tick();
+    });
+  }
+  async cmd(c) {
+    const tag = `a${++this.seq}`;
+    this.buf = Buffer.alloc(0);
+    this.sock.write(`${tag} ${c}\r\n`);
+    const res = await this.wait(new RegExp(`^${tag} (OK|NO|BAD)`, "m"));
+    if (!new RegExp(`^${tag} OK`, "m").test(res)) throw new Error(`IMAP ${c.split(" ")[0]}: ${res.slice(-200)}`);
+    return res;
+  }
+  /** APPEND com literal: espera a continuação "+" antes de mandar os bytes. */
+  async append(pasta, mensagem) {
+    const data = Buffer.from(mensagem.replace(/\r?\n/g, "\r\n"), "utf8");
+    const tag = `a${++this.seq}`;
+    this.buf = Buffer.alloc(0);
+    this.sock.write(`${tag} APPEND "${pasta}" (\\Seen) {${data.length}}\r\n`);
+    const go = await this.wait(new RegExp(`(^\\+|^${tag} (OK|NO|BAD))`, "m"));
+    if (new RegExp(`^${tag} (NO|BAD)`, "m").test(go)) throw new Error(`APPEND recusado: ${go.slice(-200)}`);
+    this.buf = Buffer.alloc(0);
+    this.sock.write(data);
+    this.sock.write("\r\n");
+    const res = await this.wait(new RegExp(`^${tag} (OK|NO|BAD)`, "m"));
+    if (!new RegExp(`^${tag} OK`, "m").test(res)) throw new Error(`APPEND falhou: ${res.slice(-200)}`);
+  }
+  close() { try { this.sock.write(`a${++this.seq} LOGOUT\r\n`); this.sock.end(); } catch {} }
+}
+
+async function gravarEmEnviados(mensagem) {
+  const s = new Imap();
+  await s.connect();
+  try {
+    await s.cmd(`LOGIN "${USER}" "${PASS.replace(/(["\\])/g, "\\$1")}"`);
+    // Nome da pasta muda por servidor — descobre pelo atributo \Sent (mesma
+    // lógica do ler_caixa.cjs; nome fixo "INBOX.Sent" dava NO neste servidor).
+    const linhas = (await s.cmd(`LIST "" "*"`)).split(/\r?\n/).filter((l) => l.startsWith("* LIST"));
+    const nome = (l) => l.match(/"([^"]*)"\s*$/)?.[1] || l.trim().split(/\s+/).pop();
+    const porAtributo = linhas.find((l) => /\\Sent/i.test(l));
+    const achado = porAtributo
+      ? nome(porAtributo)
+      : ["INBOX.Sent", "Sent", "Sent Items", "INBOX.Sent Items"].find((c) =>
+          linhas.some((l) => nome(l)?.toLowerCase() === c.toLowerCase()));
+    if (!achado) throw new Error(`pasta de enviados nao encontrada. Caixas: ${linhas.map(nome).join(", ")}`);
+    await s.append(achado, mensagem);
+  } finally {
+    s.close();
+  }
+}
+
 (async () => {
   const html = fs.readFileSync(path.resolve(arquivo), "utf8");
 
@@ -149,6 +225,11 @@ class Smtp {
     `To: ${dest}`,
     ...(bcc ? [`Bcc: ${bcc}`] : []),
     `Subject: ${cabecalho(assunto)}`,
+    // Date/Message-ID: sem eles a cópia gravada em enviados fica sem data e
+    // sem identidade — o servidor SMTP até completa em trânsito, mas o APPEND
+    // grava a mensagem exatamente como está aqui.
+    `Date: ${new Date().toUTCString()}`,
+    `Message-ID: <frank-${Date.now()}-${Math.random().toString(36).slice(2)}@fastcloner.com>`,
     "MIME-Version: 1.0",
     'Content-Type: text/html; charset="UTF-8"',
     "",
@@ -159,6 +240,15 @@ class Smtp {
   await smtp.conectar();
   await smtp.enviar(USER, destinos, mensagem);
   console.log(`✅ enviado para ${dest}${bcc ? ` (bcc ${bcc})` : ""}`);
+
+  // O e-mail JÁ SAIU — daqui pra baixo é auditoria, nunca pode virar "FALHOU"
+  // (o operador reenviaria e o aluno receberia duas vezes).
+  try {
+    await gravarEmEnviados(mensagem);
+    console.log("🗂  cópia gravada na pasta de enviados");
+  } catch (e) {
+    console.error(`⚠️ e-mail ENVIADO, mas a cópia NÃO foi gravada em enviados: ${e.message}`);
+  }
 })().catch((e) => {
   console.error("FALHOU:", e.message);
   process.exit(1);
