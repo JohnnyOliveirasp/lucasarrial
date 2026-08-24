@@ -93,6 +93,30 @@ conferido), mas o incidente segue sem causa raiz e **já pegou um aluno novo hoj
 - `6c38c99d` (#99, 6x, último hoje 20:35): aluno mandou 30+min por link e segue
   esperando.
 
+## ⚠️ Achado do passo fixo de fim de ronda: fix de aluno preso em branch (de novo)
+
+O passo obrigatório (`git rev-list main..<branch>`) pegou **o mesmo defeito de
+19/08**, que naquele dia deixou um fix de aluno 9h parado. Desta vez está parado
+**há 3 dias** e é o que destrava aluno pagante:
+
+- **`feat/resgate-voz-failed`** (commit `1340f5c`, 21/08) — faz o
+  `resgatar_voz.cjs` aceitar voz `failed`, refiltrar `raw_audio_paths` e validar
+  com ffprobe. **Não está na main:** o `resgatar_voz.cjs` da main ainda tem
+  `if (voz.status !== "uploading") throw` na linha 128.
+  É exatamente a lacuna que a ordem de 21/08 (item 4) descreve como bloqueio pra
+  destravar **Cláudio Sityá** (parado desde 15/08) e **Marcelo** (desde 10/08),
+  os dois pagantes com crédito e sem voz.
+
+⚠️ **NÃO mergear essa branch direto.** Ela está STALE: o diff contra a main dá
+179 arquivos e ~16.400 deleções — mergear reverteria meio repositório. É o mesmo
+buraco já documentado pra `feat/fix-image-upload-retry`. O caminho certo é
+**cherry-pick do `1340f5c` sobre a main fresca**, com PR.
+
+Outras ~24 branches locais aparecem como não-mergeadas por patch-id. Boa parte
+deve ser ruído de squash-merge, mas **não conferi uma a uma** e não vou afirmar
+que são inofensivas. Fica como auditoria pendente do próximo turno, começando
+pelas de data mais recente.
+
 ## Regra 7 (comunicação)
 
 **Não postei no grupo.** Nada nesta ronda é fato consumado do tipo que a regra
