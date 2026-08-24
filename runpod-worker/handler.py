@@ -1028,6 +1028,32 @@ def _qa_transcribe_seg(seg, sample_rate, whisper_model, language, label):
         return None
 
 
+def _qa_transcribe_seg_autodetect(seg, sample_rate, whisper_model, label):
+    """Igual à `_qa_transcribe_seg`, mas DEIXA o whisper descobrir o idioma.
+
+    Devolve (palavras_normalizadas, idioma_detectado, confiança) ou
+    (None, None, 0.0) quando o whisper falhou. As palavras são normalizadas no
+    idioma DETECTADO — é ele que manda na expansão de dígito ("36" -> "thirty
+    six" num texto em inglês, "trinta e seis" em português).
+    """
+    import tempfile
+    try:
+        from voice_pipeline import transcribe_file_autodetect
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        sf.write(str(tmp_path), seg, sample_rate)
+        try:
+            texto, lang, prob = transcribe_file_autodetect(
+                tmp_path, model_name=whisper_model
+            )
+            return _qa_norm_words(texto, lang), lang, prob
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    except Exception as exc:
+        _log("error", f"inference.{label}.error", error=str(exc))
+        return None, None, 0.0
+
+
 def _echo_leak_count(got, chunk_text, prompt_text, language: str = "pt"):
     """QA anti-eco (caso Carlos "mesma coisa" 2026-07-29): o continuation do
     VoxCPM vaza frases da REF no meio/fim dos chunks — o QA de 1a palavra não
@@ -1306,6 +1332,58 @@ def _run_chunk_qa(
             break
         qa_stats["regens"] += 1
         seg = regen_fn()
+
+    # ─── SEGUNDA OPINIÃO NO IDIOMA QUE O WHISPER OUVIU (incidente 37bacb68) ───
+    # `qa_language` é o idioma da VOZ (`voice.language`, generate/route.ts:209),
+    # NÃO o idioma do TEXTO. Quando a aluna escreve num idioma diferente do da
+    # voz dela, o whisper é FORÇADO ao idioma errado e passa a TRADUZIR em vez
+    # de transcrever — o texto esperado e o transcrito não têm palavra em comum,
+    # a cobertura desaba e o buraco vira um bloco CONTÍNUO, indistinguível de
+    # um trecho que o modelo comeu (caso Katia). O áudio está BOM; quem está
+    # errado é a régua.
+    #
+    # Medido em 24/08 com o mesmo áudio lido nos dois idiomas
+    # (`_Bugs/qa-lang/prova_idioma.py`):
+    #   "Live interpretation on the spot is brutally hard"
+    #     whisper(pt) -> "A interpretação ao vivo no lugar é brutalmente difícil"
+    #                    cobertura 0.0,   lacuna 8  -> REPROVA
+    #     whisper(auto) -> texto exato,  cobertura 1.0, lacuna 0 -> PASSA
+    #   Vítimas na fila: janetecasarotto2 (c5eb5cb4) e johnny.oliveirasp (dd4b98a3).
+    #
+    # É a mesma correção que a `detect_language` já fez pro TREINO no caso Joana
+    # (21/07, voz em espanhol transcrita como pt no pipeline inteiro); a
+    # inferência tinha ficado pra trás.
+    #
+    # Roda SÓ no caminho de reprovação — não encarece a geração que passou — e
+    # NÃO enfraquece a proteção do caso Katia: chunk mudo ou comido continua
+    # mudo ou comido em qualquer idioma, e só adotamos a segunda leitura quando
+    # ela é melhor que a primeira.
+    segunda_opiniao = (
+        coverage_qa_enabled
+        and best_coverage is not None
+        and best_coverage < coverage_qa_min
+        and best_seg is not None
+        and best_seg.size >= int(sample_rate * 0.2)
+    )
+    if segunda_opiniao:
+        got2, lang2, prob2 = _qa_transcribe_seg_autodetect(
+            best_seg, sample_rate, echo_qa_model, "chunk_qa_autodetect"
+        )
+        if got2 is not None and lang2:
+            cov2 = _chunk_coverage(got2, chunk, lang2)
+            lac2 = _maior_lacuna(got2, chunk, lang2)
+            _log(
+                "info", "inference.coverage_qa.autodetect", idx=idx,
+                qa_language=qa_language, detectado=lang2, probabilidade=round(prob2, 3),
+                coverage_antes=best_coverage, coverage_depois=cov2,
+                lacuna_antes=best_lacuna, lacuna_depois=lac2,
+            )
+            if cov2 is not None and cov2 > best_coverage:
+                qa_stats["coverage_idioma_corrigido"] = (
+                    qa_stats.get("coverage_idioma_corrigido", 0) + 1
+                )
+                best_coverage, best_lacuna = cov2, lac2
+
     return best_seg, best_coverage, best_lacuna
 
 

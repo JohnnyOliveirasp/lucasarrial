@@ -64,6 +64,40 @@ def transcribe_file(
     return " ".join(seg.text.strip() for seg in segments).strip()
 
 
+def transcribe_file_autodetect(
+    audio_path: Path | str,
+    model_name: str = "large-v3",
+    device: str = "cuda",
+    compute_type: str = "float16",
+    log: Optional[LogFn] = None,
+) -> "tuple[str, str, float]":
+    """Transcreve DEIXANDO o whisper descobrir o idioma. Devolve
+    (texto, idioma_detectado, confiança).
+
+    Existe porque `transcribe_file` faz `language=language or "pt"`: quem passa
+    `None` esperando auto-detecção recebe português forçado, em silêncio. Essa
+    coerção é o que a `detect_language` (caso Joana, 21/07) já tinha resolvido
+    pro TREINO — a inferência ficou pra trás.
+
+    Incidente 37bacb68: com o idioma forçado errado o whisper TRADUZ em vez de
+    transcrever ("Live interpretation on the spot is brutally hard" volta como
+    "A interpretação ao vivo no lugar é brutalmente difícil"), a cobertura do
+    QA vai a 0.0 e o áudio BOM é reprovado. Medido em 24/08, ver
+    `_Bugs/qa-lang/prova_idioma.py`.
+    """
+    if log:
+        log(f"whisper transcribe+detect {Path(audio_path).name} ({model_name}/{device})")
+    model = _get_whisper(model_name, device, compute_type)
+    segments, info = model.transcribe(
+        str(audio_path),
+        language=None,  # <- sem `or "pt"`: aqui a auto-detecção é o objetivo
+        vad_filter=True,
+        beam_size=5,
+    )
+    texto = " ".join(seg.text.strip() for seg in segments).strip()
+    return texto, (info.language or "pt"), float(info.language_probability or 0.0)
+
+
 def transcribe_words(
     audio_path: Path | str,
     model_name: str = "large-v3",
