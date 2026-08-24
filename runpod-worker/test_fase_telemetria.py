@@ -17,6 +17,7 @@ Estes testes provam, SEM GPU e SEM rede:
 Roda sem GPU e sem pesos — módulos pesados stubados, rede mockada:
 
     cd runpod-worker && python3 test_fase_telemetria.py -v
+(portado do b9bc646 da main para os modulos do refator: worker_log.py)
 """
 import json
 import sys
@@ -36,6 +37,7 @@ if not hasattr(sys.modules["huggingface_hub"], "snapshot_download"):
     sys.modules["huggingface_hub"].snapshot_download = lambda *a, **k: None
 
 import handler  # noqa: E402
+import worker_log  # noqa: E402  (no refator, heartbeat + telemetria vivem aqui)
 
 CFG_INPUT = {
     "fase_url": "https://app.exemplo.com/api/v1/webhooks/runpod-fase",
@@ -46,7 +48,7 @@ CFG_INPUT = {
 
 class FaseCfgFromInputTest(unittest.TestCase):
     def test_liga_com_as_tres_chaves(self):
-        cfg = handler._fase_cfg_from_input(dict(CFG_INPUT))
+        cfg = worker_log._fase_cfg_from_input(dict(CFG_INPUT))
         self.assertEqual(cfg, {
             "url": CFG_INPUT["fase_url"],
             "token": CFG_INPUT["fase_token"],
@@ -57,30 +59,30 @@ class FaseCfgFromInputTest(unittest.TestCase):
         for faltando in ("fase_url", "fase_token", "fase_ref"):
             inp = dict(CFG_INPUT)
             del inp[faltando]
-            self.assertIsNone(handler._fase_cfg_from_input(inp), faltando)
+            self.assertIsNone(worker_log._fase_cfg_from_input(inp), faltando)
 
     def test_desligado_com_url_nao_https(self):
         inp = dict(CFG_INPUT, fase_url="http://app.exemplo.com/x")
-        self.assertIsNone(handler._fase_cfg_from_input(inp))
+        self.assertIsNone(worker_log._fase_cfg_from_input(inp))
 
     def test_desligado_com_tipos_errados(self):
-        self.assertIsNone(handler._fase_cfg_from_input(dict(CFG_INPUT, fase_token=123)))
-        self.assertIsNone(handler._fase_cfg_from_input({}))
-        self.assertIsNone(handler._fase_cfg_from_input(dict(CFG_INPUT, fase_ref="")))
+        self.assertIsNone(worker_log._fase_cfg_from_input(dict(CFG_INPUT, fase_token=123)))
+        self.assertIsNone(worker_log._fase_cfg_from_input({}))
+        self.assertIsNone(worker_log._fase_cfg_from_input(dict(CFG_INPUT, fase_ref="")))
 
 
 class FasePostTest(unittest.TestCase):
     def setUp(self):
-        handler._FASE_CFG = handler._fase_cfg_from_input(dict(CFG_INPUT))
+        worker_log._FASE_CFG = worker_log._fase_cfg_from_input(dict(CFG_INPUT))
 
     def tearDown(self):
-        handler._FASE_CFG = None
+        worker_log._FASE_CFG = None
 
     def test_post_monta_url_headers_e_body(self):
-        with mock.patch.object(handler.urllib.request, "urlopen") as urlopen:
+        with mock.patch.object(worker_log.urllib.request, "urlopen") as urlopen:
             urlopen.return_value.__enter__ = lambda s: s
             urlopen.return_value.__exit__ = lambda s, *a: False
-            handler._fase_post("inference.chunk.generate", 312.4, "inference")
+            worker_log._fase_post("inference.chunk.generate", 312.4, "inference")
         urlopen.assert_called_once()
         req = urlopen.call_args[0][0]
         self.assertEqual(req.full_url, CFG_INPUT["fase_url"])
@@ -95,48 +97,48 @@ class FasePostTest(unittest.TestCase):
             "job_type": "inference",
         })
         # timeout curto SEMPRE presente: POST pendurado não pode segurar nada
-        self.assertEqual(urlopen.call_args[1].get("timeout"), handler.FASE_POST_TIMEOUT_S)
+        self.assertEqual(urlopen.call_args[1].get("timeout"), worker_log.FASE_POST_TIMEOUT_S)
 
     def test_sem_cfg_nao_ha_chamada_de_rede(self):
-        handler._FASE_CFG = None
-        with mock.patch.object(handler.urllib.request, "urlopen") as urlopen:
-            handler._fase_post("model.load", 1.0, "inference")
+        worker_log._FASE_CFG = None
+        with mock.patch.object(worker_log.urllib.request, "urlopen") as urlopen:
+            worker_log._fase_post("model.load", 1.0, "inference")
         urlopen.assert_not_called()
 
     def test_erro_de_rede_nao_propaga(self):
         with mock.patch.object(
-            handler.urllib.request, "urlopen", side_effect=OSError("rede caiu")
+            worker_log.urllib.request, "urlopen", side_effect=OSError("rede caiu")
         ):
-            handler._fase_post("inference.upload", 9.9, "inference")  # não lança
+            worker_log._fase_post("inference.upload", 9.9, "inference")  # não lança
 
     def test_erro_de_serializacao_nao_propaga(self):
         # meta não-serializável em algum lugar não pode derrubar o heartbeat
-        handler._FASE_CFG = {"url": CFG_INPUT["fase_url"], "token": "t", "ref": object()}
-        handler._fase_post("x", None, None)  # não lança
+        worker_log._FASE_CFG = {"url": CFG_INPUT["fase_url"], "token": "t", "ref": object()}
+        worker_log._fase_post("x", None, None)  # não lança
 
 
 class HeartbeatTickTest(unittest.TestCase):
     """Um tick do loop de heartbeat posta a fase do topo da pilha."""
 
     def tearDown(self):
-        handler._CURRENT_JOB_TYPE = None
-        handler._FASE_CFG = None
-        with handler._PHASE_LOCK:
-            handler._PHASE_STACK.clear()
+        worker_log._CURRENT_JOB_TYPE = None
+        worker_log._FASE_CFG = None
+        with worker_log._PHASE_LOCK:
+            worker_log._PHASE_STACK.clear()
 
     def test_tick_chama_fase_post_com_a_fase_do_topo(self):
-        handler._CURRENT_JOB_TYPE = "inference"
-        with handler._PHASE_LOCK:
-            handler._PHASE_STACK.append(
+        worker_log._CURRENT_JOB_TYPE = "inference"
+        with worker_log._PHASE_LOCK:
+            worker_log._PHASE_STACK.append(
                 {"name": "inference.chunk.generate", "start": time.monotonic(), "meta": {"chunk": 3}}
             )
         # 1º sleep passa (roda um tick), 2º lança KeyboardInterrupt (BaseException,
         # escapa do `except Exception` do loop) pra encerrar o teste.
         with mock.patch.object(
-            handler.time, "sleep", side_effect=[None, KeyboardInterrupt()]
-        ), mock.patch.object(handler, "_fase_post") as post:
+            worker_log.time, "sleep", side_effect=[None, KeyboardInterrupt()]
+        ), mock.patch.object(worker_log, "_fase_post") as post:
             with self.assertRaises(KeyboardInterrupt):
-                handler._heartbeat_loop()
+                worker_log._heartbeat_loop()
         post.assert_called_once()
         fase, running_s, job_type = post.call_args[0]
         self.assertEqual(fase, "inference.chunk.generate")
@@ -144,12 +146,12 @@ class HeartbeatTickTest(unittest.TestCase):
         self.assertEqual(job_type, "inference")
 
     def test_tick_idle_nao_posta(self):
-        handler._CURRENT_JOB_TYPE = None  # entre jobs
+        worker_log._CURRENT_JOB_TYPE = None  # entre jobs
         with mock.patch.object(
-            handler.time, "sleep", side_effect=[None, KeyboardInterrupt()]
-        ), mock.patch.object(handler, "_fase_post") as post:
+            worker_log.time, "sleep", side_effect=[None, KeyboardInterrupt()]
+        ), mock.patch.object(worker_log, "_fase_post") as post:
             with self.assertRaises(KeyboardInterrupt):
-                handler._heartbeat_loop()
+                worker_log._heartbeat_loop()
         post.assert_not_called()
 
 
@@ -157,17 +159,17 @@ class HandlerCfgLifecycleTest(unittest.TestCase):
     """handler() seta a config do input e SEMPRE limpa no finally."""
 
     def tearDown(self):
-        handler._CURRENT_JOB_TYPE = None
-        handler._FASE_CFG = None
+        worker_log._CURRENT_JOB_TYPE = None
+        worker_log._FASE_CFG = None
 
     def test_health_seta_e_limpa_cfg(self):
         visto = {}
         # _start_heartbeat roda logo depois da config ser setada — captura ali,
         # e de quebra evita subir a thread daemon de verdade no teste.
         with mock.patch.object(
-            handler, "_start_heartbeat",
-            side_effect=lambda: visto.update(cfg=handler._FASE_CFG),
-        ), mock.patch.object(handler, "_faxina", lambda *a, **k: None):
+            handler, "start_heartbeat",
+            side_effect=lambda: visto.update(cfg=worker_log._FASE_CFG),
+        ), mock.patch.object(handler, "faxina", lambda *a, **k: None):
             out = handler.handler({"input": {"type": "health", **CFG_INPUT}})
         self.assertTrue(out.get("ok"))
         self.assertEqual(visto["cfg"], {
@@ -175,23 +177,23 @@ class HandlerCfgLifecycleTest(unittest.TestCase):
             "token": CFG_INPUT["fase_token"],
             "ref": CFG_INPUT["fase_ref"],
         })
-        self.assertIsNone(handler._FASE_CFG)          # limpou no finally
-        self.assertIsNone(handler._CURRENT_JOB_TYPE)  # comportamento antigo intacto
+        self.assertIsNone(worker_log._FASE_CFG)          # limpou no finally
+        self.assertIsNone(worker_log._CURRENT_JOB_TYPE)  # comportamento antigo intacto
 
     def test_job_que_lanca_tambem_limpa_cfg(self):
-        with mock.patch.object(handler, "_start_heartbeat", lambda: None), \
-             mock.patch.object(handler, "_faxina", lambda *a, **k: None), \
-             mock.patch.object(handler, "_handle_transcribe", side_effect=RuntimeError("boom")):
+        with mock.patch.object(handler, "start_heartbeat", lambda: None), \
+             mock.patch.object(handler, "faxina", lambda *a, **k: None), \
+             mock.patch.object(handler, "handle_transcribe", side_effect=RuntimeError("boom")):
             out = handler.handler({"input": {"type": "transcribe", **CFG_INPUT}})
         self.assertIn("error", out)
-        self.assertIsNone(handler._FASE_CFG)
+        self.assertIsNone(worker_log._FASE_CFG)
 
     def test_sem_chaves_no_input_cfg_fica_none(self):
         visto = {}
         with mock.patch.object(
-            handler, "_start_heartbeat",
-            side_effect=lambda: visto.update(cfg=handler._FASE_CFG),
-        ), mock.patch.object(handler, "_faxina", lambda *a, **k: None):
+            handler, "start_heartbeat",
+            side_effect=lambda: visto.update(cfg=worker_log._FASE_CFG),
+        ), mock.patch.object(handler, "faxina", lambda *a, **k: None):
             handler.handler({"input": {"type": "health"}})
         self.assertIsNone(visto["cfg"])
 

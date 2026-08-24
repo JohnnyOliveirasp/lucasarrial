@@ -16,6 +16,9 @@ Estes testes provam que agora:
   6. whisper FALHANDO (None) segue inconclusivo e não bloqueia (rede de
      segurança, não gate).
 
+O QA vive em tts_qa/ desde 20/08 e a quebra do texto em tts_text.py —
+nenhum dos dois precisa mais do handler.
+
 Roda SEM GPU e sem pesos — os módulos pesados são stubados e o whisper é
 simulado. Só precisa de numpy:
 
@@ -26,17 +29,17 @@ import types
 import unittest
 from unittest import mock
 
-# ── Stubs dos módulos pesados ANTES de importar o handler ──────────────────
-for _name in ("runpod", "soundfile", "huggingface_hub"):
-    if _name not in sys.modules:
-        sys.modules[_name] = types.ModuleType(_name)
-sys.modules["runpod"].serverless = types.SimpleNamespace(start=lambda *a, **k: None)
+# ── Stub do soundfile ANTES de importar tts_qa (o resto do peso saiu junto
+# com o QA no refator de 20/08 — este arquivo nao carrega mais o handler).
+if "soundfile" not in sys.modules:
+    sys.modules["soundfile"] = types.ModuleType("soundfile")
 sys.modules["soundfile"].write = lambda *a, **k: None
-sys.modules["huggingface_hub"].snapshot_download = lambda *a, **k: None
 
 import numpy as np  # noqa: E402
 
-import handler  # noqa: E402
+import tts_text  # noqa: E402
+import tts_qa  # noqa: E402
+import tts_qa.loop  # noqa: E402
 
 SR = 16000
 # Texto no padrão do caso Katia (sintético — mesmo formato/tamanho de chunk).
@@ -44,7 +47,7 @@ CHUNK = (
     "Eu sei que existe uma parte de voce que esta cansada de viver no piloto "
     "automatico, esperando o momento perfeito que nunca chega para comecar."
 )
-CHUNK_WORDS = handler._qa_norm_words(CHUNK)
+CHUNK_WORDS = tts_qa.norm_words(CHUNK)
 # Áudio que começa NO MEIO do chunk (padrão do chunk 1 da Katia: faltavam os
 # 96 primeiros caracteres) — transcrição só contém a metade final, na ordem.
 HALF_WORDS = CHUNK_WORDS[len(CHUNK_WORDS) // 2:]
@@ -87,30 +90,30 @@ def fresh_stats() -> dict:
 
 
 class ChunkCoverageTest(unittest.TestCase):
-    """_chunk_coverage: a régua que mede se o áudio contém o texto do chunk."""
+    """chunk_coverage: a régua que mede se o áudio contém o texto do chunk."""
 
     def test_transcricao_completa_da_cobertura_total(self):
-        self.assertEqual(handler._chunk_coverage(CHUNK_WORDS, CHUNK), 1.0)
+        self.assertEqual(tts_qa.chunk_coverage(CHUNK_WORDS, CHUNK), 1.0)
 
     def test_audio_que_comeca_no_meio_reprova(self):
-        cov = handler._chunk_coverage(HALF_WORDS, CHUNK)
+        cov = tts_qa.chunk_coverage(HALF_WORDS, CHUNK)
         self.assertIsNotNone(cov)
         self.assertLess(cov, 0.85)
 
     def test_chunk_mudo_e_cobertura_zero(self):
         # Padrão do chunk 3 da Katia: chunk INTEIRO ausente do áudio.
-        self.assertEqual(handler._chunk_coverage([], CHUNK), 0.0)
+        self.assertEqual(tts_qa.chunk_coverage([], CHUNK), 0.0)
 
     def test_whisper_falhou_e_inconclusivo(self):
         # None = whisper quebrou — QA é rede de segurança, não bloqueia.
-        self.assertIsNone(handler._chunk_coverage(None, CHUNK))
+        self.assertIsNone(tts_qa.chunk_coverage(None, CHUNK))
 
     def test_chunk_sem_palavras_e_inconclusivo(self):
-        self.assertIsNone(handler._chunk_coverage(CHUNK_WORDS, "..."))
+        self.assertIsNone(tts_qa.chunk_coverage(CHUNK_WORDS, "..."))
 
 
 class RunChunkQATest(unittest.TestCase):
-    """_run_chunk_qa: o laço reprovar → regenerar → (falhar explícito)."""
+    """run_chunk_qa: o laço reprovar → regenerar → (falhar explícito)."""
 
     def test_chunk_incompleto_reprova_regenera_e_passa(self):
         # 1a tentativa: áudio começa no meio (cobertura baixa) → regenera.
@@ -119,9 +122,9 @@ class RunChunkQATest(unittest.TestCase):
         stats = fresh_stats()
         seg_ruim, seg_bom = make_seg(), make_seg(2.0)
         with mock.patch.object(
-            handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: next(transcripts)
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(transcripts)
         ):
-            best, cov, _lac = handler._run_chunk_qa(
+            best, cov, _lac = tts_qa.run_chunk_qa(
                 seg_ruim, 1, CHUNK, regen_fn=lambda: seg_bom,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -137,8 +140,8 @@ class RunChunkQATest(unittest.TestCase):
         seg_mudo = np.zeros(100, dtype=np.float32)  # < 0.2s → nem transcreve
         stats = fresh_stats()
         transcriber = mock.Mock()
-        with mock.patch.object(handler, "_qa_transcribe_seg", transcriber):
-            _best, cov, _lac = handler._run_chunk_qa(
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", transcriber):
+            _best, cov, _lac = tts_qa.run_chunk_qa(
                 seg_mudo, 3, CHUNK, regen_fn=lambda: seg_mudo,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -156,23 +159,23 @@ class RunChunkQATest(unittest.TestCase):
         it = iter(seqs)
         stats = fresh_stats()
         with mock.patch.object(
-            handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: next(it)
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(it)
         ):
-            _best, cov, _lac = handler._run_chunk_qa(
+            _best, cov, _lac = tts_qa.run_chunk_qa(
                 make_seg(), 2, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(),
             )
         self.assertIsNotNone(cov)
         self.assertLess(cov, 0.85)
-        self.assertEqual(cov, handler._chunk_coverage(HALF_WORDS, CHUNK))
+        self.assertEqual(cov, tts_qa.chunk_coverage(HALF_WORDS, CHUNK))
         self.assertEqual(stats["exhausted"], 1)
 
     def test_start_qa_roda_em_chunk_que_nao_e_o_primeiro(self):
         # O `idx == 0` caiu: a 1a palavra é conferida em TODOS os chunks.
         start_ok = mock.Mock(return_value=True)
-        with mock.patch.object(handler, "_start_word_ok", start_ok), \
-             mock.patch.object(handler, "_qa_transcribe_seg", return_value=CHUNK_WORDS):
-            handler._run_chunk_qa(
+        with mock.patch.object(tts_qa.loop, "start_word_ok", start_ok), \
+             mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=CHUNK_WORDS):
+            tts_qa.run_chunk_qa(
                 make_seg(), 2, CHUNK, regen_fn=make_seg,
                 qa_stats=fresh_stats(), **qa_kwargs(start_qa_enabled=True),
             )
@@ -183,8 +186,8 @@ class RunChunkQATest(unittest.TestCase):
         prompt = "a raposa marrom pulou sobre o cachorro preguicoso dormindo"
         transcriber = mock.Mock(return_value=CHUNK_WORDS)
         stats = fresh_stats()
-        with mock.patch.object(handler, "_qa_transcribe_seg", transcriber):
-            handler._run_chunk_qa(
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", transcriber):
+            tts_qa.run_chunk_qa(
                 make_seg(), 0, CHUNK, regen_fn=make_seg,
                 qa_stats=stats,
                 **qa_kwargs(echo_qa_enabled=True, prompt_text=prompt),
@@ -196,8 +199,8 @@ class RunChunkQATest(unittest.TestCase):
     def test_whisper_quebrado_nao_bloqueia(self):
         # Transcrição None (whisper FALHOU) = inconclusivo → entrega sem regen.
         stats = fresh_stats()
-        with mock.patch.object(handler, "_qa_transcribe_seg", return_value=None):
-            _best, cov, _lac = handler._run_chunk_qa(
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=None):
+            _best, cov, _lac = tts_qa.run_chunk_qa(
                 make_seg(), 1, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -213,12 +216,12 @@ class SplitParityTest(unittest.TestCase):
 
     def test_todo_chunk_do_split_tem_palavras_mensuraveis(self):
         text = " ".join([CHUNK] * 4)
-        chunks = handler._split_text_for_tts(text, max_chars=160)
+        chunks = tts_text.split_text_for_tts(text, max_chars=160)
         self.assertGreater(len(chunks), 1)
         for c, _ends in chunks:
-            words = handler._qa_norm_words(c)
+            words = tts_qa.norm_words(c)
             self.assertTrue(words)
-            self.assertEqual(handler._chunk_coverage(words, c), 1.0)
+            self.assertEqual(tts_qa.chunk_coverage(words, c), 1.0)
 
 
 class DigitosViramPalavrasTest(unittest.TestCase):
@@ -233,33 +236,33 @@ class DigitosViramPalavrasTest(unittest.TestCase):
                "Eu adoro o E36, mas não o recomendo.")
 
     def test_audio_perfeito_com_numero_em_digito_da_cobertura_total(self):
-        got = handler._qa_norm_words(self.WHISPER, "pt")
-        self.assertEqual(handler._chunk_coverage(got, self.CHUNK, "pt"), 1.0)
+        got = tts_qa.norm_words(self.WHISPER, "pt")
+        self.assertEqual(tts_qa.chunk_coverage(got, self.CHUNK, "pt"), 1.0)
 
     def test_audio_pela_metade_continua_reprovando(self):
         metade = "Estás a pensar comprar um E36 como primeiro carro?"
-        got = handler._qa_norm_words(metade, "pt")
-        self.assertLess(handler._chunk_coverage(got, self.CHUNK, "pt"), 0.85)
+        got = tts_qa.norm_words(metade, "pt")
+        self.assertLess(tts_qa.chunk_coverage(got, self.CHUNK, "pt"), 0.85)
 
     def test_expansao_por_idioma(self):
-        self.assertEqual(handler._digits_to_words("36", "pt"), ["trinta", "e", "seis"])
-        self.assertEqual(handler._digits_to_words("42", "en"), ["forty", "two"])
-        self.assertEqual(handler._digits_to_words("36", "es"), ["treinta", "y", "seis"])
+        self.assertEqual(tts_qa.digits_to_words("36", "pt"), ["trinta", "e", "seis"])
+        self.assertEqual(tts_qa.digits_to_words("42", "en"), ["forty", "two"])
+        self.assertEqual(tts_qa.digits_to_words("36", "es"), ["treinta", "y", "seis"])
 
     def test_letra_colada_no_digito_separa(self):
         # "e36" precisa virar ["e", "trinta", "e", "seis"], não um token opaco
         self.assertEqual(
-            handler._qa_norm_words("E36", "pt"), ["e", "trinta", "e", "seis"],
+            tts_qa.norm_words("E36", "pt"), ["e", "trinta", "e", "seis"],
         )
 
     def test_numero_gigante_soletra_digito_a_digito(self):
-        words = handler._digits_to_words("11987654321", "pt")
+        words = tts_qa.digits_to_words("11987654321", "pt")
         self.assertEqual(words[:2], ["um", "um"])
         self.assertIn("nove", words)
 
 
 class ChunkIntrusionsTest(unittest.TestCase):
-    """_chunk_intrusions (incidente fb8d29b7): palavra A MAIS ou TROCADA no
+    """chunk_intrusions (incidente fb8d29b7): palavra A MAIS ou TROCADA no
     áudio — o inverso do coverage. Fixtures do caso REAL da Katia 19/08: a ref
     da voz termina em "por menos" e o VoxCPM soltava "Menos." nas junções."""
 
@@ -267,40 +270,40 @@ class ChunkIntrusionsTest(unittest.TestCase):
              "jornada profunda de autoconhecimento e despertar")
 
     def test_audio_limpo_e_zero(self):
-        got = handler._qa_norm_words(self.TEXTO)
-        self.assertEqual(handler._chunk_intrusions(got, self.TEXTO), 0)
+        got = tts_qa.norm_words(self.TEXTO)
+        self.assertEqual(tts_qa.chunk_intrusions(got, self.TEXTO), 0)
 
     def test_eco_de_cauda_da_ref_e_intrusao(self):
         # Caso real: "Por menos, por isso eu criei..." (tomada 1 da Katia).
-        got = handler._qa_norm_words("Por menos, " + self.TEXTO)
-        self.assertGreaterEqual(handler._chunk_intrusions(got, self.TEXTO), 1)
+        got = tts_qa.norm_words("Por menos, " + self.TEXTO)
+        self.assertGreaterEqual(tts_qa.chunk_intrusions(got, self.TEXTO), 1)
 
     def test_palavra_inventada_no_meio_e_intrusao(self):
-        got = handler._qa_norm_words(
+        got = tts_qa.norm_words(
             self.TEXTO.replace("para te guiar", "para menos te guiar"))
-        self.assertGreaterEqual(handler._chunk_intrusions(got, self.TEXTO), 1)
+        self.assertGreaterEqual(tts_qa.chunk_intrusions(got, self.TEXTO), 1)
 
     def test_variacao_de_whisper_nao_e_intrusao(self):
         # "quatorze" falado/ouvido "catorze": substituição PARECIDA (ratio
         # >= 0.7) é sotaque/grafia do Whisper, não defeito.
         texto = "ela completou quatorze anos em março"
-        got = handler._qa_norm_words("ela completou catorze anos em março")
-        self.assertEqual(handler._chunk_intrusions(got, texto), 0)
+        got = tts_qa.norm_words("ela completou catorze anos em março")
+        self.assertEqual(tts_qa.chunk_intrusions(got, texto), 0)
 
     def test_substituicao_real_e_intrusao(self):
         # Palavra TROCADA por outra sem parentesco conta.
         texto = "a jornada exige coragem e persistencia"
-        got = handler._qa_norm_words("a jornada exige dinheiro e persistencia")
-        self.assertGreaterEqual(handler._chunk_intrusions(got, texto), 1)
+        got = tts_qa.norm_words("a jornada exige dinheiro e persistencia")
+        self.assertGreaterEqual(tts_qa.chunk_intrusions(got, texto), 1)
 
     def test_palavra_curta_nao_conta(self):
         # "e"/"a"/"o" a mais é ruído de transcrição, não intrusão.
-        got = handler._qa_norm_words(self.TEXTO.replace("para te", "para e te"))
-        self.assertEqual(handler._chunk_intrusions(got, self.TEXTO), 0)
+        got = tts_qa.norm_words(self.TEXTO.replace("para te", "para e te"))
+        self.assertEqual(tts_qa.chunk_intrusions(got, self.TEXTO), 0)
 
     def test_inconclusivo_nao_bloqueia(self):
-        self.assertIsNone(handler._chunk_intrusions(None, self.TEXTO))
-        self.assertIsNone(handler._chunk_intrusions([], self.TEXTO))
+        self.assertIsNone(tts_qa.chunk_intrusions(None, self.TEXTO))
+        self.assertIsNone(tts_qa.chunk_intrusions([], self.TEXTO))
 
 
 class IntrusionLoopTest(unittest.TestCase):
@@ -308,15 +311,15 @@ class IntrusionLoopTest(unittest.TestCase):
     esgotamento NÃO derruba o job (gate macio — coverage devolvida é a boa)."""
 
     def test_intrusao_regenera_e_escolhe_a_limpa(self):
-        suja = handler._qa_norm_words("Por menos, " + CHUNK)
+        suja = tts_qa.norm_words("Por menos, " + CHUNK)
         limpa = CHUNK_WORDS
         it = iter([suja, limpa])
         stats = fresh_stats()
         seg_sujo, seg_limpo = make_seg(), make_seg(2.0)
         with mock.patch.object(
-            handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: next(it)
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(it)
         ):
-            best, cov, _lac = handler._run_chunk_qa(
+            best, cov, _lac = tts_qa.run_chunk_qa(
                 seg_sujo, 0, CHUNK, regen_fn=lambda: seg_limpo,
                 qa_stats=stats, **qa_kwargs(intrusion_qa_enabled=True),
             )
@@ -327,10 +330,10 @@ class IntrusionLoopTest(unittest.TestCase):
         self.assertEqual(cov, 1.0)
 
     def test_intrusao_persistente_esgota_mas_nao_derruba(self):
-        suja = handler._qa_norm_words("Por menos, " + CHUNK)
+        suja = tts_qa.norm_words("Por menos, " + CHUNK)
         stats = fresh_stats()
-        with mock.patch.object(handler, "_qa_transcribe_seg", return_value=suja):
-            _best, cov, _lac = handler._run_chunk_qa(
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=suja):
+            _best, cov, _lac = tts_qa.run_chunk_qa(
                 make_seg(), 0, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(intrusion_qa_enabled=True),
             )
@@ -343,7 +346,7 @@ class IntrusionLoopTest(unittest.TestCase):
 
 
 class MaiorLacunaTest(unittest.TestCase):
-    """_maior_lacuna: a régua que separa DEFEITO de TEXTO-QUE-NAO-SE-FALA.
+    """maior_lacuna: a régua que separa DEFEITO de TEXTO-QUE-NAO-SE-FALA.
 
     A cobertura sozinha reprovava áudio PERFEITO toda vez que o texto tinha
     algo não falado (número por extenso, markdown, emoji, rótulo de locutor) —
@@ -352,7 +355,7 @@ class MaiorLacunaTest(unittest.TestCase):
     markup some em palavras SOLTAS."""
 
     def _lacuna(self, chunk, falado):
-        return handler._maior_lacuna(handler._qa_norm_words(falado, "pt"), chunk, "pt")
+        return tts_qa.maior_lacuna(tts_qa.norm_words(falado, "pt"), chunk, "pt")
 
     # ── áudio BOM (falso negativo antigo): buraco pequeno e espalhado ──
     def test_rotulo_de_dialogo_da_buraco_de_1(self):
@@ -388,8 +391,8 @@ class MaiorLacunaTest(unittest.TestCase):
         self.assertGreaterEqual(self._lacuna(CHUNK, " ".join(HALF_WORDS)), 6)
 
     def test_chunk_mudo_e_o_chunk_inteiro(self):
-        esperado = len(handler._qa_norm_words(CHUNK))
-        self.assertEqual(handler._maior_lacuna([], CHUNK), esperado)
+        esperado = len(tts_qa.norm_words(CHUNK))
+        self.assertEqual(tts_qa.maior_lacuna([], CHUNK), esperado)
 
     def test_pedaco_comido_no_meio_da_buraco_grande(self):
         c = "um dois tres quatro cinco seis sete oito nove dez onze doze"
@@ -397,10 +400,10 @@ class MaiorLacunaTest(unittest.TestCase):
 
     # ── guardas ──
     def test_whisper_falhou_e_inconclusivo(self):
-        self.assertIsNone(handler._maior_lacuna(None, CHUNK))
+        self.assertIsNone(tts_qa.maior_lacuna(None, CHUNK))
 
     def test_chunk_sem_palavras_e_inconclusivo(self):
-        self.assertIsNone(handler._maior_lacuna(CHUNK_WORDS, "..."))
+        self.assertIsNone(tts_qa.maior_lacuna(CHUNK_WORDS, "..."))
 
 
 class DecisaoDeReprovarTest(unittest.TestCase):
@@ -411,10 +414,10 @@ class DecisaoDeReprovarTest(unittest.TestCase):
     GAP_MIN = 6
 
     def _reprova(self, chunk, falado):
-        got = handler._qa_norm_words(falado, "pt")
-        cov = handler._chunk_coverage(got, chunk, "pt")
-        lac = handler._maior_lacuna(got, chunk, "pt")
-        n = len(handler._qa_norm_words(chunk, "pt"))
+        got = tts_qa.norm_words(falado, "pt")
+        cov = tts_qa.chunk_coverage(got, chunk, "pt")
+        lac = tts_qa.maior_lacuna(got, chunk, "pt")
+        n = len(tts_qa.norm_words(chunk, "pt"))
         limite = max(self.GAP_MIN, int(n * 0.20))
         return cov is not None and cov < 0.85 and (lac is None or lac >= limite)
 
@@ -462,21 +465,21 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
 
     EN = "Live interpretation on the spot is brutally hard."
     # o que o whisper devolve quando forçado a pt: TRADUÇÃO, não transcrição
-    EN_TRADUZIDO = handler._qa_norm_words(
+    EN_TRADUZIDO = tts_qa.norm_words(
         "A interpretacao ao vivo no lugar e brutalmente dificil.", "pt"
     )
-    EN_CERTO = handler._qa_norm_words(EN, "en")
+    EN_CERTO = tts_qa.norm_words(EN, "en")
 
     def test_idioma_errado_e_resgatado_pela_segunda_opiniao(self):
         stats = fresh_stats()
         seg = make_seg(3.0)
         with mock.patch.object(
-            handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: self.EN_TRADUZIDO
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: self.EN_TRADUZIDO
         ), mock.patch.object(
-            handler, "_qa_transcribe_seg_autodetect",
+            tts_qa.loop, "transcribe_seg_autodetect",
             return_value=(self.EN_CERTO, "en", 0.99),
         ) as auto:
-            _best, cov, lac = handler._run_chunk_qa(
+            _best, cov, lac = tts_qa.loop.run_chunk_qa(
                 seg, 0, self.EN, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -493,12 +496,12 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         stats = fresh_stats()
         seg = make_seg(3.0)
         with mock.patch.object(
-            handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
         ), mock.patch.object(
-            handler, "_qa_transcribe_seg_autodetect",
+            tts_qa.loop, "transcribe_seg_autodetect",
             return_value=(HALF_WORDS, "pt", 0.99),
         ) as auto:
-            _best, cov, _lac = handler._run_chunk_qa(
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -511,11 +514,11 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         stats = fresh_stats()
         seg = make_seg(3.0)
         with mock.patch.object(
-            handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: CHUNK_WORDS
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: CHUNK_WORDS
         ), mock.patch.object(
-            handler, "_qa_transcribe_seg_autodetect"
+            tts_qa.loop, "transcribe_seg_autodetect"
         ) as auto:
-            _best, cov, _lac = handler._run_chunk_qa(
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -527,11 +530,11 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         stats = fresh_stats()
         seg = make_seg(3.0)
         with mock.patch.object(
-            handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
         ), mock.patch.object(
-            handler, "_qa_transcribe_seg_autodetect", return_value=(None, None, 0.0)
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
         ):
-            _best, cov, _lac = handler._run_chunk_qa(
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -543,11 +546,11 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         stats = fresh_stats()
         seg = make_seg(3.0)
         with mock.patch.object(
-            handler, "_qa_transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
         ), mock.patch.object(
-            handler, "_qa_transcribe_seg_autodetect", return_value=([], "en", 0.5)
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=([], "en", 0.5)
         ):
-            _best, cov, _lac = handler._run_chunk_qa(
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )

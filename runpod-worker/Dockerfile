@@ -64,6 +64,14 @@ RUN --mount=type=secret,id=url_model \
 
 # Handler + pipeline
 COPY handler.py .
+COPY worker_log.py .
+COPY worker_config.py .
+COPY worker_disk.py .
+COPY model_loader.py .
+COPY audio_ops.py .
+COPY tts_text.py .
+COPY whisper_qa.py .
+COPY downloads.py .
 COPY sample_gen.py .
 COPY audio_edit.py .
 COPY video_edit.py .
@@ -72,6 +80,8 @@ COPY finish.py .
 COPY tts_prepare.py .
 COPY variants.py .
 COPY voice_pipeline ./voice_pipeline
+COPY tts_qa ./tts_qa
+COPY jobs ./jobs
 
 # RunPod Serverless ENTRYPOINT
 CMD ["python", "-u", "handler.py"]
