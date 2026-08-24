@@ -192,6 +192,10 @@ function timeoutMs(textLen) {
     reference_transcript: (voz.reference_transcript ?? "").trim() || null,
     audio_path: outputKey,
     runpod_job_id: job.id,
+    // #125 (24/08): geracao da equipe SEM debito precisa ser reconhecivel no
+    // banco — sem nome, o detector de 'entregue e nao cobrada' a confunde com
+    // vazamento de receita (28% falso). Nome = rotulo + data.
+    name: `Conta da casa — ${new Date().toISOString().slice(0, 10)}`,
   });
   if (eIns) throw new Error(`insert generations: ${eIns.message} (job ${job.id} JÁ disparado)`);
 
