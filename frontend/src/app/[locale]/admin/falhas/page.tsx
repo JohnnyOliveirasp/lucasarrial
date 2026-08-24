@@ -8,6 +8,8 @@ import { CAUSE_LABELS, KIND_LABELS, type IncidentCause } from "@/lib/incidents/c
 type AgentNote = { at: string; by: string; note: string };
 type Incident = {
   id: string;
+  /** tecnico = tem ação NOSSA que resolve · atendimento = precisa de pessoa (mig 93). */
+  categoria: "tecnico" | "atendimento";
   /** Número curto do chamado (mig 87) — é por ele que as pessoas se referem
    *  ao caso ("olha o #85"), e não pelo uuid. */
   numero: number | null;
@@ -42,12 +44,26 @@ const STATUS_META: Record<Incident["status"], { label: string; cls: string }> = 
   ignored: { label: "Ignorado", cls: "text-[var(--ash)]" },
 };
 
+/**
+ * Duas filas, pedido do Johnny (24/08): *"senão fica na tela um monte de
+ * chamado aberto e fica difícil saber o que é o quê"*.
+ *
+ * TÉCNICOS = tem ação nossa e a gente executa (retreinar voz, refazer imagem,
+ * reprocessar, corrigir bug). É a fila de correção.
+ * ATENDIMENTO = reclamação do produto, dúvida, pré-venda, espera de resposta.
+ * Precisa de PESSOA falando com o aluno.
+ */
 const FILTERS = [
-  { key: "active", label: "Ativos" },
+  { key: "tecnicos", label: "Técnicos" },
+  { key: "atendimento", label: "Atendimento" },
   { key: "aguardando_aluno", label: "Aguardando o aluno" },
   { key: "fixed", label: "Corrigidos" },
   { key: "all", label: "Todos" },
 ] as const;
+
+/** Em aberto de verdade: nem resolvido, nem esperando o aluno. */
+const emAberto = (i: Incident) =>
+  i.status !== "fixed" && i.status !== "ignored" && i.status !== "aguardando_aluno";
 
 const dt = (iso: string) =>
   new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -55,7 +71,7 @@ const dt = (iso: string) =>
 export default function FalhasPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("active");
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("tecnicos");
   const [open, setOpen] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
 
@@ -86,10 +102,8 @@ export default function FalhasPage() {
   }
 
   const shown = useMemo(() => {
-    if (filter === "active")
-      return incidents.filter(
-        (i) => i.status !== "fixed" && i.status !== "ignored" && i.status !== "aguardando_aluno",
-      );
+    if (filter === "tecnicos") return incidents.filter((i) => emAberto(i) && i.categoria === "tecnico");
+    if (filter === "atendimento") return incidents.filter((i) => emAberto(i) && i.categoria === "atendimento");
     if (filter === "aguardando_aluno") return incidents.filter((i) => i.status === "aguardando_aluno");
     if (filter === "fixed") return incidents.filter((i) => i.status === "fixed");
     return incidents;

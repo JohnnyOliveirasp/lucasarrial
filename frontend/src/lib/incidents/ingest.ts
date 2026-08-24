@@ -109,6 +109,8 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
     } else {
       const gravado = await inserirChamadoUnico(admin, {
           kind: f.kind === "voice" ? "training" : f.kind,
+          // Sync de falhas do sistema: sempre fila TÉCNICA (mig 93).
+          categoria: "tecnico",
           cause: classifyCause(error),
           // user_dataset já nasce fechado: estornado + explicado ao aluno.
           status: userError ? "ignored" : "open",

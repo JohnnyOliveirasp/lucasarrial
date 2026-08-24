@@ -239,6 +239,8 @@ async function openBurstIncident(a: {
           `passou 18 dias despercebido.`
         : ""),
     reported_by: "burst-rule",
+    categoria: "tecnico", // rajada de falha de sistema: conserto é nosso
+
     ...(userError
       ? {
           resolution_note:

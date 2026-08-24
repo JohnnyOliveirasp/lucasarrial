@@ -157,6 +157,7 @@ async function openIncidentForSentinela(
       ? `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`
       : `Pedido de ATENDIMENTO por e-mail ao suporte@ (cobrança, cancelamento, reembolso ou dúvida de conta) — a Fast não resolve isso sozinha e prometeu ao aluno que a equipe verificaria. Resumo dela: ${reason}`,
     reportedBy: "fast",
+    categoria: technical ? "tecnico" : "atendimento",
     affectedEmails: [fromEmail],
     sampleError: excerpt,
     attachments: prints,

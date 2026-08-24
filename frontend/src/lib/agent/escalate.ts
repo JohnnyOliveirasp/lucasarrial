@@ -169,6 +169,9 @@ export async function abrirChamadoDaEscalacao(args: {
         : `Pedido por WhatsApp de ${args.chat.name || "aluno sem nome"} (${quem}) — a Carol escalou. ` +
           `Resumo dela: ${args.reason}`,
       reportedBy: grupo ? "carol-grupo" : "carol-zap",
+      // O marcador que ela já usa separa as filas: [ESCALAR-TECNICO] é falha
+      // da plataforma (tem conserto nosso); [ESCALAR] é conversa.
+      categoria: technical ? "tecnico" : "atendimento",
       sampleError: excerpt,
       attachments: args.attachments,
     });
