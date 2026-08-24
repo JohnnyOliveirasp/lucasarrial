@@ -82,8 +82,69 @@ def _heartbeat_loop() -> None:
                 meta = dict(top["meta"]) if top else {}
             log("info", "phase.alive", phase=name, running_s=running_s,
                 job_type=_CURRENT_JOB_TYPE, **meta)
+            # Leva a fase até o NOSSO banco (o log daqui expira ~30min e o
+            # status do job some minutos após o fim — sem isso, um hang morto
+            # por executionTimeout perde a fase antes de alguém olhar).
+            _fase_post(name, running_s, _CURRENT_JOB_TYPE)
         except Exception:
             pass  # heartbeat JAMAIS derruba nada
+
+
+# ───────── Fase corrente → app (incidente d3d8d1b2, parte 2 — b9bc646) ─────────
+# O heartbeat acima nomeia a fase no STDOUT, mas esse log morre no console da
+# RunPod e expira; num job SIGKILLado por executionTimeout ninguém chega a
+# tempo. Este bloco faz a fase chegar ao nosso banco: o APP manda `fase_url`,
+# `fase_token` e `fase_ref` no input do job (por-job, mesmo modelo de confiança
+# das presigned URLs que já viajam no input) e o heartbeat faz POST best-effort
+# pra essa URL. Sem as três chaves no input, a feature está desligada e nada
+# acontece. NADA aqui roda no caminho do job — só a thread daemon do heartbeat
+# posta, com timeout curto e try/except em volta de tudo.
+import urllib.request
+
+_FASE_CFG: dict | None = None  # {"url","token","ref"} — setado por job (set_current_job)
+FASE_POST_TIMEOUT_S = float(os.environ.get("FASE_POST_TIMEOUT_S", "5"))
+
+
+def _fase_cfg_from_input(inp: dict) -> dict | None:
+    """Extrai a config de telemetria de fase do input do job. None = desligado."""
+    try:
+        url = inp.get("fase_url")
+        token = inp.get("fase_token")
+        ref = inp.get("fase_ref")
+        if (
+            isinstance(url, str) and url.startswith("https://")
+            and isinstance(token, str) and token
+            and isinstance(ref, str) and ref
+        ):
+            return {"url": url, "token": token, "ref": ref}
+    except Exception:
+        pass
+    return None
+
+
+def _fase_post(fase: str, running_s: float | None, job_type: str | None) -> None:
+    """POST da fase corrente pro app. Best-effort: timeout curto, JAMAIS lança."""
+    try:
+        cfg = _FASE_CFG
+        if not cfg:
+            return
+        body = json.dumps({
+            "generation_id": cfg["ref"],
+            "token": cfg["token"],
+            "fase": fase,
+            "running_s": running_s,
+            "job_type": job_type,
+        }, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            cfg["url"],
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=FASE_POST_TIMEOUT_S):
+            pass
+    except Exception:
+        pass  # telemetria JAMAIS derruba nem atrasa um job
 
 
 def start_heartbeat() -> None:
@@ -101,7 +162,11 @@ def start_heartbeat() -> None:
             pass
 
 
-def set_current_job(job_type) -> None:
-    """Quem está rodando (pro heartbeat); None silencia entre jobs."""
-    global _CURRENT_JOB_TYPE
+def set_current_job(job_type, inp: dict | None = None) -> None:
+    """Quem está rodando (pro heartbeat); None silencia entre jobs.
+    Se o app mandou fase_url/token/ref no `inp`, o heartbeat também POSTa a
+    fase corrente pro nosso banco. A config é POR JOB: None limpa e nunca vaza
+    pro próximo."""
+    global _CURRENT_JOB_TYPE, _FASE_CFG
     _CURRENT_JOB_TYPE = job_type
+    _FASE_CFG = _fase_cfg_from_input(inp) if (job_type is not None and inp) else None

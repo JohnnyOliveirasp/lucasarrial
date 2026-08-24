@@ -35,7 +35,9 @@ def handler(event: dict) -> dict:
     _log("info", "job.start", type=job_type, disk_pct=round(disk_percent(), 1))
     # Instrumentação d3d8d1b2: heartbeat nomeia a fase corrente no log — num
     # hang SIGKILLado pelo executionTimeout, é o único rastro que sobra.
-    set_current_job(job_type)
+    # Parte 2 do d3d8d1b2 (b9bc646): se o app mandou fase_url/token/ref no
+    # input, o heartbeat também POSTa a fase corrente pro nosso banco.
+    set_current_job(job_type, inp)
     start_heartbeat()
     try:
         if job_type == "train":
