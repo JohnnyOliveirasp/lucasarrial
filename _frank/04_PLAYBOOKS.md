@@ -173,13 +173,18 @@ voltou e que a causa foi corrigida.
 > `ref_type='generation_refund'`, e quem filtrar só por esse valor recebe
 > **zero** com toda a confiança.
 >
-> **São SETE `ref_type` de estorno, não um** (a tabela completa está na seção
-> "As origens, por volume", mais abaixo). Contados no banco em 21/08:
-> `image_video_refund` 71 · `voice_train_refund` 66 · `generation_refund` 46 ·
-> mais `video_clone_refund`, `image_refund`, `support_refund`,
-> `studio_scene_refund`. **Falha de treino estorna com `voice_train_refund`** —
+> **São NOVE `ref_type` de estorno, não um.** Recontados no banco em 23/08
+> (553 linhas): `image_refund` 157 · `video_clone_refund` 156 ·
+> `image_video_refund` 71 · `voice_train_refund` 69 · `generation_refund` 52 ·
+> `studio_scene_refund` 29 · `estorno_de_engano` 14 · `estorno` 3 ·
+> `support_refund` 2. **Falha de treino estorna com `voice_train_refund`** —
 > procurar `generation_refund` numa voz é o mesmo falso negativo que quase
 > pagou em dobro para 13 alunos, entrando por outra porta.
+>
+> ⚠️ **A pegadinha que sobra depois do conserto óbvio:** `estorno_de_engano` e
+> `estorno` (17 linhas) **NÃO terminam em `_refund`**. Trocar
+> `generation_refund` por `LIKE '%_refund'` continua cego para elas.
+> Lista única (e detector de tipo novo): `_frank/ferramentas/_estornos.cjs`.
 >
 > **Faça assim:** case o `ref_id` com o id do objeto que falhou e some o
 > **sinal** do `amount` (débito negativo + estorno positivo = 0 → está quitado).
