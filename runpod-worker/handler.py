@@ -30,12 +30,14 @@ Resposta:
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import json
 import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -202,12 +204,102 @@ def _log(level: str, msg: str, **meta: Any) -> None:
     print(json.dumps(entry, ensure_ascii=False), flush=True)
 
 
+# ───────── Instrumentação de fase + heartbeat (incidente d3d8d1b2) ─────────
+# Jobs estouram o executionTimeout do RunPod SEM correlação com o tamanho do
+# texto (hang, não régua). Quando o teto dispara o processo é SIGKILLado: o
+# `except` do handler nunca roda, não sai traceback — sobra só o que foi
+# impresso ANTES. Como os _log() vivem nas BORDAS das fases, um hang DENTRO de
+# uma fase não deixa rastro de qual fase pendurou. Este bloco resolve só a
+# OBSERVABILIDADE: rastreia a fase corrente numa pilha e um heartbeat em thread
+# daemon imprime `phase.alive` periodicamente — a ÚLTIMA linha de heartbeat no
+# log do RunPod nomeia a fase que estava rodando quando o processo morreu.
+# NADA aqui muda comportamento funcional: só log, e todo caminho tem
+# try/except pra jamais derrubar um job de aluno.
+TTS_HEARTBEAT_SECONDS = float(os.environ.get("TTS_HEARTBEAT_SECONDS", "30"))
+
+_PHASE_LOCK = threading.Lock()
+_PHASE_STACK: list[dict] = []  # topo = fase corrente (aninhamento: qa > regen)
+_CURRENT_JOB_TYPE: str | None = None  # setado pelo handler(); None = idle
+_HEARTBEAT_STARTED = False
+
+
+@contextlib.contextmanager
+def _phase(name: str, **meta: Any):
+    """Marca uma fase: loga `phase.start`/`phase.done` (com elapsed_s) e mantém
+    a fase corrente na pilha global pro heartbeat. Exceções passam intactas."""
+    entry = {"name": name, "start": time.monotonic(), "meta": meta}
+    try:
+        _log("info", "phase.start", phase=name, **meta)
+    except Exception:
+        pass
+    try:
+        with _PHASE_LOCK:
+            _PHASE_STACK.append(entry)
+    except Exception:
+        pass
+    try:
+        yield
+    finally:
+        try:
+            with _PHASE_LOCK:
+                if entry in _PHASE_STACK:
+                    _PHASE_STACK.remove(entry)
+        except Exception:
+            pass
+        try:
+            _log(
+                "info", "phase.done", phase=name,
+                elapsed_s=round(time.monotonic() - entry["start"], 2), **meta,
+            )
+        except Exception:
+            pass
+
+
+def _heartbeat_loop() -> None:
+    """Imprime `phase.alive` a cada TTS_HEARTBEAT_SECONDS enquanto um job roda.
+    É a parte que mais importa num hang: o processo morre por SIGKILL e a última
+    linha de heartbeat é a única testemunha de QUAL fase pendurou."""
+    while True:
+        try:
+            time.sleep(TTS_HEARTBEAT_SECONDS)
+            if _CURRENT_JOB_TYPE is None:
+                continue  # idle entre jobs — não polui o log
+            with _PHASE_LOCK:
+                top = _PHASE_STACK[-1] if _PHASE_STACK else None
+                name = top["name"] if top else "(sem fase instrumentada)"
+                running_s = round(time.monotonic() - top["start"], 1) if top else None
+                meta = dict(top["meta"]) if top else {}
+            _log(
+                "info", "phase.alive", phase=name, running_s=running_s,
+                job_type=_CURRENT_JOB_TYPE, **meta,
+            )
+        except Exception:
+            pass  # heartbeat JAMAIS derruba nada
+
+
+def _start_heartbeat() -> None:
+    """Sobe a thread daemon do heartbeat uma única vez (daemon: não segura o
+    processo no shutdown). Desligável com TTS_HEARTBEAT_SECONDS<=0."""
+    global _HEARTBEAT_STARTED
+    if _HEARTBEAT_STARTED or TTS_HEARTBEAT_SECONDS <= 0:
+        return
+    try:
+        threading.Thread(target=_heartbeat_loop, name="phase-heartbeat", daemon=True).start()
+        _HEARTBEAT_STARTED = True
+    except Exception as exc:
+        try:
+            _log("warn", "phase.heartbeat_start_failed", error=str(exc))
+        except Exception:
+            pass
+
+
 def _ensure_model_downloaded() -> None:
     if MODEL_DIR.exists() and any(MODEL_DIR.glob("*.safetensors")):
         return
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     _log("info", "model.download.start", model=MODEL_ID, dir=str(MODEL_DIR))
-    snapshot_download(repo_id=MODEL_ID, local_dir=str(MODEL_DIR))
+    with _phase("model.download", model=MODEL_ID):
+        snapshot_download(repo_id=MODEL_ID, local_dir=str(MODEL_DIR))
     _log("info", "model.download.done", dir=str(MODEL_DIR))
 
 
@@ -218,7 +310,8 @@ def _load_model():
     from voxcpm import VoxCPM
     _ensure_model_downloaded()
     _log("info", "model.load.start", dir=str(MODEL_DIR))
-    _MODEL = VoxCPM.from_pretrained(str(MODEL_DIR), load_denoiser=False, optimize=True)
+    with _phase("model.load"):
+        _MODEL = VoxCPM.from_pretrained(str(MODEL_DIR), load_denoiser=False, optimize=True)
     _log("info", "model.load.done", sample_rate=_MODEL.tts_model.sample_rate)
     return _MODEL
 
@@ -1244,9 +1337,14 @@ def _ensure_local_from_url(url: str, target_dir: Path, label: str) -> Path:
     if target.exists() and target.stat().st_size > 0:
         _log("info", "cache.hit", label=label, path=str(target))
         return target
-    paths = download_to_dir([url], target_dir)
+    # Instrumentação d3d8d1b2: antes só o cache HIT era logado — um hang no
+    # download deixava o log mudo sobre qual arquivo estava sendo baixado.
+    _log("info", "download.start", label=label, target=str(target))
+    with _phase(f"download.{label}"):
+        paths = download_to_dir([url], target_dir)
     # download_to_dir nomeia como 000_<basename>; rename pra ter cache estável
     paths[0].rename(target)
+    _log("info", "download.done", label=label, size_bytes=target.stat().st_size if target.exists() else None)
     return target
 
 
@@ -1278,7 +1376,8 @@ def _handle_inference(inp: dict) -> dict:
     # 1. Baixa LoRA (cache local) + carrega modelo
     lora_path: Path | None = None
     if lora_url:
-        lora_path = _ensure_local_from_url(lora_url, _LORA_CACHE_DIR, "lora")
+        with _phase("inference.lora.download"):
+            lora_path = _ensure_local_from_url(lora_url, _LORA_CACHE_DIR, "lora")
 
     # 2. Baixa referência. CONTINUATION mode (prompt_wav_path + prompt_text) —
     # mesma chamada do desktop (`VoiceLoraStudio/core.py:841`) que funcionava
@@ -1287,7 +1386,8 @@ def _handle_inference(inp: dict) -> dict:
     prompt_wav_local: str | None = None
     if prompt_wav_url:
         ref_dir = WORKSPACE / "refs"
-        ref_path = _ensure_local_from_url(prompt_wav_url, ref_dir, "ref")
+        with _phase("inference.ref.download"):
+            ref_path = _ensure_local_from_url(prompt_wav_url, ref_dir, "ref")
         # CAUDA DE SILÊNCIO na ref (caso "hoje" engolido 2026-07-17): o VoxCPM
         # continua ACUSTICAMENTE a cauda da referência — ref que termina no meio
         # de fala faz a 1a palavra da geração sair fundida/engolida. 0.5-1.0s de
@@ -1298,12 +1398,13 @@ def _handle_inference(inp: dict) -> dict:
         if pad_ms > 0:
             padded = ref_path.with_name(f"{ref_path.stem}_tail{pad_ms}.wav")
             if not (padded.exists() and padded.stat().st_size > 0):
-                r = subprocess.run(
-                    ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                     "-i", str(ref_path), "-af", f"apad=pad_dur={pad_ms / 1000}",
-                     str(padded)],
-                    capture_output=True, text=True,
-                )
+                with _phase("inference.ref.pad", pad_ms=pad_ms):
+                    r = subprocess.run(
+                        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                         "-i", str(ref_path), "-af", f"apad=pad_dur={pad_ms / 1000}",
+                         str(padded)],
+                        capture_output=True, text=True,
+                    )
                 if r.returncode != 0 or not padded.exists():
                     _log("error", "inference.ref_pad.failed", detail=(r.stderr or "")[:300])
                     padded = ref_path
@@ -1314,12 +1415,13 @@ def _handle_inference(inp: dict) -> dict:
         whisper_model = inp.get("whisper_model", "large-v3")
         language = inp.get("language", "pt")
         _log("info", "inference.transcribe.start", model=whisper_model)
-        prompt_text = transcribe_file(
-            prompt_wav_local,
-            model_name=whisper_model,
-            language=language,
-            log=lambda m: _log("info", "whisper", detail=m),
-        )
+        with _phase("inference.ref.transcribe", model=whisper_model):
+            prompt_text = transcribe_file(
+                prompt_wav_local,
+                model_name=whisper_model,
+                language=language,
+                log=lambda m: _log("info", "whisper", detail=m),
+            )
         _log("info", "inference.transcribe.done", text_len=len(prompt_text or ""))
 
     # Pontuacao terminal no prompt_text: a ref auto de 30s costuma terminar no
@@ -1357,13 +1459,14 @@ def _handle_inference(inp: dict) -> dict:
     _free_cuda()  # worker quente pode ter VRAM presa de jobs anteriores
     _ensure_model_downloaded()
     _log("info", "model.load.start", lora=bool(lora_path))
-    model = VoxCPM.from_pretrained(
-        str(MODEL_DIR),
-        load_denoiser=False,
-        optimize=True,
-        lora_config=lora_cfg,
-        lora_weights_path=str(lora_path) if lora_path else None,
-    )
+    with _phase("inference.model.load", lora=bool(lora_path)):
+        model = VoxCPM.from_pretrained(
+            str(MODEL_DIR),
+            load_denoiser=False,
+            optimize=True,
+            lora_config=lora_cfg,
+            lora_weights_path=str(lora_path) if lora_path else None,
+        )
     sample_rate = model.tts_model.sample_rate
 
     # Chunking por frase + trim + crossfade: cada chunk e' UMA chamada de
@@ -1445,21 +1548,33 @@ def _handle_inference(inp: dict) -> dict:
     intrusion_qa_enabled = os.environ.get("TTS_INTRUSION_QA", "1") not in ("0", "false", "False", "")
     intrusion_qa_retries = int(os.environ.get("TTS_INTRUSION_QA_RETRIES", "3"))
 
-    def _gen_chunk(chunk_text: str) -> np.ndarray:
+    # Instrumentação d3d8d1b2: tentativa POR CHUNK (1 = geração original,
+    # 2+ = regeneração disparada pelo QA) — o incidente pede "em qual fase o
+    # chunk pendura", e sem o número da tentativa o heartbeat não distingue a
+    # geração inicial de um regen.
+    _chunk_attempts: dict[int, int] = {}
+
+    def _gen_chunk(chunk_text: str, chunk_idx: int = -1) -> np.ndarray:
+        attempt = _chunk_attempts.get(chunk_idx, 0) + 1
+        _chunk_attempts[chunk_idx] = attempt
         # Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853).
-        seg = model.generate(
-            text=chunk_text,
-            prompt_wav_path=prompt_wav_local,
-            prompt_text=prompt_text,
-            cfg_value=cfg_value,
-            inference_timesteps=inference_timesteps,
-            max_len=4096,
-            normalize=normalize,
-            denoise=False,
-            retry_badcase=True,
-            retry_badcase_max_times=retry_max,
-            retry_badcase_ratio_threshold=retry_ratio,
-        )
+        with _phase(
+            "inference.chunk.generate",
+            chunk=chunk_idx, attempt=attempt, chars=len(chunk_text),
+        ):
+            seg = model.generate(
+                text=chunk_text,
+                prompt_wav_path=prompt_wav_local,
+                prompt_text=prompt_text,
+                cfg_value=cfg_value,
+                inference_timesteps=inference_timesteps,
+                max_len=4096,
+                normalize=normalize,
+                denoise=False,
+                retry_badcase=True,
+                retry_badcase_max_times=retry_max,
+                retry_badcase_ratio_threshold=retry_ratio,
+            )
         return np.asarray(seg, dtype=np.float32)
 
     # Observabilidade do QA (29/07): devolvida no output do job — tira a
@@ -1477,7 +1592,7 @@ def _handle_inference(inp: dict) -> dict:
     coverage_failure: "dict | None" = None
     for idx, (chunk, ends_paragraph) in enumerate(chunks):
         ct0 = time.monotonic()
-        seg = _gen_chunk(chunk)
+        seg = _gen_chunk(chunk, idx)
         raw_samples = int(seg.size)
 
         def _trim(s: np.ndarray, i=idx) -> np.ndarray:
@@ -1492,25 +1607,29 @@ def _handle_inference(inp: dict) -> dict:
         if prompt_wav_local and (
             start_qa_enabled or echo_qa_enabled or coverage_qa_enabled or intrusion_qa_enabled
         ):
-            seg, best_coverage, best_lacuna = _run_chunk_qa(
-                seg, idx, chunk,
-                regen_fn=lambda c=chunk, t=_trim: t(_gen_chunk(c)),
-                sample_rate=sample_rate,
-                prompt_text=prompt_text,
-                qa_language=qa_language,
-                start_qa_enabled=start_qa_enabled,
-                start_qa_retries=start_qa_retries,
-                start_qa_model=start_qa_model,
-                echo_qa_enabled=echo_qa_enabled,
-                echo_qa_retries=echo_qa_retries,
-                echo_qa_model=echo_qa_model,
-                coverage_qa_enabled=coverage_qa_enabled,
-                coverage_qa_retries=coverage_qa_retries,
-                coverage_qa_min=coverage_qa_min,
-                intrusion_qa_enabled=intrusion_qa_enabled,
-                intrusion_qa_retries=intrusion_qa_retries,
-                qa_stats=qa_stats,
-            )
+            # Fase "pai" do QA do chunk: os whispers do QA rodam aqui dentro e
+            # um regen empilha inference.chunk.generate por cima (o heartbeat
+            # mostra sempre o topo da pilha, com chunk e tentativa).
+            with _phase("inference.chunk.qa", chunk=idx):
+                seg, best_coverage, best_lacuna = _run_chunk_qa(
+                    seg, idx, chunk,
+                    regen_fn=lambda c=chunk, t=_trim, i=idx: t(_gen_chunk(c, i)),
+                    sample_rate=sample_rate,
+                    prompt_text=prompt_text,
+                    qa_language=qa_language,
+                    start_qa_enabled=start_qa_enabled,
+                    start_qa_retries=start_qa_retries,
+                    start_qa_model=start_qa_model,
+                    echo_qa_enabled=echo_qa_enabled,
+                    echo_qa_retries=echo_qa_retries,
+                    echo_qa_model=echo_qa_model,
+                    coverage_qa_enabled=coverage_qa_enabled,
+                    coverage_qa_retries=coverage_qa_retries,
+                    coverage_qa_min=coverage_qa_min,
+                    intrusion_qa_enabled=intrusion_qa_enabled,
+                    intrusion_qa_retries=intrusion_qa_retries,
+                    qa_stats=qa_stats,
+                )
             # DUAS CONDIÇÕES pra derrubar o job (mudança de 20/08):
             #   (1) cobertura abaixo do mínimo, E
             #   (2) o que falta é um TRECHO CONTÍNUO grande.
@@ -1622,7 +1741,8 @@ def _handle_inference(inp: dict) -> dict:
         out_path = WORKSPACE / f"gen_{int(time.time() * 1000)}.wav"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         sf.write(str(out_path), wav, sample_rate)
-        upload_file_to_presigned_url(out_path, output_upload_url, content_type="audio/wav")
+        with _phase("inference.upload"):
+            upload_file_to_presigned_url(out_path, output_upload_url, content_type="audio/wav")
         return {
             "uploaded": True,
             "sample_rate": sample_rate,
@@ -1666,9 +1786,14 @@ def _handle_transcribe(inp: dict) -> dict:
 # ───────────────────────────────────────────────────────────────
 
 def handler(event: dict) -> dict:
+    global _CURRENT_JOB_TYPE
     inp = event.get("input") or {}
     job_type = inp.get("type", "inference")
     _log("info", "job.start", type=job_type, disk_pct=round(_disk_percent(), 1))
+    # Instrumentação d3d8d1b2: heartbeat nomeia a fase corrente no log — num
+    # hang SIGKILLado pelo executionTimeout, é o único rastro que sobra.
+    _CURRENT_JOB_TYPE = job_type
+    _start_heartbeat()
     try:
         if job_type == "train":
             return _handle_train(inp)
@@ -1716,6 +1841,7 @@ def handler(event: dict) -> dict:
         _free_cuda()  # não deixa VRAM presa pro próximo job após crash
         return {"error": str(exc), "type": job_type, "traceback": traceback.format_exc()[:2000]}
     finally:
+        _CURRENT_JOB_TYPE = None  # silencia o heartbeat entre jobs
         # Disco: o worker quente atende jobs por horas e o lixo se acumula até
         # derrubar o próximo aluno. Faxina no fim de TODO job, inclusive os que
         # falharam (job que estourou é justamente o que mais deixa sujeira).
