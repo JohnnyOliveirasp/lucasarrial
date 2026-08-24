@@ -65,9 +65,19 @@ const TEXT_MAX = 2000;
  * Piso de 30min (07/08: worker FRIO do endpoint B levou >20min só carregando
  * o modelo e matou um texto de 59 chars); 2000 chars ≈ 13 chunks → 41min.
  */
+/**
+ * Teto do job (#15, 24/08). O piso de 30 min vinha da era do worker frio
+ * (download de 5 GB por worker) — assado na imagem em adcf18a (11/08). Medido
+ * em 24/08 sobre 1.186 gerações prontas desde então: p99 ≤ 271s em TODAS as
+ * faixas de tamanho, máximo absoluto 460s. Com 30 min, um worker travado
+ * segurava o aluno 1.812s por um texto de 78 caracteres (23/08 23:41) — 14
+ * casos, todos estornados, nenhum correlacionado com tamanho de texto.
+ * Agora: 5 min + 30s por pedaço de 160 chars, piso 8 min (≥2,5× o pior caso
+ * real; 2.567 chars → 13,5 min). Worker travado devolve o crédito em 8 min.
+ */
 function inferenceExecutionTimeoutMs(textLen: number): number {
   const chunks = Math.max(1, Math.ceil(textLen / 160));
-  return Math.max(30 * 60, 15 * 60 + chunks * 2 * 60) * 1000;
+  return Math.max(8 * 60, 5 * 60 + chunks * 30) * 1000;
 }
 
 type Body = {
