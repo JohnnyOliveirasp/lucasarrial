@@ -46,6 +46,7 @@ import {
   createPresignedPut,
 } from "@/lib/r2/presigned";
 import { runpodSubmitInference, webhookUrlFor } from "@/lib/runpod/client";
+import { faseTelemetriaInput } from "@/lib/generations/fase-telemetria";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -209,6 +210,13 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     language: voice.language || "pt",
   };
   if (loraUrl) inferenceInput.lora_url = loraUrl;
+
+  // Fase corrente do worker → banco (incidente d3d8d1b2): o heartbeat do
+  // worker POSTa a fase que está rodando pra /api/v1/webhooks/runpod-fase e
+  // ela cai em qa.fase_corrente — num estouro de executionTimeout a row diz
+  // qual fase pendurou. Sem a env FASE_TELEMETRIA_SECRET isso devolve {} e o
+  // input fica idêntico ao de hoje.
+  Object.assign(inferenceInput, faseTelemetriaInput(generationId));
 
   // Pacing entre frases: precedência body > config da voz. Sem nenhum, o worker
   // usa o default global (env) — comportamento inalterado pras vozes sem config.
