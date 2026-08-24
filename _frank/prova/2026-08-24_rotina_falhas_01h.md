@@ -137,5 +137,35 @@ Conferido nos dois caminhos em ENSAIO.
 
 ## 7. Fim de ronda
 
-`git fetch origin && git log --oneline origin/main..HEAD` → vazio.
-Nenhum fix preso em branch: `feat/curar-mp3-geracao-por-id` foi mergeada e deletada.
+`git fetch origin && git log --oneline origin/main..HEAD` → **vazio**.
+O meu trabalho não ficou preso: `feat/curar-mp3-geracao-por-id` foi mergeada e
+deletada, e o log desta ronda está na `main`.
+
+## 8. ⚠️ O passo obrigatório achou coisa — e não é minha
+
+O `git branch` + `git rev-list main..<branch>` que a ordem manda rodar existe por
+causa do fix que ficou **9h preso** em 19/08. Rodei e ele acusou: **28 branches com
+commit fora da `main`**, e só **18 têm PR aberto**. Sobram **~11 sem PR nenhum** —
+não é fila de review, é trabalho **invisível**, que ninguém vai revisar porque
+ninguém sabe que existe.
+
+Duas são fix de aluno e **não estão em produção** (só a `main` deploya):
+
+| branch (sem PR) | o que o commit diz | por que importa |
+|---|---|---|
+| `fix/trava-foto-nova-8379549c` | *"trava bloqueante quando foto nova do banco ficou fora da geracao"* | é o fix do incidente `8379549c` — **6 alunos**, a foto enviada não entra na geração **e cobra igual** |
+| `feat/valida-conteudo-audio-ingestao` | *"HTML de login do OneDrive nao vira mais .mp3 no R2 — conteudo decide, nao o rotulo"* | é a classe do **Cláudio Sityá**: arquivo que não é áudio entra em `raw_audio_paths` e o treino falha **culpando o aluno** |
+
+E duas são **registro** preso em branch, exatamente o que a ordem proíbe:
+`prova/2026-08-20-pagante-trancado` e `rescue/relatorio-noturno-7e02e90`.
+
+**NÃO mergeei nenhuma.** É código de outro agente, sem review, às 2h — e a ordem de
+19/08 já avisa que pelo menos uma branch dessas (`feat/fix-image-upload-retry`) está
+**STALE e não deve ser mergeada**. Mergear 11 no escuro trocaria um problema
+conhecido por um desconhecido. Fica **medido e nomeado** para a próxima ronda decidir
+uma a uma, começando pelas duas de aluno.
+
+Registro o que isso significa sem suavizar: enquanto essas duas ficarem fora da
+`main`, os 6 alunos do `8379549c` seguem tendo foto ignorada e sendo cobrados, e a
+ingestão segue aceitando arquivo que não é áudio. O código existe. Só não está onde
+serve.
