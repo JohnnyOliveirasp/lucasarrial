@@ -152,3 +152,35 @@ jobs:
               echo "::warning::VOX B nao atualizado (conferir TEMPLATE_NAME_B): $RESP_B"
             fi
           fi
+
+  # ── AMBIENTE ISOLADO DE TESTE (Johnny, 24/08): push na dev aponta o endpoint
+  # fast_cloner_TESTE_dev pra imagem nova. Zero workers ociosos; nenhum aluno
+  # cai aqui — só job mandado de propósito com RUNPOD_ENDPOINT_*_ID=vtfxcwcb0ohvdn.
+  deploy-runpod-teste:
+    needs: build
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      TEMPLATE_ID: 1alygp5qks
+      ENDPOINT_ID: vtfxcwcb0ohvdn
+    steps:
+      - name: Set lowercase repo owner
+        id: owner
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - name: Point TEST template to new image
+        run: |
+          if [ -z "$RUNPOD_API_KEY" ]; then
+            echo "::warning::secret RUNPOD_API_KEY ausente — pulei o deploy de teste."
+            exit 0
+          fi
+          IMG="ghcr.io/${{ steps.owner.outputs.owner }}/lucasarrial-runpod:${GITHUB_SHA::7}"
+          echo "template de TESTE -> $IMG"
+          QUERY=$(printf 'mutation { saveTemplate(input: { id: "%s", name: "fast_cloner_TESTE_dev__template", imageName: "%s", containerDiskInGb: 50, volumeInGb: 0, dockerArgs: "", env: [], isServerless: true }) { id imageName } }' "$TEMPLATE_ID" "$IMG")
+          RESP=$(curl -sf -X POST "https://api.runpod.io/graphql?api_key=$RUNPOD_API_KEY"             -H "Content-Type: application/json"             -d "$(python3 -c 'import json,sys;print(json.dumps({"query":sys.argv[1]}))' "$QUERY")")
+          echo "$RESP" | grep -q "\"imageName\":\"$IMG\"" || { echo "::error::saveTemplate nao aplicou: $RESP"; exit 1; }
+          # workersMax 0 -> 2: descarta worker com imagem velha (workers stale)
+          curl -sf -X PATCH "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID"             -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json"             -d '{"workersMax":0}' -o /dev/null
+          sleep 20
+          curl -sf -X PATCH "https://rest.runpod.io/v1/endpoints/$ENDPOINT_ID"             -H "Authorization: Bearer $RUNPOD_API_KEY" -H "Content-Type: application/json"             -d '{"workersMax":2}' -o /dev/null
+          echo "deploy TESTE ok: $IMG"
