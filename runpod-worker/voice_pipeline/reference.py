@@ -46,8 +46,11 @@ def score_reference_transcript(transcript: str, language: str = "pt") -> float:
     # sem pontuacao terminal no fim; leve a que comeca no meio de frase.
     if not re.search(r"[.!?…]\s*$", text):
         score += 30
+    # #108 (Kessuly 24/08): comecar no meio de frase ("americano. Na 18a...")
+    # e' tao ruim quanto terminar no meio — o VoxCPM continua o TEXTO da ref
+    # e o 1o chunk nasce atropelado. Antes pesava 8; agora pesa como o fim.
     if text and text[0].islower():
-        score += 8
+        score += 30
     if language.startswith("pt"):
         first = words[0]
         last = re.sub(r"[.,!?;:]+$", "", words[-1])
@@ -117,13 +120,66 @@ def _word_field(w, name: str):
     return getattr(w, name, None)
 
 
+_SENTENCE_END = re.compile(r"[.!?…]['\")\]]*$")
+
+
+def _ends_sentence(w) -> bool:
+    """A palavra fecha uma frase? (whisper deixa a pontuacao colada na palavra)."""
+    return bool(_SENTENCE_END.search((_word_field(w, "word") or "").strip()))
+
+
+def _trim_to_sentence(
+    inside: list, ordered: list, min_seconds: float,
+) -> "tuple[list, str]":
+    """Encolhe `inside` para comecar em INICIO de frase e terminar em FIM de
+    frase (chamado #108, caso Kessuly: a ref comecava em "americano. Na 18a
+    peca..." — o VoxCPM continua o TEXTO da ref, e uma ref que comeca/termina
+    no meio de frase faz cada chunk nascer atropelado ou com eco).
+
+    Inicio de frase = 1a palavra do audio OU palavra cujo vizinho anterior (no
+    audio inteiro, nao so na janela) fecha frase. Fim = ultima palavra que
+    fecha frase. Se o recorte ficar menor que `min_seconds`, tenta so o fim
+    (a borda que o score pune mais), depois so o inicio; se nada couber,
+    devolve as palavras como vieram — a melhoria NUNCA descarta uma candidata
+    por si so. Devolve (palavras, modo) com modo em
+    {"sentence", "end_only", "start_only", "words"}.
+    """
+    if not inside:
+        return inside, "words"
+    pos = {id(w): i for i, w in enumerate(ordered)}
+    starts = [
+        w for w in inside
+        if pos.get(id(w), 0) == 0 or _ends_sentence(ordered[pos[id(w)] - 1])
+    ]
+    ends = [w for w in inside if _ends_sentence(w)]
+
+    def _dur(a, b) -> float:
+        return float(_word_field(b, "end")) - float(_word_field(a, "start"))
+
+    def _slice(a, b):
+        ia, ib = pos[id(a)], pos[id(b)]
+        return [w for w in inside if ia <= pos[id(w)] <= ib]
+
+    if starts and ends:
+        a, b = starts[0], ends[-1]
+        if pos[id(a)] <= pos[id(b)] and _dur(a, b) >= min_seconds:
+            return _slice(a, b), "sentence"
+    if ends and _dur(inside[0], ends[-1]) >= min_seconds:
+        return _slice(inside[0], ends[-1]), "end_only"
+    if starts and _dur(starts[0], inside[-1]) >= min_seconds:
+        return _slice(starts[0], inside[-1]), "start_only"
+    return inside, "words"
+
+
 def _snap_bounds_to_words(
     words: list,
     region_start: float,
     region_end: float,
     pad: float = _EDGE_PAD_SECONDS,
+    min_sentence_seconds: float = 0.0,
 ) -> "tuple[float, float, str] | None":
-    """Ajusta [region_start, region_end] p/ fronteiras de PALAVRA COMPLETA.
+    """Ajusta [region_start, region_end] p/ fronteiras de PALAVRA COMPLETA e,
+    quando `min_sentence_seconds` > 0, tambem p/ fronteiras de FRASE (#108).
 
     `words`: lista de palavras com .start/.end/.word (ou dicts), tempos no
     MESMO relogio de region_start/region_end. Escolhe a 1a palavra que COMECA
@@ -132,15 +188,21 @@ def _snap_bounds_to_words(
     nenhuma palavra inteira couber.
     """
     eps = 1e-6
-    inside = []
+    ordered = []
     for w in sorted(words or [], key=lambda w: _word_field(w, "start") or 0.0):
         ws, we = _word_field(w, "start"), _word_field(w, "end")
         if ws is None or we is None:
             continue
-        if ws >= region_start - eps and we <= region_end + eps:
-            inside.append(w)
+        ordered.append(w)
+    inside = [
+        w for w in ordered
+        if _word_field(w, "start") >= region_start - eps
+        and _word_field(w, "end") <= region_end + eps
+    ]
     if not inside:
         return None
+    if min_sentence_seconds > 0:
+        inside, _modo = _trim_to_sentence(inside, ordered, min_sentence_seconds)
     transcript = " ".join(
         (_word_field(w, "word") or "").strip() for w in inside
     ).strip()
@@ -195,11 +257,18 @@ def _cut_snapped_candidate(
         # Tempos do whisper sao relativos ao clipe folgado; a regiao desejada
         # [offset, offset+ref_seconds] vira [offset-win_start, ...] nesse relogio.
         rel_start = offset - win_start
-        snapped = _snap_bounds_to_words(words, rel_start, rel_start + ref_seconds)
+        snapped = _snap_bounds_to_words(
+            words, rel_start, rel_start + ref_seconds,
+            min_sentence_seconds=ref_seconds * _MIN_SNAPPED_FRACTION,
+        )
         if snapped is None:
             log(level="info", event="reference.snap.no_full_word", offset=offset)
             return (_SNAP_DISCARD, None)
         start, end, transcript = snapped
+        log(level="info", event="reference.snap.sentence",
+            offset=offset,
+            starts_sentence=not transcript[:1].islower(),
+            ends_sentence=bool(_SENTENCE_END.search(transcript)))
         if end - start < ref_seconds * _MIN_SNAPPED_FRACTION:
             log(level="info", event="reference.snap.too_short",
                 offset=offset, snapped_seconds=round(end - start, 2))
