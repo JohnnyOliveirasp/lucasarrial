@@ -22,6 +22,7 @@ import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { runpodGetStatus, inferenceEndpoint } from "@/lib/runpod/client";
 import { finalizeGenerationSuccess, qaTelemetria, type GenerationOutput } from "@/lib/generations/finalize";
+import { preservaFaseCorrente, errorMessageComFase } from "@/lib/generations/fase-telemetria";
 import { recordRunpodTiming } from "@/lib/generations/runpod-timing";
 import { finalizeTraining, type TrainOutput } from "@/lib/voices/finalize-training";
 import {
@@ -91,12 +92,18 @@ export async function POST(request: NextRequest) {
   // 2. Tenta achar em generations (inferência)
   const { data: generation } = await admin
     .from("generations")
-    .select("id, user_id, audio_path")
+    .select("id, user_id, audio_path, qa")
     .eq("runpod_job_id", payload.id as never)
     .maybeSingle();
 
   if (generation) {
-    await handleGenerationWebhook(payload, generation.id, generation.user_id, generation.audio_path);
+    await handleGenerationWebhook(
+      payload,
+      generation.id,
+      generation.user_id,
+      generation.audio_path,
+      (generation as { qa?: unknown }).qa ?? null,
+    );
     return jsonOk({ handled: "generation" });
   }
 
@@ -185,6 +192,7 @@ async function handleGenerationWebhook(
   generationId: string,
   userId: string,
   audioPath: string | null,
+  qaAtual: unknown = null,
 ) {
   const out = payload.output ?? {};
 
@@ -211,6 +219,9 @@ async function handleGenerationWebhook(
   // NUNCA concatenar esse dado no error_message: a assinatura do incidente é
   // derivada do texto do erro (src/lib/incidents/classify.ts) e identificador
   // alfanumérico não normaliza — já estilhaçou a mesma falha em 4 incidentes.
+  // ÚNICA exceção sancionada: o sufixo "[fase: ...]" (errorMessageComFase),
+  // de formato FIXO, que a assinatura REMOVE antes de assinar (stripFaseSuffix
+  // em classify.ts) — num timeout, a row passa a NOMEAR a fase pendurada.
   const failUpdate: {
     status: "failed";
     error_message: string;
@@ -218,10 +229,13 @@ async function handleGenerationWebhook(
     qa?: Record<string, unknown> | null;
   } = {
     status: "failed",
-    error_message: rawError.slice(0, 500),
+    error_message: errorMessageComFase(rawError, qaAtual),
     // Telemetria do QA (mig 94, #52): na falha é onde ela mais vale — o log
-    // do RunPod expira e a investigação chegava tarde.
-    qa: qaTelemetria(out as GenerationOutput),
+    // do RunPod expira e a investigação chegava tarde. preservaFaseCorrente:
+    // num timeout o `out` vem vazio e este update REESCREVE a coluna qa — sem
+    // o merge, a falha apagaria a qa.fase_corrente que o heartbeat gravou
+    // (exatamente o dado que nomeia a fase pendurada, incidente d3d8d1b2).
+    qa: preservaFaseCorrente(qaTelemetria(out as GenerationOutput), qaAtual),
   };
   if (typeof payload.executionTime === "number") {
     failUpdate.elapsed_seconds = payload.executionTime / 1000; // RunPod manda em ms

@@ -40,6 +40,7 @@ import subprocess
 import threading
 import time
 import traceback
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -273,8 +274,67 @@ def _heartbeat_loop() -> None:
                 "info", "phase.alive", phase=name, running_s=running_s,
                 job_type=_CURRENT_JOB_TYPE, **meta,
             )
+            # Leva a fase até o NOSSO banco (o log daqui expira ~30min e o
+            # status do job some minutos após o fim — sem isso, um hang morto
+            # por executionTimeout perde a fase antes de alguém olhar).
+            _fase_post(name, running_s, _CURRENT_JOB_TYPE)
         except Exception:
             pass  # heartbeat JAMAIS derruba nada
+
+
+# ───────── Fase corrente → app (incidente d3d8d1b2, parte 2) ─────────
+# O heartbeat acima nomeia a fase no STDOUT, mas esse log morre no console da
+# RunPod e expira; num job SIGKILLado por executionTimeout ninguém chega a
+# tempo. Este bloco faz a fase chegar ao nosso banco: o APP manda `fase_url`,
+# `fase_token` e `fase_ref` no input do job (por-job, mesmo modelo de confiança
+# das presigned URLs que já viajam no input) e o heartbeat faz POST best-effort
+# pra essa URL. Sem as três chaves no input, a feature está desligada e nada
+# acontece. NADA aqui roda no caminho do job — só a thread daemon do heartbeat
+# posta, com timeout curto e try/except em volta de tudo.
+_FASE_CFG: dict | None = None  # {"url","token","ref"} — setado por job no handler()
+FASE_POST_TIMEOUT_S = float(os.environ.get("FASE_POST_TIMEOUT_S", "5"))
+
+
+def _fase_cfg_from_input(inp: dict) -> dict | None:
+    """Extrai a config de telemetria de fase do input do job. None = desligado."""
+    try:
+        url = inp.get("fase_url")
+        token = inp.get("fase_token")
+        ref = inp.get("fase_ref")
+        if (
+            isinstance(url, str) and url.startswith("https://")
+            and isinstance(token, str) and token
+            and isinstance(ref, str) and ref
+        ):
+            return {"url": url, "token": token, "ref": ref}
+    except Exception:
+        pass
+    return None
+
+
+def _fase_post(fase: str, running_s: float | None, job_type: str | None) -> None:
+    """POST da fase corrente pro app. Best-effort: timeout curto, JAMAIS lança."""
+    try:
+        cfg = _FASE_CFG
+        if not cfg:
+            return
+        body = json.dumps({
+            "generation_id": cfg["ref"],
+            "token": cfg["token"],
+            "fase": fase,
+            "running_s": running_s,
+            "job_type": job_type,
+        }, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            cfg["url"],
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=FASE_POST_TIMEOUT_S):
+            pass
+    except Exception:
+        pass  # telemetria JAMAIS derruba nem atrasa um job
 
 
 def _start_heartbeat() -> None:
@@ -1966,13 +2026,17 @@ def _handle_transcribe(inp: dict) -> dict:
 # ───────────────────────────────────────────────────────────────
 
 def handler(event: dict) -> dict:
-    global _CURRENT_JOB_TYPE
+    global _CURRENT_JOB_TYPE, _FASE_CFG
     inp = event.get("input") or {}
     job_type = inp.get("type", "inference")
     _log("info", "job.start", type=job_type, disk_pct=round(_disk_percent(), 1))
     # Instrumentação d3d8d1b2: heartbeat nomeia a fase corrente no log — num
     # hang SIGKILLado pelo executionTimeout, é o único rastro que sobra.
     _CURRENT_JOB_TYPE = job_type
+    # Parte 2 do d3d8d1b2: se o app mandou fase_url/token/ref no input, o
+    # heartbeat também POSTa a fase corrente pro nosso banco (o log daqui
+    # expira; qa.fase_corrente na row da geração não).
+    _FASE_CFG = _fase_cfg_from_input(inp)
     _start_heartbeat()
     try:
         if job_type == "train":
@@ -2022,6 +2086,7 @@ def handler(event: dict) -> dict:
         return {"error": str(exc), "type": job_type, "traceback": traceback.format_exc()[:2000]}
     finally:
         _CURRENT_JOB_TYPE = None  # silencia o heartbeat entre jobs
+        _FASE_CFG = None  # config é por-job; nunca vaza pro próximo
         # Disco: o worker quente atende jobs por horas e o lixo se acumula até
         # derrubar o próximo aluno. Faxina no fim de TODO job, inclusive os que
         # falharam (job que estourou é justamente o que mais deixa sujeira).
