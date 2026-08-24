@@ -6,6 +6,7 @@
  * AMOSTRA automática (linha em generations pro usuário ouvir a voz na hora).
  * Server-only.
  */
+import { logger } from "@/lib/logger/server";
 import { getAdmin } from "@/lib/db/admin";
 import { buildAutoReferenceKey } from "@/lib/r2/presigned";
 import { addExtraCredits } from "@/lib/credits/service";
@@ -193,12 +194,21 @@ export async function finalizeTraining(args: {
   // com o campo NULO). Gravar aqui faz a voz nova já sair no ritmo certo, em
   // vez de depender de alguém notar e ajustar na mão — como foi o caso Katia.
   // ⚠️ SÓ vozes novas, por decisão do dono (21/08): as antigas não são tocadas.
-  if (success && typeof out.reference_pause_ms === "number" && out.reference_pause_ms > 0) {
-    update.tts_silence_ms = out.reference_pause_ms;
-    // O crossfade padrão do worker é 60ms e ele COME a pausa que acabamos de
-    // inserir (funde o fim de um pedaço com o começo do outro). Zerar junto é
-    // o que foi medido funcionando na Katia: 220/0, e depois 466/0.
-    update.tts_crossfade_ms = 0;
+  //
+  // ⛔ DESLIGADO 24/08 (ordem do Johnny, caso Kessuly): gravar pausa + crossfade 0
+  // no treino deixou a voz "horrível, muito pior" — com crossfade 0 e 1,5-1,9s
+  // de silêncio inserido, cada borda suja de pedaço (respiro, sílaba extra,
+  // chiado) fica exposta sozinha no ar; com crossfade 60 ela é mascarada pelo
+  // pedaço seguinte. Medido no mesmo texto: 85s/27 pausas (antiga) contra
+  // 115s/41 pausas de 0,7s (nova); a montagem antiga sobre a mesma voz voltou a
+  // 88s e o Johnny aprovou de ouvido. 93 vozes treinadas desde 21/08 tinham
+  // isso e foram zeradas (backup em _Bugs/chamado_108_referencias/). O worker
+  // continua MEDINDO `reference_pause_ms` (fica no output/telemetria); só não
+  // vira configuração da voz. Ver memória debug-retreino-kessuly-piorou.
+  if (success && typeof out.reference_pause_ms === "number") {
+    logger.info("api", "voice.train.pacing_measured_not_applied", {
+      voiceId, referencePauseMs: out.reference_pause_ms,
+    });
   }
   if (success && typeof out.language === "string" && out.language) {
     // Idioma detectado no treino — a geração/QA passam a rodar no idioma certo.
