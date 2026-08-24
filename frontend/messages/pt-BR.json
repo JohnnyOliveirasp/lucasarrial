@@ -449,6 +449,7 @@
         "fixedLabel": "Imagem de referência",
         "fixedBadge": "Referência fixa",
         "replace": "Trocar foto",
+        "remove": "Remover foto",
         "extrasLabel": "Fotos extras (opcional)",
         "promote": "Usar como referência",
         "historyTip": "Dica: em qualquer imagem do seu histórico, clique em “Usar como referência” para trazê-la para cá."

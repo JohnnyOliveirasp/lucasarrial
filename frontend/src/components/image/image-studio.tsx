@@ -541,6 +541,22 @@ export function ImageStudio({
     persistFixedRef({ key: chosen.key, url: chosen.preview });
   }
 
+  /**
+   * Zera a referência fixa (#79, Rafael, 24/08): até aqui NÃO existia jeito
+   * de tirar a foto do quadro — só trocar por outra ou apagá-la do histórico.
+   * Quem queria "começar do zero" ficava preso na foto antiga. Limpa também o
+   * padrão do SERVIDOR (profiles.image_ref_key, onboarding via planilha):
+   * senão, no próximo carregamento o localStorage vazio cai no fallback e a
+   * foto removida volta sozinha.
+   */
+  function removeFixedRef() {
+    if (!fixedRef || fixedUploading) return;
+    persistFixedRef(null);
+    void fetch("/api/v1/images/ref-default", { method: "DELETE" }).catch(() => {
+      /* best-effort: a tela já limpou; o servidor limpa na próxima */
+    });
+  }
+
   function removeRef(id: string) {
     setRefs((prev) => {
       const found = prev.find((x) => x.id === id);
@@ -791,14 +807,26 @@ export function ImageStudio({
             <span className="absolute left-2 top-2 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]/90 px-2 py-1 font-mono text-[10px] tracking-wide text-[var(--silver)]">
               {t("refs.fixedBadge")}
             </span>
-            <button
-              type="button"
-              onClick={() => replaceInputRef.current?.click()}
-              className="absolute bottom-2 right-2 inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]/90 px-3 font-mono text-[11px] tracking-wide text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)]"
-            >
-              <ImagePlus className="h-3.5 w-3.5" />
-              {t("refs.replace")}
-            </button>
+            <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={removeFixedRef}
+                aria-label={t("refs.remove")}
+                title={t("refs.remove")}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]/90 px-3 font-mono text-[11px] tracking-wide text-[var(--mute)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--ink)]"
+              >
+                <X className="h-3.5 w-3.5" />
+                {t("refs.remove")}
+              </button>
+              <button
+                type="button"
+                onClick={() => replaceInputRef.current?.click()}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-raised)]/90 px-3 font-mono text-[11px] tracking-wide text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)]"
+              >
+                <ImagePlus className="h-3.5 w-3.5" />
+                {t("refs.replace")}
+              </button>
+            </div>
           </div>
         ) : (
           <button
