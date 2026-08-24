@@ -18,7 +18,7 @@
  *   4. sobe em ref/auto.wav (backup .bak-<data>) e grava reference_transcript.
  *
  * Uso (de qualquer pasta):
- *   node _frank/ferramentas/fabricar_referencia.cjs <voiceId> [--confirmar] [--top 5]
+ *   node _frank/ferramentas/fabricar_referencia.cjs <voiceId> [--confirmar] [--top 5] [--escolher 2]
  *   Cache: a transcrição fica em frontend/_Bugs/chamado_108_referencias/<voz>/raw.whisper.json
  */
 const path = require("node:path");
@@ -31,6 +31,7 @@ const VOICE = process.argv[2];
 const CONFIRMAR = process.argv.includes("--confirmar");
 const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
 const TOP = parseInt(arg("--top") || "5", 10);
+const ESCOLHER = parseInt(arg("--escolher") || "1", 10); // qual candidata aplicar (1 = melhor)
 const ALVO = -23, MIN_S = 18, MAX_S = 30, PAUSA_MAX = 1.2;
 if (!VOICE) { console.log(fs.readFileSync(__filename, "utf8").split("*/")[0]); process.exit(0); }
 
@@ -120,13 +121,13 @@ function pontuar(cands, raw, dir, total) {
   console.log(`candidatas (frase inteira, ${MIN_S}-${MAX_S}s, pausa<=${PAUSA_MAX}s): ${cands.length}`);
   const rank = pontuar(cands, raw, dir, total);
   rank.slice(0, TOP).forEach((k, n) => console.log(`\n#${n + 1} score ${k.score.toFixed(2)} · ${k.start.toFixed(1)}s→${k.end.toFixed(1)}s (${k.dur.toFixed(1)}s) · ${k.lufs} LUFS · LRA ${k.lra} · pausa máx ${k.pausaMax.toFixed(2)}s\n   "${k.texto}"`));
-  const best = rank[0]; if (!best) throw new Error("nenhuma candidata");
+  const best = rank[ESCOLHER - 1]; if (!best) throw new Error("nenhuma candidata");
   // normaliza a escolhida
   const nova = path.join(dir, "ref_nova.wav");
   const jj = JSON.parse((ff(["-hide_banner", "-i", best.file, "-af", `loudnorm=I=${ALVO}:TP=-1.5:LRA=11:print_format=json`, "-f", "null", "-"]).match(/\{[\s\S]*\}/) || ["{}"])[0]);
   execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", best.file, "-af", `loudnorm=I=${ALVO}:TP=-1.5:LRA=11:measured_I=${jj.input_i}:measured_TP=${jj.input_tp}:measured_LRA=${jj.input_lra}:measured_thresh=${jj.input_thresh}:offset=${jj.target_offset}:linear=true,afade=t=out:st=${(best.dur + 0.4 - 0.15).toFixed(2)}:d=0.15`, "-ar", "16000", "-ac", "1", nova]);
   const m = medir(nova);
-  console.log(`\nESCOLHIDA: #1 → ${nova} · ${m.lufs} LUFS · pico ${m.pico}`);
+  console.log(`\nESCOLHIDA: #${ESCOLHER} → ${nova} · ${m.lufs} LUFS · pico ${m.pico}`);
   if (!CONFIRMAR) { console.log("\n(simulação — nada foi alterado. --confirmar aplica)"); return; }
   const stamp = new Date().toISOString().slice(0, 10) + "-" + Date.now().toString(36).slice(-4);
   const bak = v.reference_audio_path.replace(/\.wav$/, `.bak-${stamp}.wav`);
