@@ -1155,6 +1155,21 @@ def _maior_lacuna(got, chunk_text, language="pt"):
     Então medimos o maior buraco contínuo em vez de só contar o que falta.
     Isso não depende de saber QUAIS símbolos não se fala — funciona pra
     variação que ainda nem apareceu.
+
+    ⚠️ CORREÇÃO 24/08 (incidente 37bacb68): o buraco é medido em palavras
+    FALÁVEIS — token de 1 letra não conta. A premissa acima ("markup some em
+    palavras soltas") tem uma exceção que custou áudio de aluno: SIGLA
+    SOLETRADA some em bloco CONTÍNUO. "B P C, L O A S" normaliza pra 7 tokens
+    de 1 letra e o whisper escreve "BPC LOAS" (2 tokens) — buraco contínuo de
+    7, indistinguível de um parágrafo comido, e o gate reprovava ÁUDIO BOM.
+    Medido em 23/08 com o tulliojeronimo: o MESMO roteiro falhou 2x escrito
+    "B P C, L O A S" (16c7626a 19:32, 2b59e898 19:35) e saiu [ready] às 19:43
+    (8959506f) quando ele mesmo reescreveu foneticamente "Bê pê cê, lóas".
+    Mesma voz, mesmo texto, só mudou a grafia da sigla.
+    Token de 1 letra é justamente aquele cuja forma escrita é imprevisível na
+    transcrição (sigla soletrada) ou que o whisper engole por ser átono ("e",
+    "a", "o"). Trecho realmente comido é feito de palavra de verdade, então
+    descontar 1-letra NÃO enfraquece a proteção do caso Katia.
     """
     import difflib
 
@@ -1164,12 +1179,15 @@ def _maior_lacuna(got, chunk_text, language="pt"):
     if got is None:
         return None
     if not got:
-        return len(expected)  # chunk inteiro mudo: buraco = tudo
+        # Chunk inteiro mudo: o whisper não ouviu NADA. Isso é defeito real
+        # seja qual for a grafia do texto — aqui o buraco é tudo, sem desconto.
+        return len(expected)
     sm = difflib.SequenceMatcher(None, expected, got)
     maior = 0
     for tag, i1, i2, _j1, _j2 in sm.get_opcodes():
         if tag in ("delete", "replace"):
-            maior = max(maior, i2 - i1)
+            faladas = sum(1 for w in expected[i1:i2] if len(w) >= 2)
+            maior = max(maior, faladas)
     return maior
 
 
