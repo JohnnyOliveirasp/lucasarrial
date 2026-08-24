@@ -14,6 +14,7 @@
 import { getAdmin } from "@/lib/db/admin";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { reabrirPorRespostaDoAluno } from "@/lib/incidents/espera";
+import { entregarAoTime } from "@/lib/incidents/entregar";
 import { guardarPrints } from "./mail-anexos";
 import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
@@ -147,10 +148,10 @@ async function openIncidentForSentinela(
    *  cancelamento, reembolso, dúvida de conta). Os dois viram incidente desde
    *  19/08 — muda o rótulo, não a existência. */
   technical = true,
-): Promise<void> {
+): Promise<number | null> {
   // O corpo vive em lib/incidents/reportar.ts desde 22/08 — o WhatsApp precisa
   // do MESMO caminho, e duas cópias é como o zap ficou sem chamado até hoje.
-  await abrirChamadoReportado({
+  return abrirChamadoReportado({
     signature: `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`,
     title: `Fast (e-mail${technical ? "" : ", atendimento"}): ${reason.slice(0, 90)}`,
     description: technical
@@ -363,7 +364,12 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     try {
       // O print é a prova: guarda ANTES de abrir o incidente.
       const prints = await guardarPrints(mail.raw, { fromEmail, uid: mail.uid });
-      await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
+      const numero = await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
+      // ATENDIMENTO = precisa de gente, não de código (#82, Johnny 24/08):
+      // avisa o grupo e FECHA — a responsabilidade é do time, não do quadro.
+      if (numero != null && !technical) {
+        await entregarAoTime({ numero, canal: "e-mail", aluno: fromEmail, resumo: reason, texto: text });
+      }
     } catch (e) {
       console.error("[agent/mail] falha ao abrir incidente:", e instanceof Error ? e.message : e);
     }

@@ -29,6 +29,7 @@ import { abrirChamadoDaEscalacao, extractEscalation, notifyTeamEscalation } from
 import { guardarPrintBytes } from "@/lib/support/prints";
 import { ehGrupoDoTime } from "@/lib/support/grupo";
 import { reabrirPorRespostaDoAluno } from "@/lib/incidents/espera";
+import { entregarAoTime } from "@/lib/incidents/entregar";
 import { shouldAnswerUnprompted } from "@/lib/agent/classify";
 import { winbackContext, applyWinbackMarkers } from "@/lib/winback/conversation";
 import { WINBACK_MAX_PARTS } from "@/lib/winback/script";
@@ -350,6 +351,17 @@ export async function maybeRespond(msg: IngestedMessage): Promise<void> {
       // No grupo INTERNO quem marcou é colega, não aluno: "já já te respondem
       // aqui" é frase pra quem comprou. O que o time precisa saber é que virou
       // chamado E qual o número — é por ele que se fala do caso depois.
+      // Zap PRIVADO de aluno, fila de atendimento: precisa de gente, não de
+      // código (#82, Johnny 24/08) → avisa o grupo e FECHA o chamado.
+      if (numero != null && !technical && msg.chat.kind !== "group") {
+        await entregarAoTime({
+          numero,
+          canal: "WhatsApp",
+          aluno: `${msg.chat.name || "aluno"} +${msg.chat.wa_phone || msg.chat.wa_jid}`,
+          resumo: reason,
+          texto: lastUserText,
+        });
+      }
       if (numero != null && ehGrupoDoTime(msg.chat.wa_jid)) {
         try {
           await sendAgentText(
