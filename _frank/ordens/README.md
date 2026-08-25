@@ -63,7 +63,7 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 | Congelar a lista + trial × venda | `2026-08-18_ok_para_executar.md` (itens 1 e 3) |
 | Vigia noturno | `2026-08-18_vigia_noturno.md` |
 | Prova de capacidade | `2026-08-18_prova_de_capacidade.md` |
-| Como saber se "já pagou" (migration 79) | `2026-08-18_migration_ja_pagou.md` |
+| ⚠️ **SUSPENSA** — Como saber se "já pagou" (migration 79) | `2026-08-18_migration_ja_pagou.md` — **NÃO use a coluna `profiles.ja_pagou`.** O backfill dela nunca saiu: medido em 25/08, `ja_pagou = false` em **1.515 de 1.515** perfis, `ja_pagou_em`/`ja_pagou_origem` nulos em todos. A coluna carrega ZERO informação e lê **"nunca pagou" para todo mundo, inclusive para pagante** — conferido no mesmo dia num caso real (Rafael, `rafapaga@uol.com.br`, acesso Hotmart até 03/09, `ja_pagou = false`). Quem seguir esta ordem ao pé da letra nega crédito a quem pagou. **Enquanto isso, a fonte de verdade é `_frank/ferramentas/pagou_de_verdade.cjs`** (Hotmart viva: `value > 0` **E** status COMPLETE/APPROVED — `OVERDUE` não é pagamento). Incidente `cfcdd6bb` (#129). |
 | Canal, conta de teste e prioridade | `2026-08-18_ddl_pelo_git_e_prioridade.md` |
 | DDL aprovado + achados da prova | `2026-08-19_ddl_aprovado_e_achados.md` |
 | 🖼️ Imagens: refactor de hoje + branch STALE (não mergear `feat/fix-image-upload-retry`) | `2026-08-19_imagens_refatoradas_branch_stale.md` |
