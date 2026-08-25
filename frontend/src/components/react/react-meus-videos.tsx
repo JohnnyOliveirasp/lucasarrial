@@ -12,7 +12,7 @@
  * "não está mais disponível" em vez de mostrar um play que não toca.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Download, Loader2, Play, RefreshCw, X } from "lucide-react";
+import { Download, Loader2, Play, RefreshCw, Trash2, X } from "lucide-react";
 
 type ReactPronto = {
   id: string;
@@ -70,6 +70,19 @@ export function ReactMeusVideos() {
     void carregar();
   }, [carregar]);
 
+  /** Apagar um React (Johnny 25/08). Some da lista na hora; se o servidor
+      recusar, volta. */
+  async function apagar(v: ReactPronto) {
+    if (!window.confirm("Apagar este React? Ele não volta.")) return;
+    setVideos((atual) => (atual ?? []).filter((x) => x.id !== v.id));
+    setAberto((a) => (a && a.id === v.id ? null : a));
+    const r = await fetch(`/api/v1/react/meus?id=${encodeURIComponent(v.id)}`, { method: "DELETE" });
+    if (!r.ok) {
+      setErro("Não consegui apagar — tente de novo.");
+      void carregar();
+    }
+  }
+
   if (videos === null) {
     return <p className="text-[13px] text-[var(--mute)]">Carregando os seus React…</p>;
   }
@@ -102,7 +115,7 @@ export function ReactMeusVideos() {
           const falhou = v.status === "erro" || v.expirado;
           const rotulo = v.expirado ? "não está mais disponível" : (v.erro ?? "falhou");
           return (
-            <li key={v.id} className="flex flex-col gap-0.5" title={falhou ? rotulo : "Abrir para assistir"}>
+            <li key={v.id} className="relative flex flex-col gap-0.5" title={falhou ? rotulo : "Abrir para assistir"}>
               <button
                 type="button"
                 onClick={() => v.video_url && setAberto(v)}
@@ -133,6 +146,15 @@ export function ReactMeusVideos() {
                     {v.segundos}s
                   </span>
                 )}
+              </button>
+              <button
+                type="button"
+                onClick={() => void apagar(v)}
+                title="Apagar este React"
+                aria-label="Apagar"
+                className="absolute right-0.5 top-0.5 z-10 grid size-5 place-items-center rounded bg-black/60 text-white/80 hover:bg-red-600 hover:text-white"
+              >
+                <Trash2 className="size-3" />
               </button>
               <span className="truncate text-[9px] leading-tight text-[var(--mute)]">
                 {v.autor ? `@${v.autor}` : "React"} · {quando(v.criado_em)}
@@ -172,6 +194,15 @@ export function ReactMeusVideos() {
               >
                 <Download className="size-4" />
               </a>
+              <button
+                type="button"
+                onClick={() => void apagar(aberto)}
+                title="Apagar este React"
+                aria-label="Apagar"
+                className="grid size-8 place-items-center rounded-[var(--radius-sm)] border border-white/30 hover:bg-red-600"
+              >
+                <Trash2 className="size-4" />
+              </button>
               <button
                 type="button"
                 onClick={() => setAberto(null)}
