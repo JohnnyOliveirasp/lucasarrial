@@ -72,3 +72,5 @@ LEGACY_LORA_ALPHA = 16  # default da inferência p/ LoRAs sem alpha gravado
 
 # Cache local de LoRA baixada (inferencia).
 LORA_CACHE_DIR = Path(os.environ.get("LORA_CACHE_DIR", "/workspace/loras"))
+
+# build 25/08: re-disparo apos falha transitoria no Build and push (951ec22)
