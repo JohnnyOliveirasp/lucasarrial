@@ -292,6 +292,53 @@ export function projetarTotalDoEnvio(
 }
 
 /**
+ * Desconto de segurança sobre cada arquivo PERDIDO na projeção: assume-se que
+ * ele pode ser até 25% mais curto que a média dos irmãos que chegaram.
+ *
+ * Por que existe (medido em 25/08, ainda no `2c5bab42`): a comparação dura
+ * `projetado >= porta` prometia "a MESMA gravação serve" com folga de
+ * SEGUNDOS sobre uma regra de três. Na base daquele dia:
+ *
+ *   laila.r.blanco       601s de 3/6  → projeta 1202s → folga +2s
+ *   leandro.fitoway      575s de 6/14 → projeta 1342s → folga +142s
+ *
+ * Dois segundos de folga numa média extrapolada de 3 arquivos para 6 é cara
+ * ou coroa: se os perdidos forem mais curtos que a média, o aluno reenvia e é
+ * recusado pela TERCEIRA vez achando que a culpa é dele — exatamente a classe
+ * que os três ramos existem pra matar. A prova de que a margem é necessária
+ * foi escrita por gente: o e-mail enviado ao leandro em 25/08 00:47 NÃO
+ * confiou na projeção e pediu "grave mais uns 3 a 5 minutos" mesmo com +142s
+ * de folga.
+ */
+export const DESCONTO_ARQUIVO_PERDIDO = 0.25;
+
+/**
+ * A projeção CONSERVADORA: o que chegou vale inteiro (é medido, é fato); cada
+ * arquivo perdido entra com a média descontada pelo `DESCONTO_ARQUIVO_PERDIDO`
+ * (é palpite, e palpite não sustenta promessa).
+ *
+ * A margem resultante é proporcional ao tamanho da extrapolação — projetar 6
+ * a partir de 3 (metade no escuro) exige mais folga que projetar 15 a partir
+ * de 8 — que é onde mora a barra de erro da regra de três. Com o desconto de
+ * 25%, a laila (+2s de folga otimista) cai pra ~17,5min e ganha o pedido de
+ * "acrescente ~3min" — o MESMO número que o e-mail humano pediu.
+ */
+export function projetarTotalConservador(
+  totalSegundos: number,
+  chegaram: number,
+  esperados: number,
+): number | null {
+  const projetado = projetarTotalDoEnvio(totalSegundos, chegaram, esperados);
+  if (projetado === null) return null;
+  const faltando = Math.max(0, esperados - chegaram);
+  if (faltando === 0) return projetado;
+  const mediaPorArquivo = totalSegundos / chegaram;
+  return (
+    totalSegundos + mediaPorArquivo * faltando * (1 - DESCONTO_ARQUIVO_PERDIDO)
+  );
+}
+
+/**
  * A recusa quando o envio chegou pela metade. Não pede pra gravar mais —
  * pede pra REENVIAR, que é a única coisa que resolve. E diz de quem é a
  * culpa, porque é nossa.
@@ -305,10 +352,16 @@ export function projetarTotalDoEnvio(
  * código de produção, e atinge todo aluno cujo envio pela metade não fecha a
  * porta nem inteiro.
  *
- * Então a projeção vem ANTES da escolha da frase, e são três ramos:
- *   - projeta ≥ 20min → a mesma gravação serve mesmo: reenviar basta.
- *   - projeta < 20min → a perda é nossa E falta gravação: dizer os dois, com
- *     o número do que falta, senão ele volta pra fila do mesmo jeito.
+ * Então a projeção vem ANTES da escolha da frase, e são três ramos — usando a
+ * projeção CONSERVADORA (`projetarTotalConservador`), nunca a comparação dura
+ * contra a média crua, que em 25/08 prometia "reenviar basta" com +2s de
+ * folga (laila.r.blanco, 601s de 3/6):
+ *   - projeção conservadora ≥ 20min → a mesma gravação serve mesmo, com folga
+ *     real: reenviar basta.
+ *   - projeção conservadora < 20min → a perda é nossa E falta gravação: dizer
+ *     os dois, com o número do que falta, senão ele volta pra fila do mesmo
+ *     jeito. O número exibido é o conservador — é ele que decidiu a recusa, e
+ *     número exibido não pode contradizer a recusa (regra da porta).
  *   - não dá pra projetar → não prometer nem uma coisa nem outra.
  */
 export function mensagemEnvioIncompleto(
@@ -325,7 +378,7 @@ export function mensagemEnvioIncompleto(
   // própria falha; escrita errada, soa automática e perde o peso.
   const chegou = faltando === 1 ? "não chegou" : "não chegaram";
 
-  const projetado = projetarTotalDoEnvio(totalSegundos, chegaram, esperados);
+  const projetado = projetarTotalConservador(totalSegundos, chegaram, esperados);
   const aba = `deixe a aba aberta até a barra de envio chegar ao fim`;
 
   let saida: string;
