@@ -232,8 +232,19 @@ async function gravarEmEnviados(mensagem) {
     `Message-ID: <frank-${Date.now()}-${Math.random().toString(36).slice(2)}@fastcloner.com>`,
     "MIME-Version: 1.0",
     'Content-Type: text/html; charset="UTF-8"',
+    // ⚠️ SEM ESTA LINHA O ALUNO LÊ "vocÃª". Medido em 25/08 no e-mail do
+    // Luciano (enviados uid 103): o cabeçalho dizia charset UTF-8, mas o corpo
+    // saía em bytes 8-bit CRUS, sem declarar codificação de transferência. O
+    // padrão quando este campo falta é 7bit, que proíbe byte acima de 127 —
+    // então cada acento vira dois caracteres sujos e sobra pro cliente
+    // adivinhar. O mailer da Fast (frontend/src/lib/agent/mail-smtp.ts:141)
+    // sempre mandou base64, e por isso na MESMA pasta de enviados os e-mails
+    // DELA apareciam limpos e os NOSSOS não. Vale pra todo e-mail que este
+    // script mandou pra aluno antes desta data.
+    "Content-Transfer-Encoding: base64",
     "",
-    html,
+    // Base64 quebrado em 76 colunas (limite do MIME).
+    b64(html).replace(/(.{76})/g, "$1\r\n"),
   ].join("\r\n");
 
   const smtp = new Smtp();
