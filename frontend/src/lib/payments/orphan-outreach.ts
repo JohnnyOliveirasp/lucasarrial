@@ -140,6 +140,35 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     }
   }
 
+  // #127 (Cassio, 24/08): compra aprovada UMA VEZ entrava na lista pra sempre.
+  // Quem cancelou/estornou/chargeback/expirou recebia "seus créditos continuam
+  // reservados" — e o lembrete de 3 dias também. A verdade do acesso é
+  // entitlements.status (vale a linha mais recente por comprador): só 'active'
+  // ganha convite. Consulta em blocos, e se falhar ABORTA (mesma regra da guarda
+  // hasAccount: lista incompleta é o que manda e-mail errado).
+  const naoAtivo = new Set<string>();
+  {
+    const ultimo = new Map<string, { status: string; at: string }>();
+    for (let i = 0; i < buyerEmails.length; i += CHUNK) {
+      const chunk = buyerEmails.slice(i, i + CHUNK);
+      const { data, error } = await admin
+        .from("entitlements")
+        .select("buyer_email, status, updated_at, created_at")
+        .in("buyer_email", chunk);
+      if (error) throw new Error(`[orphan-outreach] guarda entitlements falhou: ${error.message}`);
+      for (const e of (data ?? []) as {
+        buyer_email: string | null; status: string | null; updated_at: string | null; created_at: string | null;
+      }[]) {
+        const em = (e.buyer_email ?? "").toLowerCase();
+        if (!em) continue;
+        const at = e.updated_at ?? e.created_at ?? "";
+        const cur = ultimo.get(em);
+        if (!cur || at > cur.at) ultimo.set(em, { status: e.status ?? "", at });
+      }
+    }
+    for (const [em, u] of ultimo) if (u.status !== "active") naoAtivo.add(em);
+  }
+
   const state = await loadState();
   const now = Date.now();
   const sent: string[] = [];
@@ -152,6 +181,7 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
 
   for (const [email, info] of buyers) {
     if (hasAccount.has(email)) continue; // criou conta — claim do login resolve
+    if (naoAtivo.has(email)) continue; // cancelou/estornou/expirou — não há crédito a convidar (#127)
     if (now - new Date(info.at).getTime() < MIN_AGE_MS) continue;
     summary.orphans += 1;
 
