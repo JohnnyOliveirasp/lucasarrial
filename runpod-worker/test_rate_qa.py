@@ -109,5 +109,46 @@ class StretchRealTest(unittest.TestCase):
         self.assertIs(rate.stretch(seg, SR, 1.0), seg)
 
 
+class RitmoNoLacoUnicoTest(unittest.TestCase):
+    """v4: o ritmo e' julgado no MESMO laco do conteudo — tentativa rapida
+    perde pra tentativa no ritmo, mas tentativa com palavra faltando perde
+    pra tentativa rapida (peso menor)."""
+
+    def _roda(self, rates, coverages, target=2.0):
+        from tts_qa import loop
+        fila_r = list(rates); fila_c = list(coverages)
+        regen = lambda: np.zeros(SR, dtype=np.float32)
+        with mock.patch.object(loop, "measure_seg_rate", side_effect=lambda *a, **k: fila_r.pop(0)), \
+             mock.patch.object(loop, "transcribe_seg", return_value=["x"]), \
+             mock.patch.object(loop, "echo_leak_count", return_value=0), \
+             mock.patch.object(loop, "chunk_coverage", side_effect=lambda *a, **k: fila_c.pop(0)), \
+             mock.patch.object(loop, "maior_lacuna", return_value=0), \
+             mock.patch.object(loop, "chunk_intrusions", return_value=0):
+            stats = {k: 0 for k in ("echo_checked", "echo_none", "coverage_checked", "coverage_none",
+                                    "intrusion_checked", "intrusion_none", "regens", "exhausted",
+                                    "echo_flagged", "coverage_flagged", "intrusion_flagged")}
+            seg0 = np.zeros(SR * 2, dtype=np.float32)
+            best, cov, _ = loop.run_chunk_qa(
+                seg0, 0, "texto de teste", regen, SR, None, "pt",
+                start_qa_enabled=False, start_qa_retries=0, start_qa_model="s",
+                echo_qa_enabled=True, echo_qa_retries=3, echo_qa_model="t",
+                coverage_qa_enabled=True, coverage_qa_retries=3, coverage_qa_min=0.85,
+                intrusion_qa_enabled=True, intrusion_qa_retries=3, qa_stats=stats,
+                rate_target=target, rate_tolerance=0.10, rate_retries=3, rate_model="t",
+            )
+        return best, stats
+
+    def test_rapido_regenera_e_fica_com_a_no_ritmo(self):
+        best, stats = self._roda(rates=[3.0, 2.05], coverages=[1.0, 1.0])
+        self.assertEqual(stats["regens"], 1)
+        self.assertEqual(stats["rate_flagged"], 1)
+        self.assertEqual(best.size, SR)          # a regenerada (no ritmo)
+
+    def test_palavra_faltando_pesa_mais_que_ritmo(self):
+        # 1a: rapida (desvio 50% -> +30) · 2a: no ritmo mas cobertura 0.5 (+135) · 3a: rapida
+        best, stats = self._roda(rates=[3.0, 2.0, 3.0], coverages=[1.0, 0.5, 1.0])
+        self.assertEqual(best.size, SR * 2)      # ficou com a 1a (rapida, mas completa)
+
+
 if __name__ == "__main__":
     unittest.main()

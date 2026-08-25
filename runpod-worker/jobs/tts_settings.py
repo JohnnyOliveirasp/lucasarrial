@@ -168,7 +168,8 @@ class TtsSettings:
             # o texto de 60s saiu em 48,6s; 0,10 pega os chunks a 2,4+ .
             rate_qa_tolerance=float(os.environ.get("TTS_RATE_QA_TOLERANCE", "0.10")),
             rate_qa_retries=int(os.environ.get("TTS_RATE_QA_RETRIES", "2")),
-            rate_qa_max_stretch=float(os.environ.get("TTS_RATE_QA_MAX_STRETCH", "0.75")),
+            # 0,90: acima de ~10% o atempo soa "bebado" (Johnny ouviu a 0,75).
+            rate_qa_max_stretch=float(os.environ.get("TTS_RATE_QA_MAX_STRETCH", "0.90")),
             rate_qa_model=os.environ.get("TTS_RATE_QA_WHISPER", os.environ.get("TTS_ECHO_QA_WHISPER", "large-v3-turbo")),
             target_wps=(float(inp["speech_rate_wps"]) if inp.get("speech_rate_wps") else None),
         )
