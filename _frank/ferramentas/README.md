@@ -9,7 +9,7 @@ Nenhum deles cobra crédito do aluno. Os que alteram dados só agem com
 
 | Script | O que faz | Altera algo? |
 |---|---|---|
-| `varredura_travados.cjs` | A varredura diária: tudo parado em estado intermediário + incidentes abertos. Comece o dia por ele. | não |
+| `varredura_travados.cjs` | A varredura diária: tudo parado em estado intermediário + incidentes abertos + **os que estão `aguardando_aluno`, em bloco próprio**. Comece o dia por ele. O bloco de espera existe porque `aguardando_aluno` não é fechado e sumia do filtro de abertos (objeção do Vigia em 25/08: o placar dizia 5 abertos e havia 8 com gente esperando) — honesto não pode significar invisível, senão ninguém dá segunda tentativa em aluno que não respondeu. Fica separado dos abertos de propósito, pra não inflar o número que é pra ser atacado. | não |
 | `cancelamentos_ontem.cjs [--dia YYYY-MM-DD] [--json]` | Quem cancelou no dia, **por pessoa**: classifica trial × assinante × estorno na **Hotmart viva** (pagou = valor > 0 **E** status COMPLETE/APPROVED — `OVERDUE` não é pagamento) e confere se o crédito de cada um seguiu a regra 9. Acusa quem tem outra assinatura viva. Base do relatório diário de cancelamentos. | não |
 | `aluno.cjs <email>` | Raio-x completo de um aluno: conta, compra, créditos, vozes, produção e erros. **Rode isto antes de responder qualquer reclamação.** Se não achar a conta, procura contas/compras parecidas (caso "duas contas"). | não |
 | `resgatar_voz.cjs <voiceId> --confirmar` | Voz parada em "uploading" com áudio no R2: restaura e dispara o treino **por conta da casa** (não cobra). | sim |

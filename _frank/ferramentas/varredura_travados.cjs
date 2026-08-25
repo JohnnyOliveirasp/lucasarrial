@@ -213,10 +213,55 @@ const ALVOS = [
     }
   }
 
+  /**
+   * `aguardando_aluno` NÃO é "fechado", e some do filtro de abertos.
+   *
+   * Objeção do Vigia em 25/08 14h, e ela estava certa: o placar dizia "5
+   * abertos" enquanto havia 8 com gente esperando. Os 3 invisíveis eram o
+   * `65` (3 pagantes, 363h), o `120` (Sandra, pré-venda) e o `124`.
+   *
+   * O status é honesto — a bola está com o aluno, não comigo — mas honesto
+   * não pode significar INVISÍVEL: aluno que não responde em uma semana
+   * precisa de segunda tentativa, e ninguém dá segunda tentativa no que não
+   * aparece na varredura do dia. Vai em bloco PRÓPRIO, separado dos abertos,
+   * pra não inflar o número de "abertos" (que é o que eu tenho que atacar)
+   * nem sumir com quem está esperando.
+   */
+  // ⚠️ `incidents` NÃO tem `updated_at` (conferido no information_schema em
+  // 25/08 — a 1ª versão desta consulta pediu a coluna e quebrou). O que
+  // interessaria aqui é "desde quando o aluno não responde", e isso não é
+  // coluna nenhuma: mora nas `agent_notes`. Então mostro a IDADE do chamado,
+  // que existe, e chamo pelo nome certo — "aberto há", não "parado há".
+  const { data: espera, error: errEsp, count: totalEsp } = await db
+    .from("incidents")
+    .select("numero, title, affected_emails, created_at", { count: "exact" })
+    .eq("status", "aguardando_aluno")
+    .order("created_at", { ascending: true })
+    .limit(50);
+  if (errEsp) {
+    console.log(`\n⚠️  consulta de AGUARDANDO ALUNO FALHOU: ${errEsp.message}`);
+    console.log("    NÃO trate esta rodada como limpa — pode haver aluno esperando sem aparecer.");
+  } else if (totalEsp) {
+    console.log(`\n⏳ AGUARDANDO ALUNO: ${totalEsp} (não é fechado — a bola está com ele)`);
+    for (const i of espera ?? []) {
+      const dias = Math.floor(
+        (Date.now() - new Date(i.created_at).getTime()) / 86400000,
+      );
+      const quem = (i.affected_emails ?? []).length;
+      console.log(
+        `   #${i.numero} aberto há ${dias}d · ${quem} aluno(s) · ${i.title.slice(0, 80)}`,
+      );
+    }
+    console.log("   ⚠️  parado há 7d+ sem resposta pede SEGUNDA tentativa, não silêncio.");
+  }
+
+  const nadaAberto = !errInc && !totalInc && !errEsp && !totalEsp;
   console.log(
-    total === 0 && comAudio === 0 && !errInc && !totalInc
+    total === 0 && comAudio === 0 && nadaAberto
       ? "\n✅ Nada preso, nada aberto."
-      : `\n➡️  ${total} item(ns) preso(s) · ${errInc ? "?" : (totalInc ?? 0)} incidente(s) aberto(s). Vá pelo mais antigo — playbooks em _frank/04.`,
+      : `\n➡️  ${total} item(ns) preso(s) · ${errInc ? "?" : (totalInc ?? 0)} incidente(s) aberto(s)` +
+          ` · ${errEsp ? "?" : (totalEsp ?? 0)} aguardando aluno.` +
+          ` Vá pelo mais antigo — playbooks em _frank/04.`,
   );
 })().catch((e) => {
   console.error("FALHOU:", e.message);
