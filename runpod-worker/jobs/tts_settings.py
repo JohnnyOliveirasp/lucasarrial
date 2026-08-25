@@ -113,6 +113,9 @@ class TtsSettings:
     rate_qa_max_stretch: float
     rate_qa_model: str
     target_wps: "float | None"
+    speech_rate_factor: float
+    """Opcao B (Johnny 25/08): o aluno escolhe "mais calmo / normal / mais rapido"
+    na tela = regua x 0,85 / 1,0 / 1,15. Vem no input como speech_rate_factor."""
     """QA de RITMO (caso Ellen/Johnny 25/08): o modelo articula mais rapido que
     a pessoa e varia por chunk. Regua = `speech_rate_wps` da voz (vem no input);
     sem ela, a articulacao da propria referencia medida uma vez no job.
@@ -172,4 +175,5 @@ class TtsSettings:
             rate_qa_max_stretch=float(os.environ.get("TTS_RATE_QA_MAX_STRETCH", "0.90")),
             rate_qa_model=os.environ.get("TTS_RATE_QA_WHISPER", os.environ.get("TTS_ECHO_QA_WHISPER", "large-v3-turbo")),
             target_wps=(float(inp["speech_rate_wps"]) if inp.get("speech_rate_wps") else None),
+            speech_rate_factor=min(1.5, max(0.5, float(inp.get("speech_rate_factor") or 1.0))),
         )

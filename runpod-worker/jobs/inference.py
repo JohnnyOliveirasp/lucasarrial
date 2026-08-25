@@ -128,8 +128,11 @@ class InferenceJob:
         if not alvo:
             alvo = measure_file_rate(self.prompt_wav_local, c.rate_qa_model, c.qa_language)
             origem = "referencia"
+        if alvo and c.speech_rate_factor != 1.0:
+            alvo = round(alvo * c.speech_rate_factor, 2)  # escolha do aluno na tela
         self.target_wps = alvo
         _log("info", "inference.rate_qa.regua", alvo=alvo, origem=origem,
+             fator=c.speech_rate_factor,
              tolerancia=c.rate_qa_tolerance, max_stretch=c.rate_qa_max_stretch)
 
     def _ajustar_ritmo_global(self, wav: np.ndarray) -> np.ndarray:

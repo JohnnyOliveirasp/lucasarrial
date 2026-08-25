@@ -89,7 +89,11 @@ type Body = {
   // da voz (tts_*); sem ela, o worker usa o default global (env).
   chunk_silence_ms?: number;
   chunk_crossfade_ms?: number;
+  /** Ritmo escolhido na tela (opcao B, 25/08): regua da pessoa x 0,85 / 1 / 1,15. */
+  speed?: "calm" | "normal" | "fast";
 };
+
+const SPEED_FACTOR: Record<string, number> = { calm: 0.85, normal: 1, fast: 1.15 };
 
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -211,6 +215,9 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     // Regua do QA de ritmo (mig 96): velocidade natural da pessoa em pal/s.
     // null = o worker mede a propria referencia.
     ...(typeof voice.speech_rate_wps === "number" ? { speech_rate_wps: voice.speech_rate_wps } : {}),
+    ...(body.speed && SPEED_FACTOR[body.speed] && SPEED_FACTOR[body.speed] !== 1
+      ? { speech_rate_factor: SPEED_FACTOR[body.speed] }
+      : {}),
   };
   if (loraUrl) inferenceInput.lora_url = loraUrl;
 
