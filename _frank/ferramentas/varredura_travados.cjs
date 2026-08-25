@@ -37,7 +37,12 @@ const ALVOS = [
   let total = 0;
 
   for (const [tabela, estados, limiteHoras, campoNome, colData] of ALVOS) {
-    const cols = ["id", "user_id", "status", colData, campoNome].filter(Boolean).join(", ");
+    // `voice_id` só existe em training_jobs, e é ele que diz se o aluno já
+    // recebeu o produto apesar do job não ter fechado (ver "linha obsoleta").
+    const cols = ["id", "user_id", "status", colData, campoNome]
+      .concat(tabela === "training_jobs" ? ["voice_id"] : [])
+      .filter(Boolean)
+      .join(", ");
     const { data, error } = await db
       .from(tabela)
       .select(cols)
@@ -49,7 +54,49 @@ const ALVOS = [
       console.log(`⚠️  ${tabela}: ${error.message}`);
       continue;
     }
-    const presos = (data ?? []).filter((r) => idadeHoras(r[colData]) > limiteHoras);
+    let presos = (data ?? []).filter((r) => idadeHoras(r[colData]) > limiteHoras);
+
+    /**
+     * LINHA OBSOLETA ≠ ALUNO PARADO (medido em 25/08, caso draellenca).
+     *
+     * O job `ebf5cc56` ficou `queued` pra sempre, mas a voz dele (`f4b9b0f2`,
+     * "Ellen 3") está `ready` desde 25/08 03:20 e a aluna vinha gerando áudio
+     * no mesmo dia. A varredura gritava "13.3h · PAGANTE" pra quem já tinha o
+     * produto na mão: o job é escrituração que não fechou, não gente esperando.
+     *
+     * Por que isso importa e não é firula: alarme vermelho falso repetido todo
+     * dia é como a ronda seguinte aprende a ignorar a linha vermelha — e o dia
+     * em que houver um treino REALMENTE pendurado ele chega no meio do ruído.
+     *
+     * Não sumir com a linha, porém: ela vai pra um bloco à parte. Zero
+     * silencioso é o acidente de 18/08, e a regra da casa é que o que sai da
+     * conta apareça dizendo por que saiu.
+     */
+    const obsoletos = [];
+    if (tabela === "training_jobs" && presos.length) {
+      const vivos = [];
+      for (const r of presos) {
+        const { data: v } = await db
+          .from("voices")
+          .select("id, status")
+          .eq("id", r.voice_id)
+          .maybeSingle();
+        if (v && v.status === "ready") obsoletos.push({ job: r, voz: v });
+        else vivos.push(r);
+      }
+      presos = vivos;
+    }
+    if (obsoletos.length) {
+      console.log(
+        `\n🧾 training_jobs — ${obsoletos.length} linha(s) obsoleta(s): ` +
+          `job nunca saiu de queued/running, mas a VOZ já está ready ` +
+          `(escrituração pendente, ninguém esperando)`,
+      );
+      for (const o of obsoletos) {
+        console.log(`   job ${o.job.id.slice(0, 8)} → voz ${o.voz.id.slice(0, 8)} [ready]`);
+      }
+    }
+
     if (presos.length === 0) continue;
 
     console.log(`\n🔴 ${tabela} — ${presos.length} parado(s) [${estados.join("/")}]`);
