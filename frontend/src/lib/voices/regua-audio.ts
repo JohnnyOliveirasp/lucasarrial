@@ -274,6 +274,17 @@ export function contarSlotsDoEnvio(
  * A recusa quando o envio chegou pela metade. Não pede pra gravar mais —
  * pede pra REENVIAR, que é a única coisa que resolve. E diz de quem é a
  * culpa, porque é nossa.
+ *
+ * MAS "a MESMA gravação serve" só é verdade quando o TOTAL dos arquivos que
+ * o aluno TINHA passa da porta de 20min. Medido em 25/08 (incidente
+ * 2c5bab42/#72): jrfengenhariadf (voz 1858c53b) recebeu 4 de 7 arquivos =
+ * 617s; projetando os 7 pela média, ~1080s ≈ 18min — abaixo da porta.
+ * A frase mandava ele reenviar EXATAMENTE a mesma coisa e ser recusado pela
+ * TERCEIRA vez, achando de novo que a culpa era dele. Por isso a projeção
+ * decide a frase final: se nem o envio completo passaria, a mensagem diz as
+ * DUAS coisas — reenviar (falha nossa) E acrescentar gravação (quanto falta,
+ * calculado, arredondado pra CIMA: mandar acrescentar de menos é condenar o
+ * aluno a falhar por segundos, o caso dirceu do outro mínimo).
  */
 export function mensagemEnvioIncompleto(
   totalSegundos: number,
@@ -282,16 +293,42 @@ export function mensagemEnvioIncompleto(
 ): string {
   const faltando = Math.max(0, esperados - chegaram);
   const tem = minutosExibidos(totalSegundos);
+  const porta = MIN_TOTAL_SECONDS / 60;
   // Concordância no singular: com UM arquivo perdido a frase virava
   // "1 não chegaram até nós". Achado em 21/08 no backfill do `2c5bab42` — a voz
   // `99379e28` (4 de 5) leria exatamente isso. É a frase em que a casa admite a
   // própria falha; escrita errada, soa automática e perde o peso.
   const chegou = faltando === 1 ? "não chegou" : "não chegaram";
-  return (
+  const prefixo =
     `Recebemos apenas ${chegaram} dos ${esperados} arquivos que você enviou — ` +
     `${faltando} ${chegou} até nós (o envio foi interrompido no meio, ` +
     `normalmente quando a aba fecha ou a internet oscila). ` +
-    `O que chegou soma ~${tem}min, por isso o treino não pôde começar. ` +
+    `O que chegou soma ~${tem}min, por isso o treino não pôde começar. `;
+
+  // Projeção do envio COMPLETO pela média dos que chegaram. Sem arquivo
+  // chegado não há média — aí não dá pra afirmar que a gravação não serve,
+  // então fica a frase de hoje (reenviar resolve o que a gente sabe que é
+  // nosso; nunca acuse o aluno com um número que você não tem).
+  const projecao = chegaram > 0 ? (totalSegundos / chegaram) * esperados : null;
+
+  if (projecao !== null && projecao < MIN_TOTAL_SECONDS) {
+    // Nem o envio completo passaria a porta. Arredonda pra CIMA o que falta.
+    const acrescentar = Math.max(
+      1,
+      Math.ceil((MIN_TOTAL_SECONDS - projecao) / 60),
+    );
+    return (
+      prefixo +
+      `E tem um segundo ponto, pra você não ser recusado de novo: mesmo com os ` +
+      `${esperados} arquivos completos, sua gravação somaria menos que o mínimo ` +
+      `de ${porta}min no total. Então, ao enviar de novo, acrescente ~${acrescentar}min ` +
+      `de gravação até somar ${porta}min — e deixe a aba aberta até a barra de ` +
+      `envio chegar ao fim. Nada foi cobrado.`
+    );
+  }
+
+  return (
+    prefixo +
     `Não é que você gravou pouco — a MESMA gravação serve. Envie de novo e, ` +
     `desta vez, deixe a aba aberta até a barra de envio chegar ao fim. ` +
     `Nada foi cobrado.`

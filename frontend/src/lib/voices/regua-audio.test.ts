@@ -196,14 +196,57 @@ test("foto ignorada NÃO esconde o áudio que sumiu de verdade", () => {
 
 test("a recusa por envio incompleto NÃO manda o aluno gravar mais", () => {
   // O estrago do 2c5bab42: mandar "grave mais" pra quem já gravou o dobro e
-  // teve metade perdida no NOSSO envio.
-  const msg = mensagemEnvioIncompleto(617, 4, 7);
+  // teve metade perdida no NOSSO envio. 700s em 4 de 7: projetando os 7,
+  // 700/4*7 = 1225s ≥ 1200 — o envio completo PASSA a porta, então a mesma
+  // gravação serve mesmo.
+  const msg = mensagemEnvioIncompleto(700, 4, 7);
   assert.ok(msg.includes("4 dos 7"), msg);
   assert.ok(/envie de novo/i.test(msg), msg);
   // Nao prometer retomada: o produto NAO tem resume, o aluno recria a voz.
   assert.ok(!/de onde parou|retoma/i.test(msg), msg);
   assert.ok(msg.includes("Não é que você gravou pouco"), msg);
-  assert.ok(!/grave mais|adicione mais gravação/i.test(msg), msg);
+  assert.ok(!/grave mais|adicione mais gravação|acrescente/i.test(msg), msg);
+});
+
+/* ── a projeção decide a frase final (25/08, mesmo incidente 2c5bab42) ──────
+ * jrfengenhariadf, voz 1858c53b: 4 de 7 = 617s. Projetando os 7 pela média,
+ * 617/4*7 ≈ 1080s ≈ 18min < porta de 20min. "A MESMA gravação serve" era
+ * MENTIRA pra ele — reenviar igual = terceira recusa, achando que errou.
+ * ------------------------------------------------------------------------ */
+
+test("quando NEM o envio completo passaria a porta, NÃO promete que a mesma gravação serve", () => {
+  const msg = mensagemEnvioIncompleto(617, 4, 7);
+  assert.ok(!msg.includes("a MESMA gravação serve"), msg);
+  // Continua admitindo a falha nossa e pedindo o reenvio...
+  assert.ok(msg.includes("3 não chegaram até nós"), msg);
+  assert.ok(/envi(e|ar) de novo/i.test(msg), msg);
+  // ...E diz quanto acrescentar, calculado: 1200 - 1079,75 = 120,25s → ~3min
+  // (pra CIMA — mandar acrescentar de menos é recusar o aluno por segundos).
+  assert.ok(msg.includes("acrescente ~3min"), msg);
+  assert.ok(msg.includes("20min"), msg);
+  // As réguas erradas que já mandaram aluno pro brejo (ordem de 21/08, seção
+  // 3): nunca 15min, e nunca 10min como ALVO. (O "~10min" do começo é o que o
+  // aluno TEM — medido, não alvo — e esse pode.)
+  assert.ok(!msg.includes("15min"), msg);
+  assert.ok(!/somar 10min|grave 10min|10min de fala/i.test(msg), msg);
+  assert.ok(msg.includes("até somar 20min"), msg);
+  // Sem prazo nem promessa de acompanhamento na mensagem automática.
+  assert.ok(!/prazo|em breve|entraremos em contato|acompanhar/i.test(msg), msg);
+  assert.ok(msg.includes("Nada foi cobrado"), msg);
+});
+
+test("quando a projeção PASSA a porta, a frase de hoje fica intacta", () => {
+  // 1080s em 4 de 5: projeção 1350s ≥ 1200 — a mesma gravação serve mesmo.
+  const msg = mensagemEnvioIncompleto(1080, 4, 5);
+  assert.ok(msg.includes("a MESMA gravação serve"), msg);
+  assert.ok(!/acrescente/i.test(msg), msg);
+});
+
+test("sem NENHUM arquivo chegado não há média — não inventa número pro aluno", () => {
+  // chegaram=0: projeção impossível. Cai na frase de hoje em vez de acusar o
+  // aluno com um "acrescente Xmin" que a gente não tem como calcular.
+  const msg = mensagemEnvioIncompleto(0, 0, 7);
+  assert.ok(!/acrescente/i.test(msg), msg);
 });
 
 test("o minuto do envio incompleto também arredonda pra BAIXO", () => {
