@@ -24,9 +24,22 @@ if (process.argv.includes("--teste")) {
  * finalize-training credita 10.000 que não foram cobrados. Como a ordem é
  * compensar o aluno, fica assim de propósito.
  *
+ * 25/08 — + GATE MULTI-LOCUTOR (incidente 5c3f1f8b/#65): o resgate da voz
+ *          f6f82819 treinou em cima de uma ENTREVISTA (duas pessoas) que já
+ *          estava vetada, e o clone saiu com a voz da entrevistadora. Agora,
+ *          ANTES de disparar GPU, a referência é medida por F0 (autocorrelação,
+ *          mesma técnica de frontend/_Bugs/marcelo_pitch/medir_f0.cjs): se a
+ *          distribuição indicar mais de um locutor, o resgate é RECUSADO.
+ *          Corte calibrado na varredura de 25/08 (60 vozes ready): IQR máximo
+ *          das limpas foi 82Hz; a do Marcelo tem 152Hz. O corte em 100Hz cai
+ *          no vazio entre as duas populações.
+ *
  * Uso (de dentro de frontend/):
  *   node _Bugs/fast_emails_18-08/resgatar_voz.cjs <voiceId>            # simula
  *   node _Bugs/fast_emails_18-08/resgatar_voz.cjs <voiceId> --confirmar # executa
+ *   node _Bugs/fast_emails_18-08/resgatar_voz.cjs <voiceId> --so-gate  # SÓ mede
+ *       o gate multi-locutor (qualquer status) e sai; não resgata nada
+ *   flag --ignorar-locutor: um HUMANO força passar por cima da recusa do gate
  */
 const path_ = require("node:path");
 const os_ = require("node:os");
@@ -34,7 +47,7 @@ const fs_ = require("node:fs");
 const RAIZ_ = path_.resolve(__dirname, "..", "..");
 require(path_.join(RAIZ_, "frontend", "node_modules", "dotenv")).config({ path: path_.join(RAIZ_, "frontend", ".env.local") });
 const { createClient } = require(path_.join(RAIZ_, "frontend", "node_modules", "@supabase/supabase-js"));
-const { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand } = require(path_.join(RAIZ_, "frontend", "node_modules", "@aws-sdk/client-s3"));
+const { S3Client, ListObjectsV2Command, GetObjectCommand, PutObjectCommand, HeadObjectCommand } = require(path_.join(RAIZ_, "frontend", "node_modules", "@aws-sdk/client-s3"));
 const { getSignedUrl } = require(path_.join(RAIZ_, "frontend", "node_modules", "@aws-sdk/s3-request-presigner"));
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
@@ -42,8 +55,10 @@ const run = promisify(execFile);
 
 const VOICE_ID = process.argv[2];
 const CONFIRMAR = process.argv.includes("--confirmar");
+const SO_GATE = process.argv.includes("--so-gate");
+const IGNORAR_LOCUTOR = process.argv.includes("--ignorar-locutor");
 if (!VOICE_ID) {
-  console.error("uso: node resgatar_voz.cjs <voiceId> [--confirmar]");
+  console.error("uso: node resgatar_voz.cjs <voiceId> [--confirmar] [--so-gate] [--ignorar-locutor]");
   process.exit(1);
 }
 
@@ -136,6 +151,169 @@ async function duracao(url) {
   }
 }
 
+/* ============================== GATE MULTI-LOCUTOR ==============================
+ * F0 por autocorrelação — porte fiel de frontend/_Bugs/marcelo_pitch/medir_f0.cjs
+ * e varrer_refs.cjs (mesmos parâmetros: janela 40ms, salto 20ms, 70-300Hz,
+ * RMS>0.01, periodicidade>0.35). Só ffmpeg local, sem dependência nova.
+ * Critério de recusa (medido na varredura de 25/08, não é chute):
+ *   IQR do F0 > 100Hz  E  cada lado do corte de 160Hz com > 20% das janelas.
+ * Menos de 40 janelas vozeadas = INCONCLUSIVO → recusa também (não medir não é
+ * o mesmo que estar limpo).
+ * ============================================================================= */
+const GATE_MAX_SEG = 240;      // ~4 min bastam pra caracterizar a distribuição
+const GATE_IQR_HZ = 100;       // vazio medido entre limpas (máx 82Hz) e mista (152Hz)
+const GATE_CORTE_HZ = 160;     // fronteira masculino/feminino
+const GATE_LADO_MIN = 0.2;     // cada lado com >20% = dois locutores
+const GATE_MIN_JANELAS = 40;   // abaixo disso a estatística não vale nada
+
+const GATE_SR = 16000;
+
+/** Extrai a série de F0 (Hz) das janelas vozeadas de um arquivo local. */
+async function extrairF0(arquivo, maxSeg) {
+  const tmp = path_.join(os_.tmpdir(), `f0_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}.raw`);
+  try {
+    await run("ffmpeg", [
+      "-v", "error", "-i", arquivo, "-t", String(maxSeg),
+      "-ac", "1", "-ar", String(GATE_SR), "-f", "s16le", "-acodec", "pcm_s16le", tmp,
+    ], { timeout: 300000 });
+    const buf = fs_.readFileSync(tmp);
+    const n = Math.floor(buf.length / 2);
+    const x = new Float32Array(n);
+    for (let i = 0; i < n; i++) x[i] = buf.readInt16LE(i * 2) / 32768;
+    const JAN = Math.round(0.04 * GATE_SR);
+    const SALTO = Math.round(0.02 * GATE_SR);
+    const LAG_MIN = Math.floor(GATE_SR / 300);
+    const LAG_MAX = Math.floor(GATE_SR / 70);
+    const f0s = [];
+    for (let ini = 0; ini + JAN < n; ini += SALTO) {
+      let energia = 0;
+      for (let i = 0; i < JAN; i++) energia += x[ini + i] * x[ini + i];
+      if (Math.sqrt(energia / JAN) < 0.01) continue; // silêncio/ruído não vota
+      let melhorLag = 0, melhorR = 0;
+      for (let lag = LAG_MIN; lag <= LAG_MAX; lag++) {
+        let r = 0;
+        for (let i = 0; i + lag < JAN; i++) r += x[ini + i] * x[ini + i + lag];
+        const norm = r / (energia + 1e-9);
+        if (norm > melhorR) { melhorR = norm; melhorLag = lag; }
+      }
+      if (melhorR > 0.35 && melhorLag > 0) f0s.push(GATE_SR / melhorLag);
+    }
+    return { f0s, segAnalisados: n / GATE_SR };
+  } finally {
+    try { fs_.unlinkSync(tmp); } catch {}
+  }
+}
+
+/** Baixa um objeto do R2 pro /tmp (ffmpeg/ffprobe daqui segfaulta em URL https). */
+async function baixarTmp(bucket, key) {
+  const url = await getUrl(bucket, key);
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`download de ${key} falhou: HTTP ${resp.status}`);
+  const tmp = path_.join(os_.tmpdir(), `gate_${Date.now()}_${Math.random().toString(36).slice(2)}${path_.extname(key) || ".bin"}`);
+  fs_.writeFileSync(tmp, Buffer.from(await resp.arrayBuffer()));
+  return tmp;
+}
+
+async function existeR2(bucket, key) {
+  try {
+    await r2.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Chaves de áudio bruto (/raw/) da voz, pro fallback quando não há ref/auto.wav. */
+async function chavesRawDaVoz(voz) {
+  const brutos = Array.isArray(voz.raw_audio_paths) ? voz.raw_audio_paths.filter((k) => EXT_AUDIO.test(k)) : [];
+  if (brutos.length > 0) return brutos;
+  const lista = await r2.send(
+    new ListObjectsV2Command({ Bucket: B_VOICES, Prefix: `${voz.user_id}/${voz.id}/` }),
+  );
+  return (lista.Contents ?? [])
+    .filter((o) => o.Size > 10000 && /\/raw\/[^/]+\.(mp3|wav|m4a|aac|ogg|webm|mp4|flac)$/i.test(o.Key))
+    .map((o) => o.Key)
+    .sort();
+}
+
+/**
+ * Mede a referência e devolve o veredito. NÃO toca no banco, NÃO dispara job.
+ * @returns {Promise<{recusar: boolean, motivo: string}>}
+ */
+async function gateMultiLocutor(voz) {
+  console.log("\n— gate multi-locutor (F0 por autocorrelação) —");
+  const refKey = `${voz.user_id}/${voz.id}/ref/auto.wav`;
+  let f0s = [];
+  if (await existeR2(B_VOICES, refKey)) {
+    console.log(`fonte: ref/auto.wav (a referência que o treino usaria)`);
+    const tmp = await baixarTmp(B_VOICES, refKey);
+    try {
+      ({ f0s } = await extrairF0(tmp, GATE_MAX_SEG));
+    } finally {
+      try { fs_.unlinkSync(tmp); } catch {}
+    }
+  } else {
+    console.log(`fonte: sem ref/auto.wav — medindo os primeiros ~${GATE_MAX_SEG}s do áudio bruto (/raw/)`);
+    const raws = await chavesRawDaVoz(voz);
+    if (raws.length === 0) {
+      return { recusar: true, motivo: "INCONCLUSIVO: nenhum áudio encontrado pra medir (sem ref/auto.wav e sem /raw/)" };
+    }
+    let restam = GATE_MAX_SEG;
+    for (const k of raws) {
+      if (restam <= 1) break;
+      const tmp = await baixarTmp(B_VOICES, k);
+      try {
+        const r = await extrairF0(tmp, restam);
+        f0s.push(...r.f0s);
+        restam -= r.segAnalisados;
+        console.log(`  medido: ${path_.basename(k)} (${r.f0s.length} janelas vozeadas)`);
+      } catch (e) {
+        console.log(`  (não deu pra medir ${path_.basename(k)}: ${String(e.message).slice(0, 80)})`);
+      } finally {
+        try { fs_.unlinkSync(tmp); } catch {}
+      }
+    }
+  }
+
+  if (f0s.length < GATE_MIN_JANELAS) {
+    console.log(`janelas vozeadas: ${f0s.length} (mínimo pra concluir: ${GATE_MIN_JANELAS})`);
+    return { recusar: true, motivo: `INCONCLUSIVO: só ${f0s.length} janelas vozeadas (< ${GATE_MIN_JANELAS}) — não medir não é o mesmo que estar limpo` };
+  }
+
+  f0s.sort((a, b) => a - b);
+  const q = (p) => f0s[Math.floor(f0s.length * p)];
+  const iqr = q(0.75) - q(0.25);
+  const baixo = f0s.filter((f) => f < GATE_CORTE_HZ).length / f0s.length;
+  const alto = 1 - baixo;
+  console.log(`janelas vozeadas: ${f0s.length}`);
+  console.log(`F0 mediana: ${q(0.5).toFixed(1)} Hz   p25 ${q(0.25).toFixed(1)} · p75 ${q(0.75).toFixed(1)}   IQR ${iqr.toFixed(1)} Hz`);
+  console.log(`abaixo de ${GATE_CORTE_HZ}Hz (faixa masculina): ${(100 * baixo).toFixed(1)}%`);
+  console.log(`${GATE_CORTE_HZ}Hz ou mais (faixa feminina):    ${(100 * alto).toFixed(1)}%`);
+
+  const misto = iqr > GATE_IQR_HZ && baixo > GATE_LADO_MIN && alto > GATE_LADO_MIN;
+  if (misto) {
+    return {
+      recusar: true,
+      motivo: `MULTI-LOCUTOR: IQR ${iqr.toFixed(1)}Hz > ${GATE_IQR_HZ}Hz e os dois lados do corte de ${GATE_CORTE_HZ}Hz povoados (${(100 * baixo).toFixed(1)}% / ${(100 * alto).toFixed(1)}%, mínimo pra flag: ${100 * GATE_LADO_MIN}%) — treinar nisso produz clone de uma pessoa que não existe`,
+    };
+  }
+  console.log(`✅ gate: um locutor só (IQR ${iqr.toFixed(1)}Hz ≤ ${GATE_IQR_HZ}Hz ou um lado dominante)`);
+  return { recusar: false, motivo: "" };
+}
+
+/** Aplica o veredito: recusou e ninguém forçou → sai com código ≠ 0. */
+function aplicarGate(veredito) {
+  if (!veredito.recusar) return;
+  console.error(`\n⛔ GATE RECUSOU O RESGATE — ${veredito.motivo}`);
+  if (IGNORAR_LOCUTOR) {
+    console.error("⚠️ --ignorar-locutor: um humano mandou prosseguir MESMO ASSIM. Fica registrado.");
+    return;
+  }
+  console.error("(nenhum job foi disparado, nada foi gravado no banco. pra forçar: --ignorar-locutor)");
+  process.exit(2);
+}
+/* ============================ fim do gate multi-locutor ============================ */
+
 (async () => {
   const { data: voz } = await supa
     .from("voices")
@@ -143,6 +321,17 @@ async function duracao(url) {
     .eq("id", VOICE_ID)
     .maybeSingle();
   if (!voz) throw new Error("voz não encontrada");
+
+  // --so-gate: só mede e sai — serve pra auditar QUALQUER voz (inclusive ready),
+  // sem passar pelo fluxo de resgate. Nunca grava nada.
+  if (SO_GATE) {
+    console.log(`voz "${voz.name}" (${voz.status}) — só o gate, sem resgate`);
+    const veredito = await gateMultiLocutor(voz);
+    aplicarGate(veredito);
+    console.log("\n(--so-gate: fim — nada foi alterado)");
+    return;
+  }
+
   if (voz.status !== "uploading" && voz.status !== "failed") {
     throw new Error(`status é '${voz.status}', não 'uploading' nem 'failed'`);
   }
@@ -225,6 +414,11 @@ async function duracao(url) {
       console.log(`⚠️ ${(total / 60).toFixed(1)} min brutos < porta de upload (${MIN_UPLOAD / 60} min) — o worker mede fala útil e pode reprovar; decisão é sua`);
     }
   }
+
+  // GATE MULTI-LOCUTOR — roda ANTES de qualquer escrita/GPU, inclusive no
+  // ensaio (ensaio que não mede não serve de ensaio). Recusa = sai com ≠ 0.
+  const veredito = await gateMultiLocutor(voz);
+  aplicarGate(veredito);
 
   if (!CONFIRMAR) {
     console.log("\n(simulação — nada foi alterado. rode com --confirmar pra executar)");
