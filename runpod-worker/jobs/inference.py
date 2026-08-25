@@ -159,10 +159,18 @@ class InferenceJob:
             return self._gerar_bruto(chunk_text)
 
     def _gerar_bruto(self, chunk_text: str) -> np.ndarray:
+        # README oficial (Ultimate Cloning): "For maximum cloning similarity,
+        # pass the same reference clip to BOTH reference_wav_path and
+        # prompt_wav_path". So passavamos o prompt (25/08). Desligavel por env.
+        ref_kw = (
+            {"reference_wav_path": self.prompt_wav_local}
+            if self.cfg.reference_wav_too and self.prompt_wav_local else {}
+        )
         seg = self.model.generate(
             text=chunk_text,
             prompt_wav_path=self.prompt_wav_local,
             prompt_text=self.prompt_text,
+            **ref_kw,
             cfg_value=self.cfg.cfg_value,
             inference_timesteps=self.cfg.inference_timesteps,
             max_len=4096,

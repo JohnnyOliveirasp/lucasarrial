@@ -103,6 +103,10 @@ class TtsSettings:
     job (23/40 entregas recentes tem o defeito; gate duro = tempestade de
     estorno)."""
 
+    reference_wav_too: bool
+    """Passa a referencia tambem em reference_wav_path (README: 'maximum
+    cloning similarity'). TTS_REFERENCE_WAV_TOO=0 desliga."""
+
     rate_qa_enabled: bool
     rate_qa_tolerance: float
     rate_qa_retries: int
@@ -155,10 +159,13 @@ class TtsSettings:
             coverage_qa_gap_min=int(os.environ.get("TTS_COVERAGE_QA_GAP_MIN", "6")),
             intrusion_qa_enabled=_ligado("TTS_INTRUSION_QA"),
             intrusion_qa_retries=int(os.environ.get("TTS_INTRUSION_QA_RETRIES", "3")),
+            reference_wav_too=_ligado("TTS_REFERENCE_WAV_TOO"),
             rate_qa_enabled=_ligado("TTS_RATE_QA"),
-            rate_qa_tolerance=float(os.environ.get("TTS_RATE_QA_TOLERANCE", "0.20")),
+            # 25/08 Ellen: com 0,20 so 1 de 5 chunks disparou (2,5-2,6 contra regua 2,16) e
+            # o texto de 60s saiu em 48,6s; 0,10 pega os chunks a 2,4+ .
+            rate_qa_tolerance=float(os.environ.get("TTS_RATE_QA_TOLERANCE", "0.10")),
             rate_qa_retries=int(os.environ.get("TTS_RATE_QA_RETRIES", "2")),
-            rate_qa_max_stretch=float(os.environ.get("TTS_RATE_QA_MAX_STRETCH", "0.80")),
+            rate_qa_max_stretch=float(os.environ.get("TTS_RATE_QA_MAX_STRETCH", "0.75")),
             rate_qa_model=os.environ.get("TTS_RATE_QA_WHISPER", os.environ.get("TTS_ECHO_QA_WHISPER", "large-v3-turbo")),
             target_wps=(float(inp["speech_rate_wps"]) if inp.get("speech_rate_wps") else None),
         )
