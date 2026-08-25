@@ -56,6 +56,8 @@ export function VoiceGenerator({ voiceId }: Props) {
   const [text, setText] = useState("");
   // Pausa entre frases (vai como chunk_silence_ms; backend já aceita).
   const [pauseMs, setPauseMs] = useState<number | null>(null);
+  /** Ritmo (opcao B, Johnny 25/08): regua da pessoa x 0,85 / 1 / 1,15. */
+  const [speed, setSpeed] = useState<"calm" | "normal" | "fast">("normal");
   const [takes, setTakes] = useState<Take[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -162,6 +164,7 @@ export function VoiceGenerator({ voiceId }: Props) {
         body: JSON.stringify({
           text: text.trim(),
           ...(pauseMs !== null ? { chunk_silence_ms: pauseMs } : {}),
+          ...(speed !== "normal" ? { speed } : {}),
         }),
       });
       if (genRes.status === 402) {
@@ -262,6 +265,36 @@ export function VoiceGenerator({ voiceId }: Props) {
                 aria-pressed={pauseMs === opt.v}
                 className={`rounded-[var(--radius)] border px-3 py-1.5 font-mono text-[11px] tracking-wide transition-colors ${
                   pauseMs === opt.v
+                    ? "border-[var(--hairline-bright)] text-[var(--ink)]"
+                    : "border-[var(--hairline)] text-[var(--ash)] hover:text-[var(--ink)]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Ritmo (opcao B, 25/08): o QA de ritmo segura o clone na velocidade
+            natural da pessoa (medida no treino); aqui o aluno desloca essa
+            regua em 15% pra baixo ou pra cima. */}
+        <div className="flex flex-col gap-1.5">
+          <span className="font-mono text-[11px] tracking-wide text-[var(--mute)]">
+            {t("generator.speedLabel")}
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {([
+              { v: "calm", label: t("generator.speedCalm") },
+              { v: "normal", label: t("generator.speedNormal") },
+              { v: "fast", label: t("generator.speedFast") },
+            ] as const).map((opt) => (
+              <button
+                key={opt.v}
+                type="button"
+                onClick={() => setSpeed(opt.v)}
+                aria-pressed={speed === opt.v}
+                className={`rounded-[var(--radius)] border px-3 py-1.5 font-mono text-[11px] tracking-wide transition-colors ${
+                  speed === opt.v
                     ? "border-[var(--hairline-bright)] text-[var(--ink)]"
                     : "border-[var(--hairline)] text-[var(--ash)] hover:text-[var(--ink)]"
                 }`}

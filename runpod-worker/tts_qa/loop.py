@@ -11,6 +11,7 @@ import soundfile as sf
 from worker_log import log as _log
 
 from .metrics import chunk_coverage, chunk_intrusions, echo_leak_count, maior_lacuna
+from .rate import measure_seg_rate
 from .text import norm_words
 
 
@@ -102,6 +103,10 @@ def run_chunk_qa(
     intrusion_qa_enabled: bool,
     intrusion_qa_retries: int,
     qa_stats: dict,
+    rate_target: "float | None" = None,
+    rate_tolerance: float = 0.10,
+    rate_retries: int = 0,
+    rate_model: "str | None" = None,
 ):
     """Laço de QA de UM chunk: reprovou → regenera (regen_fn); esgotou as
     tentativas → devolve a MELHOR tentativa (menos eco; 1a palavra errada e
@@ -114,7 +119,8 @@ def run_chunk_qa(
     """
     attempt = 0
     max_attempts = max(
-        start_qa_retries, echo_qa_retries, coverage_qa_retries, intrusion_qa_retries
+        start_qa_retries, echo_qa_retries, coverage_qa_retries, intrusion_qa_retries,
+        rate_retries if rate_target else 0,
     )
     best_seg, best_score, best_coverage = seg, None, None
     best_lacuna = None
@@ -185,6 +191,24 @@ def run_chunk_qa(
                     # gate duro agora viraria tempestade de falha+estorno como
                     # a de 19/08. Peso 50: acima do eco, abaixo do coverage.
                     score += 50 * intrusoes
+        # RITMO (caso Ellen/Johnny 25/08) dentro do MESMO laco: a tentativa e'
+        # julgada por conteudo E velocidade juntos — o regen por ritmo nunca
+        # mais passa por cima do QA de 1a palavra/cobertura/eco (foi assim que
+        # a Ellen perdeu a 1a palavra na v3). Desvio da regua vira pontos
+        # proporcionais (20% = +12, 50% = +30): regenera, mas pesa MENOS que
+        # palavra faltando (100+) ou intrusa (50).
+        if rate_target and attempt < rate_retries:
+            wps = measure_seg_rate(seg, sample_rate, rate_model or echo_qa_model, qa_language)
+            qa_stats["rate_checked"] = qa_stats.get("rate_checked", 0) + 1
+            if wps is None:
+                qa_stats["rate_none"] = qa_stats.get("rate_none", 0) + 1
+            else:
+                desvio = abs(wps / rate_target - 1.0)
+                _log("info", "inference.rate_qa", idx=idx, attempt=attempt,
+                     wps=wps, alvo=rate_target, desvio=round(desvio, 3))
+                if desvio > rate_tolerance:
+                    qa_stats["rate_flagged"] = qa_stats.get("rate_flagged", 0) + 1
+                    score += int(60 * desvio)
         if best_score is None or score < best_score:
             best_seg, best_score, best_coverage = seg, score, coverage
             best_lacuna = lacuna_desta

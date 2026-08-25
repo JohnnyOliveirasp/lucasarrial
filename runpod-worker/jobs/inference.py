@@ -17,6 +17,7 @@ import numpy as np
 import soundfile as sf
 
 from audio_ops import crossfade_concat, trim_silence, wav_to_base64
+from tts_qa.rate import measure_file_rate, measure_seg_rate, stretch
 from model_loader import free_cuda
 from tts_qa import norm_words, run_chunk_qa
 from tts_text import split_text_for_tts
@@ -80,6 +81,7 @@ class InferenceJob:
         )
         self.model, self.sample_rate = carregar_modelo(self.inp, lora_path)
         self._medir_em_amostras()
+        self._definir_regua_de_ritmo()
 
         chunks = split_text_for_tts(self.text, max_chars=self.cfg.chunk_max) or [(self.text, False)]
         _log(
@@ -96,7 +98,7 @@ class InferenceJob:
         if falha is not None:
             return self._resultado_incompleto(falha)
 
-        wav = self._montar(pieces)
+        wav = self._ajustar_ritmo_global(self._montar(pieces))
         elapsed = time.monotonic() - self.t0
         _log("info", "inference.done", elapsed_s=round(elapsed, 2),
              samples=len(wav), chunks=len(chunks))
@@ -114,6 +116,53 @@ class InferenceJob:
         self.trim_pad_samples = c.amostras(c.trim_pad_ms, self.sample_rate)
         self.par_pause_samples = c.amostras(c.par_pause_ms, self.sample_rate)
 
+    def _definir_regua_de_ritmo(self) -> None:
+        """Regua do QA de ritmo: `speech_rate_wps` da voz; sem ela, a articulacao
+        da referencia (uma medida por job). Sem referencia nao ha QA de ritmo."""
+        self.target_wps = None
+        c = self.cfg
+        if not c.rate_qa_enabled or not self.prompt_wav_local:
+            return
+        origem = "voz"
+        alvo = c.target_wps
+        if not alvo:
+            alvo = measure_file_rate(self.prompt_wav_local, c.rate_qa_model, c.qa_language)
+            origem = "referencia"
+        if alvo and c.speech_rate_factor != 1.0:
+            alvo = round(alvo * c.speech_rate_factor, 2)  # escolha do aluno na tela
+        self.target_wps = alvo
+        _log("info", "inference.rate_qa.regua", alvo=alvo, origem=origem,
+             fator=c.speech_rate_factor,
+             tolerancia=c.rate_qa_tolerance, max_stretch=c.rate_qa_max_stretch)
+
+    def _ajustar_ritmo_global(self, wav: np.ndarray) -> np.ndarray:
+        """Depois da montagem: UM ajuste uniforme e suave no audio inteiro
+        (caso Johnny 25/08: esticar cada chunk com fator proprio ate 0,75 soou
+        'bebado' e criou o lento->rapido). Aqui o fator e' unico, limitado a
+        max_stretch (0,90 = no maximo 11% mais longo) e simetrico (tambem
+        acelera se ficou lento demais). Sem regua ou sem medida: nao toca."""
+        if not self.target_wps or wav is None or wav.size < self.sample_rate:
+            return wav
+        c = self.cfg
+        with _phase("inference.rate_global"):
+            medido = measure_seg_rate(wav, self.sample_rate, c.rate_qa_model, c.qa_language)
+        if not medido:
+            return wav
+        desvio = medido / self.target_wps - 1.0
+        fator = 1.0
+        if desvio > c.rate_qa_tolerance:
+            fator = max(c.rate_qa_max_stretch, self.target_wps / medido)
+        elif desvio < -c.rate_qa_tolerance:
+            fator = min(1.0 / c.rate_qa_max_stretch, self.target_wps / medido)
+        _log("info", "inference.rate_global", medido=medido, alvo=self.target_wps,
+             desvio=round(desvio, 3), fator=round(fator, 3))
+        self.qa_stats["rate_global_wps"] = medido
+        if fator != 1.0:
+            self.qa_stats["rate_stretched"] = self.qa_stats.get("rate_stretched", 0) + 1
+            self.qa_stats["rate_global_fator"] = round(fator, 3)
+            return stretch(wav, self.sample_rate, fator)
+        return wav
+
     def _soltar_modelo(self) -> None:
         self.model = None
         free_cuda()
@@ -128,10 +177,18 @@ class InferenceJob:
             return self._gerar_bruto(chunk_text)
 
     def _gerar_bruto(self, chunk_text: str) -> np.ndarray:
+        # README oficial (Ultimate Cloning): "For maximum cloning similarity,
+        # pass the same reference clip to BOTH reference_wav_path and
+        # prompt_wav_path". So passavamos o prompt (25/08). Desligavel por env.
+        ref_kw = (
+            {"reference_wav_path": self.prompt_wav_local}
+            if self.cfg.reference_wav_too and self.prompt_wav_local else {}
+        )
         seg = self.model.generate(
             text=chunk_text,
             prompt_wav_path=self.prompt_wav_local,
             prompt_text=self.prompt_text,
+            **ref_kw,
             cfg_value=self.cfg.cfg_value,
             inference_timesteps=self.cfg.inference_timesteps,
             max_len=4096,
@@ -172,6 +229,10 @@ class InferenceJob:
             intrusion_qa_enabled=c.intrusion_qa_enabled,
             intrusion_qa_retries=c.intrusion_qa_retries,
             qa_stats=self.qa_stats,
+            rate_target=self.target_wps,
+            rate_tolerance=c.rate_qa_tolerance,
+            rate_retries=c.rate_qa_retries,
+            rate_model=c.rate_qa_model,
         )
 
     def _entregar_mesmo_com_cobertura_baixa(self, idx, chunk, coverage, lacuna) -> bool:

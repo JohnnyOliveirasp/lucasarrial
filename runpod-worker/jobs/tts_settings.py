@@ -103,6 +103,26 @@ class TtsSettings:
     job (23/40 entregas recentes tem o defeito; gate duro = tempestade de
     estorno)."""
 
+    reference_wav_too: bool
+    """Passa a referencia tambem em reference_wav_path (README: 'maximum
+    cloning similarity'). TTS_REFERENCE_WAV_TOO=0 desliga."""
+
+    rate_qa_enabled: bool
+    rate_qa_tolerance: float
+    rate_qa_retries: int
+    rate_qa_max_stretch: float
+    rate_qa_model: str
+    target_wps: "float | None"
+    speech_rate_factor: float
+    """Opcao B (Johnny 25/08): o aluno escolhe "mais calmo / normal / mais rapido"
+    na tela = regua x 0,85 / 1,0 / 1,15. Vem no input como speech_rate_factor."""
+    """QA de RITMO (caso Ellen/Johnny 25/08): o modelo articula mais rapido que
+    a pessoa e varia por chunk. Regua = `speech_rate_wps` da voz (vem no input);
+    sem ela, a articulacao da propria referencia medida uma vez no job.
+    Chunk acima de (1+tolerance)x regua: regenera ate `retries` e estica o
+    residuo com atempo (pitch preservado), nunca alem de `max_stretch`.
+    GATE MACIO — nunca falha o job."""
+
     @property
     def algum_qa_ligado(self) -> bool:
         return (self.start_qa_enabled or self.echo_qa_enabled
@@ -119,7 +139,10 @@ class TtsSettings:
             inference_timesteps=int(inp.get("inference_timesteps", 15)),
             normalize=bool(inp.get("normalize", False)),
             retry_max=int(os.environ.get("TTS_RETRY_MAX_TIMES", "4")),
-            retry_ratio=float(os.environ.get("TTS_RETRY_RATIO", "4.0")),
+            # 25/08 (caso Ellen): no modelo, max_len = tokens x ratio + 10 e a tomada
+            # que passa disso e' DESCARTADA e refeita. Com 4.0, quem fala devagar
+            # bate no teto: so as tomadas rapidas sobrevivem. Fabricante: 6.0.
+            retry_ratio=float(os.environ.get("TTS_RETRY_RATIO", "6.0")),
             chunk_max=int(os.environ.get("TTS_CHUNK_MAX_CHARS", "160")),
             silence_ms=_do_job_ou_env(inp, "chunk_silence_ms", "TTS_CHUNK_SILENCE_MS", "0"),
             crossfade_ms=_do_job_ou_env(inp, "chunk_crossfade_ms", "TTS_CHUNK_CROSSFADE_MS", "60"),
@@ -142,4 +165,15 @@ class TtsSettings:
             coverage_qa_gap_min=int(os.environ.get("TTS_COVERAGE_QA_GAP_MIN", "6")),
             intrusion_qa_enabled=_ligado("TTS_INTRUSION_QA"),
             intrusion_qa_retries=int(os.environ.get("TTS_INTRUSION_QA_RETRIES", "3")),
+            reference_wav_too=_ligado("TTS_REFERENCE_WAV_TOO"),
+            rate_qa_enabled=_ligado("TTS_RATE_QA"),
+            # 25/08 Ellen: com 0,20 so 1 de 5 chunks disparou (2,5-2,6 contra regua 2,16) e
+            # o texto de 60s saiu em 48,6s; 0,10 pega os chunks a 2,4+ .
+            rate_qa_tolerance=float(os.environ.get("TTS_RATE_QA_TOLERANCE", "0.10")),
+            rate_qa_retries=int(os.environ.get("TTS_RATE_QA_RETRIES", "2")),
+            # 0,90: acima de ~10% o atempo soa "bebado" (Johnny ouviu a 0,75).
+            rate_qa_max_stretch=float(os.environ.get("TTS_RATE_QA_MAX_STRETCH", "0.90")),
+            rate_qa_model=os.environ.get("TTS_RATE_QA_WHISPER", os.environ.get("TTS_ECHO_QA_WHISPER", "large-v3-turbo")),
+            target_wps=(float(inp["speech_rate_wps"]) if inp.get("speech_rate_wps") else None),
+            speech_rate_factor=min(1.5, max(0.5, float(inp.get("speech_rate_factor") or 1.0))),
         )
