@@ -72,23 +72,40 @@ const SO_ESTA = arg("--voz");
     const chaves = Array.isArray(v.raw_audio_paths) ? v.raw_audio_paths : [];
     const envio = R.contarSlotsDoEnvio(chaves, chaves);
     const total = v.duration_seconds ?? 0;
-    // CONSERVADORA, igual à produção: o `mensagemEnvioIncompleto` passou a usar
-    // `projetarTotalConservador` no PR #53. Se o critério daqui usasse a
-    // projeção crua enquanto a produção usa a conservadora, o script pularia
-    // justamente quem a regra nova passou a considerar mentira. Foi o caso do
-    // leandro.fitoway: crua 1342s (fecha a porta → o script pulava) contra
-    // conservadora 1150s (não fecha → a frase gravada promete o que não se
-    // cumpre). Critério de remediação tem que ser o MESMO da produção.
     const projetado = R.projetarTotalConservador(total, envio.chegaram, envio.esperados);
 
-    // A mentira é exatamente esta: a frase gravada PROMETE que reenviar basta,
-    // e a projeção diz que não fecha a porta.
-    const prometia = /MESMA grava/i.test(v.error_message || "");
-    const fecha = projetado !== null && projetado >= R.MIN_TOTAL_SECONDS;
-    if (!prometia || fecha) continue;
-
+    /**
+     * O CRITÉRIO É A DIVERGÊNCIA DA PRODUÇÃO DE HOJE — não "tem a frase da
+     * mentira". Duas versões deste script erraram por olhar só a frase:
+     *
+     *  1ª: critério pela projeção CRUA enquanto a produção já usava a
+     *      CONSERVADORA (PR #53). Pulava o leandro.fitoway, que crua fecha a
+     *      porta (1342s) e conservadora não (1150s) — justamente quem a regra
+     *      nova passou a considerar mentira.
+     *  2ª: critério `/MESMA grava/` (a frase do ramo otimista). Cura a MENTIRA
+     *      mas não o NÚMERO VELHO: quem já tinha sido curado antes do #53
+     *      carrega "Acrescente ~Nmin" calculado pela projeção crua, que é
+     *      OTIMISTA — pede menos gravação do que a regra de hoje exige.
+     *      Medido em 25/08 nas 18 vozes com a mensagem: 3 divergentes, todas
+     *      pedindo 1min a MENOS do que deveriam. A pior é a do
+     *      jrfengenhariadf (voz 1858c53b): a tela dele mandava "acrescente
+     *      ~3min" quando a conta conservadora (964s) pede 4 — obedecer a tela
+     *      o levaria à TERCEIRA recusa, que é exatamente a classe que este
+     *      incidente existe pra matar.
+     *
+     * Regenerar é seguro por construção: esta mensagem é 100% gerada pela
+     * `mensagemEnvioIncompleto`, nunca escrita à mão, e as entradas
+     * (`duration_seconds`, `raw_audio_paths`) são as MESMAS que a produção
+     * usou. A única diferença possível é a versão do código — e a versão nova
+     * é a regra que vale. Se nada mudou, `nova === error_message` e o script
+     * não toca.
+     *
+     * Este critério ENGLOBA o da mentira: quando a frase otimista está certa
+     * (a projeção conservadora fecha a porta), a produção regenera o MESMO
+     * texto e o alvo cai fora sozinho — sem precisar de guarda separada.
+     */
     const nova = R.mensagemEnvioIncompleto(total, envio.chegaram, envio.esperados);
-    if (nova === v.error_message) continue; // nada a fazer
+    if (nova === v.error_message) continue; // já é o que a produção diria hoje
     alvos.push({ voz: v, nova, projetado, envio, total });
   }
 
@@ -102,9 +119,15 @@ const SO_ESTA = arg("--voz");
   for (const a of alvos) {
     const { voz, nova, projetado, envio, total } = a;
     console.log(`── voz ${voz.id}  (${voz.status})`);
+    // Sem projeção, `Math.round(null)` imprimia "projetado 0s (< 1200s da
+    // porta)" — número inventado numa linha que existe pra ser conferida.
+    const proj =
+      projetado === null
+        ? "projeção impossível (nada chegou ou duração não medida)"
+        : `projetado ${Math.round(projetado)}s ` +
+          `(${projetado >= R.MIN_TOTAL_SECONDS ? "≥" : "<"} ${R.MIN_TOTAL_SECONDS}s da porta)`;
     console.log(
-      `   ${envio.chegaram}/${envio.esperados} arquivos · total ${total}s · ` +
-        `projetado ${Math.round(projetado)}s (< ${R.MIN_TOTAL_SECONDS}s da porta)`,
+      `   ${envio.chegaram}/${envio.esperados} arquivos · total ${total}s · ${proj}`,
     );
     console.log(`   ANTES: ...${(voz.error_message || "").slice(-120)}`);
     console.log(`   DEPOIS: ...${nova.slice(-160)}`);
