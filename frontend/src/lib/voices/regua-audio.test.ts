@@ -22,6 +22,7 @@ import {
   mensagemEnvioIncompleto,
   mensagemFalaLimpaInsuficiente,
   minutosExibidos,
+  projetarTotalConservador,
   projetarTotalDoEnvio,
 } from "./regua-audio.ts";
 
@@ -237,13 +238,62 @@ test("envio incompleto que NEM inteiro fecha a porta não promete que reenviar b
   assert.ok(!/a MESMA gravação serve/i.test(msg), msg);
   // A perda continua sendo NOSSA — isso não pode sumir junto com a promessa.
   assert.ok(/A perda do que não chegou foi nossa/i.test(msg), msg);
-  // E ele precisa saber o tamanho do buraco. 617/4×7 = 1079,75s: o projetado
-  // arredonda pra BAIXO (17min, nunca "18") e o que falta pra cima (3min),
-  // pelo mesmo motivo da porta — número exibido não pode contradizer a recusa.
-  assert.ok(msg.includes("~17min"), msg);
-  assert.ok(msg.includes("~3min de gravação"), msg);
+  // E ele precisa saber o tamanho do buraco. Desde a margem de 25/08 o número
+  // exibido é o CONSERVADOR (617 + 154,25×3×0,75 = 964,06s): o projetado
+  // arredonda pra BAIXO (16min) e o que falta pra cima (4min), pelo mesmo
+  // motivo da porta — número exibido não pode contradizer a recusa. Antes da
+  // margem exibia a média crua (~17min / ~3min).
+  assert.ok(msg.includes("~16min"), msg);
+  assert.ok(msg.includes("~4min de gravação"), msg);
   assert.ok(msg.includes("20min"), msg);
   assert.ok(msg.includes("Nada foi cobrado"), msg);
+});
+
+// ---------------------------------------------------------------------------
+// A margem de segurança — medida em 25/08, ainda no `2c5bab42`. A comparação
+// dura `projetado >= porta` prometia "a MESMA gravação serve" com folga de
+// SEGUNDOS sobre uma regra de três extrapolada. Os quatro números abaixo são
+// da base daquele dia, não são inventados.
+// ---------------------------------------------------------------------------
+
+test("a projeção conservadora desconta 25% de cada arquivo perdido", () => {
+  // laila: 601s de 3/6 → crua 1202s; conservadora 601 + 200,33×3×0,75.
+  assert.equal(projetarTotalConservador(601, 3, 6), 601 + (601 / 3) * 3 * 0.75);
+  // Sem buraco não há palpite a descontar: vale o total medido.
+  assert.equal(projetarTotalConservador(1400, 7, 7), 1400);
+  // Sem projeção possível continua "não sei", nunca "fecha".
+  assert.equal(projetarTotalConservador(0, 0, 7), null);
+  assert.equal(projetarTotalConservador(617, 0, 7), null);
+});
+
+test("folga de +2s NÃO ganha a promessa de que a mesma gravação serve (laila)", () => {
+  // laila.r.blanco: 601s de 3/6 → média crua projeta 1202s, DOIS segundos
+  // acima da porta, extrapolando metade do envio no escuro. Conservadora:
+  // 1051,75s → ramo "acrescente", pedindo ~3min — o mesmo número que o
+  // e-mail humano do leandro pediu ("mais uns 3 a 5 minutos").
+  const msg = mensagemEnvioIncompleto(601, 3, 6);
+  assert.ok(!/a MESMA gravação serve/i.test(msg), msg);
+  assert.ok(/A perda do que não chegou foi nossa/i.test(msg), msg);
+  assert.ok(msg.includes("~3min de gravação"), msg);
+});
+
+test("folga de +142s numa amostra de 6/14 também não ganha a promessa (leandro)", () => {
+  // leandro.fitoway: 575s de 6/14 → média crua projeta 1342s (+142s). O
+  // e-mail humano de 25/08 00:47 não confiou nessa folga e pediu 3-5min a
+  // mais; o código agora concorda. Conservadora: 1150s → "acrescente".
+  const msg = mensagemEnvioIncompleto(575, 6, 14);
+  assert.ok(!/a MESMA gravação serve/i.test(msg), msg);
+  assert.ok(/A perda do que não chegou foi nossa/i.test(msg), msg);
+  assert.ok(/Acrescente/i.test(msg), msg);
+});
+
+test("envio folgado de verdade CONTINUA ganhando a promessa (fabiobragaclone)", () => {
+  // fabiobragaclone: 1057s de 4/6 → crua 1585,5s (+386s); mesmo com o
+  // desconto de 25% nos 2 perdidos fecha em 1453s, acima da porta com folga
+  // real. A margem não pode transformar todo mundo em "grave mais".
+  const msg = mensagemEnvioIncompleto(1057, 4, 6);
+  assert.ok(msg.includes("a MESMA gravação serve"), msg);
+  assert.ok(!/Acrescente/i.test(msg), msg);
 });
 
 test("envio incompleto que fecha a porta inteiro mantém a promessa antiga", () => {
