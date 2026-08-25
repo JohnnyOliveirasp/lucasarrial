@@ -72,7 +72,14 @@ const SO_ESTA = arg("--voz");
     const chaves = Array.isArray(v.raw_audio_paths) ? v.raw_audio_paths : [];
     const envio = R.contarSlotsDoEnvio(chaves, chaves);
     const total = v.duration_seconds ?? 0;
-    const projetado = R.projetarTotalDoEnvio(total, envio.chegaram, envio.esperados);
+    // CONSERVADORA, igual à produção: o `mensagemEnvioIncompleto` passou a usar
+    // `projetarTotalConservador` no PR #53. Se o critério daqui usasse a
+    // projeção crua enquanto a produção usa a conservadora, o script pularia
+    // justamente quem a regra nova passou a considerar mentira. Foi o caso do
+    // leandro.fitoway: crua 1342s (fecha a porta → o script pulava) contra
+    // conservadora 1150s (não fecha → a frase gravada promete o que não se
+    // cumpre). Critério de remediação tem que ser o MESMO da produção.
+    const projetado = R.projetarTotalConservador(total, envio.chegaram, envio.esperados);
 
     // A mentira é exatamente esta: a frase gravada PROMETE que reenviar basta,
     // e a projeção diz que não fecha a porta.
