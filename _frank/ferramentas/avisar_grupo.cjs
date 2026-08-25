@@ -23,6 +23,27 @@
  *
  * O link deve ser URL ASSINADA e vale poucas horas — sem ele ninguém vai
  * atrás, e a mensagem morre no grupo.
+ *
+ * ── MODO FATO (`--fato`), adicionado 23/08 ──────────────────────────────────
+ * A regra 7 mudou em 21/08 e passou a EXIGIR post no grupo de FATO CONSUMADO:
+ * incidente fechado, fix em produção, e-mail enviado pra aluno. Só que este
+ * script nasceu antes disso e só sabia fazer PERGUNTA: o cabeçalho "Precisa de
+ * um olho humano" e o "Responda aqui mesmo" são fixos. Anunciar um incidente
+ * FECHADO com esse cabeçalho pede resposta que ninguém deve dar — é exatamente
+ * o ruído que a regra 7 manda evitar ("o grupo agora tem o Lucas dentro").
+ *
+ * Então: `--fato` posta constatação, sem pedir nada de volta.
+ *
+ *   node _frank/ferramentas/avisar_grupo.cjs --fato \
+ *     --assunto "Incidente 85ffef6b fechado — Daniel" \
+ *     --corpo "O chamado dizia X. Era Y. Fiz Z." \
+ *     --incidente 85ffef6b
+ *
+ * Com `--fato`, `--pergunta` deixa de ser obrigatória (e é recusada, pra não
+ * sair fato e pergunta na mesma mensagem). Sem `--fato`, nada muda.
+ *
+ * ⚠️ A WAHA só escuta em 127.0.0.1 no servidor. Da máquina local isto roda com
+ * `--seco`; pra enviar de verdade, rode via ssh de lá.
  */
 const path = require("node:path");
 const RAIZ = path.resolve(__dirname, "..", "..");
@@ -46,30 +67,57 @@ const arg = (n) => {
   const link = arg("--link");
   const incidente = arg("--incidente");
   const seco = process.argv.includes("--seco");
+  const fato = process.argv.includes("--fato");
+  const corpo = arg("--corpo");
 
-  if (!assunto || !pergunta) {
+  if (fato && pergunta) {
+    console.error(
+      "--fato e --pergunta juntos, não.\n" +
+        "Fato consumado não pede resposta; pergunta pede. Misturar os dois faz o\n" +
+        "grupo não saber se deve agir. Mande duas mensagens, ou escolha um.",
+    );
+    process.exit(1);
+  }
+
+  if (fato) {
+    if (!assunto || !corpo) {
+      console.error(
+        'uso: --fato --assunto "<manchete>" --corpo "<o que aconteceu>" [--incidente <id>] [--aluno <email>]',
+      );
+      process.exit(1);
+    }
+  } else if (!assunto || !pergunta) {
     console.error(
       "faltou --assunto e/ou --pergunta.\n" +
         "A pergunta é obrigatória de propósito: recado sem pedido claro vira mensagem\n" +
-        "que todo mundo lê e ninguém responde.",
+        "que todo mundo lê e ninguém responde.\n" +
+        "Se o que você tem é FATO CONSUMADO (regra 7), use --fato.",
     );
     process.exit(1);
   }
 
   // Formato pensado pra quem lê no celular: o pedido primeiro, contexto depois.
-  const linhas = [
-    `🔎 *Precisa de um olho humano*`,
-    ``,
-    `*${assunto}*`,
-    aluno ? `Aluno: ${aluno}` : null,
-    conferi ? `Já conferi: ${conferi}` : null,
-    link ? `\nAbrir: ${link}` : null,
-    ``,
-    `❓ ${pergunta}`,
-    ``,
-    `_Responda aqui mesmo — eu levo a resposta adiante._`,
-    incidente ? `_(incidente ${incidente})_` : null,
-  ].filter((l) => l !== null);
+  const linhas = fato
+    ? [
+        `*${assunto}*`,
+        aluno ? `Aluno: ${aluno}` : null,
+        ``,
+        corpo,
+        incidente ? `\n_(incidente ${incidente})_` : null,
+      ].filter((l) => l !== null)
+    : [
+        `🔎 *Precisa de um olho humano*`,
+        ``,
+        `*${assunto}*`,
+        aluno ? `Aluno: ${aluno}` : null,
+        conferi ? `Já conferi: ${conferi}` : null,
+        link ? `\nAbrir: ${link}` : null,
+        ``,
+        `❓ ${pergunta}`,
+        ``,
+        `_Responda aqui mesmo — eu levo a resposta adiante._`,
+        incidente ? `_(incidente ${incidente})_` : null,
+      ].filter((l) => l !== null);
 
   const texto = linhas.join("\n");
 
