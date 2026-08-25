@@ -36,7 +36,12 @@
  */
 const { supa, STATUS_FECHADO } = require("./_comum.cjs");
 
-const STATUS_VALIDOS = ["open", "investigating", "fixed", "ignored", "fixing"];
+// `aguardando_aluno` ja existia no banco (incidentes 120 e 124) e esta lista o
+// recusava — o que empurrava quem fechasse um caso desses pro `fixed`,
+// carimbando "resolvido" num incidente que so espera o aluno responder.
+// NAO entra em STATUS_FECHADO de proposito: assim nao carimba resolved_at,
+// porque nada foi resolvido ainda. (medido 25/08, ao fechar o #65)
+const STATUS_VALIDOS = ["open", "investigating", "fixed", "ignored", "fixing", "aguardando_aluno"];
 
 function arg(nome) {
   const i = process.argv.indexOf(nome);
@@ -138,6 +143,15 @@ function normalizarNotas(atual) {
     // 18:41. O relatório passa a mentir sobre quando o problema acabou.
     // Ainda assim não re-carimba quem só re-anota um card JÁ fechado no
     // mesmo status — nesse caso a data original é a verdadeira.
+    // Sair de um status FECHADO pra um ABERTO tem que APAGAR o carimbo, senao
+    // o incidente anda com uma data de "resolvido" que nao vale mais e todo
+    // relatorio que le resolved_at mente. Aconteceu no #65 em 25/08: fechado
+    // 21/08 18:41, movido pra aguardando_aluno, e o banco seguia dizendo que
+    // tinha sido resolvido em 21/08.
+    if (!STATUS_FECHADO.includes(status) && antes.resolved_at) {
+      patch.resolved_at = null;
+      patch.resolved_by = null;
+    }
     if (STATUS_FECHADO.includes(status)) {
       const jaEstavaFechado = STATUS_FECHADO.includes(antes.status);
       if (!jaEstavaFechado || !antes.resolved_at) {
