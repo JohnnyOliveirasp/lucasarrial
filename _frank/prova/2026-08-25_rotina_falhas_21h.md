@@ -165,6 +165,45 @@ colocando por escrito em vez de deixar apodrecer: ou a linha é cancelada com
 critério, ou o detector aprende a ignorar job órfão sem cobrança. Detector que
 grita à toa acaba ignorado, e aí ele deixa de proteger quando for de verdade.
 
+## 10. O passo fixo de fim de ronda achou um gargalo, e não é meu
+
+`git log origin/main..HEAD` saiu **vazio** e a árvore está limpa: nada meu ficou
+preso. Mas a segunda metade do passo (conferir que não ficou fix preso em
+branch) mostrou outra coisa:
+
+**19 PRs abertos, o mais velho há 7 dias**, e vários são correção que toca dinheiro
+ou espera de aluno:
+
+| idade | PR | o que está parado |
+|---|---|---|
+| 7d | #4 | estorno/chargeback zera o crédito de mensalidade |
+| 7d | **#5** | `expire_trial_credits` não debita quem tem **cobrança em voo** |
+| 6d | #10 | amostra do treino fora do seletor do vídeo clone |
+| 5d | #17 | `canceled` com período pago vigente **mantém** o acesso |
+| 0d | #55 | rosto fora de câmera não cobra (é o `131`, do Itamar) |
+| 0d | #56 | `chunk_max` por job (é o card `a1c65be3`, da Katia) |
+
+O **#5** merece o olho hoje: é justamente a máquina de expiração de trial, e o
+Luciano é um trial que converte **amanhã 12:00Z**. Some com o `135` aberto pelo
+Vigia às 20h (a varredura do trial **não escreve desde 18/08**) e com o `136`
+(a Fast promete "seus créditos não expiram nunca" pra trial): três sinais na mesma
+máquina, na véspera de uma conversão.
+
+Registro como o que é — **medição, não conclusão**. Não abri incidente novo e não
+mexi em PR: revisar/mergear é decisão de quem revisa. Mas a ordem diz que *"card
+completed no Mission Board não significa em produção — só a main deploya"*, e o que
+está medido aqui é que existe correção **escrita e não entregue** enquanto o
+defeito segue vivo pro aluno.
+
+Nenhum desses PRs é meu desta ronda: os meus dois commits foram ferramenta e log,
+e foram **direto pra main**, como manda a ordem.
+
+Branches com commit fora da main e **sem PR nenhum**: `chore/gitattributes`,
+`feat/incidents-resolved-guard`, `feat/qa-telemetria-na-falha`, `feat/vigia-noturno`,
+`pr48-review`, `prova/2026-08-20-pagante-trancado`, `rescue/relatorio-noturno-7e02e90`,
+`test/ref16-merged`. Não são fix de aluno (são rascunho, prova e teste), por isso não
+puxei nenhum — mas ficam listados pra ninguém precisar redescobrir.
+
 ---
 
 ## O que eu NÃO fiz
