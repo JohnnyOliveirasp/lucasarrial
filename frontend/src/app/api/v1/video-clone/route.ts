@@ -17,6 +17,7 @@ import { R2_BUCKETS, imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { deleteKeys } from "@/lib/r2/delete";
 import { transcribeUploadedAudio } from "@/lib/video/transcribe";
+import { checkFrontalFace } from "@/lib/video/face-check";
 import {
   CLONE_MAX_AUDIO_SECONDS,
   cloneCreditsCost,
@@ -143,6 +144,28 @@ export async function POST(request: NextRequest) {
     imagePath = imageKey;
   } else {
     return badRequest("Selecione uma foto do histórico ou envie uma nova.");
+  }
+
+  // ── ROSTO FORA DE CÂMERA NÃO VAI PRA GPU (incidente 131, 25/08) ──
+  // Imagem GERADA no Gerador de Imagem com prompt de cena saiu com o aluno
+  // olhando pra baixo, olhos fora da câmera; virou entrada do Vídeo Clone e o
+  // lip-sync era impossível — o produto cobrou os três passos sem avisar em
+  // nenhum (10.120c estornados na mão). Mesmo espírito do guard de áudio mudo
+  // abaixo: checa ANTES de cobrar e de inserir a row. FAIL-OPEN: se a
+  // checagem falhar tecnicamente, o fluxo segue (nunca bloquear pagante por
+  // hiccup de API).
+  try {
+    const faceCheckUrl = await createPresignedGet(imageBucket, imagePath, 300);
+    const face = await checkFrontalFace(faceCheckUrl);
+    if (!face.ok) {
+      return badRequest(
+        `Essa foto não serve pro Vídeo Clone: ${face.reason ?? "o rosto não está de frente pra câmera"}. ` +
+          "Pro lip-sync funcionar o rosto precisa estar de frente pra câmera, com a boca visível. " +
+          "Escolha outra foto ou use a sua foto original. Você NÃO foi cobrado.",
+      );
+    }
+  } catch {
+    /* presign/checagem falhou — fail-open, segue o fluxo normal */
   }
 
   // ── Áudio: gerado (TTS, duração já persistida) OU upload (Whisper mede) ──
