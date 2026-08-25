@@ -17,6 +17,7 @@ import numpy as np
 import soundfile as sf
 
 from audio_ops import crossfade_concat, trim_silence, wav_to_base64
+from tts_qa.rate import apply_rate_qa, measure_file_rate
 from model_loader import free_cuda
 from tts_qa import norm_words, run_chunk_qa
 from tts_text import split_text_for_tts
@@ -80,6 +81,7 @@ class InferenceJob:
         )
         self.model, self.sample_rate = carregar_modelo(self.inp, lora_path)
         self._medir_em_amostras()
+        self._definir_regua_de_ritmo()
 
         chunks = split_text_for_tts(self.text, max_chars=self.cfg.chunk_max) or [(self.text, False)]
         _log(
@@ -113,6 +115,35 @@ class InferenceJob:
         self.crossfade_samples = c.amostras(c.crossfade_ms, self.sample_rate)
         self.trim_pad_samples = c.amostras(c.trim_pad_ms, self.sample_rate)
         self.par_pause_samples = c.amostras(c.par_pause_ms, self.sample_rate)
+
+    def _definir_regua_de_ritmo(self) -> None:
+        """Regua do QA de ritmo: `speech_rate_wps` da voz; sem ela, a articulacao
+        da referencia (uma medida por job). Sem referencia nao ha QA de ritmo."""
+        self.target_wps = None
+        c = self.cfg
+        if not c.rate_qa_enabled or not self.prompt_wav_local:
+            return
+        origem = "voz"
+        alvo = c.target_wps
+        if not alvo:
+            alvo = measure_file_rate(self.prompt_wav_local, c.rate_qa_model, c.qa_language)
+            origem = "referencia"
+        self.target_wps = alvo
+        _log("info", "inference.rate_qa.regua", alvo=alvo, origem=origem,
+             tolerancia=c.rate_qa_tolerance, max_stretch=c.rate_qa_max_stretch)
+
+    def _ajustar_ritmo(self, seg, idx: int, chunk: str):
+        if not self.target_wps:
+            return seg
+        c = self.cfg
+        with _phase("inference.chunk.rate_qa", chunk=idx):
+            return apply_rate_qa(
+                seg, idx, self.sample_rate, self.target_wps,
+                regen_fn=lambda: self._aparar(self._gerar(chunk, idx), idx),
+                whisper_model=c.rate_qa_model, language=c.qa_language,
+                tolerance=c.rate_qa_tolerance, retries=c.rate_qa_retries,
+                max_stretch=c.rate_qa_max_stretch, qa_stats=self.qa_stats,
+            )
 
     def _soltar_modelo(self) -> None:
         self.model = None
@@ -234,6 +265,10 @@ class InferenceJob:
                         return pieces, {"chunk_idx": idx, "coverage": coverage,
                                         "maior_lacuna": lacuna}
                     seg = resgate
+
+            # Ritmo (25/08): depois do QA de conteudo, o chunk aprovado ainda
+            # pode estar mais rapido que a pessoa — segura perto da regua.
+            seg = self._ajustar_ritmo(seg, idx, chunk)
 
             _log(
                 "info", "inference.chunk", idx=idx, total=len(chunks),

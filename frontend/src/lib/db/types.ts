@@ -89,6 +89,8 @@ export type VoiceRow = {
   lora_alpha: number | null;
   tts_silence_ms: number | null;
   tts_crossfade_ms: number | null;
+  speech_rate_wps: number | null;
+  reference_rate_wps: number | null;
   runpod_job_id: string | null;
   error_message: string | null;
   trained_at: Timestamp | null;

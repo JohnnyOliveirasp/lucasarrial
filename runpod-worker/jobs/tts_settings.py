@@ -103,6 +103,19 @@ class TtsSettings:
     job (23/40 entregas recentes tem o defeito; gate duro = tempestade de
     estorno)."""
 
+    rate_qa_enabled: bool
+    rate_qa_tolerance: float
+    rate_qa_retries: int
+    rate_qa_max_stretch: float
+    rate_qa_model: str
+    target_wps: "float | None"
+    """QA de RITMO (caso Ellen/Johnny 25/08): o modelo articula mais rapido que
+    a pessoa e varia por chunk. Regua = `speech_rate_wps` da voz (vem no input);
+    sem ela, a articulacao da propria referencia medida uma vez no job.
+    Chunk acima de (1+tolerance)x regua: regenera ate `retries` e estica o
+    residuo com atempo (pitch preservado), nunca alem de `max_stretch`.
+    GATE MACIO — nunca falha o job."""
+
     @property
     def algum_qa_ligado(self) -> bool:
         return (self.start_qa_enabled or self.echo_qa_enabled
@@ -142,4 +155,10 @@ class TtsSettings:
             coverage_qa_gap_min=int(os.environ.get("TTS_COVERAGE_QA_GAP_MIN", "6")),
             intrusion_qa_enabled=_ligado("TTS_INTRUSION_QA"),
             intrusion_qa_retries=int(os.environ.get("TTS_INTRUSION_QA_RETRIES", "3")),
+            rate_qa_enabled=_ligado("TTS_RATE_QA"),
+            rate_qa_tolerance=float(os.environ.get("TTS_RATE_QA_TOLERANCE", "0.20")),
+            rate_qa_retries=int(os.environ.get("TTS_RATE_QA_RETRIES", "2")),
+            rate_qa_max_stretch=float(os.environ.get("TTS_RATE_QA_MAX_STRETCH", "0.80")),
+            rate_qa_model=os.environ.get("TTS_RATE_QA_WHISPER", os.environ.get("TTS_ECHO_QA_WHISPER", "large-v3-turbo")),
+            target_wps=(float(inp["speech_rate_wps"]) if inp.get("speech_rate_wps") else None),
         )

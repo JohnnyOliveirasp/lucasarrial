@@ -116,7 +116,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   // aluno (uso interno/suporte).
   let voiceQuery = admin
     .from("voices")
-    .select("id, user_id, status, is_stock, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language")
+    .select("id, user_id, status, is_stock, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language, speech_rate_wps")
     .eq("id", voiceId);
   if (!auth.is_admin) {
     voiceQuery = voiceQuery.or(`user_id.eq.${auth.user_id},is_stock.eq.true`);
@@ -208,6 +208,9 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     // transcrição do worker rodam no idioma CERTO (caso Joana: voz es com QA
     // em pt reprovava sempre e virava loteria de retries).
     language: voice.language || "pt",
+    // Regua do QA de ritmo (mig 96): velocidade natural da pessoa em pal/s.
+    // null = o worker mede a propria referencia.
+    ...(typeof voice.speech_rate_wps === "number" ? { speech_rate_wps: voice.speech_rate_wps } : {}),
   };
   if (loraUrl) inferenceInput.lora_url = loraUrl;
 
