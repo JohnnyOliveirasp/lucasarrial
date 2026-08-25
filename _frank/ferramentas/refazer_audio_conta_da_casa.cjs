@@ -47,8 +47,18 @@ const { randomUUID } = require("node:crypto");
 
 const GEN_ID = process.argv[2];
 const CONFIRMAR = process.argv.includes("--confirmar");
+// --nome deixa o rótulo FINDÁVEL pelo aluno. A Katia (#47) navegou o Histórico
+// "de cima para baixo" contando posição porque as 2 gerações mais novas
+// estavam SEM nome e o e-mail apontava outra pela etiqueta. O prefixo
+// "Conta da casa" é preservado — é ele que separa da receita (#125).
+const NOME = (() => {
+  const i = process.argv.indexOf("--nome");
+  const v = i > 0 ? (process.argv[i + 1] || "").trim() : "";
+  if (!v) return null;
+  return v.startsWith("Conta da casa") ? v : `Conta da casa — ${v}`;
+})();
 if (!GEN_ID) {
-  console.error("uso: node refazer_audio_conta_da_casa.cjs <generationId> [--confirmar]");
+  console.error("uso: node refazer_audio_conta_da_casa.cjs <generationId> [--confirmar] [--nome \"rótulo\"]");
   process.exit(1);
 }
 
@@ -195,7 +205,7 @@ function timeoutMs(textLen) {
     // #125 (24/08): geracao da equipe SEM debito precisa ser reconhecivel no
     // banco — sem nome, o detector de 'entregue e nao cobrada' a confunde com
     // vazamento de receita (28% falso). Nome = rotulo + data.
-    name: `Conta da casa — ${new Date().toISOString().slice(0, 10)}`,
+    name: NOME || `Conta da casa — ${new Date().toISOString().slice(0, 10)}`,
   });
   if (eIns) throw new Error(`insert generations: ${eIns.message} (job ${job.id} JÁ disparado)`);
 
