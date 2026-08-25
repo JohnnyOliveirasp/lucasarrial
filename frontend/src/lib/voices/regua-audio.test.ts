@@ -22,6 +22,7 @@ import {
   mensagemEnvioIncompleto,
   mensagemFalaLimpaInsuficiente,
   minutosExibidos,
+  projetarTotalDoEnvio,
 } from "./regua-audio.ts";
 
 test("a porta é 20min brutos e o treino 10min limpos", () => {
@@ -197,13 +198,66 @@ test("foto ignorada NÃO esconde o áudio que sumiu de verdade", () => {
 test("a recusa por envio incompleto NÃO manda o aluno gravar mais", () => {
   // O estrago do 2c5bab42: mandar "grave mais" pra quem já gravou o dobro e
   // teve metade perdida no NOSSO envio.
-  const msg = mensagemEnvioIncompleto(617, 4, 7);
+  //
+  // Os números mudaram em 25/08 (eram 617, 4, 7): aquele envio projeta ~18min
+  // e caiu no OUTRO ramo — ver "reenviar não basta" abaixo. Aqui ficam 4 de 7
+  // somando 1400s, que projeta 2450s (~40min) e fecha a porta com folga: é o
+  // caso em que reenviar realmente resolve, que é o que este teste guarda.
+  const msg = mensagemEnvioIncompleto(1400, 4, 7);
   assert.ok(msg.includes("4 dos 7"), msg);
   assert.ok(/envie de novo/i.test(msg), msg);
   // Nao prometer retomada: o produto NAO tem resume, o aluno recria a voz.
   assert.ok(!/de onde parou|retoma/i.test(msg), msg);
   assert.ok(msg.includes("Não é que você gravou pouco"), msg);
   assert.ok(!/grave mais|adicione mais gravação/i.test(msg), msg);
+});
+
+// ---------------------------------------------------------------------------
+// A projeção — medida em 25/08 no `2c5bab42`, envio do jrfengenhariadf.
+// Chegaram 4 de 7 somando 617s. 617/4×7 ≈ 1080s ≈ 18min: NEM inteiro o envio
+// fecharia a porta de 20min. "A MESMA gravação serve, envie de novo" mandava
+// esse aluno ser recusado pela terceira vez achando que a culpa era dele.
+// ---------------------------------------------------------------------------
+
+test("projeta o total pelo que chegou, e só isso decide a frase", () => {
+  // Regra de três: média por arquivo × slots emitidos.
+  assert.equal(projetarTotalDoEnvio(617, 4, 7), (617 / 4) * 7);
+  // Nada chegou / medição falhou: "não sei", nunca "fecha".
+  assert.equal(projetarTotalDoEnvio(0, 0, 7), null);
+  assert.equal(projetarTotalDoEnvio(617, 0, 7), null);
+  // Sem buraco não há o que projetar: o total é o próprio total.
+  assert.equal(projetarTotalDoEnvio(1400, 7, 7), 1400);
+});
+
+test("envio incompleto que NEM inteiro fecha a porta não promete que reenviar basta", () => {
+  // O caso do jrf, literal.
+  const msg = mensagemEnvioIncompleto(617, 4, 7);
+  assert.ok(msg.includes("4 dos 7"), msg);
+  // A mentira que este fix mata.
+  assert.ok(!/a MESMA gravação serve/i.test(msg), msg);
+  // A perda continua sendo NOSSA — isso não pode sumir junto com a promessa.
+  assert.ok(/A perda do que não chegou foi nossa/i.test(msg), msg);
+  // E ele precisa saber o tamanho do buraco. 617/4×7 = 1079,75s: o projetado
+  // arredonda pra BAIXO (17min, nunca "18") e o que falta pra cima (3min),
+  // pelo mesmo motivo da porta — número exibido não pode contradizer a recusa.
+  assert.ok(msg.includes("~17min"), msg);
+  assert.ok(msg.includes("~3min de gravação"), msg);
+  assert.ok(msg.includes("20min"), msg);
+  assert.ok(msg.includes("Nada foi cobrado"), msg);
+});
+
+test("envio incompleto que fecha a porta inteiro mantém a promessa antiga", () => {
+  // Mesmo buraco (4 de 7), gravação grande: 1400s projeta ~40min.
+  const msg = mensagemEnvioIncompleto(1400, 4, 7);
+  assert.ok(msg.includes("a MESMA gravação serve"), msg);
+  assert.ok(!/Acrescente/i.test(msg), msg);
+});
+
+test("sem projeção possível a frase não promete nem uma coisa nem outra", () => {
+  const msg = mensagemEnvioIncompleto(0, 0, 5);
+  assert.ok(!/a MESMA gravação serve/i.test(msg), msg);
+  assert.ok(!/Acrescente/i.test(msg), msg);
+  assert.ok(/envie de novo/i.test(msg), msg);
 });
 
 test("o minuto do envio incompleto também arredonda pra BAIXO", () => {

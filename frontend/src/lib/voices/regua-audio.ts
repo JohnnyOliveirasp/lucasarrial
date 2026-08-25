@@ -271,9 +271,45 @@ export function contarSlotsDoEnvio(
 }
 
 /**
+ * O total que o envio TERIA se todos os slots de áudio tivessem chegado.
+ *
+ * Regra de três sobre o que chegou (média por arquivo × slots emitidos). É
+ * estimativa, e é a única que existe: o arquivo perdido nunca chegou ao R2,
+ * então ninguém sabe a duração dele — a média dos irmãos do mesmo envio é o
+ * melhor palpite disponível, e o aluno costuma gravar pedaços parecidos.
+ *
+ * Devolve `null` quando não dá pra projetar (nada chegou, ou a medição de
+ * duração falhou): quem chama trata como "não sei", nunca como "fecha".
+ */
+export function projetarTotalDoEnvio(
+  totalSegundos: number,
+  chegaram: number,
+  esperados: number,
+): number | null {
+  if (!(totalSegundos > 0) || chegaram <= 0) return null;
+  if (esperados <= chegaram) return totalSegundos;
+  return (totalSegundos / chegaram) * esperados;
+}
+
+/**
  * A recusa quando o envio chegou pela metade. Não pede pra gravar mais —
  * pede pra REENVIAR, que é a única coisa que resolve. E diz de quem é a
  * culpa, porque é nossa.
+ *
+ * ⚠️ …DESDE QUE REENVIAR RESOLVA. Achado em 25/08 no `2c5bab42`, no envio do
+ * jrfengenhariadf: chegaram 4 de 7 arquivos somando 617s. Projetando os 7
+ * pela média, 617/4×7 ≈ 1080s ≈ 18min — abaixo dos 20min da PORTA. A frase
+ * "a MESMA gravação serve, envie de novo" mandava esse aluno repetir um envio
+ * que seria recusado de novo, pela TERCEIRA vez, achando que a culpa era
+ * dele. É a armadilha da régua errada (ordem de 21/08) escrita dentro do
+ * código de produção, e atinge todo aluno cujo envio pela metade não fecha a
+ * porta nem inteiro.
+ *
+ * Então a projeção vem ANTES da escolha da frase, e são três ramos:
+ *   - projeta ≥ 20min → a mesma gravação serve mesmo: reenviar basta.
+ *   - projeta < 20min → a perda é nossa E falta gravação: dizer os dois, com
+ *     o número do que falta, senão ele volta pra fila do mesmo jeito.
+ *   - não dá pra projetar → não prometer nem uma coisa nem outra.
  */
 export function mensagemEnvioIncompleto(
   totalSegundos: number,
@@ -282,18 +318,46 @@ export function mensagemEnvioIncompleto(
 ): string {
   const faltando = Math.max(0, esperados - chegaram);
   const tem = minutosExibidos(totalSegundos);
+  const porta = MIN_TOTAL_SECONDS / 60;
   // Concordância no singular: com UM arquivo perdido a frase virava
   // "1 não chegaram até nós". Achado em 21/08 no backfill do `2c5bab42` — a voz
   // `99379e28` (4 de 5) leria exatamente isso. É a frase em que a casa admite a
   // própria falha; escrita errada, soa automática e perde o peso.
   const chegou = faltando === 1 ? "não chegou" : "não chegaram";
+
+  const projetado = projetarTotalDoEnvio(totalSegundos, chegaram, esperados);
+  const aba = `deixe a aba aberta até a barra de envio chegar ao fim`;
+
+  let saida: string;
+  if (projetado === null) {
+    // Sem projeção não se promete nada: nem "a mesma gravação serve" (pode
+    // não servir), nem "grave mais" (pode não precisar).
+    saida =
+      `Envie de novo e, desta vez, ${aba}. Confira no medidor da tela que o ` +
+      `total fecha ${porta}min antes de enviar. Nada foi cobrado.`;
+  } else if (projetado >= MIN_TOTAL_SECONDS) {
+    saida =
+      `Não é que você gravou pouco — a MESMA gravação serve. Envie de novo e, ` +
+      `desta vez, ${aba}. Nada foi cobrado.`;
+  } else {
+    const projMin = minutosExibidos(projetado);
+    const faltamMin = Math.max(
+      1,
+      Math.ceil((MIN_TOTAL_SECONDS - projetado) / 60),
+    );
+    saida =
+      `A perda do que não chegou foi nossa, mas reenviar só o que ` +
+      `você já tem não basta: mesmo com os ${esperados} inteiros o total daria ` +
+      `~${projMin}min, e o treino só começa a partir de ${porta}min. ` +
+      `Acrescente ~${faltamMin}min de gravação, envie tudo de novo e, desta ` +
+      `vez, ${aba}. Nada foi cobrado.`;
+  }
+
   return (
     `Recebemos apenas ${chegaram} dos ${esperados} arquivos que você enviou — ` +
     `${faltando} ${chegou} até nós (o envio foi interrompido no meio, ` +
     `normalmente quando a aba fecha ou a internet oscila). ` +
     `O que chegou soma ~${tem}min, por isso o treino não pôde começar. ` +
-    `Não é que você gravou pouco — a MESMA gravação serve. Envie de novo e, ` +
-    `desta vez, deixe a aba aberta até a barra de envio chegar ao fim. ` +
-    `Nada foi cobrado.`
+    saida
   );
 }
