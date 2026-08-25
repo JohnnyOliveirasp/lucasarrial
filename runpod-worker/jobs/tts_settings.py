@@ -136,7 +136,10 @@ class TtsSettings:
             inference_timesteps=int(inp.get("inference_timesteps", 15)),
             normalize=bool(inp.get("normalize", False)),
             retry_max=int(os.environ.get("TTS_RETRY_MAX_TIMES", "4")),
-            retry_ratio=float(os.environ.get("TTS_RETRY_RATIO", "4.0")),
+            # 25/08 (caso Ellen): no modelo, max_len = tokens x ratio + 10 e a tomada
+            # que passa disso e' DESCARTADA e refeita. Com 4.0, quem fala devagar
+            # bate no teto: so as tomadas rapidas sobrevivem. Fabricante: 6.0.
+            retry_ratio=float(os.environ.get("TTS_RETRY_RATIO", "6.0")),
             chunk_max=int(os.environ.get("TTS_CHUNK_MAX_CHARS", "160")),
             silence_ms=_do_job_ou_env(inp, "chunk_silence_ms", "TTS_CHUNK_SILENCE_MS", "0"),
             crossfade_ms=_do_job_ou_env(inp, "chunk_crossfade_ms", "TTS_CHUNK_CROSSFADE_MS", "60"),
