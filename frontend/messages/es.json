@@ -92,12 +92,13 @@
       "statuses": {
         "uploading": "Subiendo audios",
         "validating": "Validando",
-        "awaiting_training": "Lista para entrenar",
+        "awaiting_training": "Falta que la entrenes",
         "rejected_too_short": "< 20min · Rechazado",
         "training": "Entrenando",
         "ready": "Lista",
         "failed": "Falló"
       },
+      "awaitingHint": "Falta 1 paso: abre la voz y haz clic en “Iniciar entrenamiento”.",
       "paywall": {
         "titleNoCredits": "Créditos insuficientes para entrenar",
         "titleNoPlan": "Suscríbete para entrenar una voz",
