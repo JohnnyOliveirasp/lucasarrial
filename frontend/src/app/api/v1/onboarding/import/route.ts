@@ -251,8 +251,14 @@ export async function POST(request: NextRequest) {
         r.kind === "nao_suportado" ||
           // 22/08 (OneDrive): o link devolveu página de login — gerar "um link
           // novo" no MESMO serviço daria na mesma. A saída é trocar de serviço.
-          /página da internet|não conseguimos baixar/i.test(r.motivo)
-          ? "Envie o material por Google Drive, WeTransfer ou Dropbox, com o link aberto para \"qualquer pessoa com o link\"."
+          // 26/08 (incidente 144): o endpoint api.onedrive.com passou a devolver
+          // 401 pra TODO link (inclusive os que funcionavam em 22/08). "download
+          // respondeu 401/403" caía no else e o aluno lia "gere um link novo" —
+          // ele gerava, dava 401 de novo, e levava a culpa por defeito NOSSO
+          // (caso Luzielia: 4 idas e vindas na madrugada). 401/403 também é
+          // trocar de serviço, e a mensagem admite que o problema pode ser nosso.
+          /página da internet|não conseguimos baixar|download respondeu 40[13]/i.test(r.motivo)
+          ? "Não conseguimos baixar o seu material desse link, e o problema pode ser do nosso lado (não é a sua permissão). Envie por Google Drive ou WeTransfer, com o link aberto para \"qualquer pessoa com o link\", que são os caminhos que estão funcionando."
           : "Gere um link novo (o anterior expirou ou está inacessível) e cole na planilha.",
       );
       return;
