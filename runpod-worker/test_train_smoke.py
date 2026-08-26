@@ -263,33 +263,115 @@ class AmostraTest(TrainBase):
         self.assertEqual(r["sample_qa"], "passed")
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class TranscritoFielTest(unittest.TestCase):
     """Caso Negrini (#124, 24/08): o texto gravado tem que ser o que o AUDIO
     cortado contem. O seletor previu '...precisar O' (timestamp impreciso do
     'O' na borda), o audio terminava em 'precisar', e o VoxCPM ecoou 'Ou' no
-    comeco de cada frase. A 2a passada de whisper no clipe final e a cura."""
+    comeco de cada frase. A 2a passada de whisper no clipe final e a cura.
+
+    ⚠️ Esta classe ficava DEPOIS do `unittest.main()` do fim do arquivo, entao
+    `python test_train_smoke.py` NUNCA a coletava (o main roda antes de a classe
+    existir): os 4 testes abaixo passaram a rodar so agora. Por isso o bloco
+    `__main__` mudou pro fim do arquivo."""
 
     def test_palavra_fantasma_na_cauda_e_removida(self):
         with mock.patch.object(tref, "transcribe_with_retry", return_value="Pra gente fazer o teste E aí se precisar"):
-            t = tref.transcricao_fiel(Path("x.wav"), "Pra gente fazer o teste E aí se precisar O", "large-v3", "pt")
-        self.assertEqual(t, "Pra gente fazer o teste E aí se precisar.")
+            c = tref.transcricao_fiel(Path("x.wav"), "Pra gente fazer o teste E aí se precisar O", "large-v3", "pt")
+        self.assertEqual(c.texto, "Pra gente fazer o teste E aí se precisar.")
 
     def test_whisper_falhando_mantem_o_previsto(self):
         with mock.patch.object(tref, "transcribe_with_retry", return_value=None):
-            t = tref.transcricao_fiel(Path("x.wav"), "texto previsto", "large-v3", "pt")
-        self.assertEqual(t, "texto previsto.")
+            c = tref.transcricao_fiel(Path("x.wav"), "texto previsto", "large-v3", "pt")
+        self.assertEqual(c.texto, "texto previsto.")
 
     def test_pontuacao_existente_e_preservada(self):
         with mock.patch.object(tref, "transcribe_with_retry", return_value="Tudo certo, sabe?"):
-            t = tref.transcricao_fiel(Path("x.wav"), "Tudo certo, sabe", "large-v3", "pt")
-        self.assertEqual(t, "Tudo certo, sabe?")
+            c = tref.transcricao_fiel(Path("x.wav"), "Tudo certo, sabe", "large-v3", "pt")
+        self.assertEqual(c.texto, "Tudo certo, sabe?")
 
     def test_virgula_final_vira_ponto(self):
         with mock.patch.object(tref, "transcribe_with_retry", return_value="pra gente fazer o teste, e aí se precisar,"):
-            t = tref.transcricao_fiel(Path("x.wav"), "x", "large-v3", "pt")
-        self.assertEqual(t, "pra gente fazer o teste, e aí se precisar.")
+            c = tref.transcricao_fiel(Path("x.wav"), "x", "large-v3", "pt")
+        self.assertEqual(c.texto, "pra gente fazer o teste, e aí se precisar.")
+
+
+class CuraRamoTest(unittest.TestCase):
+    """Incidente 52: a cura decide calada e ninguem consegue dizer depois se ela
+    rodou. O `ramo` e' esse registro — a DECISAO nao mudou, so ficou dita."""
+
+    def test_whisper_ok_marca_curado_e_guarda_o_texto_antes(self):
+        with mock.patch.object(tref, "transcribe_with_retry", return_value="o audio real"):
+            c = tref.transcricao_fiel(Path("x.wav"), "o previsto errado", "large-v3", "pt")
+        self.assertEqual(c.ramo, "curado")
+        self.assertEqual(c.texto, "o audio real.")
+        self.assertEqual(c.texto_antes, "o previsto errado")   # o par antes/depois
+        self.assertEqual(c.texto_depois, c.texto)
+        self.assertIsNone(c.erro)
+
+    def test_whisper_vazio_marca_fallback_vazio_sem_erro(self):
+        # String vazia e' DIFERENTE de excecao: os dois caiam no previsto, calados.
+        with mock.patch.object(tref, "transcribe_with_retry", return_value="   "):
+            c = tref.transcricao_fiel(Path("x.wav"), "o previsto", "large-v3", "pt")
+        self.assertEqual(c.ramo, "fallback_vazio")
+        self.assertEqual(c.texto, "o previsto.")
+        self.assertIsNone(c.erro)
+
+    def test_whisper_none_tambem_e_fallback_vazio(self):
+        with mock.patch.object(tref, "transcribe_with_retry", return_value=None):
+            c = tref.transcricao_fiel(Path("x.wav"), "o previsto", "large-v3", "pt")
+        self.assertEqual(c.ramo, "fallback_vazio")
+
+    def test_whisper_explodindo_marca_fallback_erro_com_a_mensagem(self):
+        with mock.patch.object(tref, "transcribe_with_retry", side_effect=RuntimeError("CUDA out of memory")):
+            c = tref.transcricao_fiel(Path("x.wav"), "o previsto", "large-v3", "pt")
+        self.assertEqual(c.ramo, "fallback_erro")
+        self.assertEqual(c.texto, "o previsto.")          # nao derruba o treino
+        self.assertIn("CUDA out of memory", c.erro)
+
+    def test_sem_whisper_e_sem_previsto_marca_sem_previsto(self):
+        with mock.patch.object(tref, "transcribe_with_retry", return_value=None):
+            c = tref.transcricao_fiel(Path("x.wav"), None, "large-v3", "pt")
+        self.assertEqual(c.ramo, "sem_previsto")
+        self.assertEqual(c.texto, "")
+
+    def test_erro_sem_previsto_e_sem_previsto_MAS_guarda_o_erro(self):
+        # O ramo diz DE ONDE veio o texto final; o erro nao pode se perder.
+        with mock.patch.object(tref, "transcribe_with_retry", side_effect=RuntimeError("boom")):
+            c = tref.transcricao_fiel(Path("x.wav"), None, "large-v3", "pt")
+        self.assertEqual(c.ramo, "sem_previsto")
+        self.assertIn("boom", c.erro)
+
+
+class IdentidadeDoBuildTest(TrainBase):
+    """Dado um treino, saber QUE build o produziu (hoje training_jobs nao guarda
+    nada da imagem e a pergunta so se responde por data, no olho)."""
+
+    def test_output_do_treino_carrega_a_identidade_do_build(self):
+        r = train.handle_train(_job(reference_upload_url="https://r2/ref.wav?sig=x"))
+        self.assertTrue(r["worker_image"])                    # nunca vazio
+        self.assertEqual(r["reference_cura_ramo"], "curado")  # stub "ouve" texto
+
+    def test_falha_de_dataset_tambem_diz_o_build(self):
+        # E' JUSTAMENTE na falha que se pergunta "que build rodou isso?".
+        _estado.chunks_por_arquivo = 1
+        r = train.handle_train(_job())
+        self.assertEqual(r["error"], "insufficient_audio")
+        self.assertTrue(r["worker_image"])
+
+    def test_build_local_sem_arg_diz_desconhecida_em_vez_de_inventar(self):
+        import worker_config
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(worker_config.worker_build_id(), "desconhecida")
+
+    def test_identidade_carimbada_no_ci_aparece_com_o_pod(self):
+        import worker_config
+
+        with mock.patch.dict(os.environ, {"WORKER_IMAGE": "main@a1b2c3d",
+                                          "RUNPOD_POD_ID": "xyz789"}, clear=True):
+            self.assertEqual(worker_config.worker_build_id(), "main@a1b2c3d pod=xyz789")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
 

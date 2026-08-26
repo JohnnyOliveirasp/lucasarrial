@@ -17,7 +17,14 @@ import time
 from pathlib import Path
 
 from model_loader import ensure_model_downloaded, free_cuda
-from worker_config import LORA_RANK, MODEL_DIR, TRAIN_LORA_ALPHA, VOXCPM_REPO, WORKSPACE
+from worker_config import (
+    LORA_RANK,
+    MODEL_DIR,
+    TRAIN_LORA_ALPHA,
+    VOXCPM_REPO,
+    WORKSPACE,
+    worker_build_id,
+)
 from worker_log import log as _log
 
 from .train_dataset import (
@@ -69,7 +76,7 @@ class TrainJob:
         self.dataset_chunks, stats = preparar_dataset(arquivos, self.dirs)
         if self.dataset_chunks == 0:
             return {"error": "no usable speech segments after VAD/chunk",
-                    "preprocess_stats": stats}
+                    "preprocess_stats": stats, "worker_image": worker_build_id()}
 
         falta = self._conferir_audio_util()
         if falta is not None:
@@ -90,11 +97,13 @@ class TrainJob:
             return {"voice_id": self.voice_id, "error": "trainer failed",
                     "trainer_returncode": resultado["returncode"],
                     "stdout_tail": resultado["stdout_tail"],
-                    "stderr_tail": resultado["stderr_tail"]}
+                    "stderr_tail": resultado["stderr_tail"],
+                    "worker_image": worker_build_id()}
 
         lora = self._achar_lora()
         if lora is None:
-            return {"voice_id": self.voice_id, "error": "no safetensors produced"}
+            return {"voice_id": self.voice_id, "error": "no safetensors produced",
+                    "worker_image": worker_build_id()}
         self._subir_lora(lora)
 
         amostra = gerar_amostra_com_qa(
@@ -131,6 +140,7 @@ class TrainJob:
             "useful_seconds": self.useful_seconds,
             "min_required_seconds": minimo,
             "dataset_chunks": self.dataset_chunks,
+            "worker_image": worker_build_id(),
         }
 
     def _medir_pausa_natural(self):
@@ -193,6 +203,10 @@ class TrainJob:
         _log("info", "train.upload.done")
 
     def _resultado(self, ref, amostra: dict) -> dict:
+        # Observabilidade da cura do transcript (incidente 52): `reference_transcript`
+        # ja e' o texto DEPOIS; o que faltava era saber COMO ele saiu — se a 2a
+        # passada de whisper rodou ou se caiu calada no texto previsto.
+        cura = getattr(ref, "cura", None)
         return {
             "voice_id": self.voice_id,
             "lora_uploaded": True,
@@ -204,9 +218,13 @@ class TrainJob:
             "reference_uploaded": ref.uploaded,
             "reference_transcript": ref.transcript,
             "reference_error": ref.error,
+            "reference_cura_ramo": cura.ramo if cura else None,
+            "reference_cura_texto_antes": cura.texto_antes if cura else None,
+            "reference_cura_erro": cura.erro if cura else None,
             "reference_pause_ms": self.reference_pause_ms,
             "language": self.language,
             "lora_alpha": TRAIN_LORA_ALPHA,
             "lora_rank": LORA_RANK,
+            "worker_image": worker_build_id(),
             **amostra,
         }

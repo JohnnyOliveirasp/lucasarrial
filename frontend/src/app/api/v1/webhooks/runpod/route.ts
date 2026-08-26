@@ -45,6 +45,12 @@ type RunpodWebhookPayload = {
     uploaded?: boolean;
     reference_uploaded?: boolean;
     reference_transcript?: string | null;
+    // Observabilidade da cura do transcript + build do worker (incidente 52).
+    // Repassados intactos ao finalizeTraining, que decide o que persistir.
+    reference_cura_ramo?: string | null;
+    reference_cura_texto_antes?: string | null;
+    reference_cura_erro?: string | null;
+    worker_image?: string | null;
     lora_alpha?: number;
     lora_rank?: number;
     elapsed_seconds?: number;

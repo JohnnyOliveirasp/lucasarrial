@@ -89,6 +89,7 @@ jobs:
           build-args: |
             MODEL_SOURCE=r2
             MODEL_NAME=VoxBR
+            WORKER_IMAGE=voxbr:${{ github.ref_name }}@${{ github.sha }}
           secrets: |
             url_model=${{ steps.presign.outputs.url_model }}
             url_audiovae=${{ steps.presign.outputs.url_audiovae }}
