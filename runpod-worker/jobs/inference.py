@@ -21,6 +21,7 @@ from tts_qa.rate import measure_file_rate, measure_seg_rate, stretch
 from model_loader import free_cuda
 from tts_qa import norm_words, run_chunk_qa
 from tts_qa.metrics import fim_abrupto
+from tts_qa.loop import palavras_com_tempo
 from tts_text import split_text_for_tts
 from worker_config import WORKSPACE
 from worker_log import log as _log, phase as _phase
@@ -212,26 +213,52 @@ class InferenceJob:
                if idx == 0 else self.trim_pad_samples)
         return trim_silence(s, threshold=self.cfg.trim_threshold, pad_samples=pad)
 
-    def _curar_fim_abrupto(self, seg, idx: int, chunk: str):
-        """Ultimo recurso quando o modelo TEIMA em decepar o fim (caso Carol
-        26/08: a mesma frase cortou nas duas geracoes seguidas, entao regenerar
-        igual nao adianta).
+    # Frase-isca: some do áudio entregue, existe só pra dar ao modelo um
+    # "depois" — é no fecho do último trecho que ele decepa.
+    ISCA = "Muito obrigada."
 
-        Medido naquele dia, mesma voz e mesmo texto:
-          "…sua nutricionista."     -> rms final 0,071 e 0,062  (cortado 2x)
-          "…sua nutricionista..."   -> rms final 0,014          (inteiro)
-        As reticencias nao viram palavra na fala: mudam a prosodia do fecho e o
-        modelo para de cortar. Se mesmo assim nao melhorar, fica o original —
-        nunca entrega algo pior do que ja tinha.
+    def _curar_fim_abrupto(self, seg, idx: int, chunk: str):
+        """Cura o fim decepado GERANDO ALÉM e cortando no lugar certo.
+
+        Histórico honesto (caso Carol, 26/08), tudo medido na mesma voz:
+          "…sua nutricionista."     -> 0,071 / 0,062 / 0,096  cortado SEMPRE
+          "…sua nutricionista..."   -> 0,014                  melhorou, mas
+             na 2ª rodada em prod voltou a cortar: reticências não bastam.
+          "…nutricionista. Seja bem-vinda." -> 0,002           ÍNTEGRO
+        Ou seja: o que conserta não é a pontuação, é existir fala DEPOIS. Então
+        geramos com uma frase-isca no fim e cortamos o áudio no fim da última
+        palavra do texto do aluno — o tempo vem do whisper, não de chute.
+
+        Se qualquer etapa não fechar, devolve o áudio original: nunca entrega
+        algo pior nem corta no escuro.
         """
-        if chunk.rstrip().endswith("..."):
+        alvo = chunk.rstrip()
+        if not alvo:
             return seg
-        candidato = self._aparar(self._gerar(f"{chunk.rstrip()}...", idx), idx)
-        if fim_abrupto(candidato, self.sample_rate) is False:
-            self.qa_stats["tail_healed"] = self.qa_stats.get("tail_healed", 0) + 1
-            _log("info", "inference.tail_qa.curado", idx=idx)
-            return candidato
-        return seg
+        bruto = self._aparar(self._gerar(f"{alvo} {self.ISCA}", idx), idx)
+        palavras = palavras_com_tempo(
+            bruto, self.sample_rate, self.cfg.echo_qa_model, self.cfg.qa_language
+        )
+        n_isca = len([w for w in self.ISCA.split() if w])
+        if len(palavras) <= n_isca:
+            return seg
+        ultima = palavras[-(n_isca + 1)]
+        fim_s = getattr(ultima, "end", None)
+        if fim_s is None and isinstance(ultima, dict):
+            fim_s = ultima.get("end")
+        if fim_s is None:
+            return seg
+        # +120 ms: deixa a consoante final respirar antes do corte.
+        corte = min(int((float(fim_s) + 0.12) * self.sample_rate), bruto.size)
+        if corte <= 0:
+            return seg
+        candidato = bruto[:corte]
+        if fim_abrupto(candidato, self.sample_rate) is not False:
+            return seg
+        self.qa_stats["tail_healed"] = self.qa_stats.get("tail_healed", 0) + 1
+        _log("info", "inference.tail_qa.curado", idx=idx,
+             corte_s=round(float(fim_s) + 0.12, 2), palavras=len(palavras))
+        return candidato
 
     def _rodar_qa(self, seg, idx: int, chunk: str, eh_ultimo: bool = False):
         c = self.cfg

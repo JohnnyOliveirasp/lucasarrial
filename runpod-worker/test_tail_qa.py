@@ -67,71 +67,68 @@ if __name__ == "__main__":
 
 
 class CuraDoFimTest(unittest.TestCase):
-    """A cura (regenerar com '...') só entra quando o regen normal não resolve,
-    e nunca entrega algo pior — caso Carol 26/08, onde a MESMA frase cortou nas
-    duas gerações seguidas."""
+    """A cura gera ALÉM do texto do aluno (frase-isca) e corta no fim da última
+    palavra dele, com o tempo vindo do whisper. Medido em 26/08: só ter fala
+    depois conserta (0,002); reticências não bastaram (voltou a cortar em prod).
+    """
 
-    def test_reticencias_nao_sao_reaplicadas(self):
-        from jobs.inference import InferenceJob
+    def _fake(self, gerado, palavras):
+        from jobs import inference as ji
 
-        chamou = []
+        class Fake(ji.InferenceJob):
+            ISCA = "Muito obrigada."
 
-        class Fake(InferenceJob):
             def __init__(self):
                 self.sample_rate = SR
                 self.qa_stats = {}
+                self.cfg = type("C", (), {"echo_qa_model": "small", "qa_language": "pt"})()
 
             def _gerar(self, chunk, idx):
-                chamou.append(chunk)
-                return _com_decaimento()
+                self.chunk_pedido = chunk
+                return gerado
 
-            def _aparar(self, s, idx):
-                return s
-
-        f = Fake()
-        seg = _fala()
-        # chunk que JÁ termina em reticências: não regenera (evita "......")
-        self.assertIs(f._curar_fim_abrupto(seg, 0, "bom dia..."), seg)
-        self.assertEqual(chamou, [])
-
-    def test_cura_troca_o_audio_quando_melhora(self):
-        from jobs.inference import InferenceJob
-
-        class Fake(InferenceJob):
-            def __init__(self):
-                self.sample_rate = SR
-                self.qa_stats = {}
-
-            def _gerar(self, chunk, idx):
-                assert chunk.endswith("..."), chunk
-                return _com_decaimento()
-
-            def _aparar(self, s, idx):
-                return s
+            def _aparar(self, x, idx):
+                return x
 
         f = Fake()
+        ji.palavras_com_tempo = lambda *a, **k: palavras
+        return f
+
+    def test_corta_no_fim_da_ultima_palavra_do_aluno(self):
+        # fala do aluno decaindo até 0,60s, pausa, depois a isca — é a forma
+        # real: entre a frase e a isca existe silêncio, e é nele que o corte cai
+        gerado = np.concatenate([
+            _com_decaimento(0.60), np.zeros(int(SR * 0.25), dtype=np.float32),
+            _com_decaimento(0.40),
+        ])
+        palavras = [{"word": "nutricionista", "start": 0.2, "end": 0.60},
+                    {"word": "Muito", "start": 0.9, "end": 1.0},
+                    {"word": "obrigada", "start": 1.0, "end": 1.15}]
+        f = self._fake(gerado, palavras)
         curado = f._curar_fim_abrupto(_fala(), 0, "sua nutricionista.")
-        self.assertFalse(fim_abrupto(curado, SR))
+        self.assertIn("Muito obrigada", f.chunk_pedido)
+        self.assertLess(curado.size, gerado.size, "cortou a isca fora")
         self.assertEqual(f.qa_stats.get("tail_healed"), 1)
 
-    def test_cura_que_nao_ajuda_mantem_o_original(self):
-        from jobs.inference import InferenceJob
-
-        class Fake(InferenceJob):
-            def __init__(self):
-                self.sample_rate = SR
-                self.qa_stats = {}
-
-            def _gerar(self, chunk, idx):
-                return _fala()  # continua decepado
-
-            def _aparar(self, s, idx):
-                return s
-
-        f = Fake()
-        original = _fala(dur_s=2.0)
+    def test_sem_palavras_suficientes_mantem_original(self):
+        original = _fala(2.0)
+        f = self._fake(_fala(1.0), [{"word": "obrigada", "start": 0.1, "end": 0.4}])
         self.assertIs(f._curar_fim_abrupto(original, 0, "sua nutricionista."), original)
         self.assertNotIn("tail_healed", f.qa_stats)
+
+    def test_corte_que_continua_decepado_mantem_original(self):
+        original = _fala(2.0)
+        palavras = [{"word": "nutricionista", "start": 0.2, "end": 0.60},
+                    {"word": "Muito", "start": 0.9, "end": 1.0},
+                    {"word": "obrigada", "start": 1.0, "end": 1.15}]
+        f = self._fake(_fala(1.5), palavras)  # tudo plano: corte segue abrupto
+        self.assertIs(f._curar_fim_abrupto(original, 0, "sua nutricionista."), original)
+        self.assertNotIn("tail_healed", f.qa_stats)
+
+    def test_chunk_vazio_nao_gera(self):
+        f = self._fake(_fala(), [])
+        seg = _fala()
+        self.assertIs(f._curar_fim_abrupto(seg, 0, "   "), seg)
 
 
 class UltimaPalavraTruncadaTest(unittest.TestCase):
