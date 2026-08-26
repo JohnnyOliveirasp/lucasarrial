@@ -64,3 +64,71 @@ class FimAbruptoTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CuraDoFimTest(unittest.TestCase):
+    """A cura (regenerar com '...') só entra quando o regen normal não resolve,
+    e nunca entrega algo pior — caso Carol 26/08, onde a MESMA frase cortou nas
+    duas gerações seguidas."""
+
+    def test_reticencias_nao_sao_reaplicadas(self):
+        from jobs.inference import InferenceJob
+
+        chamou = []
+
+        class Fake(InferenceJob):
+            def __init__(self):
+                self.sample_rate = SR
+                self.qa_stats = {}
+
+            def _gerar(self, chunk, idx):
+                chamou.append(chunk)
+                return _com_decaimento()
+
+            def _aparar(self, s, idx):
+                return s
+
+        f = Fake()
+        seg = _fala()
+        # chunk que JÁ termina em reticências: não regenera (evita "......")
+        self.assertIs(f._curar_fim_abrupto(seg, 0, "bom dia..."), seg)
+        self.assertEqual(chamou, [])
+
+    def test_cura_troca_o_audio_quando_melhora(self):
+        from jobs.inference import InferenceJob
+
+        class Fake(InferenceJob):
+            def __init__(self):
+                self.sample_rate = SR
+                self.qa_stats = {}
+
+            def _gerar(self, chunk, idx):
+                assert chunk.endswith("..."), chunk
+                return _com_decaimento()
+
+            def _aparar(self, s, idx):
+                return s
+
+        f = Fake()
+        curado = f._curar_fim_abrupto(_fala(), 0, "sua nutricionista.")
+        self.assertFalse(fim_abrupto(curado, SR))
+        self.assertEqual(f.qa_stats.get("tail_healed"), 1)
+
+    def test_cura_que_nao_ajuda_mantem_o_original(self):
+        from jobs.inference import InferenceJob
+
+        class Fake(InferenceJob):
+            def __init__(self):
+                self.sample_rate = SR
+                self.qa_stats = {}
+
+            def _gerar(self, chunk, idx):
+                return _fala()  # continua decepado
+
+            def _aparar(self, s, idx):
+                return s
+
+        f = Fake()
+        original = _fala(dur_s=2.0)
+        self.assertIs(f._curar_fim_abrupto(original, 0, "sua nutricionista."), original)
+        self.assertNotIn("tail_healed", f.qa_stats)

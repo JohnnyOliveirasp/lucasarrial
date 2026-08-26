@@ -20,6 +20,7 @@ from audio_ops import crossfade_concat, trim_silence, wav_to_base64
 from tts_qa.rate import measure_file_rate, measure_seg_rate, stretch
 from model_loader import free_cuda
 from tts_qa import norm_words, run_chunk_qa
+from tts_qa.metrics import fim_abrupto
 from tts_text import split_text_for_tts
 from worker_config import WORKSPACE
 from worker_log import log as _log, phase as _phase
@@ -67,7 +68,7 @@ class InferenceJob:
             "coverage_exhausted": 0,
             "intrusion_checked": 0, "intrusion_flagged": 0, "intrusion_none": 0,
             "regens": 0, "exhausted": 0,
-            "tail_checked": 0, "tail_flagged": 0, "tail_none": 0,
+            "tail_checked": 0, "tail_flagged": 0, "tail_none": 0, "tail_healed": 0,
         }
         # Instrumentação d3d8d1b2: tentativa POR CHUNK (1 = geração original,
         # 2+ = regen do QA) — sem isso o heartbeat não distingue os dois.
@@ -210,6 +211,27 @@ class InferenceJob:
                if idx == 0 else self.trim_pad_samples)
         return trim_silence(s, threshold=self.cfg.trim_threshold, pad_samples=pad)
 
+    def _curar_fim_abrupto(self, seg, idx: int, chunk: str):
+        """Ultimo recurso quando o modelo TEIMA em decepar o fim (caso Carol
+        26/08: a mesma frase cortou nas duas geracoes seguidas, entao regenerar
+        igual nao adianta).
+
+        Medido naquele dia, mesma voz e mesmo texto:
+          "…sua nutricionista."     -> rms final 0,071 e 0,062  (cortado 2x)
+          "…sua nutricionista..."   -> rms final 0,014          (inteiro)
+        As reticencias nao viram palavra na fala: mudam a prosodia do fecho e o
+        modelo para de cortar. Se mesmo assim nao melhorar, fica o original —
+        nunca entrega algo pior do que ja tinha.
+        """
+        if chunk.rstrip().endswith("..."):
+            return seg
+        candidato = self._aparar(self._gerar(f"{chunk.rstrip()}...", idx), idx)
+        if fim_abrupto(candidato, self.sample_rate) is False:
+            self.qa_stats["tail_healed"] = self.qa_stats.get("tail_healed", 0) + 1
+            _log("info", "inference.tail_qa.curado", idx=idx)
+            return candidato
+        return seg
+
     def _rodar_qa(self, seg, idx: int, chunk: str, eh_ultimo: bool = False):
         c = self.cfg
         return run_chunk_qa(
@@ -287,6 +309,8 @@ class InferenceJob:
                 with _phase("inference.chunk.qa", chunk=idx):
                     seg, coverage, lacuna = self._rodar_qa(
                         seg, idx, chunk, eh_ultimo=(idx == len(chunks) - 1))
+                if idx == len(chunks) - 1 and fim_abrupto(seg, self.sample_rate):
+                    seg = self._curar_fim_abrupto(seg, idx, chunk)
                 if (self.cfg.coverage_qa_enabled and coverage is not None
                         and coverage < self.cfg.coverage_qa_min
                         and not self._entregar_mesmo_com_cobertura_baixa(
