@@ -54,6 +54,11 @@ import {
   dependeDoAluno,
   escalarNoGrupo,
 } from "@/lib/onboarding/avisos";
+import {
+  MOTIVO_AUDIO_CURTO_HERDADO,
+  decidirAvisoAudio,
+  motivoAudioCurto,
+} from "@/lib/onboarding/veredito-audio";
 import { abrirLink } from "@/lib/onboarding/links";
 import { registrarArquivoLocal } from "@/lib/onboarding/drive";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
@@ -365,11 +370,29 @@ export async function POST(request: NextRequest) {
 
   // Erro de áudio: nenhum arquivo baixou, ou a soma ficou abaixo de 20min.
   // Os dois dependem do aluno (link fechado / gravar mais) → ele é avisado.
-  const audioCurto = audiosResult.voice_status === "rejected_too_short";
-  if (audios.length > 0 && (audiosResult.imported + audiosResult.skipped === 0 || audioCurto)) {
-    const motivo = audioCurto
-      ? `o áudio enviado soma menos de 20 minutos (${audiosResult.training ?? "mínimo não atingido"})`
-      : (audiosResult.failed[0]?.error ?? "nenhum áudio aproveitável no link");
+  //
+  // INCIDENTE 146 (26/08): um run que não MEDIU nada não pode afirmar nada ao
+  // aluno sobre duração. `voice_status` pode ser HERDADO de uma voz anterior
+  // (a importação pulou tudo: imported=0, skipped>0), e antes esse status virava
+  // e-mail dizendo "o áudio enviado soma menos de 20 minutos" sobre material que
+  // o sistema nunca abriu — 18 das 20 recusas de 14 dias eram assim. Prova: run
+  // f7a26c5e (ycarlosk), imported=0/skipped=10, status vindo de uma voz de 24/08
+  // com 72s, enquanto o aluno tinha acabado de mandar 28min.
+  //
+  // A escolha do ramo vive em lib/onboarding/veredito-audio.ts (lógica pura,
+  // com testes) — aqui ficam só os textos de orientação.
+  const aviso = decidirAvisoAudio({
+    audiosPedidos: audios.length,
+    imported: audiosResult.imported,
+    skipped: audiosResult.skipped,
+    voiceStatus: audiosResult.voice_status,
+    training: audiosResult.training,
+    primeiroErro: audiosResult.failed[0]?.error ?? null,
+    qtdErros: audiosResult.failed.length,
+  });
+  const audioCurto = aviso.audioCurto;
+  if (aviso.acao === "avisar_aluno") {
+    const motivo = aviso.motivo ?? "nenhum áudio aproveitável no link";
     // Arquivo gigante tem orientação PRÓPRIA: mandar "abra o link" pra quem
     // subiu 8,9GB não ajuda em nada — o link está aberto, o arquivo é que não
     // cabe. Casos reais 22/08: linha 529 (8.944MB) e 531 (3.932MB).
@@ -390,10 +413,24 @@ export async function POST(request: NextRequest) {
             ? "O arquivo que você enviou é grande demais para o nosso limite. Se for um vídeo, envie só o áudio (MP3 ou M4A); se for áudio, pode dividir em partes menores na mesma pasta. Precisamos de 20 minutos de fala — não de qualidade de estúdio."
             : "Confira se o link do áudio está aberto para \"qualquer pessoa com o link\" e se os arquivos estão mesmo na pasta.",
     );
-  } else if (audiosResult.failed.length > 0) {
+  } else if (aviso.acao === "so_grupo_herdado") {
+    // A linha CONTINUA parada (a voz está recusada de verdade), então não é
+    // sucesso: vai pra `falhas` e o Status volta pra Erro na planilha. Mas o
+    // aluno NÃO é avisado de novo — ele já recebeu o e-mail no run que de fato
+    // mediu, e é a repetição disso que gerou 3 e-mails pro robson, 3 pro
+    // itabenke e 3 pra isabella. O grupo recebe o motivo honesto, e a instrução
+    // que o `escalarNoGrupo` monta ("quando ele mandar material novo, volte o
+    // Status pra Recebido") é exatamente a certa aqui.
+    falhas.push(`áudio: ${MOTIVO_AUDIO_CURTO_HERDADO}`);
     await escalarNoGrupo({
       linha: row, email, etapa: "áudio",
-      motivo: `${audiosResult.failed.length} de ${audios.length} falharam: ${audiosResult.failed[0]?.error ?? "?"}`,
+      motivo: MOTIVO_AUDIO_CURTO_HERDADO,
+      dependeDoAluno: false,
+    });
+  } else if (aviso.acao === "so_grupo_parcial") {
+    await escalarNoGrupo({
+      linha: row, email, etapa: "áudio",
+      motivo: aviso.motivo ?? "?",
       dependeDoAluno: false,
     });
   }
@@ -436,9 +473,14 @@ export async function POST(request: NextRequest) {
     imagesResult.failed[0]?.error ??
     imagesResult.ignored?.[0]?.reason ??
     audiosResult.failed[0]?.error ??
+    // Incidente 146: só o run que MEDIU escreve "o áudio enviado soma menos de
+    // 20 minutos". Status herdado ganha o motivo honesto — o que aconteceu foi
+    // que nada novo chegou, não que medimos e reprovamos de novo.
     (audioCurto
-      ? `o áudio enviado soma menos de 20 minutos (${audiosResult.training ?? "mínimo não atingido"})`
-      : null) ??
+      ? motivoAudioCurto(audiosResult.training)
+      : aviso.audioCurtoHerdado
+        ? MOTIVO_AUDIO_CURTO_HERDADO
+        : null) ??
     falhas[0] ??
     (tinhaLinkOuArquivo && !entrouAlgo
       ? "o link foi aberto mas não veio nenhuma foto nem áudio aproveitável"
