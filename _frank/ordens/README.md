@@ -67,6 +67,7 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 | Canal, conta de teste e prioridade | `2026-08-18_ddl_pelo_git_e_prioridade.md` |
 | DDL aprovado + achados da prova | `2026-08-19_ddl_aprovado_e_achados.md` |
 | 🖼️ Imagens: refactor de hoje + branch STALE (não mergear `feat/fix-image-upload-retry`) | `2026-08-19_imagens_refatoradas_branch_stale.md` |
+| ☁️ **OneDrive: corrigido e no ar — branch STALE, não mergear `feat/onedrive-401`** | O incidente `144` (#144) foi fechado em 26/08 pelo **PR #60** (`feat/onedrive-spo-fedauth`), merge `2dd1150`, deploy SUCCESS 14:49Z. O caminho que vale é o módulo `frontend/src/lib/onboarding/onedrive.ts` (cadeia de redirect → cookie **FedAuth** → `_api/v2.0`). ⚠️ **Existe no origin um branch CONCORRENTE, `feat/onedrive-401`**, com uma tentativa ANTERIOR pro mesmo defeito por outro caminho (token "badger"), que reescreve `links.ts` com um `resolverOneDrive` próprio e **não conhece o `onedrive.ts`**. Ele não tem PR. Se alguém abrir e mergear, **derruba o fix que está em produção** — mesmo risco que o `feat/fix-image-upload-retry` já criou em 19/08. Não mergear; se for descartar de vez, apagar no origin. |
 | 🔊 Incidentes do QA de completude: medição pronta, falta curar 2 vozes | `2026-08-19_qa_coverage_incidentes.md` |
 | 🔊 Resposta à passagem das vozes: quase tudo resolvido; falta re-medir 40 entregas (fecha o fb8d29b7) | `2026-08-19_resposta_passagem_vozes.md` |
 
