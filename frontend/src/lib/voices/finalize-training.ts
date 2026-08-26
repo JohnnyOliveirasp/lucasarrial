@@ -30,6 +30,28 @@ export type TrainOutput = {
    * confiança → não gravamos nada e a voz se comporta como antes.
    */
   reference_pause_ms?: number | null;
+  /**
+   * COMO o `reference_transcript` acima foi produzido — incidente 52.
+   * A 2ª passada de whisper no clipe final (a "cura" do caso Negrini #124) cai
+   * calada no texto previsto quando o whisper falha ou volta mudo, e depois do
+   * fato era impossível dizer qual dos dois aconteceu numa voz. Agora o worker
+   * diz:
+   *   curado         · a 2ª passada rodou e SUBSTITUIU o previsto
+   *   fallback_vazio · whisper voltou vazio → ficou o previsto
+   *   fallback_erro  · whisper explodiu    → ficou o previsto (ver `_erro`)
+   *   sem_previsto   · não havia nem um nem outro → transcript vazio
+   */
+  reference_cura_ramo?: string | null;
+  /** O texto que o seletor havia previsto, ANTES da cura (par antes/depois). */
+  reference_cura_texto_antes?: string | null;
+  /** Mensagem da exceção quando o whisper da cura explodiu. */
+  reference_cura_erro?: string | null;
+  /**
+   * Identidade do build do worker que rodou este job ("<branch>@<sha> pod=..."),
+   * carimbada na imagem pelo CI. "desconhecida" = build sem o carimbo (local),
+   * e é a verdade — nunca um palpite. Responde "esse treino saiu de que build?".
+   */
+  worker_image?: string | null;
   lora_alpha?: number;
   elapsed_seconds?: number;
   steps?: number;
@@ -138,6 +160,65 @@ async function alertSupportTrainFailure(args: {
   });
 }
 
+/**
+ * Registra COMO o transcript da referência saiu e QUE build do worker rodou.
+ *
+ * Incidente 52 (qa_coverage): a cura do transcript decide calada dentro do
+ * treino, e cada ronda re-investigava do zero se ela tinha rodado numa voz.
+ * Agora o worker diz o ramo; aqui a gente guarda.
+ *
+ * ⚠️ Duas decisões de propósito:
+ *  1. Vai num UPDATE SEPARADO, depois do gate idempotente — nunca junto com o
+ *     claim. A DDL (scripts/96) ainda NÃO foi aplicada, e coluna inexistente
+ *     dentro do claim derrubaria a finalização INTEIRA do treino (voz nunca
+ *     ficaria `ready`). Observabilidade não pode quebrar o produto.
+ *  2. O `logger.info` roda SEMPRE, antes e independente do banco: enquanto a
+ *     DDL não é aplicada, o dado já existe no log — que é o que resolve a
+ *     pergunta na próxima ronda.
+ */
+async function registrarCuraEBuild(
+  runpodJobId: string,
+  voiceId: string,
+  out: TrainOutput,
+): Promise<void> {
+  const ramo = out.reference_cura_ramo ?? null;
+  const textoAntes = out.reference_cura_texto_antes ?? null;
+  const curaErro = out.reference_cura_erro ?? null;
+  const workerImage = out.worker_image ?? null;
+  if (!ramo && !workerImage) return; // worker antigo, sem os campos novos
+
+  logger.info("api", "voice.train.transcript_cura", {
+    voiceId,
+    runpodJobId,
+    ramo,
+    workerImage,
+    curaErro,
+    lenAntes: textoAntes?.length ?? 0,
+    lenDepois: out.reference_transcript?.length ?? 0,
+  });
+
+  try {
+    const { error } = await getAdmin()
+      .from("training_jobs")
+      .update({
+        reference_cura_ramo: ramo,
+        reference_cura_texto_antes: textoAntes,
+        reference_cura_erro: curaErro,
+        worker_image: workerImage,
+      } as never)
+      .eq("runpod_job_id", runpodJobId);
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    // Esperado até a DDL de scripts/96 ser aplicada. O log acima já guardou o
+    // dado; falhar aqui não pode afetar o treino.
+    logger.warn("api", "voice.train.transcript_cura_nao_persistida", {
+      voiceId,
+      runpodJobId,
+      motivo: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
 export async function finalizeTraining(args: {
   voiceId: string;
   userId: string;
@@ -173,6 +254,9 @@ export async function finalizeTraining(args: {
   if (!claimed || claimed.length === 0) {
     return { applied: false, status: nextStatus };
   }
+
+  // ── Observabilidade da cura do transcript + build do worker (incidente 52) ─
+  await registrarCuraEBuild(runpodJobId, voiceId, out);
 
   // ── Voz ─────────────────────────────────────────────────────────────────
   const update: VoiceUpdate = {

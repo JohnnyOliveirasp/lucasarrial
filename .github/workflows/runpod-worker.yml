@@ -73,6 +73,10 @@ jobs:
           context: ./runpod-worker
           file: ./runpod-worker/Dockerfile
           push: true
+          # Carimba a identidade do build DENTRO da imagem (ENV WORKER_IMAGE).
+          # Vai no output de todo job -> dá pra dizer que build produziu um treino.
+          build-args: |
+            WORKER_IMAGE=${{ github.ref_name }}@${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

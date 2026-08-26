@@ -83,5 +83,16 @@ COPY voice_pipeline ./voice_pipeline
 COPY tts_qa ./tts_qa
 COPY jobs ./jobs
 
+# ─────────────────────────────────────────────────────────────────────────
+# IDENTIDADE DO BUILD — pra saber, olhando um treino no banco, QUE imagem o
+# produziu. O CI passa --build-arg WORKER_IMAGE="<branch>@<sha>"; build local
+# sem o arg fica "desconhecida" (a verdade, não um palpite).
+# ⚠️ Fica no FIM de propósito: `ENV` invalida as camadas SEGUINTES, e depois
+# dele só resta o CMD — a camada de 5GB do modelo não é tocada.
+# ⚠️ Vai no Dockerfile, NUNCA no env do template do RunPod: o workflow manda
+# `env: []` no saveTemplate e apaga o template a cada deploy.
+ARG WORKER_IMAGE=desconhecida
+ENV WORKER_IMAGE=${WORKER_IMAGE}
+
 # RunPod Serverless ENTRYPOINT
 CMD ["python", "-u", "handler.py"]

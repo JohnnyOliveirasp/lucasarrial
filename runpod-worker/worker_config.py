@@ -73,4 +73,34 @@ LEGACY_LORA_ALPHA = 16  # default da inferência p/ LoRAs sem alpha gravado
 # Cache local de LoRA baixada (inferencia).
 LORA_CACHE_DIR = Path(os.environ.get("LORA_CACHE_DIR", "/workspace/loras"))
 
+
+# ───────── Identidade do BUILD (observabilidade) ─────────
+# Dado um treino no banco, saber QUE build o produziu. Antes disso nao dava:
+# training_jobs nao guardava nada da imagem, entao "isso ja foi corrigido no
+# worker?" so se respondia por data, no olho.
+#
+# WORKER_IMAGE vem do Dockerfile (ARG->ENV preenchido pelo CI com
+# "<branch>@<sha>"). O ARG fica no FIM do Dockerfile de proposito: ENV invalida
+# as camadas seguintes, e depois do COPY do codigo nao ha nada caro pra
+# invalidar. Build local sem --build-arg = "desconhecida", que e' a verdade e
+# nao um palpite. RUNPOD_* sao best-effort: se o RunPod expuser, entram junto;
+# se nao existirem, nao aparecem (nunca inventar identificador).
+def worker_build_id() -> str:
+    """Identificador do build que esta rodando este job.
+
+    Formato: "<WORKER_IMAGE>" + sufixos best-effort do ambiente RunPod.
+    Ex.: "main@a1b2c3d pod=abc123" · "desconhecida" (build local/dev).
+
+    Le o env na CHAMADA, nao no import: o valor e' carimbado na imagem e nunca
+    muda em runtime, mas ler na hora deixa a funcao testavel sem reload de
+    modulo (reload aqui tem efeito colateral — este modulo cria diretorios).
+    """
+    partes = [os.environ.get("WORKER_IMAGE") or "desconhecida"]
+    for chave, rotulo in (("RUNPOD_POD_ID", "pod"), ("RUNPOD_ENDPOINT_ID", "endpoint")):
+        valor = os.environ.get(chave)
+        if valor:
+            partes.append(f"{rotulo}={valor}")
+    return " ".join(partes)
+
+
 # build 25/08: re-disparo apos falha transitoria no Build and push (951ec22)

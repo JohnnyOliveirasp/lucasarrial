@@ -18,6 +18,35 @@ from worker_log import log as _log
 
 
 @dataclass
+class CuraTranscricao:
+    """O que a 2a passada de whisper FEZ com o transcript — nao so o resultado.
+
+    Existe por causa do incidente 52 (qa_coverage): a cura roda dentro do treino
+    e, quando ela NAO acontece (whisper mudo ou explodindo), o codigo cai calado
+    no texto previsto. Ficava impossivel, depois, dizer se uma voz teve o
+    transcript curado ou nao — e cada ronda re-investigava do zero.
+
+    `ramo` diz qual caminho rodou:
+      curado          2a passada devolveu texto e ele SUBSTITUIU o previsto
+      fallback_vazio  whisper devolveu vazio/None -> ficou o previsto
+      fallback_erro   whisper levantou excecao    -> ficou o previsto (ver `erro`)
+      sem_previsto    whisper nao deu nada E nao havia previsto -> texto vazio
+
+    `erro` e' preenchido sempre que houve excecao, inclusive quando o ramo sai
+    `sem_previsto`: o ramo diz DE ONDE veio o texto final, e o erro nao se perde.
+    """
+    texto: str                      # o que vai pro banco (== texto_depois)
+    ramo: str
+    texto_antes: str | None = None  # o previsto pelo seletor, ANTES da cura
+    erro: str | None = None
+
+    @property
+    def texto_depois(self) -> str:
+        """Alias de `texto` — nome do par antes/depois usado no payload/DDL."""
+        return self.texto
+
+
+@dataclass
 class Referencia:
     """O estado da referencia da voz ao longo do job."""
     uploaded: bool = False
@@ -25,6 +54,7 @@ class Referencia:
     error: str | None = None
     clip: Path | None = None
     candidatas: list = field(default_factory=list)   # ranking p/ o QA da amostra
+    cura: CuraTranscricao | None = None   # COMO o transcript acima foi produzido
 
 
 def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
@@ -78,18 +108,19 @@ def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
         return ref
 
     clip, transcript = escolhida
-    transcript = transcricao_fiel(clip, transcript, whisper_model, language)
+    cura = transcricao_fiel(clip, transcript, whisper_model, language)
     upload_file_to_presigned_url(clip, reference_upload_url, content_type="audio/wav")
     ref.uploaded = True
-    ref.transcript = transcript
+    ref.transcript = cura.texto
+    ref.cura = cura
     ref.clip = clip          # reusada na amostra pos-treino
     _log("info", "train.reference.done", seconds=REFERENCE_SECONDS,
-         transcript_len=len(transcript))
+         transcript_len=len(cura.texto), cura_ramo=cura.ramo)
     return ref
 
 
 def transcricao_fiel(clip: Path, texto_previsto: "str | None", whisper_model: str,
-                     language: str) -> str:
+                     language: str) -> CuraTranscricao:
     """O transcript gravado no banco tem que ser o que o AUDIO CORTADO contem.
 
     Caso Negrini (#124, 24/08): o corte por palavra escolhe as palavras pelos
@@ -102,13 +133,20 @@ def transcricao_fiel(clip: Path, texto_previsto: "str | None", whisper_model: st
     Se o whisper falhar, fica o texto previsto (comportamento de antes).
     Fecha com '.' quando o audio termina sem pontuacao: o modelo entende que a
     frase acabou e nao emenda a fala nova na cauda da referencia.
+
+    Devolve CuraTranscricao (texto + QUAL ramo rodou). A DECISAO nao mudou —
+    so passou a ficar registrada: antes, whisper mudo e whisper explodindo eram
+    indistinguiveis depois do fato.
     """
     real = None
+    erro = None
     try:
         real = (transcribe_with_retry(clip, whisper_model, language, attempts=2) or "").strip()
     except Exception as exc:  # nunca derruba o treino
+        erro = str(exc)[:300]
         _log("error", "train.reference.transcript_recheck_error", error=str(exc))
-    texto = real or (texto_previsto or "").strip()
+    previsto = (texto_previsto or "").strip()
+    texto = real or previsto
     # Fecha a frase: sem pontuacao, ou terminando em virgula/ponto-e-virgula/
     # dois-pontos (whisper corta em ',' quando o clipe acaba no meio) -> '.'.
     texto = re.sub(r"[,;:\-\s]+$", "", texto)
@@ -117,7 +155,20 @@ def transcricao_fiel(clip: Path, texto_previsto: "str | None", whisper_model: st
     if real and texto_previsto and real.split()[-1:] != (texto_previsto or "").split()[-1:]:
         _log("info", "train.reference.transcript_fixed",
              cauda_prevista=(texto_previsto or "")[-40:], cauda_real=texto[-40:])
-    return texto
+
+    if real:
+        ramo = "curado"
+    elif previsto:
+        ramo = "fallback_erro" if erro else "fallback_vazio"
+    else:
+        # Nem whisper nem previsto: a referencia sai SEM texto util. Nao e' novo
+        # (era o comportamento silencioso de antes), agora fica dito.
+        ramo = "sem_previsto"
+    cura = CuraTranscricao(texto=texto, ramo=ramo,
+                           texto_antes=texto_previsto, erro=erro)
+    _log("info", "train.reference.transcript_cura", ramo=ramo,
+         len_antes=len(previsto), len_depois=len(texto), erro=erro)
+    return cura
 
 
 def transcrever_palavras_seguro(wav_path: Path, whisper_model: str, language: str):
@@ -167,8 +218,12 @@ def gerar_amostra_com_qa(inp: dict, dirs, ref: Referencia, lora_path: Path,
                 # Promove a candidata: substitui a referencia OFICIAL (mesma
                 # chave R2) e o transcript que vai pro banco via webhook.
                 upload_file_to_presigned_url(clip, reference_upload_url, content_type="audio/wav")
-                ref.clip, ref.transcript = clip, transcricao_fiel(clip, texto, whisper_model, language)
-                _log("info", "train.sample.qa.ref_swapped", attempt=tentativa)
+                # A cura acompanha a candidata PROMOVIDA: o que fica registrado
+                # tem que descrever a referencia que ficou de pe, nao a descartada.
+                cura = transcricao_fiel(clip, texto, whisper_model, language)
+                ref.clip, ref.transcript, ref.cura = clip, cura.texto, cura
+                _log("info", "train.sample.qa.ref_swapped", attempt=tentativa,
+                     cura_ramo=cura.ramo)
 
             info = generate_training_sample(
                 model_dir=model_dir,
