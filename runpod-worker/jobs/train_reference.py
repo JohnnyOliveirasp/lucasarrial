@@ -214,7 +214,14 @@ def gerar_amostra_com_qa(inp: dict, dirs, ref: Referencia, lora_path: Path,
                       if ref.candidatas else [(ref.clip, ref.transcript)])
 
         for tentativa, (clip, texto) in enumerate(candidatas):
-            if tentativa > 0 and reference_upload_url and clip is not None:
+            # `texto` e' o transcript CRU do seletor; o que vai pro banco — e que
+            # o aluno usa em TODA geracao dali pra frente — e' o CURADO. O QA tem
+            # que medir o par (audio, texto) que realmente vai ao ar: `ref_text`.
+            if tentativa == 0:
+                # A cura da candidata 0 ja rodou em escolher_e_subir e esta em
+                # ref.transcript/ref.cura: reusa, nao gasta outra passada de whisper.
+                ref_text = ref.transcript if ref.transcript is not None else texto
+            elif reference_upload_url and clip is not None:
                 # Promove a candidata: substitui a referencia OFICIAL (mesma
                 # chave R2) e o transcript que vai pro banco via webhook.
                 upload_file_to_presigned_url(clip, reference_upload_url, content_type="audio/wav")
@@ -222,8 +229,13 @@ def gerar_amostra_com_qa(inp: dict, dirs, ref: Referencia, lora_path: Path,
                 # tem que descrever a referencia que ficou de pe, nao a descartada.
                 cura = transcricao_fiel(clip, texto, whisper_model, language)
                 ref.clip, ref.transcript, ref.cura = clip, cura.texto, cura
+                ref_text = cura.texto
                 _log("info", "train.sample.qa.ref_swapped", attempt=tentativa,
                      cura_ramo=cura.ramo)
+            else:
+                # Candidata NAO promovida (sem URL de referencia): nao ha cura
+                # deste clipe, e a da anterior descreve OUTRO audio. Fica o cru.
+                ref_text = texto
 
             info = generate_training_sample(
                 model_dir=model_dir,
@@ -231,7 +243,7 @@ def gerar_amostra_com_qa(inp: dict, dirs, ref: Referencia, lora_path: Path,
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
                 ref_wav=clip,
-                ref_text=texto,
+                ref_text=ref_text,
                 sample_text=sample_text,
                 upload_url=sample_upload_url,
                 work_dir=dirs.job / "sample",

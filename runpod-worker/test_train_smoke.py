@@ -263,6 +263,87 @@ class AmostraTest(TrainBase):
         self.assertEqual(r["sample_qa"], "passed")
 
 
+class AmostraUsaTextoCuradoTest(TrainBase):
+    """Incidente 52 (26/08): o QA da amostra media um par que nunca ia ao ar.
+
+    A amostra era gerada com o texto CRU do seletor, mas o transcript gravado no
+    banco — o que o aluno usa em TODA geracao dali pra frente — e' o CURADO. O QA
+    aprovava uma configuracao diferente da que ficava de pe.
+
+    Medido na voz 541d3f4d (treino d1767e22, 19:15Z, lido da API da RunPod):
+      texto cru      =  52 chars  "Agora, umas palavras mais dificeis. Outra sequencia."
+      transcript     = 407 chars  (o conteudo real do clipe, 29,70s por ffprobe)
+      sample_qa      = "passed", similaridade 1  <- validou os 52, entregou os 407.
+
+    A invariante que estes testes prendem: o `ref_text` que vai pro
+    generate_training_sample e' SEMPRE o mesmo que sai em reference_transcript.
+    """
+
+    def _cura_por_clipe(self):
+        """Cura devolve texto DIFERENTE por candidata, pro teste poder dizer
+        QUAL cura chegou na amostra (o stub cru diz 'Nx candidata.')."""
+        return lambda clip, *a, **k: f"cura de {Path(clip).stem}"
+
+    def _espiao_da_amostra(self):
+        """Mock de generate_training_sample que guarda os kwargs de cada chamada."""
+        chamadas = []
+
+        def _gen(**k):
+            chamadas.append(k)
+            _toca(Path(k["work_dir"]) / "training_sample.wav")
+            return {"sample_uploaded": True, "sample_seconds": 3.0, "sample_error": None}
+
+        return chamadas, mock.Mock(side_effect=_gen)
+
+    def test_tentativa_0_gera_a_amostra_com_o_texto_CURADO(self):
+        chamadas, gen = self._espiao_da_amostra()
+        with mock.patch.object(tref, "transcribe_with_retry", side_effect=self._cura_por_clipe()), \
+             mock.patch.object(tref, "sample_qa_similarity", return_value=0.95), \
+             mock.patch.dict(sys.modules["sample_gen"].__dict__,
+                             {"generate_training_sample": gen}):
+            r = train.handle_train(_job(sample_upload_url="https://r2/s.wav?sig=x",
+                                        reference_upload_url="https://r2/ref.wav?sig=x"))
+        self.assertEqual(r["sample_qa"], "passed")
+        self.assertEqual(len(chamadas), 1)
+        # o cru era "primeira candidata." — nunca pode ser ele
+        self.assertEqual(chamadas[0]["ref_text"], "cura de cand_0.")
+        self.assertEqual(Path(chamadas[0]["ref_wav"]).stem, "cand_0")
+        # a invariante: o QA mediu exatamente o que foi pro banco
+        self.assertEqual(chamadas[0]["ref_text"], r["reference_transcript"])
+
+    def test_tentativa_seguinte_gera_com_a_cura_da_candidata_PROMOVIDA(self):
+        # 1a reprova, 2a passa: a 2a chamada tem que levar a cura da cand_1,
+        # nao o cru "segunda candidata." nem a cura da cand_0 (outro audio).
+        notas = iter([0.10, 0.95])
+        chamadas, gen = self._espiao_da_amostra()
+        with mock.patch.object(tref, "transcribe_with_retry", side_effect=self._cura_por_clipe()), \
+             mock.patch.object(tref, "sample_qa_similarity", side_effect=lambda *a, **k: next(notas)), \
+             mock.patch.dict(sys.modules["sample_gen"].__dict__,
+                             {"generate_training_sample": gen}):
+            r = train.handle_train(_job(sample_upload_url="https://r2/s.wav?sig=x",
+                                        reference_upload_url="https://r2/ref.wav?sig=x"))
+        self.assertEqual(r["sample_qa"], "retried_passed")
+        self.assertEqual(len(chamadas), 2)
+        self.assertEqual(chamadas[0]["ref_text"], "cura de cand_0.")
+        self.assertEqual(chamadas[1]["ref_text"], "cura de cand_1.")
+        self.assertEqual(Path(chamadas[1]["ref_wav"]).stem, "cand_1")
+        # a referencia que ficou de pe e o texto que o QA aprovou sao o MESMO par
+        self.assertEqual(chamadas[1]["ref_text"], r["reference_transcript"])
+
+    def test_cura_nao_e_recalculada_na_tentativa_0(self):
+        # A cura da candidata 0 ja rodou em escolher_e_subir. Reusar (e nao
+        # re-transcrever) e' o que impede uma passada de whisper a toa por treino.
+        _, gen = self._espiao_da_amostra()
+        with mock.patch.object(tref, "transcribe_with_retry",
+                               side_effect=self._cura_por_clipe()) as w, \
+             mock.patch.object(tref, "sample_qa_similarity", return_value=0.95), \
+             mock.patch.dict(sys.modules["sample_gen"].__dict__,
+                             {"generate_training_sample": gen}):
+            train.handle_train(_job(sample_upload_url="https://r2/s.wav?sig=x",
+                                    reference_upload_url="https://r2/ref.wav?sig=x"))
+        self.assertEqual(w.call_count, 1)   # so a cura de escolher_e_subir
+
+
 class TranscritoFielTest(unittest.TestCase):
     """Caso Negrini (#124, 24/08): o texto gravado tem que ser o que o AUDIO
     cortado contem. O seletor previu '...precisar O' (timestamp impreciso do
