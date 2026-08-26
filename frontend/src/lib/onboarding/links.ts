@@ -14,8 +14,9 @@
  * Zip é aberto aqui (unzip do Linux, mesmo jeito que o ffmpeg é chamado).
  *
  * QUEM ENTRA NESTE TURNO: WeTransfer (API pública que o próprio site usa —
- * provado 22/08: sem login, sem CSRF, HTTP 200 direto), Dropbox e OneDrive
- * (link direto trocando um parâmetro), e URL direta de arquivo.
+ * provado 22/08: sem login, sem CSRF, HTTP 200 direto), Dropbox, OneDrive
+ * (API v2.0 anônima com token badger — arquivo E pasta; ver resolverOneDrive)
+ * e URL direta de arquivo.
  * QUEM FICA PRA DEPOIS: Google Photos, iCloud, YouTube, Samsung Cloud —
  * exigem sessão ou ferramenta de download; devolvem `{ suportado: false }`
  * com motivo legível, e a régua avisa o aluno do que fazer.
@@ -140,29 +141,102 @@ function linkDiretoDropbox(link: string): string {
   return u.toString();
 }
 
-export function linkDiretoOneDrive(link: string): string {
-  // 22/08: o replace antigo (/redir → /download) só cobria o formato VELHO de
-  // link. O formato atual (1drv.ms/..., onedrive.live.com/?id=...&cid=...)
-  // passava INTACTO, o fetch trazia a página de LOGIN da Microsoft (HTML de
-  // ~300KB, HTTP 200) e ela era gravada no R2 como .mp3 — o worker não achava
-  // fala e o aluno lia "grave num ambiente silencioso" por um download NOSSO
-  // que falhou (casos reais: marlonwsmuniz e lazevedo, vozes 0e2f5726 e
-  // 3d3c4da8). O caminho que funciona anônimo é a API de shares da própria
-  // Microsoft: o link vira token base64url com prefixo "u!" e /root/content
-  // redireciona pro arquivo (ou responde 4xx legível quando o link é privado —
-  // que o baixarPara transforma em erro, em vez de gravar HTML calado).
-  if (/sharepoint\.com/i.test(link)) {
-    // SharePoint (pessoal/empresa): baixar direto com download=1.
-    const u = new URL(link);
-    u.searchParams.set("download", "1");
-    return u.toString();
+export function linkDiretoSharePoint(link: string): string {
+  // SharePoint de EMPRESA (contoso-my.sharepoint.com): baixar com download=1.
+  // Sem caso medido quebrando — comportamento de 22/08 mantido.
+  const u = new URL(link);
+  u.searchParams.set("download", "1");
+  return u.toString();
+}
+
+/** O link de compartilhamento vira token "u!<base64url>" (doc oficial de shares). */
+export function tokenShareOneDrive(link: string): string {
+  const b64 = Buffer.from(link.trim()).toString("base64");
+  return "u!" + b64.replace(/=+$/, "").replace(/\//g, "_").replace(/\+/g, "-");
+}
+
+export type ItemOneDrive = { url: string; filename: string; bytes: number };
+
+// 26/08 (incidente 144): a API legada api.onedrive.com (Vroom) passou a dar
+// 401 pra TODO share pessoal — inclusive dois que baixaram de verdade em
+// 22/08 (as contas migraram pro SPO: o redirect do 1drv.ms diz
+// migratedtospo=true). O caminho que funciona HOJE é o do próprio web app
+// anônimo do OneDrive: token "badger" (endpoint público, sem login) + API
+// v2.0 de my.microsoftpersonalcontent.com, que devolve @content.downloadUrl.
+// Medido em 26/08 nos 5 links reais dos incidentes 144/140 (2 pastas + 3
+// arquivos): 200 com content-type e tamanho do ARQUIVO, não HTML.
+const ONEDRIVE_API = "https://my.microsoftpersonalcontent.com/_api/v2.0";
+// AppId PÚBLICO que a página anônima do OneDrive usa — não é segredo nosso.
+const BADGER_APP_ID = "5cbed6ac-a083-4e14-b191-b4ba07653de2";
+
+async function tokenBadger(): Promise<string> {
+  const r = await fetch("https://api-badgerp.svc.ms/v1.0/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "User-Agent": UA },
+    body: JSON.stringify({ appId: BADGER_APP_ID }),
+  });
+  // "(HTTP 5xx)" cai na família NOSSO do classificarErro — aluno não é culpado.
+  if (!r.ok) throw new Error(`OneDrive: falha ao obter acesso anônimo (HTTP ${r.status})`);
+  const j = (await r.json()) as { token?: string };
+  if (!j.token) throw new Error("OneDrive: resposta sem token de acesso anônimo (HTTP 200)");
+  return j.token;
+}
+
+type NoOneDrive = {
+  name?: string; size?: number; folder?: unknown; children?: NoOneDrive[];
+  "@content.downloadUrl"?: string; "children@odata.nextLink"?: string;
+};
+
+async function apiOneDrive(badger: string, url: string): Promise<NoOneDrive> {
+  const r = await fetch(url, {
+    headers: { Authorization: `Badger ${badger}`, Prefer: "autoredeem", "User-Agent": UA },
+  });
+  if (r.status === 404 || r.status === 410) {
+    throw new Error("o link do OneDrive não existe mais (o arquivo foi movido ou apagado) — gere um link novo");
   }
-  const token = Buffer.from(link.trim())
-    .toString("base64")
-    .replace(/=+$/, "")
-    .replace(/\//g, "_")
-    .replace(/\+/g, "-");
-  return `https://api.onedrive.com/v1.0/shares/u!${token}/root/content`;
+  if (r.status === 401 || r.status === 403) {
+    // Sem "HTTP 40x" no texto: a família tem que ser ALUNO (ele é avisado pra
+    // trocar de serviço) e a mensagem do route.ts admite que pode ser nosso.
+    throw new Error(`não conseguimos baixar do OneDrive (respondeu ${r.status} pra gente, mesmo com o link aberto)`);
+  }
+  if (!r.ok) throw new Error(`OneDrive: erro inesperado (HTTP ${r.status})`);
+  return (await r.json()) as NoOneDrive;
+}
+
+/**
+ * Resolve o share (arquivo OU pasta) em links diretos de download. Pasta:
+ * lista os filhos (com paginação); subpasta é ignorada com aviso no log —
+ * recursão exigiria chamada que não temos caso real pra medir.
+ */
+export async function resolverOneDrive(link: string): Promise<ItemOneDrive[]> {
+  const badger = await tokenBadger();
+  const base = `${ONEDRIVE_API}/shares/${tokenShareOneDrive(link)}/driveItem`;
+  const raiz = await apiOneDrive(badger, base);
+
+  if (!raiz.folder) {
+    if (!raiz["@content.downloadUrl"]) throw new Error("OneDrive: item veio sem link de download (HTTP 200)");
+    return [{ url: raiz["@content.downloadUrl"], filename: raiz.name || "arquivo", bytes: raiz.size || 0 }];
+  }
+
+  const itens: ItemOneDrive[] = [];
+  let pagina: NoOneDrive | null = await apiOneDrive(badger, `${base}?$expand=children`);
+  while (pagina) {
+    for (const c of pagina.children || []) {
+      if (c.folder) {
+        console.warn(`[onboarding/links] OneDrive: subpasta "${c.name}" ignorada (só baixamos arquivos da pasta raiz)`);
+        continue;
+      }
+      if (c["@content.downloadUrl"]) {
+        itens.push({ url: c["@content.downloadUrl"], filename: c.name || "arquivo", bytes: c.size || 0 });
+      }
+    }
+    const prox: string | undefined = pagina["children@odata.nextLink"];
+    pagina = prox ? await apiOneDrive(badger, prox) : null;
+  }
+  if (itens.length === 0) {
+    throw new Error("a pasta do OneDrive não tem arquivos soltos (vazia ou só subpastas) — coloque os arquivos direto nela");
+  }
+  return itens;
 }
 
 // ── Download pro disco + unzip ────────────────────────────────────────────
@@ -248,28 +322,47 @@ export async function abrirLink(
 
   let url = link.trim();
   let filename: string | null = null;
+  let itensOneDrive: ItemOneDrive[] | null = null;
   try {
     if (kind === "wetransfer") ({ url, filename } = await linkDiretoWeTransfer(url));
     else if (kind === "dropbox") url = linkDiretoDropbox(url);
-    else if (kind === "onedrive") url = linkDiretoOneDrive(url);
+    else if (kind === "onedrive") {
+      if (/sharepoint\.com/i.test(url)) url = linkDiretoSharePoint(url);
+      // Pessoal (1drv.ms / onedrive.live.com): resolve arquivo OU pasta.
+      else itensOneDrive = await resolverOneDrive(url);
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, kind, motivo: msg, dependeDoAluno: /expirou|apagado|não reconheço/i.test(msg) };
+    const doAluno = /expirou|apagado|não reconheço|conseguimos baixar|não existe mais|pasta do OneDrive/i.test(msg);
+    return { ok: false, kind, motivo: msg, dependeDoAluno: doAluno };
   }
 
-  const nomeBase = filename || decodeURIComponent((url.split("?")[0].split("/").pop() || "arquivo").trim()) || "arquivo";
-  const destino = join(workDir, nomeBase);
   try {
-    await baixarPara(url, destino, maxBytes);
+    // Pasta do OneDrive: N arquivos, cada um pelo MESMO funil (sniff de HTML,
+    // teto de bytes, zip) do caminho de arquivo único.
+    if (itensOneDrive) {
+      const arquivos: ArquivoBaixado[] = [];
+      for (const it of itensOneDrive) arquivos.push(...(await receberArquivo(it.url, it.filename, workDir, maxBytes)));
+      return { ok: true, kind, arquivos };
+    }
+    const nomeBase = filename || decodeURIComponent((url.split("?")[0].split("/").pop() || "arquivo").trim()) || "arquivo";
+    return { ok: true, kind, arquivos: await receberArquivo(url, nomeBase, workDir, maxBytes) };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return {
-      ok: false,
-      kind,
-      motivo: msg,
-      dependeDoAluno: /teto|passa do|página da internet|conseguimos baixar/i.test(msg),
-    };
+    const doAluno = /teto|passa do|página da internet|conseguimos baixar|zip/i.test(msg);
+    return { ok: false, kind, motivo: msg, dependeDoAluno: doAluno };
   }
+}
+
+/**
+ * Baixa UMA url pro disco, recusa HTML disfarçado e extrai zip. Lança Error
+ * com motivo legível — quem chama traduz em ResultadoLink. É o antigo miolo
+ * do abrirLink, extraído pra servir também à pasta do OneDrive (N arquivos).
+ */
+async function receberArquivo(url: string, nome: string, workDir: string, maxBytes: number): Promise<ArquivoBaixado[]> {
+  const nomeBase = nome.replace(/[/\\]/g, "_") || "arquivo";
+  const destino = join(workDir, nomeBase);
+  await baixarPara(url, destino, maxBytes);
 
   // 22/08: página de login também chega MENTINDO no content-type (200 +
   // octet-stream). Os primeiros bytes não mentem: se o que baixou é HTML,
@@ -277,14 +370,10 @@ export async function abrirLink(
   // ".mp3" no R2 ou "zip corrompido" na mensagem (as duas culpavam o aluno).
   const inicioBaixado = await lerInicio(destino);
   if (ehPaginaWeb(inicioBaixado)) {
-    return {
-      ok: false,
-      kind,
-      motivo:
-        "não conseguimos baixar seu arquivo a partir desse link — " +
+    throw new Error(
+      "não conseguimos baixar seu arquivo a partir desse link — " +
         "veio uma página da internet (provavelmente pedindo login) no lugar do arquivo",
-      dependeDoAluno: true,
-    };
+    );
   }
 
   // 22/08: quem decide se é pacote é o CONTEÚDO, não a extensão. O link do
@@ -292,17 +381,18 @@ export async function abrirLink(
   // não rodou — 18MB de ZIP viraram ".mp3" no R2 e ele foi acusado de gravar
   // mal. O `Audio IA.ogg` estava lá dentro o tempo todo.
   if (extname(destino).toLowerCase() === ".zip" || ehZipDeArquivos(inicioBaixado)) {
-    const pasta = join(workDir, "unzip");
+    // Sufixo por arquivo: dois zips na mesma pasta não se atropelam.
+    const pasta = join(workDir, `unzip_${nomeBase.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40)}`);
     await mkdir(pasta, { recursive: true });
     try {
       await run("unzip", ["-o", "-q", destino, "-d", pasta]);
     } catch (e) {
-      return { ok: false, kind, motivo: `zip corrompido ou incompleto (${e instanceof Error ? e.message : e})`, dependeDoAluno: true };
+      throw new Error(`zip corrompido ou incompleto (${e instanceof Error ? e.message : e})`);
     }
     const arquivos = await listarArquivos(pasta);
-    if (arquivos.length === 0) return { ok: false, kind, motivo: "o zip veio vazio", dependeDoAluno: true };
-    return { ok: true, kind, arquivos };
+    if (arquivos.length === 0) throw new Error("o zip veio vazio");
+    return arquivos;
   }
 
-  return { ok: true, kind, arquivos: [{ path: destino, filename: nomeBase, bytes: (await stat(destino)).size }] };
+  return [{ path: destino, filename: nomeBase, bytes: (await stat(destino)).size }];
 }
