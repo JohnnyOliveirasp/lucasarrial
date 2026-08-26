@@ -92,12 +92,13 @@
       "statuses": {
         "uploading": "Uploading audio",
         "validating": "Validating",
-        "awaiting_training": "Ready to train",
+        "awaiting_training": "Waiting for you to train",
         "rejected_too_short": "< 20min · Rejected",
         "training": "Training",
         "ready": "Ready",
         "failed": "Failed"
       },
+      "awaitingHint": "One step left: open the voice and click “Start training”.",
       "paywall": {
         "titleNoCredits": "Not enough credits to train",
         "titleNoPlan": "Subscribe to train a voice",
