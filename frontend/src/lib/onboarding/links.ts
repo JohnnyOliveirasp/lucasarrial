@@ -14,8 +14,8 @@
  * Zip é aberto aqui (unzip do Linux, mesmo jeito que o ffmpeg é chamado).
  *
  * QUEM ENTRA NESTE TURNO: WeTransfer (API pública que o próprio site usa —
- * provado 22/08: sem login, sem CSRF, HTTP 200 direto), Dropbox e OneDrive
- * (link direto trocando um parâmetro), e URL direta de arquivo.
+ * provado 22/08: sem login, sem CSRF, HTTP 200 direto), Dropbox, OneDrive
+ * (cadeia FedAuth + _api/v2.0 — ver ./onedrive.ts) e URL direta de arquivo.
  * QUEM FICA PRA DEPOIS: Google Photos, iCloud, YouTube, Samsung Cloud —
  * exigem sessão ou ferramenta de download; devolvem `{ suportado: false }`
  * com motivo legível, e a régua avisa o aluno do que fazer.
@@ -32,6 +32,7 @@ import { pipeline } from "node:stream/promises";
 
 // Extensão explícita: deixa `node --test` rodar o links.test.ts sem build.
 import { ehPaginaWeb, ehZipDeArquivos } from "./audio-tipo.ts";
+import { baixarItemOneDrive, resolverOneDrive } from "./onedrive.ts";
 
 export type LinkKind = "drive" | "wetransfer" | "dropbox" | "onedrive" | "direto" | "nao_suportado";
 
@@ -140,30 +141,19 @@ function linkDiretoDropbox(link: string): string {
   return u.toString();
 }
 
-export function linkDiretoOneDrive(link: string): string {
-  // 22/08: o replace antigo (/redir → /download) só cobria o formato VELHO de
-  // link. O formato atual (1drv.ms/..., onedrive.live.com/?id=...&cid=...)
-  // passava INTACTO, o fetch trazia a página de LOGIN da Microsoft (HTML de
-  // ~300KB, HTTP 200) e ela era gravada no R2 como .mp3 — o worker não achava
-  // fala e o aluno lia "grave num ambiente silencioso" por um download NOSSO
-  // que falhou (casos reais: marlonwsmuniz e lazevedo, vozes 0e2f5726 e
-  // 3d3c4da8). O caminho que funciona anônimo é a API de shares da própria
-  // Microsoft: o link vira token base64url com prefixo "u!" e /root/content
-  // redireciona pro arquivo (ou responde 4xx legível quando o link é privado —
-  // que o baixarPara transforma em erro, em vez de gravar HTML calado).
-  if (/sharepoint\.com/i.test(link)) {
-    // SharePoint (pessoal/empresa): baixar direto com download=1.
-    const u = new URL(link);
-    u.searchParams.set("download", "1");
-    return u.toString();
-  }
-  const token = Buffer.from(link.trim())
-    .toString("base64")
-    .replace(/=+$/, "")
-    .replace(/\//g, "_")
-    .replace(/\+/g, "-");
-  return `https://api.onedrive.com/v1.0/shares/u!${token}/root/content`;
+export function linkDiretoSharePoint(link: string): string {
+  // SharePoint (empresa/escola): baixar direto com download=1 continua valendo.
+  const u = new URL(link);
+  u.searchParams.set("download", "1");
+  return u.toString();
 }
+
+// 26/08 (incidente 144): a API legada api.onedrive.com/v1.0/shares/u!<token>
+// que usávamos pra 1drv.ms/onedrive.live.com passou a devolver 401 pra TODO
+// link (as contas migraram pro SharePoint Online e o grant anônimo virou
+// cookie FedAuth emitido pela cadeia de redirect). O caminho novo, medido em
+// _Bugs/onedrive_144/, vive em ./onedrive.ts — e de quebra resolve PASTA
+// (listagem via /children), que a API antiga nunca soube fazer.
 
 // ── Download pro disco + unzip ────────────────────────────────────────────
 
@@ -247,11 +237,19 @@ export async function abrirLink(
   }
 
   let url = link.trim();
+
+  // OneDrive pessoal (1drv.ms / onedrive.live.com) tem caminho próprio desde
+  // 26/08: cadeia de redirect + cookie FedAuth + _api/v2.0 — serve arquivo E
+  // pasta. SharePoint corporativo continua no download=1, que segue de pé.
+  if (kind === "onedrive" && !/sharepoint\.com/i.test(url)) {
+    return abrirOneDrive(url, workDir, maxBytes);
+  }
+
   let filename: string | null = null;
   try {
     if (kind === "wetransfer") ({ url, filename } = await linkDiretoWeTransfer(url));
     else if (kind === "dropbox") url = linkDiretoDropbox(url);
-    else if (kind === "onedrive") url = linkDiretoOneDrive(url);
+    else if (kind === "onedrive") url = linkDiretoSharePoint(url);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, kind, motivo: msg, dependeDoAluno: /expirou|apagado|não reconheço/i.test(msg) };
@@ -271,10 +269,29 @@ export async function abrirLink(
     };
   }
 
-  // 22/08: página de login também chega MENTINDO no content-type (200 +
-  // octet-stream). Os primeiros bytes não mentem: se o que baixou é HTML,
-  // o download FALHOU — dizer isso, e não deixar o arquivo seguir pra virar
-  // ".mp3" no R2 ou "zip corrompido" na mensagem (as duas culpavam o aluno).
+  return conferirEExtrair(destino, nomeBase, workDir, kind, "unzip");
+}
+
+/**
+ * Pós-download comum a todos os provedores: sniff de HTML + extração de zip.
+ *
+ * 22/08: página de login também chega MENTINDO no content-type (200 +
+ * octet-stream). Os primeiros bytes não mentem: se o que baixou é HTML,
+ * o download FALHOU — dizer isso, e não deixar o arquivo seguir pra virar
+ * ".mp3" no R2 ou "zip corrompido" na mensagem (as duas culpavam o aluno).
+ *
+ * 22/08: quem decide se é pacote é o CONTEÚDO, não a extensão. O link do
+ * fb_teixeira baixou como token sem extensão, o `extname` deu "" e o unzip
+ * não rodou — 18MB de ZIP viraram ".mp3" no R2 e ele foi acusado de gravar
+ * mal. O `Audio IA.ogg` estava lá dentro o tempo todo.
+ */
+async function conferirEExtrair(
+  destino: string,
+  nomeBase: string,
+  workDir: string,
+  kind: LinkKind,
+  pastaUnzip: string,
+): Promise<ResultadoLink> {
   const inicioBaixado = await lerInicio(destino);
   if (ehPaginaWeb(inicioBaixado)) {
     return {
@@ -287,12 +304,8 @@ export async function abrirLink(
     };
   }
 
-  // 22/08: quem decide se é pacote é o CONTEÚDO, não a extensão. O link do
-  // fb_teixeira baixou como token sem extensão, o `extname` deu "" e o unzip
-  // não rodou — 18MB de ZIP viraram ".mp3" no R2 e ele foi acusado de gravar
-  // mal. O `Audio IA.ogg` estava lá dentro o tempo todo.
   if (extname(destino).toLowerCase() === ".zip" || ehZipDeArquivos(inicioBaixado)) {
-    const pasta = join(workDir, "unzip");
+    const pasta = join(workDir, pastaUnzip);
     await mkdir(pasta, { recursive: true });
     try {
       await run("unzip", ["-o", "-q", destino, "-d", pasta]);
@@ -305,4 +318,43 @@ export async function abrirLink(
   }
 
   return { ok: true, kind, arquivos: [{ path: destino, filename: nomeBase, bytes: (await stat(destino)).size }] };
+}
+
+/**
+ * OneDrive pessoal pós-migração SPO (incidente 144, 26/08): resolve o link
+ * pela cadeia FedAuth (./onedrive.ts), baixa item a item validando tamanho
+ * anunciado, e passa cada arquivo pelo MESMO pós-download dos outros
+ * provedores. Pasta (/f/) e arquivo (/u/, /v/) vão pelo mesmo caminho.
+ */
+async function abrirOneDrive(link: string, workDir: string, maxBytes: number): Promise<ResultadoLink> {
+  const kind: LinkKind = "onedrive";
+  let resolvido;
+  try {
+    resolvido = await resolverOneDrive(link);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, kind, motivo: `não conseguimos baixar seu arquivo a partir desse link — ${msg}`, dependeDoAluno: false };
+  }
+  if (!resolvido.ok) {
+    return { ok: false, kind, motivo: resolvido.motivo, dependeDoAluno: resolvido.dependeDoAluno };
+  }
+
+  const todos: ArquivoBaixado[] = [];
+  for (const [i, item] of resolvido.itens.entries()) {
+    const nome = (item.nome || `arquivo_${i}`).replace(/[/\\]/g, "_");
+    const destino = join(workDir, nome);
+    try {
+      await baixarItemOneDrive(item, resolvido.cookie, destino, maxBytes);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // Teto de tamanho é material do aluno; o resto ("não conseguimos
+      // baixar…") é falha nossa com o acesso já emitido.
+      return { ok: false, kind, motivo: msg, dependeDoAluno: /teto|passa do/i.test(msg) };
+    }
+    const r = await conferirEExtrair(destino, nome, workDir, kind, `unzip_${i}`);
+    if (!r.ok) return r;
+    todos.push(...r.arquivos);
+  }
+  if (todos.length === 0) return { ok: false, kind, motivo: "a pasta do OneDrive veio vazia", dependeDoAluno: true };
+  return { ok: true, kind, arquivos: todos };
 }
