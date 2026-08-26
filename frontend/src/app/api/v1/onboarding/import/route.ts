@@ -245,15 +245,27 @@ export async function POST(request: NextRequest) {
     const r = await abrirLink(link, join(workDir, etapa === "imagens" ? "img" : "aud"), MAX_LINK_BYTES);
     if (!r.ok) {
       if (r.kind === "drive") return; // Drive sem fileIds = o Apps Script já falhou antes
+      // 26/08 (incidente 140): o link PEDE LOGIN. A API de shares da Microsoft
+      // responde 401/403 limpo quando a pasta está compartilhada com "pessoas
+      // específicas" em vez de "qualquer pessoa com o link". Isso NÃO é link
+      // vencido: mandar "gere um link novo" faz o aluno regerar com a MESMA
+      // permissão e falhar idêntico — foi o loop da Luziélia (`luzielisam`,
+      // linha 553), que reenviou o link depois do 401 e tomou o mesmo 401.
+      // O caso irmão (página de login com HTTP 200) já era tratado desde 22/08,
+      // mas a condição olhava só o TEXTO daquele caso e deixava o 401 — que é o
+      // que a API devolve hoje — cair no "link expirou", a orientação errada.
+      const pedeLogin = /respondeu 40[13]\b/.test(r.motivo);
       await tratarErro(
         etapa,
         `${r.motivo} (${r.kind})`,
-        r.kind === "nao_suportado" ||
-          // 22/08 (OneDrive): o link devolveu página de login — gerar "um link
-          // novo" no MESMO serviço daria na mesma. A saída é trocar de serviço.
-          /página da internet|não conseguimos baixar/i.test(r.motivo)
-          ? "Envie o material por Google Drive, WeTransfer ou Dropbox, com o link aberto para \"qualquer pessoa com o link\"."
-          : "Gere um link novo (o anterior expirou ou está inacessível) e cole na planilha.",
+        pedeLogin
+          ? 'O link pede login, por isso não conseguimos baixar (não é link vencido: gerar outro do mesmo jeito dá no mesmo). Abra a permissão para "qualquer pessoa com o link" e reenvie — ou mande por Google Drive, WeTransfer ou Dropbox, também com o link aberto.'
+          : r.kind === "nao_suportado" ||
+              // 22/08 (OneDrive): o link devolveu página de login — gerar "um link
+              // novo" no MESMO serviço daria na mesma. A saída é trocar de serviço.
+              /página da internet|não conseguimos baixar/i.test(r.motivo)
+            ? 'Envie o material por Google Drive, WeTransfer ou Dropbox, com o link aberto para "qualquer pessoa com o link".'
+            : "Gere um link novo (o anterior expirou ou está inacessível) e cole na planilha.",
       );
       return;
     }
