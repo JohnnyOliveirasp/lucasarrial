@@ -58,7 +58,15 @@ class FakeVoxCPM:
         # fim de cada chunk e boot-up no comeco, e e' isso que o trim tira. Sem
         # o silencio aqui, o teste do trim nao testaria nada.
         quieto = np.zeros(int(SR * 0.1), dtype=np.float32)
-        return np.concatenate([quieto, np.ones(n, dtype=np.float32) * 0.1, quieto])
+        corpo = np.ones(n, dtype=np.float32) * 0.1
+        # Fala de verdade DECAI no fim (a última sílaba perde energia antes do
+        # silêncio). Sem essa rampa o QA de fim abrupto (caso Carol 26/08) leria
+        # este fake como áudio decepado e mandaria regenerar — o teste passaria
+        # a medir o fake, não o pipeline.
+        rampa = min(int(SR * 0.2), n)  # 200 ms: decaimento de fala natural
+        if rampa > 1:
+            corpo[-rampa:] *= np.linspace(1.0, 0.0, rampa, dtype=np.float32)
+        return np.concatenate([quieto, corpo, quieto])
 
 
 def _stub_modulos():

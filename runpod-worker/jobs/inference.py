@@ -67,6 +67,7 @@ class InferenceJob:
             "coverage_exhausted": 0,
             "intrusion_checked": 0, "intrusion_flagged": 0, "intrusion_none": 0,
             "regens": 0, "exhausted": 0,
+            "tail_checked": 0, "tail_flagged": 0, "tail_none": 0,
         }
         # Instrumentação d3d8d1b2: tentativa POR CHUNK (1 = geração original,
         # 2+ = regen do QA) — sem isso o heartbeat não distingue os dois.
@@ -209,7 +210,7 @@ class InferenceJob:
                if idx == 0 else self.trim_pad_samples)
         return trim_silence(s, threshold=self.cfg.trim_threshold, pad_samples=pad)
 
-    def _rodar_qa(self, seg, idx: int, chunk: str):
+    def _rodar_qa(self, seg, idx: int, chunk: str, eh_ultimo: bool = False):
         c = self.cfg
         return run_chunk_qa(
             seg, idx, chunk,
@@ -233,6 +234,7 @@ class InferenceJob:
             rate_tolerance=c.rate_qa_tolerance,
             rate_retries=c.rate_qa_retries,
             rate_model=c.rate_qa_model,
+            eh_ultimo_chunk=eh_ultimo,
         )
 
     def _entregar_mesmo_com_cobertura_baixa(self, idx, chunk, coverage, lacuna) -> bool:
@@ -283,7 +285,8 @@ class InferenceJob:
                 # Fase "pai" do QA do chunk: os whispers rodam aqui dentro e um
                 # regen empilha inference.chunk.generate por cima.
                 with _phase("inference.chunk.qa", chunk=idx):
-                    seg, coverage, lacuna = self._rodar_qa(seg, idx, chunk)
+                    seg, coverage, lacuna = self._rodar_qa(
+                        seg, idx, chunk, eh_ultimo=(idx == len(chunks) - 1))
                 if (self.cfg.coverage_qa_enabled and coverage is not None
                         and coverage < self.cfg.coverage_qa_min
                         and not self._entregar_mesmo_com_cobertura_baixa(

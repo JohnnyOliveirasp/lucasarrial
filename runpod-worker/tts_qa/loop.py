@@ -10,7 +10,7 @@ import soundfile as sf
 
 from worker_log import log as _log
 
-from .metrics import chunk_coverage, chunk_intrusions, echo_leak_count, maior_lacuna
+from .metrics import chunk_coverage, chunk_intrusions, echo_leak_count, fim_abrupto, maior_lacuna
 from .rate import measure_seg_rate
 from .text import norm_words
 
@@ -107,6 +107,7 @@ def run_chunk_qa(
     rate_tolerance: float = 0.10,
     rate_retries: int = 0,
     rate_model: "str | None" = None,
+    eh_ultimo_chunk: bool = False,
 ):
     """Laço de QA de UM chunk: reprovou → regenera (regen_fn); esgotou as
     tentativas → devolve a MELHOR tentativa (menos eco; 1a palavra errada e
@@ -191,6 +192,22 @@ def run_chunk_qa(
                     # gate duro agora viraria tempestade de falha+estorno como
                     # a de 19/08. Peso 50: acima do eco, abaixo do coverage.
                     score += 50 * intrusoes
+        # FIM ABRUPTO (caso Carol Crozeta 26/08) — no MESMO laco, pelo mesmo
+        # motivo do ritmo: e' um defeito que NENHUM criterio textual ve, porque
+        # o whisper reconstroi a palavra truncada e a cobertura da 100%. Peso
+        # 100 (mesmo nivel de palavra faltando): audio que corta no meio da
+        # palavra e' entrega quebrada. So o ULTIMO chunk e' julgado — no meio
+        # do texto a emenda com o proximo chunk cobre a transicao.
+        if eh_ultimo_chunk:
+            cortado = fim_abrupto(seg, sample_rate)
+            qa_stats["tail_checked"] = qa_stats.get("tail_checked", 0) + 1
+            if cortado is None:
+                qa_stats["tail_none"] = qa_stats.get("tail_none", 0) + 1
+            elif cortado:
+                qa_stats["tail_flagged"] = qa_stats.get("tail_flagged", 0) + 1
+                _log("info", "inference.tail_qa", idx=idx, attempt=attempt, abrupto=True)
+                score += 100
+
         # RITMO (caso Ellen/Johnny 25/08) dentro do MESMO laco: a tentativa e'
         # julgada por conteudo E velocidade juntos — o regen por ritmo nunca
         # mais passa por cima do QA de 1a palavra/cobertura/eco (foi assim que

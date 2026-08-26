@@ -161,3 +161,42 @@ def maior_lacuna(got, chunk_text, language="pt"):
             faladas = sum(1 for w in expected[i1:i2] if len(w) >= 2)
             maior = max(maior, faladas)
     return maior
+
+
+# ── Fim abrupto (caso Carol Crozeta 26/08) ────────────────────────────────
+# O QA de cobertura usa whisper, e whisper RECONSTRÓI palavra truncada: a
+# geração "…sua nutricionista." saiu com a última sílaba cortada, o whisper
+# transcreveu a palavra inteira, a cobertura deu 100% e o áudio foi entregue
+# cortado. Nenhum critério textual enxerga esse defeito — só o ENVELOPE.
+# Fala que termina naturalmente decai (a energia cai antes do silêncio);
+# fala truncada vai de energia alta a zero num frame.
+def fim_abrupto(seg, sample_rate: int, janela_ms: int = 50, limiar: float = 0.03) -> "bool | None":
+    """True quando a fala termina ALTA — sinal de corte no meio da palavra.
+
+    ⚠️ Não basta olhar os últimos 50 ms do buffer: quase sempre são silêncio
+    (padding do encoder, sobra do trim) e a medida daria sempre "ok". Aqui a
+    janela é ancorada no ÚLTIMO ponto com som — é ali que se vê se a voz
+    decaiu ou foi decepada.
+
+    `limiar` é amplitude RMS (0..1): 0.03 ≈ -30 dBFS. Medido em 26/08 no caso
+    real: entrega cortada terminou em 0.056; sete entregas boas do mesmo dia
+    terminaram entre 0.005 e 0.010. Devolve None quando não dá pra medir.
+    """
+    if seg is None or seg.size == 0:
+        return None
+    import numpy as _np
+
+    janela = max(1, int(sample_rate * janela_ms / 1000))
+    if seg.size < janela:
+        return None
+    piso = 0.005  # mesmo piso do trim_silence: abaixo disso é silêncio
+    ativos = _np.where(_np.abs(seg) > piso)[0]
+    if ativos.size == 0:
+        return None
+    fim = int(ativos[-1]) + 1
+    ini = max(0, fim - janela)
+    cauda = seg[ini:fim]
+    if cauda.size == 0:
+        return None
+    rms = float(_np.sqrt(_np.mean(_np.square(cauda))))
+    return rms > limiar
