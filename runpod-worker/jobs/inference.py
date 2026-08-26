@@ -20,7 +20,7 @@ from audio_ops import crossfade_concat, trim_silence, wav_to_base64
 from tts_qa.rate import measure_file_rate, measure_seg_rate, stretch
 from model_loader import free_cuda
 from tts_qa import norm_words, run_chunk_qa
-from tts_qa.metrics import fim_abrupto
+from tts_qa.metrics import fim_abrupto, ultima_palavra_truncada
 from tts_qa.loop import palavras_com_tempo
 from tts_text import split_text_for_tts
 from worker_config import WORKSPACE
@@ -217,6 +217,22 @@ class InferenceJob:
     # "depois" — é no fecho do último trecho que ele decepa.
     ISCA = "Muito obrigada."
 
+    def _fim_ainda_ruim(self, seg) -> bool:
+        """As DUAS provas, não só o envelope.
+
+        Erro que custou uma rodada de build (26/08): a cura só era chamada
+        quando o ENVELOPE acusava. O áudio da Carol saiu com envelope 0,0143 —
+        passou raspando no limiar 0,015 — mas com "nutricionista" em 0,38s e
+        "sua" em 0,00s: truncado na cara, e a cura nunca foi chamada.
+        O envelope é barato e pega o corte grosseiro; a duração da palavra pega
+        o corte fino. Uma só das duas deixa passar.
+        """
+        if fim_abrupto(seg, self.sample_rate):
+            return True
+        return bool(ultima_palavra_truncada(
+            palavras_com_tempo(seg, self.sample_rate, self.cfg.echo_qa_model, self.cfg.qa_language)
+        ))
+
     def _curar_fim_abrupto(self, seg, idx: int, chunk: str):
         """Cura o fim decepado GERANDO ALÉM e cortando no lugar certo.
 
@@ -253,7 +269,7 @@ class InferenceJob:
         if corte <= 0:
             return seg
         candidato = bruto[:corte]
-        if fim_abrupto(candidato, self.sample_rate) is not False:
+        if self._fim_ainda_ruim(candidato):
             return seg
         self.qa_stats["tail_healed"] = self.qa_stats.get("tail_healed", 0) + 1
         _log("info", "inference.tail_qa.curado", idx=idx,
@@ -337,7 +353,7 @@ class InferenceJob:
                 with _phase("inference.chunk.qa", chunk=idx):
                     seg, coverage, lacuna = self._rodar_qa(
                         seg, idx, chunk, eh_ultimo=(idx == len(chunks) - 1))
-                if idx == len(chunks) - 1 and fim_abrupto(seg, self.sample_rate):
+                if idx == len(chunks) - 1 and self._fim_ainda_ruim(seg):
                     seg = self._curar_fim_abrupto(seg, idx, chunk)
                 if (self.cfg.coverage_qa_enabled and coverage is not None
                         and coverage < self.cfg.coverage_qa_min

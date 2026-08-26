@@ -101,9 +101,11 @@ class CuraDoFimTest(unittest.TestCase):
             _com_decaimento(0.60), np.zeros(int(SR * 0.25), dtype=np.float32),
             _com_decaimento(0.40),
         ])
-        palavras = [{"word": "nutricionista", "start": 0.2, "end": 0.60},
-                    {"word": "Muito", "start": 0.9, "end": 1.0},
-                    {"word": "obrigada", "start": 1.0, "end": 1.15}]
+        # a última palavra do aluno acaba em 0,60s e dura o bastante pra ser
+        # pronunciável (0,45s / 5 sílabas) — senão a própria cura se reprova
+        palavras = [{"word": "nutricionista", "start": 0.15, "end": 0.60},
+                    {"word": "Muito", "start": 0.9, "end": 1.05},
+                    {"word": "obrigada", "start": 1.05, "end": 1.40}]
         f = self._fake(gerado, palavras)
         curado = f._curar_fim_abrupto(_fala(), 0, "sua nutricionista.")
         self.assertIn("Muito obrigada", f.chunk_pedido)
@@ -174,3 +176,38 @@ class UltimaPalavraTruncadaTest(unittest.TestCase):
         """0,027 passava no limiar antigo (0,030) e o corte estava lá."""
         self.assertTrue(fim_abrupto(_fala(amp=0.027), SR))
         self.assertFalse(fim_abrupto(_fala(amp=0.010), SR))
+
+
+class FimAindaRuimTest(unittest.TestCase):
+    """As duas provas juntas. O envelope sozinho deixou passar o caso real:
+    0,0143 (abaixo do limiar) com "nutricionista" em 0,38s — truncado."""
+
+    def _job(self, palavras):
+        from jobs import inference as ji
+
+        class Fake(ji.InferenceJob):
+            def __init__(self):
+                self.sample_rate = SR
+                self.qa_stats = {}
+                self.cfg = type("C", (), {"echo_qa_model": "small", "qa_language": "pt"})()
+
+        ji.palavras_com_tempo = lambda *a, **k: palavras
+        return Fake()
+
+    def test_envelope_ok_mas_palavra_impossivel_reprova(self):
+        # caso real: envelope aprovava, palavra denunciava
+        j = self._job([{"word": "nutricionista", "start": 2.48, "end": 2.86}])
+        self.assertTrue(j._fim_ainda_ruim(_com_decaimento()))
+
+    def test_envelope_ok_e_palavra_ok_passa(self):
+        j = self._job([{"word": "nutricionista", "start": 2.0, "end": 2.9}])
+        self.assertFalse(j._fim_ainda_ruim(_com_decaimento()))
+
+    def test_envelope_reprova_sem_precisar_de_whisper(self):
+        chamou = []
+
+        from jobs import inference as ji
+        ji.palavras_com_tempo = lambda *a, **k: chamou.append(1) or []
+        j = self._job([])
+        self.assertTrue(j._fim_ainda_ruim(_fala()))
+        self.assertEqual(chamou, [], "envelope ja reprovou: nao gasta whisper")
