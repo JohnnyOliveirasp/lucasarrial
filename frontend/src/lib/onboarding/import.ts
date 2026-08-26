@@ -51,6 +51,7 @@ import {
 import { extrairFramesDeArquivo } from "./video-frames";
 import { escolherReferenciaFrontal } from "./referencia";
 import { dispararTreinoOnboarding } from "./treino";
+import { decidirVozOnboarding, type VozOnboarding } from "./veredito-audio";
 
 type Admin = SupabaseClient<Database>;
 
@@ -446,38 +447,64 @@ export async function importTrainingAudios(
     return { ...result, voice_id: null, voice_status: null, training: null };
   }
 
-  // Idempotência: a voz do onboarding já existe e passou do upload → pronto.
-  const { data: existing } = await admin
+  // Idempotência da voz do onboarding — INCIDENTE 146 (26/08).
+  //
+  // A guarda antiga era `created_at ASC limit 1` + "qualquer status !=
+  // 'uploading' já está pronto". Isso fazia duas coisas erradas ao mesmo tempo:
+  // estado TERMINAL DE FALHA virava "pronto" (material NOVO era pulado sem
+  // download e sem medição, e o veredito velho voltava pro chamador, que o
+  // mandava por e-mail), e a voz escolhida era a MAIS ANTIGA (rafaelleitemacedo,
+  // voz `ready` desde 16/08, foi recusado em 22/08 pela voz reprovada de 13/08).
+  //
+  // Agora quem decide é `decidirVozOnboarding` (lógica pura + testes em
+  // veredito-audio.ts): voz em estado bom manda; falha terminal com o MESMO
+  // material continua pulando (é o que evita o e-mail duplicado — robson levou
+  // 3, itabenke 3, isabella 3); falha terminal com fileId NOVO volta pro fluxo
+  // normal de importação, porque aí o aluno reenviou e o material PRECISA ser
+  // medido. A régua (MIN_TOTAL_SECONDS) não mudou: o portão passa a RODAR, não
+  // a afrouxar.
+  //
+  // ⚠️ COBRANÇA: o fluxo de importação termina em `tentarTreino`, que cobra
+  // TRAINING_CREDIT_COST (treino.ts, `debitCreditsOnboarding`). Por isso o
+  // caminho "importar" só é liberado quando existe fileId NOVO — ou seja, o
+  // aluno mandou material novo e está pedindo o treino. Re-execução da planilha
+  // com o mesmo material NÃO cria cobrança nova.
+  const { data: vozes } = await admin
     .from("voices")
-    .select("id, status")
+    .select("id, status, raw_audio_paths, created_at")
     .eq("user_id", userId)
     .eq("name", ONBOARDING_VOICE_NAME)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: false })
+    .limit(20);
 
-  if (existing && existing.status !== "uploading") {
+  const decisao = decidirVozOnboarding((vozes ?? []) as VozOnboarding[], fileIds);
+
+  if (decisao.acao === "reusar" || decisao.acao === "pular") {
+    const voz = decisao.voz;
     result.skipped = fileIds.length;
     // Reprocesso de conta importada no modelo antigo: voz parada esperando
     // o aluno pagar → dispara o treino agora (idempotente: training/ready
     // não entram aqui).
     let training: string | null = null;
-    if (existing.status === "awaiting_training") {
-      const t = await tentarTreino(admin, userId, existing.id as string);
+    if (voz.status === "awaiting_training") {
+      const t = await tentarTreino(admin, userId, voz.id);
       training = t.nota;
       if (t.status) {
-        return { ...result, voice_id: existing.id as string, voice_status: t.status, training };
+        return { ...result, voice_id: voz.id, voice_status: t.status, training };
       }
     }
     return {
       ...result,
-      voice_id: existing.id as string,
-      voice_status: existing.status as string,
+      voice_id: voz.id,
+      voice_status: voz.status,
       training,
     };
   }
 
-  let voiceId = existing?.id as string | undefined;
+  // "retomar" = importação anterior morreu no meio (voz em "uploading").
+  // "importar" = sem voz, ou falha terminal com material novo → voz nova, para
+  // que as chaves R2 (que levam o voiceId) forcem download e medição de tudo.
+  let voiceId = decisao.acao === "retomar" ? decisao.voz.id : undefined;
   if (!voiceId) {
     const { data: voice, error } = await admin
       .from("voices")
