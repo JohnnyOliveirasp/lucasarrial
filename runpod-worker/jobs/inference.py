@@ -63,10 +63,20 @@ class InferenceJob:
         # Observabilidade do QA (29/07): devolvida no output do job — tira a
         # adivinhacao por timing na hora de validar se o QA esta mesmo agindo.
         # coverage_* (19/08): mede se o remedio do caso Katia esta pegando.
+        # coverage_min_visto/medio/medido_n (26/08): a cobertura MEDIDA tambem
+        # no caminho de SUCESSO — antes so existia no payload de falha, e sem
+        # ela nao dava pra saber a que distancia da regua os audios entregues
+        # passam. coverage_idioma_* (26/08): a 2a opiniao de idioma deixa
+        # rastro mesmo quando roda e NAO melhora. Inicializados de proposito:
+        # chave ausente nao distingue "nao rodou" de "rodou e deu zero".
         self.qa_stats = {
             "echo_checked": 0, "echo_flagged": 0, "echo_none": 0,
             "coverage_checked": 0, "coverage_flagged": 0, "coverage_none": 0,
             "coverage_exhausted": 0,
+            "coverage_min_visto": None, "coverage_medio": None,
+            "coverage_soma": 0.0, "coverage_medido_n": 0,
+            "coverage_idioma_checked": 0, "coverage_idioma_divergente": 0,
+            "coverage_idioma_corrigido": 0,
             "intrusion_checked": 0, "intrusion_flagged": 0, "intrusion_none": 0,
             "regens": 0, "exhausted": 0,
             "tail_checked": 0, "tail_flagged": 0, "tail_none": 0, "tail_healed": 0,
@@ -463,6 +473,10 @@ class InferenceJob:
             "sample_rate": self.sample_rate,
             "duration_s": round(len(wav) / self.sample_rate, 3),
             "elapsed_s": round(elapsed, 2),
+            # A REGUA vai junto na entrega (26/08), mesmo campo que ja existia
+            # no payload de falha: `qa.coverage_min_visto` medido sem o limiar
+            # ao lado nao responde "passou por quanto".
+            "coverage_min": self.cfg.coverage_qa_min,
             "qa": self.qa_stats,
         }
         if not self.output_upload_url:
