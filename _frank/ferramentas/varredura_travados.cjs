@@ -188,6 +188,21 @@ const ALVOS = [
       }
       const vitimas = [];
       for (const p of perfis) {
+        // ⚠️ ESTE FILTRO É `access_until` VIVO — e acesso vivo NÃO é pagamento.
+        // Trial R$0 tem acesso vivo igual a assinante. Enquanto a linha 206
+        // imprimia a palavra "PAGANTE", 4 dos 5 nomes da lista de 25/08 NUNCA
+        // tinham pago (incidente 138): ycarlosk, definidameta, oliver_humberto
+        // e leandro.fitoway — este último com uma cobrança de R$97 **OVERDUE**,
+        // que é a mais traiçoeira, porque "existe R$97" lê como assinante.
+        // É o mesmo modo de falha que fez o índice de ordens SUSPENDER a
+        // `2026-08-18_migration_ja_pagou.md`, só que na direção oposta: lá a
+        // coluna dizia "nunca pagou" pra todo mundo e negaria crédito a quem
+        // pagou; aqui a lista dizia "pagante" pra quem nunca pagou e daria
+        // proteção de assinante a trial R$0. A REGRA FINAL DE CRÉDITO separa
+        // exatamente essas duas populações.
+        // Quem for DECIDIR CRÉDITO a partir desta lista tem que cruzar com
+        // `pagou_de_verdade.cjs` (Hotmart viva: value > 0 E COMPLETE/APPROVED —
+        // OVERDUE não é pagamento). O rótulo aqui diz só o que o filtro mede.
         if (!(p.access_until && new Date(p.access_until) > new Date())) continue;
         if ((p.credits_subscription ?? 0) + (p.credits_extra ?? 0) < CUSTO_TREINO) continue;
         const minhas = porDono.get(p.id) ?? [];
@@ -203,7 +218,11 @@ const ALVOS = [
       }
       vitimas.sort((a, b) => new Date(a.maisVelha.created_at) - new Date(b.maisVelha.created_at));
       if (vitimas.length) {
-        console.log(`\n🚨 PAGANTE COM CRÉDITO E SEM NENHUMA VOZ PRONTA: ${vitimas.length}`);
+        console.log(
+          `\n🚨 ACESSO VIVO, COM CRÉDITO E SEM NENHUMA VOZ PRONTA: ${vitimas.length}` +
+            `\n   (acesso vivo ≠ pagou — inclui trial R$0. Antes de decidir crédito,` +
+            ` cruze com pagou_de_verdade.cjs — incidente 138)`,
+        );
         for (const { p, minhas, maisVelha } of vitimas) {
           const credito = (p.credits_subscription ?? 0) + (p.credits_extra ?? 0);
           console.log(
