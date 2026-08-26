@@ -63,7 +63,7 @@ class FakeVoxCPM:
         # silêncio). Sem essa rampa o QA de fim abrupto (caso Carol 26/08) leria
         # este fake como áudio decepado e mandaria regenerar — o teste passaria
         # a medir o fake, não o pipeline.
-        rampa = min(int(SR * 0.2), n)  # 200 ms: decaimento de fala natural
+        rampa = min(int(SR * 0.4), n)  # 400 ms: decaimento de fala natural
         if rampa > 1:
             corpo[-rampa:] *= np.linspace(1.0, 0.0, rampa, dtype=np.float32)
         return np.concatenate([quieto, corpo, quieto])

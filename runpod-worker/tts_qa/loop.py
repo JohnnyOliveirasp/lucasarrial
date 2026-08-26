@@ -10,7 +10,8 @@ import soundfile as sf
 
 from worker_log import log as _log
 
-from .metrics import chunk_coverage, chunk_intrusions, echo_leak_count, fim_abrupto, maior_lacuna
+from .metrics import (chunk_coverage, chunk_intrusions, echo_leak_count, fim_abrupto,
+                      maior_lacuna, ultima_palavra_truncada)
 from .rate import measure_seg_rate
 from .text import norm_words
 
@@ -34,6 +35,23 @@ def transcribe_seg(seg, sample_rate, whisper_model, language, label):
     except Exception as exc:
         _log("error", f"inference.{label}.error", error=str(exc))
         return None
+
+
+def palavras_com_tempo(seg, sample_rate, whisper_model, language):
+    """Palavras + tempos do trecho (pro QA de última palavra truncada).
+    Lista vazia quando não dá pra medir — o QA nunca bloqueia por falha sua."""
+    try:
+        from voice_pipeline import transcribe_file_words
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        sf.write(str(tmp_path), seg, sample_rate)
+        try:
+            return transcribe_file_words(tmp_path, model_name=whisper_model, language=language)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    except Exception as exc:
+        _log("error", "inference.tail_words.error", error=str(exc)[:200])
+        return []
 
 
 def start_word_ok(
@@ -200,6 +218,18 @@ def run_chunk_qa(
         # do texto a emenda com o proximo chunk cobre a transicao.
         if eh_ultimo_chunk:
             cortado = fim_abrupto(seg, sample_rate)
+            # 2a prova, mais dura que o envelope (o envelope sozinho deixou
+            # passar o 0,027 que o Johnny pegou de ouvido): a ULTIMA palavra
+            # cabe no tempo que ela levou? Só roda quando o envelope aprovou —
+            # se já reprovou, não gasta um whisper a mais.
+            if cortado is False:
+                truncada = ultima_palavra_truncada(
+                    palavras_com_tempo(seg, sample_rate, echo_qa_model, qa_language)
+                )
+                if truncada:
+                    qa_stats["tail_word_flagged"] = qa_stats.get("tail_word_flagged", 0) + 1
+                    _log("info", "inference.tail_qa.palavra_curta", idx=idx, attempt=attempt)
+                    cortado = True
             qa_stats["tail_checked"] = qa_stats.get("tail_checked", 0) + 1
             if cortado is None:
                 qa_stats["tail_none"] = qa_stats.get("tail_none", 0) + 1

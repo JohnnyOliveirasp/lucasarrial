@@ -23,7 +23,7 @@ def _fala(dur_s: float = 1.0, amp: float = 0.1) -> np.ndarray:
     return np.ones(int(SR * dur_s), dtype=np.float32) * amp
 
 
-def _com_decaimento(dur_s: float = 1.0, decai_ms: int = 200, amp: float = 0.1) -> np.ndarray:
+def _com_decaimento(dur_s: float = 1.0, decai_ms: int = 400, amp: float = 0.1) -> np.ndarray:
     w = _fala(dur_s, amp)
     n = min(int(SR * decai_ms / 1000), w.size)
     w[-n:] *= np.linspace(1.0, 0.0, n, dtype=np.float32)
@@ -132,3 +132,48 @@ class CuraDoFimTest(unittest.TestCase):
         original = _fala(dur_s=2.0)
         self.assertIs(f._curar_fim_abrupto(original, 0, "sua nutricionista."), original)
         self.assertNotIn("tail_healed", f.qa_stats)
+
+
+class UltimaPalavraTruncadaTest(unittest.TestCase):
+    """Números reais medidos em 26/08 com timestamp por palavra (whisper).
+
+    cortadas: "nutricionista" em 0,20s e 0,32s = 0,040 e 0,064 s/sílaba
+    boas:     0,100 a 0,340 s/sílaba, sete alunos diferentes
+    """
+
+    def _p(self, word, dur):
+        return [{"word": word, "start": 1.0, "end": 1.0 + dur}]
+
+    def test_caso_real_cortado_reprova(self):
+        from tts_qa.metrics import ultima_palavra_truncada
+
+        self.assertTrue(ultima_palavra_truncada(self._p("nutricionista", 0.20)))
+        self.assertTrue(ultima_palavra_truncada(self._p("nutricionista", 0.32)))
+
+    def test_casos_reais_bons_passam(self):
+        from tts_qa.metrics import ultima_palavra_truncada
+
+        for word, dur in [("vinda", 0.26), ("Cruzeta", 0.66), ("voz", 0.34),
+                          ("vídeos", 0.30), ("querida", 0.46), ("investir", 0.36),
+                          ("cabeça", 0.30), ("vendas", 0.46)]:
+            self.assertFalse(ultima_palavra_truncada(self._p(word, dur)), word)
+
+    def test_sem_dados_devolve_none(self):
+        from tts_qa.metrics import ultima_palavra_truncada
+
+        self.assertIsNone(ultima_palavra_truncada(None))
+        self.assertIsNone(ultima_palavra_truncada([]))
+        self.assertIsNone(ultima_palavra_truncada([{"word": "oi"}]))
+
+    def test_contagem_de_silabas(self):
+        from tts_qa.metrics import contar_silabas
+
+        self.assertEqual(contar_silabas("nutricionista"), 5)
+        self.assertEqual(contar_silabas("voz"), 1)
+        self.assertEqual(contar_silabas("cabeça"), 3)
+        self.assertEqual(contar_silabas(""), 1)
+
+    def test_limiar_apertado_pega_o_que_o_johnny_ouviu(self):
+        """0,027 passava no limiar antigo (0,030) e o corte estava lá."""
+        self.assertTrue(fim_abrupto(_fala(amp=0.027), SR))
+        self.assertFalse(fim_abrupto(_fala(amp=0.010), SR))

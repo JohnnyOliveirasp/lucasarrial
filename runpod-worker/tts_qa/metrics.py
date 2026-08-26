@@ -170,7 +170,7 @@ def maior_lacuna(got, chunk_text, language="pt"):
 # cortado. Nenhum critério textual enxerga esse defeito — só o ENVELOPE.
 # Fala que termina naturalmente decai (a energia cai antes do silêncio);
 # fala truncada vai de energia alta a zero num frame.
-def fim_abrupto(seg, sample_rate: int, janela_ms: int = 50, limiar: float = 0.03) -> "bool | None":
+def fim_abrupto(seg, sample_rate: int, janela_ms: int = 50, limiar: float = 0.015) -> "bool | None":
     """True quando a fala termina ALTA — sinal de corte no meio da palavra.
 
     ⚠️ Não basta olhar os últimos 50 ms do buffer: quase sempre são silêncio
@@ -178,9 +178,11 @@ def fim_abrupto(seg, sample_rate: int, janela_ms: int = 50, limiar: float = 0.03
     janela é ancorada no ÚLTIMO ponto com som — é ali que se vê se a voz
     decaiu ou foi decepada.
 
-    `limiar` é amplitude RMS (0..1): 0.03 ≈ -30 dBFS. Medido em 26/08 no caso
-    real: entrega cortada terminou em 0.056; sete entregas boas do mesmo dia
-    terminaram entre 0.005 e 0.010. Devolve None quando não dá pra medir.
+    `limiar` é amplitude RMS (0..1). Medido em 26/08: entregas cortadas em
+    0.027, 0.062 e 0.071; sete entregas boas do mesmo dia entre 0.005 e 0.010.
+    ⚠️ O limiar nasceu 0.030 e DEIXOU PASSAR o 0.027 — o Johnny ouviu o áudio e
+    o corte estava lá. Apertado pra 0.015, no meio da separação real.
+    Devolve None quando não dá pra medir.
     """
     if seg is None or seg.size == 0:
         return None
@@ -200,3 +202,52 @@ def fim_abrupto(seg, sample_rate: int, janela_ms: int = 50, limiar: float = 0.03
         return None
     rms = float(_np.sqrt(_np.mean(_np.square(cauda))))
     return rms > limiar
+
+
+# ── Última palavra rápida demais pra existir (caso Carol 26/08, 2ª rodada) ──
+# O envelope sozinho deixou passar um corte que o ouvido humano pegou. Esta é a
+# prova mais dura, e vem do próprio whisper que antes escondia o defeito: se a
+# ÚLTIMA palavra do áudio dura menos do que fisicamente cabe nas sílabas dela,
+# o áudio acabou no meio e o whisper completou o resto de cabeça.
+#
+# Medido em 26/08 (whisper com timestamp por palavra):
+#   cortadas → "nutricionista" em 0,20s e 0,32s  = 0,040 e 0,064 s/sílaba
+#   boas     → 0,100 a 0,340 s/sílaba (sete alunos diferentes)
+# O limiar 0,085 fica no meio dessa separação.
+_VOGAIS = "aeiouáéíóúâêôãõàäëïöü"
+
+
+def contar_silabas(palavra: str) -> int:
+    """Aproximação por grupos de vogais — suficiente pra saber se 6 sílabas
+    couberam em 0,2s. Não precisa de separação silábica de verdade."""
+    grupos, dentro = 0, False
+    for ch in (palavra or "").lower():
+        if ch in _VOGAIS:
+            if not dentro:
+                grupos += 1
+                dentro = True
+        else:
+            dentro = False
+    return max(grupos, 1)
+
+
+def ultima_palavra_truncada(
+    palavras: "list | None", limiar_s_por_silaba: float = 0.085
+) -> "bool | None":
+    """True quando a última palavra saiu curta demais pra ser pronunciável.
+
+    `palavras` = lista de objetos/dicts com `word`/`start`/`end` (o que o
+    faster-whisper devolve com word_timestamps=True). None = não deu pra medir.
+    """
+    if not palavras:
+        return None
+    u = palavras[-1]
+    texto = getattr(u, "word", None) if not isinstance(u, dict) else u.get("word")
+    ini = getattr(u, "start", None) if not isinstance(u, dict) else u.get("start")
+    fim = getattr(u, "end", None) if not isinstance(u, dict) else u.get("end")
+    if texto is None or ini is None or fim is None:
+        return None
+    dur = float(fim) - float(ini)
+    if dur <= 0:
+        return None
+    return (dur / contar_silabas(str(texto).strip())) < limiar_s_por_silaba

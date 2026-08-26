@@ -69,6 +69,7 @@ class InferenceJob:
             "intrusion_checked": 0, "intrusion_flagged": 0, "intrusion_none": 0,
             "regens": 0, "exhausted": 0,
             "tail_checked": 0, "tail_flagged": 0, "tail_none": 0, "tail_healed": 0,
+            "tail_word_flagged": 0,
         }
         # Instrumentação d3d8d1b2: tentativa POR CHUNK (1 = geração original,
         # 2+ = regen do QA) — sem isso o heartbeat não distingue os dois.

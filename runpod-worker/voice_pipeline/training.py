@@ -64,6 +64,34 @@ def transcribe_file(
     return " ".join(seg.text.strip() for seg in segments).strip()
 
 
+def transcribe_file_words(
+    audio_path: Path | str,
+    model_name: str = "large-v3",
+    language: str = "pt",
+    device: str = "cuda",
+    compute_type: str = "float16",
+) -> list:
+    """Transcreve devolvendo as PALAVRAS com tempo (start/end).
+
+    Existe por causa do caso Carol 26/08: só o tempo por palavra prova que o
+    áudio foi decepado — "nutricionista" transcrita em 0,20s são 6 sílabas em
+    tempo impossível, e é o whisper (que reconstruiu a palavra) entregando a
+    prova contra si mesmo. Lista vazia = não deu pra medir.
+    """
+    model = _get_whisper(model_name, device, compute_type)
+    segments, _info = model.transcribe(
+        str(audio_path),
+        language=language or "pt",
+        vad_filter=True,
+        beam_size=5,
+        word_timestamps=True,
+    )
+    palavras = []
+    for seg in segments:
+        palavras.extend(getattr(seg, "words", None) or [])
+    return palavras
+
+
 def transcribe_file_autodetect(
     audio_path: Path | str,
     model_name: str = "large-v3",
