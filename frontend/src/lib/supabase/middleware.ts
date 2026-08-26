@@ -8,6 +8,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { SUPABASE_STORAGE_KEY } from "./storage-key";
+
 export async function updateSupabaseSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -15,6 +17,7 @@ export async function updateSupabaseSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: { name: SUPABASE_STORAGE_KEY },
       cookies: {
         getAll() {
           return request.cookies.getAll();
