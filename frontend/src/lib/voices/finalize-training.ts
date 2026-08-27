@@ -70,6 +70,14 @@ export type TrainOutput = {
   /** Idioma detectado no áudio de treino (ISO: pt/es/en...) — worker e3ea664+. */
   language?: string | null;
   error?: string;
+  /**
+   * Diagnóstico do subprocess do trainer quando ele morre — incidente #11.
+   * O worker (jobs/train.py:96-101) manda os DOIS tails junto com
+   * `error: "trainer failed"`; até 27/08 o backend declarava os campos aqui e
+   * NUNCA os lia, então o traceback morria na porta e a única cópia ficava no
+   * RunPod, que purga o job (/status devolve 404 poucas horas depois). Agora
+   * `registrarSaidaDoTrainer` os persiste em colunas próprias.
+   */
   stdout_tail?: string;
   stderr_tail?: string;
 };
@@ -219,6 +227,100 @@ async function registrarCuraEBuild(
   }
 }
 
+/**
+ * Teto de cada log do trainer no banco. O worker já manda tails curtos
+ * (stdout 4000 / stderr 2000 chars, voice_pipeline/training.py:324-325); o teto
+ * maior aqui é folga pra não ter que mexer nas duas pontas se a janela do
+ * worker crescer.
+ */
+const MAX_TRAINER_LOG_CHARS = 8000;
+
+/**
+ * Guarda o stderr/stdout do subprocess do trainer quando ele morre.
+ *
+ * Incidente #11 ("trainer failed"): aberto desde 21/07, 3 ocorrências, NUNCA
+ * diagnosticado. O worker sempre mandou o diagnóstico (jobs/train.py:96-101) e
+ * o backend jogava fora — `stdout_tail`/`stderr_tail` estavam declarados no
+ * type e nunca eram lidos. A única cópia vivia no RunPod, e o RunPod PURGA: o
+ * /status do job devolve 404 "job not found" ~9h depois da falha, então toda
+ * ronda que ia investigar chegava depois da purga.
+ *
+ * ⚠️ Três decisões de propósito:
+ *  1. Colunas próprias, NUNCA `training_jobs.error_message`. Esse campo vira o
+ *     `error` de admin_failures() e alimenta errorSignature() (incidents/
+ *     classify.ts): para cause='bug' a assinatura de dedup são os primeiros 120
+ *     chars do texto. Traceback varia a cada ocorrência → cada falha viraria um
+ *     incidente NOVO e o #11 se estilhaçaria. error_message continua sendo
+ *     exatamente "trainer failed" (travado por teste em classify.test.ts).
+ *  2. UPDATE SEPARADO, depois do gate idempotente — nunca junto com o claim. A
+ *     DDL (scripts/97) ainda NÃO foi aplicada, e coluna inexistente dentro do
+ *     claim derrubaria a finalização INTEIRA: a voz nunca iria pra `failed` e o
+ *     ESTORNO do aluno nunca rodaria. Observabilidade não pode quebrar o
+ *     produto — muito menos o estorno.
+ *  3. O `logger.error` roda ANTES do UPDATE, mas DENTRO do mesmo try/catch:
+ *     enquanto a DDL não é aplicada, o traceback já fica no log, que é o que
+ *     responde a pergunta na próxima ronda — e mesmo assim ele não pode
+ *     escapar. Esta função é chamada na JANELA entre o claim idempotente e o
+ *     ESTORNO do aluno: exceção que suba daqui deixa o claim já consumido e o
+ *     estorno sem rodar, ou seja, crédito perdido e sem retry. Hoje o logger
+ *     não teria como lançar (o `meta` vem só de JSON.parse do webhook/RunPod,
+ *     então o JSON.stringify de logger/server.ts não quebra), mas o ramo de
+ *     console do writeEntry é o único trecho desprotegido de lá e roda TAMBÉM
+ *     em produção quando level === 'error'. Nesta janela, "provavelmente
+ *     vazia" não serve: nada de observabilidade fica fora do try.
+ *
+ * Caminho feliz não grava nada: o worker devolve `trainer_returncode: 0` sem
+ * tails, e "o treino deu certo" já está em `training_jobs.status`. Escrever aí
+ * seria um UPDATE a mais por treino sem informação nova.
+ */
+async function registrarSaidaDoTrainer(
+  runpodJobId: string,
+  voiceId: string,
+  out: TrainOutput,
+): Promise<void> {
+  const rc = typeof out.trainer_returncode === "number" ? out.trainer_returncode : null;
+  const stderr = typeof out.stderr_tail === "string" ? out.stderr_tail : null;
+  const stdout = typeof out.stdout_tail === "string" ? out.stdout_tail : null;
+  // Nada a diagnosticar: worker antigo (sem os campos) ou caminho feliz (rc 0
+  // e sem tails). Ver decisão 3 acima.
+  if (stderr === null && stdout === null && (rc === null || rc === 0)) return;
+
+  // Tail, não head: o traceback que interessa está no FIM da saída — cortar
+  // pelo começo guardaria o download do modelo e perderia a exceção.
+  const patch: Record<string, unknown> = { trainer_returncode: rc };
+  if (stderr !== null) patch.trainer_stderr = stderr.slice(-MAX_TRAINER_LOG_CHARS);
+  if (stdout !== null) patch.trainer_stdout = stdout.slice(-MAX_TRAINER_LOG_CHARS);
+
+  try {
+    logger.error("api", "voice.train.trainer_failed", {
+      voiceId,
+      runpodJobId,
+      trainerReturncode: rc,
+      workerImage: out.worker_image ?? null,
+      stderrTail: patch.trainer_stderr ?? null,
+      stdoutTail: patch.trainer_stdout ?? null,
+    });
+
+    const { error } = await getAdmin()
+      .from("training_jobs")
+      .update(patch as never)
+      .eq("runpod_job_id", runpodJobId);
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    // Esperado até a DDL de scripts/97 ser aplicada — nesse caso o logger.error
+    // acima JÁ guardou o diagnóstico e só o UPDATE falhou. O catch cobre também
+    // o próprio logger.error (ver decisão 3): se fosse ele a lançar, o warn
+    // abaixo é seguro em produção, porque writeEntry só cai no ramo de console
+    // para level 'error'/'fatal' e a escrita em arquivo tem try/catch próprio.
+    // Em qualquer dos casos: falhar aqui não pode afetar o treino nem o estorno.
+    logger.warn("api", "voice.train.trainer_failed_nao_persistido", {
+      voiceId,
+      runpodJobId,
+      motivo: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
 export async function finalizeTraining(args: {
   voiceId: string;
   userId: string;
@@ -257,6 +359,9 @@ export async function finalizeTraining(args: {
 
   // ── Observabilidade da cura do transcript + build do worker (incidente 52) ─
   await registrarCuraEBuild(runpodJobId, voiceId, out);
+
+  // ── stderr/stdout do trainer quando o subprocess morre (incidente #11) ────
+  await registrarSaidaDoTrainer(runpodJobId, voiceId, out);
 
   // ── Voz ─────────────────────────────────────────────────────────────────
   const update: VoiceUpdate = {
