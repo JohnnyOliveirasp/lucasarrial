@@ -17,6 +17,7 @@ import { getInfiniteTalkStatus } from "@/lib/video-clone/runpod";
 import { finalizeVideoClone } from "@/lib/video-clone/finalize";
 import { getRunpodBilling } from "@/lib/admin/runpod";
 import { processCourtesyCampaigns } from "@/lib/courtesy/service";
+import { sweepStuckStudioScenes, type StudioSceneSweep } from "@/lib/studio/sweep-stuck-scenes";
 import { rescueStuckVoiceUploads } from "@/lib/voices/rescue-stuck-uploads";
 import { expireTrialCredits, type TrialExpirySummary } from "@/lib/credits/trial-expiry";
 import { sweepStuckImageGenerations, type ImageSweepSummary } from "@/lib/images/sweep-stuck";
@@ -151,6 +152,19 @@ export async function POST(request: NextRequest) {
     trialExpiry = { ok: false, error: msg };
   }
 
+  // Cenas do Estúdio presas (26/08): mesma doença das imagens, um andar acima —
+  // a cena só avançava com a TELA ABERTA. 34 presas quando isto entrou, a mais
+  // velha há 317h. Best-effort: nunca derruba o sweep de clones.
+  let studioScenes: StudioSceneSweep | null = null;
+  try {
+    studioScenes = await sweepStuckStudioScenes();
+    if (studioScenes.ready > 0 || studioScenes.failed > 0 || studioScenes.errors > 0) {
+      console.log("[sweep-clones] cenas do estudio", JSON.stringify(studioScenes));
+    }
+  } catch (e) {
+    console.error("[sweep-clones] cenas do estudio falhou:", e instanceof Error ? e.message : e);
+  }
+
   // Imagens presas (incidente 69f0aec5): sem webhook e sem tela aberta,
   // NINGUÉM reconciliava image_generations com o Kie — row presa 28 dias,
   // imagem pronta em 74s que ninguém buscou. Best-effort — nunca derruba o
@@ -167,5 +181,12 @@ export async function POST(request: NextRequest) {
 
   const summary = { checked: (stuck ?? []).length, ready, failed_refunded: failed, still_running: running, errors };
   if (summary.checked > 0) console.log("[sweep-clones]", JSON.stringify(summary));
-  return jsonOk({ sweep: summary, courtesy, voice_rescue: voiceRescue, trial_expiry: trialExpiry, image_sweep: imageSweep });
+  return jsonOk({
+    sweep: summary,
+    courtesy,
+    voice_rescue: voiceRescue,
+    trial_expiry: trialExpiry,
+    image_sweep: imageSweep,
+    studio_scenes: studioScenes,
+  });
 }
