@@ -56,7 +56,7 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 |---|---|
 | 🗺️ **O FLUXO: quem olha o quê e como se chama socorro** | `2026-08-20_fluxo_quem_olha_o_que.md` |
 | 🎯 **VIGIA: só erro de SISTEMA vira chamado** (atendimento/processo/decisão vão pro grupo/Telegram; dinheiro exige `ref_id` + `arquivo:linha`) | `2026-08-27_vigia_so_erro_de_sistema.md` |
-| 🌙 Rotina das Falhas 24h (turno da noite) | `2026-08-20_decisoes_55_trancadas_e_turno_noite.md` (item 2) |
+| 🌙 Turno da noite: **NÃO roda de madrugada** (Johnny 27/08; Executor 08h–23h BRT) | `2026-08-20_decisoes_55_trancadas_e_turno_noite.md` (item 2, ⛔ superado) |
 | 🔴 Correções da ronda de 20/08 (janela do QA, worktree) | `2026-08-20_correcoes_da_ronda.md` |
 | 💬 Canal: Telegram + git, e como ligar o teu lado | `2026-08-20_canal_telegram.md` |
 | **Crédito: quem perde, quem mantém** | ⭐ `2026-08-20_REGRA_FINAL_CREDITO.md` — substitui TODAS as anteriores do assunto |

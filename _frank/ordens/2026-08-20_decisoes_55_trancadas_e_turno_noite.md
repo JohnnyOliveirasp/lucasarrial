@@ -11,7 +11,7 @@
 > mensalidade valer acesso permanente — R$97 viraria vitalício. O Claude
 > escreveu ordem em cima disso sem testar a regra contra o absurdo.
 >
-> **O item 2 (turno da noite) continua valendo e está em execução.**
+> **O item 2 (turno da noite) foi SUPERADO em 27/08 — ver bloco no item 2.**
 
 Duas decisões dadas pelo Johnny depois do card `3e259b71` fechar. Ambas
 **autorizadas**, com guarda.
@@ -57,6 +57,13 @@ ACTIVE ou não.** Use a variante leitura-pura para o alvo, não a oficial.
    e esse **precisa de ok separado do Johnny**. Não mexer neles.
 
 ## 2. Rotina das Falhas passa a rodar 24 horas — hoje
+
+> ## ⛔ SUPERADA — decisão do Johnny, 27/08
+> **"Não roda mais na madrugada."** Vale a ordem de 21/08: Executor em
+> **08h–23h BRT** (`23 0-2,11-23 * * *`), cortado pelo custo de token medido
+> nas 8 rodadas da madrugada. O item 2 abaixo fica só como histórico; o
+> chamado #143 foi fechado como superado. Não religar sem ordem nova.
+
 
 **Autorizado.** O diagnóstico do Frank foi o que fechou a pergunta do Johnny
 (*"quem vai ver isto? deveria ser automático"*):
