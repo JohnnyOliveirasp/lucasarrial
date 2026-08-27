@@ -1914,7 +1914,8 @@
         "bancoAutoCorpo": "The AI reads your script and reuses fitting scenes from the collection automatically — free, already included.",
         "bancoEscolherTitulo": "I want to pick from the bank",
         "bancoEscolherCorpo": "You pick the scenes and the AI places each one on the sentence where it fits best — at no cost.",
-        "gerandoCena": "Please wait, generating the scene…"
+        "gerandoCena": "Please wait, generating the scene…",
+        "cenaFalhou": "Failed — open to see why"
       },
       "cloneOpcoes": {
         "padrao": {

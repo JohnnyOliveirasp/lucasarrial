@@ -26,15 +26,23 @@ const STILL_MODEL = "gpt-image-2-text-to-image";
 const VIDEO_MODEL = "grok-imagine-video-1-5-preview";
 // E3 (MAQUINA_EDICAO_AUTOMATICA.md §2.5): ritmo REAL — sem o pedido explícito
 // o Grok entrega tudo em câmera lenta/flutuante (regra 4 validada em produção).
+// SEM FALA (caso Fabio Fiuza, 26/08): o Grok inventa diálogo quando o prompt
+// não proíbe — e como todo o prompt é em inglês, as pessoas da cena falavam
+// INGLÊS por cima da narração do aluno. A fala do vídeo final vem SEMPRE do
+// clone de voz; a cena é b-roll e não deve falar nada.
+const SEM_FALA = "no speech, no dialogue, no talking, mouth closed, no lip movement";
+
 const MOTION_PROMPT =
   "subtle handheld camera movement, natural ambient motion, realistic, " +
-  "real-time everyday pacing, brisk — NOT slow-motion, not dreamy or floaty, no faces";
+  "real-time everyday pacing, brisk — NOT slow-motion, not dreamy or floaty, no faces, " +
+  SEM_FALA;
 
 /** C4: cena COM a pessoa — mesma pegada, sem o "no faces". */
 const MOTION_PROMPT_PERSON =
   "subtle handheld camera movement, natural ambient motion, realistic, " +
   "real-time everyday pacing, brisk — NOT slow-motion, not dreamy or floaty, " +
-  "keep the person's face consistent and natural";
+  "keep the person's face consistent and natural, " +
+  SEM_FALA;
 
 /**
  * C4: sufixo do still COM a pessoa (fotos de referência via image-to-image).

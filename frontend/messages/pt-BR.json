@@ -1914,7 +1914,8 @@
         "bancoAutoCorpo": "A IA lê seu roteiro e reaproveita sozinha as cenas do acervo que encaixam — de graça, já incluso.",
         "bancoEscolherTitulo": "Quero escolher do banco",
         "bancoEscolherCorpo": "Você marca as cenas e a IA encaixa cada uma na frase onde faz mais sentido — sem custo.",
-        "gerandoCena": "Aguarde, gerando a cena…"
+        "gerandoCena": "Aguarde, gerando a cena…",
+        "cenaFalhou": "Falhou — abra pra ver"
       },
       "cloneOpcoes": {
         "padrao": {
