@@ -45,10 +45,10 @@
       }
     },
     "voiceCloning": {
-      "title": "Generar Voz",
+      "title": "Entrenar Voz",
       "subtitle": "Entrena tu voz como necesites — locutor, contenido periodístico, más rápida o más pausada. Sube unos minutos de audio y la IA aprende tu timbre para generar audio con cualquier texto.",
       "empty": "Aún no has entrenado ninguna voz.",
-      "createButton": "+ Generar Nueva Voz",
+      "createButton": "+ Entrenar nueva voz",
       "generateAudioTitle": "Generar Audio",
       "generateAudioSubtitle": "Elige una voz lista y genera audio con cualquier texto.",
       "generateAudioEmpty": "Aún no tienes una voz lista. Entrena una voz primero.",

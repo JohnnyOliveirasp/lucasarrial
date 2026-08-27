@@ -45,10 +45,10 @@
       }
     },
     "voiceCloning": {
-      "title": "Generate Voice",
+      "title": "Train Voice",
       "subtitle": "Train your voice however you need — announcer, news content, faster or slower. Upload a few minutes of audio and the AI learns your timbre to generate audio with any text.",
       "empty": "You haven't trained any voice yet.",
-      "createButton": "+ Generate New Voice",
+      "createButton": "+ Train new voice",
       "generateAudioTitle": "Generate Audio",
       "generateAudioSubtitle": "Pick a ready voice and generate audio with any text.",
       "generateAudioEmpty": "You don't have a ready voice yet. Train a voice first.",

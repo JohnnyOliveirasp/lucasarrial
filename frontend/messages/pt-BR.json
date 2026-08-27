@@ -49,10 +49,10 @@
       }
     },
     "voiceCloning": {
-      "title": "Gerar Voz",
+      "title": "Treinar Voz",
       "subtitle": "Treine a sua voz do jeito que precisar — locutor, conteúdo jornalístico, mais rápida ou mais pausada. Envie alguns minutos de áudio e a IA aprende o seu timbre para gerar áudio com qualquer texto.",
       "empty": "Você ainda não treinou nenhuma voz.",
-      "createButton": "+ Gerar Nova Voz",
+      "createButton": "+ Treinar nova voz",
       "generateAudioTitle": "Gerar Áudio",
       "generateAudioSubtitle": "Escolha uma voz pronta e gere áudio com qualquer texto.",
       "generateAudioEmpty": "Você ainda não tem voz pronta. Treine uma voz primeiro.",
