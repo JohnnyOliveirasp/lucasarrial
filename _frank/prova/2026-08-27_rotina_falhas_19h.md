@@ -11,7 +11,7 @@ Papéis (regra 14-A): o Vigia abre e anota; eu investigo, decido e fecho.
 | | |
 |---|---|
 | Abertos no início (sem `aguardando_aluno`) | **9** |
-| Abertos no fim | **10** (abri o `#161`) |
+| Abertos no fim | **11** — abri o `#161` **e** entrou o `#160` sozinho às 18h41, no meio da ronda |
 | Fechados nesta ronda | **0** — e explico abaixo por que fechar seria mentira |
 | **Alunos que passaram a ter resposta** | **2** (Ronald Lenz, Cássio Fialho) |
 | **Chamado novo de causa-raiz** | **1** (`#161`, 190 cadastros) |
@@ -218,3 +218,8 @@ prazo a ninguém.
 2. **Conferir se Ronald e Cássio responderam.**
 3. **`#161`**: se o Johnny liberar, backfill + PR.
 4. **`#157`** ficou sem dono nesta ronda (é o próximo pela regra 8).
+5. **`#160` entrou às 18h41, no meio desta ronda, e eu não o toquei.** Chat do
+   app, `atendimento`: aluna quer mais movimento corporal/energia no Vídeo
+   Clone. Não é erro de sistema (é pedido de produto) e ninguém está travado
+   nele, mas está **`open` e sem dono** — registro aqui pra não virar espera
+   silenciosa, que é o defeito que esta própria ronda passou o dia medindo.
