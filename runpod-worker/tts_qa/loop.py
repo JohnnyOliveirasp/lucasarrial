@@ -101,6 +101,63 @@ def transcribe_seg_autodetect(seg, sample_rate, whisper_model, label):
         return None, None, 0.0
 
 
+def registrar_cobertura(qa_stats: dict, best_coverage: "float | None") -> None:
+    """Acumula a cobertura de um pedaco ENTREGUE nas estatisticas da geracao.
+
+    Ate 26/08 a cobertura so aparecia no payload de FALHA (`coverage_best` em
+    `_resultado_incompleto`): das 279 geracoes entregues desde 24/08 dava pra
+    contar quantas vezes o QA reprovou, mas NAO a que distancia da regua
+    (`coverage_qa_min`) os audios entregues estavam passando — logo nao dava
+    pra dizer se apertar/afrouxar a regua move a taxa de reprovacao.
+
+    Registra, por GERACAO:
+      coverage_min_visto — menor cobertura entre os pedacos (o elo fraco do
+                           audio que foi entregue);
+      coverage_medio     — media das coberturas medidas;
+      coverage_soma      — soma crua (deixa a media auditavel, sem drift de
+                           arredondamento incremental);
+      coverage_medido_n  — quantos pedacos entraram na media (o DENOMINADOR:
+                           media sem ele nao distingue "bom" de "nao mediu").
+
+    Chunk inconclusivo (coverage None) fica FORA da media — ele ja e' contado
+    em `coverage_none`. So contador: nao decide nada sobre o audio.
+
+    ⚠️ QUEM CHAMA E' O CHAMADOR, DE PROPOSITO (26/08). A 1a versao chamava isto
+    no fim de `run_chunk_qa`, o que parecia certo mas registrava audio JOGADO
+    FORA: quando a cobertura reprova com buraco continuo, o chunk vai pra
+    `_resgatar_por_subdivisao`, que gera OUTRO audio — e e' o do resgate que o
+    aluno recebe. O numero do chunk descartado ficava como `coverage_min_visto`
+    da geracao.
+    Nao e' hipotese: medido em 26/08 nas 294 geracoes com telemetria desde
+    24/08, o resgate ENTREGOU 5 vezes, e 4 delas tambem passaram pela escotilha
+    de cobertura espalhada — ou seja, exatamente a populacao que este contador
+    existe pra julgar. Duas dessas 5 sao os casos mais olhados do chamado 52:
+    `96a09526` (janetecasarotto2, o exemplo que motivou a 2a opiniao de idioma)
+    e `71a68eb6` (godoyalessandroadv, a pista que o Vigia levantou na ronda das
+    00h). Nas duas, a leitura ingenua reportaria a tomada descartada e acenderia
+    alarme falso na primeira vez que alguem lesse o instrumento novo.
+    So o chamador sabe qual audio virou entrega. Por isso a chamada mora nos
+    dois pontos de decisao de `_gerar_todos_os_chunks`/`_resgatar_por_subdivisao`
+    e NAO aqui dentro.
+
+    ⚠️ LIMITE HONESTO: os contadores so descrevem entrega quando a geracao
+    termina `ready`. Se um chunk posterior derrubar o job, os chunks ja
+    registrados continuam na conta e o aluno nao recebeu nada — leia estes
+    campos filtrando por `status='ready'` (no job que falha, quem responde e'
+    `coverage_best`, no payload de falha).
+    """
+    if best_coverage is None:
+        return
+    anterior = qa_stats.get("coverage_min_visto")
+    if anterior is None or best_coverage < anterior:
+        qa_stats["coverage_min_visto"] = round(best_coverage, 4)
+    soma = qa_stats.get("coverage_soma", 0.0) + best_coverage
+    n = qa_stats.get("coverage_medido_n", 0) + 1
+    qa_stats["coverage_soma"] = round(soma, 6)
+    qa_stats["coverage_medido_n"] = n
+    qa_stats["coverage_medio"] = round(soma / n, 4)
+
+
 def run_chunk_qa(
     seg,
     idx: int,
@@ -280,10 +337,22 @@ def run_chunk_qa(
         and best_seg is not None
         and best_seg.size >= int(sample_rate * 0.2)
     ):
+        # Telemetria (26/08): o contador sobe assim que o bloco RODA, antes de
+        # saber se ajudou. Sem isto, "a chave nao esta na qa" era indecidivel
+        # entre "nao rodou" e "rodou e nao melhorou" — foi o que deixou a
+        # geracao ed8a5e6b (texto em ingles, voz pt) sem resposta.
+        qa_stats["coverage_idioma_checked"] = qa_stats.get("coverage_idioma_checked", 0) + 1
         got2, lang2, prob2 = transcribe_seg_autodetect(
             best_seg, sample_rate, echo_qa_model, "chunk_qa_autodetect"
         )
         if got2 is not None and lang2:
+            qa_stats["coverage_idioma_detectado"] = lang2
+            qa_stats["coverage_idioma_prob"] = round(prob2, 3)
+            if str(lang2).lower() != str(qa_language).lower():
+                # Divergencia conta MESMO quando a 2a leitura nao melhorou:
+                # este e' o contador que responde "quantos alunos escrevem
+                # num idioma diferente do da voz".
+                qa_stats["coverage_idioma_divergente"] = qa_stats.get("coverage_idioma_divergente", 0) + 1
             cov2 = chunk_coverage(got2, chunk, lang2)
             lac2 = maior_lacuna(got2, chunk, lang2)
             _log(
@@ -295,4 +364,7 @@ def run_chunk_qa(
             if cov2 is not None and cov2 > best_coverage:
                 qa_stats["coverage_idioma_corrigido"] = qa_stats.get("coverage_idioma_corrigido", 0) + 1
                 best_coverage, best_lacuna = cov2, lac2
+    # NAO registra a cobertura aqui: este audio ainda pode ser DESCARTADO pelo
+    # resgate por subdivisao. Quem registra e' o chamador, quando sabe o que
+    # virou entrega — ver `registrar_cobertura`.
     return best_seg, best_coverage, best_lacuna

@@ -557,5 +557,291 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         self.assertGreater(cov, 0.0)  # ficou com a leitura da 1a, não com 0.0
 
 
+def entregar(stats, coverage):
+    """O que o CHAMADOR faz quando decide que aquele audio vira entrega.
+
+    `run_chunk_qa` deliberadamente NAO registra sozinho: o audio que ele
+    devolve ainda pode ser descartado pelo resgate por subdivisao. Ver
+    `registrar_cobertura`.
+    """
+    tts_qa.registrar_cobertura(stats, coverage)
+
+
+class TelemetriaCoberturaEntregueTest(unittest.TestCase):
+    """A cobertura do caminho de SUCESSO (26/08, incidente 52).
+
+    Até aqui `coverage_best` só era escrito no payload de FALHA
+    (`_resultado_incompleto`). Resultado medido: das 279 gerações ENTREGUES
+    desde 24/08 dava pra contar quantas vezes o QA reprovou (222 de 279
+    precisaram de ao menos um regen), mas NÃO a que distância da régua
+    (`coverage_qa_min`, hoje 0.85) os áudios entregues estavam passando — ou
+    seja, ninguém sabia dizer se apertar/afrouxar a régua move a taxa de
+    reprovação.
+
+    Estes testes provam que a cobertura do chunk ENTREGUE é registrada, que o
+    chunk inconclusivo fica FORA da média (e continua contado em
+    `coverage_none`), e que nada disso decide o destino do áudio.
+    """
+
+    # Áudio bom, mas não perfeito: o whisper perdeu a última palavra. Passa a
+    # régua (>= 0.85) e é ENTREGUE — exatamente o caso que era invisível.
+    QUASE = CHUNK_WORDS[:-1]
+
+    def test_entrega_limpa_registra_min_visto_e_media(self):
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        cov_quase = tts_qa.chunk_coverage(self.QUASE, CHUNK)
+        self.assertGreaterEqual(cov_quase, 0.85)  # é entrega, não falha
+        self.assertLess(cov_quase, 1.0)
+        leituras = [CHUNK_WORDS, self.QUASE]  # chunk 0 perfeito, chunk 1 quase
+        for idx, leitura in enumerate(leituras):
+            with mock.patch.object(
+                tts_qa.loop, "transcribe_seg", side_effect=lambda *a, _l=leitura, **k: _l
+            ), mock.patch.object(
+                tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+            ):
+                _b, cov, _l = tts_qa.loop.run_chunk_qa(
+                    seg, idx, CHUNK, regen_fn=lambda: seg,
+                    qa_stats=stats, **qa_kwargs(),
+                )
+            entregar(stats, cov)
+        self.assertEqual(stats["coverage_medido_n"], 2)          # o DENOMINADOR
+        self.assertEqual(stats["coverage_min_visto"], round(cov_quase, 4))
+        self.assertEqual(stats["coverage_medio"], round((1.0 + cov_quase) / 2, 4))
+        self.assertEqual(stats["coverage_flagged"], 0)           # nada reprovou
+        self.assertEqual(stats["regens"], 0)                     # nada regerou
+
+    def test_elo_fraco_e_o_menor_nao_o_ultimo(self):
+        # `coverage_min_visto` é o pior chunk do áudio entregue — não o último
+        # medido. Ordem invertida do teste acima, mesmo resultado.
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        cov_quase = tts_qa.chunk_coverage(self.QUASE, CHUNK)
+        for idx, leitura in enumerate([self.QUASE, CHUNK_WORDS]):
+            with mock.patch.object(
+                tts_qa.loop, "transcribe_seg", side_effect=lambda *a, _l=leitura, **k: _l
+            ), mock.patch.object(
+                tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+            ):
+                _b, cov, _l = tts_qa.loop.run_chunk_qa(
+                    seg, idx, CHUNK, regen_fn=lambda: seg,
+                    qa_stats=stats, **qa_kwargs(),
+                )
+            entregar(stats, cov)
+        self.assertEqual(stats["coverage_min_visto"], round(cov_quase, 4))
+
+    def test_chunk_inconclusivo_fica_fora_da_media(self):
+        # Whisper falhou (None) = não medimos nada — não pode virar 0.0 na
+        # média nem sumir do relatório: continua contado em `coverage_none`.
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: None
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+        ) as auto:
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        entregar(stats, cov)
+        self.assertIsNone(cov)
+        self.assertEqual(stats["coverage_none"], 1)              # continua contado
+        self.assertEqual(stats.get("coverage_medido_n", 0), 0)   # fora da média
+        self.assertIsNone(stats.get("coverage_min_visto"))
+        self.assertIsNone(stats.get("coverage_medio"))
+        auto.assert_not_called()                                 # nem paga 2a opinião
+
+    def test_media_ignora_o_inconclusivo_mas_conta_o_medido(self):
+        # Mistura: um chunk medido + um inconclusivo. A média é do medido.
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        for idx, leitura in enumerate([CHUNK_WORDS, None]):
+            with mock.patch.object(
+                tts_qa.loop, "transcribe_seg", side_effect=lambda *a, _l=leitura, **k: _l
+            ), mock.patch.object(
+                tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+            ):
+                _b, cov, _l = tts_qa.loop.run_chunk_qa(
+                    seg, idx, CHUNK, regen_fn=lambda: seg,
+                    qa_stats=stats, **qa_kwargs(),
+                )
+            entregar(stats, cov)
+        self.assertEqual(stats["coverage_medido_n"], 1)
+        self.assertEqual(stats["coverage_medio"], 1.0)
+        self.assertEqual(stats["coverage_min_visto"], 1.0)
+        self.assertEqual(stats["coverage_none"], 1)
+
+    def test_chunk_DESCARTADO_pelo_resgate_nao_entra_na_telemetria(self):
+        """O chunk que reprova e vai pro resgate NAO e' entrega — nao conta.
+
+        Este e' o defeito que a 1a versao tinha (achado na revisao de 27/08).
+        `run_chunk_qa` registrava sozinho, no fim de si mesmo. Mas quando a
+        cobertura reprova com buraco CONTINUO o chamador joga aquele audio
+        fora e entrega o de `_resgatar_por_subdivisao` — e o numero do audio
+        DESCARTADO ficava como `coverage_min_visto` da geracao.
+
+        Medido em producao antes de corrigir: das 294 geracoes com telemetria
+        desde 24/08, o resgate ENTREGOU 5 vezes e 4 delas tambem passaram pela
+        escotilha de cobertura espalhada. Duas das cinco sao os casos mais
+        olhados do chamado 52 — `96a09526` (janetecasarotto2) e `71a68eb6`
+        (godoyalessandroadv). Nas duas, a leitura ingenua acenderia alarme
+        falso na PRIMEIRA vez que alguem usasse o instrumento novo.
+        """
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        comido = CHUNK_WORDS[:2]        # o modelo comeu o resto: buraco continuo
+        cov_ruim = tts_qa.chunk_coverage(comido, CHUNK)
+        self.assertLess(cov_ruim, 0.85)  # reprova de verdade
+
+        # 1) chunk original reprova. O chamador NAO registra: vai pro resgate.
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: comido
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+        ):
+            _b, cov, _l = tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg, qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertEqual(round(cov, 4), round(cov_ruim, 4))
+        # o audio reprovado NAO virou telemetria de entrega
+        self.assertEqual(stats.get("coverage_medido_n", 0), 0)
+        self.assertIsNone(stats.get("coverage_min_visto"))
+
+        # 2) os sub-pedacos do resgate saem limpos — E' ISSO que o aluno recebe.
+        for sub in (1, 2):
+            with mock.patch.object(
+                tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: CHUNK_WORDS
+            ), mock.patch.object(
+                tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+            ):
+                _b, cov_sub, _l = tts_qa.loop.run_chunk_qa(
+                    seg, sub, CHUNK, regen_fn=lambda: seg, qa_stats=stats, **qa_kwargs(),
+                )
+            entregar(stats, cov_sub)
+
+        self.assertEqual(stats["coverage_medido_n"], 2)     # so os 2 entregues
+        self.assertEqual(stats["coverage_min_visto"], 1.0)  # NAO o cov_ruim
+        self.assertEqual(stats["coverage_medio"], 1.0)
+        # e a reprovacao do descartado continua visivel no contador que e' dela
+        self.assertGreaterEqual(stats["coverage_flagged"], 1)
+
+
+class TelemetriaSegundaOpiniaoTest(unittest.TestCase):
+    """A 2a opinião de idioma tem que deixar rastro MESMO quando não ajuda.
+
+    Antes disso ela só escrevia `coverage_idioma_corrigido`, e só quando
+    melhorava. Caso real que ficou sem resposta: geração ed8a5e6b (25/08
+    21:44, janetecasarotto2) — texto em INGLÊS numa voz `language='pt'`,
+    reprovada com coverage 0.1, com o PR #47 JÁ em produção (merge 9214e86,
+    24/08 13h53Z). A `qa` dela não tem a chave, então "rodou e não ajudou" e
+    "nem rodou" eram indistinguíveis. Agora não são mais.
+    """
+
+    EN = SegundaOpiniaoIdiomaTest.EN
+    EN_TRADUZIDO = SegundaOpiniaoIdiomaTest.EN_TRADUZIDO
+
+    def test_rodou_e_nao_melhorou_deixa_rastro(self):
+        # Mesmo idioma da voz, leitura igual: não melhora nada. `checked` sobe,
+        # `corrigido` NÃO — é isto que torna o caso ed8a5e6b decidível.
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(HALF_WORDS, "pt", 0.97)
+        ) as auto:
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        auto.assert_called_once()
+        self.assertLess(cov, 0.85)                                  # veredito intacto
+        self.assertEqual(stats["coverage_idioma_checked"], 1)       # rodou
+        self.assertEqual(stats.get("coverage_idioma_corrigido", 0), 0)  # e não ajudou
+        self.assertEqual(stats.get("coverage_idioma_divergente", 0), 0)  # mesmo idioma
+        self.assertEqual(stats["coverage_idioma_detectado"], "pt")
+        self.assertEqual(stats["coverage_idioma_prob"], 0.97)
+
+    def test_idioma_divergente_conta_mesmo_sem_melhorar(self):
+        # Voz em pt, whisper ouviu inglês, e a 2a leitura NÃO melhorou o
+        # veredito. `divergente` sobe assim mesmo — é este contador que
+        # responde "quantos alunos escrevem em idioma diferente do da voz".
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=([], "en", 0.88)
+        ):
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertEqual(stats["coverage_idioma_checked"], 1)
+        self.assertEqual(stats["coverage_idioma_divergente"], 1)
+        self.assertEqual(stats.get("coverage_idioma_corrigido", 0), 0)
+        self.assertLess(cov, 0.85)   # e o veredito continua o da 1a leitura
+
+    def test_idioma_divergente_conta_tambem_quando_resgata(self):
+        # O caso janetecasarotto original: divergiu E melhorou. Os DOIS
+        # contadores sobem — `corrigido` mantém o significado antigo.
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: self.EN_TRADUZIDO
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect",
+            return_value=(tts_qa.norm_words(self.EN, "en"), "en", 0.99),
+        ):
+            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+                seg, 0, self.EN, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertEqual(cov, 1.0)
+        self.assertEqual(stats["coverage_idioma_checked"], 1)
+        self.assertEqual(stats["coverage_idioma_divergente"], 1)
+        self.assertEqual(stats["coverage_idioma_corrigido"], 1)
+        # Aqui a 2a opiniao SALVOU o audio (1.0 >= régua): o chamador entrega
+        # este mesmo `seg`, sem passar pelo resgate por subdivisao. Logo ele
+        # registra — e o valor registrado é o veredito DEPOIS da 2a opinião,
+        # não o 0.x da 1a leitura.
+        entregar(stats, cov)
+        self.assertEqual(stats["coverage_min_visto"], 1.0)
+
+    def test_segunda_opiniao_quebrada_ainda_conta_como_rodada(self):
+        # Whisper do autodetect falhou (None): "rodou e foi inconclusivo" tem
+        # que ser distinguível de "nem rodou".
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: HALF_WORDS
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+        ):
+            tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertEqual(stats["coverage_idioma_checked"], 1)
+        self.assertNotIn("coverage_idioma_detectado", stats)
+
+    def test_audio_aprovado_nao_conta_como_checado(self):
+        # A 2a opinião só existe no caminho de reprovação — o contador não
+        # pode inflar com quem passou de primeira.
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: CHUNK_WORDS
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+        ):
+            tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertEqual(stats.get("coverage_idioma_checked", 0), 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
