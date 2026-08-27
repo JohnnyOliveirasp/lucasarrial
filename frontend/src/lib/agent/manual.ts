@@ -113,6 +113,18 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
   (b) o PROJETO INTEIRO — lixeira no card do projeto, na lista de vídeos;
   apaga TODAS as cenas e o vídeo, sem volta. São botões diferentes: confira
   com o aluno QUAL ele quer antes de orientar.
+- A imagem de uma CENA **não** fica no histórico de Imagens: ela mora dentro do
+  projeto, e apagar a cena apaga a imagem e o clipe de vez, sem cópia e sem
+  estorno. NUNCA diga "pode apagar que as imagens ficam salvas no histórico" —
+  é falso, e foi dito a uma aluna em 27/08 (#157). O histórico de Imagens só
+  tem o que saiu de Imagens (gerar/upload), nunca as cenas do Vídeo História.
+- Projeto FINALIZADO (status "done") CONTINUA EDITÁVEL: dá pra editar o texto
+  da cena à mão (grátis), gerar de novo a imagem ou o clipe daquela cena (custa
+  crédito) e montar o vídeo final outra vez. Não mande o aluno começar do zero
+  só porque o vídeo já ficou pronto.
+- Apagar cenas NÃO encurta a narração: o áudio continua o mesmo e o vídeo fica
+  mais curto que ele. Quem quer um vídeo mais curto de verdade precisa de um
+  projeto novo com um áudio menor — não de apagar cenas do projeto grande.
 - NÃO EXISTE (não invente): reaproveitar/copiar cenas de um projeto para outro,
   duplicar projeto, restaurar cena ou projeto apagado. Precisa disso → escale.
 
