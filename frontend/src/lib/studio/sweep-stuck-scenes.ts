@@ -32,11 +32,47 @@ export type StudioSceneSweep = {
   failed: number;
   still_running: number;
   errors: number;
+  /** Projetos cujo scenes_status foi fechado (ready/failed) nesta rodada. */
+  projects_closed: number;
 };
+
+/**
+ * Fecha `scenes_status` dos projetos cujas cenas já terminaram. Sem isto o
+ * status só virava "ready" no GET da tela — com todas as cenas prontas o
+ * projeto seguia "generating", o painel de cena ficava travado e o botão de
+ * montar não aparecia (Fabio Fiuza 26/08: 10/10 cenas ready, projeto preso).
+ * Mesma guarda do GET: só mexe se ainda estiver "generating".
+ */
+async function fecharProjetosProntos(admin: ReturnType<typeof getAdmin>): Promise<number> {
+  const { data: projetos } = await admin
+    .from("studio_projects")
+    .select("id, scene_plan")
+    .eq("scenes_status", "generating")
+    .limit(50);
+  let fechados = 0;
+  for (const p of (projetos ?? []) as { id: string; scene_plan: { scene_id: string }[] | null }[]) {
+    const ids = [...new Set((p.scene_plan ?? []).map((x) => x.scene_id))];
+    if (ids.length === 0) continue;
+    const { data: cenas } = await admin.from("studio_scenes").select("status").in("id", ids);
+    const rows = (cenas ?? []) as { status: string }[];
+    if (rows.length === 0) continue;
+    const pendente = rows.some((c) => c.status !== "ready" && c.status !== "failed");
+    if (pendente) continue;
+    const falhou = rows.some((c) => c.status === "failed");
+    const { data: upd } = await admin
+      .from("studio_projects")
+      .update({ scenes_status: falhou ? "failed" : "ready" } as never)
+      .eq("id", p.id)
+      .eq("scenes_status", "generating")
+      .select("id");
+    if (upd && upd.length > 0) fechados += 1;
+  }
+  return fechados;
+}
 
 export async function sweepStuckStudioScenes(): Promise<StudioSceneSweep> {
   const admin = getAdmin();
-  const out: StudioSceneSweep = { checked: 0, ready: 0, failed: 0, still_running: 0, errors: 0 };
+  const out: StudioSceneSweep = { checked: 0, ready: 0, failed: 0, still_running: 0, errors: 0, projects_closed: 0 };
 
   const cutoff = new Date(Date.now() - IDADE_MINIMA_MS).toISOString();
   const { data, error } = await admin
@@ -75,6 +111,12 @@ export async function sweepStuckStudioScenes(): Promise<StudioSceneSweep> {
       out.errors += 1;
       console.error("[sweep-studio-scenes]", row.id, e instanceof Error ? e.message : e);
     }
+  }
+  try {
+    out.projects_closed = await fecharProjetosProntos(admin);
+  } catch (e) {
+    out.errors += 1;
+    console.error("[sweep-studio-scenes] fechar projetos:", e instanceof Error ? e.message : e);
   }
   return out;
 }
