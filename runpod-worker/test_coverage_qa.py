@@ -557,6 +557,16 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         self.assertGreater(cov, 0.0)  # ficou com a leitura da 1a, não com 0.0
 
 
+def entregar(stats, coverage):
+    """O que o CHAMADOR faz quando decide que aquele audio vira entrega.
+
+    `run_chunk_qa` deliberadamente NAO registra sozinho: o audio que ele
+    devolve ainda pode ser descartado pelo resgate por subdivisao. Ver
+    `registrar_cobertura`.
+    """
+    tts_qa.registrar_cobertura(stats, coverage)
+
+
 class TelemetriaCoberturaEntregueTest(unittest.TestCase):
     """A cobertura do caminho de SUCESSO (26/08, incidente 52).
 
@@ -590,10 +600,11 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                tts_qa.loop.run_chunk_qa(
+                _b, cov, _l = tts_qa.loop.run_chunk_qa(
                     seg, idx, CHUNK, regen_fn=lambda: seg,
                     qa_stats=stats, **qa_kwargs(),
                 )
+            entregar(stats, cov)
         self.assertEqual(stats["coverage_medido_n"], 2)          # o DENOMINADOR
         self.assertEqual(stats["coverage_min_visto"], round(cov_quase, 4))
         self.assertEqual(stats["coverage_medio"], round((1.0 + cov_quase) / 2, 4))
@@ -612,10 +623,11 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                tts_qa.loop.run_chunk_qa(
+                _b, cov, _l = tts_qa.loop.run_chunk_qa(
                     seg, idx, CHUNK, regen_fn=lambda: seg,
                     qa_stats=stats, **qa_kwargs(),
                 )
+            entregar(stats, cov)
         self.assertEqual(stats["coverage_min_visto"], round(cov_quase, 4))
 
     def test_chunk_inconclusivo_fica_fora_da_media(self):
@@ -632,6 +644,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
+        entregar(stats, cov)
         self.assertIsNone(cov)
         self.assertEqual(stats["coverage_none"], 1)              # continua contado
         self.assertEqual(stats.get("coverage_medido_n", 0), 0)   # fora da média
@@ -649,14 +662,69 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                tts_qa.loop.run_chunk_qa(
+                _b, cov, _l = tts_qa.loop.run_chunk_qa(
                     seg, idx, CHUNK, regen_fn=lambda: seg,
                     qa_stats=stats, **qa_kwargs(),
                 )
+            entregar(stats, cov)
         self.assertEqual(stats["coverage_medido_n"], 1)
         self.assertEqual(stats["coverage_medio"], 1.0)
         self.assertEqual(stats["coverage_min_visto"], 1.0)
         self.assertEqual(stats["coverage_none"], 1)
+
+    def test_chunk_DESCARTADO_pelo_resgate_nao_entra_na_telemetria(self):
+        """O chunk que reprova e vai pro resgate NAO e' entrega — nao conta.
+
+        Este e' o defeito que a 1a versao tinha (achado na revisao de 27/08).
+        `run_chunk_qa` registrava sozinho, no fim de si mesmo. Mas quando a
+        cobertura reprova com buraco CONTINUO o chamador joga aquele audio
+        fora e entrega o de `_resgatar_por_subdivisao` — e o numero do audio
+        DESCARTADO ficava como `coverage_min_visto` da geracao.
+
+        Medido em producao antes de corrigir: das 294 geracoes com telemetria
+        desde 24/08, o resgate ENTREGOU 5 vezes e 4 delas tambem passaram pela
+        escotilha de cobertura espalhada. Duas das cinco sao os casos mais
+        olhados do chamado 52 — `96a09526` (janetecasarotto2) e `71a68eb6`
+        (godoyalessandroadv). Nas duas, a leitura ingenua acenderia alarme
+        falso na PRIMEIRA vez que alguem usasse o instrumento novo.
+        """
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        comido = CHUNK_WORDS[:2]        # o modelo comeu o resto: buraco continuo
+        cov_ruim = tts_qa.chunk_coverage(comido, CHUNK)
+        self.assertLess(cov_ruim, 0.85)  # reprova de verdade
+
+        # 1) chunk original reprova. O chamador NAO registra: vai pro resgate.
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: comido
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+        ):
+            _b, cov, _l = tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg, qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertEqual(round(cov, 4), round(cov_ruim, 4))
+        # o audio reprovado NAO virou telemetria de entrega
+        self.assertEqual(stats.get("coverage_medido_n", 0), 0)
+        self.assertIsNone(stats.get("coverage_min_visto"))
+
+        # 2) os sub-pedacos do resgate saem limpos — E' ISSO que o aluno recebe.
+        for sub in (1, 2):
+            with mock.patch.object(
+                tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: CHUNK_WORDS
+            ), mock.patch.object(
+                tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+            ):
+                _b, cov_sub, _l = tts_qa.loop.run_chunk_qa(
+                    seg, sub, CHUNK, regen_fn=lambda: seg, qa_stats=stats, **qa_kwargs(),
+                )
+            entregar(stats, cov_sub)
+
+        self.assertEqual(stats["coverage_medido_n"], 2)     # so os 2 entregues
+        self.assertEqual(stats["coverage_min_visto"], 1.0)  # NAO o cov_ruim
+        self.assertEqual(stats["coverage_medio"], 1.0)
+        # e a reprovacao do descartado continua visivel no contador que e' dela
+        self.assertGreaterEqual(stats["coverage_flagged"], 1)
 
 
 class TelemetriaSegundaOpiniaoTest(unittest.TestCase):
@@ -734,7 +802,11 @@ class TelemetriaSegundaOpiniaoTest(unittest.TestCase):
         self.assertEqual(stats["coverage_idioma_checked"], 1)
         self.assertEqual(stats["coverage_idioma_divergente"], 1)
         self.assertEqual(stats["coverage_idioma_corrigido"], 1)
-        # e a cobertura RESGATADA é a que entra na telemetria de entrega
+        # Aqui a 2a opiniao SALVOU o audio (1.0 >= régua): o chamador entrega
+        # este mesmo `seg`, sem passar pelo resgate por subdivisao. Logo ele
+        # registra — e o valor registrado é o veredito DEPOIS da 2a opinião,
+        # não o 0.x da 1a leitura.
+        entregar(stats, cov)
         self.assertEqual(stats["coverage_min_visto"], 1.0)
 
     def test_segunda_opiniao_quebrada_ainda_conta_como_rodada(self):

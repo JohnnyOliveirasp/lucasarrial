@@ -19,7 +19,7 @@ import soundfile as sf
 from audio_ops import crossfade_concat, trim_silence, wav_to_base64
 from tts_qa.rate import measure_file_rate, measure_seg_rate, stretch
 from model_loader import free_cuda
-from tts_qa import norm_words, run_chunk_qa
+from tts_qa import norm_words, registrar_cobertura, run_chunk_qa
 from tts_qa.metrics import fim_abrupto, ultima_palavra_truncada
 from tts_qa.loop import palavras_com_tempo
 from tts_text import split_text_for_tts
@@ -375,7 +375,14 @@ class InferenceJob:
                         self.qa_stats["coverage_exhausted"] += 1
                         return pieces, {"chunk_idx": idx, "coverage": coverage,
                                         "maior_lacuna": lacuna}
+                    # ENTREGA E' O RESGATE, nao este `seg`. A cobertura deste
+                    # chunk NAO entra na telemetria: quem registra sao os
+                    # sub-pedacos, dentro de _resgatar_por_subdivisao.
                     seg = resgate
+                else:
+                    # Este audio e' o que vai pro aluno (aprovado ou entregue
+                    # pela escotilha de lacuna espalhada): registra.
+                    registrar_cobertura(self.qa_stats, coverage)
 
             _log(
                 "info", "inference.chunk", idx=idx, total=len(chunks),
@@ -424,6 +431,9 @@ class InferenceJob:
                      coverage=cov, maior_lacuna=lacuna)
                 self.qa_stats["coverage_rescue_failed"] = self.qa_stats.get("coverage_rescue_failed", 0) + 1
                 return None
+            # Este sub-pedaco entra no audio final: e' ELE que o aluno recebe,
+            # nao o chunk original que reprovou e trouxe a gente ate aqui.
+            registrar_cobertura(self.qa_stats, cov)
             pedacos.append(seg)
         self.qa_stats["coverage_rescued"] = self.qa_stats.get("coverage_rescued", 0) + 1
         _log("info", "inference.coverage.rescued", idx=idx, partes=len(partes))
