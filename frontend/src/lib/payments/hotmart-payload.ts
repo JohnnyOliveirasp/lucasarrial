@@ -29,6 +29,30 @@ export function extractPurchaseStatus(data: Record<string, unknown>): string {
 }
 
 /**
+ * Status da ASSINATURA no payload de compra (data.subscription.status —
+ * "ACTIVE", "CANCELED", "PAST_DUE"…). Vazio quando não vem.
+ *
+ * Incidente #161 (27/08): NINGUÉM lia este campo. A Hotmart manda o
+ * PURCHASE_COMPLETE ~7,8 dias depois do APPROVED; se o aluno cancelou nesse
+ * intervalo, o COMPLETE chega com subscription.status=CANCELED e, mesmo
+ * assim, grantAccess regravava o entitlement como `active`. Não existe
+ * webhook de cancelamento para esses casos: este campo é o ÚNICO sinal.
+ * Medido: 190 entitlements `active` com a assinatura CANCELED do lado da
+ * Hotmart (17 com acesso futuro, 173 já expirados).
+ */
+export function extractSubscriptionStatus(data: Record<string, unknown>): string {
+  const s =
+    asRecord(data.subscription).status ??
+    asRecord(asRecord(data.purchase).subscription).status;
+  return typeof s === "string" ? s.toUpperCase() : "";
+}
+
+/** A assinatura já morreu do lado da Hotmart (não vai renovar). */
+export function subscriptionIsDead(status: string): boolean {
+  return status === "CANCELED" || status === "CANCELLED" || status === "EXPIRED" || status === "INACTIVE";
+}
+
+/**
  * Identificador do PAGAMENTO (uma cobrança específica), ao contrário do
  * externalId, que na assinatura é o código do assinante e não muda nunca.
  * É a chave de idempotência do crédito: um pagamento credita uma vez.

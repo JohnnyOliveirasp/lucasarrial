@@ -12,7 +12,9 @@ import assert from "node:assert/strict";
 import {
   extractExternalId,
   extractNextChargeIso,
+  extractSubscriptionStatus,
   isUnknownExternalId,
+  subscriptionIsDead,
 } from "./hotmart-payload.ts";
 
 // ── SUBSCRIPTION_CANCELLATION: forma real — o código vem em data.subscriber.code
@@ -96,4 +98,42 @@ test("extractNextChargeIso: prioridade de purchase/subscription preservada nos P
   );
   assert.equal(extractNextChargeIso({}), null);
   assert.equal(extractNextChargeIso({ date_next_charge: "not-a-number" }), null);
+});
+
+
+// ── #161 (27/08): subscription.status no payload de COMPRA ─────────────────
+// Forma real: PURCHASE_COMPLETE chega ~7,8 dias depois do APPROVED; se o
+// aluno cancelou no meio, vem com subscription.status = "CANCELED" e NENHUM
+// webhook de cancelamento separado. Era o campo que ninguém lia.
+const completeCanceled: Record<string, unknown> = {
+  product: { id: 1234567, name: "Produto" },
+  purchase: { transaction: "HP0123456789", status: "COMPLETED", date_next_charge: 1758024000 },
+  subscription: {
+    status: "CANCELED",
+    subscriber: { code: "ABCD1234" },
+    plan: { id: 1, name: "Mensal" },
+  },
+};
+
+test("#161: extrai subscription.status do payload de compra (maiúsculo)", () => {
+  assert.equal(extractSubscriptionStatus(completeCanceled), "CANCELED");
+  assert.equal(extractSubscriptionStatus({ subscription: { status: "active" } }), "ACTIVE");
+});
+
+test("#161: sem subscription.status devolve vazio (compra única, payload antigo)", () => {
+  assert.equal(extractSubscriptionStatus({ purchase: { status: "APPROVED" } }), "");
+  assert.equal(extractSubscriptionStatus({}), "");
+});
+
+test("#161: cai no fallback data.purchase.subscription.status quando é lá que vem", () => {
+  assert.equal(
+    extractSubscriptionStatus({ purchase: { subscription: { status: "past_due" } } }),
+    "PAST_DUE",
+  );
+});
+
+test("#161: só CANCELED/CANCELLED/EXPIRED/INACTIVE contam como assinatura morta", () => {
+  for (const dead of ["CANCELED", "CANCELLED", "EXPIRED", "INACTIVE"]) assert.equal(subscriptionIsDead(dead), true, dead);
+  // PAST_DUE ainda pode renovar (a Hotmart tenta de novo) — NÃO é morta.
+  for (const alive of ["ACTIVE", "PAST_DUE", "", "STARTED"]) assert.equal(subscriptionIsDead(alive), false, alive);
 });
