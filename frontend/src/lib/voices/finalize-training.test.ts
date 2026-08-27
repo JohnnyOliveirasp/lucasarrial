@@ -69,6 +69,41 @@ test("a telemetria do trainer roda DEPOIS do gate e é best-effort", () => {
   assert.match(corpo, /logger\.warn\(/);
 });
 
+/**
+ * A janela entre o claim idempotente e o ESTORNO tem que ficar VAZIA de código
+ * que possa lançar. registrarSaidaDoTrainer roda dentro dessa janela: se algo
+ * dela subir, o claim já foi consumido e o estorno do aluno nunca roda —
+ * crédito perdido, sem retry. O `logger.error` é a única instrução de
+ * observabilidade da função além do UPDATE, e ele NÃO pode ficar fora do
+ * try/catch: logger/server.ts protege a escrita em arquivo com try/catch
+ * próprio, mas o ramo de console logo abaixo fica desprotegido e roda TAMBÉM em
+ * produção quando level === 'error'.
+ */
+test("nada da telemetria do trainer fica fora do try/catch (nem o logger.error)", () => {
+  const inicioFn = FONTE.indexOf("async function registrarSaidaDoTrainer(");
+  assert.ok(inicioFn > 0, "não achei registrarSaidaDoTrainer");
+  const corpo = FONTE.slice(inicioFn, FONTE.indexOf("export async function finalizeTraining"));
+
+  const posTry = corpo.indexOf("try {");
+  const posCatch = corpo.indexOf("} catch (e)", posTry);
+  assert.ok(posTry > 0 && posCatch > posTry, "não achei o try/catch de registrarSaidaDoTrainer");
+
+  const posErro = corpo.indexOf('logger.error("api", "voice.train.trainer_failed"');
+  assert.ok(posErro > 0, "não achei o logger.error da telemetria do trainer");
+  assert.ok(
+    posErro > posTry && posErro < posCatch,
+    "logger.error saiu do try/catch — exceção dele sobe por finalizeTraining e " +
+      "mata o ESTORNO com o claim idempotente já consumido",
+  );
+
+  // E não pode ter aparecido nenhum OUTRO logger.error fora do try.
+  const foraDoTry = corpo.slice(0, posTry);
+  assert.ok(
+    !foraDoTry.includes("logger."),
+    "apareceu chamada de logger antes do try — mesma armadilha, outro lugar",
+  );
+});
+
 test("os logs do trainer são truncados em 8000 chars, pelo FIM", () => {
   assert.match(FONTE, /const MAX_TRAINER_LOG_CHARS = 8000;/);
   // slice NEGATIVO: o traceback está no fim da saída.

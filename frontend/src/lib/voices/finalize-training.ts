@@ -257,9 +257,17 @@ const MAX_TRAINER_LOG_CHARS = 8000;
  *     claim derrubaria a finalização INTEIRA: a voz nunca iria pra `failed` e o
  *     ESTORNO do aluno nunca rodaria. Observabilidade não pode quebrar o
  *     produto — muito menos o estorno.
- *  3. O `logger.error` roda SEMPRE, antes e independente do banco: enquanto a
- *     DDL não é aplicada, o traceback já fica no log, que é o que responde a
- *     pergunta na próxima ronda.
+ *  3. O `logger.error` roda ANTES do UPDATE, mas DENTRO do mesmo try/catch:
+ *     enquanto a DDL não é aplicada, o traceback já fica no log, que é o que
+ *     responde a pergunta na próxima ronda — e mesmo assim ele não pode
+ *     escapar. Esta função é chamada na JANELA entre o claim idempotente e o
+ *     ESTORNO do aluno: exceção que suba daqui deixa o claim já consumido e o
+ *     estorno sem rodar, ou seja, crédito perdido e sem retry. Hoje o logger
+ *     não teria como lançar (o `meta` vem só de JSON.parse do webhook/RunPod,
+ *     então o JSON.stringify de logger/server.ts não quebra), mas o ramo de
+ *     console do writeEntry é o único trecho desprotegido de lá e roda TAMBÉM
+ *     em produção quando level === 'error'. Nesta janela, "provavelmente
+ *     vazia" não serve: nada de observabilidade fica fora do try.
  *
  * Caminho feliz não grava nada: o worker devolve `trainer_returncode: 0` sem
  * tails, e "o treino deu certo" já está em `training_jobs.status`. Escrever aí
@@ -283,24 +291,28 @@ async function registrarSaidaDoTrainer(
   if (stderr !== null) patch.trainer_stderr = stderr.slice(-MAX_TRAINER_LOG_CHARS);
   if (stdout !== null) patch.trainer_stdout = stdout.slice(-MAX_TRAINER_LOG_CHARS);
 
-  logger.error("api", "voice.train.trainer_failed", {
-    voiceId,
-    runpodJobId,
-    trainerReturncode: rc,
-    workerImage: out.worker_image ?? null,
-    stderrTail: patch.trainer_stderr ?? null,
-    stdoutTail: patch.trainer_stdout ?? null,
-  });
-
   try {
+    logger.error("api", "voice.train.trainer_failed", {
+      voiceId,
+      runpodJobId,
+      trainerReturncode: rc,
+      workerImage: out.worker_image ?? null,
+      stderrTail: patch.trainer_stderr ?? null,
+      stdoutTail: patch.trainer_stdout ?? null,
+    });
+
     const { error } = await getAdmin()
       .from("training_jobs")
       .update(patch as never)
       .eq("runpod_job_id", runpodJobId);
     if (error) throw new Error(error.message);
   } catch (e) {
-    // Esperado até a DDL de scripts/97 ser aplicada. O log acima já guardou o
-    // diagnóstico; falhar aqui não pode afetar o treino nem o estorno.
+    // Esperado até a DDL de scripts/97 ser aplicada — nesse caso o logger.error
+    // acima JÁ guardou o diagnóstico e só o UPDATE falhou. O catch cobre também
+    // o próprio logger.error (ver decisão 3): se fosse ele a lançar, o warn
+    // abaixo é seguro em produção, porque writeEntry só cai no ramo de console
+    // para level 'error'/'fatal' e a escrita em arquivo tem try/catch próprio.
+    // Em qualquer dos casos: falhar aqui não pode afetar o treino nem o estorno.
     logger.warn("api", "voice.train.trainer_failed_nao_persistido", {
       voiceId,
       runpodJobId,
