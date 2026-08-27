@@ -147,8 +147,14 @@ class RunChunkQATest(unittest.TestCase):
             )
         transcriber.assert_not_called()  # mudo = "não ouvi nada", sem whisper
         self.assertEqual(cov, 0.0)
-        self.assertEqual(stats["exhausted"], 1)
-        self.assertEqual(stats["regens"], 2)  # tentou as 3 (2 regens)
+        # 27/08 (#52 reincidente): cobertura ~0 duas vezes seguidas e' chunk
+        # ALUCINADO/mudo — repetir a 3a tentativa identica so' gasta GPU. O
+        # laco sai cedo (1 regen, nao 2) e entrega ao resgate, que muda de
+        # estrategia. `exhausted` fica 0: nao esgotou, DESISTIU de repetir.
+        self.assertEqual(stats["regens"], 1)
+        self.assertEqual(stats["exhausted"], 0)
+        self.assertEqual(stats["coverage_alucinado_saida"], 1)
+        self.assertEqual(stats["coverage_alucinado"], 2)
         # O gate do chamador (_handle_inference) com esta cobertura FALHA o job:
         self.assertTrue(cov is not None and cov < 0.85)
 
@@ -841,6 +847,80 @@ class TelemetriaSegundaOpiniaoTest(unittest.TestCase):
                 qa_stats=stats, **qa_kwargs(),
             )
         self.assertEqual(stats.get("coverage_idioma_checked", 0), 0)
+
+
+
+class ChunkAlucinadoTest(unittest.TestCase):
+    """#52 (27/08, caso Ronald): entre uma tentativa e outra NADA muda no
+    worker (mesmo texto, mesmos parametros, sem seed). Cobertura ~0 duas vezes
+    seguidas nao e' "faltou um pedaco", e' audio que nao e' o texto — repetir
+    a chamada e' cair no mesmo poco. O laco para e devolve ao chamador."""
+
+    def test_duas_alucinadas_seguidas_param_o_laco(self):
+        stats = fresh_stats()
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=CHUNK_WORDS[:1]):
+            _b, cov, _l = tts_qa.run_chunk_qa(
+                make_seg(), 0, CHUNK, regen_fn=make_seg,
+                qa_stats=stats, **qa_kwargs(coverage_qa_retries=3),
+            )
+        self.assertLess(cov, 0.3)
+        self.assertEqual(stats["regens"], 1)           # 2 tentativas, nao 3
+        self.assertEqual(stats["coverage_alucinado_saida"], 1)
+        self.assertEqual(stats["exhausted"], 0)
+
+    def test_cobertura_que_se_recupera_zera_o_contador(self):
+        # 1a ~0, 2a meia (0,52), 3a ~0: nunca sao DUAS SEGUIDAS -> laco normal.
+        seqs = iter([CHUNK_WORDS[:1], HALF_WORDS, CHUNK_WORDS[:1]])
+        stats = fresh_stats()
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(seqs)):
+            _b, cov, _l = tts_qa.run_chunk_qa(
+                make_seg(), 0, CHUNK, regen_fn=make_seg,
+                qa_stats=stats, **qa_kwargs(coverage_qa_retries=3),
+            )
+        self.assertEqual(stats["regens"], 2)           # gastou as 3
+        self.assertEqual(stats["exhausted"], 1)
+        self.assertNotIn("coverage_alucinado_saida", stats)
+        self.assertEqual(cov, tts_qa.chunk_coverage(HALF_WORDS, CHUNK))  # a melhor
+
+    def test_botao_desligado_volta_ao_comportamento_antigo(self):
+        stats = fresh_stats()
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=[]):
+            tts_qa.run_chunk_qa(
+                make_seg(), 0, CHUNK, regen_fn=make_seg, qa_stats=stats,
+                alucinacao_max_seguidas=0, **qa_kwargs(coverage_qa_retries=3),
+            )
+        self.assertEqual(stats["regens"], 2)
+        self.assertEqual(stats["exhausted"], 1)
+
+
+class SplitBelowSentenceTest(unittest.TestCase):
+    """split_below_sentence: o nivel 2 do resgate parte ABAIXO da frase —
+    o split por frase nunca desce disso e deixava 'frase_unica' sem saida."""
+
+    FRASE = ("Boa tarde a todos, e uma honra dividir esse momento com um publico "
+             "que entende na pratica o que e construir um negocio do zero com as "
+             "proprias maos e sem nenhum apoio externo")
+
+    def test_pedacos_respeitam_o_limite_e_nao_cortam_palavra(self):
+        partes = tts_text.split_below_sentence(self.FRASE, 70)
+        self.assertGreaterEqual(len(partes), 3)
+        for pz in partes:
+            self.assertLessEqual(len(pz), 71)          # +1 do terminal
+            self.assertTrue(pz.endswith("."))          # borda limpa
+        # Nenhuma palavra foi partida: juntando tudo, todas as palavras voltam.
+        originais = self.FRASE.replace(",", "").split()
+        obtidas = " ".join(partes).replace(",", "").replace(".", "").split()
+        self.assertEqual(obtidas, originais)
+
+    def test_corta_na_virgula_antes_de_cortar_por_palavra(self):
+        partes = tts_text.split_below_sentence("Ola pessoal, tudo bem com voces, vamos comecar", 40)
+        self.assertEqual(partes[0], "Ola pessoal, tudo bem com voces.")
+
+    def test_frase_curta_volta_inteira(self):
+        self.assertEqual(tts_text.split_below_sentence("Oi gente.", 70), ["Oi gente."])
+
+    def test_vazio(self):
+        self.assertEqual(tts_text.split_below_sentence("   ", 70), [])
 
 
 if __name__ == "__main__":

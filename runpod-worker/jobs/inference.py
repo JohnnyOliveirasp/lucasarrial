@@ -22,7 +22,7 @@ from model_loader import free_cuda
 from tts_qa import norm_words, registrar_cobertura, run_chunk_qa
 from tts_qa.metrics import fim_abrupto, ultima_palavra_truncada
 from tts_qa.loop import palavras_com_tempo
-from tts_text import split_text_for_tts
+from tts_text import split_text_for_tts, split_below_sentence
 from worker_config import WORKSPACE
 from worker_log import log as _log, phase as _phase
 
@@ -182,15 +182,18 @@ class InferenceJob:
         free_cuda()
 
     # ── Geracao ────────────────────────────────────────────────────────────
-    def _gerar(self, chunk_text: str, chunk_idx: int = -1) -> np.ndarray:
-        """Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853)."""
+    def _gerar(self, chunk_text: str, chunk_idx: int = -1,
+               cfg_value: "float | None" = None) -> np.ndarray:
+        """Chamada 1:1 com o desktop (VoiceLoraStudio/core.py:841-853).
+        `cfg_value` so e passado pelo resgate nivel 2 (#52): e a unica
+        alavanca que muda a geracao entre tentativas."""
         attempt = self._chunk_attempts.get(chunk_idx, 0) + 1
         self._chunk_attempts[chunk_idx] = attempt
         with _phase("inference.chunk.generate", chunk=chunk_idx, attempt=attempt,
-                    chars=len(chunk_text)):
-            return self._gerar_bruto(chunk_text)
+                    chars=len(chunk_text), cfg=cfg_value):
+            return self._gerar_bruto(chunk_text, cfg_value=cfg_value)
 
-    def _gerar_bruto(self, chunk_text: str) -> np.ndarray:
+    def _gerar_bruto(self, chunk_text: str, cfg_value: "float | None" = None) -> np.ndarray:
         # README oficial (Ultimate Cloning): "For maximum cloning similarity,
         # pass the same reference clip to BOTH reference_wav_path and
         # prompt_wav_path". So passavamos o prompt (25/08). Desligavel por env.
@@ -203,7 +206,7 @@ class InferenceJob:
             prompt_wav_path=self.prompt_wav_local,
             prompt_text=self.prompt_text,
             **ref_kw,
-            cfg_value=self.cfg.cfg_value,
+            cfg_value=self.cfg.cfg_value if cfg_value is None else cfg_value,
             inference_timesteps=self.cfg.inference_timesteps,
             max_len=4096,
             normalize=self.cfg.normalize,
@@ -286,11 +289,14 @@ class InferenceJob:
              corte_s=round(float(fim_s) + 0.12, 2), palavras=len(palavras))
         return candidato
 
-    def _rodar_qa(self, seg, idx: int, chunk: str, eh_ultimo: bool = False):
+    def _rodar_qa(self, seg, idx: int, chunk: str, eh_ultimo: bool = False,
+                  cfg_value: "float | None" = None):
         c = self.cfg
         return run_chunk_qa(
             seg, idx, chunk,
-            regen_fn=lambda: self._aparar(self._gerar(chunk, idx), idx),
+            regen_fn=lambda: self._aparar(self._gerar(chunk, idx, cfg_value=cfg_value), idx),
+            alucinacao_min=c.qa_alucinacao_min,
+            alucinacao_max_seguidas=c.qa_alucinacao_max_seguidas,
             sample_rate=self.sample_rate,
             prompt_text=self.prompt_text,
             qa_language=c.qa_language,
@@ -402,42 +408,82 @@ class InferenceJob:
         return pieces, None
 
     def _resgatar_por_subdivisao(self, chunk: str, idx: int):
-        """Chunk esgotou o QA com buraco CONTINUO -> parte nas frases e gera
-        cada uma com o mesmo QA (#52, 24/08).
+        """Chunk esgotou o QA com buraco CONTINUO -> muda de ESTRATEGIA.
 
-        Medido em 36h: 7 de 129 geracoes (5,4%) morriam aqui — 1 em 18, 6
-        alunos, a causa dominante de falha de audio. Os que falham sao 1,6x
-        maiores e 86% tem quebra de linha: chunks onde VARIAS frases foram
-        coladas ate 160 chars e o modelo pulou uma. Regenerar o MESMO chunk 3x
-        cai no mesmo buraco; cada pedaco curto re-ancora o modelo.
+        Nivel 1 (24/08): parte nas FRASES e gera cada uma com o mesmo QA.
+        Medido em 36h: 7 de 129 geracoes (5,4%) morriam aqui — chunks onde
+        varias frases foram coladas ate 160 chars e o modelo pulou uma.
 
-        Devolve o audio concatenado, ou None se nao da pra partir (frase
-        unica) ou se algum pedaco ainda vier comido — ai o job cai como antes.
+        Nivel 2 (27/08, #52 reincidente): quando o nivel 1 nao da (frase
+        unica) ou um pedaco dele TAMBEM vem alucinado, parte o pedaco ABAIXO
+        da frase (virgula/palavras, `rescue_word_chars`) e gera com
+        `cfg_value + rescue_cfg_delta`. Por que: entre uma tentativa e outra
+        NADA mudava (mesmo texto, mesmos parametros, sem seed) — o Ronald teve
+        6 falhas seguidas no mesmo texto, coverage_best 0-0,1, com o nivel 1
+        rodando e caindo no mesmo poco. O nivel 2 e a primeira coisa que de
+        fato muda a geracao. Deixa de ser tudo-ou-nada: so o pedaco ruim
+        desce de nivel; os bons ficam.
+
+        Devolve o audio concatenado, ou None se mesmo no nivel 2 um pedaco
+        vier comido — ai o job cai como antes.
         """
         partes = [c for c, _ in split_text_for_tts(chunk, max_chars=1)]
-        if len(partes) < 2:
-            _log("info", "inference.coverage.rescue.skip", idx=idx, motivo="frase_unica")
-            return None
+        nivel1 = len(partes) >= 2
+        if not nivel1:
+            _log("info", "inference.coverage.rescue.frase_unica", idx=idx)
+            partes = [chunk]  # nivel 1 nao tem o que partir: vai direto ao 2
         self.qa_stats["coverage_rescue"] = self.qa_stats.get("coverage_rescue", 0) + 1
         _log("info", "inference.coverage.rescue", idx=idx, partes=len(partes))
         pedacos: list[np.ndarray] = []
         for j, parte in enumerate(partes):
             sub_idx = idx * 100 + j + 1  # rotulo unico no log/heartbeat
-            seg = self._aparar(self._gerar(parte, sub_idx), idx)
-            seg, cov, lacuna = self._rodar_qa(seg, sub_idx, parte)
-            if (cov is not None and cov < self.cfg.coverage_qa_min
-                    and not self._entregar_mesmo_com_cobertura_baixa(sub_idx, parte, cov, lacuna)):
-                _log("error", "inference.coverage.rescue.failed", idx=idx, parte=j,
+            if nivel1:
+                seg = self._aparar(self._gerar(parte, sub_idx), idx)
+                seg, cov, lacuna = self._rodar_qa(seg, sub_idx, parte)
+                ok = not (cov is not None and cov < self.cfg.coverage_qa_min
+                          and not self._entregar_mesmo_com_cobertura_baixa(sub_idx, parte, cov, lacuna))
+                if ok:
+                    # Este sub-pedaco entra no audio final: e ELE que o aluno
+                    # recebe, nao o chunk original que reprovou.
+                    registrar_cobertura(self.qa_stats, cov)
+                    pedacos.append(seg)
+                    continue
+                _log("warn", "inference.coverage.rescue.nivel1_falhou", idx=idx, parte=j,
                      coverage=cov, maior_lacuna=lacuna)
+            seg2 = self._resgatar_nivel_2(parte, sub_idx)
+            if seg2 is None:
+                _log("error", "inference.coverage.rescue.failed", idx=idx, parte=j)
                 self.qa_stats["coverage_rescue_failed"] = self.qa_stats.get("coverage_rescue_failed", 0) + 1
                 return None
-            # Este sub-pedaco entra no audio final: e' ELE que o aluno recebe,
-            # nao o chunk original que reprovou e trouxe a gente ate aqui.
-            registrar_cobertura(self.qa_stats, cov)
-            pedacos.append(seg)
+            pedacos.append(seg2)
         self.qa_stats["coverage_rescued"] = self.qa_stats.get("coverage_rescued", 0) + 1
         _log("info", "inference.coverage.rescued", idx=idx, partes=len(partes))
         return np.concatenate(pedacos)
+
+    def _resgatar_nivel_2(self, texto: str, base_idx: int):
+        """Parte ABAIXO da frase e gera com cfg mais alto. None se algum
+        pedaco ainda vier comido."""
+        c = self.cfg
+        pedacos_txt = split_below_sentence(texto, max_chars=c.rescue_word_chars)
+        if not pedacos_txt:
+            return None
+        cfg2 = min(2.5, c.cfg_value + c.rescue_cfg_delta)
+        self.qa_stats["coverage_rescue_nivel2"] = self.qa_stats.get("coverage_rescue_nivel2", 0) + 1
+        _log("info", "inference.coverage.rescue.nivel2", idx=base_idx,
+             pedacos=len(pedacos_txt), cfg=cfg2)
+        out: list[np.ndarray] = []
+        for k, pz in enumerate(pedacos_txt):
+            sub = base_idx * 10 + k + 1
+            seg = self._aparar(self._gerar(pz, sub, cfg_value=cfg2), base_idx)
+            seg, cov, lacuna = self._rodar_qa(seg, sub, pz, cfg_value=cfg2)
+            if (cov is not None and cov < c.coverage_qa_min
+                    and not self._entregar_mesmo_com_cobertura_baixa(sub, pz, cov, lacuna)):
+                _log("error", "inference.coverage.rescue.nivel2_falhou", idx=base_idx,
+                     pedaco=k, coverage=cov, maior_lacuna=lacuna)
+                return None
+            registrar_cobertura(self.qa_stats, cov)
+            out.append(seg)
+        return np.concatenate(out)
 
     # ── Saida ──────────────────────────────────────────────────────────────
     def _montar(self, pieces) -> np.ndarray:

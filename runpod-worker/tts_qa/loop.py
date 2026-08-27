@@ -183,6 +183,8 @@ def run_chunk_qa(
     rate_retries: int = 0,
     rate_model: "str | None" = None,
     eh_ultimo_chunk: bool = False,
+    alucinacao_min: float = 0.3,
+    alucinacao_max_seguidas: int = 2,
 ):
     """Laço de QA de UM chunk: reprovou → regenera (regen_fn); esgotou as
     tentativas → devolve a MELHOR tentativa (menos eco; 1a palavra errada e
@@ -200,6 +202,13 @@ def run_chunk_qa(
     )
     best_seg, best_score, best_coverage = seg, None, None
     best_lacuna = None
+    # Chunk ALUCINADO (#52, 27/08): cobertura ~0 nao e' "faltou um pedaco", e'
+    # audio que nao e' o texto. Entre uma tentativa e outra NADA muda (mesmo
+    # texto, mesmos parametros, sem seed) — o Ronald viu 6 falhas seguidas no
+    # mesmo texto, cada uma gastando 3 tentativas + 3 por sub-frase do resgate,
+    # todas identicas. Duas seguidas abaixo do piso: para e entrega ao
+    # chamador, que muda de ESTRATEGIA (resgate nivel 2) em vez de repetir.
+    alucinadas_seguidas = 0
     while attempt < max_attempts:
         score = 0
         coverage = None
@@ -251,6 +260,11 @@ def run_chunk_qa(
                     # Penalidade proporcional ao que falta: entre duas
                     # tentativas ruins, best_seg fica com a MAIS completa.
                     score += 100 + int((coverage_qa_min - coverage) * 100)
+                if coverage < alucinacao_min:
+                    alucinadas_seguidas += 1
+                    qa_stats["coverage_alucinado"] = qa_stats.get("coverage_alucinado", 0) + 1
+                else:
+                    alucinadas_seguidas = 0
             lacuna_desta = lacuna
         if intrusion_qa_enabled and attempt < intrusion_qa_retries:
             intrusoes = chunk_intrusions(got, chunk, qa_language)
@@ -319,6 +333,11 @@ def run_chunk_qa(
         if score == 0:
             break
         attempt += 1
+        if alucinacao_max_seguidas > 0 and alucinadas_seguidas >= alucinacao_max_seguidas:
+            _log("error", "inference.qa.alucinado", idx=idx, attempt=attempt,
+                 coverage=coverage, seguidas=alucinadas_seguidas)
+            qa_stats["coverage_alucinado_saida"] = qa_stats.get("coverage_alucinado_saida", 0) + 1
+            break
         if attempt >= max_attempts:
             _log("error", "inference.qa.exhausted", idx=idx, best_score=best_score)
             qa_stats["exhausted"] += 1

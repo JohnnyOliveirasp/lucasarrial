@@ -51,8 +51,11 @@ class FakeVoxCPM:
     def from_pretrained(cls, *a, **k):
         return cls()
 
+    kwargs = []
+
     def generate(self, text, **k):
         FakeVoxCPM.gerados.append(text)
+        FakeVoxCPM.kwargs.append(k)
         n = max(int(SR * 0.3), int(SR * len(text) / 120))
         # 100ms de silencio em cada ponta: o VoxCPM real deixa "respiracao" no
         # fim de cada chunk e boot-up no comeco, e e' isso que o trim tira. Sem
@@ -217,6 +220,37 @@ class InferenciaPontaAPontaTest(unittest.TestCase):
 
     def setUp(self):
         FakeVoxCPM.gerados = []
+        FakeVoxCPM.kwargs = []
+
+    def test_frase_longa_ALUCINADA_e_resgatada_no_nivel_2(self):
+        # #52, caso Ronald (27/08): um chunk de frase UNICA sai alucinado
+        # (whisper nao ouve nada dele) em toda tentativa. Ate 26/08: 3
+        # tentativas identicas + resgate "frase_unica" -> job cai, aluno
+        # tenta 6x. Agora: 2 tentativas -> resgate nivel 2 (parte abaixo da
+        # frase, cfg mais alto) -> pedacos curtos passam -> ENTREGA.
+        frase = ("Boa tarde a todos e uma honra dividir esse momento com um "
+                 "publico que entende na pratica o que e construir um negocio "
+                 "do zero com as proprias maos")
+        self.assertLess(len(frase), 160)  # cabe num chunk so': frase unica
+
+        def aluc_em_texto_longo(seg, sr, m, lang, label):
+            pedido = FakeVoxCPM.gerados[-1]
+            return [] if len(pedido) > 80 else tts_qa.norm_words(pedido, lang)
+
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=aluc_em_texto_longo), \
+             mock.patch.object(tts_qa.loop, "transcribe_seg_autodetect", return_value=([], "pt", 0.0)):
+            r = handler.handler({"input": _clone_job(text=frase)})
+        self.assertNotIn("error", r, r.get("error"))
+        qa = r["qa"]
+        self.assertGreaterEqual(qa["coverage_alucinado_saida"], 1, "saiu cedo do laco")
+        self.assertEqual(qa["coverage_rescue_nivel2"], 1)
+        self.assertEqual(qa["coverage_rescued"], 1)
+        # Os pedacos do nivel 2 foram gerados com cfg MAIOR (1.6 + 0.4).
+        cfgs = {k.get("cfg_value") for k in FakeVoxCPM.kwargs}
+        self.assertIn(2.0, cfgs)
+        self.assertIn(1.6, cfgs)
+        # E o audio entregue e' feito dos pedacos curtos, nao do chunk alucinado.
+        self.assertTrue(all(len(t) <= 80 for t in FakeVoxCPM.gerados[-3:]))
 
     def test_clone_completo_entrega_audio(self):
         # QA ouve exatamente o texto pedido -> nada regenera, entrega limpa.

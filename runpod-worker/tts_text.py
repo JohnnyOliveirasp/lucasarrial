@@ -80,3 +80,45 @@ def split_text_for_tts(text: str, max_chars: int = 160) -> "list[tuple[str, bool
         for i, c in enumerate(cleaned):
             out.append((c, i == len(cleaned) - 1))
     return out
+
+
+def split_below_sentence(text: str, max_chars: int = 70) -> "list[str]":
+    """Parte UMA frase em pedacos <= max_chars, ABAIXO da fronteira de frase
+    (#52, 27/08). `split_text_for_tts` nunca corta dentro de uma frase — por
+    isso o resgate de 24/08 devolvia "frase_unica" e desistia quando o chunk
+    alucinado era uma frase longa.
+
+    Ordem de corte: virgula/ponto-e-virgula/travessao primeiro (respiro
+    natural), depois por palavras. Nunca corta no meio de uma palavra. Cada
+    pedaco passa por ensure_terminal (borda limpa, anti-filler).
+    """
+    text = (text or "").strip()
+    if not text:
+        return []
+    max_chars = max(10, int(max_chars))
+    # 1) clausulas: corta DEPOIS de , ; : — –
+    clausulas = [c.strip() for c in re.split(r"(?<=[,;:—–])\s+", text) if c.strip()]
+    # 2) clausula que ainda estoura: parte por palavras
+    pedacos: "list[str]" = []
+    for cl in clausulas:
+        if len(cl) <= max_chars:
+            pedacos.append(cl)
+            continue
+        cur = ""
+        for w in cl.split():
+            if cur and len(cur) + 1 + len(w) > max_chars:
+                pedacos.append(cur)
+                cur = w
+            else:
+                cur = (cur + " " + w) if cur else w
+        if cur:
+            pedacos.append(cur)
+    # 3) junta vizinhos curtos ate o limite (evita pedaco de 1-2 palavras, que
+    #    o modelo tende a "completar" com filler)
+    juntos: "list[str]" = []
+    for pz in pedacos:
+        if juntos and len(juntos[-1]) + 1 + len(pz) <= max_chars:
+            juntos[-1] = juntos[-1] + " " + pz
+        else:
+            juntos.append(pz)
+    return [c for c in (ensure_terminal(c) for c in juntos) if c]
