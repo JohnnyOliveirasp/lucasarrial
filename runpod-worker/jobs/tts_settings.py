@@ -123,6 +123,25 @@ class TtsSettings:
     residuo com atempo (pitch preservado), nunca alem de `max_stretch`.
     GATE MACIO — nunca falha o job."""
 
+    # ── Chunk ALUCINADO (#52, 27/08) ───────────────────────────────────────
+    qa_alucinacao_min: float
+    """Cobertura abaixo disto nao e' "faltou um pedaco": e' audio que NAO E' o
+    texto (chunk alucinado). Medido no Ronald (27/08): 6 falhas no mesmo texto
+    com coverage_best 0-0,1 enquanto os outros chunks davam 0,96."""
+    qa_alucinacao_max_seguidas: int
+    """Quantas tentativas seguidas abaixo de `qa_alucinacao_min` o laco tolera
+    antes de PARAR de repetir a mesma chamada. Nada muda entre uma tentativa e
+    outra (mesmo texto, mesmos parametros, sem seed): repetir e' cair no mesmo
+    poco. Sair cedo entrega o chunk ao resgate, que muda de estrategia."""
+    rescue_word_chars: int
+    """Nivel 2 do resgate: tamanho maximo (chars) dos pedacos partidos ABAIXO da
+    fronteira de frase (virgula/palavras). O split por frase (nivel 1) nao desce
+    disso e uma frase longa unica ficava sem resgate ("frase_unica")."""
+    rescue_cfg_delta: float
+    """Quanto somar ao cfg_value no nivel 2 do resgate (aderencia maior ao
+    texto). E' a UNICA alavanca que muda a geracao entre as tentativas — o
+    VoxCPM nao expoe seed nem temperatura. Teto 2.5."""
+
     @property
     def algum_qa_ligado(self) -> bool:
         return (self.start_qa_enabled or self.echo_qa_enabled
@@ -176,4 +195,8 @@ class TtsSettings:
             rate_qa_model=os.environ.get("TTS_RATE_QA_WHISPER", os.environ.get("TTS_ECHO_QA_WHISPER", "large-v3-turbo")),
             target_wps=(float(inp["speech_rate_wps"]) if inp.get("speech_rate_wps") else None),
             speech_rate_factor=min(1.5, max(0.5, float(inp.get("speech_rate_factor") or 1.0))),
+            qa_alucinacao_min=float(os.environ.get("TTS_QA_ALUCINACAO_MIN", "0.3")),
+            qa_alucinacao_max_seguidas=int(os.environ.get("TTS_QA_ALUCINACAO_MAX_SEGUIDAS", "2")),
+            rescue_word_chars=int(os.environ.get("TTS_RESCUE_WORD_CHARS", "70")),
+            rescue_cfg_delta=float(os.environ.get("TTS_RESCUE_CFG_DELTA", "0.4")),
         )
