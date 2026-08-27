@@ -1172,6 +1172,13 @@
       "audioSelected": "Áudio selecionado",
       "sceneEstimate": "~{n} cenas de {s}s"
     },
+    "sceneDelete": {
+      "label": "Apagar cena",
+      "title": "Apagar a cena {n}?",
+      "warning": "Ação <strong>irreversível</strong>. Remove só esta cena (imagem e clipe). As outras cenas continuam. O vídeo final fica mais curto que a narração.",
+      "deleting": "Apagando…",
+      "failed": "Falha ao apagar a cena"
+    },
     "scenes": {
       "loadFailed": "Falha ao carregar cenas",
       "generateFailed": "Falha ao gerar cenas",
