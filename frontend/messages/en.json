@@ -1172,6 +1172,13 @@
       "audioSelected": "Audio selected",
       "sceneEstimate": "~{n} scenes of {s}s"
     },
+    "sceneDelete": {
+      "label": "Delete scene",
+      "title": "Delete scene {n}?",
+      "warning": "This action is <strong>irreversible</strong>. It removes only this scene (image and clip). The other scenes stay. The final video gets shorter than the narration.",
+      "deleting": "Deleting…",
+      "failed": "Couldn't delete the scene"
+    },
     "scenes": {
       "loadFailed": "Couldn't load scenes",
       "generateFailed": "Couldn't generate scenes",

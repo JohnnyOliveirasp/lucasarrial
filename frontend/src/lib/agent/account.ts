@@ -131,13 +131,22 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       recent("generations", "name,status,error_message,created_at"),
       recent("video_clones", "name,status,error_message,created_at"),
       recent("image_generations", "name,status,error_message,created_at"),
-      recent("video_projects", "name,status,error_message,created_at"),
+      // scene_count entra no nome: em 27/08 a Fast apontou pra aluna "o projeto
+      // das 16 cenas" e era o projeto ERRADO (1 cena) — ela apagou esse. Sem o
+      // número de cenas o bot não tem como distinguir um projeto do outro.
+      recent("video_projects", "name,status,error_message,created_at,scene_count"),
       admin.from("credit_transactions").select("kind,amount,note,created_at").eq("user_id", profileId).order("created_at", { ascending: false }).limit(6),
     ]);
 
-    type R = { name?: string | null; status?: string | null; error_message?: string | null; created_at?: string | null };
+    type R = { name?: string | null; status?: string | null; error_message?: string | null; created_at?: string | null; scene_count?: number | null };
     const lines = (label: string, rows: unknown): JobLine[] =>
-      ((rows ?? []) as R[]).map((r) => ({ label, name: r.name ?? null, status: r.status ?? null, error: r.error_message ?? null, at: r.created_at ?? null }));
+      ((rows ?? []) as R[]).map((r) => ({
+        label,
+        name: r.name ? (typeof r.scene_count === "number" ? `${r.name} (${r.scene_count} cenas)` : r.name) : null,
+        status: r.status ?? null,
+        error: r.error_message ?? null,
+        at: r.created_at ?? null,
+      }));
 
     const jobs = [
       ...lines("Voz (treino)", voices.data),

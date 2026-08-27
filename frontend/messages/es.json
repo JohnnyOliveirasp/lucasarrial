@@ -1172,6 +1172,13 @@
       "audioSelected": "Audio seleccionado",
       "sceneEstimate": "~{n} escenas de {s}s"
     },
+    "sceneDelete": {
+      "label": "Eliminar escena",
+      "title": "¿Eliminar la escena {n}?",
+      "warning": "Acción <strong>irreversible</strong>. Elimina solo esta escena (imagen y clip). Las demás escenas se mantienen. El video final queda más corto que la narración.",
+      "deleting": "Eliminando…",
+      "failed": "No se pudo eliminar la escena"
+    },
     "scenes": {
       "loadFailed": "No se pudieron cargar las escenas",
       "generateFailed": "No se pudieron generar las escenas",

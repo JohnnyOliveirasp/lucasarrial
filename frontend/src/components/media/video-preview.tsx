@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Maximize2, Pause, Volume2, Captions, Settings } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Maximize2, Pause, VolumeX, Captions, Settings } from "lucide-react";
+
+/** mm:ss pro contador do chrome. */
+function fmt(s: number): string {
+  if (!Number.isFinite(s) || s < 0) return "00:00";
+  const m = Math.floor(s / 60);
+  const r = Math.floor(s % 60);
+  return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+}
 
 /**
  * VideoPreview — a superfície de output protagonista (substitui a "code window"
@@ -31,6 +39,13 @@ export function VideoPreview({
   maxWidth,
 }: VideoPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Chrome HONESTO (#149, 27/08): o contador "00:11 / 00:28", a barra em 38% e o
+  // ícone de volume eram decoração fixa — um aluno escreveu pro suporte que "o
+  // vídeo de exemplo está sem áudio". O asset é mudo por concepção (clipe de 6s
+  // sem faixa de áudio), então o chrome mostra o tempo REAL do vídeo e um
+  // ícone de mudo, em vez de prometer som que não existe.
+  const [time, setTime] = useState(0);
+  const [dur, setDur] = useState(0);
 
   useEffect(() => {
     videoRef.current?.play().catch(() => {
@@ -39,6 +54,7 @@ export function VideoPreview({
   }, []);
 
   const maxW = maxWidth ?? (vertical ? 320 : 760);
+  const pct = dur > 0 ? Math.min(100, (time / dur) * 100) : 0;
 
   return (
     <figure className="m-0 w-full" style={{ maxWidth: maxW }}>
@@ -57,6 +73,8 @@ export function VideoPreview({
             loop
             playsInline
             preload="metadata"
+            onLoadedMetadata={(e) => setDur(e.currentTarget.duration)}
+            onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
           />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
@@ -88,14 +106,14 @@ export function VideoPreview({
         {/* chrome inferior — barra de progresso + controles */}
         <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2.5 bg-gradient-to-t from-black/70 to-transparent px-4 py-3.5">
           <div className="relative h-[3px] rounded-sm bg-[var(--hairline-strong)]">
-            <div className="absolute inset-y-0 left-0 w-[38%] rounded-sm bg-[rgba(250,250,250,0.92)]" />
-            <div className="absolute -top-[3px] left-[38%] size-[9px] -translate-x-1/2 rounded-full bg-white" />
+            <div className="absolute inset-y-0 left-0 rounded-sm bg-[rgba(250,250,250,0.92)]" style={{ width: `${pct}%` }} />
+            <div className="absolute -top-[3px] size-[9px] -translate-x-1/2 rounded-full bg-white" style={{ left: `${pct}%` }} />
           </div>
           <div className="flex items-center gap-3.5 text-[var(--silver)]">
             <Pause className="size-4" />
-            <Volume2 className="size-4" />
+            <VolumeX className="size-4" aria-label="sem som" />
             <span className="font-mono text-[12px] tracking-[0.02em] text-[var(--mute)]">
-              00:11 / 00:28
+              {fmt(time)} / {fmt(dur)}
             </span>
             <span className="ml-auto inline-flex gap-3.5">
               <Captions className="size-4" />
