@@ -366,7 +366,31 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
         .update({ status: "ready", video_path: key, error_message: null } as never)
         .eq("id", scene.id);
     } catch (e) {
-      await failScene(scene, e instanceof Error ? `salvar cena: ${e.message}` : "salvar cena falhou");
+      // ⚠️ NÃO reprovar a cena aqui (incidente 147/148, 27/08).
+      //
+      // Chegar neste ponto significa que o Kie JÁ ENTREGOU o vídeo com sucesso
+      // (`info.state === "success"` acima) e que o problema foi NOSSO: baixar o
+      // arquivo ou gravá-lo no R2. Antes, o catch chamava `failScene`, que marca
+      // a cena `failed` e estorna — ou seja, tratava falha de INFRA como se a
+      // geração tivesse falhado, e jogava fora um vídeo que existia.
+      //
+      // Foi exatamente isso que matou 8 cenas de 3 alunos em 71 segundos: uma
+      // execução com `R2_BUCKET_*` ausente fez `imagesBucket()` devolver "" e o
+      // SDK estourar "No value provided for input HTTP label: Bucket". As 8
+      // tasks seguiam `state=success` no Kie, com os arquivos íntegros (1,1MB a
+      // 4,2MB) — recuperadas depois à mão, uma delas esperando havia 14 dias.
+      //
+      // A cena FICA em `animating`: o resultado continua no Kie e o sweep de 5
+      // min (`lib/studio/sweep-stuck-scenes.ts`) tenta de novo. Assim o erro se
+      // cura sozinho quando a causa (config, rede, R2 fora) passa, em vez de
+      // virar prejuízo permanente pro aluno. Só registra o motivo, sem estornar
+      // e sem mexer no status.
+      const motivo = e instanceof Error ? `salvar cena: ${e.message}` : "salvar cena falhou";
+      console.error("[studio-scene] falha ao GUARDAR resultado pronto", scene.id, motivo);
+      await admin
+        .from("studio_scenes")
+        .update({ error_message: motivo.slice(0, 300) } as never)
+        .eq("id", scene.id);
     }
   }
 }
