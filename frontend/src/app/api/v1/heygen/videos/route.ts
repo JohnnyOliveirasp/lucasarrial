@@ -18,6 +18,11 @@ import {
   generateAvatarIV,
   friendlyHeygenError,
 } from "@/lib/heygen/client";
+import {
+  contentTypeImagemHeygen,
+  erroImagemNaoSuportada,
+  type ContentTypeHeygen,
+} from "@/lib/heygen/imagem-content-type";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
@@ -55,7 +60,7 @@ async function loadApiKey(userId: string): Promise<string | null> {
 async function imageBytesFromBody(
   userId: string,
   image: NonNullable<PostBody["image"]>,
-): Promise<{ bytes: Uint8Array; contentType: "image/jpeg" | "image/png" } | string> {
+): Promise<{ bytes: Uint8Array; contentType: ContentTypeHeygen } | string> {
   if (image.kind === "platform_image") {
     if (!image.image_generation_id) return "Escolha uma imagem da plataforma";
     const { data } = await getAdmin()
@@ -70,8 +75,10 @@ async function imageBytesFromBody(
     const url = await createPresignedGet(imagesBucket(), row.image_path, 600);
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return "Não foi possível ler a imagem";
-    const ct = res.headers.get("content-type")?.includes("png") ? "image/png" : "image/jpeg";
-    return { bytes: new Uint8Array(await res.arrayBuffer()), contentType: ct };
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const ct = contentTypeImagemHeygen(bytes);
+    if (!ct) return erroImagemNaoSuportada(bytes);
+    return { bytes, contentType: ct };
   }
 
   if (image.kind === "heygen_look") {
@@ -90,18 +97,24 @@ async function imageBytesFromBody(
     if (!hostOk) return "Look inválido";
     const res = await fetch(u.toString(), { cache: "no-store" });
     if (!res.ok) return "Não foi possível ler a foto do avatar no HeyGen";
-    const ct = res.headers.get("content-type")?.includes("png") ? "image/png" : "image/jpeg";
     const buf = new Uint8Array(await res.arrayBuffer());
     if (buf.length > MAX_UPLOAD_BYTES * 2) return "Foto do avatar muito grande";
+    // ⚠️ Este é o caminho da queixa: o CDN do HeyGen serve WebP. Ler o header
+    // aqui era o que produzia "Content type not match image/jpeg != image/webp".
+    const ct = contentTypeImagemHeygen(buf);
+    if (!ct) return erroImagemNaoSuportada(buf);
     return { bytes: buf, contentType: ct };
   }
 
-  // upload direto (data URL)
-  const m = image.data_url?.match(/^data:(image\/(?:jpeg|png));base64,(.+)$/);
-  if (!m) return "Envie uma foto JPG ou PNG";
-  const bytes = Buffer.from(m[2], "base64");
+  // upload direto (data URL) — o prefixo `data:image/...` é só rótulo mandado
+  // pelo browser; quem decide o content-type continua sendo o conteúdo.
+  const m = image.data_url?.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
+  if (!m) return "Envie uma foto JPG, PNG ou WebP";
+  const bytes = new Uint8Array(Buffer.from(m[1], "base64"));
   if (bytes.length > MAX_UPLOAD_BYTES) return "Foto muito grande (máx. 8MB)";
-  return { bytes: new Uint8Array(bytes), contentType: m[1] as "image/jpeg" | "image/png" };
+  const ct = contentTypeImagemHeygen(bytes);
+  if (!ct) return erroImagemNaoSuportada(bytes);
+  return { bytes, contentType: ct };
 }
 
 export async function POST(request: NextRequest) {
