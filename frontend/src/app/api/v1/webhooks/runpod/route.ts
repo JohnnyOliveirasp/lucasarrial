@@ -34,6 +34,7 @@ import {
 import { finalizeVideoClone } from "@/lib/video-clone/finalize";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import { verificarOnboardingPronto } from "@/lib/onboarding/pronto";
+import { tentarReenviar } from "@/lib/generations/reenviar";
 
 type RunpodWebhookPayload = {
   id: string;
@@ -228,6 +229,13 @@ async function handleGenerationWebhook(
   // ÚNICA exceção sancionada: o sufixo "[fase: ...]" (errorMessageComFase),
   // de formato FIXO, que a assinatura REMOVE antes de assinar (stripFaseSuffix
   // em classify.ts) — num timeout, a row passa a NOMEAR a fase pendurada.
+  // #15: worker travado devolve executionTimeout num texto que roda em 90s se
+  // for refeito. Antes de falhar, tenta UMA vez sozinho — sem estorno e sem
+  // novo débito, porque é a mesma geração. Só o timeout entra aqui; qualquer
+  // outro erro segue direto pro caminho de falha de sempre.
+  const reenvio = await tentarReenviar(generationId, rawError);
+  if (reenvio !== "nao_aplica") return;
+
   const failUpdate: {
     status: "failed";
     error_message: string;
