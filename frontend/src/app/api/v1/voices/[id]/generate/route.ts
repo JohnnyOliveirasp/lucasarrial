@@ -111,6 +111,16 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   if (!text) return badRequest("'text' is required");
   if (text.length > TEXT_MAX) return badRequest(`'text' max length is ${TEXT_MAX}`);
+  // Caractere de substituição U+FFFD (28/08, caso Vinicius #162): o aluno colou
+  // "Ningu�m te conta isso" — texto já corrompido na origem (copiado de um
+  // arquivo com encoding errado). O modelo lê "Ningu m" e a 1ª palavra sai
+  // quebrada — "áudio ruim no começo". 4 gerações cobradas com o mesmo texto.
+  // Recusar aqui é grátis; sintetizar é cobrar por um defeito que não é nosso.
+  if (text.includes("�")) {
+    return badRequest(
+      "O texto tem um caractere inválido (aparece como ▯ ou �). Cole o texto de novo a partir da origem — geralmente é um acento que veio quebrado.",
+    );
+  }
 
   const admin = getAdmin();
 

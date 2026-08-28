@@ -53,6 +53,54 @@ def W(start, end, word):
 PAD = reference._EDGE_PAD_SECONDS
 
 
+class TestSnapFraseInteira(unittest.TestCase):
+    """28/08: a referencia entra e sai em FRASE, nao em palavra. 5 de 8 vozes
+    reclamadas tinham referencia comecando no meio de uma frase."""
+
+    def _janela(self):
+        # "...luxo de dormir. Eu sei que existe uma parte. Ela cansou de tudo. e ai"
+        return [
+            W(0.0, 0.4, "luxo"), W(0.4, 0.7, "de"), W(0.7, 1.2, "dormir."),
+            W(1.4, 1.6, "Eu"), W(1.6, 1.9, "sei"), W(1.9, 2.1, "que"), W(2.1, 2.5, "existe"),
+            W(2.5, 2.8, "uma"), W(2.8, 3.3, "parte."), W(3.5, 3.8, "Ela"), W(3.8, 4.3, "cansou"),
+            W(4.3, 4.5, "de"), W(4.5, 5.0, "tudo."), W(5.2, 5.3, "e"), W(5.3, 5.6, "ai"),
+        ]
+
+    def test_recorta_em_inicio_e_fim_de_frase(self):
+        r = reference._snap_bounds_to_words(self._janela(), 0.0, 5.6, pad=0.0)
+        self.assertIsNotNone(r)
+        start, end, transcript = r
+        self.assertEqual(transcript, "Eu sei que existe uma parte. Ela cansou de tudo.")
+        self.assertAlmostEqual(start, 1.4)
+        self.assertAlmostEqual(end, 5.0)
+
+    def test_janela_que_ja_comeca_em_maiuscula_mantem_o_inicio(self):
+        ws = self._janela()[3:]  # comeca em "Eu"
+        _s, _e, transcript = reference._snap_bounds_to_words(ws, 1.4, 5.6, pad=0.0)
+        self.assertTrue(transcript.startswith("Eu sei"))
+        self.assertTrue(transcript.endswith("tudo."))
+
+    def test_sem_fronteira_de_frase_cai_no_corte_por_palavra(self):
+        ws = [W(0.0, 0.5, "uma"), W(0.5, 1.0, "frase"), W(1.0, 1.5, "sem"), W(1.5, 2.0, "ponto")]
+        _s, _e, transcript = reference._snap_bounds_to_words(ws, 0.0, 2.0, pad=0.0)
+        self.assertEqual(transcript, "uma frase sem ponto")
+
+    def test_frase_curta_demais_nao_vale_a_pena_e_fica_por_palavra(self):
+        # so 1s de frase inteira dentro de 30s de janela: perderia o timbre
+        ws = [W(0.0, 0.5, "bla")] * 0 + [
+            W(0.0, 10.0, "muitas"), W(10.0, 20.0, "palavras"), W(20.0, 28.0, "compridas."),
+            W(28.2, 28.6, "Oi."), W(28.8, 30.0, "tchau"),
+        ]
+        _s, _e, transcript = reference._snap_bounds_to_words(ws, 0.0, 30.0, pad=0.0)
+        self.assertEqual(transcript, "muitas palavras compridas. Oi. tchau")
+
+    def test_fecha_frase_reconhece_pontuacao_com_aspas(self):
+        self.assertTrue(reference._fecha_frase(W(0, 1, 'dormir."')))
+        self.assertTrue(reference._fecha_frase(W(0, 1, "vai?")))
+        self.assertTrue(reference._fecha_frase(W(0, 1, "fim…")))
+        self.assertFalse(reference._fecha_frase(W(0, 1, "meio,")))
+
+
 class TestSnapBoundsToWords(unittest.TestCase):
     """_snap_bounds_to_words puro: injeta words, confere os limites."""
 
