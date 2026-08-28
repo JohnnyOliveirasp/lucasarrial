@@ -190,8 +190,13 @@ class TtsSettings:
             # o texto de 60s saiu em 48,6s; 0,10 pega os chunks a 2,4+ .
             rate_qa_tolerance=float(os.environ.get("TTS_RATE_QA_TOLERANCE", "0.10")),
             rate_qa_retries=int(os.environ.get("TTS_RATE_QA_RETRIES", "2")),
-            # 0,90: acima de ~10% o atempo soa "bebado" (Johnny ouviu a 0,75).
-            rate_qa_max_stretch=float(os.environ.get("TTS_RATE_QA_MAX_STRETCH", "0.90")),
+            # 0,85 (Johnny 28/08): o 0,75 POR PEDACO soou "bebado" (25/08); o
+            # ajuste aqui e' UNICO e uniforme no audio inteiro, apos a montagem
+            # (_ajustar_ritmo_global), e 0,90 (11%) nao alcancava desvios de
+            # 30-35% medidos hoje (Victor, Ellen). 0,85 = ate 18% mais longo.
+            # Referencia escolhida no ritmo da pessoa NAO resolveu (rodada 2 em
+            # dev); o esticador e' a unica alavanca que age na SAIDA.
+            rate_qa_max_stretch=float(os.environ.get("TTS_RATE_QA_MAX_STRETCH", "0.85")),
             rate_qa_model=os.environ.get("TTS_RATE_QA_WHISPER", os.environ.get("TTS_ECHO_QA_WHISPER", "large-v3-turbo")),
             target_wps=(float(inp["speech_rate_wps"]) if inp.get("speech_rate_wps") else None),
             speech_rate_factor=min(1.5, max(0.5, float(inp.get("speech_rate_factor") or 1.0))),
