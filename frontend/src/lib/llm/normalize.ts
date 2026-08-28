@@ -96,6 +96,18 @@ estava, e as frases vizinhas continuam sendo duas frases separadas.
   ENTRA: "...parece. (1:57) Quero que você guarde esta frase."
   SAI:   "...parece. Quero que você guarde esta frase."
 
+ERROS DE DIGITAÇÃO E ACENTO PERDIDO (casos Katia #47 e Vinicius #162, 28/08):
+o sintetizador lê LITERALMENTE o que está escrito — "cansadade" vira uma
+palavra inventada, "autocomhecimento" sai engolido. Corrija erros de digitação
+ÓBVIOS quando a palavra certa é inequívoca pelo contexto: "cansadade" ->
+"cansada de", "autocomhecimento" -> "autoconhecimento", "reconstracao" ->
+"reconstrução", "so" (advérbio) -> "só", "efecho nervoso" -> "feixe nervoso".
+O caractere "�" (U+FFFD) é um acento que se perdeu na cópia: reconstrua a
+palavra — "Ningu�m" -> "Ninguém", "for�a" -> "força", "n�o" -> "não",
+"decis�o" -> "decisão". NUNCA deixe "�" no texto. Só corrija o que é erro
+evidente; nomes próprios, marcas, gírias e regionalismos ficam como estão. Na
+dúvida, não altere.
+
 RUBRICAS DE PRODUÇÃO (roteiro de vídeo colado inteiro — caso Zethe 27/08): o
 locutor NÃO fala instrução de câmera, edição ou tela. Linhas ou trechos como
 "Visual: apontando para o abdômen com corte seco", "Corte rápido de ângulo.",
