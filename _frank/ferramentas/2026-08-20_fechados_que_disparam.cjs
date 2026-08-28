@@ -35,14 +35,25 @@ const PAGINA = 1000;
 
 /**
  * Lê a tabela inteira paginando. O PostgREST corta em 1000 linhas EM SILÊNCIO;
- * hoje são 140 fechados e não trunca, mas o denominador deste script é
+ * hoje são 142 fechados e não trunca, mas o denominador deste script é
  * exatamente o número que não pode mentir quando a base crescer.
+ *
+ * ⚠️ A ORDENAÇÃO TEM QUE SER ÚNICA, senão a paginação mente sem avisar.
+ * Paginar é OFFSET/LIMIT: com `order by` que empata, o Postgres não promete
+ * ordem estável de uma página para a seguinte, então linha empatada na
+ * fronteira pode sair DUAS vezes — ou nenhuma. Não é hipótese nesta base:
+ * medido em 28/08, 142 fechados para 140 `last_seen_at` distintos, ou seja
+ * 2 grupos de empate JÁ existem. Enquanto tudo cabe numa página o efeito é
+ * zero; passando de 1000 o denominador passa a errar em silêncio, que é
+ * exatamente o defeito que este script existe para não cometer. Daí o
+ * desempate por `id` (chave primária: ordem total e estável).
  */
 async function lerTudo(db, tabela, colunas, aplicarFiltro) {
   const out = [];
   for (let de = 0; ; de += PAGINA) {
     let q = db.from(tabela).select(colunas).range(de, de + PAGINA - 1);
     if (aplicarFiltro) q = aplicarFiltro(q);
+    q = q.order("id", { ascending: true }); // desempate — ver aviso acima
     const { data, error } = await q;
     if (error) return { data: null, error };
     out.push(...data);
