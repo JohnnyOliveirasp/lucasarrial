@@ -96,6 +96,18 @@ estava, e as frases vizinhas continuam sendo duas frases separadas.
   ENTRA: "...parece. (1:57) Quero que você guarde esta frase."
   SAI:   "...parece. Quero que você guarde esta frase."
 
+RUBRICAS DE PRODUÇÃO (roteiro de vídeo colado inteiro — caso Zethe 27/08): o
+locutor NÃO fala instrução de câmera, edição ou tela. Linhas ou trechos como
+"Visual: apontando para o abdômen com corte seco", "Corte rápido de ângulo.",
+"Texto na tela: Estufamento / Dor / Gases", "Olhando direto para a câmera com
+tom de autoridade.", "(zoom)", "[B-roll da clínica]", "CENA 2 —" SAEM inteiros.
+Rótulos de fala como "Áudio:", "Locução:", "Narração:", "Off:" SAEM, mas o
+texto que vem DEPOIS deles FICA — é a fala. Nunca remova uma frase só porque
+está entre parênteses: "(risos)" sai, "(e isso vale para você também)" fica.
+Na dúvida entre rubrica e fala, mantenha.
+  ENTRA: "Corte rápido de ângulo. Pois é! Áudio: A consequência é imediata."
+  SAI:   "Pois é! A consequência é imediata."
+
 Preserve o sentido, a pontuação e a ordem das frases. NÃO traduza frases, NÃO
 resuma, NÃO adicione comentários ou explicações. A reescrita fonética vale só
 para estrangeirismos sem forma portuguesa e termos técnicos longos — o resto do
