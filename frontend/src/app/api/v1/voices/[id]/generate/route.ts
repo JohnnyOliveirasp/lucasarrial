@@ -47,6 +47,7 @@ import {
 } from "@/lib/r2/presigned";
 import { runpodSubmitInference, webhookUrlFor } from "@/lib/runpod/client";
 import { faseTelemetriaInput } from "@/lib/generations/fase-telemetria";
+import { inferenceExecutionTimeoutMs } from "@/lib/generations/execucao";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -56,30 +57,6 @@ const PRESIGN_EXPIRES = 60 * 60; // 1h
 // ficar instável em single-shot — se precisar mais, dividir por frase no worker.
 const TEXT_MAX = 2000;
 
-/**
- * Teto de execução do job (policy.executionTimeout), como no treino e nos
- * clones. Esta era a ÚNICA rota sem policy por job: valia o default de 20min
- * do endpoint, que desde o QA anti-eco (777e405: todo chunk transcrito + até
- * 3 tentativas) não comporta texto longo em GPU fria/lenta — 5 alunos
- * estouraram em 06/08 (diagnóstico do Vigia, incidente "tempo de execução
- * estourado"). Chunk de 160 chars espelha TTS_CHUNK_MAX_CHARS do worker.
- * Piso de 30min (07/08: worker FRIO do endpoint B levou >20min só carregando
- * o modelo e matou um texto de 59 chars); 2000 chars ≈ 13 chunks → 41min.
- */
-/**
- * Teto do job (#15, 24/08). O piso de 30 min vinha da era do worker frio
- * (download de 5 GB por worker) — assado na imagem em adcf18a (11/08). Medido
- * em 24/08 sobre 1.186 gerações prontas desde então: p99 ≤ 271s em TODAS as
- * faixas de tamanho, máximo absoluto 460s. Com 30 min, um worker travado
- * segurava o aluno 1.812s por um texto de 78 caracteres (23/08 23:41) — 14
- * casos, todos estornados, nenhum correlacionado com tamanho de texto.
- * Agora: 5 min + 30s por pedaço de 160 chars, piso 8 min (≥2,5× o pior caso
- * real; 2.567 chars → 13,5 min). Worker travado devolve o crédito em 8 min.
- */
-function inferenceExecutionTimeoutMs(textLen: number): number {
-  const chunks = Math.max(1, Math.ceil(textLen / 160));
-  return Math.max(8 * 60, 5 * 60 + chunks * 30) * 1000;
-}
 
 type Body = {
   text: string;
@@ -201,10 +178,13 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     );
   }
 
-  const inferenceInput: Record<string, unknown> = {
+  // `params` = tudo que NÃO é URL assinada nem token de telemetria. É
+  // exatamente o que fica gravado em generations.request_params (mig 99, #15)
+  // pro reenvio automático repetir o pedido sem adivinhar nada — inclusive a
+  // escolha de ritmo da tela (speed) e o pacing da voz.
+  const params: Record<string, unknown> = {
     type: "inference",
     text: normalizedText,
-    output_upload_url: outputUploadUrl,
     // Alpha gravado no treino daquela voz (16 p/ antigas, 32 p/ novas). O worker
     // infere com esse alpha — casa com a LoRA. Sem valor, o worker usa 16.
     lora_alpha: typeof voice.lora_alpha === "number" ? voice.lora_alpha : 16,
@@ -228,14 +208,6 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       ? { speech_rate_factor: SPEED_FACTOR[body.speed] }
       : {}),
   };
-  if (loraUrl) inferenceInput.lora_url = loraUrl;
-
-  // Fase corrente do worker → banco (incidente d3d8d1b2): o heartbeat do
-  // worker POSTa a fase que está rodando pra /api/v1/webhooks/runpod-fase e
-  // ela cai em qa.fase_corrente — num estouro de executionTimeout a row diz
-  // qual fase pendurou. Sem a env FASE_TELEMETRIA_SECRET isso devolve {} e o
-  // input fica idêntico ao de hoje.
-  Object.assign(inferenceInput, faseTelemetriaInput(generationId));
 
   // Pacing entre frases: precedência body > config da voz. Sem nenhum, o worker
   // usa o default global (env) — comportamento inalterado pras vozes sem config.
@@ -247,24 +219,38 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     typeof body.chunk_crossfade_ms === "number"
       ? body.chunk_crossfade_ms
       : voice.tts_crossfade_ms;
-  if (typeof silenceMs === "number") inferenceInput.chunk_silence_ms = silenceMs;
-  if (typeof crossfadeMs === "number") inferenceInput.chunk_crossfade_ms = crossfadeMs;
+  if (typeof silenceMs === "number") params.chunk_silence_ms = silenceMs;
+  if (typeof crossfadeMs === "number") params.chunk_crossfade_ms = crossfadeMs;
 
   // Transcrição da referência efetivamente enviada como prompt_text. Guardada
   // p/ auditoria (debug de "filler"/eco da referência depende de saber QUAL
   // prompt_text foi usado naquela geração).
   let refTranscriptUsed: string | null = null;
   if (refUrl) {
-    inferenceInput.prompt_wav_url = refUrl;
     // A referência é auto-extraída e transcrita no treino. Mandamos o
     // prompt_text salvo → o worker NÃO re-transcreve a cada geração. Se por
     // algum motivo não houver transcrição, o worker cai no Whisper (Caminho A).
     const refTranscript = (voice.reference_transcript ?? "").trim();
     if (refTranscript) {
-      inferenceInput.prompt_text = refTranscript;
+      params.prompt_text = refTranscript;
       refTranscriptUsed = refTranscript;
     }
   }
+
+  // O input real = params + as partes que NÃO se guardam: as URLs assinadas
+  // (expiram em 1h) e o token de telemetria de fase (segredo por job).
+  // Fase corrente do worker → banco (incidente d3d8d1b2): o heartbeat do
+  // worker POSTa a fase que está rodando pra /api/v1/webhooks/runpod-fase e
+  // ela cai em qa.fase_corrente — num estouro de executionTimeout a row diz
+  // qual fase pendurou. Sem a env FASE_TELEMETRIA_SECRET isso devolve {} e o
+  // input fica idêntico ao de hoje.
+  const inferenceInput: Record<string, unknown> = {
+    ...params,
+    output_upload_url: outputUploadUrl,
+    ...faseTelemetriaInput(generationId),
+  };
+  if (loraUrl) inferenceInput.lora_url = loraUrl;
+  if (refUrl) inferenceInput.prompt_wav_url = refUrl;
 
   let runpodJob;
   try {
@@ -288,6 +274,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     reference_transcript: refTranscriptUsed,
     audio_path: outputKey,
     runpod_job_id: runpodJob.id,
+    request_params: params,
   } as never);
 
   if (insertErr) {

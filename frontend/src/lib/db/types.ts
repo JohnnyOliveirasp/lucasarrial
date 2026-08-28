@@ -163,6 +163,10 @@ export type GenerationRow = {
   status: GenerationStatus;
   error_message: string | null;
   runpod_job_id: string | null;
+  /** Input mandado ao worker sem as URLs assinadas — mig 99 (#15), p/ reenvio. */
+  request_params: Record<string, unknown> | null;
+  /** Envios ao RunPod desta geração (1 = original) — mig 99 (#15). */
+  request_attempts: number | null;
   created_at: Timestamp;
 };
 export type GenerationInsert = {
