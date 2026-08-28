@@ -5,6 +5,15 @@
  * inventar o que não está neste manual.
  */
 
+import { CLONE_TIERS, CLONE_MAX_AUDIO_SECONDS, CLONE_MIN_BILLED_SECONDS } from "@/lib/video-clone/config";
+
+// #175 (28/08): o manual cotava Padrão 170 / Turbo 105 — preço ANTERIOR a 08/08
+// (Johnny reprecificou: Padrão 2.0 = 105, Turbo = 80). A Fast dizia 31–62% a mais
+// pro aluno e pro e-mail de winback. O preço agora vem do MESMO lugar que cobra.
+const tierPorId = (id: string) => CLONE_TIERS.find((t) => t.id === id);
+const CLONE_PADRAO = tierPorId("480p-v3");
+const CLONE_TURBO = tierPorId("480p-v2");
+
 export const PLATFORM_MANUAL = `
 # FastCloner — manual da plataforma (fonte da verdade)
 
@@ -117,8 +126,8 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
   duplicar projeto, restaurar cena ou projeto apagado. Precisa disso → escale.
 
 ### Vídeos → Vídeo Clone (você falando: foto + áudio → lip-sync)
-- Custo por SEGUNDO de áudio: Padrão 170 · Turbo 105 créditos/s.
-  Mínimo cobrado: 5s. Áudio de no máximo 90s. (Não existe mais opção HD.)
+- Custo por SEGUNDO de áudio: ${CLONE_PADRAO?.label ?? "Padrão 2.0"} ${CLONE_PADRAO?.creditsPerSecond ?? 105} · ${CLONE_TURBO?.label ?? "Turbo"} ${CLONE_TURBO?.creditsPerSecond ?? 80} créditos/s.
+  Mínimo cobrado: ${CLONE_MIN_BILLED_SECONDS}s. Áudio de no máximo ${CLONE_MAX_AUDIO_SECONDS}s. (Não existe mais opção HD nem "Padrão 170".)
 - Como: menu Vídeos → Vídeo Clone → escolhe uma foto (do Gerador de Imagem ou
   upload; ideal: metade do corpo pra cima, rosto nítido) + um áudio (gerado
   com a voz OU upload) → escolhe a qualidade → Gerar (leva alguns minutos).

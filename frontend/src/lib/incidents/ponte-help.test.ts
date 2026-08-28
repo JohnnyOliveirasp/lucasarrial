@@ -81,26 +81,21 @@ test("as duas filas viram chamado — atendimento também, não só técnico", (
   );
 });
 
-test("este canal NÃO fecha o chamado sozinho (não chama entregarAoTime)", () => {
-  // Decisão deliberada, e a única divergência proposital em relação ao e-mail.
-  // No e-mail, "avisa o grupo e FECHA" (#82, ordem do Johnny 24/08) funciona
-  // porque quem pegar responde o aluno pelo suporte@. O chat do app não tem
-  // resposta humana — o próprio texto do emailEscalation diz isso ao time.
-  // Fechar como "entregue ao time" num canal sem caminho de volta é como a
-  // Zethe se perdeu. Se o chat ganhar resposta humana, alinhar com o e-mail
-  // é correto — mas tem que ser uma decisão consciente, e este teste obriga
-  // quem fizer isso a lê-la antes.
-  // Procura a CHAMADA e o IMPORT, não a palavra: o comentário de
-  // abrirChamadoDoChat cita `entregarAoTime` justamente pra explicar por que
-  // não é usado aqui, e um teste que casasse com a menção reprovaria a própria
-  // documentação da decisão que ele existe pra proteger.
+test("ATENDIMENTO é entregue ao time e fechado; TÉCNICO fica aberto (regra #82, 28/08)", () => {
+  // Revisão de 28/08 (Johnny: "21 chamados abertos não faz sentido"): a fila
+  // mede o SISTEMA. Pedido de gente vai pro grupo e fecha, como no e-mail.
+  // Falha técnica continua aberta. E a entrega é guardada por `!technical`:
+  // fechar um bug de plataforma como "entregue ao time" o esconderia da fila.
   assert.ok(
-    !/\bentregarAoTime\s*\(/.test(fonte),
-    "alguém CHAMOU entregarAoTime no chat do app: isso FECHA o chamado assim que o grupo é avisado, " +
-      "num canal onde o aluno não recebe resposta humana. Leia o comentário de abrirChamadoDoChat antes de mudar",
+    /import[^;]*\bentregarAoTime\b[^;]*;/.test(fonte),
+    "entregarAoTime não é mais importado — atendimento voltaria a acumular na fila",
   );
   assert.ok(
-    !/import[^;]*\bentregarAoTime\b[^;]*;/.test(fonte),
-    "entregarAoTime foi importado na rota do help — se é pra usar, a decisão do comentário precisa ser revista antes",
+    /if \(numero != null && !technical\) \{[\s\S]{0,200}await entregarAoTime\(/.test(fonte),
+    "a entrega ao time precisa ser SÓ para atendimento (!technical) e SÓ com chamado aberto (numero != null)",
+  );
+  assert.ok(
+    /canal: "chat do app"/.test(fonte),
+    "o aviso ao grupo tem que dizer de onde o aluno falou (chat do app)",
   );
 });

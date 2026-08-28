@@ -17,6 +17,7 @@ import { buildAgentReply, type AgentImage } from "@/lib/agent/brain";
 import { buildAccountContext } from "@/lib/agent/account";
 import { extractEscalation } from "@/lib/agent/escalate";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
+import { entregarAoTime } from "@/lib/incidents/entregar";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
 import { transcribeAudioBuffer } from "@/lib/video/transcribe";
@@ -148,14 +149,14 @@ async function emailEscalation(args: {
  * o índice UNIQUE parcial da mig 92 + `inserirChamadoUnico` já resolvem a
  * corrida (lição do #110, "1 problema virava 6 chamados").
  *
- * ⚠️ POR QUE ESTE CANAL NÃO CHAMA `entregarAoTime` (e o e-mail chama):
- * no e-mail, "avisa o grupo e FECHA" (#82, ordem do Johnny 24/08) funciona
- * porque quem pegar responde o aluno pelo suporte@. O chat do app NÃO TEM
- * resposta humana — o próprio texto do `emailEscalation` abaixo diz isso. Um
- * chamado fechado como "entregue ao time" num canal sem caminho de volta é
- * precisamente como a Zethe se perdeu. Aqui o chamado FICA ABERTO até alguém
- * responder de verdade. Se/quando o chat ganhar resposta humana, alinhar com
- * o e-mail.
+ * ATENDIMENTO × TÉCNICO (revisado 28/08, pedido do Johnny — "21 chamados
+ * abertos não faz sentido"): a fila de incidentes mede a saúde do SISTEMA.
+ * Pedido de atendimento (dúvida, "como faço", reclamação de resultado que
+ * precisa de gente) segue a regra #82 do e-mail: abre o chamado como registro,
+ * AVISA O GRUPO DO TIME e FECHA como "entregue ao time" — quem pegar responde
+ * o aluno por e-mail. Só o TÉCNICO (falha de plataforma) fica aberto na fila.
+ * Se o grupo não recebeu, `entregarAoTime` devolve false e o chamado FICA
+ * ABERTO (nunca some sem alguém saber — é a lição da Zethe, #151).
  */
 async function abrirChamadoDoChat(args: {
   email: string;
@@ -319,6 +320,15 @@ export async function POST(request: NextRequest) {
     // O chamado primeiro: é o registro que sobrevive: o e-mail é aviso, não memória.
     const numero = await abrirChamadoDoChat({ email, reason, lastText: userContent, pathname, technical });
     await emailEscalation({ email, reason, lastText: userContent, pathname, technical, numero });
+    // ATENDIMENTO = precisa de gente, não de código (#82): avisa o grupo e
+    // fecha. Best-effort: se o grupo não recebeu, o chamado fica aberto.
+    if (numero != null && !technical) {
+      try {
+        await entregarAoTime({ numero, canal: "chat do app", aluno: email, resumo: reason, texto: userContent });
+      } catch (e) {
+        console.error("[help] entrega ao time falhou:", e instanceof Error ? e.message : e);
+      }
+    }
   }
   const finalReply = clean || reply;
 
