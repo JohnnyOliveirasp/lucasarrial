@@ -116,6 +116,7 @@ def _stub():
     # 93f9b3b transcribe_words): o stub precisa conhece-los.
     pac = types.ModuleType("voice_pipeline.pacing")
     pac.measure_natural_pause_ms = lambda files, log=None: None
+    pac.measure_speech_rate_wps = lambda dataset_dir, log=None: 2.31
     vp.pacing = pac
     vp.transcribe_words = lambda *a, **k: None
     sys.modules["voice_pipeline.pacing"] = pac
