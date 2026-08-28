@@ -22,6 +22,10 @@ import {
   listGroupLooks,
   uploadImageAsset,
 } from "@/lib/heygen/client";
+import {
+  contentTypeImagemHeygen,
+  erroImagemNaoSuportada,
+} from "@/lib/heygen/imagem-content-type";
 import type { HeygenAccountRow } from "@/lib/db/types";
 
 export async function GET(request: NextRequest) {
@@ -98,8 +102,10 @@ export async function POST(request: NextRequest) {
     const url = await createPresignedGet(imagesBucket(), img.image_path, 600);
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return badRequest("Não foi possível ler a imagem");
-    const ct = res.headers.get("content-type")?.includes("png") ? "image/png" : "image/jpeg";
-    const { image_key } = await uploadImageAsset(apiKey, new Uint8Array(await res.arrayBuffer()), ct);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const ct = contentTypeImagemHeygen(bytes);
+    if (!ct) return badRequest(erroImagemNaoSuportada(bytes));
+    const { image_key } = await uploadImageAsset(apiKey, bytes, ct);
     const { group_id } = await createPhotoAvatarGroup(apiKey, { name, image_key });
     return jsonOk({ group_id, name }, 201);
   } catch (e) {

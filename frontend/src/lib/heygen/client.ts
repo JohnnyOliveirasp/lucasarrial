@@ -11,6 +11,8 @@
  * Server-only.
  */
 
+import type { ContentTypeHeygen } from "./imagem-content-type.ts";
+
 const API = "https://api.heygen.com";
 const UPLOAD = "https://upload.heygen.com";
 const TIMEOUT_MS = 30_000;
@@ -154,11 +156,18 @@ export async function listGroupLooks(apiKey: string, groupId: string): Promise<H
 
 // ───────── escrita (conta do ALUNO; consome créditos DELE) ─────────
 
-/** Sobe uma imagem e devolve o image_key exigido pelo av4/generate. */
+/**
+ * Sobe uma imagem e devolve o image_key exigido pelo av4/generate.
+ *
+ * ⚠️ O HeyGen CONFERE o content-type contra os bytes e recusa a divergência
+ * ("Content type not match image/jpeg != image/webp", 28/08). Quem chama tem
+ * que passar o tipo VERDADEIRO — use `contentTypeImagemHeygen(bytes)`, nunca
+ * o header da resposta nem a extensão da chave.
+ */
 export async function uploadImageAsset(
   apiKey: string,
   bytes: Uint8Array,
-  contentType: "image/jpeg" | "image/png",
+  contentType: ContentTypeHeygen,
 ): Promise<{ image_key: string }> {
   const data = await call<{ image_key?: string; url?: string }>(apiKey, "/v1/asset", {
     base: UPLOAD,
