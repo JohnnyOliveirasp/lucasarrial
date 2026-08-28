@@ -141,6 +141,19 @@ def _snap_bounds_to_words(
             inside.append(w)
     if not inside:
         return None
+    # FRONTEIRA DE FRASE (28/08, analise das 6 vozes reclamadas): 5 de 8
+    # referencias comecavam no MEIO de uma frase ("me portar como alguem
+    # que...", "que ela ja tinha derrubado...") e 3 terminavam sem ponto. O
+    # score so punia isso com +8/+30, mas quando TODAS as candidatas sao
+    # cortadas por palavra, todas pagam a multa e a escolhida continua torta.
+    # O VoxCPM copia a prosodia do trecho: referencia que entra no meio de
+    # frase da geracao que "comeca ruim" (Vinicius #162, Katia #47).
+    # Aqui a janela e' encolhida ate a 1a palavra que ABRE frase e a ultima
+    # que FECHA frase — so' se o que sobrar ainda tiver tamanho de referencia
+    # (>= _MIN_SENTENCE_FRACTION da regiao); senao fica o corte por palavra.
+    frase = _trim_to_sentence_bounds(inside, region_end - region_start)
+    if frase is not None:
+        inside = frase
     transcript = " ".join(
         (_word_field(w, "word") or "").strip() for w in inside
     ).strip()
@@ -150,6 +163,54 @@ def _snap_bounds_to_words(
     start = max(0.0, float(_word_field(inside[0], "start")) - pad)
     end = float(_word_field(inside[-1], "end")) + pad
     return (start, end, transcript)
+
+
+# Fracao minima da regiao que o recorte por FRASE precisa preservar. Abaixo
+# disso a referencia ficaria curta demais (menos material de timbre) e o corte
+# por palavra e' o menor mal.
+_MIN_SENTENCE_FRACTION = 0.6
+_TERMINAL_RE = re.compile(r"[.!?…]+[\"'”’)]*$")
+
+
+def _fecha_frase(w) -> bool:
+    return bool(_TERMINAL_RE.search((_word_field(w, "word") or "").strip()))
+
+
+def _trim_to_sentence_bounds(inside: list, region_seconds: float) -> "list | None":
+    """Encolhe `inside` (palavras inteiras, ordenadas) ate comecar em INICIO de
+    frase e terminar em FIM de frase. Devolve None se nao da (sem fronteira
+    dentro da janela, ou sobra curta demais)."""
+    if not inside:
+        return None
+    # inicio: a 1a palavra ja abre frase se a anterior (fora da janela) fechou —
+    # nao sabemos; entao o inicio valido e' a palavra logo DEPOIS de uma que
+    # fecha frase, ou a 1a se ela comeca com maiuscula (whisper capitaliza
+    # inicio de frase).
+    ini = None
+    primeira = (_word_field(inside[0], "word") or "").strip()
+    if primeira[:1].isupper():
+        ini = 0
+    else:
+        for i in range(len(inside) - 1):
+            if _fecha_frase(inside[i]):
+                ini = i + 1
+                break
+    if ini is None:
+        return None
+    fim = None
+    for j in range(len(inside) - 1, ini, -1):
+        if _fecha_frase(inside[j]):
+            fim = j
+            break
+    if fim is None:
+        return None
+    s0 = _word_field(inside[ini], "start")
+    e1 = _word_field(inside[fim], "end")
+    if s0 is None or e1 is None or region_seconds <= 0:
+        return None
+    if (float(e1) - float(s0)) < region_seconds * _MIN_SENTENCE_FRACTION:
+        return None
+    return inside[ini:fim + 1]
 
 
 # Status do recorte por palavra: decide o que o laco de candidatas faz.
