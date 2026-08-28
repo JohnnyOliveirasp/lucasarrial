@@ -88,6 +88,10 @@ class FasePostTest(unittest.TestCase):
         self.assertEqual(req.full_url, CFG_INPUT["fase_url"])
         self.assertEqual(req.get_method(), "POST")
         self.assertEqual(req.get_header("Content-type"), "application/json")
+        # #15 (28/08): sem UA nosso a Cloudflare responde 403 e o heartbeat
+        # inteiro morre calado — foi o que segurou a causa raiz por 4 semanas.
+        self.assertEqual(req.get_header("User-agent"), worker_log.WORKER_USER_AGENT)
+        self.assertNotIn("urllib", req.get_header("User-agent").lower())
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {
             "generation_id": CFG_INPUT["fase_ref"],

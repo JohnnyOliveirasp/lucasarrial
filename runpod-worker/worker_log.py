@@ -101,6 +101,16 @@ def _heartbeat_loop() -> None:
 # posta, com timeout curto e try/except em volta de tudo.
 import urllib.request
 
+# User-Agent NOSSO em todo request do worker pro nosso domínio.
+# 28/08, chamado #15: a Cloudflare na frente do app responde 403 a qualquer
+# request com o UA padrão do urllib ("Python-urllib/3.x") — medido: urllib=403,
+# curl/requests/qualquer outro nome=401 (o app respondendo). Como esta
+# telemetria é best-effort e engole exceção, TODO heartbeat de fase desde 24/08
+# morreu no portão em silêncio: segredo certo, rota no ar, worker com o código,
+# e mesmo assim zero fase_corrente em 1.098 gerações. Sem este header a
+# investigação de worker travado continua cega.
+WORKER_USER_AGENT = "fastcloner-worker/1"
+
 _FASE_CFG: dict | None = None  # {"url","token","ref"} — setado por job (set_current_job)
 FASE_POST_TIMEOUT_S = float(os.environ.get("FASE_POST_TIMEOUT_S", "5"))
 
@@ -138,7 +148,11 @@ def _fase_post(fase: str, running_s: float | None, job_type: str | None) -> None
         req = urllib.request.Request(
             cfg["url"],
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                # Sem isto a Cloudflare devolve 403 e o POST morre calado.
+                "User-Agent": WORKER_USER_AGENT,
+            },
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=FASE_POST_TIMEOUT_S):
