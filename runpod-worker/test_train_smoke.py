@@ -423,6 +423,145 @@ class CuraRamoTest(unittest.TestCase):
         self.assertIn("boom", c.erro)
 
 
+class CuraPortaoDePlausibilidadeTest(unittest.TestCase):
+    """Incidente 108: a CURA virou a doenca.
+
+    `transcricao_fiel` aceitava a 2a passada de whisper sempre que ela viesse
+    nao-vazia. So que whisper alucina em silencio de cauda — entao a cura, que
+    existe pra APAGAR cauda fantasma, passou a ESCREVER cauda fantasma. Medido
+    em producao (27/08):
+
+      voz a12d737d (aluna pagante, treino 19:51) — reference_transcript termina
+        "...isso pode influenciar diretamente a evolução dos sintomas Obrigado
+        por assistir."  <- repare: NAO ha ponto antes de "Obrigado". E' um
+        segmento alucinado colado no real, nao uma frase que a aluna falou.
+      voz acdcd52b — termina "...esquecidos Música.", a tag [Música] do whisper
+        vazando pro texto.
+
+    Como o VoxCPM CONTINUA o texto da referencia, essa cauda vira artefato no
+    comeco de TODA geracao que o aluno faz.
+
+    Dois filtros, cada um pegando uma FORMA diferente de alucinacao:
+      1. cobertura de palavra (wholesale)  -> ramo `rejeitado_incoerente`
+      2. poda de cauda conhecida (append)  -> ramo `curado_cauda_podada`
+    O caso de producao acima e um APPEND: a cobertura dele e' 1.0 e o filtro 1
+    NAO o pega — quem pega e o filtro 2. Isso esta provado por escrito abaixo.
+    """
+
+    # ── 1. a cura continua funcionando: divergencia de BORDA passa ──────────
+    def test_divergencia_de_borda_o_real_ainda_vence(self):
+        # Caso Negrini com texto de tamanho realista: o previsto tem um 'O'
+        # fantasma na ponta, o real nao. 11 de 12 palavras batem -> cura vale.
+        previsto = "e isso vale pra qualquer pessoa que queira começar hoje mesmo O"
+        real = "e isso vale pra qualquer pessoa que queira começar hoje mesmo"
+        with mock.patch.object(tref, "transcribe_with_retry", return_value=real):
+            c = tref.transcricao_fiel(Path("x.wav"), previsto, "large-v3", "pt")
+        self.assertEqual(c.ramo, "curado")
+        self.assertEqual(c.texto, real + ".")
+
+    def test_texto_curto_nao_e_medido_o_comportamento_antigo_fica(self):
+        # Com 3 palavras a fracao e' ruido (uma troca de borda ja derruba pra
+        # 0,66). O portao so age onde consegue medir: >= 8 palavras no previsto.
+        with mock.patch.object(tref, "transcribe_with_retry", return_value="o audio real"):
+            c = tref.transcricao_fiel(Path("x.wav"), "o previsto errado", "large-v3", "pt")
+        self.assertEqual(c.ramo, "curado")
+        self.assertEqual(c.texto, "o audio real.")
+
+    # ── 2. wholesale: a 2a passada fala de OUTRO audio -> fica o previsto ────
+    def test_desacordo_total_rejeita_a_cura_e_mantem_o_previsto(self):
+        previsto = "então o que a gente faz aqui é olhar pro paciente inteiro"
+        real = "Muito bom, pessoal. Curtiram? Deixem seu like e comentem abaixo."
+        with mock.patch.object(tref, "transcribe_with_retry", return_value=real):
+            c = tref.transcricao_fiel(Path("x.wav"), previsto, "large-v3", "pt")
+        self.assertEqual(c.ramo, "rejeitado_incoerente")
+        self.assertEqual(c.texto, previsto + ".")   # o ancorado nos timestamps
+        self.assertEqual(c.texto_antes, previsto)
+        self.assertIsNone(c.erro)
+
+    def test_rejeicao_e_LOGADA_com_as_duas_caudas(self):
+        previsto = "então o que a gente faz aqui é olhar pro paciente inteiro"
+        real = "Muito bom, pessoal. Curtiram? Deixem seu like e comentem abaixo."
+        with mock.patch.object(tref, "transcribe_with_retry", return_value=real), \
+             mock.patch.object(tref, "_log") as log:
+            tref.transcricao_fiel(Path("x.wav"), previsto, "large-v3", "pt")
+        eventos = {c.args[1]: c.kwargs for c in log.call_args_list}
+        self.assertIn("train.reference.transcript_cura_rejeitada", eventos)
+        rej = eventos["train.reference.transcript_cura_rejeitada"]
+        self.assertIn("paciente inteiro", rej["cauda_prevista"])
+        self.assertIn("comentem abaixo", rej["cauda_real"])
+        self.assertLess(rej["cobertura"], 0.5)
+
+    # ── 3. o caso de PRODUCAO (a12d737d): APPEND, cobertura 1.0 ─────────────
+    def test_cobertura_NAO_pega_append_isto_esta_documentado(self):
+        # Prova escrita da limitacao: o texto real de producao tem cobertura
+        # MAXIMA (o alucinado contem o previsto INTEIRO). Nenhum limiar de
+        # sobreposicao pega isso — por isso existe a poda de cauda.
+        previsto = ("a gente precisa entender que isso pode influenciar "
+                    "diretamente a evolução dos sintomas")
+        real = previsto + " Obrigado por assistir."
+        self.assertEqual(tref._cobertura_do_previsto(real, previsto), 1.0)
+
+    def test_producao_a12d737d_a_cauda_alucinada_e_podada(self):
+        previsto = ("a gente precisa entender que isso pode influenciar "
+                    "diretamente a evolução dos sintomas")
+        real = previsto + " Obrigado por assistir."
+        with mock.patch.object(tref, "transcribe_with_retry", return_value=real):
+            c = tref.transcricao_fiel(Path("x.wav"), previsto, "large-v3", "pt")
+        self.assertEqual(c.ramo, "curado_cauda_podada")
+        self.assertEqual(c.texto, previsto + ".")
+        self.assertNotIn("Obrigado", c.texto)
+
+    def test_producao_acdcd52b_a_tag_musica_e_podada(self):
+        previsto = "são aqueles detalhes que ficam sempre para trás e acabam esquecidos"
+        with mock.patch.object(tref, "transcribe_with_retry", return_value=previsto + " Música."):
+            c = tref.transcricao_fiel(Path("x.wav"), previsto, "large-v3", "pt")
+        self.assertEqual(c.ramo, "curado_cauda_podada")
+        self.assertEqual(c.texto, previsto + ".")
+
+    def test_frase_que_o_aluno_REALMENTE_falou_nao_e_podada(self):
+        # O previsto e' ancorado nos timestamps do audio: se ELE termina em
+        # "obrigado por assistir", o aluno falou isso — nao se corta.
+        previsto = "bom pessoal era isso que eu queria falar hoje obrigado por assistir"
+        real = "Bom pessoal, era isso que eu queria falar hoje, obrigado por assistir."
+        with mock.patch.object(tref, "transcribe_with_retry", return_value=real):
+            c = tref.transcricao_fiel(Path("x.wav"), previsto, "large-v3", "pt")
+        self.assertEqual(c.ramo, "curado")
+        self.assertEqual(c.texto, real)
+
+    def test_cura_que_e_SO_alucinacao_cai_no_previsto(self):
+        # Poda esvazia o real -> nao ha cura nenhuma, fica o previsto.
+        previsto = "então o que a gente faz aqui é olhar pro paciente inteiro"
+        with mock.patch.object(tref, "transcribe_with_retry",
+                               return_value="Legendas pela comunidade Amara.org"):
+            c = tref.transcricao_fiel(Path("x.wav"), previsto, "large-v3", "pt")
+        self.assertEqual(c.ramo, "rejeitado_incoerente")
+        self.assertEqual(c.texto, previsto + ".")
+
+    # ── 4. os ramos que ja existiam continuam existindo ──────────────────────
+    def test_whisper_vazio_segue_fallback_vazio(self):
+        previsto = "então o que a gente faz aqui é olhar pro paciente inteiro"
+        with mock.patch.object(tref, "transcribe_with_retry", return_value="   "):
+            c = tref.transcricao_fiel(Path("x.wav"), previsto, "large-v3", "pt")
+        self.assertEqual(c.ramo, "fallback_vazio")
+        self.assertEqual(c.texto, previsto + ".")
+
+    def test_whisper_explodindo_segue_fallback_erro(self):
+        previsto = "então o que a gente faz aqui é olhar pro paciente inteiro"
+        with mock.patch.object(tref, "transcribe_with_retry",
+                               side_effect=RuntimeError("CUDA out of memory")):
+            c = tref.transcricao_fiel(Path("x.wav"), previsto, "large-v3", "pt")
+        self.assertEqual(c.ramo, "fallback_erro")
+        self.assertEqual(c.texto, previsto + ".")
+        self.assertIn("CUDA out of memory", c.erro)
+
+    def test_sem_previsto_o_portao_nao_roda(self):
+        # Sem previsto nao ha com que comparar: o real entra como sempre entrou.
+        with mock.patch.object(tref, "transcribe_with_retry", return_value="qualquer coisa aqui"):
+            c = tref.transcricao_fiel(Path("x.wav"), None, "large-v3", "pt")
+        self.assertEqual(c.ramo, "curado")
+        self.assertEqual(c.texto, "qualquer coisa aqui.")
+
+
 class IdentidadeDoBuildTest(TrainBase):
     """Dado um treino, saber QUE build o produziu (hoje training_jobs nao guarda
     nada da imagem e a pergunta so se responde por data, no olho)."""

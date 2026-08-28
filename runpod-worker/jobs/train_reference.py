@@ -27,10 +27,14 @@ class CuraTranscricao:
     transcript curado ou nao — e cada ronda re-investigava do zero.
 
     `ramo` diz qual caminho rodou:
-      curado          2a passada devolveu texto e ele SUBSTITUIU o previsto
-      fallback_vazio  whisper devolveu vazio/None -> ficou o previsto
-      fallback_erro   whisper levantou excecao    -> ficou o previsto (ver `erro`)
-      sem_previsto    whisper nao deu nada E nao havia previsto -> texto vazio
+      curado               2a passada devolveu texto e ele SUBSTITUIU o previsto
+      curado_cauda_podada  idem, mas com uma cauda de alucinacao CONHECIDA
+                           ("Obrigado por assistir.", "Musica.") cortada do fim
+      rejeitado_incoerente 2a passada devolveu texto que NAO fala do mesmo audio
+                           (incidente 108) -> ficou o previsto
+      fallback_vazio       whisper devolveu vazio/None -> ficou o previsto
+      fallback_erro        whisper levantou excecao    -> ficou o previsto (ver `erro`)
+      sem_previsto         whisper nao deu nada E nao havia previsto -> texto vazio
 
     `erro` e' preenchido sempre que houve excecao, inclusive quando o ramo sai
     `sem_previsto`: o ramo diz DE ONDE veio o texto final, e o erro nao se perde.
@@ -119,6 +123,81 @@ def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
     return ref
 
 
+# ── Portao de plausibilidade da cura (incidente 108) ──────────────────────────
+# A cura acredita CEGAMENTE na 2a passada de whisper. Mas whisper alucina em
+# silencio de cauda: a propria cura ja ESCREVEU cauda fantasma em producao
+# (voz a12d737d, 27/08: "...evolucao dos sintomas Obrigado por assistir." — sem
+# ponto antes do "Obrigado", um segmento alucinado colado no real; voz acdcd52b:
+# "...esquecidos Musica.", a tag [musica] vazando pro texto). Como o VoxCPM
+# CONTINUA o texto da referencia, essa cauda vira artefato no comeco de TODA
+# geracao do aluno. Daqui pra frente `real` precisa passar por dois filtros.
+
+_ACENTOS = str.maketrans(
+    "áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ",
+    "aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC",
+)
+
+# Abaixo disto a fracao de sobreposicao e' RUIDO, nao evidencia: com 3 palavras,
+# uma divergencia legitima de borda ja derruba a fracao pra 0,66. Referencia de
+# verdade tem ~30s de fala (dezenas de palavras) — o portao so age onde mede.
+_CURA_MIN_PALAVRAS = 8
+_CURA_MIN_COBERTURA = 0.5
+
+# Cauda que o whisper INVENTA em silencio — lista fechada e curta, so o que ja
+# apareceu em producao ou e' folclore documentado do modelo. Nao e' um filtro
+# generico de "frase suspeita": e' uma lista de nomes proprios de alucinacao.
+_CAUDAS_FANTASMA = frozenset({
+    "obrigado por assistir",
+    "obrigada por assistir",
+    "obrigado por assistirem",
+    "legendas pela comunidade amara org",
+    "legendado pela comunidade amara org",
+    "legendas pela comunidade",
+    "thanks for watching",
+    "subtitles by the amara org community",
+    "musica",      # tag [Musica] do whisper vazando como palavra
+    "aplausos",
+    "risos",
+})
+
+
+def _palavras_norm(texto: "str | None") -> list:
+    """Palavras em minuscula, sem acento e sem pontuacao — base da comparacao."""
+    limpo = re.sub(r"[^\w\s]", " ", (texto or "").translate(_ACENTOS).lower())
+    return [p for p in limpo.split() if p]
+
+
+def _cobertura_do_previsto(real: str, previsto: str) -> float:
+    """Fracao das palavras do previsto que TAMBEM aparecem no real (0..1).
+
+    O previsto vem do snap por timestamp de palavra: por construcao ele e'
+    exatamente o que esta DENTRO do audio cortado. Se a 2a passada quase nao
+    repete essas palavras, ela nao esta descrevendo este audio.
+    """
+    pv = _palavras_norm(previsto)
+    if not pv:
+        return 1.0
+    rl = set(_palavras_norm(real))
+    return sum(1 for p in pv if p in rl) / len(pv)
+
+
+def _podar_cauda_fantasma(real: str, previsto: str) -> "tuple[str, str | None]":
+    """Corta do FIM do `real` uma cauda de alucinacao conhecida.
+
+    So corta se a MESMA cauda nao estiver no fim do previsto: se o audio de
+    fato termina em "obrigado por assistir", o previsto (ancorado nos
+    timestamps) tambem termina — e ai nao ha nada a cortar.
+    """
+    tokens = real.split()
+    pv_norm = " ".join(_palavras_norm(previsto))
+    for corte in range(1, min(len(tokens), 8) + 1):
+        cauda_raw = " ".join(tokens[-corte:])
+        cauda = " ".join(_palavras_norm(cauda_raw))
+        if cauda in _CAUDAS_FANTASMA and not pv_norm.endswith(cauda):
+            return " ".join(tokens[:-corte]).strip(), cauda_raw
+    return real, None
+
+
 def transcricao_fiel(clip: Path, texto_previsto: "str | None", whisper_model: str,
                      language: str) -> CuraTranscricao:
     """O transcript gravado no banco tem que ser o que o AUDIO CORTADO contem.
@@ -137,6 +216,12 @@ def transcricao_fiel(clip: Path, texto_previsto: "str | None", whisper_model: st
     Devolve CuraTranscricao (texto + QUAL ramo rodou). A DECISAO nao mudou —
     so passou a ficar registrada: antes, whisper mudo e whisper explodindo eram
     indistinguiveis depois do fato.
+
+    Incidente 108: a cura acreditava CEGAMENTE no `real`. Whisper alucina em
+    silencio de cauda, entao a cura podia ESCREVER a cauda fantasma que existe
+    pra apagar. Agora `real` so entra se for plausivel — ver o bloco de portao
+    acima. Divergencia de BORDA (uma ou duas palavras) segue passando: e' pra
+    isso que a cura existe.
     """
     real = None
     erro = None
@@ -146,6 +231,27 @@ def transcricao_fiel(clip: Path, texto_previsto: "str | None", whisper_model: st
         erro = str(exc)[:300]
         _log("error", "train.reference.transcript_recheck_error", error=str(exc))
     previsto = (texto_previsto or "").strip()
+
+    # Portao: com os DOIS textos na mao, da pra desconfiar do `real`. Sem
+    # previsto nao ha com que comparar — segue o comportamento de sempre.
+    cauda_podada = None
+    rejeitado = False
+    if real and previsto:
+        bruto = real
+        real, cauda_podada = _podar_cauda_fantasma(real, previsto)
+        cobertura = _cobertura_do_previsto(real, previsto)
+        poucas = len(_palavras_norm(previsto)) < _CURA_MIN_PALAVRAS
+        if not real or (not poucas and cobertura < _CURA_MIN_COBERTURA):
+            # Wholesale: a 2a passada fala de outro audio. Fica o previsto, que
+            # e' ancorado nos timestamps das palavras que estao MESMO no clipe.
+            _log("warning", "train.reference.transcript_cura_rejeitada",
+                 cobertura=round(cobertura, 3), min_cobertura=_CURA_MIN_COBERTURA,
+                 cauda_prevista=previsto[-80:], cauda_real=bruto[-80:])
+            real, cauda_podada, rejeitado = "", None, True
+        elif cauda_podada:
+            _log("warning", "train.reference.transcript_cauda_fantasma_podada",
+                 cauda_podada=cauda_podada[:80], cauda_prevista=previsto[-80:])
+
     texto = real or previsto
     # Fecha a frase: sem pontuacao, ou terminando em virgula/ponto-e-virgula/
     # dois-pontos (whisper corta em ',' quando o clipe acaba no meio) -> '.'.
@@ -157,7 +263,9 @@ def transcricao_fiel(clip: Path, texto_previsto: "str | None", whisper_model: st
              cauda_prevista=(texto_previsto or "")[-40:], cauda_real=texto[-40:])
 
     if real:
-        ramo = "curado"
+        ramo = "curado_cauda_podada" if cauda_podada else "curado"
+    elif rejeitado:
+        ramo = "rejeitado_incoerente"
     elif previsto:
         ramo = "fallback_erro" if erro else "fallback_vazio"
     else:
