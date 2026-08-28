@@ -72,8 +72,14 @@ def parse_caption_style(style: dict | None, tmp: Path) -> dict:
     if isinstance(url, str) and url.startswith("http"):
         try:
             import urllib.request
+            from worker_log import WORKER_USER_AGENT
             dst = tmp / "caption_font.ttf"
-            urllib.request.urlretrieve(url, dst)  # noqa: S310 — URL nossa (assets do app)
+            # urlretrieve não aceita header: com o UA padrão do urllib a
+            # Cloudflare devolve 403 e a legenda caía na fonte padrão em
+            # silêncio (mesmo portão do heartbeat de fase — #15, 28/08).
+            req = urllib.request.Request(url, headers={"User-Agent": WORKER_USER_AGENT})
+            with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310 — URL nossa
+                dst.write_bytes(resp.read())
             if dst.stat().st_size > 1000:
                 st["font_path"] = str(dst)
         except Exception:
