@@ -92,6 +92,9 @@ class TrainJob:
                                self.whisper_model, self.language)
 
         self._transcrever_dataset()
+        # Regua do QA de ritmo (#165): sai do dataset ja transcrito, sem
+        # whisper extra. None = a geracao segue no fallback (articulacao da ref).
+        self.speech_rate_wps = self._medir_velocidade()
         resultado = self._treinar()
         if resultado["returncode"] != 0:
             return {"voice_id": self.voice_id, "error": "trainer failed",
@@ -142,6 +145,14 @@ class TrainJob:
             "dataset_chunks": self.dataset_chunks,
             "worker_image": worker_build_id(),
         }
+
+    def _medir_velocidade(self):
+        from voice_pipeline.pacing import measure_speech_rate_wps
+
+        return measure_speech_rate_wps(
+            self.dirs.dataset,
+            log=lambda **k: _log(k.pop("level", "info"), k.pop("event", "train.rate"), **k),
+        )
 
     def _medir_pausa_natural(self):
         from voice_pipeline.pacing import measure_natural_pause_ms
@@ -222,6 +233,7 @@ class TrainJob:
             "reference_cura_texto_antes": cura.texto_antes if cura else None,
             "reference_cura_erro": cura.erro if cura else None,
             "reference_pause_ms": self.reference_pause_ms,
+            "speech_rate_wps": getattr(self, "speech_rate_wps", None),
             "language": self.language,
             "lora_alpha": TRAIN_LORA_ALPHA,
             "lora_rank": LORA_RANK,

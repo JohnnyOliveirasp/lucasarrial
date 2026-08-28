@@ -99,3 +99,75 @@ def measure_natural_pause_ms(
     except Exception as exc:  # pacing é mimo: NUNCA derruba um treino que deu certo
         log(level="error", event="train.pacing.crashed", error=str(exc)[:300])
         return None
+
+
+# ── Velocidade natural (regua do QA de ritmo) — incidente 165 ────────────────
+# `voices.speech_rate_wps` e' lida em 3 lugares e, ate 28/08, escrita por
+# NENHUM codigo (1.010 de 1.012 vozes NULL; so' o script offline
+# medir_velocidade_voz.cjs gravava, na mao). O QA de ritmo caia no fallback
+# "articulacao da propria referencia", que no caso Ellen deu 2,83 pal/s contra
+# 1,7-2,2 de fala real: a regua errada faz o clone sair acelerado e o QA
+# aprovar. Aqui a medida sai do DATASET inteiro (VAD ja tirou o silencio
+# entre trechos; o que sobra dentro do trecho e' descontado por silencedetect),
+# no mesmo treino, sem whisper extra: os .txt ja existem pro manifest.
+RATE_FLOOR_WPS = 1.0
+RATE_CEIL_WPS = 5.0
+RATE_MIN_CHUNKS = 6
+RATE_MAX_CHUNKS = 40
+RATE_MIN_CHUNK_SECONDS = 3.0
+RATE_MIN_CHUNK_WORDS = 6
+
+
+def _duracao_s(path: Path) -> "float | None":
+    try:
+        import soundfile as sf
+        info = sf.info(str(path))
+        return float(info.frames) / float(info.samplerate) if info.samplerate else None
+    except Exception:
+        return None
+
+
+def measure_speech_rate_wps(
+    dataset_dir: Path,
+    log: Callable[..., None] = lambda **k: None,
+) -> "float | None":
+    """Mediana de palavras / segundo FALANDO nos trechos voice_*.wav + .txt.
+
+    Articulacao, nao ritmo bruto: pausas >=150ms dentro do trecho sao
+    descontadas (mesmo limiar do pacing). Amostra limitada a RATE_MAX_CHUNKS
+    trechos, espalhados pelo dataset (nao so' o comeco, onde a pessoa ainda
+    esta se aquecendo). None = nao calibra: o QA segue no fallback de hoje.
+    Nunca levanta excecao — e' medida, nao pode derrubar um treino que deu certo.
+    """
+    try:
+        dataset_dir = Path(dataset_dir)
+        wavs = sorted(dataset_dir.glob("voice_*.wav"))
+        if len(wavs) > RATE_MAX_CHUNKS:
+            passo = len(wavs) / RATE_MAX_CHUNKS
+            wavs = [wavs[int(i * passo)] for i in range(RATE_MAX_CHUNKS)]
+        amostras: list[float] = []
+        for wav in wavs:
+            txt = wav.with_suffix(".txt")
+            if not txt.exists():
+                continue
+            palavras = len(txt.read_text(encoding="utf-8").split())
+            dur = _duracao_s(wav)
+            if dur is None or dur < RATE_MIN_CHUNK_SECONDS or palavras < RATE_MIN_CHUNK_WORDS:
+                continue
+            falando = dur - sum(_silences_ms(wav)) / 1000.0
+            if falando < 1.0:
+                continue
+            amostras.append(palavras / falando)
+        if len(amostras) < RATE_MIN_CHUNKS:
+            log(level="info", event="train.rate.skipped", reason="poucas amostras", n=len(amostras))
+            return None
+        amostras.sort()
+        bruto = amostras[len(amostras) // 2]
+        wps = round(max(RATE_FLOOR_WPS, min(RATE_CEIL_WPS, bruto)), 3)
+        log(level="info", event="train.rate.measured", n=len(amostras), bruto_wps=round(bruto, 3),
+            wps=wps, bateu_piso=wps == RATE_FLOOR_WPS and bruto < RATE_FLOOR_WPS,
+            bateu_teto=wps == RATE_CEIL_WPS and bruto > RATE_CEIL_WPS)
+        return wps
+    except Exception as exc:
+        log(level="error", event="train.rate.crashed", error=str(exc)[:300])
+        return None

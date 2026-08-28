@@ -150,5 +150,66 @@ class RitmoNoLacoUnicoTest(unittest.TestCase):
         self.assertEqual(best.size, SR * 2)      # ficou com a 1a (rapida, mas completa)
 
 
+
+
+
+class MeasureSpeechRateNoTreinoTest(unittest.TestCase):
+    """#165: a regua do QA de ritmo passa a ser MEDIDA no treino, do dataset
+    transcrito. Ate 28/08 voices.speech_rate_wps era lida em 3 lugares e
+    escrita por ninguem."""
+
+    def _dataset(self, n, palavras_por_trecho, segundos, com_txt=True):
+        import tempfile
+        from pathlib import Path
+        import numpy as np
+        import soundfile as sf
+        d = Path(tempfile.mkdtemp())
+        sr = 16000
+        for i in range(n):
+            # tom continuo (sem silencio): "falando" = duracao inteira
+            t = np.arange(int(sr * segundos)) / sr
+            wav = (0.2 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+            sf.write(str(d / f"voice_{i:04d}.wav"), wav, sr)
+            if com_txt:
+                (d / f"voice_{i:04d}.txt").write_text(" ".join(["palavra"] * palavras_por_trecho) + "\n", encoding="utf-8")
+        return d
+
+    def test_mede_palavras_por_segundo_falando(self):
+        from voice_pipeline import pacing
+        d = self._dataset(8, palavras_por_trecho=20, segundos=8.0)   # 2,5 pal/s
+        with mock.patch.object(pacing, "_silences_ms", return_value=[]):
+            wps = pacing.measure_speech_rate_wps(d)
+        self.assertIsNotNone(wps)
+        self.assertAlmostEqual(wps, 2.5, places=2)
+
+    def test_desconta_silencio_dentro_do_trecho(self):
+        from voice_pipeline import pacing
+        d = self._dataset(8, palavras_por_trecho=20, segundos=10.0)  # 2,0 bruto
+        # 2s de pausa em cada trecho -> falando 8s -> 2,5 pal/s (articulacao)
+        with mock.patch.object(pacing, "_silences_ms", return_value=[1000, 1000]):
+            wps = pacing.measure_speech_rate_wps(d)
+        self.assertAlmostEqual(wps, 2.5, places=2)
+
+    def test_poucas_amostras_nao_calibra(self):
+        from voice_pipeline import pacing
+        d = self._dataset(3, palavras_por_trecho=20, segundos=8.0)
+        with mock.patch.object(pacing, "_silences_ms", return_value=[]):
+            self.assertIsNone(pacing.measure_speech_rate_wps(d))
+
+    def test_sem_txt_nao_calibra(self):
+        from voice_pipeline import pacing
+        d = self._dataset(8, palavras_por_trecho=20, segundos=8.0, com_txt=False)
+        self.assertIsNone(pacing.measure_speech_rate_wps(d))
+
+    def test_piso_e_teto(self):
+        from voice_pipeline import pacing
+        d = self._dataset(8, palavras_por_trecho=80, segundos=8.0)   # 10 pal/s: artefato
+        with mock.patch.object(pacing, "_silences_ms", return_value=[]):
+            self.assertEqual(pacing.measure_speech_rate_wps(d), pacing.RATE_CEIL_WPS)
+
+    def test_nunca_levanta(self):
+        from voice_pipeline import pacing
+        self.assertIsNone(pacing.measure_speech_rate_wps("/caminho/que/nao/existe"))
+
 if __name__ == "__main__":
     unittest.main()

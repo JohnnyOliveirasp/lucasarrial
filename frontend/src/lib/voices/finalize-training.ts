@@ -31,6 +31,13 @@ export type TrainOutput = {
    */
   reference_pause_ms?: number | null;
   /**
+   * Velocidade natural de fala (palavras/segundo FALANDO), medida no dataset
+   * transcrito do treino (worker: voice_pipeline.pacing.measure_speech_rate_wps).
+   * Vira `voices.speech_rate_wps`, a régua do QA de ritmo — incidente #165:
+   * a coluna era lida em 3 lugares e escrita por ninguém (1.010/1.012 NULL).
+   */
+  speech_rate_wps?: number | null;
+  /**
    * COMO o `reference_transcript` acima foi produzido — incidente 52.
    * A 2ª passada de whisper no clipe final (a "cura" do caso Negrini #124) cai
    * calada no texto previsto quando o whisper falha ou volta mudo, e depois do
@@ -398,6 +405,19 @@ export async function finalizeTraining(args: {
     logger.info("api", "voice.train.pacing_measured_not_applied", {
       voiceId, referencePauseMs: out.reference_pause_ms,
     });
+  }
+  // Régua do QA de ritmo (#165): só grava valor plausível (1–5 pal/s). Sem
+  // ela a geração cai no fallback (articulação da própria referência), que no
+  // caso Ellen mediu 2,83 contra 1,7–2,2 de fala real — o clone saía acelerado
+  // e o QA aprovava. Retreino sobrescreve: a medida nova é do material atual.
+  if (
+    success &&
+    typeof out.speech_rate_wps === "number" &&
+    Number.isFinite(out.speech_rate_wps) &&
+    out.speech_rate_wps >= 1 &&
+    out.speech_rate_wps <= 5
+  ) {
+    (update as Record<string, unknown>).speech_rate_wps = out.speech_rate_wps;
   }
   if (success && typeof out.language === "string" && out.language) {
     // Idioma detectado no treino — a geração/QA passam a rodar no idioma certo.
