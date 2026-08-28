@@ -459,19 +459,15 @@ export async function POST(request: NextRequest) {
   // Cada tentativa fica em onboarding_runs — motivo inteiro, sem o corte de
   // ~300 caracteres da nota da célula. É o que permite responder "por que a
   // linha 529 falhou" com uma consulta em vez de garimpo no Drive.
-  const etapaFalha: "imagens" | "audio" | null = !ok
-    ? (imagesResult.all_keys.length === 0 && images.length > 0 ? "imagens" : "audio")
-    : null;
-
   // 22/08: o motivo PRECISA sair daqui pronto. O Apps Script monta a nota com
   // `body.error.message || falhas(images) || falhas(audios) || "HTTP " + code`,
   // e `falhas()` só olha a lista `failed`. Áudio curto tem `failed` VAZIO — o
   // arquivo baixou bem, só é curto — então caía no fallback e a planilha
   // recebia a nota inútil **"HTTP 200"**. Linhas 348, 352 e 353 ficaram assim,
   // sendo que o motivo real era "áudio com menos de 20 minutos".
-  const motivoGeral =
-    imagesResult.failed[0]?.error ??
-    imagesResult.ignored?.[0]?.reason ??
+  const motivoImagens =
+    imagesResult.failed[0]?.error ?? imagesResult.ignored?.[0]?.reason ?? null;
+  const motivoAudio =
     audiosResult.failed[0]?.error ??
     // Incidente 146: só o run que MEDIU escreve "o áudio enviado soma menos de
     // 20 minutos". Status herdado ganha o motivo honesto — o que aconteceu foi
@@ -480,11 +476,30 @@ export async function POST(request: NextRequest) {
       ? motivoAudioCurto(audiosResult.training)
       : aviso.audioCurtoHerdado
         ? MOTIVO_AUDIO_CURTO_HERDADO
-        : null) ??
+        : null);
+  const motivoGeral =
+    motivoImagens ??
+    motivoAudio ??
     falhas[0] ??
     (tinhaLinkOuArquivo && !entrouAlgo
       ? "o link foi aberto mas não veio nenhuma foto nem áudio aproveitável"
       : null);
+
+  // #177 (28/08): a etapa vem do MESMO motivo que o aluno lê — fonte única.
+  // Antes eram duas expressões independentes: a etapa só virava "imagens" se
+  // NENHUMA foto tivesse entrado, e todo o resto caía em "audio" por default.
+  // Medido pelo Vigia: 24 de 68 runs rotulados "audio" tinham motivo de
+  // imagens (35%), o que mandava consertar o lado errado do pipeline. O
+  // texto pro aluno sempre esteve certo; só o rótulo mentia.
+  const etapaFalha: "imagens" | "audio" | null = !ok
+    ? motivoImagens
+      ? "imagens"
+      : motivoAudio
+        ? "audio"
+        : imagesResult.all_keys.length === 0 && images.length > 0
+          ? "imagens"
+          : "audio"
+    : null;
 
   await registrarRun(admin, {
     linha: row,
