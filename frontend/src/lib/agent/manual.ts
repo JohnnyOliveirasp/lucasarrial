@@ -10,6 +10,14 @@ import { CLONE_TIERS, CLONE_MAX_AUDIO_SECONDS, CLONE_MIN_BILLED_SECONDS } from "
 // #175 (28/08): o manual cotava Padrão 170 / Turbo 105 — preço ANTERIOR a 08/08
 // (Johnny reprecificou: Padrão 2.0 = 105, Turbo = 80). A Fast dizia 31–62% a mais
 // pro aluno e pro e-mail de winback. O preço agora vem do MESMO lugar que cobra.
+// #178 (28/08): a Fast disse a uma aluna que "o Turbo costuma sair mais natural"
+// e mandou trocar de modo — claim que não existe em lugar nenhum (os dois tiers
+// são "o mesmo motor", config.ts:44-63) e ela JÁ estava no Turbo nas 4 gerações.
+// Causa: o manual trazia só "Turbo é o melhor custo-benefício" (claim de PREÇO) e
+// nada sobre o limite do lip-sync nem sobre enquadramento — as duas perguntas que
+// os alunos realmente fazem sobre Vídeo Clone (#133 "ficou artificial", #167 e
+// #168 "como faço gesto"). Sem o fato no manual, o agente preenche o buraco
+// inventando. Aqui o buraco é preenchido.
 const tierPorId = (id: string) => CLONE_TIERS.find((t) => t.id === id);
 const CLONE_PADRAO = tierPorId("480p-v3");
 const CLONE_TURBO = tierPorId("480p-v2");
@@ -131,7 +139,27 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
 - Como: menu Vídeos → Vídeo Clone → escolhe uma foto (do Gerador de Imagem ou
   upload; ideal: metade do corpo pra cima, rosto nítido) + um áudio (gerado
   com a voz OU upload) → escolhe a qualidade → Gerar (leva alguns minutos).
-- Dica: Turbo é o melhor custo-benefício.
+- Diferença entre os dois modos (é de PREÇO e de repetição, NÃO de qualidade):
+  os dois rodam o MESMO motor. ${CLONE_PADRAO?.label ?? "Padrão 2.0"} é repetível
+  (mesma foto + mesmo áudio = sempre o mesmo vídeo) e em áudio acima de ~40s o
+  rosto pode se afastar da foto. ${CLONE_TURBO?.label ?? "Turbo"} é a opção
+  econômica no mesmo motor, corta o vídeo no fim exato do áudio e cada geração
+  varia um pouco. Turbo é o melhor custo-benefício em PREÇO.
+  NUNCA diga que um modo sai "mais natural", "mais realista" ou "melhor" que o
+  outro, e NUNCA mande o aluno trocar de modo pra melhorar naturalidade: isso
+  não existe, e faz ele gastar crédito de novo à toa. Antes de comentar o modo
+  que ele usou, confira no histórico — não chute.
+- LIMITE DO LIP-SYNC (diga isto com todas as letras quando perguntarem):
+  o Vídeo Clone ANIMA UMA FOTO PARADA — sincroniza a boca e o movimento do
+  rosto com o áudio. Ele NÃO cria gesto, não mexe as mãos, não muda a
+  expressão corporal e não muda o enquadramento. Não existe campo, prompt ou
+  ajuste pra pedir gesto: o que estiver na foto é o que o vídeo tem. Quem quer
+  gesto precisa que a foto já mostre a pose desejada.
+- ENQUADRAMENTO DA FOTO muda MUITO o resultado, e é a causa mais comum de
+  "ficou artificial": o vídeo sai em 480×832, então quanto menor o rosto na
+  foto, menos pixels sobram pra boca e a fala fica grosseira. Foto de corpo
+  inteiro é o pior caso. Oriente sempre: do peito pra cima, rosto grande e
+  nítido, olhando pra câmera.
 
 ## Problemas comuns → o que responder
 - "Deu erro / falhou": explicar que falha técnica devolve os créditos
