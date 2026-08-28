@@ -153,7 +153,7 @@ class InferenceJob:
         """Depois da montagem: UM ajuste uniforme e suave no audio inteiro
         (caso Johnny 25/08: esticar cada chunk com fator proprio ate 0,75 soou
         'bebado' e criou o lento->rapido). Aqui o fator e' unico, limitado a
-        max_stretch (0,90 = no maximo 11% mais longo) e simetrico (tambem
+        max_stretch (0,85 = no maximo 18% mais longo; era 0,90) e simetrico (tambem
         acelera se ficou lento demais). Sem regua ou sem medida: nao toca."""
         if not self.target_wps or wav is None or wav.size < self.sample_rate:
             return wav
