@@ -22,6 +22,7 @@ import {
   faseTelemetriaToken,
   faseTelemetriaInput,
   faseTokenValido,
+  faseTelemetriaMotivoDesligada,
   qaComFase,
   preservaFaseCorrente,
   type FaseCorrente,
@@ -85,6 +86,66 @@ test("token valida pro mesmo id e reprova pra id trocado / token errado", () => 
   assert.equal(faseTokenValido(GEN_ID, "deadbeef"), false);
   assert.equal(faseTokenValido(GEN_ID, null), false);
   assert.equal(faseTokenValido(GEN_ID, 123), false);
+});
+
+// ---------------------------------------------------------------------------
+// faseTelemetriaMotivoDesligada — o estado OFF tem que ser AUDÍVEL.
+// Regressão de 28/08 (#15): a feature foi mergeada em 25/08, a env nunca foi
+// setada, e por 4 dias o app injetou `{}` no input sem uma linha de log.
+// Medido no dia: qa.fase_corrente em 0 de 322 gerações (a coluna qa em si
+// estava preenchida em 259 — não era a coluna, era a fase que nunca chegava).
+// Estes testes existem pra que "desligada" nunca mais passe por "no ar".
+// ---------------------------------------------------------------------------
+
+test("motivo: sem env nenhuma, nomeia AS DUAS que faltam", () => {
+  const motivo = faseTelemetriaMotivoDesligada();
+  assert.ok(motivo, "sem env nenhuma a feature está desligada");
+  assert.match(motivo, /FASE_TELEMETRIA_SECRET/);
+  assert.match(motivo, /SITE_URL/);
+});
+
+test("motivo: o caso REAL de 28/08 — base ok, secret ausente", () => {
+  process.env.NEXT_PUBLIC_SITE_URL = "https://app.exemplo.com";
+  const motivo = faseTelemetriaMotivoDesligada();
+  assert.ok(motivo);
+  assert.match(motivo, /FASE_TELEMETRIA_SECRET/);
+  // e o efeito prático que o motivo tem que explicar: input vazio
+  assert.deepEqual(faseTelemetriaInput(GEN_ID), {});
+});
+
+test("motivo: secret curta demais conta como desligada (não é meia-auth)", () => {
+  process.env.NEXT_PUBLIC_SITE_URL = "https://app.exemplo.com";
+  process.env.FASE_TELEMETRIA_SECRET = "curta";
+  assert.match(String(faseTelemetriaMotivoDesligada()), /FASE_TELEMETRIA_SECRET/);
+});
+
+test("motivo: secret ok mas sem destino nomeia a URL, não o secret", () => {
+  process.env.FASE_TELEMETRIA_SECRET = "um-segredo-com-tamanho-suficiente";
+  const motivo = faseTelemetriaMotivoDesligada();
+  assert.ok(motivo);
+  assert.match(motivo, /SITE_URL/);
+  assert.doesNotMatch(motivo, /FASE_TELEMETRIA_SECRET/);
+});
+
+test("motivo: com as duas envs, null — e aí o input SAI de verdade", () => {
+  process.env.FASE_TELEMETRIA_SECRET = "um-segredo-com-tamanho-suficiente";
+  process.env.NEXT_PUBLIC_SITE_URL = "https://app.exemplo.com";
+  assert.equal(faseTelemetriaMotivoDesligada(), null);
+  // null tem que significar LIGADA de verdade, não só "envs presentes"
+  assert.equal(
+    faseTelemetriaInput(GEN_ID).fase_url,
+    "https://app.exemplo.com/api/v1/webhooks/runpod-fase",
+  );
+});
+
+test("motivo: SITE_URL sozinha (sem a NEXT_PUBLIC_) também liga", () => {
+  process.env.FASE_TELEMETRIA_SECRET = "um-segredo-com-tamanho-suficiente";
+  process.env.SITE_URL = "https://fastcloner.exemplo.com";
+  assert.equal(faseTelemetriaMotivoDesligada(), null);
+  assert.equal(
+    faseTelemetriaInput(GEN_ID).fase_url,
+    "https://fastcloner.exemplo.com/api/v1/webhooks/runpod-fase",
+  );
 });
 
 const FASE: FaseCorrente = {
