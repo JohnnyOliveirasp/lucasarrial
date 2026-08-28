@@ -53,6 +53,33 @@ class RatePenaltyTest(unittest.TestCase):
         self.assertIsNone(reference._median([None]))
 
 
+class ArticulacaoTest(unittest.TestCase):
+    """28/08 (teste da Ellen em dev): a candidata tem que ser medida em
+    ARTICULACAO (sem as pausas), a mesma unidade da regua do #165. Antes,
+    30 palavras em 30s com 10s de pausa davam 1,0 pal/s (parecia lenta) quando a
+    pessoa articula a 1,5 — e a penalidade empurrava pro trecho acelerado."""
+
+    def test_pausa_interna_nao_conta_como_fala(self):
+        # 30 palavras: 15 em [1,11], pausa de 10s, 15 em [21,31] -> 30 pal / 20s falando
+        ws = [W("a", 1 + i * 0.66, 1 + i * 0.66 + 0.6) for i in range(15)]
+        ws += [W("b", 21 + i * 0.66, 21 + i * 0.66 + 0.6) for i in range(15)]
+        transcript = " ".join(w["word"] for w in ws)
+        sem_words = reference._words_per_second(transcript, 0.0, 32.0, 0.0)
+        com_words = reference._words_per_second(transcript, 0.0, 32.0, 0.0, ws)
+        self.assertAlmostEqual(sem_words, 30 / 32, places=1)   # ritmo bruto (antigo)
+        self.assertAlmostEqual(com_words, 30 / 22, places=1)   # articulacao: 10s de pausa fora
+        self.assertGreater(com_words, sem_words)
+
+    def test_pausas_curtas_ficam_dentro_da_fala(self):
+        # gaps de 60ms (< 150ms) NAO sao pausa: bruto == articulacao
+        ws = [W("a", i * 0.5, i * 0.5 + 0.44) for i in range(20)]
+        transcript = " ".join(w["word"] for w in ws)
+        self.assertEqual(
+            reference._words_per_second(transcript, 0.0, 10.0, 0.0),
+            reference._words_per_second(transcript, 0.0, 10.0, 0.0, ws),
+        )
+
+
 class SelecaoPorVelocidadeTest(unittest.TestCase):
     """3 janelas: 2 no ritmo da pessoa (1,4 pal/s) e 1 acelerada (2,8)."""
 

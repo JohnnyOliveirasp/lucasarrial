@@ -219,13 +219,46 @@ _SNAP_DISCARD = "discard"          # ficou curto demais / sem palavra inteira ->
 _SNAP_UNAVAILABLE = "unavailable"  # sem words (erro/modelo antigo) -> corte por tempo de hoje
 
 
-def _words_per_second(transcript: str, start: float, end: float, pad: float) -> "float | None":
-    """Velocidade de fala do clipe: palavras / segundos de fala (sem o pad)."""
+# Pausa entre palavras que NAO conta como fala — o MESMO limiar do
+# measure_speech_rate_wps (pacing.py, #165), senao regua e candidata ficam em
+# unidades diferentes.
+_RATE_PAUSE_SECONDS = 0.15
+
+
+def _words_per_second(
+    transcript: str, start: float, end: float, pad: float, words: "list | None" = None,
+) -> "float | None":
+    """ARTICULACAO do clipe: palavras / segundos FALANDO (sem pad, sem pausas).
+
+    28/08, teste da Ellen em dev: a regua (#165) e' articulacao — desconta as
+    pausas >=150ms — mas aqui a candidata era medida em palavras / duracao do
+    clipe, COM as pausas. Quem fala pausado (Ellen: 1,5 pal/s de ritmo bruto,
+    2,6 de articulacao) parecia "lenta demais" contra a regua de 2,93 e a
+    penalidade EMPURRAVA a escolha pro trecho acelerado: o worker escolheu a
+    janela de 3,28 (bruto) e o clone saiu em 32s onde ela leva 60. Medido na
+    simulacao offline com as 6 candidatas reais. Com `words` (timestamps do
+    whisper), as pausas internas saem da conta e as duas medidas batem.
+    """
     n = len([w for w in re.split(r"\s+", transcript.strip()) if w])
     dur = (end - start) - 2 * pad
     if n < 5 or dur <= 1.0:
         return None
-    return round(n / dur, 2)
+    falando = dur
+    if words:
+        lo, hi = start + pad, end - pad
+        dentro = []
+        for w in words:
+            ws, we = _word_field(w, "start"), _word_field(w, "end")
+            if ws is None or we is None or we < lo or ws > hi:
+                continue
+            dentro.append((float(ws), float(we)))
+        dentro.sort()
+        pausas = sum(
+            max(0.0, b[0] - a[1]) for a, b in zip(dentro, dentro[1:])
+            if b[0] - a[1] >= _RATE_PAUSE_SECONDS
+        )
+        falando = max(1.0, dur - pausas)
+    return round(n / falando, 2)
 
 
 def _cut_snapped_candidate(
@@ -281,7 +314,7 @@ def _cut_snapped_candidate(
         if not _slice_window(padded, clip, start, end - start):
             log(level="error", event="reference.snap.cut_failed", offset=offset)
             return (_SNAP_UNAVAILABLE, None, None)
-        wps = _words_per_second(transcript, start, end, _EDGE_PAD_SECONDS)
+        wps = _words_per_second(transcript, start, end, _EDGE_PAD_SECONDS, words)
         log(level="info", event="reference.snap.ok", offset=offset,
             snapped_seconds=round(end - start, 2), words=len(transcript.split()), wps=wps)
         return (_SNAP_OK, transcript, wps)
