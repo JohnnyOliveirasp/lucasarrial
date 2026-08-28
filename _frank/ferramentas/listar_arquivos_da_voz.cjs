@@ -47,25 +47,79 @@ function hhmmss(seg) {
   return `${Math.floor(t / 60)}min${String(t % 60).padStart(2, "0")}s`;
 }
 
-/** Duração real pelo ffprobe. Devolve null se não for mídia decodificável. */
+/**
+ * Duração real pelo ffprobe. Devolve null se não for mídia decodificável.
+ *
+ * ⚠️ O QUE DECIDE É EXISTIR FAIXA DE ÁUDIO, NÃO O PRIMEIRO STREAM.
+ *
+ * A 1ª versão lia `codec_type` com `match()`, que devolve só a PRIMEIRA
+ * ocorrência. Num `.mp4` os streams saem na ordem vídeo→áudio, então todo
+ * vídeo com faixa de áudio boa era classificado `tipo="video"`, caía fora da
+ * soma (`soAudio` filtra `=== "audio"`) e a tela imprimia
+ * "ÁUDIO de verdade: 0/1 · soma 0min00s" mais o carimbo
+ * "NÃO são áudio — o treino falha por CAUSA NOSSA, não do aluno".
+ *
+ * Isso é o ERRO ESPELHO da armadilha que este script existe pra evitar: em vez
+ * de culpar o aluno por arquivo nosso, culpa a casa por arquivo bom do aluno —
+ * e manda a ronda refazer treino de graça / pedir desculpa por um defeito que
+ * não existe. Medido em 28/08: **916 arquivos de vídeo em 203 das 1.012 vozes**
+ * (20%) cairiam nessa leitura. Caso Kelin (`a046ede6`): 1 `.mp4` h264+**aac
+ * 44,1kHz estéreo de 1174,0s**, lido como "0 áudio", quando a recusa verdadeira
+ * era o portão de 20min faltando 26s.
+ *
+ * O produto ACEITA container de vídeo de propósito — `voice-creator.tsx:17`
+ * traz `.webm,.mp4` no `ACCEPT` e `measureAudioDuration` mede a faixa de áudio.
+ * Prova em dado de produção, não em leitura de intenção: o banco gravou
+ * `duration_seconds=1174` pra esse mesmo `.mp4`. Logo o instrumento tem que
+ * contar o que a produção conta, senão mede um produto que não existe.
+ *
+ * `-of json` em vez de `default=`: o formato plano obriga a casar linha por
+ * linha e foi exatamente onde o `match()` se perdeu.
+ */
 function duracaoReal(arquivo) {
   const r = spawnSync(
     "ffprobe",
-    ["-v", "error", "-show_entries", "format=duration:stream=codec_type,codec_name",
-     "-of", "default=noprint_wrappers=1", arquivo],
+    ["-v", "error", "-show_entries", "format=duration:stream=codec_type,codec_name,duration",
+     "-of", "json", arquivo],
     { encoding: "utf8" },
   );
   // spawnSync (não execFileSync): execFileSync não devolve stderr em exit 0 e
   // já produziu "0 pausas" em instrumento cego (a2b528a4 / medir_pausas).
-  if (r.status !== 0) return { seg: null, tipo: null, codec: null, erro: (r.stderr || "").trim().slice(0, 160) };
-  const txt = r.stdout || "";
-  const mDur = txt.match(/duration=([0-9.]+)/);
-  const mTipo = txt.match(/codec_type=(\w+)/);
-  const mCodec = txt.match(/codec_name=(\w+)/);
+  if (r.status !== 0) return { seg: null, tipo: null, codec: null, container: null, erro: (r.stderr || "").trim().slice(0, 160) };
+
+  let j;
+  try {
+    j = JSON.parse(r.stdout || "{}");
+  } catch (e) {
+    // Não devolve zero de instrumento cego: sem parse, não há veredito.
+    return { seg: null, tipo: null, codec: null, container: null, erro: `ffprobe ilegível: ${e.message}`.slice(0, 160) };
+  }
+
+  const streams = Array.isArray(j.streams) ? j.streams : [];
+  const faixaAudio = streams.find((s) => s.codec_type === "audio");
+  const faixaVideo = streams.find((s) => s.codec_type === "video");
+  const durFormato = j.format?.duration != null ? Number(j.format.duration) : null;
+
+  if (!faixaAudio) {
+    // Sem faixa de áudio não treina nada: foto, pdf, ou vídeo mudo.
+    return {
+      seg: durFormato,
+      tipo: faixaVideo ? "video" : (streams[0]?.codec_type ?? null),
+      codec: faixaVideo?.codec_name ?? streams[0]?.codec_name ?? null,
+      container: null,
+      erro: null,
+    };
+  }
+
+  // TEM faixa de áudio → é material de treino, mesmo dentro de container de
+  // vídeo. A duração que vale é a da FAIXA; só cai no formato quando o stream
+  // não carimba duração (comum em .webm).
+  const segFaixa = faixaAudio.duration != null ? Number(faixaAudio.duration) : null;
   return {
-    seg: mDur ? Number(mDur[1]) : null,
-    tipo: mTipo ? mTipo[1] : null,
-    codec: mCodec ? mCodec[1] : null,
+    seg: Number.isFinite(segFaixa) && segFaixa > 0 ? segFaixa : durFormato,
+    tipo: "audio",
+    codec: faixaAudio.codec_name ?? null,
+    container: faixaVideo ? "vídeo" : null,
     erro: null,
   };
 }
@@ -109,8 +163,11 @@ function duracaoReal(arquivo) {
   }
   fs.rmSync(tmp, { recursive: true, force: true });
 
-  const audios = linhas.filter((l) => l.tipo === "audio" || l.tipo === "video");
+  // `tipo === "audio"` agora significa "TEM faixa de áudio", inclusive dentro
+  // de container de vídeo (ver `duracaoReal`). A variável `audios`, que somava
+  // audio+video, era morta — nunca foi usada, e a soma real saía do `soAudio`.
   const soAudio = linhas.filter((l) => l.tipo === "audio");
+  const emVideo = soAudio.filter((l) => l.container === "vídeo");
   const naoAudio = linhas.filter((l) => l.existe && l.tipo !== "audio");
   const sumOk = soAudio.reduce((a, l) => a + (l.seg || 0), 0);
 
@@ -130,13 +187,20 @@ function duracaoReal(arquivo) {
       console.log(`   [${l.i}] ${l.nome}  ⛔ NÃO É ÁUDIO (${l.tipo ?? "indecodificável"}${l.codec ? "/" + l.codec : ""})${l.erro ? " · " + l.erro : ""}`);
       continue;
     }
-    console.log(`   [${l.i}] ${l.nome}  ${hhmmss(l.seg)}  (${l.codec}, ${(l.bytes / 1e6).toFixed(1)}MB)`);
+    const dentroDeVideo = l.container === "vídeo" ? ", faixa de áudio dentro de vídeo" : "";
+    console.log(`   [${l.i}] ${l.nome}  ${hhmmss(l.seg)}  (${l.codec}${dentroDeVideo}, ${(l.bytes / 1e6).toFixed(1)}MB)`);
   }
 
   console.log("");
   console.log(`   ÁUDIO de verdade: ${soAudio.length}/${paths.length} · soma ${hhmmss(sumOk)} (${Math.round(sumOk)}s)`);
+  if (emVideo.length) {
+    // Dito em voz alta porque a leitura ingênua ("é .mp4, logo não é áudio")
+    // foi justamente o defeito de 28/08 — e porque o produto aceita .mp4/.webm
+    // de propósito (`voice-creator.tsx:17`), então isto é material VÁLIDO.
+    console.log(`   ℹ️  ${emVideo.length} deste(s) veio(vieram) em container de VÍDEO com faixa de áudio boa — conta pro portão, igual à produção.`);
+  }
   if (naoAudio.length) {
-    console.log(`   ⚠️  ${naoAudio.length} arquivo(s) NÃO são áudio — o treino falha por CAUSA NOSSA, não do aluno.`);
+    console.log(`   ⚠️  ${naoAudio.length} arquivo(s) SEM faixa de áudio — o treino falha por CAUSA NOSSA, não do aluno.`);
   }
   const falta = PORTAO_SEG - sumOk;
   if (falta > 0) console.log(`   ⛔ PORTÃO DE 20min: faltam ${hhmmss(falta)} — este conjunto seria RECUSADO.`);
