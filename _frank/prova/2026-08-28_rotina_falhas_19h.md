@@ -208,3 +208,31 @@ Mandei por Telegram (msgs 558 e 559) pra não sumir. Pela 14-C isto é
 - Não li a caixa do suporte@ pra triagem; só conferi os **enviados** de um aluno
   específico que eu já estava tratando.
 - Não toquei em `tts_silence_ms`, que parecia bug e é decisão sua.
+
+---
+
+## Fim de ronda — conferência fixa (passo obrigatório)
+
+```
+git fetch origin
+git log --oneline origin/main..HEAD   → VAZIO
+git rev-parse --abbrev-ref HEAD       → main
+git status --short                    → vazio (árvore limpa)
+```
+
+**Nada meu ficou preso em branch.** Esta ronda produziu um único artefato de
+git — este log — e ele foi commitado e **pushado direto na main** (`452f94e`),
+não em branch de feature. Era o risco de 19/08, quando um fix de aluno ficou 9h
+invisível dentro de um `feat/`.
+
+Varredura de branches locais: **44 branches com commit fora da main**. Nenhum é
+desta ronda; é o backlog de merge já conhecido e já escalado (21+ PRs abertos, o
+mais velho de 18/08). Registro o número aqui porque ele é o gargalo real: entre
+esses 44 está o `feat/fase-telemetria-url-publica`, que é justamente o que faria
+o instrumento do `#15` parar de mentir por omissão.
+
+Lembrete que continua valendo e que esta ronda reencontrou na prática: card
+"completed" e commit na main **não significam em produção quando o
+comportamento depende de env** — o `#15` é o caso-escola disso. Código mergeado
+em 24/08, quatro dias no ar, zero efeito, porque faltava uma variável de
+ambiente. Vale pra DDL (coluna conferida no banco) e vale pra env.
