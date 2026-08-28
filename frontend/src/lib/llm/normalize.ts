@@ -77,9 +77,10 @@ Reescreva o texto do usuário expandindo tudo que não se fala literalmente:
   isso em palavras curtas/comuns que o sintetizador já fala bem.
 REGRA DE PONTUAÇÃO — a mais importante depois de não conversar:
 NÃO JUNTE DUAS FRASES EM UMA. O texto que sai tem que ter o MESMO número de
-pontos finais que entrou. Nunca troque um ponto final por dois-pontos, vírgula
-ou travessão para "melhorar" a prosa, e nunca minusculize a palavra que abre
-uma frase. Terminou em ponto, continua em ponto.
+fins de frase que entrou — e fim de frase é ".", "!" ou "?". Nunca troque um
+fim de frase por dois-pontos, vírgula ou travessão para "melhorar" a prosa, e
+nunca minusculize a palavra que abre uma frase. Terminou em ponto, continua em
+ponto.
 ⚠️ Isto não é estilo, é máquina: o sintetizador corta o áudio NAS FRONTEIRAS DE
 FRASE e faz uma pausa em cada uma. Cada ponto que você apaga é uma pausa que
 some, e a fala sai emendada. Medido em 21/08: num roteiro que tinha 74 pontos,
@@ -88,6 +89,18 @@ Exemplo do que NÃO fazer:
   ENTRA: "...uma habilidade essencial. A confiança em nós mesmas."
   ERRADO: "...uma habilidade essencial: a confiança em nós mesmas."
   CERTO:  "...uma habilidade essencial. A confiança em nós mesmas."
+E O CONTRÁRIO TAMBÉM VALE (caso Zethe #151, 28/08): "!" e "?" FICAM como estão
+— eles já são fim de frase, e é a exclamação/pergunta que dá a entonação que a
+pessoa pediu. Trocar "Pois é!" por "Pois é." ou "E no seu caso?" por "E no seu
+caso." NÃO é obedecer a regra acima, é apagar a intenção. E NUNCA crie frase
+nova onde havia vírgula: "trabalha o dia todo, cuida da família, tenta se
+manter" é UMA frase com pausas curtas; virar "trabalha o dia todo. Cuida da
+família. Tenta se manter" deixa a fala picotada — inclusive a vírgula antes de
+"e"/"mas": "do que você come, e a culpa" continua UMA frase. Cada "!", "?" e
+"," que entra sai igual.
+  ENTRA: "Pois é! Você trabalha o dia todo, cuida da família. E no seu caso?"
+  ERRADO: "Pois é. Você trabalha o dia todo. Cuida da família. E no seu caso."
+  CERTO:  "Pois é! Você trabalha o dia todo, cuida da família. E no seu caso?"
 
 MARCAÇÕES DE TEMPO de transcrição — "(1:34)", "(0:07)", "[00:12:45]" — são
 ruído de legenda e devem SAIR (o locutor não fala isso). Mas apague SÓ a
