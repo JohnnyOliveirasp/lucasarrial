@@ -6,7 +6,7 @@
  * custo SEMPRE visível → Gerar → poll até ficar pronto.
  * Quem não tem foto/áudio cria nas telas próprias (links nos seletores).
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Check, Clock, Download, Film, Info, Loader2, RefreshCw } from "lucide-react";
 import {
@@ -283,6 +283,40 @@ export function CloneStudio({
     return () => clearInterval(timer);
   }, [job, inflight, onChanged]);
 
+  /**
+   * Pede ao servidor uma URL presignada NOVA para o job atual.
+   *
+   * ⚠️ Incidente 166 (medido em 28/08): a `video_url` vem assinada com validade
+   * de 1 HORA e esta tela a guarda em estado sem nunca renovar. Um render que
+   * demora 20-35 minutos e depois fica aberto (ou uma aba de celular que volta
+   * do segundo plano) chega no clique com o link já vencido — o R2 responde
+   * `403 ExpiredRequest`, o player morre com `MEDIA_ELEMENT_ERROR: Format
+   * error` e o download não faz nada. Os dois botões param juntos, e é isso
+   * que o aluno enxerga como "o vídeo não abre e não baixa".
+   */
+  const renovarUrl = useCallback(async (): Promise<string | null> => {
+    if (!job) return null;
+    try {
+      const res = await fetch(`/api/v1/video-clone/${job.id}`, { cache: "no-store" });
+      if (!res.ok) return null;
+      const j = await res.json();
+      const nova = (j?.clone?.video_url ?? null) as string | null;
+      if (nova) setJob((prev) => (prev && prev.id === job.id ? { ...prev, video_url: nova } : prev));
+      return nova;
+    } catch {
+      return null;
+    }
+  }, [job]);
+
+  // Uma renovação por job: se o link novo também falhar, renovar a cada
+  // `onError` viraria laço infinito de requisições.
+  const jaRenovado = useRef<string | null>(null);
+  const aoFalharPlayer = useCallback(() => {
+    if (!job || jaRenovado.current === job.id) return;
+    jaRenovado.current = job.id;
+    void renovarUrl();
+  }, [job, renovarUrl]);
+
   function reset() {
     setJob(null);
     setPoster(null);
@@ -325,8 +359,13 @@ export function CloneStudio({
         {job.status === "ready" && job.video_url && (
           /* Vídeo pronto toca NO MESMO quadro onde estava a foto (poster = ela). */
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            {/* `key` na URL: quando `renovarUrl` troca o link, o React remonta
+                o elemento e o player tenta de novo com o link vivo (trocar só
+                o `src` não refaz o carregamento). */}
             <video
+              key={job.video_url}
               src={job.video_url}
+              onError={aoFalharPlayer}
               poster={poster ?? image?.preview ?? undefined}
               controls
               loop
@@ -335,7 +374,7 @@ export function CloneStudio({
               className="w-full max-w-[420px] rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-black"
             />
             <div className="flex flex-col gap-2">
-              <button type="button" onClick={() => downloadFromUrl(job.video_url!, "video-clone", "mp4")} className={PILL}>
+              <button type="button" onClick={() => downloadFromUrl(job.video_url!, "video-clone", "mp4", renovarUrl)} className={PILL}>
                 <Download className="h-4 w-4" /> {t("download")}
               </button>
               <button type="button" onClick={reset} className={PILL}>
