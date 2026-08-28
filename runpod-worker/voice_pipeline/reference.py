@@ -219,6 +219,15 @@ _SNAP_DISCARD = "discard"          # ficou curto demais / sem palavra inteira ->
 _SNAP_UNAVAILABLE = "unavailable"  # sem words (erro/modelo antigo) -> corte por tempo de hoje
 
 
+def _words_per_second(transcript: str, start: float, end: float, pad: float) -> "float | None":
+    """Velocidade de fala do clipe: palavras / segundos de fala (sem o pad)."""
+    n = len([w for w in re.split(r"\s+", transcript.strip()) if w])
+    dur = (end - start) - 2 * pad
+    if n < 5 or dur <= 1.0:
+        return None
+    return round(n / dur, 2)
+
+
 def _cut_snapped_candidate(
     primary: Path,
     clip: Path,
@@ -227,8 +236,12 @@ def _cut_snapped_candidate(
     duration: float,
     transcribe_words_fn: "Callable[[Path], list | None]",
     log: Callable[..., None],
-) -> "tuple[str, str | None]":
-    """Corta a candidata em FRONTEIRA DE PALAVRA. Devolve (status, transcript).
+) -> "tuple[str, str | None, float | None]":
+    """Corta a candidata em FRONTEIRA DE PALAVRA. Devolve (status, transcript, wps).
+
+    `wps` = palavras por segundo do clipe (caso Ellen 25/08: o VoxCPM copia o
+    RITMO da referencia; uma ref cortada num trecho acelerado da pessoa faz o
+    clone falar 2x mais rapido que ela). None quando nao deu pra medir.
 
     Passos: corta uma janela FOLGADA (offset±slack), transcreve com timestamps
     de palavra, acha a 1a/ultima palavra inteiramente dentro da regiao desejada
@@ -243,7 +256,7 @@ def _cut_snapped_candidate(
     try:
         if not _slice_window(primary, padded, win_start, win_end - win_start):
             log(level="error", event="reference.snap.pad_slice_failed", offset=offset)
-            return (_SNAP_UNAVAILABLE, None)
+            return (_SNAP_UNAVAILABLE, None, None)
         try:
             words = transcribe_words_fn(padded)
         except Exception as exc:  # whisper nunca derruba o treino por isso
@@ -252,25 +265,26 @@ def _cut_snapped_candidate(
             words = None
         if not words:
             log(level="info", event="reference.snap.no_words", offset=offset)
-            return (_SNAP_UNAVAILABLE, None)
+            return (_SNAP_UNAVAILABLE, None, None)
         # Tempos do whisper sao relativos ao clipe folgado; a regiao desejada
         # [offset, offset+ref_seconds] vira [offset-win_start, ...] nesse relogio.
         rel_start = offset - win_start
         snapped = _snap_bounds_to_words(words, rel_start, rel_start + ref_seconds)
         if snapped is None:
             log(level="info", event="reference.snap.no_full_word", offset=offset)
-            return (_SNAP_DISCARD, None)
+            return (_SNAP_DISCARD, None, None)
         start, end, transcript = snapped
         if end - start < ref_seconds * _MIN_SNAPPED_FRACTION:
             log(level="info", event="reference.snap.too_short",
                 offset=offset, snapped_seconds=round(end - start, 2))
-            return (_SNAP_DISCARD, None)
+            return (_SNAP_DISCARD, None, None)
         if not _slice_window(padded, clip, start, end - start):
             log(level="error", event="reference.snap.cut_failed", offset=offset)
-            return (_SNAP_UNAVAILABLE, None)
+            return (_SNAP_UNAVAILABLE, None, None)
+        wps = _words_per_second(transcript, start, end, _EDGE_PAD_SECONDS)
         log(level="info", event="reference.snap.ok", offset=offset,
-            snapped_seconds=round(end - start, 2), words=len(transcript.split()))
-        return (_SNAP_OK, transcript)
+            snapped_seconds=round(end - start, 2), words=len(transcript.split()), wps=wps)
+        return (_SNAP_OK, transcript, wps)
     finally:
         try:
             padded.unlink(missing_ok=True)
@@ -300,6 +314,27 @@ def _candidate_offsets(duration: float, ref_seconds: int, max_candidates: int) -
     return [round(lo + i * step, 1) for i in range(n)]
 
 
+# Caso Ellen (25/08): mesma frase, ela 60s, o clone 30s. A ref tinha 3,7 pal/s
+# num audio onde ela fala a 1,4. Penalidade por desvio da mediana das
+# candidatas: 25% fora = +25 (empata com bordao na 1a palavra); 2x = +100.
+_RATE_PENALTY_PER_UNIT = 100.0
+
+
+def _median(xs: "list[float]") -> "float | None":
+    xs = sorted(x for x in xs if x is not None)
+    if not xs:
+        return None
+    m = len(xs) // 2
+    return xs[m] if len(xs) % 2 else (xs[m - 1] + xs[m]) / 2
+
+
+def rate_penalty(wps: "float | None", median: "float | None") -> float:
+    """Quanto o score sobe por a candidata falar mais rapido/devagar que a pessoa."""
+    if not wps or not median or median <= 0:
+        return 0.0
+    return round(_RATE_PENALTY_PER_UNIT * abs(wps / median - 1.0), 1)
+
+
 def select_reference_candidates(
     norm_files: list[Path],
     work_dir: Path,
@@ -309,6 +344,8 @@ def select_reference_candidates(
     max_candidates: int = 6,
     log: Callable[..., None] = lambda **k: None,
     transcribe_words_fn: "Callable[[Path], list | None] | None" = None,
+    medidas: "dict | None" = None,
+    target_wps: "float | None" = None,
 ) -> "list[tuple[Path, str]]":
     """Como select_reference_clip, mas devolve TODAS as candidatas válidas
     RANQUEADAS (melhor primeiro). Usado pelo QA pós-treino: se a amostra sair
@@ -329,13 +366,14 @@ def select_reference_candidates(
     def _rank_pass(
         words_fn: "Callable[[Path], list | None] | None",
         name_suffix: str = "",
-    ) -> "list[tuple[float, Path, str]]":
-        ranked: "list[tuple[float, Path, str]]" = []
+    ) -> "list[tuple[float, Path, str, float | None]]":
+        ranked: "list[tuple[float, Path, str, float | None]]" = []
         for i, off in enumerate(offsets):
             clip = work_dir / f"ref_cand_{i}_{int(off)}s{name_suffix}.wav"
             transcript: "str | None" = None
+            wps: "float | None" = None
             if words_fn is not None:
-                status, snapped = _cut_snapped_candidate(
+                status, snapped, wps = _cut_snapped_candidate(
                     primary, clip, off, ref_seconds, duration,
                     words_fn, log,
                 )
@@ -354,8 +392,8 @@ def select_reference_candidates(
                 continue
             score = score_reference_transcript(transcript, language=language)
             log(level="info", event="reference.candidate", offset=off, score=score,
-                transcript_len=len(transcript))
-            ranked.append((score, clip, transcript))
+                transcript_len=len(transcript), wps=wps)
+            ranked.append((score, clip, transcript, wps))
         return ranked
 
     scored = _rank_pass(transcribe_words_fn)
@@ -368,10 +406,27 @@ def select_reference_candidates(
         scored = _rank_pass(None, name_suffix="_time")
 
     if scored:
+        # Velocidade NATURAL da pessoa: `target_wps` (medida no dataset
+        # INTEIRO, #165) quando o treino a passou; senao a mediana das
+        # candidatas (espalhadas pelo audio), como em 25/08. Candidata que
+        # foge dela sobe no score — o VoxCPM copia o ritmo da referencia.
+        median = _median([w for _, _, _, w in scored])
+        regua = target_wps if target_wps and target_wps > 0 else median
+        scored = [
+            (score + rate_penalty(w, regua), clip, transcript, w)
+            for score, clip, transcript, w in scored
+        ]
         scored.sort(key=lambda t: t[0])
+        if medidas is not None:
+            medidas["speech_rate_wps"] = regua
+            medidas["reference_rate_wps"] = scored[0][3]
+        log(level="info", event="reference.speech_rate", regua_wps=regua,
+            regua_origem="dataset" if regua is not None and regua == target_wps else "mediana",
+            median_wps=median, chosen_wps=scored[0][3],
+            rates=[w for _, _, _, w in scored])
         log(level="info", event="reference.selected", source=primary.name,
             score=scored[0][0], seconds=ref_seconds, candidates=len(scored))
-        return [(clip, transcript) for _, clip, transcript in scored]
+        return [(clip, transcript) for _, clip, transcript, _ in scored]
 
     # Fallback: primeiros ref_seconds do 1o arquivo (melhor que nada).
     fb = work_dir / "ref_fallback.wav"
