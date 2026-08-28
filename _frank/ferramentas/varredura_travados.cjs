@@ -321,12 +321,92 @@ const ALVOS = [
     console.log("   ⚠️  parado há 7d+ sem resposta pede SEGUNDA tentativa, não silêncio.");
   }
 
-  const nadaAberto = !errInc && !totalInc && !errEsp && !totalEsp;
+  /**
+   * FECHADO EM CIMA DO PRÓPRIO DISPARO, e ninguém humano voltou (incidente #153).
+   *
+   * O e-mail do aluno re-dispara o chamado e `entregarAoTime` o re-fecha 0,8s a
+   * 1,6s depois, assinando "carol (entregue ao time)". O contador de ocorrências
+   * sobe, o chamado nunca fica aberto, e quem olha a fila vê ZERO — enquanto o
+   * aluno está escrevendo. Medido no #153: 6 casos; no #154 (Marlon) o aluno
+   * abriu CONTESTAÇÃO NO CARTÃO de R$97 22 minutos depois do fechamento, sem
+   * nenhuma pessoa ter falado com ele.
+   *
+   * ⚠️ Isto NÃO julga o fechamento. A regra do Johnny de 24/08 ("chamado não
+   * fica aberto no limbo") segue intacta e o chamado continua fechando — este
+   * bloco é RÉGUA, não comportamento, e é o mesmo argumento que criou o bloco
+   * `aguardando_aluno` acima: honesto não pode significar INVISÍVEL.
+   *
+   * ⚠️ Por que existe o filtro "ninguém voltou": sem ele o bloco reimprime todo
+   * dia casos JÁ atendidos (#126, #154) e vira alarme que se aprende a ignorar.
+   * O sinal de que a bola voltou do lado humano é uma nota posterior ao
+   * fechamento assinada por alguém que não é a `carol` — que é exatamente o
+   * retorno que o #153 mediu não existir (5 de 5 entregas do #126 sem resposta).
+   *
+   * O detector completo, com as duas famílias, é
+   * `2026-08-20_fechados_que_disparam.cjs`. Aqui fica só o recorte que dói,
+   * porque detector que ninguém roda não vigia nada: medido em 28/08, aquele
+   * script não é chamado por rotina nenhuma — só por quem lembra dele.
+   */
+  const JANELA_EM_CIMA_MS = 300 * 1000;
+  const desde7d = new Date(Date.now() - 7 * 86400000).toISOString();
+  const { data: fech, error: errFech } = await db
+    .from("incidents")
+    .select(
+      "numero, title, status, resolved_at, resolved_by, last_seen_at, occurrences, affected_emails, agent_notes",
+    )
+    .in("status", ["fixed", "ignored"])
+    .gte("last_seen_at", desde7d)
+    .gt("occurrences", 1)
+    .not("resolved_at", "is", null)
+    .order("last_seen_at", { ascending: false })
+    .limit(200);
+
+  let orfaos = [];
+  if (errFech) {
+    // mesmo motivo dos outros dois: zero aqui é indistinguível de saúde
+    console.log(`\n⚠️  consulta de FECHADO EM CIMA DO DISPARO FALHOU: ${errFech.message}`);
+    console.log("    NÃO trate esta rodada como limpa — pode haver aluno sem resposta fora da fila.");
+  } else {
+    orfaos = (fech ?? []).filter((i) => {
+      const delta = new Date(i.resolved_at).getTime() - new Date(i.last_seen_at).getTime();
+      if (delta < 0 || delta > JANELA_EM_CIMA_MS) return false;
+      if (!(i.affected_emails ?? []).length) return false;
+      // `agent_notes` já apareceu corrompido em string nesta base — não confie no tipo
+      const notas = Array.isArray(i.agent_notes) ? i.agent_notes : [];
+      const humanoVoltou = notas.some(
+        (n) =>
+          n?.at &&
+          new Date(n.at).getTime() > new Date(i.resolved_at).getTime() &&
+          !/^carol/i.test(String(n.by ?? "")),
+      );
+      return !humanoVoltou;
+    });
+    if (orfaos.length) {
+      console.log(
+        `\n🕳️  FECHADO EM CIMA DO PRÓPRIO DISPARO E NINGUÉM VOLTOU: ${orfaos.length}` +
+          ` (não conta como aberto — o aluno escreveu de novo e o chamado re-fechou)`,
+      );
+      for (const i of orfaos) {
+        const delta =
+          (new Date(i.resolved_at).getTime() - new Date(i.last_seen_at).getTime()) / 1000;
+        const h = Math.round((Date.now() - new Date(i.last_seen_at).getTime()) / 3600000);
+        console.log(
+          `   #${i.numero} fechou ${delta.toFixed(3)}s depois do disparo · ${i.occurrences}x ·` +
+            ` última há ${h}h · ${(i.affected_emails ?? []).join(", ")}`,
+        );
+        console.log(`      por "${i.resolved_by}" · ${i.title.slice(0, 80)}`);
+      }
+      console.log("   ⚠️  entrega ao time SEM retorno humano. Trate como aluno esperando.");
+    }
+  }
+
+  const nadaAberto = !errInc && !totalInc && !errEsp && !totalEsp && !errFech && !orfaos.length;
   console.log(
     total === 0 && comAudio === 0 && nadaAberto
       ? "\n✅ Nada preso, nada aberto."
       : `\n➡️  ${total} item(ns) preso(s) · ${errInc ? "?" : (totalInc ?? 0)} incidente(s) aberto(s)` +
-          ` · ${errEsp ? "?" : (totalEsp ?? 0)} aguardando aluno.` +
+          ` · ${errEsp ? "?" : (totalEsp ?? 0)} aguardando aluno` +
+          ` · ${errFech ? "?" : orfaos.length} fechado(s) sem retorno humano.` +
           ` Vá pelo mais antigo — playbooks em _frank/04.`,
   );
 })().catch((e) => {
