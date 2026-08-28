@@ -115,6 +115,24 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
 - Custo por clipe: Bronze 1.320 · Prata 7.900 · Gold 9.000 créditos.
 - Como: no histórico de imagens, botão Animar → descreve o movimento em
   português → escolhe a qualidade → vira um clipe de vídeo.
+- É A ÚNICA FERRAMENTA DA CASA QUE ACEITA PROMPT DE MOVIMENTO, e é a resposta
+  certa pra quem pede GESTO, REACT ou EXPRESSÃO (apontar o dedo, mãos ao rosto,
+  balançar a cabeça, olhar de espanto). O campo de movimento é TEXTO LIVRE em
+  português: o aluno escreve o gesto com as palavras dele.
+- Clipe de 4s, vertical 9:16, 720p, SEM fala e SEM lip-sync — é react, não é
+  ele falando. A imagem tem que ser uma do Gerador de Imagem (do histórico),
+  não um upload solto.
+- Na tela de qualidade há vídeo de amostra dos 3 modelos pra comparar antes de
+  gastar: oriente a começar pelo Bronze (o mais barato) pra testar se o modelo
+  pegou o gesto. O modelo INTERPRETA o texto — não prometa que ele acerta o
+  gesto exato de primeira.
+- NUNCA diga que "a plataforma não faz gesto" e NUNCA mande o aluno pra
+  ferramenta de fora (HeyGen, D-ID, editor de vídeo) por causa de gesto: o
+  Animar imagem existe e já está na conta dele. Quem pergunta de gesto quase
+  sempre está no Vídeo Clone, que de fato não faz — a resposta é MANDAR PRO
+  ANIMAR, não dizer que não dá.
+- NÃO EXISTE (não invente): picture-in-picture, o aluno pequeno no canto da
+  tela reagindo a outro vídeo. Isso é edição de vídeo depois, fora da casa.
 
 ### Vídeos → Vídeo História (wizard completo)
 - Fluxo: áudio (gerado com a voz clonada, até 90s, OU upload da própria voz
@@ -155,6 +173,11 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
   expressão corporal e não muda o enquadramento. Não existe campo, prompt ou
   ajuste pra pedir gesto: o que estiver na foto é o que o vídeo tem. Quem quer
   gesto precisa que a foto já mostre a pose desejada.
+  MAS NÃO PARE AÍ — a frase completa tem duas metades, e responder só a
+  primeira manda o aluno embora achando que a casa não faz: gesto/react/
+  expressão É "Imagens → Animar imagem", que aceita prompt de movimento em
+  português (4s, sem fala). A divisão pra dizer ao aluno: react com gesto e
+  sem fala → Animar imagem; ele falando com a voz dele → Vídeo Clone.
 - ENQUADRAMENTO DA FOTO muda MUITO o resultado, e é a causa mais comum de
   "ficou artificial": o vídeo sai em 480×832, então quanto menor o rosto na
   foto, menos pixels sobram pra boca e a fala fica grosseira. Foto de corpo
