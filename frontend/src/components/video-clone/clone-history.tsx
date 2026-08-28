@@ -69,6 +69,46 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
     load();
   }, [load, reloadKey]);
 
+  /**
+   * Pede ao servidor uma URL presignada NOVA para um clone e troca a da lista.
+   *
+   * ⚠️ Existe por causa do incidente 166 (medido em 28/08): a `video_url` da
+   * listagem é assinada com validade de 1 HORA e a página nunca a renovava.
+   * Passada a hora o R2 devolve `403 ExpiredRequest`, e como esta tela guarda
+   * a URL em estado, uma aba aberta há mais de uma hora (ou uma aba de celular
+   * que voltou do segundo plano) ficava com TODOS os links mortos: o player
+   * falhava com `MEDIA_ELEMENT_ERROR: Format error` e o botão de baixar não
+   * fazia nada — os dois sintomas ao mesmo tempo, que foi exatamente o relato.
+   * Recarregar a página resolvia, mas ninguém tem como adivinhar isso.
+   */
+  const renovarUrl = useCallback(async (id: string): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/v1/video-clone/${id}`, { cache: "no-store" });
+      if (!res.ok) return null;
+      const json = await res.json();
+      const nova = (json?.clone?.video_url ?? null) as string | null;
+      if (nova) {
+        setItems((prev) => prev.map((c) => (c.id === id ? { ...c, video_url: nova } : c)));
+      }
+      return nova;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Uma renovação por clone, e só. Se a URL nova também falhar (objeto de fato
+  // ausente, por exemplo), renovar a cada `onError` viraria laço infinito de
+  // requisições — o remédio virando defeito.
+  const jaRenovado = useRef<Set<string>>(new Set());
+  const aoFalharPlayer = useCallback(
+    (id: string) => {
+      if (jaRenovado.current.has(id)) return;
+      jaRenovado.current.add(id);
+      void renovarUrl(id);
+    },
+    [renovarUrl],
+  );
+
   const hasInflight = items.some((i) => i.status === "pending" || i.status === "generating");
   useEffect(() => {
     if (!hasInflight) return;
@@ -235,7 +275,9 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
               <button
                 type="button"
                 disabled={!c.video_url}
-                onClick={() => c.video_url && downloadFromUrl(c.video_url, fallbackName(c), "mp4")}
+                onClick={() =>
+                  c.video_url && downloadFromUrl(c.video_url, fallbackName(c), "mp4", () => renovarUrl(c.id))
+                }
                 aria-label={t("download")}
                 className="text-[var(--mute)] transition-colors hover:text-[var(--ink)] disabled:opacity-30"
               >
@@ -248,7 +290,10 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
 
             {openId === c.id && c.video_url && (
               <div className="w-full sm:basis-full">
-                <video src={c.video_url} controls loop playsInline preload="metadata" className="max-h-[420px] w-auto max-w-full rounded-[var(--radius)] border border-[var(--hairline-strong)]" />
+                {/* `key` na URL: quando `renovarUrl` troca o link, o React
+                    remonta o elemento e o player tenta de novo com o link vivo
+                    (trocar só o `src` não refaz o carregamento). */}
+                <video key={c.video_url} src={c.video_url} onError={() => aoFalharPlayer(c.id)} controls loop playsInline preload="metadata" className="max-h-[420px] w-auto max-w-full rounded-[var(--radius)] border border-[var(--hairline-strong)]" />
               </div>
             )}
           </li>
