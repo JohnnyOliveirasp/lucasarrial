@@ -12,7 +12,7 @@ const ACCEPT = ".mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4,.aac,.opus,audio/*";
 
 type Item =
   | { id: string; nome: string; fase: "enviando" | "analisando" }
-  | { id: string; nome: string; fase: "aprovado"; segundos: number; key: string }
+  | { id: string; nome: string; fase: "aprovado"; segundos: number; key: string; avisos?: string[] }
   | { id: string; nome: string; fase: "reprovado"; motivos: string[]; key: string }
   | { id: string; nome: string; fase: "indeciso" | "erro"; mensagem: string; key?: string };
 
@@ -29,7 +29,7 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
   const [itens, setItens] = useState<Item[]>(() =>
     iniciais.map((a) =>
       a.status === "aprovado"
-        ? { id: a.key, nome: a.nome, fase: "aprovado", segundos: a.segundos, key: a.key }
+        ? { id: a.key, nome: a.nome, fase: "aprovado", segundos: a.segundos, key: a.key, avisos: a.avisos }
         : { id: a.key, nome: a.nome, fase: "reprovado", motivos: a.motivos ?? [], key: a.key },
     ),
   );
@@ -79,7 +79,7 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
       patch(
         id,
         audio.status === "aprovado"
-          ? { id, nome, fase: "aprovado", segundos: audio.segundos, key }
+          ? { id, nome, fase: "aprovado", segundos: audio.segundos, key, avisos: audio.avisos }
           : { id, nome, fase: "reprovado", motivos: audio.motivos ?? [], key },
       );
     } catch (e) {
@@ -170,7 +170,14 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
               <li key={i.id} className="flex items-start justify-between gap-3 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3.5 py-2.5 text-[13px]">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-[var(--ink)]">{i.nome}</span>
-                  {i.fase === "aprovado" ? <span className="text-emerald-400">✓ {t("aprovado")} · {formatDuration(i.segundos)} {t("deFala")}</span> : null}
+                  {i.fase === "aprovado" ? (
+                    <>
+                      <span className="text-emerald-400">✓ {t("aprovado")} · {formatDuration(i.segundos)} {t("deFala")}</span>
+                      {(i.avisos ?? []).map((a) => (
+                        <span key={a} className="text-amber-400">⚠ {a} — {t("avisoAfeta")}</span>
+                      ))}
+                    </>
+                  ) : null}
                   {i.fase === "reprovado" ? i.motivos.map((m) => <span key={m} className="text-red-400">✕ {m}</span>) : null}
                   {i.fase === "enviando" || i.fase === "analisando" ? <span className="text-[var(--silver)]">{i.fase === "enviando" ? t("enviando") : t("analisando")}</span> : null}
                   {i.fase === "indeciso" || i.fase === "erro" ? <span className="text-[var(--status-error)]">{i.mensagem}</span> : null}

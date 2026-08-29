@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
       segundos: Math.round(m.falaSegundos),
       status: m.aprovado ? "aprovado" : "reprovado",
       motivos: m.motivos,
+      avisos: m.avisos,
     };
     const audios = (pedido.audios ?? []).filter((a) => a.key !== key).concat(audio);
     await atualizarSessao(pedido.sessao, { audios });

@@ -50,7 +50,10 @@ export type SgpAudio = {
   nome: string;
   segundos: number;
   status: "processando" | "aprovado" | "reprovado";
+  /** Por que foi barrado. */
   motivos?: string[];
+  /** Ressalvas: o áudio vale, mas pode afetar a voz clonada. */
+  avisos?: string[];
 };
 
 export type SgpPedidoRow = {

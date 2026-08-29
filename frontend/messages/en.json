@@ -2225,7 +2225,8 @@
       "erroConcluir": "Couldn't continue.",
       "voltar": "Back",
       "continuar": "Continue",
-      "salvando": "Saving…"
+      "salvando": "Saving…",
+      "avisoAfeta": "may affect the cloned voice"
     },
     "revisao": {
       "titulo": "Confirmation & Authorization",
