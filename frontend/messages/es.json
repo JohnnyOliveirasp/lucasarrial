@@ -2186,7 +2186,7 @@
         "sem_acessorios": "Sin gafas de sol, gorra o accesorios que cubran el rostro"
       },
       "fotosTitulo": "Tus fotos",
-      "fotosDica": "Aceptamos cualquier formato (JPG, PNG, HEIC de iPhone, WEBP…). Sube de {min} a {max} fotos tuyas de una vez: de rostro y de cuerpo. Necesitas **al menos una de frente y una de lado** (perfil o 3/4). Solo rechazamos imágenes generadas por IA, fotos con más de una persona o sin persona.",
+      "fotosDica": "Aceptamos cualquier formato (JPG, PNG, HEIC de iPhone, WEBP…). Sube de {min} a {max} fotos tuyas de una vez: de rostro y de cuerpo. Necesitas al menos una de frente y una de lado (perfil o 3/4). Solo rechazamos imágenes donde no aparece nadie o donde aparecen otras personas.",
       "enviando": "Subiendo…",
       "analisando": "Analizando…",
       "aprovada": "aprobada",

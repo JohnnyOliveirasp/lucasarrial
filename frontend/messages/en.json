@@ -2186,7 +2186,7 @@
         "sem_acessorios": "No sunglasses, hat or accessories covering the face"
       },
       "fotosTitulo": "Your photos",
-      "fotosDica": "Any photo format works (JPG, PNG, iPhone HEIC, WEBP…). Upload {min} to {max} photos of yourself at once: face and body. You need **at least one front and one side** (profile or 3/4). We only reject AI-generated images, photos with more than one person, or with no person.",
+      "fotosDica": "Any photo format works (JPG, PNG, iPhone HEIC, WEBP…). Upload {min} to {max} photos of yourself at once: face and body. You need at least one front and one side (profile or 3/4). We only reject images with no one in them or with other people.",
       "enviando": "Uploading…",
       "analisando": "Analyzing…",
       "aprovada": "approved",
