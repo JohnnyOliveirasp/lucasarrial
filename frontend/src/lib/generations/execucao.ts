@@ -30,3 +30,32 @@ export function inferenceExecutionTimeoutMs(textLen: number): number {
 export function ehTimeoutDeExecucao(rawError: string): boolean {
   return rawError.toLowerCase().includes("executiontimeout");
 }
+
+/**
+ * Falha que NÃO é do material do aluno — vale refazer sozinho.
+ *
+ * 29/08 (Johnny): "isso já aconteceu com outros alunos; precisa de plano de
+ * contingência: se falhar, gerar de novo e não cobrar". O reenvio automático
+ * (#89) só cobria `executionTimeout`; um tropeço de rede no download do LoRA
+ * ou um 5xx do R2 caía direto em "falhou". Nada disso repete defeito de
+ * entrada: refazer resolve.
+ *
+ * ⚠️ Continua FORA: OOM/CUDA, erro de modelo e áudio inválido — repetir só
+ * faria o aluno esperar em dobro pelo mesmo erro.
+ */
+const TRANSITORIAS = [
+  "failed to download",
+  "connection reset",
+  "connection aborted",
+  "read timed out",
+  "temporarily unavailable",
+  "502 bad gateway",
+  "503 service",
+  "504 gateway",
+  "internalerror",
+];
+
+export function ehFalhaTransitoria(rawError: string): boolean {
+  const e = rawError.toLowerCase();
+  return ehTimeoutDeExecucao(e) || TRANSITORIAS.some((t) => e.includes(t));
+}
