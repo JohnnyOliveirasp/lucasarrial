@@ -23,6 +23,28 @@ export type EtapasSgp = {
   erro: string | null;
 };
 
+/**
+ * Mesma checagem, mas a partir do DONO — é o que os webhooks do Kie e do
+ * RunPod chamam quando a imagem/o treino termina. Sem isto, o e-mail de etapa
+ * dependia de alguém estar com a tela aberta (Johnny 29/08: "se ele fechar a
+ * tela os e-mails das etapas não vão ser enviados?"). Silencioso pra quem não
+ * é do SGP.
+ */
+export async function avancarEtapasDoUsuario(userId: string): Promise<void> {
+  try {
+    const { data } = await getAdmin()
+      .from("sgp_pedidos" as never)
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const pedido = data as SgpPedidoRow | null;
+    if (!pedido?.enviado_em) return;
+    await estadoDasEtapas(pedido);
+  } catch (e) {
+    console.error("[sgp/etapas] avançar falhou:", e instanceof Error ? e.message : e);
+  }
+}
+
 export async function estadoDasEtapas(pedido: SgpPedidoRow): Promise<EtapasSgp> {
   const base = (status: SgpStatus): EtapasSgp => ({
     status,
