@@ -47,10 +47,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const admin = getAdmin();
+    // UPSERT, não update: conta antiga cujo perfil foi apagado (caso do
+    // Johnny no smoke de 29/08 — auth.users fica, profiles some) chegava aqui
+    // com 0 linhas afetadas e o pedido morria na FK. Recria o perfil no ato.
     const { error: perfilErr } = await admin
       .from("profiles" as never)
-      .update({ display_name: nome, whatsapp } as never)
-      .eq("id", auth.user_id);
+      .upsert(
+        { id: auth.user_id, email: auth.email ?? "", display_name: nome, whatsapp } as never,
+        { onConflict: "id" },
+      );
     if (perfilErr) throw new Error(perfilErr.message);
 
     // Pedido: cria em `foto`; se já existe e ainda está em `dados`, avança.
