@@ -185,7 +185,16 @@ class TtsSettings:
             intrusion_qa_enabled=_ligado("TTS_INTRUSION_QA"),
             intrusion_qa_retries=int(os.environ.get("TTS_INTRUSION_QA_RETRIES", "3")),
             reference_wav_too=_ligado("TTS_REFERENCE_WAV_TOO"),
-            rate_qa_enabled=_ligado("TTS_RATE_QA"),
+            # DESLIGADO por padrao desde 29/08 (Johnny, no ouvido): ele comparou
+            # o MESMO texto na voz do Lucas com e sem o QA de ritmo e aprovou o
+            # SEM ("ficou perfeito"). Medido no par: 67,7s sem QA contra 72,1s
+            # com o esticador 0,85 -- e o incomodo nao era so o esticador: os
+            # regens do QA de ritmo tambem mudavam a prosodia.
+            # ⚠️ O QUE SE PERDE: a correcao de quem fala RAPIDO demais (casos
+            # Victor e Ellen, 28/08), que era a razao do esticador existir.
+            # Se voltar a aparecer "voz acelerada", religue com TTS_RATE_QA=1
+            # no template do endpoint -- a env continua mandando.
+            rate_qa_enabled=_ligado("TTS_RATE_QA", "0"),
             # 25/08 Ellen: com 0,20 so 1 de 5 chunks disparou (2,5-2,6 contra regua 2,16) e
             # o texto de 60s saiu em 48,6s; 0,10 pega os chunks a 2,4+ .
             rate_qa_tolerance=float(os.environ.get("TTS_RATE_QA_TOLERANCE", "0.10")),
