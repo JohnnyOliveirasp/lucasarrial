@@ -2243,8 +2243,61 @@
     },
     "revisao": {
       "titulo": "Confirmación y Autorización",
-      "descricao": "Revisa toda la información antes de enviar.",
-      "emConstrucao": "En construcción — próxima etapa del SGP."
+      "descricao": "Revisa toda la información antes de enviar. Tras la confirmación, nuestro equipo empieza a construir tu clon.",
+      "dadosPessoais": "Datos personales",
+      "nome": "Nombre",
+      "alterar": "Cambiar",
+      "fotos": "Fotos aprobadas ({n})",
+      "cienciaFoto": "Confirmaste {n} de 5 ítems de la guía de la foto.",
+      "audios": "Audios aprobados ({n}) · {total} de habla",
+      "cienciaAudio": "Confirmaste {n} de 4 ítems de la guía del audio.",
+      "lgpdTitulo": "Protección de Datos (LGPD)",
+      "lgpdTexto": "De acuerdo con la Ley General de Protección de Datos de Brasil (Ley 13.709/2018), todos los datos personales de este formulario se usarán exclusivamente para configurar tu clon de IA. Tus datos se tratan con total confidencialidad, no se comparten con terceros y se descartan al concluir el servicio. Puedes pedir su eliminación en cualquier momento contactando a nuestro equipo.",
+      "declaracao": "Declaro que la información enviada es correcta, autorizo al equipo del Sistema de Generación Lista a usar mis datos exclusivamente para configurar mi clon de IA y acepto el tratamiento de datos descrito arriba.",
+      "avisoProcessamento": "Al enviar, el sistema empieza a construir tu clon (foto y voz). Puedes seguirlo en la siguiente pantalla o cerrar — te avisamos por e-mail al terminar cada etapa.",
+      "confirmarEnviar": "Confirmar y Enviar",
+      "enviando": "Enviando…",
+      "erroEnviar": "No se pudo enviar.",
+      "voltar": "Volver"
+    },
+    "acompanhar": {
+      "selo": "Sistema de Generación Lista",
+      "titulo": "Tu clon se está construyendo",
+      "descricao": "Sigue cada etapa aquí. Te avisamos por e-mail al terminar.",
+      "descricaoPronto": "¡Listo! Tu foto y tu voz ya están en la plataforma.",
+      "etapas": {
+        "recebido": {
+          "titulo": "Pedido recibido",
+          "feito": "Recibimos tus fotos y audios.",
+          "andamento": "",
+          "espera": "",
+          "falhou": ""
+        },
+        "foto": {
+          "titulo": "Clon de foto",
+          "feito": "Tu foto social está lista.",
+          "andamento": "Generando tu foto… unos minutos.",
+          "espera": "Esperando.",
+          "falhou": "No pudimos generarla. Nuestro equipo lo revisará."
+        },
+        "voz": {
+          "titulo": "Clon de voz",
+          "feito": "Tu voz está entrenada.",
+          "andamento": "Entrenando tu voz… unos 30 minutos.",
+          "espera": "Esperando.",
+          "falhou": "El entrenamiento falló. Nuestro equipo lo revisará."
+        },
+        "pronto": {
+          "titulo": "Plataforma lista",
+          "feito": "Ya puedes usar la plataforma.",
+          "andamento": "",
+          "espera": "Cuando terminen foto y voz, te avisamos por e-mail.",
+          "falhou": "Algo salió mal — nuestro equipo te contactará."
+        }
+      },
+      "erroTime": "Una etapa necesitó atención de nuestro equipo. No tienes que hacer nada — lo resolvemos y te avisamos por e-mail.",
+      "podeFechar": "Puedes cerrar esta página. Recibirás un e-mail al terminar cada etapa.",
+      "irParaPlataforma": "Ir a la plataforma"
     }
   }
 }

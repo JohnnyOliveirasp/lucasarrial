@@ -2243,8 +2243,61 @@
     },
     "revisao": {
       "titulo": "Confirmation & Authorization",
-      "descricao": "Review everything before sending.",
-      "emConstrucao": "Under construction — next SGP step."
+      "descricao": "Review everything before sending. After confirmation, our team starts building your clone.",
+      "dadosPessoais": "Personal details",
+      "nome": "Name",
+      "alterar": "Edit",
+      "fotos": "Approved photos ({n})",
+      "cienciaFoto": "You confirmed {n} of 5 items from the photo guide.",
+      "audios": "Approved audio files ({n}) · {total} of speech",
+      "cienciaAudio": "You confirmed {n} of 4 items from the audio guide.",
+      "lgpdTitulo": "Data Protection (LGPD)",
+      "lgpdTexto": "In accordance with the Brazilian General Data Protection Law (Law 13.709/2018), all personal data provided in this form will be used exclusively to set up your AI clone. Your data is kept strictly confidential, is not shared with third parties and is discarded after the service is complete. You can request deletion at any time by contacting our team.",
+      "declaracao": "I declare the information sent is correct, I authorize the Ready Generation System team to use my data exclusively to set up my AI clone, and I agree to the data processing described above.",
+      "avisoProcessamento": "When you send, the system starts building your clone (photo and voice). You can follow it on the next screen or close — we email you when each step is done.",
+      "confirmarEnviar": "Confirm and Send",
+      "enviando": "Sending…",
+      "erroEnviar": "Could not send.",
+      "voltar": "Back"
+    },
+    "acompanhar": {
+      "selo": "Ready Generation System",
+      "titulo": "Your clone is being built",
+      "descricao": "Follow each step here. We email you when it is done.",
+      "descricaoPronto": "All set! Your photo and voice are on the platform.",
+      "etapas": {
+        "recebido": {
+          "titulo": "Order received",
+          "feito": "We got your photos and audio.",
+          "andamento": "",
+          "espera": "",
+          "falhou": ""
+        },
+        "foto": {
+          "titulo": "Photo clone",
+          "feito": "Your social photo is ready.",
+          "andamento": "Generating your photo… a few minutes.",
+          "espera": "Waiting.",
+          "falhou": "We could not generate it. Our team will look."
+        },
+        "voz": {
+          "titulo": "Voice clone",
+          "feito": "Your voice is trained.",
+          "andamento": "Training your voice… about 30 minutes.",
+          "espera": "Waiting.",
+          "falhou": "Training failed. Our team will look."
+        },
+        "pronto": {
+          "titulo": "Platform ready",
+          "feito": "You can use the platform now.",
+          "andamento": "",
+          "espera": "Once photo and voice finish, we email you.",
+          "falhou": "Something went wrong — our team will reach out."
+        }
+      },
+      "erroTime": "One step needs our team's attention. Nothing to do on your side — we will fix it and email you.",
+      "podeFechar": "You can close this page. You will get an email when each step is done.",
+      "irParaPlataforma": "Go to the platform"
     }
   }
 }
