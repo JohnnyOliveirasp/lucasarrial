@@ -2214,7 +2214,36 @@
     },
     "audio": {
       "titulo": "Audio para clonar la voz",
-      "descricao": "Graba al menos 20 minutos de audio para clonar tu voz con alta fidelidad.",
+      "descricao": "Graba al menos 20 minutos de audio para clonar tu voz con alta fidelidad. Puede ser lectura o habla natural.",
+      "videoPendente": "⚠️ Aquí va el video de Lucas explicando la grabación (pendiente de grabar).",
+      "confirmeTitulo": "Confirma antes de enviar tu audio:",
+      "ciencia": {
+        "30min": "Grabé al menos 20 minutos de audio",
+        "silencio": "Ambiente silencioso, sin ruidos de fondo",
+        "mesmo_ambiente": "Todos los bloques grabados en el mismo ambiente",
+        "fala_natural": "Habla natural o lectura (sin susurros ni gritos)"
+      },
+      "arquivosTitulo": "Tus audios",
+      "arquivosDica": "Sube uno o varios archivos (MP3, WAV, M4A, grabación del celular…). Los minutos se acumulan. El sistema analiza cada archivo: volumen, ruido, silencio e idioma — solo cuenta el habla aprobada.",
+      "soltarAqui": "Toca para elegir los archivos de audio",
+      "acumulado": "{atual} de habla aprobada (mínimo {minimo} min)",
+      "maximo": "máximo {max} min",
+      "aprovado": "aprobado",
+      "deFala": "de habla",
+      "enviando": "Subiendo…",
+      "analisando": "Analizando…",
+      "indeciso": "No pudimos analizarlo ahora. Intenta subirlo de nuevo.",
+      "remover": "Quitar",
+      "erroUpload": "No pudimos subir el audio.",
+      "erroAnalise": "No pudimos analizar el audio.",
+      "erroConcluir": "No se pudo continuar.",
+      "voltar": "Volver",
+      "continuar": "Continuar",
+      "salvando": "Guardando…"
+    },
+    "revisao": {
+      "titulo": "Confirmación y Autorización",
+      "descricao": "Revisa toda la información antes de enviar.",
       "emConstrucao": "En construcción — próxima etapa del SGP."
     }
   }

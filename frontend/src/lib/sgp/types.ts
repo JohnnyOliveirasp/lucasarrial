@@ -31,6 +31,9 @@ export type SgpFotoSlot = (typeof SGP_FOTO_SLOTS)[number];
 
 /** Checkboxes da tela 2 (ciência do aluno, gravada com hora). */
 export const CIENCIA_FOTO = ["luz", "fundo", "enquadramento", "nitida", "sem_acessorios"] as const;
+/** Régua de áudio do SGP = a do app (Johnny 29/08): 20–60 min de FALA aprovada. */
+export const SGP_AUDIO_MIN_SEGUNDOS = 20 * 60;
+export const SGP_AUDIO_MAX_SEGUNDOS = 60 * 60;
 /** Checkboxes da tela 3. */
 export const CIENCIA_AUDIO = ["30min", "silencio", "mesmo_ambiente", "fala_natural"] as const;
 
