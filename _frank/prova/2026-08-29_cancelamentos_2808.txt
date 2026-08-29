@@ -1,0 +1,51 @@
+janela UTC 2026-08-28T00:00:00.000Z -> 2026-08-29T00:00:00.000Z (dia 2026-08-28)
+5 evento(s) de cancelamento -> 5 pessoa(s)
+varredura expire_trial_credits: DESATIVADA — DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas
+
+==========================================================================
+cleutonvalentim82@gmail.com  (Cleuton Valentim)
+  TRIAL | adesao 2026-08-03 -> cancelou 2026-08-28 = 24 dia(s)
+    assinatura DFGPACJ1 CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 COMPLETE        2026-08-03
+    rec#2 R$    97 OVERDUE           <-- cobranca EXISTE mas NAO foi paga
+    banco: mensalidade 90000 cr | extra 0 cr | acesso ate 2026-09-03
+    marcador trial: nenhum
+    dia 10 do trial: 2026-08-13 (JA passou)
+    !! TRIAL passou do dia 10 (venceu 2026-08-13) e ainda tem 90000 cr — a varredura NAO pegou.
+==========================================================================
+csitya100@gmail.com  (Claudio Sitya)
+  ASSINANTE | adesao 2026-08-13 -> cancelou 2026-08-28 = 15 dia(s)
+    assinatura YPAA46L6 CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 COMPLETE        2026-08-13
+    rec#2 R$    97 COMPLETE        2026-08-20
+    banco: mensalidade 166492 cr | extra 10000 cr | acesso ate 2026-09-13
+    marcador trial: nenhum
+==========================================================================
+definidameta@gmail.com  (Ana Sampaio)
+  TRIAL | adesao 2026-08-25 -> cancelou 2026-08-28 = 2 dia(s)
+    assinatura ACZXD6ZO CANCELLED_BY_SELLER (trial)
+    rec#1 R$     0 APPROVED        2026-08-25
+    banco: mensalidade 53321 cr | extra -1575 cr | acesso ate 2026-09-01
+    marcador trial: nenhum
+    dia 10 do trial: 2026-09-04 (ainda vai chegar)
+    !! TRIAL ainda no prazo (dia 10 em 2026-09-04), mas a varredura esta DESATIVADA (DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas) — os 53321 cr NAO vao expirar sozinhos.
+==========================================================================
+contato@rdrdigital.com.br  (Rudnei Jose de Moraes)
+  ASSINANTE | adesao 2026-08-11 -> cancelou 2026-08-28 = 17 dia(s)
+    assinatura LU4FIO8N CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 COMPLETE        2026-08-11
+    rec#2 R$    97 COMPLETE        2026-08-18
+    banco: mensalidade 200000 cr | extra 0 cr | acesso ate 2026-09-11
+    marcador trial: nenhum
+==========================================================================
+clonefiuza@gmail.com  (FABIO FIUZA)
+  TRIAL | adesao 2026-08-25 -> cancelou 2026-08-28 = 3 dia(s)
+    assinatura M2XOL5Y9 CANCELLED_BY_SELLER (trial)
+    rec#1 R$     0 APPROVED        2026-08-25
+    banco: mensalidade 76259 cr | extra 0 cr | acesso ate 2026-09-01
+    marcador trial: nenhum
+    dia 10 do trial: 2026-09-04 (ainda vai chegar)
+    !! TRIAL ainda no prazo (dia 10 em 2026-09-04), mas a varredura esta DESATIVADA (DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas) — os 76259 cr NAO vao expirar sozinhos.
+
+==========================================================================
+3 caso(s) FORA DA REGRA: cleutonvalentim82@gmail.com, definidameta@gmail.com, clonefiuza@gmail.com
