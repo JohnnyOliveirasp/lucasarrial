@@ -561,6 +561,15 @@ export async function importTrainingAudios(
 
   const uploadedKeys: string[] = [];
   let streamsRestantes = MAX_AUDIO_STREAM_FILES;
+  // Teto de RELÓGIO, não só de contagem — medido no próprio caso Johnathan
+  // (29/08): os 3 arquivos que o resgate pegaria somam **4,77 GB**. A 24 MB/s
+  // (throughput real medido contra o Drive) dá ~200s só de download, dentro do
+  // `maxDuration = 600` da rota — mas essa folga é do TAMANHO DA PASTA DELE,
+  // não uma garantia. Uma pasta pior, ou um dia de rede ruim, estoura os 600s
+  // e aí o import inteiro morre: o aluno não recebe recusa, recebe NADA — pior
+  // que a mensagem errada que este commit veio consertar. Com o relógio, o que
+  // não coube vira descarte declarado, e a mensagem agora conta o descarte.
+  const RESGATE_DEADLINE = Date.now() + 300_000;
   for (let i = 0; i < Math.min(fileIds.length, MAX_AUDIOS); i++) {
     const fileId = fileIds[i];
     try {
@@ -574,6 +583,7 @@ export async function importTrainingAudios(
         // fingir que é esconderia o defeito de verdade.
         const soTamanho = /teto \d+ ?MB|passa do teto|passou de \d+ ?MB/i.test(msgDown);
         if (!soTamanho || streamsRestantes <= 0) throw eDown;
+        if (Date.now() > RESGATE_DEADLINE) throw eDown;
         streamsRestantes--;
         file = await audioDeVideoGrande(fileId);
       }

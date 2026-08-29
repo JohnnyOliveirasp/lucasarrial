@@ -61,9 +61,8 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<string> {
     });
     p.on("close", (code) => {
       clearTimeout(timer);
-      code === 0
-        ? resolve(out.trim())
-        : reject(new Error(`${cmd} exit ${code}: ${err.slice(-200)}`));
+      if (code === 0) resolve(out.trim());
+      else reject(new Error(`${cmd} exit ${code}: ${err.slice(-200)}`));
     });
   });
 }
