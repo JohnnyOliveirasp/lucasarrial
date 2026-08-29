@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_INPUT_CLASS, SGP_LABEL_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
 
 /**
@@ -15,7 +14,6 @@ import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_INPUT_CLASS, SGP_LABEL_CLASS, SGP
 export function SgpEnviarForm({ email, contaExistente }: { email: string; contaExistente: boolean }) {
   const t = useTranslations("sgp.revisao");
   const router = useRouter();
-  const supabase = createClient();
 
   const [senha, setSenha] = useState("");
   const [senha2, setSenha2] = useState("");
@@ -40,11 +38,9 @@ export function SgpEnviarForm({ email, contaExistente }: { email: string; contaE
         | null;
       if (!r.ok) throw new Error(j?.error?.message ?? t("erroEnviar"));
 
-      // Conta recém-criada: já entra, pra cair direto no acompanhamento.
-      if (j?.contaCriada && senha) {
-        await supabase.auth.signInWithPassword({ email, password: senha }).catch(() => null);
-      }
-      router.push(j?.proximo ?? "/app/sgp");
+      // NÃO logamos ninguém aqui: entrar na plataforma é decisão do aluno,
+      // depois que o clone ficar pronto (Johnny 29/08).
+      router.push(j?.proximo ?? "/sgp/acompanhar");
       router.refresh();
     } catch (e) {
       setErro(e instanceof Error ? e.message : t("erroEnviar"));
