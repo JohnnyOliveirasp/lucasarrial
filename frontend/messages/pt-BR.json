@@ -2174,7 +2174,47 @@
     },
     "foto": {
       "titulo": "Foto base para o Clone",
-      "descricao": "Envie fotos de alta qualidade que serão a base do seu clone.",
+      "descricao": "Envie fotos de alta qualidade que serão a base do seu clone. Baixe o guia abaixo para saber exatamente como tirar a foto ideal.",
+      "guiaTitulo": "Baixar Guia da Foto Base (PDF)",
+      "guiaDescricao": "Instruções detalhadas para tirar a foto ideal para o seu clone",
+      "confirmeTitulo": "Confirme antes de enviar suas fotos:",
+      "ciencia": {
+        "luz": "Foto com boa iluminação (luz de frente, sem sombras no rosto)",
+        "fundo": "Fundo limpo e sem distrações visuais",
+        "enquadramento": "Enquadramento do busto para cima, olhando para a câmera",
+        "nitida": "Foto nítida e em alta resolução (sem blur)",
+        "sem_acessorios": "Sem óculos de sol, chapéu ou acessórios cobrindo o rosto"
+      },
+      "fotosTitulo": "Suas fotos",
+      "fotosDica": "Aceitamos qualquer formato de foto (JPG, PNG, HEIC do iPhone, WEBP…). Envie uma foto em cada quadro: o sistema analisa cada uma e marca ✓ quando ela segue o guia. As 4 primeiras são obrigatórias.",
+      "slots": {
+        "frente_sorrindo": "Frente · sorrindo",
+        "frente_neutro": "Frente · neutro",
+        "lado_sorrindo": "De lado · sorrindo",
+        "lado_neutro": "De lado · neutro",
+        "extra": "Extra (opcional)"
+      },
+      "escolherFoto": "Escolher foto",
+      "toqueParaEnviar": "Toque para enviar",
+      "enviando": "Enviando…",
+      "analisando": "Analisando…",
+      "processando": "processando",
+      "aprovada": "aprovada",
+      "reprovada": "reprovada",
+      "indeciso": "Não conseguimos analisar agora. Tente enviar de novo.",
+      "trocar": "Trocar",
+      "remover": "Remover",
+      "progresso": "{n} de {total} fotos obrigatórias aprovadas",
+      "erroUpload": "Não conseguimos enviar a foto.",
+      "erroAnalise": "Não conseguimos analisar a foto.",
+      "erroConcluir": "Não foi possível continuar.",
+      "voltar": "Voltar",
+      "continuar": "Continuar",
+      "salvando": "Salvando…"
+    },
+    "audio": {
+      "titulo": "Áudio para clonagem de voz",
+      "descricao": "Grave um áudio de pelo menos 20 minutos para clonar sua voz com alta fidelidade.",
       "emConstrucao": "Em construção — próxima etapa do SGP."
     }
   }
