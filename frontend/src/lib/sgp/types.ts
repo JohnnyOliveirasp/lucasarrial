@@ -38,6 +38,8 @@ export type SgpFoto = {
   status: "processando" | "aprovada" | "reprovada";
   tipo?: SgpFotoTipo | null;
   sorrindo?: boolean;
+  /** Dá pra ver o rosto? Só isso decide qual foto vira a referência padrão. */
+  rosto_visivel?: boolean;
   motivos?: string[];
 };
 

@@ -2186,13 +2186,13 @@
         "sem_acessorios": "No sunglasses, hat or accessories covering the face"
       },
       "fotosTitulo": "Your photos",
-      "fotosDica": "Any photo format works (JPG, PNG, iPhone HEIC, WEBP…). Upload {min} to {max} photos at once, following the guide: front and side, neutral and smiling. The system checks each one and marks ✓ when it follows the guide.",
+      "fotosDica": "Any photo format works (JPG, PNG, iPhone HEIC, WEBP…). Upload {min} to {max} photos of yourself at once: face and body, front and side. We only reject AI-generated images, photos with more than one person, or with no person — at least one must show your face.",
       "enviando": "Uploading…",
       "analisando": "Analyzing…",
       "aprovada": "approved",
       "reprovada": "rejected",
       "indeciso": "We couldn't analyze it right now. Try uploading again.",
-      "remover": "Remove",
+      "remover": "Delete",
       "progresso": "{n} photo(s) approved — minimum {min}",
       "erroUpload": "We couldn't upload the photo.",
       "erroAnalise": "We couldn't analyze the photo.",
@@ -2201,7 +2201,8 @@
       "continuar": "Continue",
       "salvando": "Saving…",
       "enviarFotos": "Upload photos",
-      "maximo": "Maximum {max} photos."
+      "maximo": "Maximum {max} photos.",
+      "trocar": "Replace"
     },
     "audio": {
       "titulo": "Audio for voice cloning",
