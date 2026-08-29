@@ -88,7 +88,7 @@ export function StepDadosForm({ nomeInicial = "", emailInicial = "" }: { nomeIni
   async function entrarPorCodigo() {
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { shouldCreateUser: false },
+      options: { shouldCreateUser: false, emailRedirectTo: `${window.location.origin}/auth/callback?next=/sgp` },
     });
     if (error) {
       setErro(error.message.toLowerCase().includes("rate") ? t("muitasTentativas") : t("erroGenerico"));
