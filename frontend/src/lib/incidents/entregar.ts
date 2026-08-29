@@ -46,6 +46,17 @@ function linksDe(...textos: Array<string | null | undefined>): string[] {
   return [...achados].slice(0, 5);
 }
 
+/**
+ * Por onde o time responde. O painel só serve pra quem tem CONTA e conversa
+ * dentro do app: quem veio do formulário do SGP ainda não tem login nenhum —
+ * mandar o time "responder pelo painel" seria mandar pra uma tela vazia.
+ */
+function ondeResponder(canal: string): string {
+  if (canal === "e-mail") return "pelo suporte@";
+  if (canal.toUpperCase().startsWith("SGP")) return "no WhatsApp ou no e-mail dele — ele não tem login";
+  return "pelo painel";
+}
+
 export function montarAvisoAoTime(e: EntregaAoTime): string {
   const links = linksDe(e.resumo, e.texto);
   const trecho = (e.texto ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
@@ -57,7 +68,7 @@ export function montarAvisoAoTime(e: EntregaAoTime): string {
     trecho ? `*Ele disse:* "${trecho}${(e.texto ?? "").length > 400 ? "…" : ""}"` : "",
     links.length ? `*Link:* ${links.join("\n")}` : "",
     ``,
-    `A Fast já respondeu que o time vai olhar. O chamado está ABERTO na fila esperando gente — quem pegar responde o aluno direto (${e.canal === "e-mail" ? "pelo suporte@" : "pelo painel"}) e fecha o chamado.`,
+    `A Fast já respondeu que o time vai olhar. O chamado está ABERTO na fila esperando gente — quem pegar responde o aluno direto (${ondeResponder(e.canal)}) e fecha o chamado.`,
   ]
     .filter(Boolean)
     .join("\n");

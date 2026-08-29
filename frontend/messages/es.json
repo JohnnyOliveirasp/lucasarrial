@@ -2300,6 +2300,15 @@
       "irParaPlataforma": "Ir a la plataforma",
       "prontoTexto": "¡Listo! Entra con tu e-mail y la contraseña que creaste para ver el resultado.",
       "entrar": "Ir a la plataforma"
+    },
+    "ajuda": {
+      "botao": "Ayuda",
+      "fechar": "Cerrar",
+      "titulo": "Fast · ayuda del formulario",
+      "saudacao": "¡Hola! 👋 Soy Fast. Pregúntame lo que quieras de esta pantalla — foto rechazada, código que no llegó, minutos del audio. Si no lo resuelvo, llamo a alguien del equipo.",
+      "placeholder": "Escribe tu duda…",
+      "enviar": "Enviar",
+      "erro": "No pude responder ahora — inténtalo de nuevo en unos instantes."
     }
   }
 }

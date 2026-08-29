@@ -9,6 +9,7 @@
  */
 import type { NextRequest } from "next/server";
 import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
+import { criarLimitePorIp, ipDaRequisicao } from "@/lib/api/rate-ip";
 import { buildAgentReply } from "@/lib/agent/brain";
 import { extractEscalation } from "@/lib/agent/escalate";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
@@ -22,27 +23,9 @@ const HISTORY_MAX = 12;
 const PER_MINUTE = 4;
 const PER_DAY = Number(process.env.LANDING_HELP_RATE_LIMIT_PER_DAY ?? 25);
 
-/** Rate-limit em memória (pm2 = 1 processo; v1 é suficiente). */
-const hits = new Map<string, { day: string; count: number; minute: number; minuteCount: number }>();
-
-function limited(ip: string): boolean {
-  const now = Date.now();
-  const day = new Date(now).toISOString().slice(0, 10);
-  const minute = Math.floor(now / 60_000);
-  const h = hits.get(ip);
-  if (!h || h.day !== day) {
-    hits.set(ip, { day, count: 1, minute, minuteCount: 1 });
-    if (hits.size > 5000) hits.clear(); // teto de memória
-    return false;
-  }
-  if (h.minute !== minute) {
-    h.minute = minute;
-    h.minuteCount = 0;
-  }
-  h.count += 1;
-  h.minuteCount += 1;
-  return h.count > PER_DAY || h.minuteCount > PER_MINUTE;
-}
+/** Rate-limit em memória (pm2 = 1 processo; v1 é suficiente).
+ *  A regra mora em lib/api/rate-ip.ts — o SGP usa a mesma. */
+const limite = criarLimitePorIp({ porMinuto: PER_MINUTE, porDia: PER_DAY });
 
 function landingSystemExtra(locale: string): string {
   return [
@@ -55,11 +38,7 @@ function landingSystemExtra(locale: string): string {
 }
 
 export async function POST(request: NextRequest) {
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown";
-  if (limited(ip)) {
+  if (limite.limitado(ipDaRequisicao(request.headers))) {
     return jsonError(
       "rate_limited",
       "Muitas mensagens em sequência — espere um pouco ou escreva pra suporte@fastcloner.com.",

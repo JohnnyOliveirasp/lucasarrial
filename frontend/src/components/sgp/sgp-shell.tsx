@@ -1,11 +1,16 @@
 import { useTranslations } from "next-intl";
 import { SGP_PASSOS, type SgpPasso } from "@/lib/sgp/types";
+import { SgpAjudaWidget } from "./sgp-ajuda-widget";
 
 /**
  * Moldura de todas as telas do SGP: selo "Sistema de Geração Pronto", título,
  * barra de passos (1 Dados · 2 Imagem · 3 Áudio · 4 Confirmação) e o card.
  * Visual = tokens do FastCloner (decisão 29/08: não copiar o laranja do
  * formulário antigo).
+ *
+ * O botão "Ajuda" (a Fast) mora aqui, e não em cada tela: é o mesmo motivo do
+ * shell existir — quem entra numa tela nova ganha a ajuda de graça, e ninguém
+ * esquece de plugar numa delas (Johnny 29/08: "o botão de ajuda em cada tela").
  */
 export function SgpShell({
   passo,
@@ -74,6 +79,8 @@ export function SgpShell({
           {children}
         </section>
       </div>
+
+      <SgpAjudaWidget passo={passo} />
     </main>
   );
 }
