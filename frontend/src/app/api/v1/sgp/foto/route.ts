@@ -10,6 +10,7 @@ import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
+import { ehRepetida, impressaoDaFoto } from "@/lib/sgp/impressao-foto";
 import { julgarFoto } from "@/lib/sgp/julgar-foto";
 import { atualizarSessao, pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 import { SGP_FOTOS_MAX, type SgpFoto } from "@/lib/sgp/types";
@@ -30,6 +31,13 @@ export async function POST(request: NextRequest) {
     const atuais = (pedido.fotos ?? []).filter((f) => f.key !== key);
     if (atuais.length >= SGP_FOTOS_MAX) return badRequest(`Máximo de ${SGP_FOTOS_MAX} fotos.`);
 
+    // Foto repetida não vira referência: o modelo aprenderia a mesma pose
+    // duas vezes e o aluno acha que entregou 4 ângulos (Johnny 29/08).
+    const impressao = await impressaoDaFoto(imagesBucket(), key);
+    if (ehRepetida(impressao, atuais)) {
+      return badRequest("Você já enviou esta foto. Escolha outra, de um ângulo diferente.");
+    }
+
     const url = await createPresignedGet(imagesBucket(), key, 15 * 60);
     const v = await julgarFoto(url);
     if (v.indeciso) return jsonOk({ foto: null, indeciso: true }, 202);
@@ -41,6 +49,8 @@ export async function POST(request: NextRequest) {
       sorrindo: v.sorrindo,
       rosto_visivel: v.rostoVisivel,
       perfil: v.perfil,
+      sha256: impressao.sha256,
+      dhash: impressao.dhash,
       motivos: v.motivos,
     };
     await atualizarSessao(pedido.sessao, { fotos: atuais.concat(foto) });
