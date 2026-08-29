@@ -41,6 +41,14 @@ export async function POST(request: NextRequest) {
     if (comRosto.length === 0) {
       return badRequest("Envie pelo menos uma foto em que dê pra ver o seu rosto.");
     }
+    // O guia pede frente E de lado: sem o perfil, o clone erra o formato da
+    // cabeça nos ângulos que não são de frente (Johnny 29/08).
+    if (!comRosto.some((f) => f.perfil === true)) {
+      return badRequest("Falta uma foto de LADO (perfil ou 3/4) — o guia pede de frente e de lado.");
+    }
+    if (!comRosto.some((f) => f.perfil !== true)) {
+      return badRequest("Falta uma foto de FRENTE, olhando para a câmera.");
+    }
     const padrao =
       comRosto.find((f) => f.tipo === "rosto_frente" && !f.sorrindo) ??
       comRosto.find((f) => f.tipo === "rosto_frente") ??

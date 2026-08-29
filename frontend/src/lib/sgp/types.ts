@@ -38,8 +38,10 @@ export type SgpFoto = {
   status: "processando" | "aprovada" | "reprovada";
   tipo?: SgpFotoTipo | null;
   sorrindo?: boolean;
-  /** Dá pra ver o rosto? Só isso decide qual foto vira a referência padrão. */
+  /** Dá pra ver o rosto? Decide qual foto vira a referência padrão. */
   rosto_visivel?: boolean;
+  /** Cabeça virada de lado (perfil ou 3/4) — o guia pede pelo menos uma. */
+  perfil?: boolean;
   motivos?: string[];
 };
 
