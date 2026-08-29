@@ -69,6 +69,14 @@ type Body = {
   chunk_crossfade_ms?: number;
   /** Ritmo escolhido na tela (opcao B, 25/08): regua da pessoa x 0,85 / 1 / 1,15. */
   speed?: "calm" | "normal" | "fast";
+  /**
+   * "Ajustar ao meu ritmo" — escolha do ALUNO na tela (29/08). Padrão do
+   * worker é DESLIGADO: a voz sai como o modelo gerou. Ligado, o worker
+   * aproxima a saída da velocidade natural medida da pessoa (útil pra quem
+   * sai acelerado demais); em troca pode ficar um pouco mais lento e mudar
+   * levemente a entonação.
+   */
+  rate_qa?: boolean;
 };
 
 const SPEED_FACTOR: Record<string, number> = { calm: 0.85, normal: 1, fast: 1.15 };
@@ -229,6 +237,10 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     ...(body.speed && SPEED_FACTOR[body.speed] && SPEED_FACTOR[body.speed] !== 1
       ? { speech_rate_factor: SPEED_FACTOR[body.speed] }
       : {}),
+    // Ajuste de ritmo LIGADO pelo aluno na tela (29/08). O padrão do worker é
+    // desligado — a voz sai como o modelo gerou. Quem sai acelerado demais
+    // liga aqui e o worker aproxima a saída da régua medida da pessoa.
+    ...(body.rate_qa === true ? { rate_qa: true } : {}),
   };
 
   // Pacing entre frases: precedência body > config da voz. Sem nenhum, o worker

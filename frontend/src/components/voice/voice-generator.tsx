@@ -58,6 +58,13 @@ export function VoiceGenerator({ voiceId }: Props) {
   const [pauseMs, setPauseMs] = useState<number | null>(null);
   /** Ritmo (opcao B, Johnny 25/08): regua da pessoa x 0,85 / 1 / 1,15. */
   const [speed, setSpeed] = useState<"calm" | "normal" | "fast">("normal");
+  /**
+   * "Ajustar ao meu ritmo" — DESLIGADO por padrão (Johnny 29/08: a voz sai
+   * como o modelo gerou; quem decide é o aluno). Ligado, o worker aproxima a
+   * saída da velocidade natural medida da pessoa.
+   */
+  const [ajustarRitmo, setAjustarRitmo] = useState(false);
+  const [copiado, setCopiado] = useState<string | null>(null);
   const [takes, setTakes] = useState<Take[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,6 +191,7 @@ export function VoiceGenerator({ voiceId }: Props) {
           text: text.trim(),
           ...(pauseMs !== null ? { chunk_silence_ms: pauseMs } : {}),
           ...(speed !== "normal" ? { speed } : {}),
+          ...(ajustarRitmo ? { rate_qa: true } : {}),
         }),
       });
       if (genRes.status === 402) {
@@ -294,6 +302,20 @@ export function VoiceGenerator({ voiceId }: Props) {
           </div>
         </div>
 
+        {/* Ajuste de ritmo — escolha do aluno (29/08). Padrão desligado. */}
+        <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)] px-3.5 py-3 has-[:checked]:border-[var(--hairline-bright)]">
+          <input
+            type="checkbox"
+            checked={ajustarRitmo}
+            onChange={(e) => setAjustarRitmo(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--pill-bg)]"
+          />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-[13px] font-medium text-[var(--ink)]">{t("generator.rateQaLabel")}</span>
+            <span className="text-[12px] leading-[1.45] text-[var(--mute)]">{t("generator.rateQaHelp")}</span>
+          </span>
+        </label>
+
         {/* Ritmo (opcao B, 25/08): o QA de ritmo segura o clone na velocidade
             natural da pessoa (medida no treino); aqui o aluno desloca essa
             regua em 15% pra baixo ou pra cima. */}
@@ -397,6 +419,37 @@ export function VoiceGenerator({ voiceId }: Props) {
                   </div>
                 )}
                 <p className="line-clamp-2 text-[12px] leading-snug text-[var(--mute)]">“{take.text}”</p>
+                {/* 29/08 (Johnny): "não consigo copiar o texto novamente se
+                    quiser" — o texto ficava preso no card, cortado em 2 linhas.
+                    Copiar leva pra área de transferência; Reusar devolve pro
+                    campo de cima, pra gerar de novo com um ajuste. */}
+                <div className="flex flex-wrap gap-3 font-mono text-[10px] tracking-wide">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(take.text);
+                        setCopiado(take.id);
+                        setTimeout(() => setCopiado((c) => (c === take.id ? null : c)), 2000);
+                      } catch {
+                        /* navegador sem permissão: o Reusar ainda resolve */
+                      }
+                    }}
+                    className="text-[var(--silver)] underline decoration-[var(--hairline-bright)] underline-offset-[3px] hover:text-[var(--ink)]"
+                  >
+                    {copiado === take.id ? t("generator.copiado") : t("generator.copiarTexto")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setText(take.text);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className="text-[var(--silver)] underline decoration-[var(--hairline-bright)] underline-offset-[3px] hover:text-[var(--ink)]"
+                  >
+                    {t("generator.reusarTexto")}
+                  </button>
+                </div>
                 <div className="flex gap-3 font-mono text-[10px] tracking-wide text-[var(--ash)]">
                   <span>{new Date(take.startedAt).toLocaleTimeString("pt-BR")}</span>
                   {take.duration_seconds ? <span>· {formatDuration(take.duration_seconds)}</span> : null}

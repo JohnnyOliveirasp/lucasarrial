@@ -194,7 +194,13 @@ class TtsSettings:
             # Victor e Ellen, 28/08), que era a razao do esticador existir.
             # Se voltar a aparecer "voz acelerada", religue com TTS_RATE_QA=1
             # no template do endpoint -- a env continua mandando.
-            rate_qa_enabled=_ligado("TTS_RATE_QA", "0"),
+            # Padrao DESLIGADO (29/08, Johnny no ouvido) e ESCOLHA DO ALUNO na
+            # tela: `rate_qa` no input liga/desliga por geracao. Sem o campo,
+            # vale a env (que hoje esta desligada).
+            rate_qa_enabled=(
+                bool(inp["rate_qa"]) if inp.get("rate_qa") is not None
+                else _ligado("TTS_RATE_QA", "0")
+            ),
             # 25/08 Ellen: com 0,20 so 1 de 5 chunks disparou (2,5-2,6 contra regua 2,16) e
             # o texto de 60s saiu em 48,6s; 0,10 pega os chunks a 2,4+ .
             rate_qa_tolerance=float(os.environ.get("TTS_RATE_QA_TOLERANCE", "0.10")),
