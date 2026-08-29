@@ -6,6 +6,7 @@
  *   node _frank/ferramentas/varredura_travados.cjs --horas 2
  */
 const { supa, listar, BUCKETS, minutos, idadeHoras } = require("./_comum.cjs");
+const { conferirListaCompleta, REF_TYPES_ESTORNO } = require("./_estornos.cjs");
 
 const arg = (nome, padrao) => {
   const i = process.argv.indexOf(`--${nome}`);
@@ -398,6 +399,38 @@ const ALVOS = [
       }
       console.log("   ⚠️  entrega ao time SEM retorno humano. Trate como aluno esperando.");
     }
+  }
+
+  // ───── GUARDA DA LISTA DE ESTORNO (chamado #185, 29/08) ─────
+  // A lista de ref_type de estorno (_estornos.cjs) e o que decide se um aluno
+  // JA FOI estornado. Quando ela nao conhece um tipo, o aluno estornado le como
+  // NAO estornado — o falso negativo que paga em dobro (quase aconteceu com 13
+  // alunos em 20/08). O guarda que pega isso ja existia desde 23/08 e NUNCA foi
+  // chamado por ninguem: definicao, export, e zero chamadas no repo inteiro.
+  // Ele passa a ser chamado AQUI, na varredura que abre o dia, porque lista com
+  // guarda que ninguem roda e a mesma coisa que lista sem guarda.
+  const guarda = await conferirListaCompleta(db);
+  if (guarda.erro) {
+    // Erro CRU e barulhento: guarda que falha calado e pior que guarda nenhum,
+    // porque quem le o relatorio conclui que esta tudo certo.
+    console.log(
+      `\n🚨 GUARDA DA LISTA DE ESTORNO NAO RODOU: ${guarda.erro}` +
+        `\n   NAO conclua que a lista esta em dia — ela nao foi conferida.`,
+    );
+  } else if (!guarda.ok) {
+    console.log(
+      `\n🚨 ref_type DE ESTORNO QUE A LISTA NAO CONHECE: ${guarda.novos.join(", ")}` +
+        `\n   (varridas ${guarda.varridas} linhas com amount>0 · lista tem ${REF_TYPES_ESTORNO.length} entradas)` +
+        `\n   ⚠️  DINHEIRO: enquanto o tipo estiver fora de REF_TYPES_ESTORNO` +
+        ` (_frank/ferramentas/_estornos.cjs:27), quem conferir estorno por ela vai` +
+        ` ler aluno JA ESTORNADO como NAO estornado — e estornar de novo.` +
+        `\n   Some o tipo na lista ANTES de decidir qualquer devolucao.`,
+    );
+  } else {
+    console.log(
+      `\n💸 Lista de estorno em dia: ${REF_TYPES_ESTORNO.length} tipos,` +
+        ` ${guarda.varridas} linhas varridas, nenhum tipo desconhecido.`,
+    );
   }
 
   const nadaAberto = !errInc && !totalInc && !errEsp && !totalEsp && !errFech && !orfaos.length;
