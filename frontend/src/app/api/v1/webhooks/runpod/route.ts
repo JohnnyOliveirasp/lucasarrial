@@ -34,6 +34,7 @@ import {
 import { finalizeVideoClone } from "@/lib/video-clone/finalize";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import { verificarOnboardingPronto } from "@/lib/onboarding/pronto";
+import { avancarEtapasDoUsuario } from "@/lib/sgp/etapas";
 import { tentarReenviar } from "@/lib/generations/reenviar";
 
 type RunpodWebhookPayload = {
@@ -93,6 +94,8 @@ export async function POST(request: NextRequest) {
     // Voz do onboarding ficou pronta? Pode ser a última peça → e-mail
     // "plataforma pronta" (fire-and-forget; a função filtra não-onboarding).
     void verificarOnboardingPronto(admin, voice.user_id);
+    // SGP: "sua voz ficou pronta" sai daqui, não do polling da tela.
+    void avancarEtapasDoUsuario(voice.user_id);
     return jsonOk({ handled: "training" });
   }
 
