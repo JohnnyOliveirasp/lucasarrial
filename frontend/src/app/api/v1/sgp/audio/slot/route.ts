@@ -1,22 +1,18 @@
 /**
- * POST /api/v1/sgp/audio/slot — presigned PUT pra UM arquivo de áudio da tela 3.
- * Garante a voz do onboarding do aluno (uma só, status `uploading`, o mesmo
- * nome que a planilha usava) e devolve a chave em `{user}/{voice}/raw/`.
+ * POST /api/v1/sgp/audio/slot — presigned PUT pra UM áudio da tela 3.
+ * Sobe pra área da SESSÃO (`sgp/<sessao>/audio/...`), no bucket de vozes; a
+ * voz e a cópia pra `{user}/{voice}/raw/` nascem no "Confirmar e Enviar".
  */
+import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
-import { getAdmin } from "@/lib/db/admin";
-import { ONBOARDING_VOICE_NAME } from "@/lib/onboarding/import";
+import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { R2_BUCKETS } from "@/lib/r2/client";
-import { buildRawAudioKey, createPresignedPut, isAllowedAudioMime } from "@/lib/r2/presigned";
-import { atualizarPedido, lerPedido } from "@/lib/sgp/pedido";
+import { createPresignedPut, isAllowedAudioMime } from "@/lib/r2/presigned";
+import { pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 
 const MAX_ARQUIVOS = 20;
 
 export async function POST(request: NextRequest) {
-  const auth = await authenticate(request);
-  if (!auth) return unauthorized();
   let body: { filename?: unknown; content_type?: unknown };
   try {
     body = await request.json();
@@ -29,31 +25,15 @@ export async function POST(request: NextRequest) {
   if (!isAllowedAudioMime(contentType)) return badRequest(`Formato de áudio não suportado: ${contentType}`);
 
   try {
-    const pedido = await lerPedido(auth.user_id);
-    if (!pedido) return badRequest("Comece pela tela de dados.");
+    const pedido = await pedidoDaSessaoOuNull();
+    if (!pedido?.email_verificado_at) return badRequest("Confirme o seu e-mail na primeira tela.");
     if ((pedido.audios ?? []).length >= MAX_ARQUIVOS) return badRequest(`Máximo de ${MAX_ARQUIVOS} arquivos.`);
 
-    const admin = getAdmin();
-    let voiceId = pedido.voice_id;
-    if (voiceId) {
-      const { data } = await admin.from("voices").select("id, status").eq("id", voiceId).eq("user_id", auth.user_id).maybeSingle();
-      if (!data || (data as { status: string }).status !== "uploading") voiceId = null;
-    }
-    if (!voiceId) {
-      const { data, error } = await admin
-        .from("voices")
-        .insert({ user_id: auth.user_id, name: ONBOARDING_VOICE_NAME, status: "uploading" })
-        .select("id")
-        .single();
-      if (error || !data) throw new Error(error?.message ?? "não criou a voz");
-      voiceId = (data as { id: string }).id;
-      await atualizarPedido(auth.user_id, { voice_id: voiceId });
-    }
-
-    const index = (pedido.audios ?? []).length + Math.floor(Math.random() * 900) + 100;
-    const key = buildRawAudioKey(auth.user_id, voiceId, index, filename);
+    const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+    const key = `sgp/${pedido.sessao}/audio/${randomUUID().slice(0, 8)}_${safe}`;
+    // 6h: áudio de treino passa de centenas de MB em conexão lenta.
     const upload_url = await createPresignedPut(R2_BUCKETS.voices, key, contentType, 6 * 3600);
-    return jsonOk({ voice_id: voiceId, key, upload_url });
+    return jsonOk({ key, upload_url });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao preparar o upload");
   }

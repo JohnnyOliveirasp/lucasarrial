@@ -73,7 +73,7 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
     setFotos((prev) => [...prev, { id, preview, fase: "enviando" }]);
     try {
       const file = await paraFormatoAceito(original);
-      const r = await fetch("/api/v1/images/upload-url", {
+      const r = await fetch("/api/v1/sgp/foto/slot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: file.name, content_type: file.type }),

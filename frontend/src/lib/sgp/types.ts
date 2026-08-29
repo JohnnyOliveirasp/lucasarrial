@@ -55,7 +55,19 @@ export type SgpAudio = {
 
 export type SgpPedidoRow = {
   id: string;
-  user_id: string;
+  /** Dono enquanto não há conta (cookie httpOnly). Ver lib/sgp/sessao.ts. */
+  sessao: string;
+  nome: string | null;
+  email: string | null;
+  whatsapp: string | null;
+  email_verificado_at: string | null;
+  codigo_hash: string | null;
+  codigo_expira_em: string | null;
+  codigo_tentativas: number;
+  /** O e-mail já tinha conta no FastCloner quando começou o wizard. */
+  conta_existente: boolean;
+  /** Só depois do "Confirmar e Enviar". */
+  user_id: string | null;
   criado_em: string;
   atualizado_em: string;
   status: SgpStatus;

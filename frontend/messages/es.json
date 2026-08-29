@@ -2147,18 +2147,12 @@
       "nome": "Nombre completo",
       "nomePlaceholder": "Tu nombre completo",
       "whatsapp": "WhatsApp",
-      "acessoTitulo": "Tu acceso a FastCloner",
-      "acessoDescricao": "Crearemos tu cuenta con este e-mail y contraseña. Recibirás un código por e-mail para confirmar que es tuyo.",
       "email": "E-mail",
-      "senha": "Contraseña",
-      "senhaPlaceholder": "Mínimo 8 caracteres",
-      "senha2": "Repite la contraseña",
-      "senha2Placeholder": "Repite la contraseña",
-      "dicaCodigo": "Al hacer clic en \"Enviar código\", te mandamos un código de 6 dígitos por e-mail. Continuar solo se habilita después de confirmarlo.",
+      "dicaCodigo": "Te enviaremos un código de 6 dígitos por e-mail. Todavía NO estás creando cuenta: el registro ocurre al final, después de la revisión.",
       "enviarCodigo": "Enviar código",
       "enviandoCodigo": "Enviando…",
       "codigoEnviado": "Enviamos un código a tu e-mail. Revisa la bandeja de entrada (y el spam).",
-      "codigoEnviadoContaExistente": "Este e-mail ya tiene cuenta en FastCloner. Enviamos un código para que entres y continúes.",
+      "codigoEnviadoContaExistente": "Este e-mail ya tiene cuenta en FastCloner. Enviamos un código para confirmar que es tuyo — al final adjuntamos todo a tu cuenta.",
       "codigoLabel": "Código del e-mail",
       "verificarEContinuar": "Confirmar y continuar",
       "verificando": "Verificando…",
@@ -2170,7 +2164,7 @@
       "erroGenerico": "Algo salió mal. Intenta de nuevo.",
       "nomeCurto": "Ingresa tu nombre completo.",
       "whatsappInvalido": "Ingresa un WhatsApp válido con código de área.",
-      "senhasDiferem": "Las contraseñas no coinciden."
+      "mudarEmail": "Cambiar e-mail"
     },
     "foto": {
       "titulo": "Foto base para el Clon",
@@ -2250,7 +2244,14 @@
       "confirmarEnviar": "Confirmar y Enviar",
       "enviando": "Enviando…",
       "erroEnviar": "No se pudo enviar.",
-      "voltar": "Volver"
+      "voltar": "Volver",
+      "acessoTitulo": "Tu acceso a FastCloner",
+      "acessoDescricao": "Crearemos tu cuenta con {email}. Elige una contraseña:",
+      "acessoExistente": "{email} ya tiene cuenta en FastCloner — adjuntaremos este material a ella. Después de enviar, entra con tu contraseña habitual.",
+      "senha": "Contraseña",
+      "senhaPlaceholder": "Mínimo 8 caracteres",
+      "senha2": "Repite la contraseña",
+      "senhasDiferem": "Las contraseñas no coinciden."
     },
     "acompanhar": {
       "selo": "Sistema de Generación Lista",
