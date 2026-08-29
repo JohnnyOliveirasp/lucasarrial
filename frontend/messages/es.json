@@ -450,7 +450,6 @@
         "fixedLabel": "Imagen de referencia",
         "fixedBadge": "Referencia fija",
         "replace": "Cambiar foto",
-        "remove": "Quitar foto",
         "extrasLabel": "Fotos extra (opcional)",
         "promote": "Usar como referencia",
         "historyTip": "Consejo: en cualquier imagen de tu historial, haz clic en “Usar como referencia” para traerla aquí."
@@ -2130,5 +2129,53 @@
     "server": "El servidor de archivos falló al recibir \"{file}\" (HTTP {status}). Lo intentamos 3 veces; espera un momento e inténtalo de nuevo.",
     "rejected": "La subida de \"{file}\" fue rechazada (HTTP {status}). Inténtalo de nuevo; si persiste, contacta al soporte.",
     "unknown": "No se pudo subir \"{file}\". Inténtalo de nuevo; si persiste, contacta al soporte."
+  },
+  "sgp": {
+    "selo": "Sistema de Generación Lista",
+    "titulo": "Configuración de tu Clon de IA",
+    "subtitulo": "Completa cada etapa con atención. Nuestro equipo usará esta información para construir tu clon.",
+    "passos": {
+      "aria": "Etapas",
+      "dados": "Datos",
+      "foto": "Imagen",
+      "audio": "Audio",
+      "revisao": "Confirmación"
+    },
+    "dados": {
+      "titulo": "Tus datos",
+      "descricao": "Necesitamos tus datos para configurar tu clon. Toda la información se trata con total confidencialidad.",
+      "nome": "Nombre completo",
+      "nomePlaceholder": "Tu nombre completo",
+      "whatsapp": "WhatsApp",
+      "acessoTitulo": "Tu acceso a FastCloner",
+      "acessoDescricao": "Crearemos tu cuenta con este e-mail y contraseña. Recibirás un código por e-mail para confirmar que es tuyo.",
+      "email": "E-mail",
+      "senha": "Contraseña",
+      "senhaPlaceholder": "Mínimo 8 caracteres",
+      "senha2": "Repite la contraseña",
+      "senha2Placeholder": "Repite la contraseña",
+      "dicaCodigo": "Al hacer clic en \"Enviar código\", te mandamos un código de 6 dígitos por e-mail. Continuar solo se habilita después de confirmarlo.",
+      "enviarCodigo": "Enviar código",
+      "enviandoCodigo": "Enviando…",
+      "codigoEnviado": "Enviamos un código a tu e-mail. Revisa la bandeja de entrada (y el spam).",
+      "codigoEnviadoContaExistente": "Este e-mail ya tiene cuenta en FastCloner. Enviamos un código para que entres y continúes.",
+      "codigoLabel": "Código del e-mail",
+      "verificarEContinuar": "Confirmar y continuar",
+      "verificando": "Verificando…",
+      "reenviar": "Reenviar código",
+      "reenviarEm": "Reenviar en {seconds}s",
+      "codigoReenviado": "Código reenviado.",
+      "codigoInvalido": "Código inválido o vencido. Revisa e intenta de nuevo.",
+      "muitasTentativas": "Demasiados intentos. Espera 1 minuto.",
+      "erroGenerico": "Algo salió mal. Intenta de nuevo.",
+      "nomeCurto": "Ingresa tu nombre completo.",
+      "whatsappInvalido": "Ingresa un WhatsApp válido con código de área.",
+      "senhasDiferem": "Las contraseñas no coinciden."
+    },
+    "foto": {
+      "titulo": "Foto base para el Clon",
+      "descricao": "Sube fotos de alta calidad que serán la base de tu clon.",
+      "emConstrucao": "En construcción — próxima etapa del SGP."
+    }
   }
 }
