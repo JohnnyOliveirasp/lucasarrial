@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
-import { SGP_ERROR_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
+import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
 
 /** Rodapé da tela 4: LGPD + declaração (telas 4A/4B) + "Confirmar e Enviar". */
 export function SgpEnviarForm() {
@@ -49,7 +49,7 @@ export function SgpEnviarForm() {
       {erro ? <p role="alert" className={SGP_ERROR_CLASS}>{erro}</p> : null}
 
       <div className="flex items-center justify-between gap-3">
-        <button type="button" onClick={() => router.push("/sgp/audio")} className="text-[14px] text-[var(--silver)] transition-colors hover:text-[var(--ink)]">← {t("voltar")}</button>
+        <button type="button" onClick={() => router.push("/sgp/audio")} className={SGP_GHOST_CLASS}>← {t("voltar")}</button>
         <button type="button" disabled={!aceite || enviando} onClick={enviar} className={SGP_PILL_CLASS}>
           {enviando ? t("enviando") : t("confirmarEnviar")}
         </button>

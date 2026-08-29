@@ -8,7 +8,7 @@ import { putToR2 } from "@/lib/images/upload";
 import { paraFormatoAceito } from "@/lib/images/qualquer-formato";
 import { CIENCIA_FOTO, SGP_FOTOS_MAX, SGP_FOTOS_MIN, type SgpFoto } from "@/lib/sgp/types";
 import { SgpFotoCard, type EstadoFoto } from "./sgp-foto-card";
-import { SGP_ERROR_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
+import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
 
 type Inicial = { foto: SgpFoto; url: string };
 
@@ -160,7 +160,7 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
           type="button"
           disabled={fotos.length >= SGP_FOTOS_MAX}
           onClick={() => input.current?.click()}
-          className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-4 py-6 text-center text-[14px] text-[var(--silver)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-[0.42]"
+          className="sgp-btn sgp-btn--block"
         >
           {t("enviarFotos")}
         </button>
@@ -186,7 +186,7 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
       {erro ? <p role="alert" className={SGP_ERROR_CLASS}>{erro}</p> : null}
 
       <div className="flex items-center justify-between gap-3">
-        <button type="button" onClick={() => router.push("/sgp")} className="text-[14px] text-[var(--silver)] transition-colors hover:text-[var(--ink)]">
+        <button type="button" onClick={() => router.push("/sgp")} className={SGP_GHOST_CLASS}>
           ← {t("voltar")}
         </button>
         <button type="button" disabled={!podeContinuar || enviando} onClick={continuar} className={SGP_PILL_CLASS}>

@@ -71,7 +71,7 @@ export default async function AppSgpPage({ params }: { params: Promise<{ locale:
 
       <p className="text-[13px] text-[var(--mute)]">{t("podeFechar")}</p>
       {s.pronto ? (
-        <Link href="/app/dashboard" className="inline-flex h-11 items-center justify-center rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] text-[14px] font-medium text-[var(--pill-ink)]">{t("irParaPlataforma")}</Link>
+        <Link href="/app/dashboard" className="sgp-btn self-start">{t("irParaPlataforma")}</Link>
       ) : null}
     </div>
   );

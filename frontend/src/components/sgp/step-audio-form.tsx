@@ -6,7 +6,7 @@ import { useRouter } from "@/i18n/navigation";
 import { formatDuration } from "@/lib/audio/duration";
 import { putToR2 } from "@/lib/images/upload";
 import { CIENCIA_AUDIO, SGP_AUDIO_MAX_SEGUNDOS, SGP_AUDIO_MIN_SEGUNDOS, type SgpAudio } from "@/lib/sgp/types";
-import { SGP_ERROR_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
+import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
 
 const ACCEPT = ".mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4,.aac,.opus,audio/*";
 
@@ -148,7 +148,7 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
         <button
           type="button"
           onClick={() => input.current?.click()}
-          className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-4 py-8 text-center text-[14px] text-[var(--silver)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--ink)]"
+          className="sgp-btn sgp-btn--block"
         >
           {t("soltarAqui")}
         </button>
@@ -176,7 +176,7 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
                   {i.fase === "indeciso" || i.fase === "erro" ? <span className="text-[var(--status-error)]">{i.mensagem}</span> : null}
                 </div>
                 {i.fase !== "enviando" && i.fase !== "analisando" ? (
-                  <button type="button" onClick={() => remover(i)} className="shrink-0 text-[12px] text-[var(--silver)] hover:text-[var(--ink)]">{t("remover")}</button>
+                  <button type="button" onClick={() => remover(i)} className="sgp-btn sgp-btn--ghost sgp-btn--xs shrink-0">{t("remover")}</button>
                 ) : null}
               </li>
             ))}
@@ -187,7 +187,7 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
       {erro ? <p role="alert" className={SGP_ERROR_CLASS}>{erro}</p> : null}
 
       <div className="flex items-center justify-between gap-3">
-        <button type="button" onClick={() => router.push("/sgp/foto")} className="text-[14px] text-[var(--silver)] transition-colors hover:text-[var(--ink)]">← {t("voltar")}</button>
+        <button type="button" onClick={() => router.push("/sgp/foto")} className={SGP_GHOST_CLASS}>← {t("voltar")}</button>
         <button type="button" disabled={!podeContinuar || enviando} onClick={continuar} className={SGP_PILL_CLASS}>
           {enviando ? t("salvando") : `${t("continuar")} →`}
         </button>
