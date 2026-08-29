@@ -33,9 +33,10 @@ import { createPresignedGet, createPresignedPut } from "@/lib/r2/presigned";
 import { runpodSubmitInference, webhookUrlFor } from "@/lib/runpod/client";
 import { faseTelemetriaInput } from "@/lib/generations/fase-telemetria";
 import {
-  ehTimeoutDeExecucao,
+  ehFalhaTransitoria,
   inferenceExecutionTimeoutMs,
 } from "@/lib/generations/execucao";
+import { objectExists } from "@/lib/r2/exists";
 
 /** Envios ao RunPod por geração: o original + UM reenvio. */
 const MAX_ENVIOS = 2;
@@ -62,7 +63,7 @@ export async function tentarReenviar(
   generationId: string,
   rawError: string,
 ): Promise<ResultadoReenvio> {
-  if (!ehTimeoutDeExecucao(rawError)) return "nao_aplica";
+  if (!ehFalhaTransitoria(rawError)) return "nao_aplica";
   try {
     const admin = getAdmin();
     const { data } = await admin
@@ -74,6 +75,18 @@ export async function tentarReenviar(
       .maybeSingle();
     const gen = data as GenRow | null;
     if (!gen?.request_params || !gen.audio_path) return "nao_aplica";
+    // Download que falhou porque o arquivo SUMIU não se resolve repetindo —
+    // repetir só faria o aluno esperar duas vezes pelo mesmo 404 (caso da voz
+    // "cópia teste" do Johnny, 29/08: LoRA apagado do R2).
+    if (rawError.toLowerCase().includes("failed to download") && gen.voice_id) {
+      const { data: v } = await admin
+        .from("voices")
+        .select("lora_path")
+        .eq("id", gen.voice_id)
+        .maybeSingle();
+      const lora = (v as { lora_path: string | null } | null)?.lora_path;
+      if (lora && !(await objectExists(R2_BUCKETS.voices, lora))) return "nao_aplica";
+    }
 
     const tentativas = gen.request_attempts ?? 1;
     if (tentativas >= MAX_ENVIOS) return "nao_aplica";

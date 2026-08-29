@@ -38,6 +38,7 @@ import {
 import { getAdmin } from "@/lib/db/admin";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { getBalance, debitCredits } from "@/lib/credits/service";
+import { objectExists } from "@/lib/r2/exists";
 import { generationCreditCost } from "@/lib/credits/config";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import {
@@ -110,6 +111,27 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const canGenerate = Boolean(voice.lora_path) || Boolean(voice.is_stock && voice.reference_audio_path);
   if (voice.status !== "ready" || !canGenerate) {
     return badRequest(`Voice not ready (status=${voice.status})`);
+  }
+
+  // O LoRA ainda EXISTE no R2? (29/08) A voz "Lucas Arrial (cópia teste)"
+  // estava `ready` apontando pra um arquivo apagado: o presign nunca falha,
+  // então a plataforma COBRAVA, mandava pro RunPod e só lá dava "Failed to
+  // download". Conferir aqui custa um HEAD e evita cobrar por algo que vai
+  // falhar 100% das vezes. A voz é marcada como falha pra sair da lista.
+  if (voice.lora_path && !(await objectExists(R2_BUCKETS.voices, voice.lora_path))) {
+    await admin
+      .from("voices")
+      .update({
+        status: "failed",
+        error_message:
+          "O arquivo do treino desta voz não está mais disponível. Ela precisa ser treinada de novo.",
+      })
+      .eq("id", voice.id);
+    return jsonError(
+      "voice_needs_retraining",
+      "Esta voz precisa ser treinada de novo: o arquivo do treino não está mais disponível. Nenhum crédito foi cobrado.",
+      409,
+    );
   }
 
   // Custo em créditos = nº de caracteres (espaços contam), mínimo 400.
