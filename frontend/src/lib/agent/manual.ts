@@ -18,6 +18,23 @@ import { CLONE_TIERS, CLONE_MAX_AUDIO_SECONDS, CLONE_MIN_BILLED_SECONDS } from "
 // os alunos realmente fazem sobre Vídeo Clone (#133 "ficou artificial", #167 e
 // #168 "como faço gesto"). Sem o fato no manual, o agente preenche o buraco
 // inventando. Aqui o buraco é preenchido.
+// #99 (29/08): o bullet de enquadramento que ffff192 acabara de acrescentar
+// (28/08 21:54Z) dizia "causa mais comum de ficou artificial" + "oriente
+// SEMPRE" — sem mandar conferir a foto que o aluno usou e sem dizer que 480×832
+// é o TETO. 1h depois (23:00Z) a Fast mandou o Luciano refazer com foto do
+// peito pra cima; a foto que ele já tinha usado ANTES no histórico
+// (895205c5) era do peito pra cima. Ele refez às 23:51Z, pagou 630 créditos,
+// rosto foi de ~190 pra ~240 px de altura na saída (+26% de pixel no rosto) e o
+// resultado foi o mesmo — porque o teto é a resolução, não o enquadramento.
+// Mesmo estrago do #178 (mandar refazer sem causa), só que pelo outro bullet:
+// o guard existia só pro MODO. Agora vale pros dois, e o teto está escrito.
+// ⚠️ O guard do MODO manda "confira no histórico" — e isso é IMPOSSÍVEL de
+// cumprir: `buildAccountContext` (account.ts:130) seleciona de video_clones só
+// name,status,error_message,created_at. A Fast não recebe a foto NEM o tier, e
+// instrução que ela não pode cumprir vira alucinação ("conferi") — foi assim
+// que o #178 nasceu. Por isso aqui a ordem é PERGUNTAR ao aluno, não "conferir".
+// O guard do modo continua com o defeito (só o tier resolveria, e isso é patch
+// de account.ts, não de texto): anotado no #99 pra virar chamado próprio.
 const tierPorId = (id: string) => CLONE_TIERS.find((t) => t.id === id);
 const CLONE_PADRAO = tierPorId("480p-v3");
 const CLONE_TURBO = tierPorId("480p-v2");
@@ -178,11 +195,29 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
   expressão É "Imagens → Animar imagem", que aceita prompt de movimento em
   português (4s, sem fala). A divisão pra dizer ao aluno: react com gesto e
   sem fala → Animar imagem; ele falando com a voz dele → Vídeo Clone.
-- ENQUADRAMENTO DA FOTO muda MUITO o resultado, e é a causa mais comum de
-  "ficou artificial": o vídeo sai em 480×832, então quanto menor o rosto na
-  foto, menos pixels sobram pra boca e a fala fica grosseira. Foto de corpo
-  inteiro é o pior caso. Oriente sempre: do peito pra cima, rosto grande e
-  nítido, olhando pra câmera.
+- ENQUADRAMENTO DA FOTO muda o resultado QUANDO A FOTO ESTÁ LONGE: o vídeo sai
+  em 480×832, então quanto menor o rosto na foto, menos pixels sobram pra boca
+  e a fala fica grosseira. Foto de corpo inteiro é o pior caso. A orientação,
+  quando couber: do peito pra cima, rosto grande e nítido, olhando pra câmera.
+  PERGUNTE ANTES DE MANDAR REFAZER — mesma regra do modo, e pelo mesmo motivo
+  (crédito). **Você NÃO enxerga a foto que ele JÁ USOU na geração**: o teu
+  histórico de conta traz nome/status/data, nunca a imagem. (Se ele MANDAR a
+  foto no chat, aí você vê normalmente — regra 6.) Então não afirme que a foto
+  está ruim — PERGUNTE ("a foto que você usou é do peito pra cima ou mais de
+  longe? se puder, me manda ela aqui"). Se ele disser (ou mostrar) que já
+  está do peito pra cima, o enquadramento NÃO é a causa e mandar refazer só
+  queima crédito dele pra provar isso.
+- TETO DE QUALIDADE — não prometa o que não existe: os DOIS modos saem em
+  480×832 e NÃO há opção maior (o 720p foi retirado em 04/08). Quando a foto já
+  está do peito pra cima e o áudio é curto, "ficou artificial" é o LIMITE DO
+  PRODUTO e não tem ajuste que resolva. Diga isso com todas as letras — é mais
+  respeitoso que mais uma tentativa paga — e ESCALE, porque a decisão do que
+  oferecer a partir daí é da equipe, não sua:
+  [ESCALAR: aluno insatisfeito com o realismo do Vídeo Clone, foto já bem
+  enquadrada — avaliar]. NUNCA mande refazer geração pra "melhorar a
+  naturalidade" sem um defeito concreto identificado: refazer sem causa é
+  crédito do aluno gasto à toa. E aqui vale a regra de sempre: não mande o
+  aluno pra ferramenta de fora — quem decide isso é a equipe.
 
 ## Problemas comuns → o que responder
 - "Deu erro / falhou": explicar que falha técnica devolve os créditos
