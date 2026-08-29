@@ -52,6 +52,12 @@ async function acharUsuarioPorEmail(email: string): Promise<string | null> {
   return null;
 }
 
+/**
+ * PARTE RÁPIDA — o aluno espera por isto na tela (segundos): valida, cria a
+ * conta e marca o pedido como `processando`. O resto (cópias no R2, Kie,
+ * treino) roda depois, em background, senão o botão fica "Enviando…" eterno
+ * (Johnny 29/08).
+ */
 export async function enviarPedido(pedido: SgpPedidoRow, senha: string | null): Promise<EnvioResultado> {
   const admin = getAdmin();
   const email = (pedido.email ?? "").toLowerCase();
@@ -95,6 +101,20 @@ export async function enviarPedido(pedido: SgpPedidoRow, senha: string | null): 
     erro: null,
   });
 
+  // O pesado continua sozinho; a tela vai acompanhar pelo /sgp/status.
+  void processarMaterial(pedido, userId, email).catch((e) => {
+    console.error("[sgp/processar] material:", e instanceof Error ? e.message : e);
+  });
+
+  return { ok: true, erros: [], contaCriada, email };
+}
+
+/** PARTE LENTA — cópias no R2, clone de foto (Kie) e treino da voz. */
+async function processarMaterial(pedido: SgpPedidoRow, userId: string, email: string): Promise<void> {
+  const admin = getAdmin();
+  const fotos = (pedido.fotos ?? []).filter((f) => f.status === "aprovada");
+  const audios = (pedido.audios ?? []).filter((a) => a.status === "aprovado");
+  const totalFala = audios.reduce((s, a) => s + a.segundos, 0);
   const erros: string[] = [];
 
   // 2. FOTOS → Imagens de Referência + referência padrão
@@ -169,5 +189,4 @@ export async function enviarPedido(pedido: SgpPedidoRow, senha: string | null): 
   }
 
   if (erros.length) await atualizarSessao(pedido.sessao, { erro: erros.join(" · ") });
-  return { ok: erros.length === 0, erros, contaCriada, email };
 }

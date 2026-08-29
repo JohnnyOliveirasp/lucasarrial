@@ -2271,27 +2271,29 @@
           "titulo": "Clon de foto",
           "feito": "Tu foto social está lista.",
           "andamento": "Generando tu foto… unos minutos.",
-          "espera": "Esperando.",
+          "espera": "Aparece aquí en cuanto empiece.",
           "falhou": "No pudimos generarla. Nuestro equipo lo revisará."
         },
         "voz": {
           "titulo": "Clon de voz",
           "feito": "Tu voz está entrenada.",
           "andamento": "Entrenando tu voz… unos 30 minutos.",
-          "espera": "Esperando.",
+          "espera": "Empieza justo después de la foto.",
           "falhou": "El entrenamiento falló. Nuestro equipo lo revisará."
         },
         "pronto": {
           "titulo": "Plataforma lista",
-          "feito": "Ya puedes usar la plataforma.",
+          "feito": "Ya puedes entrar y usarla.",
           "andamento": "",
           "espera": "Cuando terminen foto y voz, te avisamos por e-mail.",
           "falhou": "Algo salió mal — nuestro equipo te contactará."
         }
       },
       "erroTime": "Una etapa necesitó atención de nuestro equipo. No tienes que hacer nada — lo resolvemos y te avisamos por e-mail.",
-      "podeFechar": "Puedes cerrar esta página. Recibirás un e-mail al terminar cada etapa.",
-      "irParaPlataforma": "Ir a la plataforma"
+      "podeFechar": "Puedes cerrar esta página — te avisamos por e-mail en cada etapa. O déjala abierta y sigue por aquí.",
+      "irParaPlataforma": "Ir a la plataforma",
+      "prontoTexto": "¡Listo! Entra con tu e-mail y la contraseña que creaste para ver el resultado.",
+      "entrar": "Ir a la plataforma"
     }
   }
 }

@@ -6,7 +6,7 @@
 import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { enviarPedido } from "@/lib/sgp/processar";
-import { encerrarSessao, pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
+import { pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 
 export const maxDuration = 300;
 
@@ -24,13 +24,14 @@ export async function POST(request: NextRequest) {
     const pedido = await pedidoDaSessaoOuNull();
     if (!pedido) return badRequest("Comece pela tela de dados.");
     if (["processando", "pronto"].includes(pedido.status)) {
-      return jsonOk({ ok: true, erros: [], jaEnviado: true, email: pedido.email });
+      return jsonOk({ ok: true, erros: [], jaEnviado: true, email: pedido.email, proximo: "/sgp/acompanhar" });
     }
     if (pedido.status !== "revisao") return badRequest("Complete as etapas anteriores antes de enviar.");
 
+    // A SESSÃO CONTINUA VIVA de propósito: o acompanhamento é a tela 5 do
+    // wizard, sem login (Johnny 29/08).
     const r = await enviarPedido(pedido, senha);
-    await encerrarSessao();
-    return jsonOk({ ...r, proximo: "/app/sgp" });
+    return jsonOk({ ...r, proximo: "/sgp/acompanhar" });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Falha ao enviar";
     return /Confirme|Complete|Falta|Crie uma senha|Comece/.test(msg) ? badRequest(msg) : serverError(msg);

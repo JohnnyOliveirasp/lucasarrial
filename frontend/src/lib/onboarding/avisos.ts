@@ -108,6 +108,34 @@ export async function avisoPrecisamosDeVoce(
 }
 
 /** Final feliz, aluno com assinatura vigente. Texto do Johnny 13/08. */
+/**
+ * SGP — etapa concluída. 29/08 (Johnny): "não recebi nenhum e-mail depois
+ * dizendo que a foto foi gerada, que a voz está em treinamento, que a voz
+ * estava pronta". Um e-mail por etapa, disparado por lib/sgp/etapas.ts.
+ */
+export async function avisoFotoPronta(email: string): Promise<void> {
+  await mandar(
+    email,
+    "Seu clone de foto ficou pronto ✅",
+    `Boa! A sua foto de clone já foi gerada.
+
+` +
+      `Agora estamos treinando a sua VOZ — leva cerca de 30 minutos. ` +
+      `Você recebe outro e-mail quando ela ficar pronta; não precisa fazer nada.`,
+  );
+}
+
+export async function avisoVozPronta(email: string): Promise<void> {
+  await mandar(
+    email,
+    "Sua voz clonada ficou pronta 🎙️",
+    `A sua voz terminou o treino e já está configurada na FastCloner.
+
+` +
+      `Se a sua foto também já ficou pronta, é só entrar na plataforma pra usar as duas.`,
+  );
+}
+
 export async function avisoTudoPronto(email: string): Promise<void> {
   await mandar(
     email,

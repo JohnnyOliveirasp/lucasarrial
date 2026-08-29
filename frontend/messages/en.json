@@ -2271,27 +2271,29 @@
           "titulo": "Photo clone",
           "feito": "Your social photo is ready.",
           "andamento": "Generating your photo… a few minutes.",
-          "espera": "Waiting.",
-          "falhou": "We could not generate it. Our team will look."
+          "espera": "It shows up here once it starts.",
+          "falhou": "We couldn't generate it. Our team will look."
         },
         "voz": {
           "titulo": "Voice clone",
           "feito": "Your voice is trained.",
           "andamento": "Training your voice… about 30 minutes.",
-          "espera": "Waiting.",
+          "espera": "Starts right after the photo.",
           "falhou": "Training failed. Our team will look."
         },
         "pronto": {
           "titulo": "Platform ready",
-          "feito": "You can use the platform now.",
+          "feito": "You can sign in and use it.",
           "andamento": "",
           "espera": "Once photo and voice finish, we email you.",
           "falhou": "Something went wrong — our team will reach out."
         }
       },
       "erroTime": "One step needs our team's attention. Nothing to do on your side — we will fix it and email you.",
-      "podeFechar": "You can close this page. You will get an email when each step is done.",
-      "irParaPlataforma": "Go to the platform"
+      "podeFechar": "You can close this page — we email you at every finished step. Or leave it open and follow along here.",
+      "irParaPlataforma": "Go to the platform",
+      "prontoTexto": "All set! Sign in with your email and the password you created to see the result.",
+      "entrar": "Go to the platform"
     }
   }
 }

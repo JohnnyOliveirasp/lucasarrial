@@ -298,3 +298,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .sgp-btn { transition: none; }
 }
+
+/* Barra indeterminada do acompanhamento do SGP (tela 5). */
+@keyframes sgp-desliza {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
