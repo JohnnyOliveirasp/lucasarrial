@@ -405,9 +405,18 @@ export async function POST(request: NextRequest) {
     await tratarErro(
       "áudio",
       motivo,
-      audioCurto
-        ? "Grave mais alguns minutos falando naturalmente (pode ser em vários arquivos) até somar pelo menos 20 minutos, e coloque na mesma pasta."
-        : downloadFalhou
+      audioCurto && grande
+        ? // 29/08 (#180): curto E com arquivo descartado por tamanho ao mesmo
+          // tempo. O ramo `audioCurto` vinha PRIMEIRO e engolia o `grande`, e o
+          // aluno lia só "grave mais 20 minutos" — depois de já ter mandado 15
+          // gravações, das quais 8 a gente descartou. Pedir gravação nova pra
+          // quem já mandou material de sobra é o terceiro recado errado
+          // seguido. Aqui os dois fatos aparecem, e o pedido é o BARATO
+          // (mandar o áudio, não regravar).
+          "Parte dos arquivos que você enviou é grande demais para o nosso limite e ficou de fora da conta — o problema é o tamanho do arquivo, não a sua gravação. Se forem vídeos, envie só o ÁUDIO deles (MP3 ou M4A), que fica bem menor; o que já estava dentro do limite nós guardamos. Não precisa gravar nada de novo se o material que você já tem soma 20 minutos."
+        : audioCurto
+          ? "Grave mais alguns minutos falando naturalmente (pode ser em vários arquivos) até somar pelo menos 20 minutos, e coloque na mesma pasta."
+          : downloadFalhou
           ? "O link que você colou abre uma página pedindo login, então não conseguimos baixar o áudio — a sua gravação não tem problema nenhum. Envie o MESMO áudio por Google Drive, WeTransfer ou Dropbox, com o link aberto para \"qualquer pessoa com o link\", e cole o link novo na planilha."
           : grande
             ? "O arquivo que você enviou é grande demais para o nosso limite. Se for um vídeo, envie só o áudio (MP3 ou M4A); se for áudio, pode dividir em partes menores na mesma pasta. Precisamos de 20 minutos de fala — não de qualidade de estúdio."

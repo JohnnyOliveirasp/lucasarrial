@@ -182,9 +182,32 @@ export const MOTIVO_AUDIO_CURTO_HERDADO =
   "a voz do onboarding já estava recusada por áudio curto numa importação " +
   "anterior e nenhum áudio novo chegou nesta execução";
 
-/** Texto de recusa por duração. Só sai quando ESTE run mediu. */
-export function motivoAudioCurto(training?: string | null): string {
-  return `o áudio enviado soma menos de 20 minutos (${training ?? "mínimo não atingido"})`;
+/** Arquivos que a importação NÃO conseguiu ler (teto de tamanho, download etc). */
+export type DescarteAudio = { qtd: number; total: number; erro?: string | null };
+
+/**
+ * Texto de recusa por duração. Só sai quando ESTE run mediu.
+ *
+ * ⚠️ O `descarte` não é enfeite (medido no caso Johnathan, #180, 29/08). Ele
+ * mandou 15 gravações; 8 morreram no teto de 400MB do import — entre elas uma
+ * de 490MB com 28min22s de fala, que SOZINHA abriria a porta de 20min. As 7 que
+ * couberam somaram 19min15s, e a mensagem saía como "o áudio enviado soma menos
+ * de 20 minutos": verdade sobre o que MEDIMOS, mentira sobre o que ELE ENVIOU —
+ * e a diferença eram 45 segundos. Ele já tinha sido mandado consertar o
+ * compartilhamento (que estava certo) e reorganizar a pasta (que ele fez); este
+ * seria o TERCEIRO recado culpando o aluno por um limite nosso.
+ */
+export function motivoAudioCurto(
+  training?: string | null,
+  descarte?: DescarteAudio | null,
+): string {
+  const base = `o áudio enviado soma menos de 20 minutos (${training ?? "mínimo não atingido"})`;
+  if (!descarte || descarte.qtd <= 0) return base;
+  return (
+    `o áudio que CONSEGUIMOS LER soma menos de 20 minutos (${training ?? "mínimo não atingido"}), ` +
+    `mas ${descarte.qtd} de ${descarte.total} arquivos ficaram de fora por limitação nossa ` +
+    `(${descarte.erro ?? "motivo não registrado"}) — a soma acima não é o que foi enviado`
+  );
 }
 
 /**
@@ -212,7 +235,15 @@ export function decidirAvisoAudio(e: EntradaAvisoAudio): AvisoAudio {
       audioCurtoHerdado,
       acao: "avisar_aluno",
       motivo: audioCurto
-        ? motivoAudioCurto(e.training)
+        ? motivoAudioCurto(e.training, {
+            // O ramo `so_grupo_parcial` lá embaixo já contava os descartados,
+            // mas ele é INALCANÇÁVEL quando `audioCurto` é true — o `return`
+            // acima sai primeiro. Era assim que o descarte por teto sumia da
+            // mensagem do aluno (#180).
+            qtd: e.qtdErros ?? 0,
+            total: e.audiosPedidos,
+            erro: e.primeiroErro,
+          })
         : (e.primeiroErro ?? "nenhum áudio aproveitável no link"),
     };
   }

@@ -22,7 +22,12 @@ import { join } from "node:path";
 
 /** Nada que o onboarding cria dura mais que o teto de 6min do Apps Script. */
 const IDADE_ORFAO_MS = 30 * 60 * 1000;
-const PREFIXOS = ["onbdl-", "onbvid-", "onbvidbuf-"];
+// ⚠️ Prefixo novo em `dirTemporario` ENTRA AQUI TAMBÉM, senão o órfão dele não
+// é faxinado por ninguém. `onbaudsrc-` guarda o VÍDEO baixado inteiro (GB) e
+// `onbaud-` a faixa extraída; o `finally` que apaga os dois não roda quando o
+// pm2 mata o processo no deploy — que é exatamente como nasceram as 6 pastas
+// órfãas de ~3GB e o `ENOSPC` de 22/08 documentado no topo deste arquivo.
+const PREFIXOS = ["onbdl-", "onbvid-", "onbvidbuf-", "onbaudsrc-", "onbaud-"];
 
 let baseCache: string | null = null;
 
