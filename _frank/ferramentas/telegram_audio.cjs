@@ -1,49 +1,51 @@
 /**
- * 25/08 — manda ÁUDIO pro grupo do Telegram (BrothersAI) pelo Bot API.
- * Nasceu do caso Ellen (draellenca): o Johnny quis OUVIR original × clone.
- * O telegram.cjs só manda texto; este usa o mesmo .env.telegram (token + chat).
+ * Manda um ÁUDIO pro grupo do Telegram (o telegram.cjs só manda texto).
  *
- * Uso (de qualquer pasta do projeto):
- *   node _frank/ferramentas/telegram_audio.cjs "legenda" arquivo1.mp3 [arquivo2.mp3 ...]
- *   node _frank/ferramentas/telegram_audio.cjs --seco "legenda" a.mp3      # ensaia
+ * Pedido do Johnny 29/08: comparar no ouvido a voz com e sem o esticador.
+ * Eu não ouço — quem decide é ele, então o arquivo precisa chegar no celular.
+ *
+ *   node _frank/ferramentas/telegram_audio.cjs <arquivo.mp3> "legenda"
+ *
+ * Credenciais: `.env.telegram` na raiz (mesmo arquivo do telegram.cjs).
  */
 const fs = require("node:fs");
 const path = require("node:path");
-const RAIZ = path.resolve(__dirname, "..", "..");
+
+const RAIZ = path.join(__dirname, "..", "..");
 const ENV = path.join(RAIZ, ".env.telegram");
 
-function env() {
-  const e = {};
-  for (const l of fs.readFileSync(ENV, "utf8").split("\n")) {
-    const t = l.trim(); if (!t || t.startsWith("#")) continue;
-    const i = t.indexOf("="); if (i < 0) continue;
-    e[t.slice(0, i).trim()] = t.slice(i + 1).trim().replace(/^["']|["']$/g, "");
+function lerEnv() {
+  const out = {};
+  for (const linha of fs.readFileSync(ENV, "utf8").split(/\r?\n/)) {
+    const m = linha.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/);
+    if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, "");
   }
-  return e;
+  return out;
 }
 
 (async () => {
-  const args = process.argv.slice(2);
-  const seco = args.includes("--seco");
-  const rest = args.filter((a) => a !== "--seco");
-  const [legenda, ...arquivos] = rest;
-  if (!legenda || !arquivos.length) { console.error("uso: telegram_audio.cjs [--seco] \"legenda\" a.mp3 [b.mp3 ...]"); process.exit(1); }
-  const { TELEGRAM_BOT_TOKEN: token, TELEGRAM_CHAT_ID: chat } = env();
-  if (!token || !chat) throw new Error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID vazios em .env.telegram");
-  for (const [i, f] of arquivos.entries()) {
-    const abs = path.resolve(f);
-    const size = fs.statSync(abs).size;
-    const cap = i === 0 ? legenda : path.basename(abs);
-    console.log(`${seco ? "(seco) " : ""}→ ${path.basename(abs)} (${(size / 1024).toFixed(0)} KB) legenda: ${cap.slice(0, 80)}`);
-    if (seco) continue;
-    const fd = new FormData();
-    fd.append("chat_id", chat);
-    fd.append("caption", cap);
-    fd.append("title", path.basename(abs, path.extname(abs)));
-    fd.append("audio", new Blob([fs.readFileSync(abs)], { type: "audio/mpeg" }), path.basename(abs));
-    const r = await fetch(`https://api.telegram.org/bot${token}/sendAudio`, { method: "POST", body: fd });
-    const j = await r.json();
-    if (!j.ok) throw new Error(`sendAudio falhou: ${JSON.stringify(j).slice(0, 200)}`);
-    console.log(`   ✅ enviado (message_id ${j.result.message_id})`);
+  const arquivo = process.argv[2];
+  const legenda = process.argv[3] || "";
+  if (!arquivo) {
+    console.error('uso: node _frank/ferramentas/telegram_audio.cjs <arquivo.mp3> "legenda"');
+    process.exit(1);
   }
-})().catch((e) => { console.error("ERRO:", e.message); process.exit(1); });
+  const env = lerEnv();
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chat = env.TELEGRAM_CHAT_ID;
+  if (!token || !chat) throw new Error("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID ausentes no .env.telegram");
+
+  const form = new FormData();
+  form.append("chat_id", chat);
+  form.append("caption", legenda.slice(0, 1000));
+  form.append("title", path.basename(arquivo));
+  form.append("audio", new Blob([fs.readFileSync(arquivo)], { type: "audio/mpeg" }), path.basename(arquivo));
+
+  const res = await fetch(`https://api.telegram.org/bot${token}/sendAudio`, { method: "POST", body: form });
+  const j = await res.json();
+  if (!j.ok) throw new Error(`telegram: ${JSON.stringify(j).slice(0, 300)}`);
+  console.log(`enviado (message_id ${j.result.message_id}) — ${path.basename(arquivo)}`);
+})().catch((e) => {
+  console.error("falhou:", e.message);
+  process.exit(1);
+});
