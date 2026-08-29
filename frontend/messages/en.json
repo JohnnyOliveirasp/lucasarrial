@@ -2232,7 +2232,8 @@
       "voltar": "Back",
       "continuar": "Continue",
       "salvando": "Saving…",
-      "avisoAfeta": "may affect the cloned voice"
+      "avisoAfeta": "may affect the cloned voice",
+      "arquivoLongo": "This file is {tem} long — the limit is {max} min per file. Split it into smaller parts and upload again."
     },
     "revisao": {
       "titulo": "Confirmation & Authorization",

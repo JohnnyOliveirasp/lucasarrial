@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
-import { formatDuration } from "@/lib/audio/duration";
+import { formatDuration, measureAudioDuration } from "@/lib/audio/duration";
 import { putToR2 } from "@/lib/images/upload";
 import { CIENCIA_AUDIO, SGP_AUDIO_MAX_SEGUNDOS, SGP_AUDIO_MIN_SEGUNDOS, type SgpAudio } from "@/lib/sgp/types";
 import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
@@ -57,6 +57,23 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
     const nome = file.name || "áudio";
     setItens((prev) => [...prev, { id, nome, fase: "enviando" }]);
     try {
+      // Teto por arquivo ANTES de subir (Johnny 29/08). Um arquivo de 1h30 em
+      // conexão de celular são minutos de upload + ffmpeg + Whisper pra no fim
+      // ser recusado. Aqui é só o atalho de UX: quem decide é o servidor, que
+      // mede com ffmpeg — o cabeçalho do MP3 mente (incidente do header Xing),
+      // então duração ilegível (null/Infinity) SOBE e o servidor julga.
+      const duracao = await measureAudioDuration(file);
+      if (duracao != null && Number.isFinite(duracao) && duracao > SGP_AUDIO_MAX_SEGUNDOS) {
+        return patch(id, {
+          id,
+          nome,
+          fase: "erro",
+          mensagem: t("arquivoLongo", {
+            tem: formatDuration(Math.round(duracao)),
+            max: SGP_AUDIO_MAX_SEGUNDOS / 60,
+          }),
+        });
+      }
       const tipo = file.type || "audio/mpeg";
       const r = await fetch("/api/v1/sgp/audio/slot", {
         method: "POST",
