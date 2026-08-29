@@ -2186,31 +2186,22 @@
         "sem_acessorios": "Sem óculos de sol, chapéu ou acessórios cobrindo o rosto"
       },
       "fotosTitulo": "Suas fotos",
-      "fotosDica": "Aceitamos qualquer formato de foto (JPG, PNG, HEIC do iPhone, WEBP…). Envie uma foto em cada quadro: o sistema analisa cada uma e marca ✓ quando ela segue o guia. As 4 primeiras são obrigatórias.",
-      "slots": {
-        "frente_sorrindo": "Frente · sorrindo",
-        "frente_neutro": "Frente · neutro",
-        "lado_sorrindo": "De lado · sorrindo",
-        "lado_neutro": "De lado · neutro",
-        "extra": "Extra (opcional)"
-      },
-      "escolherFoto": "Escolher foto",
-      "toqueParaEnviar": "Toque para enviar",
+      "fotosDica": "Aceitamos qualquer formato de foto (JPG, PNG, HEIC do iPhone, WEBP…). Envie de {min} a {max} fotos de uma vez, seguindo o guia: de frente e de lado, neutro e sorrindo. O sistema analisa cada uma e marca ✓ quando ela segue o guia.",
       "enviando": "Enviando…",
       "analisando": "Analisando…",
-      "processando": "processando",
       "aprovada": "aprovada",
       "reprovada": "reprovada",
       "indeciso": "Não conseguimos analisar agora. Tente enviar de novo.",
-      "trocar": "Trocar",
       "remover": "Remover",
-      "progresso": "{n} de {total} fotos obrigatórias aprovadas",
+      "progresso": "{n} foto(s) aprovada(s) — mínimo {min}",
       "erroUpload": "Não conseguimos enviar a foto.",
       "erroAnalise": "Não conseguimos analisar a foto.",
       "erroConcluir": "Não foi possível continuar.",
       "voltar": "Voltar",
       "continuar": "Continuar",
-      "salvando": "Salvando…"
+      "salvando": "Salvando…",
+      "enviarFotos": "Enviar fotos",
+      "maximo": "Máximo de {max} fotos."
     },
     "audio": {
       "titulo": "Áudio para clonagem de voz",

@@ -1,17 +1,16 @@
 /**
  * POST /api/v1/sgp/foto/concluir — "Continuar" da tela 2.
- * Exige os 4 slots do guia aprovados; grava a ciência dos checkboxes com hora
- * (decisão 29/08) e define a REFERÊNCIA PADRÃO do aluno (`profiles.image_ref_key`
- * = frente neutro, senão frente sorrindo) — o que a planilha fazia por visão.
+ * Exige o mínimo do guia (4 fotos aprovadas); grava a ciência dos checkboxes
+ * com hora (decisão 29/08) e define a REFERÊNCIA PADRÃO do aluno
+ * (`profiles.image_ref_key` = rosto de frente neutro > rosto de frente >
+ * primeira aprovada) — o que a planilha fazia por visão.
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { atualizarPedido, lerPedido } from "@/lib/sgp/pedido";
-import { CIENCIA_FOTO, type SgpFotoSlot } from "@/lib/sgp/types";
-
-const OBRIGATORIOS: SgpFotoSlot[] = ["frente_sorrindo", "frente_neutro", "lado_sorrindo", "lado_neutro"];
+import { CIENCIA_FOTO, SGP_FOTOS_MIN } from "@/lib/sgp/types";
 
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
@@ -31,18 +30,20 @@ export async function POST(request: NextRequest) {
     const pedido = await lerPedido(auth.user_id);
     if (!pedido) return badRequest("Comece pela tela de dados.");
     const aprovadas = (pedido.fotos ?? []).filter((f) => f.status === "aprovada");
-    const faltam = OBRIGATORIOS.filter((s) => !aprovadas.some((f) => f.slot === s));
-    if (faltam.length) return badRequest("Faltam fotos aprovadas.", { faltam });
+    if (aprovadas.length < SGP_FOTOS_MIN) {
+      return badRequest(`Faltam ${SGP_FOTOS_MIN - aprovadas.length} foto(s) aprovada(s).`);
+    }
 
     const padrao =
-      aprovadas.find((f) => f.slot === "frente_neutro") ?? aprovadas.find((f) => f.slot === "frente_sorrindo");
-    if (padrao) {
-      const { error } = await getAdmin()
-        .from("profiles" as never)
-        .update({ image_ref_key: padrao.key } as never)
-        .eq("id", auth.user_id);
-      if (error) throw new Error(error.message);
-    }
+      aprovadas.find((f) => f.tipo === "rosto_frente" && !f.sorrindo) ??
+      aprovadas.find((f) => f.tipo === "rosto_frente") ??
+      aprovadas[0];
+    const { error } = await getAdmin()
+      .from("profiles" as never)
+      .update({ image_ref_key: padrao.key } as never)
+      .eq("id", auth.user_id);
+    if (error) throw new Error(error.message);
+
     await atualizarPedido(auth.user_id, {
       ciencia_foto: ciencia,
       ciencia_foto_at: new Date().toISOString(),

@@ -1,11 +1,11 @@
 /**
- * /api/v1/sgp/foto — uma foto de um slot da tela 2 do SGP.
+ * /api/v1/sgp/foto — uma foto da tela 2 do SGP.
  *
- *   POST   { slot, key } → a foto já está no R2 (subiu pelo presigned de
+ *   POST   { key } → a foto já está no R2 (subiu pelo presigned de
  *          /images/upload-url). Aqui o sistema JULGA (visão) e, se aprovou,
  *          ADOTA como referência do aluno (`{user}/refs/` — o mesmo lugar em
- *          que a planilha jogava). Devolve a linha do slot pra tela.
- *   DELETE ?slot= → tira a foto do slot (a referência adotada fica no acervo;
+ *          que a planilha jogava). Devolve a linha da foto pra tela.
+ *   DELETE ?key= → tira a foto da lista (a referência adotada fica no acervo;
  *          apagar de lá é na aba Imagens de Referência).
  */
 import type { NextRequest } from "next/server";
@@ -17,34 +17,29 @@ import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { julgarFoto } from "@/lib/sgp/julgar-foto";
 import { atualizarPedido, lerPedido } from "@/lib/sgp/pedido";
-import { SGP_FOTO_SLOTS, type SgpFoto, type SgpFotoSlot } from "@/lib/sgp/types";
-
-function slotValido(s: unknown): s is SgpFotoSlot {
-  return typeof s === "string" && (SGP_FOTO_SLOTS as readonly string[]).includes(s);
-}
+import { SGP_FOTOS_MAX, type SgpFoto } from "@/lib/sgp/types";
 
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  let body: { slot?: unknown; key?: unknown };
+  let body: { key?: unknown };
   try {
     body = await request.json();
   } catch {
     return badRequest("Corpo inválido");
   }
-  if (!slotValido(body.slot)) return badRequest("Slot inválido");
   const key = typeof body.key === "string" ? body.key.trim() : "";
   if (!key.startsWith(`${auth.user_id}/`)) return badRequest("Essa foto não é sua");
 
   try {
     const pedido = await lerPedido(auth.user_id);
     if (!pedido) return badRequest("Comece pela tela de dados.");
+    const atuais = (pedido.fotos ?? []).filter((f) => f.key !== key);
+    if (atuais.length >= SGP_FOTOS_MAX) return badRequest(`Máximo de ${SGP_FOTOS_MAX} fotos. Remova alguma.`);
 
     const url = await createPresignedGet(imagesBucket(), key, 15 * 60);
-    const v = await julgarFoto(url, body.slot);
-    if (v.indeciso) {
-      return jsonOk({ foto: null, indeciso: true }, 202);
-    }
+    const v = await julgarFoto(url);
+    if (v.indeciso) return jsonOk({ foto: null, indeciso: true }, 202);
 
     let refKey = key;
     if (v.aprovada) {
@@ -52,15 +47,14 @@ export async function POST(request: NextRequest) {
       await apagarStagingAdotado(getAdmin(), auth.user_id, key).catch(() => {});
     }
     const foto: SgpFoto = {
-      slot: body.slot,
       key: refKey,
       status: v.aprovada ? "aprovada" : "reprovada",
       tipo: v.tipo,
+      sorrindo: v.sorrindo,
       motivos: v.motivos,
     };
-    const fotos = (pedido.fotos ?? []).filter((f) => f.slot !== body.slot).concat(foto);
-    await atualizarPedido(auth.user_id, { fotos });
-    return jsonOk({ foto, url: await createPresignedGet(imagesBucket(), refKey, 60 * 60) });
+    await atualizarPedido(auth.user_id, { fotos: atuais.concat(foto) });
+    return jsonOk({ foto });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao analisar a foto");
   }
@@ -69,12 +63,12 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
-  const slot = request.nextUrl.searchParams.get("slot");
-  if (!slotValido(slot)) return badRequest("Slot inválido");
+  const key = request.nextUrl.searchParams.get("key") ?? "";
+  if (!key.startsWith(`${auth.user_id}/`)) return badRequest("Essa foto não é sua");
   try {
     const pedido = await lerPedido(auth.user_id);
     if (!pedido) return badRequest("Comece pela tela de dados.");
-    await atualizarPedido(auth.user_id, { fotos: (pedido.fotos ?? []).filter((f) => f.slot !== slot) });
+    await atualizarPedido(auth.user_id, { fotos: (pedido.fotos ?? []).filter((f) => f.key !== key) });
     return jsonOk({ ok: true });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao remover a foto");

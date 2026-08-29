@@ -27,7 +27,6 @@ export default async function SgpRevisaoPage({ params }: { params: Promise<{ loc
   if (["enviado", "processando", "pronto", "falhou"].includes(pedido!.status)) redirect({ href: "/app/sgp", locale });
 
   const t = await getTranslations({ locale, namespace: "sgp.revisao" });
-  const tf = await getTranslations({ locale, namespace: "sgp.foto" });
   const { data: prof } = await getAdmin().from("profiles").select("display_name, whatsapp, email").eq("id", user!.id).maybeSingle();
   const p = prof as { display_name: string | null; whatsapp: string | null; email: string } | null;
 
@@ -56,12 +55,11 @@ export default async function SgpRevisaoPage({ params }: { params: Promise<{ loc
 
         <section className={bloco}>
           <div className={cab}><p className={titulo}>{t("fotos", { n: fotos.length })}</p><Link href="/sgp/foto" className={alterar}>{t("alterar")}</Link></div>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-6 gap-2">
             {fotos.map((f) => (
-              <figure key={f.slot} className="flex flex-col gap-1">
+              <figure key={f.key}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={f.url} alt="" className="aspect-[3/4] w-full rounded-[var(--radius)] object-cover" />
-                <figcaption className="truncate text-[10px] text-[var(--silver)]">{tf(`slots.${f.slot}`)}</figcaption>
               </figure>
             ))}
           </div>

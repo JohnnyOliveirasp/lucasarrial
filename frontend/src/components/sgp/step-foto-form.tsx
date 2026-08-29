@@ -1,52 +1,60 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
+import { IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
 import { putToR2 } from "@/lib/images/upload";
 import { paraFormatoAceito } from "@/lib/images/qualquer-formato";
-import { CIENCIA_FOTO, SGP_FOTO_SLOTS, type SgpFoto, type SgpFotoSlot } from "@/lib/sgp/types";
-import { SgpFotoSlotCard, type EstadoSlot } from "./sgp-foto-slot";
+import { CIENCIA_FOTO, SGP_FOTOS_MAX, SGP_FOTOS_MIN, type SgpFoto } from "@/lib/sgp/types";
+import { SgpFotoCard, type EstadoFoto } from "./sgp-foto-card";
 import { SGP_ERROR_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
-
-const OBRIGATORIOS: SgpFotoSlot[] = ["frente_sorrindo", "frente_neutro", "lado_sorrindo", "lado_neutro"];
 
 type Inicial = { foto: SgpFoto; url: string };
 
 /**
- * Tela 2 do SGP — Foto base do Clone (decisões 29/08):
- *  PDF do guia · 5 checkboxes (ciência, gravada com hora) · 4 slots do guia + 1
- *  extra · cada foto sobe (qualquer formato), o sistema JULGA e marca ✅/❌ com
- *  motivo · Continuar só com os 4 slots aprovados + 5 itens marcados.
+ * Tela 2 do SGP — Foto base do Clone (revisão do Johnny 29/08 08:44):
+ *  PDF do guia · 5 checkboxes (ciência) · UM botão "Enviar fotos" que aceita
+ *  várias de uma vez · cada foto vira uma miniatura pequena, só as enviadas ·
+ *  a IA analisa cada uma ao subir (✓ / ✕ com motivo) · Continuar com ≥ 4
+ *  aprovadas (guia: 4 a 5) e os 5 itens marcados.
  */
 export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
   const t = useTranslations("sgp.foto");
   const router = useRouter();
+  const input = useRef<HTMLInputElement | null>(null);
 
-  const [estados, setEstados] = useState<Record<SgpFotoSlot, EstadoSlot>>(() => {
-    const base = Object.fromEntries(SGP_FOTO_SLOTS.map((s) => [s, { fase: "vazio" }])) as Record<SgpFotoSlot, EstadoSlot>;
-    for (const { foto, url } of iniciais) {
-      base[foto.slot] =
-        foto.status === "aprovada"
-          ? { fase: "aprovada", preview: url }
-          : { fase: "reprovada", preview: url, motivos: foto.motivos ?? [] };
-    }
-    return base;
-  });
+  const [fotos, setFotos] = useState<EstadoFoto[]>(() =>
+    iniciais.map(({ foto, url }) =>
+      foto.status === "aprovada"
+        ? { id: foto.key, preview: url, fase: "aprovada" }
+        : { id: foto.key, preview: url, fase: "reprovada", motivos: foto.motivos ?? [] },
+    ),
+  );
   const [ciencia, setCiencia] = useState<Set<string>>(new Set());
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const aprovados = OBRIGATORIOS.filter((s) => estados[s].fase === "aprovada").length;
-  const podeContinuar = aprovados === OBRIGATORIOS.length && ciencia.size === CIENCIA_FOTO.length;
+  const aprovadas = fotos.filter((f) => f.fase === "aprovada").length;
+  const ocupado = fotos.some((f) => f.fase === "enviando" || f.fase === "analisando");
+  const podeContinuar = aprovadas >= SGP_FOTOS_MIN && !ocupado && ciencia.size === CIENCIA_FOTO.length;
 
-  function setSlot(slot: SgpFotoSlot, e: EstadoSlot) {
-    setEstados((prev) => ({ ...prev, [slot]: e }));
+  function patch(id: string, novo: EstadoFoto) {
+    setFotos((prev) => prev.map((f) => (f.id === id ? novo : f)));
   }
 
-  async function enviarFoto(slot: SgpFotoSlot, original: File) {
+  function escolher(files: FileList | null) {
+    if (!files) return;
+    const vagas = SGP_FOTOS_MAX - fotos.length;
+    const lista = Array.from(files).slice(0, Math.max(0, vagas));
+    if (lista.length < files.length) setErro(t("maximo", { max: SGP_FOTOS_MAX }));
+    for (const f of lista) void enviarUma(f);
+  }
+
+  async function enviarUma(original: File) {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const preview = URL.createObjectURL(original);
-    setSlot(slot, { fase: "enviando", preview });
+    setFotos((prev) => [...prev, { id, preview, fase: "enviando" }]);
     try {
       const file = await paraFormatoAceito(original);
       const r = await fetch("/api/v1/images/upload-url", {
@@ -58,29 +66,35 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
       const { key, upload_url } = (await r.json()) as { key: string; upload_url: string };
       await putToR2(upload_url, file, file.type);
 
-      setSlot(slot, { fase: "processando", preview });
+      patch(id, { id, preview, fase: "analisando" });
       const j = await fetch("/api/v1/sgp/foto", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot, key }),
+        body: JSON.stringify({ key }),
       });
-      if (j.status === 202) return setSlot(slot, { fase: "indeciso", preview });
+      if (j.status === 202) return patch(id, { id, preview, fase: "indeciso", mensagem: t("indeciso") });
       if (!j.ok) throw new Error(await mensagemDe(j, t("erroAnalise")));
       const { foto } = (await j.json()) as { foto: SgpFoto };
-      setSlot(
-        slot,
-        foto.status === "aprovada"
-          ? { fase: "aprovada", preview }
-          : { fase: "reprovada", preview, motivos: foto.motivos ?? [] },
+      // id passa a ser a chave definitiva (a adotada em refs/), pro DELETE achar.
+      setFotos((prev) =>
+        prev.map((f) =>
+          f.id === id
+            ? foto.status === "aprovada"
+              ? { id: foto.key, preview, fase: "aprovada" }
+              : { id: foto.key, preview, fase: "reprovada", motivos: foto.motivos ?? [] }
+            : f,
+        ),
       );
     } catch (e) {
-      setSlot(slot, { fase: "erro", preview, mensagem: e instanceof Error ? e.message : t("erroUpload") });
+      patch(id, { id, preview, fase: "erro", mensagem: e instanceof Error ? e.message : t("erroUpload") });
     }
   }
 
-  async function removerFoto(slot: SgpFotoSlot) {
-    setSlot(slot, { fase: "vazio" });
-    await fetch(`/api/v1/sgp/foto?slot=${slot}`, { method: "DELETE" }).catch(() => {});
+  async function remover(f: EstadoFoto) {
+    setFotos((prev) => prev.filter((x) => x.id !== f.id));
+    if (f.id.includes("/")) {
+      await fetch(`/api/v1/sgp/foto?key=${encodeURIComponent(f.id)}`, { method: "DELETE" }).catch(() => {});
+    }
   }
 
   function alternar(item: string) {
@@ -138,33 +152,41 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
         ))}
       </fieldset>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         <p className="text-[14px] font-semibold text-[var(--ink)]">{t("fotosTitulo")}</p>
-        <p className={SGP_HINT_CLASS}>{t("fotosDica")}</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {SGP_FOTO_SLOTS.map((slot) => (
-            <SgpFotoSlotCard
-              key={slot}
-              slot={slot}
-              estado={estados[slot]}
-              onArquivo={(f) => enviarFoto(slot, f)}
-              onRemover={() => removerFoto(slot)}
-            />
-          ))}
-        </div>
-        <p className="text-[12px] text-[var(--silver)]">{t("progresso", { n: aprovados, total: OBRIGATORIOS.length })}</p>
-      </div>
+        <p className={SGP_HINT_CLASS}>{t("fotosDica", { min: SGP_FOTOS_MIN, max: SGP_FOTOS_MAX })}</p>
 
-      {erro ? (
-        <p role="alert" className={SGP_ERROR_CLASS}>{erro}</p>
-      ) : null}
-
-      <div className="flex items-center justify-between gap-3">
         <button
           type="button"
-          onClick={() => router.push("/sgp")}
-          className="text-[14px] text-[var(--silver)] transition-colors hover:text-[var(--ink)]"
+          disabled={fotos.length >= SGP_FOTOS_MAX}
+          onClick={() => input.current?.click()}
+          className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-4 py-6 text-center text-[14px] text-[var(--silver)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-[0.42]"
         >
+          {t("enviarFotos")}
+        </button>
+        <input
+          ref={input}
+          type="file"
+          multiple
+          accept={`${IMAGE_ACCEPT_WITH_HEIC},image/*`}
+          className="hidden"
+          onChange={(e) => { escolher(e.target.files); e.target.value = ""; }}
+        />
+
+        {fotos.length ? (
+          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+            {fotos.map((f) => (
+              <SgpFotoCard key={f.id} foto={f} onRemover={() => remover(f)} />
+            ))}
+          </div>
+        ) : null}
+        <p className="text-[12px] text-[var(--silver)]">{t("progresso", { n: aprovadas, min: SGP_FOTOS_MIN })}</p>
+      </div>
+
+      {erro ? <p role="alert" className={SGP_ERROR_CLASS}>{erro}</p> : null}
+
+      <div className="flex items-center justify-between gap-3">
+        <button type="button" onClick={() => router.push("/sgp")} className="text-[14px] text-[var(--silver)] transition-colors hover:text-[var(--ink)]">
           ← {t("voltar")}
         </button>
         <button type="button" disabled={!podeContinuar || enviando} onClick={continuar} className={SGP_PILL_CLASS}>
