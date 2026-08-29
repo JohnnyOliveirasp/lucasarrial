@@ -2147,18 +2147,12 @@
       "nome": "Full name",
       "nomePlaceholder": "Your full name",
       "whatsapp": "WhatsApp",
-      "acessoTitulo": "Your FastCloner access",
-      "acessoDescricao": "We'll create your account with this email and password. You'll get a code by email to confirm it's yours.",
       "email": "Email",
-      "senha": "Password",
-      "senhaPlaceholder": "At least 8 characters",
-      "senha2": "Repeat password",
-      "senha2Placeholder": "Repeat password",
-      "dicaCodigo": "When you click \"Send code\", we email you a 6-digit code. Continue only unlocks after you confirm it.",
+      "dicaCodigo": "We'll email you a 6-digit code. You are NOT creating an account yet: the platform sign-up happens at the end, after the review.",
       "enviarCodigo": "Send code",
       "enviandoCodigo": "Sending…",
       "codigoEnviado": "We sent a code to your email. Check your inbox (and spam).",
-      "codigoEnviadoContaExistente": "This email already has a FastCloner account. We sent a code so you can sign in and continue.",
+      "codigoEnviadoContaExistente": "This email already has a FastCloner account. We sent a code to confirm it's yours — at the end we attach everything to your account.",
       "codigoLabel": "Email code",
       "verificarEContinuar": "Confirm and continue",
       "verificando": "Verifying…",
@@ -2170,7 +2164,7 @@
       "erroGenerico": "Something went wrong. Try again.",
       "nomeCurto": "Enter your full name.",
       "whatsappInvalido": "Enter a valid WhatsApp number with area code.",
-      "senhasDiferem": "Passwords don't match."
+      "mudarEmail": "Change email"
     },
     "foto": {
       "titulo": "Base photo for the Clone",
@@ -2250,7 +2244,14 @@
       "confirmarEnviar": "Confirm and Send",
       "enviando": "Sending…",
       "erroEnviar": "Could not send.",
-      "voltar": "Back"
+      "voltar": "Back",
+      "acessoTitulo": "Your FastCloner access",
+      "acessoDescricao": "We'll create your account with {email}. Choose a password:",
+      "acessoExistente": "{email} already has a FastCloner account — we'll attach this material to it. After sending, sign in with your usual password.",
+      "senha": "Password",
+      "senhaPlaceholder": "At least 8 characters",
+      "senha2": "Repeat password",
+      "senhasDiferem": "Passwords don't match."
     },
     "acompanhar": {
       "selo": "Ready Generation System",

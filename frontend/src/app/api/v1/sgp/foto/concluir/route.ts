@@ -1,20 +1,15 @@
 /**
  * POST /api/v1/sgp/foto/concluir — "Continuar" da tela 2.
- * Exige o mínimo do guia (4 fotos aprovadas); grava a ciência dos checkboxes
- * com hora (decisão 29/08) e define a REFERÊNCIA PADRÃO do aluno
- * (`profiles.image_ref_key` = rosto de frente neutro > rosto de frente >
- * primeira aprovada) — o que a planilha fazia por visão.
+ * Exige o mínimo do guia (4 aprovadas) com pelo menos uma de FRENTE e uma de
+ * LADO, e grava a ciência dos 5 checkboxes com hora. A referência padrão é
+ * escolhida no envio, quando a conta existe (Johnny 29/08).
  */
 import type { NextRequest } from "next/server";
-import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
-import { getAdmin } from "@/lib/db/admin";
-import { atualizarPedido, lerPedido } from "@/lib/sgp/pedido";
+import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
+import { atualizarSessao, pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 import { CIENCIA_FOTO, SGP_FOTOS_MIN } from "@/lib/sgp/types";
 
 export async function POST(request: NextRequest) {
-  const auth = await authenticate(request);
-  if (!auth) return unauthorized();
   let body: { ciencia?: unknown };
   try {
     body = await request.json();
@@ -27,40 +22,22 @@ export async function POST(request: NextRequest) {
   if (ciencia.length !== CIENCIA_FOTO.length) return badRequest("Marque os 5 itens da lista antes de continuar.");
 
   try {
-    const pedido = await lerPedido(auth.user_id);
+    const pedido = await pedidoDaSessaoOuNull();
     if (!pedido) return badRequest("Comece pela tela de dados.");
     const aprovadas = (pedido.fotos ?? []).filter((f) => f.status === "aprovada");
     if (aprovadas.length < SGP_FOTOS_MIN) {
       return badRequest(`Faltam ${SGP_FOTOS_MIN - aprovadas.length} foto(s) aprovada(s).`);
     }
-
-    // A referência padrão precisa mostrar o rosto (é dela que sai o clone de
-    // foto). As outras — corpo inteiro, de costas — continuam valendo como
-    // referência extra: o modelo aprende o corpo (Johnny 29/08).
     const comRosto = aprovadas.filter((f) => f.rosto_visivel !== false);
-    if (comRosto.length === 0) {
-      return badRequest("Envie pelo menos uma foto em que dê pra ver o seu rosto.");
-    }
-    // O guia pede frente E de lado: sem o perfil, o clone erra o formato da
-    // cabeça nos ângulos que não são de frente (Johnny 29/08).
+    if (comRosto.length === 0) return badRequest("Envie pelo menos uma foto em que dê pra ver o seu rosto.");
     if (!comRosto.some((f) => f.perfil === true)) {
       return badRequest("Falta uma foto de LADO (perfil ou 3/4) — o guia pede de frente e de lado.");
     }
     if (!comRosto.some((f) => f.perfil !== true)) {
       return badRequest("Falta uma foto de FRENTE, olhando para a câmera.");
     }
-    const padrao =
-      comRosto.find((f) => f.tipo === "rosto_frente" && !f.sorrindo) ??
-      comRosto.find((f) => f.tipo === "rosto_frente") ??
-      comRosto.find((f) => f.tipo === "meio_corpo") ??
-      comRosto[0];
-    const { error } = await getAdmin()
-      .from("profiles" as never)
-      .update({ image_ref_key: padrao.key } as never)
-      .eq("id", auth.user_id);
-    if (error) throw new Error(error.message);
 
-    await atualizarPedido(auth.user_id, {
+    await atualizarSessao(pedido.sessao, {
       ciencia_foto: ciencia,
       ciencia_foto_at: new Date().toISOString(),
       status: pedido.status === "foto" ? "audio" : pedido.status,
