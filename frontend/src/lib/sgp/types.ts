@@ -19,15 +19,9 @@ export type SgpStatus = (typeof SGP_STATUS)[number];
 export const SGP_PASSOS = ["dados", "foto", "audio", "revisao"] as const;
 export type SgpPasso = (typeof SGP_PASSOS)[number];
 
-/** Slots de foto = o que o guia PDF pede (4 + 1 opcional). */
-export const SGP_FOTO_SLOTS = [
-  "frente_sorrindo",
-  "frente_neutro",
-  "lado_sorrindo",
-  "lado_neutro",
-  "extra",
-] as const;
-export type SgpFotoSlot = (typeof SGP_FOTO_SLOTS)[number];
+/** Régua de fotos = o guia PDF ("4 a 5 fotos"): mínimo 4 aprovadas, máximo 6. */
+export const SGP_FOTOS_MIN = 4;
+export const SGP_FOTOS_MAX = 6;
 
 /** Checkboxes da tela 2 (ciência do aluno, gravada com hora). */
 export const CIENCIA_FOTO = ["luz", "fundo", "enquadramento", "nitida", "sem_acessorios"] as const;
@@ -37,11 +31,13 @@ export const SGP_AUDIO_MAX_SEGUNDOS = 60 * 60;
 /** Checkboxes da tela 3. */
 export const CIENCIA_AUDIO = ["30min", "silencio", "mesmo_ambiente", "fala_natural"] as const;
 
+export type SgpFotoTipo = "rosto_frente" | "rosto_lado" | "meio_corpo" | "corpo_inteiro" | "outro";
+
 export type SgpFoto = {
-  slot: SgpFotoSlot;
   key: string;
   status: "processando" | "aprovada" | "reprovada";
-  tipo?: string | null;
+  tipo?: SgpFotoTipo | null;
+  sorrindo?: boolean;
   motivos?: string[];
 };
 

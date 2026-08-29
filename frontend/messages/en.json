@@ -2186,31 +2186,22 @@
         "sem_acessorios": "No sunglasses, hat or accessories covering the face"
       },
       "fotosTitulo": "Your photos",
-      "fotosDica": "Any photo format works (JPG, PNG, iPhone HEIC, WEBP…). Upload one photo per frame: the system checks each one and marks ✓ when it follows the guide. The first 4 are required.",
-      "slots": {
-        "frente_sorrindo": "Front · smiling",
-        "frente_neutro": "Front · neutral",
-        "lado_sorrindo": "Side · smiling",
-        "lado_neutro": "Side · neutral",
-        "extra": "Extra (optional)"
-      },
-      "escolherFoto": "Choose photo",
-      "toqueParaEnviar": "Tap to upload",
+      "fotosDica": "Any photo format works (JPG, PNG, iPhone HEIC, WEBP…). Upload {min} to {max} photos at once, following the guide: front and side, neutral and smiling. The system checks each one and marks ✓ when it follows the guide.",
       "enviando": "Uploading…",
       "analisando": "Analyzing…",
-      "processando": "processing",
       "aprovada": "approved",
       "reprovada": "rejected",
       "indeciso": "We couldn't analyze it right now. Try uploading again.",
-      "trocar": "Replace",
       "remover": "Remove",
-      "progresso": "{n} of {total} required photos approved",
+      "progresso": "{n} photo(s) approved — minimum {min}",
       "erroUpload": "We couldn't upload the photo.",
       "erroAnalise": "We couldn't analyze the photo.",
       "erroConcluir": "Couldn't continue.",
       "voltar": "Back",
       "continuar": "Continue",
-      "salvando": "Saving…"
+      "salvando": "Saving…",
+      "enviarFotos": "Upload photos",
+      "maximo": "Maximum {max} photos."
     },
     "audio": {
       "titulo": "Audio for voice cloning",
