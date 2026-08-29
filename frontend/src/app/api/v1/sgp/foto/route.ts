@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
       tipo: v.tipo,
       sorrindo: v.sorrindo,
       rosto_visivel: v.rostoVisivel,
+      perfil: v.perfil,
       motivos: v.motivos,
     };
     await atualizarPedido(auth.user_id, { fotos: atuais.concat(foto) });
