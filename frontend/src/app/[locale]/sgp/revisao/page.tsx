@@ -40,7 +40,7 @@ export default async function SgpRevisaoPage({ params }: { params: Promise<{ loc
   const bloco = "rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-4";
   const cab = "mb-3 flex items-center justify-between";
   const titulo = "text-[12px] font-semibold uppercase tracking-[0.12em] text-[var(--silver)]";
-  const alterar = "text-[12px] text-[var(--silver)] underline decoration-[var(--hairline-bright)] underline-offset-[3px] hover:text-[var(--ink)]";
+  const alterar = "sgp-btn sgp-btn--ghost sgp-btn--xs";
   const linha = "flex justify-between gap-4 py-1.5 text-[13px]";
 
   return (

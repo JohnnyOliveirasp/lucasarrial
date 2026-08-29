@@ -33,7 +33,7 @@ export function SgpFotoCard({ foto, onRemover }: { foto: EstadoFoto; onRemover: 
             type="button"
             onClick={onRemover}
             aria-label={t("remover")}
-            className="absolute bottom-1 right-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white hover:bg-black/80"
+            className="sgp-btn sgp-btn--ghost sgp-btn--xs absolute bottom-1 right-1"
           >
             {t("remover")}
           </button>

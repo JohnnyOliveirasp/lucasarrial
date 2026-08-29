@@ -126,7 +126,7 @@ export function SgpOtp({
         type="button"
         onClick={reenviar}
         disabled={cooldown > 0}
-        className="self-center text-[13px] text-[var(--silver)] transition-colors hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-[0.42]"
+        className="sgp-btn sgp-btn--ghost sgp-btn--sm self-center"
       >
         {cooldown > 0 ? t("reenviarEm", { seconds: cooldown }) : t("reenviar")}
       </button>
