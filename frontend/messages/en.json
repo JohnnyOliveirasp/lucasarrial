@@ -1463,7 +1463,12 @@
       "savedNote": "All audio is also saved to your History.",
       "latestBar": "Latest audio",
       "paywallAction": "generate audio",
-      "deleteAria": "Delete this audio"
+      "deleteAria": "Delete this audio",
+      "rateQaLabel": "Match my natural speaking pace",
+      "rateQaHelp": "Turn this on if the cloned voice comes out faster than you speak. The system pulls the audio towards your natural pace — in exchange it may sound a bit slower and the intonation changes slightly. Off, it comes out exactly as the model generated it.",
+      "copiarTexto": "Copy text",
+      "copiado": "Copied!",
+      "reusarTexto": "Use this text again"
     },
     "panel": {
       "startError": "Failed to start training",

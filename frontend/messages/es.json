@@ -1463,7 +1463,12 @@
       "savedNote": "Todos los audios también quedan guardados en el Historial.",
       "latestBar": "Último audio",
       "paywallAction": "generar audio",
-      "deleteAria": "Eliminar este audio"
+      "deleteAria": "Eliminar este audio",
+      "rateQaLabel": "Ajustar a mi ritmo de habla",
+      "rateQaHelp": "Actívalo si la voz clonada sale más acelerada de lo que hablas. El sistema acerca el audio a tu velocidad natural — a cambio puede quedar un poco más lento y la entonación cambia levemente. Desactivado, sale tal como lo generó el modelo.",
+      "copiarTexto": "Copiar texto",
+      "copiado": "¡Copiado!",
+      "reusarTexto": "Usar este texto de nuevo"
     },
     "panel": {
       "startError": "No se pudo iniciar el entrenamiento",
