@@ -2300,6 +2300,15 @@
       "irParaPlataforma": "Go to the platform",
       "prontoTexto": "All set! Sign in with your email and the password you created to see the result.",
       "entrar": "Go to the platform"
+    },
+    "ajuda": {
+      "botao": "Help",
+      "fechar": "Close",
+      "titulo": "Fast · form help",
+      "saudacao": "Hi! 👋 I'm Fast. Ask me anything about this screen — a rejected photo, a code that didn't arrive, your audio minutes. If I can't solve it, I'll call someone from the team.",
+      "placeholder": "Type your question…",
+      "enviar": "Send",
+      "erro": "I couldn't reply right now — please try again in a moment."
     }
   }
 }

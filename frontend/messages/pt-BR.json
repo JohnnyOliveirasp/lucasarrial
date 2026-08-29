@@ -2300,6 +2300,15 @@
       "irParaPlataforma": "Ir para a plataforma",
       "prontoTexto": "Tudo pronto! Entre na plataforma com o seu e-mail e a senha que você criou pra ver o resultado.",
       "entrar": "Entrar na plataforma"
+    },
+    "ajuda": {
+      "botao": "Ajuda",
+      "fechar": "Fechar",
+      "titulo": "Fast · ajuda do formulário",
+      "saudacao": "Oi! 👋 Eu sou a Fast. Pode perguntar qualquer coisa desta tela — foto reprovada, código que não chegou, minutos do áudio. Se eu não resolver, eu chamo alguém do time.",
+      "placeholder": "Escreva sua dúvida…",
+      "enviar": "Enviar",
+      "erro": "Não consegui responder agora — tente de novo em instantes."
     }
   }
 }
