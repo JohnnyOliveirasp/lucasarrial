@@ -40,7 +40,13 @@ import { rm } from "node:fs/promises";
 import { dirTemporario } from "./tmp";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { downloadDriveFile, downloadDriveFileToPath, pickExtension, ehArquivoLocal } from "./drive";
+import {
+  downloadDriveFile,
+  downloadDriveFileToPath,
+  pickExtension,
+  ehArquivoLocal,
+  type DriveFile,
+} from "./drive";
 import {
   sniffImagem,
   heicParaJpegViaDrive,
@@ -49,6 +55,7 @@ import {
   descreverArquivo,
 } from "./imagem-tipo";
 import { extrairFramesDeArquivo } from "./video-frames";
+import { extrairAudioDeArquivo } from "./video-audio";
 import { escolherReferenciaFrontal } from "./referencia";
 import { dispararTreinoOnboarding } from "./treino";
 import { decidirVozOnboarding, type VozOnboarding } from "./veredito-audio";
@@ -60,6 +67,19 @@ const MAX_IMAGE_BYTES = 30 * 1024 * 1024; // 30MB por foto
 // vídeo com teto próprio e extraímos 3 frames que viram as fotos.
 const MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024; // streaming pra disco — tamanho quase não importa (A248: 878MB)
 const MAX_AUDIO_BYTES = 400 * 1024 * 1024; // 400MB por take (1h WAV cabe)
+// O aluno mandou VÍDEO como fonte de voz e o vídeo passa do teto acima. O que
+// não cabe é o VÍDEO, não a voz dele: streaming pro disco + ffmpeg tira a
+// faixa de áudio, que tem dezenas de MB. Espelha o que o lado das FOTOS já faz
+// desde 14/08 (`importarFramesDoVideo`) e que o lado do ÁUDIO nunca teve.
+// Medido no caso Johnathan (#180, 29/08): 8 dos 15 arquivos morriam aqui, entre
+// eles um de 490MB com 28min22s de fala que SOZINHO abriria a porta de 20min.
+// Os 7 que cabiam somavam 19min15s — ele era reprovado por 45 SEGUNDOS e lia
+// "seu áudio é curto, grave mais": culpado por um teto NOSSO.
+const MAX_AUDIO_SOURCE_BYTES = 4 * 1024 * 1024 * 1024; // 4GB EM DISCO, nunca em Buffer
+// Teto de TEMPO, não de tamanho: a rota tem `maxDuration` de 600s e cada vídeo
+// desses leva minutos pra baixar. Três resolvem o caso real; o que passar disso
+// segue contando como descartado — e agora o descarte APARECE na mensagem.
+const MAX_AUDIO_STREAM_FILES = 3;
 const MAX_IMAGES = 20;
 const MAX_AUDIOS = 20; // mesmo teto do MAX_FILES_PER_VOICE
 /* A régua de 20min brutos vive em @/lib/voices/regua-audio (importada acima). */
@@ -410,6 +430,30 @@ export type AudioImportResult = ImportResult & {
   training: string | null;
 };
 
+/**
+ * Arquivo grande demais pro Buffer: baixa por STREAMING pro disco e devolve só
+ * a FAIXA DE ÁUDIO. Serve tanto pro Drive quanto pro arquivo local vindo de
+ * `abrirLink` (zip/WeTransfer/Dropbox) — `downloadDriveFileToPath` trata os
+ * dois. O nome sintético carrega a extensão real da faixa, que é o que o
+ * `pickExtension` e a régua de extensões leem depois.
+ */
+async function audioDeVideoGrande(fileId: string): Promise<DriveFile> {
+  const dir = await dirTemporario("onbaudsrc-");
+  try {
+    const src = join(dir, "fonte.bin");
+    await downloadDriveFileToPath(fileId, src, MAX_AUDIO_SOURCE_BYTES);
+    const faixa = await extrairAudioDeArquivo(src);
+    const safe = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
+    return {
+      bytes: faixa.bytes,
+      contentType: faixa.mime,
+      filename: `${safe}.${faixa.ext}`,
+    };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /** Tenta disparar o treino (cobrado do aluno); nunca derruba o import. */
 async function tentarTreino(
   admin: Admin,
@@ -516,10 +560,23 @@ export async function importTrainingAudios(
   }
 
   const uploadedKeys: string[] = [];
+  let streamsRestantes = MAX_AUDIO_STREAM_FILES;
   for (let i = 0; i < Math.min(fileIds.length, MAX_AUDIOS); i++) {
     const fileId = fileIds[i];
     try {
-      const file = await downloadDriveFile(fileId, MAX_AUDIO_BYTES);
+      let file: DriveFile;
+      try {
+        file = await downloadDriveFile(fileId, MAX_AUDIO_BYTES);
+      } catch (eDown) {
+        const msgDown = eDown instanceof Error ? eDown.message : String(eDown);
+        // SÓ tamanho entra no resgate. Arquivo privado, HTML de login e id
+        // inválido continuam falhando igual: ali o problema não é o teto e
+        // fingir que é esconderia o defeito de verdade.
+        const soTamanho = /teto \d+ ?MB|passa do teto|passou de \d+ ?MB/i.test(msgDown);
+        if (!soTamanho || streamsRestantes <= 0) throw eDown;
+        streamsRestantes--;
+        file = await audioDeVideoGrande(fileId);
+      }
       // 22/08: quem decide é o CONTEÚDO, não o rótulo — a versão de áudio da
       // regra que o sniffImagem já aplica nas fotos. O caso que forçou isso:
       // link do OneDrive devolvia a página de LOGIN da Microsoft (HTML de
