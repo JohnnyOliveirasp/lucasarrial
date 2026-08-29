@@ -29,6 +29,11 @@ export const SGP_FOTO_SLOTS = [
 ] as const;
 export type SgpFotoSlot = (typeof SGP_FOTO_SLOTS)[number];
 
+/** Checkboxes da tela 2 (ciência do aluno, gravada com hora). */
+export const CIENCIA_FOTO = ["luz", "fundo", "enquadramento", "nitida", "sem_acessorios"] as const;
+/** Checkboxes da tela 3. */
+export const CIENCIA_AUDIO = ["30min", "silencio", "mesmo_ambiente", "fala_natural"] as const;
+
 export type SgpFoto = {
   slot: SgpFotoSlot;
   key: string;

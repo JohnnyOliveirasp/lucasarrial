@@ -2174,7 +2174,47 @@
     },
     "foto": {
       "titulo": "Base photo for the Clone",
-      "descricao": "Upload high-quality photos to be the base of your clone.",
+      "descricao": "Upload high-quality photos to be the base of your clone. Download the guide below to see exactly how to take the ideal photo.",
+      "guiaTitulo": "Download the Base Photo Guide (PDF)",
+      "guiaDescricao": "Detailed instructions for the ideal clone photo",
+      "confirmeTitulo": "Confirm before uploading your photos:",
+      "ciencia": {
+        "luz": "Good lighting (front light, no shadows on the face)",
+        "fundo": "Clean background, no visual distractions",
+        "enquadramento": "Framed from the chest up, looking at the camera",
+        "nitida": "Sharp, high-resolution photo (no blur)",
+        "sem_acessorios": "No sunglasses, hat or accessories covering the face"
+      },
+      "fotosTitulo": "Your photos",
+      "fotosDica": "Any photo format works (JPG, PNG, iPhone HEIC, WEBP…). Upload one photo per frame: the system checks each one and marks ✓ when it follows the guide. The first 4 are required.",
+      "slots": {
+        "frente_sorrindo": "Front · smiling",
+        "frente_neutro": "Front · neutral",
+        "lado_sorrindo": "Side · smiling",
+        "lado_neutro": "Side · neutral",
+        "extra": "Extra (optional)"
+      },
+      "escolherFoto": "Choose photo",
+      "toqueParaEnviar": "Tap to upload",
+      "enviando": "Uploading…",
+      "analisando": "Analyzing…",
+      "processando": "processing",
+      "aprovada": "approved",
+      "reprovada": "rejected",
+      "indeciso": "We couldn't analyze it right now. Try uploading again.",
+      "trocar": "Replace",
+      "remover": "Remove",
+      "progresso": "{n} of {total} required photos approved",
+      "erroUpload": "We couldn't upload the photo.",
+      "erroAnalise": "We couldn't analyze the photo.",
+      "erroConcluir": "Couldn't continue.",
+      "voltar": "Back",
+      "continuar": "Continue",
+      "salvando": "Saving…"
+    },
+    "audio": {
+      "titulo": "Audio for voice cloning",
+      "descricao": "Record at least 20 minutes of audio to clone your voice with high fidelity.",
       "emConstrucao": "Under construction — next SGP step."
     }
   }
