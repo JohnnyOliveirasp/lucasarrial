@@ -71,7 +71,7 @@ export function SgpOtp({
     setError(null);
     const { error: err } = contaNova
       ? await supabase.auth.resend({ email, type: "signup" })
-      : await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+      : await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: `${window.location.origin}/auth/callback?next=/sgp` } });
     if (err) {
       setError(err.message.toLowerCase().includes("rate") ? t("muitasTentativas") : t("erroGenerico"));
       return;
