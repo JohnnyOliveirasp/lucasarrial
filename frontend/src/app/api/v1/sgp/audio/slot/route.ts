@@ -9,6 +9,7 @@ import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedPut, isAllowedAudioMime } from "@/lib/r2/presigned";
 import { pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
+import { SGP_AUDIO_MAX_SEGUNDOS } from "@/lib/sgp/types";
 
 const MAX_ARQUIVOS = 20;
 
@@ -28,6 +29,19 @@ export async function POST(request: NextRequest) {
     const pedido = await pedidoDaSessaoOuNull();
     if (!pedido?.email_verificado_at) return badRequest("Confirme o seu e-mail na primeira tela.");
     if ((pedido.audios ?? []).length >= MAX_ARQUIVOS) return badRequest(`Máximo de ${MAX_ARQUIVOS} arquivos.`);
+
+    // Teto já batido: não adianta gastar upload + ffmpeg + Whisper num arquivo
+    // que o "Continuar" vai recusar de qualquer jeito (Johnny 29/08). Cada
+    // análise custa dinheiro nosso e minutos do aluno.
+    const falaAprovada = (pedido.audios ?? [])
+      .filter((a) => a.status === "aprovado")
+      .reduce((s, a) => s + (a.segundos ?? 0), 0);
+    if (falaAprovada >= SGP_AUDIO_MAX_SEGUNDOS) {
+      return badRequest(
+        `Você já tem ${Math.round(falaAprovada / 60)} min de fala aprovada e o limite é ` +
+          `${SGP_AUDIO_MAX_SEGUNDOS / 60} min. Remova um arquivo antes de enviar outro.`,
+      );
+    }
 
     const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
     const key = `sgp/${pedido.sessao}/audio/${randomUUID().slice(0, 8)}_${safe}`;
