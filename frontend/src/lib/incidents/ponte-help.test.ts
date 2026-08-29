@@ -81,11 +81,10 @@ test("as duas filas viram chamado — atendimento também, não só técnico", (
   );
 });
 
-test("ATENDIMENTO é entregue ao time e fechado; TÉCNICO fica aberto (regra #82, 28/08)", () => {
-  // Revisão de 28/08 (Johnny: "21 chamados abertos não faz sentido"): a fila
-  // mede o SISTEMA. Pedido de gente vai pro grupo e fecha, como no e-mail.
-  // Falha técnica continua aberta. E a entrega é guardada por `!technical`:
-  // fechar um bug de plataforma como "entregue ao time" o esconderia da fila.
+test("ATENDIMENTO é entregue ao time (grupo avisado, chamado fica aberto); TÉCNICO nunca passa pela entrega", () => {
+  // 28/08: pedido de gente vai pro grupo. 29/08 (#153): o chamado não fecha
+  // mais na entrega — fica aberto até o time responder. A entrega segue
+  // guardada por `!technical`: falha de plataforma não é "olho humano".
   assert.ok(
     /import[^;]*\bentregarAoTime\b[^;]*;/.test(fonte),
     "entregarAoTime não é mais importado — atendimento voltaria a acumular na fila",
