@@ -42,6 +42,9 @@ export type SgpFoto = {
   rosto_visivel?: boolean;
   /** Cabeça virada de lado (perfil ou 3/4) — o guia pede pelo menos uma. */
   perfil?: boolean;
+  /** Impressões digitais pra barrar foto repetida (ver lib/sgp/impressao-foto.ts). */
+  sha256?: string | null;
+  dhash?: string | null;
   motivos?: string[];
 };
 
