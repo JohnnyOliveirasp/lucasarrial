@@ -2214,7 +2214,36 @@
     },
     "audio": {
       "titulo": "Audio for voice cloning",
-      "descricao": "Record at least 20 minutes of audio to clone your voice with high fidelity.",
+      "descricao": "Record at least 20 minutes of audio to clone your voice with high fidelity. Reading or natural speech both work.",
+      "videoPendente": "⚠️ Lucas's video explaining the recording goes here (pending recording).",
+      "confirmeTitulo": "Confirm before uploading your audio:",
+      "ciencia": {
+        "30min": "I recorded at least 20 minutes of audio",
+        "silencio": "Quiet room, no background noise",
+        "mesmo_ambiente": "All blocks recorded in the same room",
+        "fala_natural": "Natural speech or reading (no whispering or shouting)"
+      },
+      "arquivosTitulo": "Your audio files",
+      "arquivosDica": "Upload one or more files (MP3, WAV, M4A, phone recording…). Minutes add up. The system checks each file: volume, noise, silence and language — only approved speech counts.",
+      "soltarAqui": "Tap to choose audio files",
+      "acumulado": "{atual} of approved speech (minimum {minimo} min)",
+      "maximo": "maximum {max} min",
+      "aprovado": "approved",
+      "deFala": "of speech",
+      "enviando": "Uploading…",
+      "analisando": "Analyzing…",
+      "indeciso": "We couldn't analyze it right now. Try uploading again.",
+      "remover": "Remove",
+      "erroUpload": "We couldn't upload the audio.",
+      "erroAnalise": "We couldn't analyze the audio.",
+      "erroConcluir": "Couldn't continue.",
+      "voltar": "Back",
+      "continuar": "Continue",
+      "salvando": "Saving…"
+    },
+    "revisao": {
+      "titulo": "Confirmation & Authorization",
+      "descricao": "Review everything before sending.",
       "emConstrucao": "Under construction — next SGP step."
     }
   }
