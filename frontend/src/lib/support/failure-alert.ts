@@ -26,7 +26,16 @@ export type TechFailureArgs = {
   debitRefType?: string;
   /** ref_type do estorno (aparece no extrato; também é a chave de idempotência). */
   refundRefType?: string;
-  /** false = só estorna, sem e-mail (erro de INPUT do usuário, não falha nossa). */
+  /**
+   * false = só estorna, sem e-mail (erro de INPUT do usuário, não falha nossa).
+   *
+   * ⚠️ Isto NÃO é só sobre e-mail — é a classificação input×técnico, e ela vale
+   * também pro incidente da rajada (chamado #183, 29/08). Antes, o portão que
+   * lê este campo ficava DEPOIS do openBurstIncident, então o arquivo do aluno
+   * virava chamado técnico ABERTO na mesma fila em que o Johnny olha se o
+   * PRODUTO está quebrado. Hoje a informação é passada adiante em vez de
+   * descartada — ver `inputError` em openBurstIncident.
+   */
   alertSupport?: boolean;
 };
 
@@ -143,6 +152,15 @@ export async function escalateStuckUser(a: {
       userEmail: a.userEmail ?? "(sem e-mail)",
       count: fails,
       rawError: a.rawError,
+      // Este caminho é, POR DEFINIÇÃO, erro de input do aluno: o finalize-training
+      // só chama aqui pra falha que ele mesmo classificou como "dataset do
+      // usuário" e por isso não alerta o suporte. Marcar `inputError: true` é a
+      // verdade — e mesmo assim o chamado NASCE ABERTO, porque `stuck: true`
+      // manda no `!a.stuck` do openBurstIncident. É exatamente pra isto que esta
+      // função existe (linhas 111-120: erro do usuário que vira problema nosso
+      // por REPETIÇÃO — foi calando este sinal que o bug do chunking rodou 18
+      // dias). Se um dia alguém trocar este `true`, o sinal some sem barulho.
+      inputError: true,
       windowLabel:
         rule.windowMs >= 60 * 60 * 1000
           ? `${Math.round(rule.windowMs / 3_600_000)}h`
@@ -185,9 +203,28 @@ async function openBurstIncident(a: {
   rawError: string;
   windowLabel: string;
   stuck: boolean;
+  /**
+   * true = quem chamou JÁ classificou a falha como erro de INPUT do aluno
+   * (`alertSupport: false`, ex.: no_speech, audio_too_long, video_too_long,
+   * video_sem_audio em studio/finalize.ts:47-50). Chamado #183.
+   */
+  inputError: boolean;
 }): Promise<void> {
   const admin = getAdmin();
-  const userError = isModerationBlock(a.rawError);
+  // Duas válvulas de "isto não é defeito nosso", e elas NÃO são a mesma coisa:
+  //
+  //  - moderação (regra do Johnny 17/08): nasce fechada SEMPRE. Comportamento
+  //    inalterado de propósito — é ordem dele, não é meu de mexer.
+  //  - erro de INPUT (chamado #183): nasce fechada SÓ SE o aluno não estiver
+  //    travado. O `!a.stuck` aqui é deliberado e é a parte que não pode sumir:
+  //    erro de input REPETIDO num aluno sem nenhuma voz pronta é exatamente o
+  //    sinal que o escalateStuckUser existe pra não perder (comentário das
+  //    linhas 111-120: foi calando esse sinal que o bug do chunking rodou 18
+  //    dias). Silenciar aluno travado trocaria o ruído de hoje por uma
+  //    cegueira cara.
+  const moderationBlock = isModerationBlock(a.rawError);
+  const inputErrorSilenciavel = a.inputError && !a.stuck;
+  const userError = moderationBlock || inputErrorSilenciavel;
   const signature = `fail-burst:${a.refundRefType}:${a.userEmail}`;
   const now = new Date().toISOString();
   const { data: existingRaw } = await admin
@@ -241,11 +278,21 @@ async function openBurstIncident(a: {
     reported_by: "burst-rule",
     categoria: "tecnico", // rajada de falha de sistema: conserto é nosso
 
+    // A nota diz QUAL das duas válvulas fechou o chamado. Nota genérica em
+    // chamado auto-fechado é como não ter nota: quem lê depois não sabe se
+    // confia no fechamento (regra 14: "investigating sem nota é o mesmo que
+    // não ter olhado" — vale igual pro ignored).
     ...(userError
       ? {
-          resolution_note:
-            "Fechado automaticamente (regra 17/08): moderação de conteúdo bloqueou o pedido — " +
-            "o produto funcionou como devia. Fica só como registro.",
+          resolution_note: moderationBlock
+            ? "Fechado automaticamente (regra 17/08): moderação de conteúdo bloqueou o pedido — " +
+              "o produto funcionou como devia. Fica só como registro."
+            : "Fechado automaticamente (chamado #183): a própria operação classificou esta " +
+              "falha como erro de INPUT do aluno (arquivo sem fala, longo demais ou sem " +
+              "áudio), não como defeito nosso — o estorno saiu e o detector acertou. Fica " +
+              "só como registro de repetição. ⚠️ Se este aluno ficar SEM NENHUMA VOZ PRONTA, " +
+              "a próxima rajada dele nasce ABERTA de propósito: erro de input repetido em " +
+              "aluno travado é sinal nosso, não dele.",
           resolved_at: now,
         }
       : {}),
@@ -302,6 +349,11 @@ export async function handleTechFailure(a: TechFailureArgs): Promise<void> {
           // Aluno TRAVADO (nenhuma voz pronta) é o sinal mais forte de churn:
           // vai embora calado. Entra no título pro Sentinela priorizar.
           stuck: await hasNoReadyVoice(a.userId),
+          // Chamado #183: passa a classificação adiante em vez de descartá-la.
+          // Quem chamou já sabe se a falha é nossa ou do arquivo do aluno; essa
+          // informação morria aqui porque o portão `alertSupport === false` só
+          // aparece DEPOIS desta chamada, e por isso calava apenas o e-mail.
+          inputError: a.alertSupport === false,
         });
       }
     }
