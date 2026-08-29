@@ -23,6 +23,158 @@ export type DriveFile = {
   filename: string | null;
 };
 
+// ── HTML no lugar do arquivo: TRÊS causas diferentes, não uma ──────────────
+// Incidente #184 (29/08). O código tratava QUALQUER `text/html` como "arquivo
+// privado" e mandava o aluno arrumar o compartilhamento. Mas o Drive também
+// devolve HTML quando estoura a COTA DE DOWNLOAD DO PRÓPRIO ARQUIVO — 2009
+// bytes com `<title>Google Drive - Quota exceeded</title>` e "Too many users
+// have viewed or downloaded this file recently". Medido na pasta do
+// johnathan.ppires@gmail.com: os 4 primeiros arquivos vieram video/mp4 e do 5º
+// em diante veio essa página; minutos depois o MESMO id voltou a responder 206
+// video/mp4. Ou seja: link certo, permissão certa, limite temporário de rajada
+// — e o aluno levava a culpa por isso, parado 2 dias com 0 vozes.
+
+export type TipoHtmlDrive = "quota" | "privado" | "desconhecido";
+
+/** Cota de tráfego do arquivo estourada. Testado ANTES do login: a página de
+ *  cota também traz link de "Sign in" no rodapé e casaria com o padrão errado. */
+const RE_QUOTA = /quota exceeded|too many users have viewed or downloaded/i;
+/** Aí sim é login/privado — o diagnóstico que a mensagem antiga dava a todos. */
+const RE_LOGIN = /ServiceLogin|accounts\.google\.com|Sign in/i;
+
+/** Teto de leitura do corpo pra classificar. A página do Drive tem ~2KB; o teto
+ *  existe só pra um HTML esquisito não segurar RAM à toa. */
+const MAX_HTML_PREVIEW_BYTES = 64 * 1024;
+
+/** Tentativas por arquivo quando a resposta é cota. 3 = 1 original + 2 retentativas. */
+const MAX_TENTATIVAS_QUOTA = 3;
+/** Espera ENTRE tentativas. Com 3 tentativas só as duas primeiras são usadas (7s). */
+const BACKOFF_QUOTA_MS = [2_000, 5_000, 10_000];
+/** Teto de espera POR ARQUIVO. A rota /api/v1/onboarding/import tem maxDuration=600. */
+const TETO_ESPERA_QUOTA_MS = 30_000;
+
+/** Só a classificação, exposta pra teste. Recebe o corpo já lido. */
+export function classificarHtmlDoDrive(corpo: string): TipoHtmlDrive {
+  if (RE_QUOTA.test(corpo)) return "quota";
+  if (RE_LOGIN.test(corpo)) return "privado";
+  return "desconhecido";
+}
+
+/**
+ * A mensagem que vira o `motivo` — e o `motivo` é o que decide se o ALUNO leva
+ * e-mail de culpa (lib/onboarding/erro-dono.ts). Por isso o texto de cada caso
+ * é parte da correção, não enfeite:
+ *   quota        → NOSSO (as âncoras "limitou temporariamente"/"cota de tráfego"
+ *                  estão na regra de erro-dono.ts). O aluno não é incomodado.
+ *   privado      → ALUNO. Mantida PALAVRA POR PALAVRA a mensagem antiga: este é
+ *                  o único caso em que o diagnóstico original estava certo.
+ *   desconhecido → ALUNO, mas SEM afirmar que é permissão. Fica com o aluno de
+ *                  propósito: pela regra invertida de 22/08, o que não é
+ *                  comprovadamente nosso é avisado — um e-mail a mais custa
+ *                  menos que um aluno parado em silêncio.
+ */
+export function mensagemHtmlDoDrive(tipo: TipoHtmlDrive, fileId: string): string {
+  if (tipo === "quota") {
+    return (
+      `O Google limitou temporariamente o download do arquivo ${fileId} ` +
+      `(cota de tráfego do próprio arquivo). O link está correto; costuma liberar em até 24h.`
+    );
+  }
+  if (tipo === "privado") {
+    return `Arquivo ${fileId} não está público no Drive (veio página HTML, não o arquivo)`;
+  }
+  return `O Drive devolveu uma página HTML inesperada no lugar do arquivo ${fileId}`;
+}
+
+/** Lê no máximo `maxBytes` do corpo e cancela o resto — não usa res.text(),
+ *  que leria a resposta inteira se ela viesse grande por acidente. */
+async function lerPrefixo(res: Response, maxBytes = MAX_HTML_PREVIEW_BYTES): Promise<string> {
+  if (!res.body) {
+    try {
+      return (await res.text()).slice(0, maxBytes);
+    } catch {
+      return "";
+    }
+  }
+  const reader = res.body.getReader();
+  const partes: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (total < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        partes.push(value);
+        total += value.length;
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(partes).subarray(0, maxBytes).toString("utf8");
+}
+
+const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Injeção só pra teste: sem isto o teste do retry gastaria 7s de sono real e
+ *  precisaria de rede. Os chamadores de produção não passam nada. */
+export type DriveDeps = {
+  fetchImpl?: typeof fetch;
+  esperar?: (ms: number) => Promise<void>;
+};
+
+/**
+ * Abre o arquivo no Drive e devolve uma Response que NÃO é HTML — o corpo sai
+ * intacto pra quem chamou (buffer ou stream, tanto faz). Único ponto de fetch:
+ * antes o trecho estava duplicado nos dois downloaders e só um teria sido
+ * corrigido.
+ *
+ * Na cota, retenta com backoff em vez de recusar: hoje um throttle de segundos
+ * vira recusa definitiva do arquivo, e o aluno fica parado por causa de um
+ * limite que passa sozinho. Requeue do import inteiro NÃO é feito aqui — é
+ * decisão de produto, fora deste conserto.
+ */
+async function abrirNoDriveSemHtml(fileId: string, deps: DriveDeps): Promise<Response> {
+  const doFetch = deps.fetchImpl ?? fetch;
+  const esperar = deps.esperar ?? dormir;
+  const url =
+    `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}` +
+    `&export=download&confirm=t`;
+
+  let esperaAcumulada = 0;
+  for (let tentativa = 1; ; tentativa++) {
+    const res = await doFetch(url, {
+      redirect: "follow",
+      // 22/08: SEM o header Range o Drive devolve HTML pra arquivo grande, MESMO
+      // com confirm=t — e o código lia isso como "arquivo não está público",
+      // diagnóstico falso que mandava o aluno "liberar" um link já liberado
+      // (caso 527: 8,9GB, público, respondendo 206 com Range e HTML sem ele).
+      headers: { Range: "bytes=0-" },
+    });
+    if (!res.ok) {
+      throw new Error(`Drive respondeu ${res.status} pro arquivo ${fileId}`);
+    }
+
+    const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
+    if (!contentType.startsWith("text/html")) return res;
+
+    // HTML: agora o CORPO decide o diagnóstico, não o content-type sozinho.
+    const tipo = classificarHtmlDoDrive(await lerPrefixo(res));
+    const espera =
+      BACKOFF_QUOTA_MS[tentativa - 1] ?? BACKOFF_QUOTA_MS[BACKOFF_QUOTA_MS.length - 1] ?? 2_000;
+    if (
+      tipo === "quota" &&
+      tentativa < MAX_TENTATIVAS_QUOTA &&
+      esperaAcumulada + espera <= TETO_ESPERA_QUOTA_MS
+    ) {
+      esperaAcumulada += espera;
+      await esperar(espera);
+      continue;
+    }
+    throw new Error(mensagemHtmlDoDrive(tipo, fileId));
+  }
+}
+
 /** Extrai o filename do Content-Disposition (filename* UTF-8 ou filename=""). */
 function parseFilename(disposition: string | null): string | null {
   if (!disposition) return null;
@@ -73,6 +225,7 @@ function mimeDoNome(filename: string): string {
 export async function downloadDriveFile(
   fileId: string,
   maxBytes: number,
+  deps: DriveDeps = {},
 ): Promise<DriveFile> {
   const local = locais.get(fileId);
   if (local) {
@@ -81,29 +234,11 @@ export async function downloadDriveFile(
     if (size > maxBytes) throw new Error(`arquivo ${local.filename} de ${Math.round(size / 1e6)} MB passa do teto`);
     return { bytes: await readFile(local.path), contentType: mimeDoNome(local.filename), filename: local.filename };
   }
-  const url =
-    `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}` +
-    `&export=download&confirm=t`;
 
-  const res = await fetch(url, {
-    redirect: "follow",
-    // 22/08: SEM o header Range o Drive devolve HTML pra arquivo grande, MESMO
-    // com confirm=t — e o código lia isso como "arquivo não está público",
-    // diagnóstico falso que mandava o aluno "liberar" um link já liberado
-    // (caso 527: 8,9GB, público, respondendo 206 com Range e HTML sem ele).
-    headers: { Range: "bytes=0-" },
-  });
-  if (!res.ok) {
-    throw new Error(`Drive respondeu ${res.status} pro arquivo ${fileId}`);
-  }
-
+  // Já vem sem HTML: cota retentada, privado/desconhecido viraram erro com o
+  // dono certo (ver abrirNoDriveSemHtml).
+  const res = await abrirNoDriveSemHtml(fileId, deps);
   const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
-  // HTML = página de login/erro do Drive (arquivo privado ou id inválido).
-  if (contentType.startsWith("text/html")) {
-    throw new Error(
-      `Arquivo ${fileId} não está público no Drive (veio página HTML, não o arquivo)`,
-    );
-  }
 
   const declared = Number(res.headers.get("content-length") ?? 0);
   if (declared > maxBytes) {
@@ -136,6 +271,7 @@ export async function downloadDriveFileToPath(
   fileId: string,
   destPath: string,
   maxBytes: number,
+  deps: DriveDeps = {},
 ): Promise<{ contentType: string; bytes: number }> {
   const local = locais.get(fileId);
   if (local) {
@@ -145,26 +281,14 @@ export async function downloadDriveFileToPath(
     await copyFile(local.path, destPath);
     return { contentType: mimeDoNome(local.filename), bytes: size };
   }
-  const url =
-    `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}` +
-    `&export=download&confirm=t`;
-  const res = await fetch(url, {
-    redirect: "follow",
-    // 22/08: SEM o header Range o Drive devolve HTML pra arquivo grande, MESMO
-    // com confirm=t — e o código lia isso como "arquivo não está público",
-    // diagnóstico falso que mandava o aluno "liberar" um link já liberado
-    // (caso 527: 8,9GB, público, respondendo 206 com Range e HTML sem ele).
-    headers: { Range: "bytes=0-" },
-  });
-  if (!res.ok || !res.body) {
+
+  // Já vem sem HTML: cota retentada, privado/desconhecido viraram erro com o
+  // dono certo (ver abrirNoDriveSemHtml).
+  const res = await abrirNoDriveSemHtml(fileId, deps);
+  if (!res.body) {
     throw new Error(`Drive respondeu ${res.status} pro arquivo ${fileId}`);
   }
   const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
-  if (contentType.startsWith("text/html")) {
-    throw new Error(
-      `Arquivo ${fileId} não está público no Drive (veio página HTML, não o arquivo)`,
-    );
-  }
   const declared = Number(res.headers.get("content-length") ?? 0);
   if (declared > maxBytes) {
     throw new Error(
