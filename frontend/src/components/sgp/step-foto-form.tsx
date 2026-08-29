@@ -126,18 +126,12 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <a
-        href="/sgp/guia-foto-base.pdf"
-        target="_blank"
-        rel="noopener"
-        className="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-4 py-3 transition-colors hover:border-[var(--hairline-bright)]"
-      >
-        <span aria-hidden className="text-lg">⤓</span>
-        <span className="flex flex-col">
-          <span className="text-[14px] font-medium text-[var(--ink)]">{t("guiaTitulo")}</span>
-          <span className="text-[12px] text-[var(--mute)]">{t("guiaDescricao")}</span>
-        </span>
-      </a>
+      <div className="flex flex-col gap-1.5">
+        <a href="/sgp/guia-foto-base.pdf" target="_blank" rel="noopener" className="sgp-btn sgp-btn--block">
+          <span aria-hidden>⤓</span> {t("guiaTitulo")}
+        </a>
+        <p className="text-center text-[12px] text-[var(--mute)]">{t("guiaDescricao")}</p>
+      </div>
 
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-[14px] font-semibold text-[var(--ink)]">{t("confirmeTitulo")}</legend>
