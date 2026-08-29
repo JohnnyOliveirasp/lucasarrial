@@ -156,13 +156,26 @@ const ALVOS = [
   // "esse pagante tem produto?" — e ela sobrevive a status que ainda nem
   // existem.
   //
-  // Ficam de fora de propósito: quem nunca subiu voz (não é vítima, é quem não
-  // tentou) e quem não tem crédito para treinar (aí o gate é o crédito, não um
-  // defeito nosso). `awaiting_training` também não entra em ALVOS lá em cima:
-  // é espera legítima pelo clique do aluno (`lib/onboarding/treino.ts`), e
-  // jogar os 28 de hoje na varredura a entupiria de falso positivo todo dia.
+  // Fica de fora de propósito quem não tem crédito para treinar (aí o gate é o
+  // crédito, não um defeito nosso). `awaiting_training` também não entra em
+  // ALVOS lá em cima: é espera legítima pelo clique do aluno
+  // (`lib/onboarding/treino.ts`), e jogar os 28 de hoje na varredura a
+  // entupiria de falso positivo todo dia.
+  //
+  // ⚠️ "QUEM NUNCA SUBIU VOZ NÃO É VÍTIMA" ERA MENTIRA — corrigido no #187.
+  // Esta lista tinha `if (minhas.length === 0) continue; // nunca tentou`, e o
+  // comentário dizia que zero voz significa "não tentou". Não significa: o
+  // aluno do onboarding tenta ANTES de existir linha em `voices`, e quando o
+  // import falha na etapa do áudio a voz nunca chega a ser criada. Medido em
+  // 29/08 no Luan (`luanmarcal.com@gmail.com`): assinatura ativa, 98.425
+  // créditos, `onboarding_runs.ok = false` às 05:42 — e ele não apareceu em
+  // NENHUMA lista desta varredura por 15h, porque tinha zero voz.
+  // A prova de que tentou não mora em `voices`, mora em `onboarding_runs`.
+  // Por isso o bloco de baixo existe, e por isso ele é SEPARADO: a pergunta
+  // "tem produto?" continua valendo pra quem tem voz, e some junto com ela.
   const CUSTO_TREINO = 10000; // = TRAINING_CREDIT_COST em lib/credits/config.ts
   let semVoz = 0;
+  let tentouSemVoz = 0;
   {
     const pagina = async (tabela, cols) => {
       let acc = [];
@@ -188,6 +201,7 @@ const ALVOS = [
         porDono.get(v.user_id).push(v);
       }
       const vitimas = [];
+      const semNenhumaVoz = [];
       for (const p of perfis) {
         // ⚠️ ESTE FILTRO É `access_until` VIVO — e acesso vivo NÃO é pagamento.
         // Trial R$0 tem acesso vivo igual a assinante. Enquanto a linha 206
@@ -207,7 +221,13 @@ const ALVOS = [
         if (!(p.access_until && new Date(p.access_until) > new Date())) continue;
         if ((p.credits_subscription ?? 0) + (p.credits_extra ?? 0) < CUSTO_TREINO) continue;
         const minhas = porDono.get(p.id) ?? [];
-        if (minhas.length === 0) continue; // nunca tentou
+        // Zero voz NÃO é "nunca tentou" (#187): a tentativa pode ter morrido no
+        // import, antes de existir linha em `voices`. Sai desta lista, mas vai
+        // pro bloco próprio logo abaixo, que pergunta ao `onboarding_runs`.
+        if (minhas.length === 0) {
+          semNenhumaVoz.push(p);
+          continue;
+        }
         if (minhas.some((v) => v.status === "ready")) continue; // tem produto
         // ⚠️ a espera se conta pela PRIMEIRA tentativa (`created_at`), não pelo
         // `updated_at`: uma varredura em lote reescreve o `updated_at` de todo
@@ -239,12 +259,103 @@ const ALVOS = [
           semVoz++;
         }
       }
+
+      /**
+       * TENTOU E FALHOU ANTES DE EXISTIR A VOZ (#187).
+       *
+       * A lista de cima só enxerga quem já tem linha em `voices`. Quem quebra
+       * no import não tem — e some. A prova de que tentou é
+       * `onboarding_runs.ok = false`, que é onde o import escreve o desfecho.
+       *
+       * Vai em bloco SEPARADO de propósito, mesmo argumento do
+       * `aguardando_aluno`: não inflo o número da lista de cima (que tem outra
+       * pergunta e outra ação) e não deixo ninguém invisível.
+       *
+       * ⚠️ O QUE ESTE BLOCO AINDA NÃO VÊ — dito aqui pra ninguém ler a
+       * varredura como completa. Ele herda o gate de acesso vivo + crédito da
+       * lista de cima, então NÃO mostra quem quebrou no import e ficou sem
+       * acesso. Caso real e vivo em 29/08: Johnathan (`johnathan.ppires@`),
+       * 2 runs falhadas em 28/08, zero voz, `access_until` vencido e crédito
+       * NEGATIVO (−1.575, porque o onboarding cobrou as imagens antes de
+       * quebrar no áudio) — ele continua invisível aqui. Não abri o gate
+       * porque sem ele a lista enche de trial abandonado e vira alarme que se
+       * aprende a ignorar; quem quiser cobrir esse caso precisa de uma régua
+       * própria ("quebrou no import E foi cobrado"), não de afrouxar esta.
+       * Enquanto essa régua não existir, o caso do Johnathan mora no #180.
+       */
+      const runs = await pagina(
+        "onboarding_runs",
+        "id, user_id, email, criado_em, ok, etapa_falha, motivo",
+      );
+      // Só falha interessa, e só a MAIS RECENTE por pessoa: quem falhou às 02:12
+      // e voltou a falhar às 02:16 é uma pessoa parada, não duas.
+      const ultimaFalha = new Map();
+      for (const r of runs) {
+        if (r.ok !== false) continue;
+        // `user_id` é o casamento certo; `email` é o fallback pra run que
+        // falhou ANTES de criar a conta (aí não há user_id nenhum).
+        const chave = r.user_id ?? (r.email ? `email:${String(r.email).toLowerCase()}` : null);
+        if (!chave) continue;
+        const atual = ultimaFalha.get(chave);
+        if (!atual || new Date(r.criado_em) > new Date(atual.criado_em)) ultimaFalha.set(chave, r);
+      }
+      // ⚠️ Uma run OK POSTERIOR à falha significa que o aluno já foi destravado
+      // (ou refez sozinho) — sem isto o bloco reimprime caso resolvido todo dia
+      // e vira alarme que se aprende a ignorar, igual ao filtro "ninguém voltou"
+      // do bloco de fechados.
+      const ultimoOk = new Map();
+      for (const r of runs) {
+        if (r.ok !== true) continue;
+        const chave = r.user_id ?? (r.email ? `email:${String(r.email).toLowerCase()}` : null);
+        if (!chave) continue;
+        const atual = ultimoOk.get(chave);
+        if (!atual || new Date(r.criado_em) > new Date(atual.criado_em)) ultimoOk.set(chave, r);
+      }
+
+      const quebrados = [];
+      for (const p of semNenhumaVoz) {
+        const falha =
+          ultimaFalha.get(p.id) ??
+          (p.email ? ultimaFalha.get(`email:${String(p.email).toLowerCase()}`) : null);
+        if (!falha) continue; // zero voz e nenhuma falha de import = de fato não tentou
+        const ok =
+          ultimoOk.get(p.id) ??
+          (p.email ? ultimoOk.get(`email:${String(p.email).toLowerCase()}`) : null);
+        if (ok && new Date(ok.criado_em) > new Date(falha.criado_em)) continue; // já destravou
+        quebrados.push({ p, falha });
+      }
+      quebrados.sort((a, b) => new Date(a.falha.criado_em) - new Date(b.falha.criado_em));
+      if (quebrados.length) {
+        console.log(
+          `\n🚨 TENTOU E O IMPORT QUEBROU ANTES DE EXISTIR A VOZ: ${quebrados.length}` +
+            `\n   (zero voz NÃO é "nunca tentou" — a prova está em onboarding_runs.ok=false, #187.` +
+            `\n    acesso vivo ≠ pagou: cruze com pagou_de_verdade.cjs antes de decidir crédito)`,
+        );
+        for (const { p, falha } of quebrados) {
+          const credito = (p.credits_subscription ?? 0) + (p.credits_extra ?? 0);
+          const h = idadeHoras(falha.criado_em);
+          console.log(
+            `   ${p.email} · ${credito} créditos · import falhou em ` +
+              `${String(falha.criado_em).slice(0, 16).replace("T", " ")} ` +
+              `(há ${h < 48 ? `${h.toFixed(1)}h` : `${(h / 24).toFixed(0)} dias`})` +
+              ` · acesso até ${String(p.access_until).slice(0, 10)}`,
+          );
+          console.log(
+            `      etapa "${falha.etapa_falha ?? "?"}" · ${(falha.motivo ?? "").slice(0, 110)}`,
+          );
+          tentouSemVoz++;
+        }
+        console.log(
+          "   ⚠️  confira se o aluno JÁ FOI avisado (ler_caixa.cjs --enviados --para <email>)" +
+            " antes de escrever: aviso repetido é ruído, silêncio é abandono.",
+        );
+      }
     } catch (e) {
       // erro cru na cara: zero silencioso aqui já custou 2 alunos esquecidos
       console.log(`⚠️  detector "pagante sem voz" FALHOU: ${e.message}`);
     }
   }
-  total += semVoz;
+  total += semVoz + tentouSemVoz;
 
   // Incidentes abertos
   //
