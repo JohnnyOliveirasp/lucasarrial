@@ -153,10 +153,10 @@ async function emailEscalation(args: {
  * abertos não faz sentido"): a fila de incidentes mede a saúde do SISTEMA.
  * Pedido de atendimento (dúvida, "como faço", reclamação de resultado que
  * precisa de gente) segue a regra #82 do e-mail: abre o chamado como registro,
- * AVISA O GRUPO DO TIME e FECHA como "entregue ao time" — quem pegar responde
- * o aluno por e-mail. Só o TÉCNICO (falha de plataforma) fica aberto na fila.
- * Se o grupo não recebeu, `entregarAoTime` devolve false e o chamado FICA
- * ABERTO (nunca some sem alguém saber — é a lição da Zethe, #151).
+ * AVISA O GRUPO DO TIME. Até 28/08 fechava na hora ("entregue ao time");
+ * desde 29/08 (#153, decisão do Johnny) o chamado FICA ABERTO até alguém do
+ * time responder o aluno — fechar em 1,5s escondia o aluno da fila e virava
+ * spam no grupo a cada mensagem nova dele.
  */
 async function abrirChamadoDoChat(args: {
   email: string;
