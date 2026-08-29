@@ -450,7 +450,6 @@
         "fixedLabel": "Reference image",
         "fixedBadge": "Fixed reference",
         "replace": "Change photo",
-        "remove": "Remove photo",
         "extrasLabel": "Extra photos (optional)",
         "promote": "Use as reference",
         "historyTip": "Tip: on any image in your history, click “Use as reference” to bring it here."
@@ -2130,5 +2129,53 @@
     "server": "The file server failed to receive \"{file}\" (HTTP {status}). We tried 3 times; wait a moment and try again.",
     "rejected": "The upload of \"{file}\" was refused (HTTP {status}). Try again; if it persists, contact support.",
     "unknown": "Failed to upload \"{file}\". Try again; if it persists, contact support."
+  },
+  "sgp": {
+    "selo": "Ready Generation System",
+    "titulo": "Set up your AI Clone",
+    "subtitulo": "Fill in each step carefully. Our team will use this information to build your clone.",
+    "passos": {
+      "aria": "Steps",
+      "dados": "Details",
+      "foto": "Image",
+      "audio": "Audio",
+      "revisao": "Confirm"
+    },
+    "dados": {
+      "titulo": "Your details",
+      "descricao": "We need your details to set up your clone. All information is kept strictly confidential.",
+      "nome": "Full name",
+      "nomePlaceholder": "Your full name",
+      "whatsapp": "WhatsApp",
+      "acessoTitulo": "Your FastCloner access",
+      "acessoDescricao": "We'll create your account with this email and password. You'll get a code by email to confirm it's yours.",
+      "email": "Email",
+      "senha": "Password",
+      "senhaPlaceholder": "At least 8 characters",
+      "senha2": "Repeat password",
+      "senha2Placeholder": "Repeat password",
+      "dicaCodigo": "When you click \"Send code\", we email you a 6-digit code. Continue only unlocks after you confirm it.",
+      "enviarCodigo": "Send code",
+      "enviandoCodigo": "Sending…",
+      "codigoEnviado": "We sent a code to your email. Check your inbox (and spam).",
+      "codigoEnviadoContaExistente": "This email already has a FastCloner account. We sent a code so you can sign in and continue.",
+      "codigoLabel": "Email code",
+      "verificarEContinuar": "Confirm and continue",
+      "verificando": "Verifying…",
+      "reenviar": "Resend code",
+      "reenviarEm": "Resend in {seconds}s",
+      "codigoReenviado": "Code resent.",
+      "codigoInvalido": "Invalid or expired code. Check and try again.",
+      "muitasTentativas": "Too many attempts. Wait 1 minute.",
+      "erroGenerico": "Something went wrong. Try again.",
+      "nomeCurto": "Enter your full name.",
+      "whatsappInvalido": "Enter a valid WhatsApp number with area code.",
+      "senhasDiferem": "Passwords don't match."
+    },
+    "foto": {
+      "titulo": "Base photo for the Clone",
+      "descricao": "Upload high-quality photos to be the base of your clone.",
+      "emConstrucao": "Under construction — next SGP step."
+    }
   }
 }

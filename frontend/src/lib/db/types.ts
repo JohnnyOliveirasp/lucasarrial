@@ -63,6 +63,7 @@ export type ProfileRow = {
   last_seen_at: Timestamp | null; // heartbeat p/ "online agora" no /admin
   image_ref_key: string | null; // referência FIXA do estúdio de imagem (mig 68, onboarding via planilha)
   onboarding_ready_email_at: Timestamp | null; // e-mail "plataforma pronta" enviado (13/08)
+  whatsapp: string | null; // dígitos com DDI, informado no SGP (mig 100)
   created_at: Timestamp;
   updated_at: Timestamp;
 };
