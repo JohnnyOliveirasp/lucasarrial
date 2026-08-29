@@ -1462,7 +1462,8 @@
       "generatedIn": "· generated in {s}s",
       "savedNote": "All audio is also saved to your History.",
       "latestBar": "Latest audio",
-      "paywallAction": "generate audio"
+      "paywallAction": "generate audio",
+      "deleteAria": "Delete this audio"
     },
     "panel": {
       "startError": "Failed to start training",

@@ -41,6 +41,12 @@ export async function GET(request: NextRequest) {
     .order("created_at", { ascending: false });
   if (!auth.is_admin) {
     q = q.eq("user_id", auth.user_id);
+    // Geração que FALHOU não fica no histórico do aluno (Johnny 29/08: "deu
+    // erro, some com a 'geração falhou' e deixa sem nada"). O crédito já é
+    // estornado, então o card só deixava lixo na tela — e no reload ele
+    // voltava, como se algo ainda estivesse pendente. A linha continua no
+    // banco: suporte e /admin (is_admin) seguem vendo tudo.
+    q = q.neq("status", "failed");
   }
   if (voiceIdParam) q = q.eq("voice_id", voiceIdParam);
   if (limit) q = q.limit(limit);
