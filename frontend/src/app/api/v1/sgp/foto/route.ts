@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       status: v.aprovada ? "aprovada" : "reprovada",
       tipo: v.tipo,
       sorrindo: v.sorrindo,
+      rosto_visivel: v.rostoVisivel,
       motivos: v.motivos,
     };
     await atualizarPedido(auth.user_id, { fotos: atuais.concat(foto) });

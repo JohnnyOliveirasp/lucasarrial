@@ -34,10 +34,18 @@ export async function POST(request: NextRequest) {
       return badRequest(`Faltam ${SGP_FOTOS_MIN - aprovadas.length} foto(s) aprovada(s).`);
     }
 
+    // A referência padrão precisa mostrar o rosto (é dela que sai o clone de
+    // foto). As outras — corpo inteiro, de costas — continuam valendo como
+    // referência extra: o modelo aprende o corpo (Johnny 29/08).
+    const comRosto = aprovadas.filter((f) => f.rosto_visivel !== false);
+    if (comRosto.length === 0) {
+      return badRequest("Envie pelo menos uma foto em que dê pra ver o seu rosto.");
+    }
     const padrao =
-      aprovadas.find((f) => f.tipo === "rosto_frente" && !f.sorrindo) ??
-      aprovadas.find((f) => f.tipo === "rosto_frente") ??
-      aprovadas[0];
+      comRosto.find((f) => f.tipo === "rosto_frente" && !f.sorrindo) ??
+      comRosto.find((f) => f.tipo === "rosto_frente") ??
+      comRosto.find((f) => f.tipo === "meio_corpo") ??
+      comRosto[0];
     const { error } = await getAdmin()
       .from("profiles" as never)
       .update({ image_ref_key: padrao.key } as never)

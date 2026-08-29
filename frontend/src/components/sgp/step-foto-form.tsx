@@ -23,6 +23,7 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
   const t = useTranslations("sgp.foto");
   const router = useRouter();
   const input = useRef<HTMLInputElement | null>(null);
+  const trocando = useRef<string | null>(null);
 
   const [fotos, setFotos] = useState<EstadoFoto[]>(() =>
     iniciais.map(({ foto, url }) =>
@@ -45,10 +46,25 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
 
   function escolher(files: FileList | null) {
     if (!files) return;
+    // Veio de "Trocar": a primeira foto substitui aquela, as demais entram como novas.
+    const alvo = trocando.current;
+    trocando.current = null;
+    const lista = Array.from(files);
+    if (alvo) {
+      const [primeira, ...resto] = lista;
+      if (primeira) void remover(fotos.find((f) => f.id === alvo)!, false).then(() => enviarUma(primeira));
+      for (const f of resto.slice(0, Math.max(0, SGP_FOTOS_MAX - fotos.length))) void enviarUma(f);
+      return;
+    }
     const vagas = SGP_FOTOS_MAX - fotos.length;
-    const lista = Array.from(files).slice(0, Math.max(0, vagas));
-    if (lista.length < files.length) setErro(t("maximo", { max: SGP_FOTOS_MAX }));
-    for (const f of lista) void enviarUma(f);
+    const cortada = lista.slice(0, Math.max(0, vagas));
+    if (cortada.length < lista.length) setErro(t("maximo", { max: SGP_FOTOS_MAX }));
+    for (const f of cortada) void enviarUma(f);
+  }
+
+  function trocar(f: EstadoFoto) {
+    trocando.current = f.id;
+    input.current?.click();
   }
 
   async function enviarUma(original: File) {
@@ -90,7 +106,8 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
     }
   }
 
-  async function remover(f: EstadoFoto) {
+  async function remover(f: EstadoFoto, limparErro = true) {
+    if (limparErro) setErro(null);
     setFotos((prev) => prev.filter((x) => x.id !== f.id));
     if (f.id.includes("/")) {
       await fetch(`/api/v1/sgp/foto?key=${encodeURIComponent(f.id)}`, { method: "DELETE" }).catch(() => {});
@@ -168,9 +185,9 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
         />
 
         {fotos.length ? (
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
             {fotos.map((f) => (
-              <SgpFotoCard key={f.id} foto={f} onRemover={() => remover(f)} />
+              <SgpFotoCard key={f.id} foto={f} onTrocar={() => trocar(f)} onRemover={() => remover(f)} />
             ))}
           </div>
         ) : null}

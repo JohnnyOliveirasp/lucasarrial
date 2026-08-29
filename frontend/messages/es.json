@@ -2186,13 +2186,13 @@
         "sem_acessorios": "Sin gafas de sol, gorra o accesorios que cubran el rostro"
       },
       "fotosTitulo": "Tus fotos",
-      "fotosDica": "Aceptamos cualquier formato (JPG, PNG, HEIC de iPhone, WEBP…). Sube de {min} a {max} fotos de una vez, siguiendo la guía: de frente y de lado, neutro y sonriendo. El sistema analiza cada una y marca ✓ cuando sigue la guía.",
+      "fotosDica": "Aceptamos cualquier formato (JPG, PNG, HEIC de iPhone, WEBP…). Sube de {min} a {max} fotos tuyas de una vez: de rostro y de cuerpo, de frente y de lado. Solo rechazamos imágenes generadas por IA, fotos con más de una persona o sin persona — al menos una debe mostrar tu rostro.",
       "enviando": "Subiendo…",
       "analisando": "Analizando…",
       "aprovada": "aprobada",
       "reprovada": "rechazada",
       "indeciso": "No pudimos analizarla ahora. Intenta subirla de nuevo.",
-      "remover": "Quitar",
+      "remover": "Eliminar",
       "progresso": "{n} foto(s) aprobada(s) — mínimo {min}",
       "erroUpload": "No pudimos subir la foto.",
       "erroAnalise": "No pudimos analizar la foto.",
@@ -2201,7 +2201,8 @@
       "continuar": "Continuar",
       "salvando": "Guardando…",
       "enviarFotos": "Subir fotos",
-      "maximo": "Máximo {max} fotos."
+      "maximo": "Máximo {max} fotos.",
+      "trocar": "Cambiar"
     },
     "audio": {
       "titulo": "Audio para clonar la voz",
