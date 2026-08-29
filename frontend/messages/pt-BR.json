@@ -1462,7 +1462,8 @@
       "generatedIn": "· gerou em {s}s",
       "savedNote": "Todos os áudios também ficam salvos no Histórico.",
       "latestBar": "Último áudio",
-      "paywallAction": "gerar áudio"
+      "paywallAction": "gerar áudio",
+      "deleteAria": "Apagar este áudio"
     },
     "panel": {
       "startError": "Falha ao iniciar treinamento",
