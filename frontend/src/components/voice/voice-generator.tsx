@@ -307,7 +307,15 @@ export function VoiceGenerator({ voiceId }: Props) {
           <input
             type="checkbox"
             checked={ajustarRitmo}
-            onChange={(e) => setAjustarRitmo(e.target.checked)}
+            onChange={(e) => {
+              const ligado = e.target.checked;
+              setAjustarRitmo(ligado);
+              // Sem o QA de ritmo o worker DESCARTA o speech_rate_factor
+              // (inference.py:137-138 retorna antes de ler a 145-146). Zerar a
+              // escolha aqui evita que ela fique gravada em request_params e
+              // seja repetida no reenvio automático sem nunca ter efeito.
+              if (!ligado) setSpeed("normal");
+            }}
             className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--pill-bg)]"
           />
           <span className="flex flex-col gap-0.5">
@@ -318,7 +326,15 @@ export function VoiceGenerator({ voiceId }: Props) {
 
         {/* Ritmo (opcao B, 25/08): o QA de ritmo segura o clone na velocidade
             natural da pessoa (medida no treino); aqui o aluno desloca essa
-            regua em 15% pra baixo ou pra cima. */}
+            regua em 15% pra baixo ou pra cima.
+            ⚠️ Este seletor SO tem efeito com a caixa acima marcada: ele vira
+            `speech_rate_factor`, que multiplica a REGUA do QA de ritmo
+            (inference.py:145-146). Com o QA desligado nao existe regua, o
+            worker retorna antes (137-138) e `_ajustar_ritmo_global` no-opa
+            (158-159) — o audio sai identico. Ate 30/08 o seletor aparecia
+            sempre e a escolha era descartada em silencio, gastando credito
+            (incidente #200). Se um dia o fator passar a valer sem o QA,
+            remova o `disabled` — nao o contrario. */}
         <div className="flex flex-col gap-1.5">
           <span className="font-mono text-[11px] tracking-wide text-[var(--mute)]">
             {t("generator.speedLabel")}
@@ -333,17 +349,23 @@ export function VoiceGenerator({ voiceId }: Props) {
                 key={opt.v}
                 type="button"
                 onClick={() => setSpeed(opt.v)}
+                disabled={!ajustarRitmo}
                 aria-pressed={speed === opt.v}
-                className={`rounded-[var(--radius)] border px-3 py-1.5 font-mono text-[11px] tracking-wide transition-colors ${
+                className={`rounded-[var(--radius)] border px-3 py-1.5 font-mono text-[11px] tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                   speed === opt.v
                     ? "border-[var(--hairline-bright)] text-[var(--ink)]"
-                    : "border-[var(--hairline)] text-[var(--ash)] hover:text-[var(--ink)]"
+                    : `border-[var(--hairline)] text-[var(--ash)] ${ajustarRitmo ? "hover:text-[var(--ink)]" : ""}`
                 }`}
               >
                 {opt.label}
               </button>
             ))}
           </div>
+          {!ajustarRitmo && (
+            <span className="text-[12px] leading-[1.45] text-[var(--mute)]">
+              {t("generator.speedNeedsRateQa")}
+            </span>
+          )}
         </div>
 
         {error && <SupportError action={t("generator.supportAction")} message={error} />}

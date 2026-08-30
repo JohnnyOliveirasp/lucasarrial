@@ -1451,6 +1451,7 @@
       "speedCalm": "Calmer",
       "speedNormal": "Normal",
       "speedFast": "Faster",
+      "speedNeedsRateQa": "Pace only changes with \"Match my natural speaking pace\" enabled above. Without it, the audio comes out exactly as the model generated it.",
       "supportAction": "generate the audio",
       "generating": "Generating…",
       "generate": "Generate audio",
