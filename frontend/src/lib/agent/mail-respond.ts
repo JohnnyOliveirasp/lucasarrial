@@ -115,7 +115,12 @@ function mailSystemExtra(accountFound: boolean): string {
     accountFound
       ? `A CONTA DO ALUNO FOI IDENTIFICADA pelo e-mail do remetente — use os dados reais abaixo.`
       : `NÃO existe conta na plataforma com o e-mail do remetente. Se a dúvida depender de conta, oriente a informar o e-mail cadastrado (ou criar conta com o e-mail da compra).`,
-    `REEMBOLSO/CANCELAMENTO/COBRANÇA: acolha, lamente e diga que a equipe confirma a solicitação em breve (a garantia Hotmart de 7 dias é respeitada) e finalize com [ESCALAR: resumo]. NUNCA confirme reembolso você mesma.`,
+    // O parêntese "(a garantia Hotmart de 7 dias é respeitada)" saiu daqui no
+    // #198: lido pelo modelo como permissão pra AFIRMAR que a pessoa está na
+    // janela, foi o que produziu o "você está dentro dos 7 primeiros dias"
+    // enviado a uma compra de 12 dias atrás. Quem diz DENTRO/FORA agora é a
+    // linha GARANTIA HOTMART do bloco da conta, calculada em account.ts.
+    `REEMBOLSO/CANCELAMENTO/COBRANÇA: acolha, lamente e diga que a equipe confirma a solicitação em breve; finalize com [ESCALAR: resumo]. NUNCA confirme reembolso você mesma. Sobre a janela de 7 dias, seja obediente à linha GARANTIA HOTMART do bloco da conta: se ela disser FORA, ou não existir, NÃO afirme que há garantia — só diga que a equipe vai verificar.`,
     `Se o e-mail NÃO for um aluno/cliente pedindo ajuda (propaganda, spam, notificação de sistema, corrente), responda APENAS a palavra PULAR.`,
   ].join("\n");
 }
