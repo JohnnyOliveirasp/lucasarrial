@@ -55,6 +55,31 @@ function comparar(transcript, ouvido) {
     palavras_texto: T.length, palavras_audio: A.length };
 }
 
+
+/**
+ * #193 (29/08) — O PORTAO QUE FALTAVA. O whisper INVENTA o final quando o
+ * ref/auto.wav corta no meio da frase: 3 chamadas no mesmo clipe de 30s deram
+ * 3 finais diferentes (voz 1d332ef0), e a cura gravou a invencao — injetou a
+ * cauda fantasma que existe pra remover. Placar auditado: 2 de 6 curas
+ * pioraram o dado. Cortando SO os ultimos 4s e transcrevendo 3x, a cauda sai
+ * IDENTICA nas 3 quando e real. Instavel = alucinacao = NAO GRAVAR.
+ */
+const { execFileSync } = require("node:child_process");
+const CAUDA_S = 4;
+async function medirCauda(buf) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cauda-"));
+  const entrada = path.join(dir, "ref.wav"), saida = path.join(dir, "cauda.wav");
+  fs.writeFileSync(entrada, buf);
+  try {
+    execFileSync("ffmpeg", ["-v", "error", "-sseof", `-${CAUDA_S}`, "-i", entrada, "-y", saida]);
+    const cauda = fs.readFileSync(saida);
+    const leituras = [];
+    for (let i = 0; i < 3; i++) leituras.push(norm((await transcrever(cauda)).text).join(" "));
+    const estavel = leituras.every((l) => l === leituras[0]) && leituras[0].length > 0;
+    return { estavel, cauda: leituras[0], leituras };
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
 async function medir() {
   const limite = parseInt(arg("--limite") || "30", 10);
   const desde = arg("--desde") || "2000-01-01";
@@ -90,6 +115,13 @@ async function curar(voiceId) {
   const cmp = comparar(v.reference_transcript, j.text);
   console.log(`voz "${v.name}"\nANTES : …${(v.reference_transcript || "").slice(-80)}\nÁUDIO : …${novo.slice(-80)}\n${cmp.ok ? "pontas batem — nada a curar" : "DIVERGE: " + cmp.motivo}`);
   if (!tem("--confirmar")) { console.log("\n(simulação — --confirmar grava)"); return; }
+  // #193: tres portoes antes de escrever em voz de aluno.
+  const m = await medirCauda(buf);
+  if (!m.estavel) throw new Error(`cauda INSTAVEL (3 leituras: ${JSON.stringify(m.leituras)}) — whisper alucinando, NAO gravo`);
+  const nCauda = m.cauda.split(" ").length;
+  if (norm(v.reference_transcript).slice(-nCauda).join(" ") === m.cauda) throw new Error(`cauda medida ("…${m.cauda}") JA E a do transcript — nada a curar, NAO gravo`);
+  if (!norm(novo).join(" ").endsWith(m.cauda)) throw new Error(`texto novo NAO termina na cauda medida ("…${m.cauda}") — o clipe inteiro alucinou, NAO gravo`);
+  console.log(`cauda estavel 3/3: "…${m.cauda}" — portoes ok`);
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUT_DIR, `transcript_backup_${v.id.slice(0, 8)}_${Date.now().toString(36)}.txt`), v.reference_transcript || "");
   const { error } = await s.from("voices").update({ reference_transcript: novo }).eq("id", v.id);

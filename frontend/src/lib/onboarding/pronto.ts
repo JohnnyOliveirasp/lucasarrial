@@ -27,6 +27,19 @@ Acesse: https://fastcloner.com/login
 
 — Equipe FastCloner`;
 
+// #189: assinante ativo cuja voz ficou pronta mas NENHUMA imagem entrou. Dizer
+// "sua imagem está configurada" aqui era mentira com prova na caixa Sent.
+const EMAIL_ASSUNTO_SEM_IMAGEM = "Sua voz está pronta! 🎙️ (falta só a foto)";
+const EMAIL_TEXTO_SEM_IMAGEM = `Sua voz está pronta! 🎙️
+
+Já configuramos a sua voz na FastCloner e testamos: está funcionando. Você já pode entrar e gerar áudios com a sua voz treinada.
+
+A parte de IMAGEM ainda não foi feita: as suas fotos não chegaram até nós. É só responder este e-mail com as fotos que a gente termina a configuração — você não precisa refazer mais nada.
+
+Acesse: https://fastcloner.com/login
+
+— Equipe FastCloner`;
+
 const BCC_ADMINS = ["johnny.oliveirasp@gmail.com"];
 
 export type ProntoStatus = {
@@ -177,18 +190,29 @@ export async function verificarOnboardingPronto(admin: Admin, userId: string): P
     // saldo — decisão dele.
     const ativo = hasActiveAccess(email, claimed?.[0]?.access_until as string | null);
 
+    // #189 (29/08): `pronto` fica true com ZERO avatar de propósito (decisão de
+    // 22/08 — a voz de pé basta pra fechar a linha, senão quem perdeu as
+    // imagens ficava preso pra sempre). O erro não era fechar; era o E-MAIL
+    // afirmar "suas imagens estão ok" pra quem tinha zero imagem — 336s depois
+    // de outro e-mail dizendo que as imagens tinham falhado (marcosvidal2013).
+    // A régua continua a mesma; o texto passa a dizer a verdade. Vale também
+    // pro SGP, que usa este mesmo statusOnboarding.
+    const semImagem = st.avatares_prontos === 0;
+
     try {
       if (ativo) {
         await sendSupportMail({
           to: email,
-          subject: EMAIL_ASSUNTO,
-          text: EMAIL_TEXTO,
+          subject: semImagem ? EMAIL_ASSUNTO_SEM_IMAGEM : EMAIL_ASSUNTO,
+          text: semImagem ? EMAIL_TEXTO_SEM_IMAGEM : EMAIL_TEXTO,
           bcc: BCC_ADMINS,
         });
       } else {
-        await avisoOkMasAssine(email);
+        await avisoOkMasAssine(email, semImagem);
       }
-      console.log(`[onboarding/pronto] e-mail enviado (${ativo ? "pronto" : "assine"}): ${email}`);
+      console.log(
+        `[onboarding/pronto] e-mail enviado (${ativo ? "pronto" : "assine"}${semImagem ? ", sem imagem" : ""}): ${email}`,
+      );
     } catch (e) {
       // Falhou o envio → devolve o claim pra retry no próximo webhook/sweep.
       await admin
