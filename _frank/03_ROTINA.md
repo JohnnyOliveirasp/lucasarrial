@@ -57,8 +57,14 @@ git am /caminho/do.patch
    e o revisor foi você. **Não convencido → NÃO MERGEIE**: escreva a objeção
    como nota no incidente e deixe a branch publicada. Backlog é melhor que
    regressão.
-6. Aplicado ou recusado, apague a chave (`set_state` com value null) pra não
-   reprocessar todo dia.
+6. Aplicado ou recusado, apague a chave **com `DELETE`** (`delete from
+   agent_state where key = '<a chave>'`) pra não reprocessar todo dia.
+   ⚠️ **Não use `set_state` com value null**: `agent_state.value` é NOT NULL, o
+   UPDATE volta `23502` e **a chave continua lá**. Medido em 30/08 numa chave
+   descartável: `update ... set value = null` → `23502 "null value in column
+   value violates not-null constraint"`, a linha permanece; `delete` → 1 linha
+   apagada, 0 sobrando. Foi essa instrução errada que fez três rondas seguidas
+   "limparem" sem limpar e 28 recados empilharem até ~70h.
 
 ⚠️ Patch que não aplica (`git am` falha) quase sempre é base velha: o dele saiu
 de `origin/main` no momento da rodada. Rebase em cima do main de agora e siga —
@@ -82,7 +88,15 @@ where key like 'para\_frank\_%'
 order by updated_at desc;
 ```
 
-Tratou? Apague a chave (`set_state` com value null) pra não reprocessar amanhã.
+Tratou? Apague a chave **com `DELETE`**, não com `set_state` value null:
+
+```sql
+delete from agent_state where key = 'para_frank_<id>';
+```
+
+⚠️ `agent_state.value` é NOT NULL. O `update ... set value = null` volta `23502`
+e **deixa a chave no lugar** — quem seguiu a versão antiga desta linha achou que
+tinha limpado e não tinha (medido em 30/08; ver §1-B).
 
 ⚠️ Se o recado citar incidente, responda **no incidente**, não só no Telegram —
 o grupo rola e some; o incidente fica.
