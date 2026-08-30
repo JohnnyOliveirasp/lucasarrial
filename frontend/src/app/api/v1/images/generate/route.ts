@@ -31,7 +31,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { getBalance, debitCredits } from "@/lib/credits/service";
 import { imagesBucket } from "@/lib/r2/client";
-import { objectExists } from "@/lib/r2/exists";
+import { objectHead } from "@/lib/r2/exists";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import {
   ASPECT_VALUES,
@@ -55,6 +55,9 @@ const PROMPT_MAX = 20_000; // limite do gpt-image-2
 // gpt-image-2 aceita até 16; o fallback Seedream corta sozinho em 10 (a fixa
 // vai primeiro no array, então ela nunca fica de fora).
 const MAX_REFERENCE_IMAGES = 15;
+// Teto do PESO SOMADO das referências (#199). Ver o bloco que usa esta
+// constante: a contagem sozinha nunca pegou o caso de 340 MB em 14 fotos.
+const MAX_REFERENCE_BYTES = 150 * 1024 * 1024;
 
 type Body = {
   // Aceita uma (input_image_key) ou várias (input_image_keys) — várias fotos da
@@ -174,12 +177,40 @@ export async function POST(request: NextRequest) {
   // Referência morta (foto apagada junto com uma geração antiga do histórico,
   // caso 06/08): valida ANTES de criar a task no Kie — erro claro, sem cobrar,
   // em vez de "Image fetch failed" já cobrado + estorno + rajada de retries.
-  const existence = await Promise.all(inputKeys.map((k) => objectExists(imagesBucket(), k)));
-  if (existence.some((ok) => !ok)) {
+  const heads = await Promise.all(inputKeys.map((k) => objectHead(imagesBucket(), k)));
+  if (heads.some((h) => !h.exists)) {
     return jsonError(
       "reference_missing",
       "Uma das fotos de referência não existe mais (ela foi apagada junto com uma geração antiga do histórico). Remova essa referência e adicione a foto de novo — você não foi cobrado por esta tentativa.",
       400,
+    );
+  }
+
+  // PESO das referências (#199, 30/08). O aluno mandou 14 fotos originais de
+  // câmera — 340 MB somados — e o Kie recusou com "generate playground failed,
+  // task id is blank". Três vezes. Ele tentou três vezes porque a NOSSA
+  // mensagem de falha mandava "tente de novo em alguns minutos", e essa falha
+  // é DETERMINÍSTICA: o mesmo payload nunca ia passar. Cada tentativa cobrou e
+  // estornou 525 créditos, e o aluno só se destravou sozinho ao usar menos fotos.
+  //
+  // A régua vem da medição do Frank (HeadObject nos bytes reais): até ~129 MB
+  // gerou ready, a partir de ~317 MB falhou 3/3, nas duas famílias de modelo.
+  // A CONTAGEM não separa nada (15 refs geraram ready 20 vezes pra 11 alunos),
+  // por isso o `MAX_REFERENCE_IMAGES` sozinho nunca pegou este caso. O limiar
+  // exato do Kie não é público: 150 MB fica acima do maior sucesso observado e
+  // bem abaixo do menor fracasso — e barrar aqui é grátis, enquanto deixar
+  // passar custa uma cobrança, um estorno e um aluno achando que quebrou.
+  const totalBytes = heads.reduce((s, h) => s + (h.bytes ?? 0), 0);
+  if (totalBytes > MAX_REFERENCE_BYTES) {
+    const mb = (n: number) => `${(n / 1024 / 1024).toFixed(0)} MB`;
+    return jsonError(
+      "references_too_large",
+      `As suas ${inputKeys.length} fotos de referência somam ${mb(totalBytes)}, e o limite é ${mb(MAX_REFERENCE_BYTES)} — ` +
+        `o gerador recusa antes de começar. Não adianta tentar de novo com as mesmas fotos: ` +
+        `use menos fotos, ou fotos mais leves (as originais de câmera são bem pesadas; ` +
+        `uma foto tirada pelo celular ou uma versão reduzida resolve). Você não foi cobrado por esta tentativa.`,
+      400,
+      { total_bytes: totalBytes, max_bytes: MAX_REFERENCE_BYTES, count: inputKeys.length },
     );
   }
 
