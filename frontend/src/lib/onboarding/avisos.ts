@@ -157,7 +157,26 @@ export async function avisoTudoPronto(email: string): Promise<void> {
  * estão ok e já processados; falta só o acesso. ⚠️ Por decisão do Johnny
  * (21/08) NÃO fala de saldo nem de cobrança — só que está tudo ok.
  */
-export async function avisoOkMasAssine(email: string): Promise<void> {
+/**
+ * @param semImagem nenhum avatar ficou pronto — o texto NÃO pode dizer que as
+ *   imagens estão ok. Ver o incidente #189 no bloco de `pronto.ts`.
+ */
+export async function avisoOkMasAssine(email: string, semImagem = false): Promise<void> {
+  if (semImagem) {
+    await mandar(
+      email,
+      "Sua voz está pronta — e falta a sua foto",
+      `A sua VOZ terminou o treino e já está configurada na FastCloner. 🎙️\n\n` +
+        `Mas as suas FOTOS não chegaram até nós, então a parte de imagem ainda ` +
+        `não foi feita. É só responder este e-mail com as suas fotos que a gente ` +
+        `termina — você não precisa refazer mais nada.\n\n` +
+        `Para usar a plataforma — gerar vídeos, cenários e áudios com a sua voz — ` +
+        `você também precisa ativar a sua assinatura.\n\n` +
+        `Assine aqui: ${ASSINAR_URL}\n\n` +
+        `Assim que ativar, é só entrar em ${LOGIN_URL}.`,
+    );
+    return;
+  }
   await mandar(
     email,
     "Seus arquivos estão prontos — falta só o acesso",
