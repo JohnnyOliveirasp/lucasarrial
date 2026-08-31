@@ -135,6 +135,8 @@
         "pickFolder": "Escolher pasta"
       },
       "measuring": "medindo…",
+      "measureFailed": "não deu pra medir",
+      "retryMeasure": "Tentar medir de novo",
       "uploading": "Subindo arquivos…",
       "submitting": "Preparando…",
       "train": "Treinar voz ({duration})",
@@ -156,7 +158,16 @@
         "unsupportedSkipped": "{count} arquivo(s) ficaram de fora por não serem um formato de áudio reconhecido: {names}",
         "network": "Falha de rede. Verifique sua conexão.",
         "uploadFailed": "{count} arquivo(s) falharam ao subir. Tente de novo.",
-        "generic": "Algo deu errado. Tente novamente."
+        "generic": "Algo deu errado. Tente novamente.",
+        "measureFailed": {
+          "timeout": "demorou demais pra ler a duração",
+          "formato": "este navegador não conseguiu abrir o arquivo",
+          "semDuracao": "o arquivo não informa a duração",
+          "navegador": "este navegador não sabe medir este arquivo",
+          "generico": "não foi possível medir"
+        },
+        "measureBlocked": "{count} arquivo(s) não puderam ser medidos, então NÃO estão somando no total — é por isso que o botão Treinar está desligado. Saídas: converta esses arquivos para MP3 ou WAV e envie de novo, remova-os da lista, ou adicione mais gravação até somar {min}min só com os que foram medidos.",
+        "measureNotCounted": "{count} arquivo(s) não puderam ser medidos e não estão somando no total. O mínimo já foi atingido sem eles, e eles sobem junto para o treino."
       }
     }
   },

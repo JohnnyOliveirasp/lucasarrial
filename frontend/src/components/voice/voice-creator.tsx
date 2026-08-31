@@ -4,9 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { Upload, X, AudioLines, Check, FolderUp, Mic } from "lucide-react";
-import { measureAudioDuration, formatDuration } from "@/lib/audio/duration";
+import { medirDuracao, formatDuration, type MotivoFalhaMedicao } from "@/lib/audio/duration";
+import {
+  chaveDoMotivo,
+  estadoDoItem,
+  resumirMedicao,
+  vaiAdiantarTentarDeNovo,
+} from "@/lib/audio/medicao";
 import { filterAudioFiles, gatherAudioFromDataTransfer } from "@/lib/audio/collect";
 import { listClips, deleteClip } from "@/lib/audio/clip-store";
+import { clientLogger } from "@/lib/logger/client";
 
 const MIN_DURATION_SECONDS = 20 * 60; // 20 minutos
 // Teto: treino com áudio demais estoura o tempo máximo de execução do worker
@@ -19,12 +26,24 @@ const ACCEPT = ".mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4,.aac,.opus,audio/*";
 type LocalFile = {
   id: string;
   file: File;
-  duration: number | null;     // null enquanto mede
+  duration: number | null;     // null enquanto mede OU se a medição falhou
+  /**
+   * Preenchido só quando a medição FALHOU. É o que separa "ainda estou
+   * medindo" de "não consegui medir" — antes os dois eram o mesmo `null` e a
+   * tela mostrava "medindo…" pra sempre nos dois casos (incidente #203).
+   */
+  falhaMedicao?: MotivoFalhaMedicao;
   progress: number;            // 0..100
   state: "idle" | "uploading" | "done" | "error";
   error?: string;
   key?: string;                // R2 key (preenchido após receber upload_slot)
 };
+
+/** Extensão pra telemetria. Sem o nome do arquivo — ele costuma ter o nome da pessoa. */
+function extensaoDe(nome: string): string {
+  const i = nome.lastIndexOf(".");
+  return i > 0 ? nome.slice(i + 1).toLowerCase() : "sem-extensao";
+}
 
 /**
  * Assinatura de um áudio para efeito de repetição: **nome + tamanho**.
@@ -146,17 +165,18 @@ export function VoiceCreator() {
             const blob = await fetch(t.url).then((r) => r.blob());
             const file = new File([blob], t.name, { type: "audio/mpeg" });
             // MP3 do servidor tem cabeçalho — duração dá pra medir no <audio>.
-            const duration = await new Promise<number>((resolve) => {
-              const a = document.createElement("audio");
-              const u = URL.createObjectURL(file);
-              const done = (n: number) => { URL.revokeObjectURL(u); resolve(n); };
-              a.preload = "metadata";
-              a.onloadedmetadata = () => done(Number.isFinite(a.duration) ? a.duration : 0);
-              a.onerror = () => done(0);
-              setTimeout(() => done(0), 5000);
-              a.src = u;
+            // Usa a MESMA medição do upload (antes era uma cópia inline com
+            // fallback 0 e timeout de 5s: o take que não media virava 00:00
+            // silencioso — mesma família do #203, um caminho de código só).
+            const medida = await medirDuracao(file);
+            additions.push({
+              id: `cel-${t.key}`,
+              file,
+              duration: medida.ok ? medida.segundos : null,
+              falhaMedicao: medida.ok ? undefined : medida.motivo,
+              progress: 0,
+              state: "idle",
             });
-            additions.push({ id: `cel-${t.key}`, file, duration, progress: 0, state: "idle" });
             phoneTakeKeys.current.push(t.key);
           } catch { /* take individual falhou — segue os outros */ }
         }
@@ -177,13 +197,22 @@ export function VoiceCreator() {
     }
   }, []);
 
-  const totalDuration = useMemo(
-    () => files.reduce((acc, f) => acc + (f.duration ?? 0), 0),
+  // A régua da medição vive em lib/audio/medicao.ts (pura e testada). Aqui só
+  // se lê o resumo — inclusive `bloqueadoPorFalha`, que é o que permite
+  // EXPLICAR o botão apagado em vez de deixar o aluno adivinhando.
+  const resumo = useMemo(
+    () =>
+      resumirMedicao(
+        files.map((f) => ({ duracao: f.duration, falha: f.falhaMedicao })),
+        MIN_DURATION_SECONDS,
+        MAX_DURATION_SECONDS,
+      ),
     [files],
   );
-  const overMaximum = totalDuration > MAX_DURATION_SECONDS;
-  const meetsMinimum = totalDuration >= MIN_DURATION_SECONDS && !overMaximum;
-  const missing = Math.max(0, MIN_DURATION_SECONDS - totalDuration);
+  const totalDuration = resumo.total;
+  const overMaximum = resumo.acimaDoMaximo;
+  const meetsMinimum = resumo.atingeMinimo;
+  const missing = resumo.faltam;
 
   // Quantos nomes de arquivo descartado mostramos por extenso na mensagem;
   // acima disso a mensagem viraria um parágrafo (pasta com dezenas de fotos).
@@ -204,6 +233,54 @@ export function VoiceCreator() {
     },
     [t],
   );
+
+  /**
+   * Mede UM arquivo e grava o desfecho — medido ou falhou, nunca um limbo.
+   *
+   * O defeito do #203 morava aqui: o `.then` gravava o `null` da falha como se
+   * fosse duração e não havia `.catch` nenhum, então qualquer tropeço deixava
+   * o arquivo em `duration: null` pra sempre — que a tela renderizava como
+   * "medindo…". Agora todo caminho termina em `duration` OU `falhaMedicao`.
+   */
+  const medirItem = useCallback(async (id: string, file: File) => {
+    // Volta pro estado "medindo" (importante no botão de tentar de novo).
+    setFiles((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, duration: null, falhaMedicao: undefined } : f)),
+    );
+
+    const marcarFalha = (motivo: MotivoFalhaMedicao, motivoMetadata?: MotivoFalhaMedicao) => {
+      setFiles((prev) =>
+        prev.map((f) => (f.id === id ? { ...f, duration: null, falhaMedicao: motivo } : f)),
+      );
+      // Telemetria: este defeito não deixava NENHUM rastro no servidor (não
+      // cria voice, não sobe pro R2, não loga) — só aparecia se o aluno
+      // reclamasse. Sem PII: formato, tamanho e motivo, nunca o nome.
+      clientLogger.warn("voz: medicao de audio falhou no browser", {
+        motivo,
+        motivoMetadata,
+        extensao: extensaoDe(file.name),
+        mime: file.type || "sem-mime",
+        bytes: file.size,
+      });
+    };
+
+    try {
+      const r = await medirDuracao(file);
+      if (r.ok) {
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === id ? { ...f, duration: r.segundos, falhaMedicao: undefined } : f,
+          ),
+        );
+        return;
+      }
+      marcarFalha(r.motivo, r.motivoMetadata);
+    } catch {
+      // medirDuracao não deveria lançar, mas se lançar o arquivo NÃO pode
+      // voltar pro limbo de "medindo…" — era assim que o aluno ficava preso.
+      marcarFalha("excecao");
+    }
+  }, []);
 
   const addFiles = useCallback(async (incoming: File[], descartados: File[] = []) => {
     // Dedup contra arquivos já na lista — ver `assinaturaAudio` (nome+tamanho;
@@ -265,13 +342,9 @@ export function VoiceCreator() {
 
     // Medir duração em paralelo (não bloqueia)
     for (const item of additions) {
-      measureAudioDuration(item.file).then((duration) => {
-        setFiles((prev) =>
-          prev.map((f) => (f.id === item.id ? { ...f, duration } : f)),
-        );
-      });
+      void medirItem(item.id, item.file);
     }
-  }, [files.length, t, msgDescartados]);
+  }, [files.length, t, msgDescartados, medirItem]);
 
   function removeFile(id: string) {
     setFiles((prev) => prev.filter((f) => f.id !== id));
@@ -473,7 +546,31 @@ export function VoiceCreator() {
       )}
 
       {files.length > 0 && (
-        <FileList files={files} onRemove={removeFile} t={t} />
+        <FileList files={files} onRemove={removeFile} onRemeasure={medirItem} t={t} />
+      )}
+
+      {/*
+        O aviso que faltava. Arquivo não medido vale 0 no total — o que é
+        honesto, já que ninguém leu a duração dele — mas ficar CALADO sobre
+        isso é o defeito do #203: o aluno via o botão morto sem uma linha de
+        explicação. Agora ele lê por que está travado e o que fazer.
+      */}
+      {resumo.falhados > 0 && (
+        <p
+          role="alert"
+          className={`rounded-[var(--radius)] border px-3 py-2 font-mono text-[11px] leading-relaxed tracking-wide ${
+            resumo.bloqueadoPorFalha
+              ? "border-[var(--status-error)]/40 bg-[var(--surface-card)] text-[var(--status-error)]"
+              : "border-[var(--hairline-bright)] bg-[var(--surface-elevated)] text-[var(--mute)]"
+          }`}
+        >
+          {resumo.bloqueadoPorFalha
+            ? t("errors.measureBlocked", {
+                count: resumo.falhados,
+                min: Math.round(MIN_DURATION_SECONDS / 60),
+              })
+            : t("errors.measureNotCounted", { count: resumo.falhados })}
+        </p>
       )}
 
       <DurationMeter
@@ -685,27 +782,60 @@ function Dropzone({
 function FileList({
   files,
   onRemove,
+  onRemeasure,
   t,
 }: {
   files: LocalFile[];
   onRemove: (id: string) => void;
+  onRemeasure: (id: string, file: File) => void;
   t: TFn;
 }) {
   const tc = useTranslations("voiceCreate");
   return (
     <ul className="flex flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)]">
-      {files.map((f, i) => (
+      {files.map((f, i) => {
+        // Três estados DISTINTOS. Antes "medindo" e "falhou" eram o mesmo
+        // `null` e os dois apareciam como "medindo…" — o aluno nunca sabia
+        // que a medição tinha desistido (incidente #203).
+        const estado = estadoDoItem({ duracao: f.duration, falha: f.falhaMedicao });
+        return (
         <li
           key={f.id}
           className={`flex items-center gap-3 bg-[var(--surface-card)] px-4 py-3 ${
             i > 0 ? "border-t border-[var(--hairline)]" : ""
           }`}
         >
-          <AudioLines className="h-4 w-4 flex-shrink-0 text-[var(--silver)]" />
+          <AudioLines
+            className={`h-4 w-4 flex-shrink-0 ${
+              estado === "falhou" ? "text-[var(--status-error)]" : "text-[var(--silver)]"
+            }`}
+          />
           <span className="flex-1 truncate text-sm text-[var(--ink)]">{f.file.name}</span>
-          <span className="font-mono text-[10px] tabular-nums text-[var(--ash)]">
-            {f.duration == null ? t("measuring") : formatDuration(f.duration)}
-          </span>
+          {estado === "falhou" && f.falhaMedicao ? (
+            <>
+              <span className="text-right font-mono text-[10px] leading-tight text-[var(--status-error)]">
+                {t("measureFailed")}
+                <span className="hidden sm:inline">
+                  {" · "}
+                  {t(`errors.measureFailed.${chaveDoMotivo(f.falhaMedicao)}`)}
+                </span>
+              </span>
+              {vaiAdiantarTentarDeNovo(f.falhaMedicao) && (
+                <button
+                  type="button"
+                  onClick={() => onRemeasure(f.id, f.file)}
+                  disabled={f.state === "uploading"}
+                  className="font-mono text-[10px] text-[var(--mute)] underline transition-colors hover:text-[var(--ink)] disabled:opacity-30"
+                >
+                  {t("retryMeasure")}
+                </button>
+              )}
+            </>
+          ) : (
+            <span className="font-mono text-[10px] tabular-nums text-[var(--ash)]">
+              {estado === "medindo" ? t("measuring") : formatDuration(f.duration ?? 0)}
+            </span>
+          )}
           {f.state === "uploading" && (
             <span className="font-mono text-[10px] tabular-nums text-[var(--silver)]">
               {f.progress}%
@@ -722,7 +852,8 @@ function FileList({
             <X className="h-4 w-4" />
           </button>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }

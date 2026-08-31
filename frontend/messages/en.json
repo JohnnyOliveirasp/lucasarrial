@@ -131,6 +131,8 @@
         "pickFolder": "Pick folder"
       },
       "measuring": "measuring…",
+      "measureFailed": "couldn't measure",
+      "retryMeasure": "Try measuring again",
       "uploading": "Uploading…",
       "submitting": "Preparing…",
       "train": "Train voice ({duration})",
@@ -152,7 +154,16 @@
         "unsupportedSkipped": "{count} file(s) were left out because they are not a recognized audio format: {names}",
         "network": "Network failure. Check your connection.",
         "uploadFailed": "{count} file(s) failed to upload. Try again.",
-        "generic": "Something went wrong. Try again."
+        "generic": "Something went wrong. Try again.",
+        "measureFailed": {
+          "timeout": "took too long to read the duration",
+          "formato": "this browser couldn't open the file",
+          "semDuracao": "the file doesn't report its duration",
+          "navegador": "this browser can't measure this file",
+          "generico": "could not be measured"
+        },
+        "measureBlocked": "{count} file(s) couldn't be measured, so they are NOT counting toward the total — that's why the Train button is off. Ways out: convert them to MP3 or WAV and upload again, remove them from the list, or add more recording until the measured files alone reach {min}min.",
+        "measureNotCounted": "{count} file(s) couldn't be measured and are not counting toward the total. The minimum was already reached without them, and they still get uploaded for training."
       }
     }
   },
