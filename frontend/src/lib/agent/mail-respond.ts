@@ -23,6 +23,7 @@ import { extractEscalation } from "./escalate";
 import { agentEnabled } from "./respond";
 import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
 import { sendSupportMail } from "./mail-smtp";
+import { tratarSeForBounce } from "./mail-bounce-registro";
 import { winbackContextByEmail, applyWinbackMarkers } from "@/lib/winback/conversation";
 
 const BODY_MAX = 4000; // o que vai pro modelo (e-mails têm assinatura/quote longos)
@@ -133,6 +134,8 @@ export type MailSweepSummary = {
   skipped: number;
   escalated: number;
   errors: number;
+  /** Relatórios de entrega que voltaram e viraram caso (#201). */
+  bounces: number;
 };
 
 /**
@@ -264,12 +267,30 @@ async function responderAnexoGrande(
   return "replied";
 }
 
-async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "skipped" | "escalated"> {
+async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "skipped" | "escalated" | "bounce"> {
   const raw = mail.raw;
   const fromHeader = header(raw, "From");
   const fromEmail = (fromHeader.match(/<([^>]+)>/)?.[1] ?? fromHeader).trim().toLowerCase();
   const subject = header(raw, "Subject") || "(sem assunto)";
   const messageId = header(raw, "Message-ID") || null;
+
+  // BOUNCE ANTES DE TUDO (#201). A resposta que voltou chega como e-mail comum
+  // na INBOX, e os dois filtros seguintes a matavam em silêncio: `SKIP_FROM`
+  // casa `mailer-daemon`/`privateemail.com` e o `Auto-Submitted: auto-replied`
+  // do relatório casa a regra de auto-submitted. Nos dois casos ia direto pro
+  // markSeen sem ninguém olhar — 21 bounces em 23 dias, nenhum tratado.
+  //
+  // Fica acima do ramo `oversized` de propósito: bounce carrega a mensagem
+  // original anexada e pode passar do teto. Truncado ele ainda serve, porque
+  // o destinatário que falhou vem no cabeçalho (X-Failed-Recipients).
+  const bounce = await tratarSeForBounce(raw);
+  if (bounce) {
+    await markSeen(mail.uid);
+    // "atraso" e bounce de cópia interna não são silêncio de aluno: contam
+    // como skipped pra métrica não inflar e ninguém achar que 5 alunos
+    // ficaram sem resposta quando o servidor só ia tentar de novo.
+    return bounce.tipo === "falha" && bounce.alunos.length > 0 ? "bounce" : "skipped";
+  }
 
   if (mail.oversized) {
     if (shouldSkip(raw, fromEmail) || !fromEmail.includes("@")) {
@@ -388,7 +409,7 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
 
 /** Uma varredura completa (chamada pelo cron). Best-effort por mensagem. */
 export async function sweepSupportMail(): Promise<MailSweepSummary> {
-  const summary: MailSweepSummary = { scanned: 0, replied: 0, skipped: 0, escalated: 0, errors: 0 };
+  const summary: MailSweepSummary = { scanned: 0, replied: 0, skipped: 0, escalated: 0, errors: 0, bounces: 0 };
   if (!supportMailConfigured() || process.env.AGENT_MAIL_ENABLED !== "1") return summary;
   if (!(await agentEnabled())) return summary; // interruptor geral da Fast vale aqui
 
@@ -416,6 +437,7 @@ export async function sweepSupportMail(): Promise<MailSweepSummary> {
       const outcome = await respondOne(mail, bcc);
       if (outcome === "replied") summary.replied += 1;
       else if (outcome === "escalated") summary.escalated += 1;
+      else if (outcome === "bounce") summary.bounces += 1;
       else summary.skipped += 1;
     } catch (e) {
       // NÃO marca como lida — tenta de novo na próxima varredura.

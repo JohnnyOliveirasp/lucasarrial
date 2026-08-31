@@ -185,8 +185,13 @@ export async function fetchUnseen(limit = 10): Promise<RawMail[]> {
       if (tamanho > MAIL_MAX_BYTES) {
         // Só os cabeçalhos: dá pra saber quem escreveu e sobre o quê, sem
         // arrastar o anexo. Quem responde decide o que fazer (ver mail-respond).
+        //
+        // X-FAILED-RECIPIENTS entrou na lista por causa do #201: bounce carrega
+        // a mensagem original anexada e pode passar do teto. Sem esse cabeçalho
+        // o bounce truncado não diz PARA QUEM a entrega falhou — a triagem
+        // morreria justamente no dado que a torna útil.
         const bufH = await session.commandRaw(
-          `UID FETCH ${uid} BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID REPLY-TO)]`,
+          `UID FETCH ${uid} BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID REPLY-TO X-FAILED-RECIPIENTS)]`,
         );
         const raw = extrairLiteral(bufH);
         out.push({ uid, raw, oversized: true, sizeBytes: tamanho });
