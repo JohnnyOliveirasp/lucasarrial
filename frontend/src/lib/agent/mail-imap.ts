@@ -126,6 +126,13 @@ export type RawMail = {
   oversized?: boolean;
   /** Tamanho real da mensagem na caixa, em bytes. */
   sizeBytes?: number;
+  /**
+   * Mensagem oversized: o TEXTO que o aluno escreveu, buscado sozinho como
+   * parte MIME (BODY.PEEK[n]) sem arrastar o anexo. Ausente quando a mensagem
+   * não tem parte de texto (só anexo) ou quando a extração falhou — nesse caso
+   * quem responde cai no comportamento antigo (pedir reenvio sem anexo).
+   */
+  textoParcial?: string;
 };
 
 /**
@@ -138,6 +145,239 @@ export type RawMail = {
  * caixa não recebe anexo, e segue a vida.
  */
 const MAIL_MAX_BYTES = Number(process.env.AGENT_MAIL_MAX_BYTES ?? 2_000_000);
+
+/**
+ * Teto PRÓPRIO da parte de texto, deliberadamente separado do MAIL_MAX_BYTES.
+ * MAIL_MAX_BYTES olha a mensagem INTEIRA (anexo incluso) e existe pra nunca
+ * arrastar 33MB pelo socket. Mas mensagem grande quase sempre é grande POR
+ * CAUSA DO ANEXO: o text/plain do aluno tem poucos KB e cabe num BODY.PEEK[n]
+ * sozinho. 200KB é folgado pra qualquer e-mail escrito por humano (e pra html
+ * pesado de cliente de e-mail) e continua barato — se estourar isso, é anexo
+ * disfarçado de texto e a gente prefere não baixar.
+ */
+const MAX_PARTE_TEXTO_BYTES = 200_000;
+
+// ---------- BODYSTRUCTURE: parser portado de _frank/ferramentas/ler_caixa.cjs ----------
+//
+// Lógica FIEL ao commit 43500d9, já validada contra a caixa real (o ler_caixa
+// usa isso em produção-de-ferramenta desde então). Não "melhorar": qualquer
+// divergência entre as duas cópias vira bug silencioso de leitura de e-mail.
+
+type Token = "(" | ")" | { str: string } | { atom: string };
+
+/** Folha (parte MIME) do BODYSTRUCTURE, com o número que o IMAP usa no FETCH. */
+export type MimePart = {
+  numero: string;
+  tipo: string;
+  subtipo: string;
+  encoding: string;
+  bytes: number;
+  nome: string | null;
+  disposition: string | null;
+};
+
+/** Tokeniza a resposta: parênteses, strings quotadas (com \" escapado) e átomos. */
+function tokenizar(s: string): Token[] {
+  const toks: Token[] = [];
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === "(" || c === ")") {
+      toks.push(c);
+      i++;
+    } else if (c === '"') {
+      let j = i + 1;
+      let val = "";
+      while (j < s.length && s[j] !== '"') {
+        if (s[j] === "\\" && j + 1 < s.length) {
+          val += s[j + 1];
+          j += 2;
+        } else {
+          val += s[j];
+          j++;
+        }
+      }
+      toks.push({ str: val });
+      i = j + 1;
+    } else if (/\s/.test(c)) {
+      i++;
+    } else if (c === "{") {
+      // Literal {n} no BODYSTRUCTURE (raro). Não suportado — falhar com verdade
+      // é melhor do que apontar pra parte errada.
+      throw new Error("BODYSTRUCTURE veio com literal {n} — parser não suporta");
+    } else {
+      let j = i;
+      while (j < s.length && !/[\s()"]/.test(s[j])) j++;
+      toks.push({ atom: s.slice(i, j) });
+      i = j;
+    }
+  }
+  return toks;
+}
+
+type Arvore = (string | null | Arvore)[];
+
+/** Monta a árvore de listas a partir dos tokens. */
+function montarArvore(toks: Token[]): Arvore {
+  let pos = 0;
+  function lista(): Arvore {
+    const out: Arvore = [];
+    while (pos < toks.length) {
+      const t = toks[pos];
+      if (t === "(") {
+        pos++;
+        out.push(lista());
+      } else if (t === ")") {
+        pos++;
+        return out;
+      } else {
+        pos++;
+        if (typeof t === "object") out.push("str" in t ? t.str : t.atom === "NIL" ? null : t.atom);
+      }
+    }
+    return out;
+  }
+  while (pos < toks.length && toks[pos] !== "(") pos++;
+  if (pos >= toks.length) throw new Error("BODYSTRUCTURE sem lista — resposta inesperada");
+  pos++;
+  return lista();
+}
+
+/** (key value key value ...) → { KEY: value } */
+function paresParaObjeto(lista: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!Array.isArray(lista)) return out;
+  for (let i = 0; i + 1 < lista.length; i += 2) {
+    if (typeof lista[i] === "string" && typeof lista[i + 1] === "string") {
+      out[(lista[i] as string).toUpperCase()] = lista[i + 1] as string;
+    }
+  }
+  return out;
+}
+
+/** Numera as partes como o IMAP numera (1, 2, 1.1, ...) e devolve as folhas. */
+function coletarPartes(no: Arvore, prefixo: string): MimePart[] {
+  if (Array.isArray(no) && Array.isArray(no[0])) {
+    const partes: MimePart[] = [];
+    let i = 0;
+    while (i < no.length && Array.isArray(no[i])) {
+      const numero = prefixo ? `${prefixo}.${i + 1}` : String(i + 1);
+      partes.push(...coletarPartes(no[i] as Arvore, numero));
+      i++;
+    }
+    return partes;
+  }
+  const [tipo, subtipo, params, , , encoding, tamanho, ...resto] = no;
+  const paramsObj = paresParaObjeto(params);
+  let dispTipo: string | null = null;
+  let dispParams: Record<string, string> = {};
+  for (const el of resto) {
+    if (Array.isArray(el) && typeof el[0] === "string" && (Array.isArray(el[1]) || el[1] === null)) {
+      dispTipo = el[0].toUpperCase();
+      dispParams = paresParaObjeto(el[1]);
+      break;
+    }
+  }
+  const nome = dispParams.FILENAME || dispParams["FILENAME*"] || paramsObj.NAME || paramsObj["NAME*"] || null;
+  return [
+    {
+      numero: prefixo || "1", // mensagem não-multipart: a parte única é a "1"
+      tipo: String(tipo || "").toUpperCase(),
+      subtipo: String(subtipo || "").toUpperCase(),
+      encoding: String(encoding || "").toUpperCase(),
+      bytes: Number(tamanho) || 0,
+      nome,
+      disposition: dispTipo,
+    },
+  ];
+}
+
+/** É anexo? Disposition ATTACHMENT, ou qualquer parte com nome de arquivo. */
+function ehAnexo(p: MimePart): boolean {
+  return p.disposition === "ATTACHMENT" || !!p.nome;
+}
+
+/** Decodifica o bloco baixado conforme o encoding declarado no BODYSTRUCTURE. */
+export function decodificarParte(textoLatin1: string, encoding: string): Buffer {
+  if (encoding === "BASE64") return Buffer.from(textoLatin1.replace(/\s+/g, ""), "base64");
+  if (encoding === "QUOTED-PRINTABLE") {
+    const s = textoLatin1
+      .replace(/=\r?\n/g, "")
+      .replace(/=([0-9A-F]{2})/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)));
+    return Buffer.from(s, "latin1");
+  }
+  // 7BIT / 8BIT / BINARY: latin1 preserva byte a byte
+  return Buffer.from(textoLatin1, "latin1");
+}
+
+/** Folhas do BODYSTRUCTURE de uma resposta de UID FETCH (lança se não parsear). */
+export function partesDoBodystructure(resposta: string): MimePart[] {
+  const linhaFetch = resposta
+    .split(/\r?\n/)
+    .find((l) => /^\* \d+ FETCH/i.test(l) && /BODYSTRUCTURE/i.test(l));
+  if (!linhaFetch) throw new Error("sem linha de BODYSTRUCTURE na resposta");
+  const idx = linhaFetch.search(/BODYSTRUCTURE/i);
+  return coletarPartes(montarArvore(tokenizar(linhaFetch.slice(idx + "BODYSTRUCTURE".length))), "");
+}
+
+/** Primeira parte de texto LEGÍVEL (text/plain > text/html) que não é anexo. */
+export function parteDeTexto(partes: MimePart[]): MimePart | null {
+  const corpoDeTexto = (p: MimePart) => p.tipo === "TEXT" && !ehAnexo(p);
+  return (
+    partes.find((p) => corpoDeTexto(p) && p.subtipo === "PLAIN") ||
+    partes.find((p) => corpoDeTexto(p) && p.subtipo === "HTML") ||
+    null
+  );
+}
+
+/** Buffer → string: tenta utf8 e cai pra latin1 se vier caractere de troca. */
+export function textoDoBuffer(buf: Buffer): string {
+  const utf8 = buf.toString("utf8");
+  return /�/.test(utf8) ? buf.toString("latin1") : utf8;
+}
+
+/** HTML → texto (mesma limpeza do mailText de mail-respond.ts). */
+function stripHtml(s: string): string {
+  return s
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Extrai SÓ o texto que o aluno escreveu numa mensagem oversized, sem arrastar
+ * o anexo: BODYSTRUCTURE → primeira parte de texto que não é anexo → se couber
+ * em MAX_PARTE_TEXTO_BYTES, BODY.PEEK[n] dela sozinha → decodifica → limpa.
+ *
+ * Recebe as buscas como callbacks pra ser testável com uma sessão de leitura
+ * pura (o teste em _Bugs/ usa EXAMINE) e pra fetchUnseen usar a sessão viva.
+ * Devolve undefined em QUALQUER falha — quem chama mantém o comportamento
+ * antigo (responderAnexoGrande). Degradar pra corpo vazio em silêncio foi o
+ * que deixou 5 alunos sem resposta (incidente 531b6529).
+ */
+export async function extrairTextoParcial(
+  buscarBodystructure: () => Promise<string>,
+  buscarParte: (numero: string) => Promise<string>,
+): Promise<string | undefined> {
+  try {
+    const pt = parteDeTexto(partesDoBodystructure(await buscarBodystructure()));
+    if (!pt || pt.bytes <= 0 || pt.bytes > MAX_PARTE_TEXTO_BYTES) return undefined;
+    const bruto = await buscarParte(pt.numero);
+    if (!bruto) return undefined;
+    const cru = textoDoBuffer(decodificarParte(bruto, pt.encoding));
+    // Mesmo tratamento do caminho normal (mailText): html vira texto, plain só
+    // colapsa espaço em branco.
+    const texto = pt.subtipo === "HTML" ? stripHtml(cru) : cru.replace(/\s+/g, " ").trim();
+    return texto || undefined;
+  } catch {
+    return undefined; // best-effort: sem texto, o fluxo antigo continua valendo
+  }
+}
 
 /**
  * Busca os e-mails NÃO LIDOS do INBOX (até `limit`), SEM marcar como lidos
@@ -189,7 +429,20 @@ export async function fetchUnseen(limit = 10): Promise<RawMail[]> {
           `UID FETCH ${uid} BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID REPLY-TO)]`,
         );
         const raw = extrairLiteral(bufH);
-        out.push({ uid, raw, oversized: true, sizeBytes: tamanho });
+
+        // A mensagem é grande POR CAUSA DO ANEXO — o texto que o aluno escreveu
+        // é um MIME part de poucos KB e dá pra buscar SOZINHO com BODY.PEEK[n],
+        // sem arrastar o anexo. Antes disso, alunos que escreveram junto com um
+        // anexo grande nunca tiveram o texto lido por ninguém (incidente
+        // 531b6529 — uma aluna ficou 62h sem resposta). PEEK também aqui:
+        // buscar o texto não pode marcar \Seen. Falhou qualquer passo →
+        // undefined, e o mail-respond mantém o comportamento antigo.
+        const textoParcial = await extrairTextoParcial(
+          () => session.command(`UID FETCH ${uid} BODYSTRUCTURE`),
+          async (numero) => extrairLiteral(await session.commandRaw(`UID FETCH ${uid} BODY.PEEK[${numero}]`)),
+        );
+
+        out.push({ uid, raw, oversized: true, sizeBytes: tamanho, textoParcial });
         continue;
       }
 
