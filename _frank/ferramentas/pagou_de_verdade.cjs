@@ -9,6 +9,26 @@
  *
  * Regra: pagou = price.value > 0  E  status IN (COMPLETE, APPROVED).
  *
+ * ⚠️ O SEGUNDO ENGANO, medido em 31/08/2026 (incidente #173): este script
+ * perguntava à Hotmart SOMENTE por `/subscriptions`. Compra AVULSA
+ * (UNIQUE_PAYMENT / MULTIPLE_PAYMENTS) não é assinatura e NÃO aparece ali —
+ * então ele imprimia **"NUNCA PAGOU" para quem pagou**, e o `payment_events`
+ * (a "segunda fonte independente") também devolvia zero, o que fazia as duas
+ * fontes concordarem no erro e o resultado parecer confirmado.
+ * Medido lado a lado no mesmo dia:
+ *   johnathan.ppires@gmail.com  → "NUNCA PAGOU" · R$ 2.391,00 APPROVED (3 compras)
+ *   comercial@roteironamao.com  → "NUNCA PAGOU" · R$   185,61 APPROVED (2 compras)
+ *   70rrosusa@gmail.com         → "NUNCA PAGOU" · R$   684,92 APPROVED (3 compras)
+ * Com base nessa leitura nós pedimos a um aluno pagante, duas vezes, que
+ * provasse uma compra que estava lá o tempo todo. **Zero de um endpoint que
+ * não faz a pergunta certa não é "não pagou": é instrumento cego.**
+ *
+ * ⚠️ E NÃO COLAPSE OS DOIS FATOS NUM BIT SÓ. "Pagou a assinatura do
+ * FastCloner" e "comprou um curso avulso" são coisas diferentes e decidem
+ * coisas diferentes. Este script agora responde as duas SEPARADAS, de
+ * propósito: quem for decidir crédito precisa saber QUAL das duas é o caso.
+ * Um booleano único aqui foi exatamente o que produziu o engano.
+ *
  * Classifica por PESSOA, não por assinatura (a outra armadilha: alguém pode
  * ter uma segunda assinatura viva). Somente leitura — não toca em saldo.
  *
@@ -76,12 +96,44 @@ async function pagouDeVerdade(email, H, db) {
   const aprovados = (evs || []).filter((ev) => ev.event_type === "PURCHASE_APPROVED"
     && (ev.payload?.data?.purchase?.price?.value ?? 0) > 0);
 
+  // TERCEIRA fonte, e a que faltava: VENDAS. É aqui que mora a compra avulsa,
+  // que /subscriptions não conhece. Sem esta pergunta o script mente (#173).
+  const rv = await fetch(`${BASE}/sales/history?buyer_email=${encodeURIComponent(email)}&max_results=50`, { headers: H });
+  const rawV = await rv.text();
+  let vendasBrutas;
+  // mesma disciplina do resto: zero que veio de falha NÃO pode virar "não pagou"
+  if (!rv.ok) return { erro: `sales/history HTTP ${rv.status}: ${rawV.slice(0, 150)}` };
+  try { const j = JSON.parse(rawV); vendasBrutas = j.items || (Array.isArray(j) ? j : []); }
+  catch { return { erro: `sales/history não-JSON (HTTP ${rv.status}): ${rawV.slice(0, 150)}` }; }
+
+  const vendas = vendasBrutas.map((i) => ({
+    produto: (i.product?.name ?? "").trim() || "(sem nome)",
+    valor: i.purchase?.price?.value ?? 0,
+    status: i.purchase?.status,
+    modo: i.purchase?.offer?.payment_mode,
+    // is_subscription vem da Hotmart; só tratamos como avulsa quando ela diz
+    // explicitamente que NÃO é assinatura — undefined não vira "avulsa".
+    avulsa: i.purchase?.is_subscription === false,
+    transacao: i.purchase?.transaction,
+    data: i.purchase?.approved_date ? new Date(i.purchase.approved_date).toISOString().slice(0, 10) : null,
+  }));
+  const vendasPagas = vendas.filter((v) => v.valor > 0 && PAGO.has(v.status));
+  const avulsasPagas = vendasPagas.filter((v) => v.avulsa);
+  const totalAvulso = avulsasPagas.reduce((s, v) => s + v.valor, 0);
+
   return {
-    pagou: pagas.length > 0 || aprovados.length > 0,
+    // os dois fatos, SEPARADOS de propósito — ver o cabeçalho
+    pagouAssinatura: pagas.length > 0 || aprovados.length > 0,
+    pagouAvulso: avulsasPagas.length > 0,
+    // mantido para quem só quer saber "entrou dinheiro desta pessoa?"
+    pagou: pagas.length > 0 || aprovados.length > 0 || avulsasPagas.length > 0,
     assinaturas: subs.length,
     cobrancas,
     pagas,
     aprovadosNoBanco: aprovados.length,
+    vendas,
+    avulsasPagas,
+    totalAvulso,
   };
 }
 
@@ -95,11 +147,28 @@ if (require.main === module) (async () => {
     const r = await pagouDeVerdade(e, H, db);
     console.log("\n" + "=".repeat(70));
     if (r.erro) { console.log(`${e}\n  ERRO: ${r.erro}`); continue; }
-    console.log(`${e}\n  ${r.pagou ? "PAGOU DE VERDADE" : "NUNCA PAGOU"}`
-      + ` | assinaturas: ${r.assinaturas} | PURCHASE_APPROVED>0 no nosso banco: ${r.aprovadosNoBanco}`);
+    // NUNCA PAGOU só pode ser dito quando as TRÊS fontes vieram vazias.
+    const veredito = r.pagou
+      ? (r.pagouAssinatura && r.pagouAvulso ? "PAGOU — assinatura E compra avulsa"
+        : r.pagouAssinatura ? "PAGOU — assinatura"
+        : "PAGOU — SOMENTE compra avulsa (invisivel ao filtro antigo)")
+      : "NUNCA PAGOU (nenhuma das 3 fontes)";
+    console.log(`${e}\n  ${veredito}`
+      + ` | assinaturas: ${r.assinaturas} | PURCHASE_APPROVED>0 no nosso banco: ${r.aprovadosNoBanco}`
+      + ` | avulsas pagas: ${r.avulsasPagas.length}${r.totalAvulso ? ` (R$ ${r.totalAvulso.toFixed(2)})` : ""}`);
     for (const c of r.cobrancas) {
-      console.log(`    rec#${c.rec} R$${String(c.valor).padStart(5)} ${String(c.status).padEnd(16)} ${c.data ?? ""}`
+      console.log(`    assinatura rec#${c.rec} R$${String(c.valor).padStart(5)} ${String(c.status).padEnd(16)} ${c.data ?? ""}`
         + `${c.valor > 0 && !PAGO.has(c.status) ? "   <-- cobranca EXISTE mas NAO foi paga" : ""}`);
+    }
+    for (const v of r.vendas) {
+      console.log(`    venda     ${(v.avulsa ? "AVULSA" : "assin.").padEnd(7)} R$${String(v.valor).padStart(8)}`
+        + ` ${String(v.status).padEnd(16)} ${v.data ?? "sem data"} ${v.transacao ?? ""} ${v.produto}`
+        + `${v.valor > 0 && !PAGO.has(v.status) ? "   <-- venda EXISTE mas NAO foi paga" : ""}`);
+    }
+    if (r.pagouAvulso && !r.pagouAssinatura) {
+      console.log("    ⚠️  Esta pessoa PAGOU, mas nao pela assinatura do FastCloner."
+        + " O que a compra avulsa da direito no FastCloner e decisao COMERCIAL, nao de script:"
+        + " leve a gente. Nao trate como 'nunca pagou' (#173).");
     }
   }
 })();
