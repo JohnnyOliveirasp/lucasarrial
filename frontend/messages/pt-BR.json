@@ -1451,6 +1451,7 @@
       "speedCalm": "Mais calmo",
       "speedNormal": "Normal",
       "speedFast": "Mais rápido",
+      "speedNeedsRateQa": "O ritmo só muda com \"Ajustar ao meu ritmo de fala\" ligado acima. Sem isso, o áudio sai exatamente como o modelo gerou.",
       "supportAction": "gerar o áudio",
       "generating": "Gerando…",
       "generate": "Gerar áudio",
