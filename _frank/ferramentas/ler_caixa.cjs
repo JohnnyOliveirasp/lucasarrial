@@ -36,6 +36,7 @@
  * (SUPPORT_MAIL_HOST / SUPPORT_MAIL_USER / SUPPORT_MAIL_PASSWORD).
  * Nenhum segredo é impresso.
  */
+const fs = require("node:fs");
 const path = require("node:path");
 const tls = require("node:tls");
 
@@ -436,6 +437,45 @@ async function acharEnviados(sessao) {
   return nomeDaPasta(porFlag || porNome) || "Sent";
 }
 
+/**
+ * Envios que SAÍRAM mas cuja cópia não entrou em Enviados (incidente #210).
+ * O `enviar_email.cjs` grava esses casos em `_frank/prova/enviados_local.jsonl`
+ * depois de 3 tentativas de APPEND falharem. Sem ler este arquivo aqui, a ronda
+ * seguinte enxerga silêncio onde houve resposta e escreve de novo pro aluno —
+ * que é exatamente o dano que o incidente descreve. Registro que ninguém lê não
+ * conserta nada, então a leitura mora do lado da consulta.
+ */
+function registroLocalDeEnvios(para) {
+  const arquivo = path.join(RAIZ, "_frank", "prova", "enviados_local.jsonl");
+  if (!fs.existsSync(arquivo)) return [];
+  return fs
+    .readFileSync(arquivo, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .filter((r) => !para || String(r.para || "").toLowerCase() === para.toLowerCase());
+}
+
+function mostrarRegistroLocal(para) {
+  const linhas = registroLocalDeEnvios(para);
+  if (!linhas.length) return;
+  console.log("");
+  console.log("⚠️  ENVIOS SEM CÓPIA EM ENVIADOS (registro local — incidente #210)");
+  console.log("   O e-mail SAIU (SMTP aceitou). O que falhou foi gravar a cópia.");
+  console.log("   NÃO trate como silêncio e NÃO reenvie só por não achar acima.");
+  for (const r of linhas) {
+    console.log(`   · ${r.at} → ${r.para} · "${r.assunto}"`);
+    console.log(`     message-id ${r.message_id} · motivo: ${r.motivo}`);
+  }
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const pega = (flag) => {
@@ -550,6 +590,9 @@ async function main() {
 
     if (!uids.length) {
       console.log(`nada encontrado em "${caixa}" com: ${criterio}`);
+      // Este é o caminho perigoso do #210: "nada encontrado" lido como "nunca
+      // foi respondido". Se houver envio registrado localmente, ele aparece.
+      if (enviados) mostrarRegistroLocal(para);
       return;
     }
     console.log(`caixa "${caixa}" · critério: ${criterio} · ${todos.length} no total, mostrando ${uids.length}\n`);
@@ -643,6 +686,8 @@ async function main() {
         ].join("\n"),
       );
     }
+    // Mesmo achando cópias, pode haver envio MAIS RECENTE que não foi gravado.
+    if (enviados) mostrarRegistroLocal(para);
   } finally {
     sessao.close();
   }
