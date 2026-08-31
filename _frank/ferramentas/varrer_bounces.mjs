@@ -34,7 +34,7 @@
 import path from "node:path";
 import tls from "node:tls";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const RAIZ = path.resolve(AQUI, "..", "..");
@@ -44,8 +44,10 @@ require(path.join(RAIZ, "frontend", "node_modules", "dotenv")).config({
 });
 
 // Mesma regra que roda na produção — importada, nunca copiada.
+// pathToFileURL: no Windows um caminho absoluto ("C:\...") não é URL válida
+// pro import() do ESM — quebrava com ERR_UNSUPPORTED_ESM_URL_SCHEME.
 const { parseBounce, ORIENTACAO } = await import(
-  path.join(RAIZ, "frontend", "src", "lib", "agent", "mail-bounce.ts")
+  pathToFileURL(path.join(RAIZ, "frontend", "src", "lib", "agent", "mail-bounce.ts")).href
 );
 
 const HOST = process.env.SUPPORT_MAIL_HOST || "mail.privateemail.com";
