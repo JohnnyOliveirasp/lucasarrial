@@ -1,0 +1,42 @@
+janela UTC 2026-08-30T00:00:00.000Z -> 2026-08-31T00:00:00.000Z (dia 2026-08-30)
+4 evento(s) de cancelamento -> 4 pessoa(s)
+varredura expire_trial_credits: DESATIVADA — DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas
+
+==========================================================================
+natanaelvarela@hotmail.com  (Natanael Bezerra Varela)
+  ASSINANTE | adesao 2026-08-18 -> cancelou 2026-08-30 = 12 dia(s)
+    assinatura 4JEV39ES CANCELLED_BY_SELLER
+    rec#1 R$    17 APPROVED        2026-08-18
+    banco: mensalidade 4426 cr | extra 525 cr | acesso ate 2026-09-18
+    marcador trial: nenhum
+==========================================================================
+julia_azambuja@outlook.com  (Julia azambuja rodrigues)
+  TRIAL | adesao 2026-08-05 -> cancelou 2026-08-30 = 25 dia(s)
+    assinatura ETUW1OJ1 CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 COMPLETE        2026-08-05
+    rec#2 R$    97 OVERDUE           <-- cobranca EXISTE mas NAO foi paga
+    banco: mensalidade 73500 cr | extra 0 cr | acesso ate 2026-09-05
+    marcador trial: nenhum
+    dia 10 do trial: 2026-08-15 (JA passou)
+    !! TRIAL passou do dia 10 (venceu 2026-08-15) e ainda tem 73500 cr — a varredura NAO pegou.
+==========================================================================
+victorbsb@gmail.com  (Victor Rudson Martins Vieira)
+  ASSINANTE | adesao 2026-07-29 -> cancelou 2026-08-30 = 32 dia(s)
+    assinatura EIV9AFCV CANCELLED_BY_SELLER (trial)
+    rec#1 R$     0 COMPLETE        2026-07-29
+    rec#2 R$    97 COMPLETE        2026-08-05
+    rec#3 R$    97 APPROVED        2026-08-29
+    banco: mensalidade 200000 cr | extra 0 cr | acesso ate 2026-09-29
+    marcador trial: paid (0 cr, 2026-08-18)
+==========================================================================
+rossiclinicas@gmail.com  (Regis Rossi)
+  ASSINANTE | adesao 2026-07-08 -> cancelou 2026-08-30 = 53 dia(s)
+    assinatura 7YJ9TJHJ CANCELLED_BY_SELLER (trial)
+    rec#1 R$     0 COMPLETE        2026-07-08
+    rec#2 R$    97 COMPLETE        2026-07-15
+    rec#3 R$    97 COMPLETE        2026-08-08
+    banco: mensalidade 100000 cr | extra 10000 cr | acesso ate 2026-09-08
+    marcador trial: paid (0 cr, 2026-08-18)
+
+==========================================================================
+1 caso(s) FORA DA REGRA: julia_azambuja@outlook.com
