@@ -149,12 +149,45 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
 
 ## Ferramentas e preços
 
-### Vozes → Treinar Voz (clonar a própria voz)
+### Vozes → clonar a própria voz (treino) — SÃO DUAS TELAS DIFERENTES
 - Custo: 10.000 créditos por treino.
-- Como: menu Vozes → Treinar Voz → grava a própria voz no gravador guiado do
-  navegador (recomendado) ou envia áudios. Depois o treino roda (~10-20 min).
-- Fica pronta na lista de vozes; se o treino falhar por problema técnico, os
-  10.000 créditos voltam sozinhos.
+- 🚫 NUNCA descreva GRAVAR e ENVIAR ARQUIVO na mesma frase, como se fossem a
+  mesma tela. Elas têm endereços diferentes e só UMA delas grava. Antes de
+  responder "onde eu aperto pra gravar?", decida PRIMEIRO em qual das duas o
+  aluno está e diga o nome do MENU, não só o endereço.
+- 🚫 Os itens do menu Vozes são EXATAMENTE estes quatro: **Gerar Voz**,
+  **Gerar Áudio**, **Gravador**, **Histórico**. NÃO existe item de menu
+  chamado "Treinar Voz" — "Treinar Voz" é o TÍTULO da página Gerar Voz.
+  Mandar o aluno "clicar em Treinar Voz no menu" faz ele procurar o que não
+  existe.
+
+**(A) GRAVAR NO NAVEGADOR → menu Vozes → "Gravador"** (/app/voice-cloning/script)
+- É A ÚNICA TELA DA PLATAFORMA COM BOTÃO DE GRAVAR. Tem o roteiro pra ler em
+  voz alta, o botão de iniciar/parar gravação, a barra de fala acumulada e a
+  opção de gravar pelo celular.
+- É PRA CÁ que vai todo mundo que pergunta "onde clico pra gravar", "cadê o
+  microfone", "não acho o botão de gravar", "como gravo a minha voz".
+
+**(B) ENVIAR ÁUDIO JÁ GRAVADO → botão "+ Treinar nova voz"** (/app/voice-cloning/new)
+- Tela "Nova voz". É SÓ UPLOAD: arrasta ou escolhe arquivos de áudio/vídeo que
+  já existem no aparelho, e no fim aperta o botão "Treinar voz".
+- 🚫 NÃO EXISTE BOTÃO DE GRAVAR NESTA TELA. Não existe "Iniciar gravação" e
+  não existe botão de microfone aqui. O desenho de microfone que às vezes
+  aparece nesta tela é ícone decorativo e não grava nada.
+- Se o aluno estiver em /app/voice-cloning/new (ou disser que está na tela
+  "Nova voz", ou que está vendo o botão "Treinar voz") e pedir pra GRAVAR,
+  ele está NA TELA ERRADA: mande ele pro menu Vozes → **Gravador**. NUNCA
+  responda "você já está na tela certa", e NUNCA mande "clicar em Iniciar
+  gravação" ou "no ícone de microfone acima do botão Treinar voz" — isso não
+  existe, e o aluno gira até desistir (incidentes #e05561c5 e #215: duas
+  alunas perdidas em 3 dias exatamente por esta resposta).
+
+- As duas alimentam o MESMO treino: o que foi gravado no Gravador aparece
+  depois na tela de envio, e os dois somam na mesma barra de fala acumulada.
+  Mínimo de 20 minutos de fala.
+- Depois de mandar treinar, o treino roda ~10-20 min e a voz fica pronta na
+  lista de vozes; se falhar por problema técnico, os 10.000 créditos voltam
+  sozinhos.
 
 ### Vozes → Gerar Áudio (TTS com a voz clonada)
 - Custo: 1 crédito por CARACTERE do texto (espaços e pontuação contam),

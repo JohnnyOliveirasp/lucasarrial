@@ -112,6 +112,10 @@
       "eyebrow": "01 · Entrenar voz",
       "title": "Nueva voz",
       "subtitle": "Sube al menos 20 minutos de audio tuyo hablando. Cuanto más, mejor.",
+      "recordInstead": {
+        "text": "¿No tienes archivo? Aquí solo se sube — grabar es en la pantalla Grabador.",
+        "cta": "Abrir el Grabador"
+      },
       "nameLabel": "Nombre de la voz",
       "namePlaceholder": "Ej: Mi voz principal",
       "next": "Continuar",

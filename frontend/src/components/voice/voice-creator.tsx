@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
-import { Upload, X, AudioLines, Check, FolderUp, Mic } from "lucide-react";
+import { Upload, X, AudioLines, Check, FolderUp, Mic, ArrowRight } from "lucide-react";
 import { medirDuracao, formatDuration, type MotivoFalhaMedicao } from "@/lib/audio/duration";
 import {
   chaveDoMotivo,
@@ -536,6 +536,31 @@ export function VoiceCreator() {
           e.target.value = "";
         }}
       />
+
+      {/*
+        SAÍDA PRA QUEM CAIU NA TELA ERRADA (#215, reincidência do #e05561c5).
+        Esta tela é SÓ upload — não tem botão de gravar. Quem chega aqui
+        querendo gravar no navegador ficava preso, perguntava pra Fast e ela
+        mandava apertar um botão que não existe aqui. Agora a saída está na
+        própria tela e não depende de ninguém responder.
+        Escondido quando o aluno já veio do Gravador (recorderImport), pra não
+        mandar de volta pra onde ele acabou de sair.
+      */}
+      {!recorderImport && (
+        <Link
+          href="/app/voice-cloning/script"
+          className="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-2.5 text-sm text-[var(--ink)] transition-[background-color,border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-strong)] hover:bg-[var(--surface-raised)]"
+        >
+          <span className="flex items-center gap-2">
+            <Mic className="h-4 w-4 flex-shrink-0 text-[var(--status-online)]" />
+            <span>{t("recordInstead.text")}</span>
+          </span>
+          <span className="flex flex-shrink-0 items-center gap-1.5 font-medium">
+            {t("recordInstead.cta")}
+            <ArrowRight className="h-4 w-4" />
+          </span>
+        </Link>
+      )}
 
       {recorderImport && (
         <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-2.5 text-sm text-[var(--ink)]">

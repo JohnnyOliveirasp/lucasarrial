@@ -112,6 +112,10 @@
       "eyebrow": "01 · Train voice",
       "title": "New voice",
       "subtitle": "Upload at least 20 minutes of you talking. More is better.",
+      "recordInstead": {
+        "text": "No file yet? This screen is upload only — recording lives in Recorder.",
+        "cta": "Open the Recorder"
+      },
       "nameLabel": "Voice name",
       "namePlaceholder": "e.g. My main voice",
       "next": "Continue",
