@@ -119,3 +119,36 @@ Quatro dias seguidos sem nenhuma falha (29, 30, 31/08 e 01/09).
 
 Não respondi aluno, não mexi em crédito, não fechei nem reabri incidente, não
 recriei endpoint do RunPod.
+
+---
+
+## Apêndice — re-execução do mesmo card (15:25Z)
+
+O card `ecd43b39` **re-disparou** com o texto idêntico ~10 min depois da ronda
+acima já ter terminado (a sessão anterior encerrou às 15:11:57Z e ficou marcada
+como incompleta, então o runner reenfileirou). Não refiz a ronda às cegas nem
+repostei no grupo: **re-verifiquei tudo de primeira mão** e anexo o resultado.
+
+| checagem | resultado da re-verificação (15:20–15:25Z) |
+|---|---|
+| último run verde `runpod-worker.yml` | `8648927`, `2026-08-29T18:32:56Z` — idêntico, nenhum run falho ou em andamento |
+| commits tocando `runpod-worker/` desde o corte | vazio (produção == main) |
+| régua atual acumulada | **0 falhas / 235** — idêntico |
+| hoje 01/09 | **0 falhas / 32** — idêntico |
+| ontem 31/08 | **0 falhas / 116** — idêntico |
+| presas em `processing`/`queued` | nenhuma — ninguém esperando |
+| `user_id` com falha desde ontem | `[]` |
+| falhas desde 24/08 × estorno | 18 falhas / 18 estornos; as 2 da Kessuly sem `generation_refund` seguem **sem nenhum débito** (0 transações apontando pras gerações) — não há aluna lesada |
+
+Diferença única contra a medição das 15:08Z: o baseline pré-corte saiu **1351**
+em vez de 1352 (uma linha a menos na paginação, ruído de fronteira). Não move
+nada: 33 falhas / 27 qa_coverage seguem iguais, a taxa continua 2,0%.
+
+**Não repostei no grupo.** O relatório de hoje saiu às 15:11:30Z com `ok:true`
+confirmado pelo Telegram. Uma segunda mensagem idêntica seria ruído, e o gatilho
+foi re-disparo de card, não fato novo. Regra permanente gravada (id 1064) para
+que a próxima re-execução cheque a prova do dia + o envio antes de refazer.
+
+A conclusão da ronda **não muda**: sem aluno travado, sem build quebrado, global
+conclusivo (0/235), e a faixa 1500–2500ch continua **sem n suficiente** (n=16)
+para certificar a correção.
