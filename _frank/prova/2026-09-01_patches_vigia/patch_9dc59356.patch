@@ -1,0 +1,211 @@
+From 6e17cb502fc6ba175fc6e5bced6a15b2250cc982 Mon Sep 17 00:00:00 2001
+From: vigia <vigia@fastcloner.com>
+Date: Fri, 28 Aug 2026 12:16:15 +0000
+Subject: [PATCH] fix(#166): COMPLETED do RunPod nao prova que o MP4 chegou ao
+ R2
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+O ramo COMPLETED marcava o clone como `ready` sem olhar o arquivo. Como o
+`video_path` e determinístico e gravado no POST (antes do job rodar), a row
+ficava `ready` com uma chave que podia nao existir; `createPresignedGet` nao
+valida existencia, entao o aluno recebia um link 404: player nao toca,
+download nao baixa. E, por nao ser `failed`, nao havia estorno, e-mail pro
+suporte nem incidente — a falha era cara e silenciosa.
+
+Agora, depois do claim idempotente, um HEAD confirma o MP4:
+- objeto presente -> `ready`, como antes;
+- 404 CONFIRMADO -> `failed` com mensagem propria, evidencia em `raw_error`
+  e alerta ao suporte SEM debitRefType/refundRefType: credito de aluno
+  continua sendo decisao humana.
+
+Erro transitorio do R2 e bucket mal configurado assumem "entregue" e mantem
+o comportamento antigo — marcar falha por engano custaria o video bom de um
+aluno (incidente 147/148).
+
+A gravacao de evidencia virou `gravarEvidencia`, usada pelos dois ramos.
+---
+ frontend/src/lib/video-clone/finalize.ts | 143 +++++++++++++++++------
+ 1 file changed, 105 insertions(+), 38 deletions(-)
+
+diff --git a/frontend/src/lib/video-clone/finalize.ts b/frontend/src/lib/video-clone/finalize.ts
+index 97965de..a19c48d 100644
+--- a/frontend/src/lib/video-clone/finalize.ts
++++ b/frontend/src/lib/video-clone/finalize.ts
+@@ -11,6 +11,8 @@
+ import { getAdmin } from "@/lib/db/admin";
+ import { handleTechFailure } from "@/lib/support/failure-alert";
+ import { logger } from "@/lib/logger/server";
++import { objectExists } from "@/lib/r2/exists";
++import { imagesBucket } from "@/lib/r2/client";
+ 
+ export function friendlyCloneError(raw: string): string {
+   const base = (() => {
+@@ -21,9 +23,78 @@ export function friendlyCloneError(raw: string): string {
+   return `${base} Os créditos cobrados foram devolvidos automaticamente.`;
+ }
+ 
++/**
++ * COMPLETED sem MP4 no R2. Mensagem PRÓPRIA, sem a promessa de estorno do
++ * `friendlyCloneError`: neste caminho o código NÃO devolve crédito nenhum —
++ * avisa o suporte e a decisão sobre os créditos é humana.
++ */
++const CLONE_SEM_ARQUIVO =
++  "A geração terminou mas o arquivo do vídeo não chegou ao nosso armazenamento. " +
++  "O suporte já foi avisado e vai verificar os créditos cobrados.";
++
++/**
++ * Evidência da falha em coluna PRÓPRIA (mig 90): o status do job expira no
++ * RunPod (~30min–2h → 404), então o erro CRU e o tempo de execução têm que ser
++ * gravados AGORA ou somem pra sempre — foi por isso que 9 falhas de 22/08
++ * ficaram sem causa atribuível.
++ *   raw_error NUNCA vai concatenado no error_message: a assinatura do
++ *   incidente deriva do texto do erro (lib/incidents/classify.ts) e
++ *   identificador alfanumérico não normaliza. O aluno segue vendo só a frase
++ *   amigável.
++ * Best-effort de propósito: enquanto a mig 90 não estiver aplicada, a
++ * telemetria falha SOZINHA — nunca segura o desfecho da row nem a contingência.
++ */
++async function gravarEvidencia(
++  cloneId: string,
++  rawError: string,
++  executionTimeMs?: number | null,
++): Promise<void> {
++  try {
++    const evidence: { raw_error: string; elapsed_seconds?: number } = {
++      raw_error: rawError.slice(0, 500),
++    };
++    if (typeof executionTimeMs === "number") {
++      evidence.elapsed_seconds = executionTimeMs / 1000; // RunPod manda em ms
++    }
++    const { error } = await getAdmin()
++      .from("video_clones")
++      .update(evidence as never)
++      .eq("id", cloneId);
++    if (error) {
++      logger.warn("api", "video_clone.raw_error.write_failed", { cloneId, error: error.message });
++    }
++  } catch (e) {
++    logger.warn("api", "video_clone.raw_error.write_failed", {
++      cloneId,
++      error: e instanceof Error ? e.message : String(e),
++    });
++  }
++}
++
++/**
++ * O MP4 final chegou mesmo ao R2? `objectExists` só devolve false em 404
++ * CONFIRMADO (rede/5xx devolve true) e `imagesBucket()` LANÇA quando o bucket
++ * não está configurado — nos dois casos assumimos entregue e mantemos o
++ * comportamento antigo. Marcar "não entregue" por engano custaria o vídeo BOM
++ * de um aluno (incidente 147/148), então a dúvida sempre pesa pro lado dele.
++ */
++async function mp4Entregue(videoPath: string | null | undefined): Promise<boolean> {
++  if (!videoPath) return false; // sem chave não há o que entregar
++  try {
++    return await objectExists(imagesBucket(), videoPath);
++  } catch (e) {
++    logger.warn("api", "video_clone.head_failed", {
++      videoPath,
++      error: e instanceof Error ? e.message : String(e),
++    });
++    return true;
++  }
++}
++
+ /**
+  * Aplica o desfecho de um job do InfiniteTalk na row do clone.
+- * COMPLETED → ready (o worker já subiu o MP4 no R2). Falha → failed + estorno.
++ * COMPLETED → ready se o MP4 estiver no R2; COMPLETED sem arquivo → failed +
++ * alerta ao suporte (sem estorno automático). Falha → failed + estorno.
+  */
+ export async function finalizeVideoClone(args: {
+   cloneId: string;
+@@ -42,8 +113,38 @@ export async function finalizeVideoClone(args: {
+       .update({ status: "ready", error_message: null })
+       .eq("id", args.cloneId)
+       .in("status", ["pending", "generating"])
+-      .select("id");
+-    return { applied: !!data && data.length > 0 };
++      .select("id, video_path");
++    const claimed = (data ?? [])[0] as { id: string; video_path: string | null } | undefined;
++    if (!claimed) return { applied: false };
++
++    // ── COMPLETED ≠ ENTREGUE (incidente #166, 28/08) ─────────────────────
++    // O status do RunPod diz que o WORKFLOW terminou, não que o node de
++    // upload gravou o MP4. Sem esta checagem, o job que termina sem subir o
++    // arquivo virava `ready` com `video_path` (determinístico, escrito no
++    // POST) apontando pra uma chave que não existe. O presign do GET não
++    // valida existência: o aluno recebia um link 404 — o player não toca, o
++    // download não baixa — e, como a row não é `failed`, não havia estorno,
++    // nem e-mail pro suporte, nem incidente. Falha cara (6.160 e 8.085 cr
++    // num único aluno) e completamente silenciosa.
++    if (await mp4Entregue(claimed.video_path)) return { applied: true };
++
++    const semArquivo = `RunPod COMPLETED sem MP4 no R2 (${claimed.video_path ?? "sem video_path"})`;
++    await admin
++      .from("video_clones")
++      .update({ status: "failed", error_message: CLONE_SEM_ARQUIVO })
++      .eq("id", args.cloneId)
++      .eq("status", "ready");
++    await gravarEvidencia(args.cloneId, semArquivo, args.executionTimeMs);
++    // SEM debitRefType/refundRefType de propósito: crédito de aluno é decisão
++    // humana (regras 9-A a 9-D). Este caminho só avisa o suporte.
++    await handleTechFailure({
++      feature: "Vídeo Clone (lip-sync) — terminou sem arquivo",
++      userId: args.userId,
++      refId: args.cloneId,
++      jobId: args.jobId,
++      rawError: semArquivo,
++    });
++    return { applied: true };
+   }
+ 
+   if (!["FAILED", "CANCELLED", "TIMED_OUT"].includes(args.runpodStatus)) {
+@@ -59,41 +160,7 @@ export async function finalizeVideoClone(args: {
+     .select("id");
+   if (!claimed || claimed.length === 0) return { applied: false };
+ 
+-  // ── Evidência da falha (mig 90, rajada agshortcut 22/08) ─────────────────
+-  // O status do job expira no RunPod (~30min–2h → 404): o erro CRU e o tempo
+-  // de execução têm que ser gravados AGORA ou somem pra sempre — foi por isso
+-  // que 9 falhas de 22/08 ficaram sem causa atribuível. Mesmo padrão da
+-  // geração de áudio (webhook runpod/route.ts, incidente d3d8d1b2).
+-  //   raw_error: texto técnico, em coluna PRÓPRIA — NUNCA concatenar no
+-  //   error_message: a assinatura do incidente deriva do texto do erro
+-  //   (lib/incidents/classify.ts) e identificador alfanumérico não normaliza.
+-  //   O aluno segue vendo só a frase amigável.
+-  // UPDATE separado e best-effort, de propósito: enquanto a mig 90 não estiver
+-  // aplicada, a telemetria falha SOZINHA — o gate acima já garantiu o failed e
+-  // o estorno abaixo nunca espera instrumentação.
+-  try {
+-    const evidence: { raw_error: string; elapsed_seconds?: number } = {
+-      raw_error: rawError.slice(0, 500),
+-    };
+-    if (typeof args.executionTimeMs === "number") {
+-      evidence.elapsed_seconds = args.executionTimeMs / 1000; // RunPod manda em ms
+-    }
+-    const { error } = await admin
+-      .from("video_clones")
+-      .update(evidence as never)
+-      .eq("id", args.cloneId);
+-    if (error) {
+-      logger.warn("api", "video_clone.raw_error.write_failed", {
+-        cloneId: args.cloneId,
+-        error: error.message,
+-      });
+-    }
+-  } catch (e) {
+-    logger.warn("api", "video_clone.raw_error.write_failed", {
+-      cloneId: args.cloneId,
+-      error: e instanceof Error ? e.message : String(e),
+-    });
+-  }
++  await gravarEvidencia(args.cloneId, rawError, args.executionTimeMs);
+ 
+   await handleTechFailure({
+     feature: "Vídeo Clone (lip-sync)",
+-- 
+2.43.0
+

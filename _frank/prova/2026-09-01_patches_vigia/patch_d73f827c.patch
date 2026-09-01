@@ -1,0 +1,107 @@
+From 8435a80f70f4d4a5ad743e3440902e1458ef87fd Mon Sep 17 00:00:00 2001
+From: vigia <vigia@fastcloner.com>
+Date: Sat, 29 Aug 2026 12:10:20 +0000
+Subject: [PATCH] fix(rajada): erro de input do aluno nao abre mais chamado
+ tecnico
+
+A burst-rule abria chamado com categoria=tecnico para falha que a propria
+origem ja tinha classificado como erro de INPUT do aluno: handleTechFailure
+chamava openBurstIncident antes do portao 'if (a.alertSupport === false)
+return', que so calava o e-mail. Metade dos chamados da regra desde 17/08
+morreu como ignored.
+
+Passa a classificacao adiante por um campo PROPRIO (userError), e nao pelo
+alertSupport: aquele flag esta sobrecarregado - studio/face.ts e
+studio/scenes.ts usam alertSupport:false em falha TECNICA cujo e-mail ja
+saiu, e le-lo aqui esconderia defeito nosso da fila.
+
+Erro de input cai no mesmo ramo que a moderacao ja tinha (nasce ignored,
+com resolution_note, e nao reabre). Aluno travado (nenhuma voz pronta)
+continua abrindo chamado tecnico - e o caminho do escalateStuckUser, que
+existe porque o bug do chunking rodou 18 dias disfarcado de erro do usuario.
+
+Incidente 183 (d73f827c-52da-4b1f-96d9-8b3fce01b1e8).
+---
+ frontend/src/lib/studio/finalize.ts       |  1 +
+ frontend/src/lib/support/failure-alert.ts | 30 ++++++++++++++++++++---
+ 2 files changed, 27 insertions(+), 4 deletions(-)
+
+diff --git a/frontend/src/lib/studio/finalize.ts b/frontend/src/lib/studio/finalize.ts
+index 2f5c7a6..afe352a 100644
+--- a/frontend/src/lib/studio/finalize.ts
++++ b/frontend/src/lib/studio/finalize.ts
+@@ -103,6 +103,7 @@ export async function finalizeStudioAudio(args: {
+       debitRefType: "studio_audio",
+       refundRefType: "studio_audio_refund",
+       alertSupport: !isInputError(out),
++      userError: isInputError(out),
+     });
+   }
+   return { applied: true };
+diff --git a/frontend/src/lib/support/failure-alert.ts b/frontend/src/lib/support/failure-alert.ts
+index dcdac91..b05bc8e 100644
+--- a/frontend/src/lib/support/failure-alert.ts
++++ b/frontend/src/lib/support/failure-alert.ts
+@@ -28,6 +28,14 @@ export type TechFailureArgs = {
+   refundRefType?: string;
+   /** false = só estorna, sem e-mail (erro de INPUT do usuário, não falha nossa). */
+   alertSupport?: boolean;
++  /**
++   * true = a falha é do ARQUIVO do aluno (áudio mudo, vídeo longo demais...),
++   * não defeito nosso: a rajada nasce fechada, como já acontece com bloqueio
++   * de moderação. Campo PRÓPRIO de propósito — `alertSupport: false` também é
++   * usado por falha técnica cujo e-mail já saiu (studio/face.ts, scenes.ts) e
++   * ler aquele flag aqui esconderia defeito nosso da fila.
++   */
++  userError?: boolean;
+ };
+ 
+ /**
+@@ -185,9 +193,16 @@ async function openBurstIncident(a: {
+   rawError: string;
+   windowLabel: string;
+   stuck: boolean;
++  /** Falha causada pelo arquivo do aluno (classificada na origem). */
++  userError?: boolean;
+ }): Promise<void> {
+   const admin = getAdmin();
+-  const userError = isModerationBlock(a.rawError);
++  // Erro de INPUT tem o mesmo tratamento da moderação: registro sim, fila não.
++  // EXCEÇÃO: aluno sem nenhuma voz pronta (stuck) continua abrindo chamado
++  // técnico — é o caminho do escalateStuckUser, que existe justamente porque o
++  // bug do chunking (08/08) rodou 18 dias disfarçado de "erro do usuário".
++  const inputError = a.userError === true && !a.stuck;
++  const userError = isModerationBlock(a.rawError) || inputError;
+   const signature = `fail-burst:${a.refundRefType}:${a.userEmail}`;
+   const now = new Date().toISOString();
+   const { data: existingRaw } = await admin
+@@ -243,9 +258,13 @@ async function openBurstIncident(a: {
+ 
+     ...(userError
+       ? {
+-          resolution_note:
+-            "Fechado automaticamente (regra 17/08): moderação de conteúdo bloqueou o pedido — " +
+-            "o produto funcionou como devia. Fica só como registro.",
++          resolution_note: inputError
++            ? "Fechado automaticamente: a origem classificou esta falha como ERRO DE INPUT " +
++              "(arquivo do aluno), não defeito nosso — o estorno saiu e a mensagem de tela é " +
++              "acionável. Fica só como registro; se o aluno ficar travado (nenhuma voz pronta), " +
++              "a rajada volta a abrir como técnica."
++            : "Fechado automaticamente (regra 17/08): moderação de conteúdo bloqueou o pedido — " +
++              "o produto funcionou como devia. Fica só como registro.",
+           resolved_at: now,
+         }
+       : {}),
+@@ -302,6 +321,9 @@ export async function handleTechFailure(a: TechFailureArgs): Promise<void> {
+           // Aluno TRAVADO (nenhuma voz pronta) é o sinal mais forte de churn:
+           // vai embora calado. Entra no título pro Sentinela priorizar.
+           stuck: await hasNoReadyVoice(a.userId),
++          // Quem chama já sabe se a culpa é do arquivo do aluno: repassa, em
++          // vez de jogar fora e abrir chamado técnico pra erro de input.
++          userError: a.userError === true,
+         });
+       }
+     }
+-- 
+2.43.0
+

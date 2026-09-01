@@ -1,0 +1,192 @@
+From 8dcef92394800014fd3c906772c8d981ee985ad3 Mon Sep 17 00:00:00 2001
+From: Vigia <vigia@fastcloner.com>
+Date: Sun, 30 Aug 2026 00:10:19 +0000
+Subject: [PATCH] fix(ferramentas): --curar so grava com cauda ESTAVEL (#193)
+
+A cura estava injetando o defeito que existe pra remover. O ref/auto.wav e um
+corte automatico de 30s, entao muitas vozes terminam no meio da frase;
+transcrevendo o CLIPE INTEIRO o whisper-1 nao devolve a truncagem, ele COMPLETA
+a frase e completa DIFERENTE a cada chamada (medido 29/08 na voz 1d332ef0: 3
+chamadas, 3 finais distintos). O unico portao do curar() era o --confirmar,
+entao a invencao ia direto pra voices.reference_transcript - exatamente a cauda
+fantasma do #124/#191. Placar antes desta trava: 2 de 6 curas pioraram o dado.
+
+Portao novo (medirCauda): corta os ultimos 4s com ffmpeg e transcreve SO essa
+cauda 3x. Grava apenas se (1) as 3 baterem entre si, (2) a cauda medida
+divergir do transcript atual e (3) o texto novo TERMINAR nessa cauda medida.
+
+A condicao (3) nao estava no roteiro original e foi acrescentada porque sem ela
+o texto gravado continuaria sendo o do clipe inteiro - ou seja, a propria
+invencao passaria pelo portao com a cauda so servindo de gatilho.
+
+Falha fechada: sem ffmpeg, sem audio ou com erro de rede, nao grava. O portao
+so serve pra IMPEDIR escrita; sem medida, nao escreve.
+
+O mesmo portao entra no --medir: o que nao tem cauda estavel deixa de ser
+contado como cauda_diverge (ok=null, 'indeterminada'), senao a estatistica da
+classe #108 segue inflada por ruido do whisper.
+
+Verificado: node --check limpo; a logica de decisao exercitada com stubs sobre
+o codigo real - reproduz o caso 1d332ef0 (a cura que corrompeu seria ABORTADA)
+e o caso Augusto (fantasma real, cura legitima, segue passando).
+---
+ .../conferir_transcript_referencia.cjs        | 113 +++++++++++++++++-
+ 1 file changed, 112 insertions(+), 1 deletion(-)
+
+diff --git a/_frank/ferramentas/conferir_transcript_referencia.cjs b/_frank/ferramentas/conferir_transcript_referencia.cjs
+index 0c43759..373213f 100644
+--- a/_frank/ferramentas/conferir_transcript_referencia.cjs
++++ b/_frank/ferramentas/conferir_transcript_referencia.cjs
+@@ -18,10 +18,16 @@
+  *       só mede; grava frontend/_Bugs/chamado_108_referencias/transcript_divergentes.json
+  *   node _frank/ferramentas/conferir_transcript_referencia.cjs --curar <voiceId> [--confirmar]
+  *       reescreve reference_transcript da voz a partir do áudio (backup do texto em arquivo)
++ *
++ * ⚠️ #193: gravar SÓ passa pelo portão de estabilidade da cauda (ver
++ * `medirCauda`). Transcrição do clipe inteiro não é prova: quando o
++ * `ref/auto.wav` corta no meio da frase, o whisper INVENTA o final e inventa
++ * diferente a cada chamada. Sem cauda estável, a ferramenta não escreve.
+  */
+ const path = require("node:path");
+ const fs = require("node:fs");
+ const os = require("node:os");
++const { execFileSync } = require("node:child_process");
+ const c = require(path.join(__dirname, "_comum.cjs"));
+ require(path.join(c.RAIZ, "frontend", "node_modules", "dotenv")).config({ path: path.join(c.RAIZ, "frontend", ".env.local") });
+ 
+@@ -40,6 +46,81 @@ async function transcrever(buf) {
+   return j;
+ }
+ 
++/**
++ * ⚠️ POR QUE ESTE PORTÃO EXISTE (#193, medido 29/08 na voz 1d332ef0):
++ * o `ref/auto.wav` é um corte automático de 30s, então MUITAS vozes terminam
++ * no meio da frase. Transcrevendo o CLIPE INTEIRO, o whisper-1 não devolve a
++ * truncagem: ele COMPLETA a frase cortada, e completa DIFERENTE a cada
++ * chamada — 3 chamadas no mesmo clipe deram 3 finais distintos ("Essa sao as
++ * tarefas." / "E e isso. Ate mais, galera." / "Entao, essa parte do
++ * Heystress,"). Gravar isso em `voices.reference_transcript` INJETA a cauda
++ * fantasma do #124/#191: a ferramenta que cura vira a fábrica do defeito
++ * (2 de 6 curas pioraram o dado antes desta trava).
++ *
++ * O discriminador: cortar só os ÚLTIMOS segundos e transcrever essa cauda
++ * várias vezes. Com pouco áudio à frente o whisper não tem o que inventar —
++ * na mesma voz o resultado foi ESTÁVEL em 3 de 3 ("Entao, essa..."), que era
++ * exatamente o que o transcript original já dizia. Cauda instável = whisper
++ * alucinando = não dá pra gravar nada.
++ */
++const CAUDA_SEG = Number(process.env.CAUDA_SEG || 4);
++const CAUDA_TENTATIVAS = Number(process.env.CAUDA_TENTATIVAS || 3);
++
++/** Corta os últimos `seg` segundos do wav. Devolve o Buffer do trecho. */
++function cortarCauda(buf, seg = CAUDA_SEG) {
++  const base = path.join(os.tmpdir(), `ref_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`);
++  const entrada = `${base}_in.wav`, saida = `${base}_cauda.wav`;
++  try {
++    fs.writeFileSync(entrada, buf);
++    // -sseof é relativo ao FIM do arquivo; exige input seekável (é arquivo, ok).
++    execFileSync(process.env.FFMPEG_PATH || "ffmpeg",
++      ["-hide_banner", "-loglevel", "error", "-y", "-sseof", `-${seg}`, "-i", entrada, "-ac", "1", "-ar", "16000", saida],
++      { stdio: ["ignore", "ignore", "pipe"] });
++    const out = fs.readFileSync(saida);
++    if (!out.length) throw new Error("cauda vazia");
++    return out;
++  } finally {
++    for (const f of [entrada, saida]) { try { fs.unlinkSync(f); } catch { /* já não existe */ } }
++  }
++}
++
++/**
++ * Transcreve SÓ a cauda `CAUDA_TENTATIVAS` vezes e exige que todas devolvam o
++ * mesmo texto (comparado normalizado, para não reprovar por vírgula/caixa).
++ *
++ * FALHA FECHADA de propósito: sem ffmpeg, sem áudio ou com erro de rede o
++ * resultado é `{ estavel: false }`. Este portão só serve para IMPEDIR uma
++ * gravação — quando ele não consegue medir, o certo é não gravar, nunca
++ * gravar sem medida.
++ */
++async function medirCauda(buf) {
++  let cauda;
++  try {
++    cauda = cortarCauda(buf);
++  } catch (e) {
++    return { estavel: false, motivo: `cauda_nao_extraida: ${String(e.message || e).slice(0, 60)}`, amostras: [] };
++  }
++  const amostras = [];
++  for (let i = 0; i < CAUDA_TENTATIVAS; i++) {
++    try {
++      amostras.push(((await transcrever(cauda)).text || "").trim());
++    } catch (e) {
++      return { estavel: false, motivo: `cauda_nao_transcrita: ${String(e.message || e).slice(0, 60)}`, amostras };
++    }
++  }
++  const chaves = amostras.map((t) => norm(t).join(" "));
++  const estavel = chaves.every((k) => k === chaves[0]) && chaves[0].length > 0;
++  return { estavel, motivo: estavel ? null : "cauda_instavel_whisper", amostras, palavras: norm(amostras[0] || "") };
++}
++
++/** As duas pontas finais batem? (mesma tolerância de 2 palavras do `comparar`) */
++function terminaEm(texto, palavrasCauda) {
++  const T = norm(texto);
++  if (!T.length || !palavrasCauda.length) return false;
++  const n = Math.min(2, palavrasCauda.length, T.length);
++  return T.slice(-n).join(" ") === palavrasCauda.slice(-n).join(" ");
++}
++
+ /** Compara pontas: devolve {ok, motivo, ultima_texto, ultima_audio, ...}. */
+ function comparar(transcript, ouvido) {
+   const T = norm(transcript), A = norm(ouvido);
+@@ -70,12 +151,23 @@ async function medir() {
+       const buf = Buffer.from(await (await fetch(await c.urlAssinada(bucket, v.reference_audio_path, 600))).arrayBuffer());
+       const j = await transcrever(buf);
+       const cmp = comparar(v.reference_transcript, j.text);
++      // Mesmo portão do --curar (#193): parte do que era contado como
++      // `cauda_diverge` é ruído do whisper no clipe inteiro, não defeito da
++      // voz — sem esta checagem a estatística da classe #108 sai inflada.
++      if (cmp.motivo === "cauda_diverge") {
++        const cauda = await medirCauda(buf);
++        if (!cauda.estavel) { cmp.ok = null; cmp.motivo = "cauda_instavel_whisper"; }
++        else if (terminaEm(v.reference_transcript, cauda.palavras)) { cmp.ok = true; cmp.motivo = "cauda_confere_na_medida_curta"; }
++        else cmp.cauda_medida = cauda.amostras[0] || null;
++      }
+       res.push({ id: v.id, nome: v.name, trained_at: v.trained_at, ...cmp, ouvido: j.text });
+       console.log(`${cmp.ok ? "  ok " : "  ✗  "} ${v.id.slice(0, 8)} ${String(v.trained_at).slice(0, 10)} ${cmp.ok ? "" : (cmp.motivo === "inicio_diverge" ? `${cmp.motivo}: texto "${cmp.inicio_texto}…" × áudio "${cmp.inicio_audio}…"` : (cmp.motivo === "inicio_diverge" ? `${cmp.motivo}: texto "${cmp.inicio_texto}…" × áudio "${cmp.inicio_audio}…"` : `${cmp.motivo}: texto "…${cmp.cauda_texto}" × áudio "…${cmp.cauda_audio}"`))}`);
+     } catch (e) { res.push({ id: v.id, erro: e.message.slice(0, 80) }); console.log(`  ERR ${v.id.slice(0, 8)} ${e.message.slice(0, 60)}`); }
+   }
+   const ruins = res.filter((r) => r.ok === false);
+-  console.log(`\n${ruins.length} de ${res.length} divergentes (${res.length ? Math.round(ruins.length / res.length * 100) : 0}%)`);
++  const indet = res.filter((r) => r.ok === null);
++  console.log(`\n${ruins.length} de ${res.length} divergentes CONFIRMADAS na medida curta (${res.length ? Math.round(ruins.length / res.length * 100) : 0}%)`);
++  if (indet.length) console.log(`${indet.length} indeterminada(s): whisper instável na cauda, não conte como defeito (#193)`);
+   fs.mkdirSync(OUT_DIR, { recursive: true });
+   fs.writeFileSync(path.join(OUT_DIR, "transcript_divergentes.json"), JSON.stringify(res, null, 1));
+ }
+@@ -89,6 +181,25 @@ async function curar(voiceId) {
+   let novo = j.text.trim(); if (novo && /[a-z0-9À-ɏ]$/i.test(novo)) novo += ".";
+   const cmp = comparar(v.reference_transcript, j.text);
+   console.log(`voz "${v.name}"\nANTES : …${(v.reference_transcript || "").slice(-80)}\nÁUDIO : …${novo.slice(-80)}\n${cmp.ok ? "pontas batem — nada a curar" : "DIVERGE: " + cmp.motivo}`);
++  if (cmp.ok) { console.log("\nnada a curar — não gravo."); return; }
++
++  // PORTÃO DE ESTABILIDADE (#193): a transcrição do clipe inteiro NÃO é prova.
++  // Antes de tocar no banco, a cauda tem que se repetir igual.
++  const cauda = await medirCauda(buf);
++  console.log(`\ncauda (${CAUDA_SEG}s, ${CAUDA_TENTATIVAS}x): ${cauda.amostras.map((a) => JSON.stringify(a.slice(-40))).join(" | ") || "—"}`);
++  if (!cauda.estavel) {
++    console.log(`⛔ ABORTADO: ${cauda.motivo}. O whisper não devolve a mesma cauda duas vezes — gravar aqui inventaria o final (#193). Nada foi escrito.`);
++    return;
++  }
++  if (terminaEm(v.reference_transcript || "", cauda.palavras)) {
++    console.log("⛔ ABORTADO: a cauda medida BATE com o transcript gravado — o texto atual está certo e quem divergiu foi o whisper no clipe inteiro. Nada foi escrito.");
++    return;
++  }
++  if (!terminaEm(novo, cauda.palavras)) {
++    console.log("⛔ ABORTADO: o texto novo não termina na cauda medida — ou seja, o final dele é invenção do clipe inteiro, exatamente o que este portão existe pra barrar. Nada foi escrito.");
++    return;
++  }
++  console.log("✔ cauda estável e confirmada — divergência é real.");
+   if (!tem("--confirmar")) { console.log("\n(simulação — --confirmar grava)"); return; }
+   fs.mkdirSync(OUT_DIR, { recursive: true });
+   fs.writeFileSync(path.join(OUT_DIR, `transcript_backup_${v.id.slice(0, 8)}_${Date.now().toString(36)}.txt`), v.reference_transcript || "");
+-- 
+2.43.0
+
