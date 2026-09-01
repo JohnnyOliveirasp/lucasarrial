@@ -116,6 +116,10 @@
       "eyebrow": "01 · Treinar voz",
       "title": "Nova voz",
       "subtitle": "Envie pelo menos 20 minutos de áudio seu falando. Mais é melhor.",
+      "recordInstead": {
+        "text": "Não tem arquivo? Aqui é só envio — gravar é na tela Gravador.",
+        "cta": "Abrir o Gravador"
+      },
       "nameLabel": "Nome da voz",
       "namePlaceholder": "Ex: Minha voz principal",
       "next": "Continuar",
