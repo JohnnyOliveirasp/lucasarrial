@@ -8,7 +8,19 @@
 // mp4/opus: gravadores de celular salvam AAC em container MP4 (caso Joana
 // 21/07: "Tipo de archivo no soportado" num .m4a.mp4 de 30min). O worker
 // converte qualquer formato via ffmpeg — aqui é só deixar entrar.
-const AUDIO_EXT_RE = /\.(mp3|wav|m4a|flac|ogg|webm|aac|wma|mp4|opus)$/i;
+//
+// VÍDEO entra de propósito: o worker extrai a faixa de áudio. Medido em
+// 23/08 na produção — 163 vozes têm .mp4 em `raw_audio_paths`, 139 delas
+// `ready`, com a MESMA taxa de falha do total (5,5% × 5,8%). Três foram
+// baixadas e conferidas no ffprobe: têm stream de vídeo h264 de verdade
+// (832x464, 1080x1920, 1920x1080), não é áudio em container mp4.
+//
+// `mov` estava DE FORA, e é o formato nativo do iPhone: o arquivo era
+// descartado aqui no browser como "não-áudio" antes de chegar no worker —
+// que sabe lidar com ele (existe voz `ready` treinada a partir de .mov, que
+// entrou pelo importador do Drive, caminho que não passa por este filtro).
+// Caso Luciano, 23/08 (incidente 95).
+const AUDIO_EXT_RE = /\.(mp3|wav|m4a|flac|ogg|webm|aac|wma|mp4|mov|opus)$/i;
 
 export function isAudioFile(file: File): boolean {
   if (file.type && file.type.toLowerCase().startsWith("audio/")) return true;
