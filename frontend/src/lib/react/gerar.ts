@@ -246,9 +246,11 @@ export async function dispararCloneHeygen(args: {
   );
   const bytes = await foto.Body!.transformToByteArray();
   // Pela EXTENSÃO da chave era o mesmo veneno do header: um .webp no R2 subia
-  // rotulado como image/png e o HeyGen recusava. Quem decide são os bytes.
+  // rotulado como image/png e o HeyGen recusava. Quem decide são os bytes —
+  // e desde 01/09 webp é recusado aqui de propósito, porque o `/v1/asset` do
+  // HeyGen aceita só png/jpeg (doc oficial).
   const tipo = contentTypeImagemHeygen(bytes);
-  if (!tipo) throw new Error(erroImagemNaoSuportada(bytes));
+  if (!tipo) throw new Error(erroImagemNaoSuportada(bytes, "plataforma"));
   try {
     const { image_key } = await uploadImageAsset(apiKey, bytes, tipo);
     const audioUrl = await createPresignedGet(R2_BUCKETS.generations, args.audioKey, 60 * 60 * 3);

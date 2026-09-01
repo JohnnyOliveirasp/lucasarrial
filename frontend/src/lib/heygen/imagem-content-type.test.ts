@@ -35,16 +35,49 @@ test("PNG real → image/png", () => {
   assert.equal(contentTypeImagemHeygen(new Uint8Array(PNG)), "image/png");
 });
 
-test("REGRESSÃO: WebP → image/webp, nunca image/jpeg", () => {
-  // Era exatamente aqui que nascia "Content type not match image/jpeg != image/webp".
-  assert.equal(contentTypeImagemHeygen(new Uint8Array(WEBP)), "image/webp");
+test("REGRESSÃO (#171): WebP → null, porque o /v1/asset aceita só png/jpeg", () => {
+  // Em 28/08 (f3c0e90) esta asserção era "image/webp": paramos de MENTIR o
+  // rótulo, mas passamos a mandar webp DE VERDADE — e a doc do endpoint lista
+  // apenas "png, jpeg". Rótulo honesto + formato recusado = aluno bloqueado do
+  // mesmo jeito. Quem não pode subir tem que ser barrado ANTES do upload.
+  assert.equal(contentTypeImagemHeygen(new Uint8Array(WEBP)), null);
 });
 
 test("REGRESSÃO: header mentindo não muda o veredito — quem decide são os bytes", () => {
   // O CDN do HeyGen mandava Content-Type: image/jpeg com corpo webp. A função
   // nem recebe o header de propósito: não há como o rótulo contaminar a decisão.
-  assert.equal(contentTypeImagemHeygen(new Uint8Array(WEBP)), "image/webp");
+  // O que sobrevive ao #171: webp JAMAIS pode sair daqui rotulado como outra coisa.
   assert.notEqual(contentTypeImagemHeygen(new Uint8Array(WEBP)), "image/jpeg");
+  assert.notEqual(contentTypeImagemHeygen(new Uint8Array(WEBP)), "image/png");
+});
+
+// ── a mensagem tem que dar uma SAÍDA, e a saída depende da origem ──────────
+
+test("#171: look do HeyGen em WebP manda o aluno pro caminho que funciona", () => {
+  const msg = erroImagemNaoSuportada(new Uint8Array(WEBP), "look_heygen");
+  assert.match(msg, /WEBP/);
+  // A saída real é o upload manual — que o próprio aluno já tinha descoberto.
+  assert.match(msg, /Enviar foto/);
+  assert.match(msg, /JPG ou PNG/);
+});
+
+test("na origem 'upload' a instrução é trocar o arquivo (aí ele TEM o arquivo)", () => {
+  const msg = erroImagemNaoSuportada(new Uint8Array(WEBP), "upload");
+  assert.match(msg, /WEBP/);
+  assert.match(msg, /Envie em JPG ou PNG/);
+});
+
+test("nenhuma mensagem recomenda WebP — era recomendar o que o HeyGen recusa", () => {
+  const gif = Buffer.concat([Buffer.from("GIF89a", "latin1"), Buffer.alloc(32)]);
+  const pdf = Buffer.concat([Buffer.from("%PDF-1.7", "latin1"), Buffer.alloc(32)]);
+  for (const origem of ["upload", "plataforma", "look_heygen"] as const) {
+    for (const b of [WEBP, gif, pdf, Buffer.alloc(0)]) {
+      const msg = erroImagemNaoSuportada(new Uint8Array(b), origem);
+      // "WEBP" (o formato que ele MANDOU) pode aparecer; "WebP" como sugestão
+      // de formato a enviar, nunca.
+      assert.doesNotMatch(msg, /ou WebP/i);
+    }
+  }
 });
 
 // ── o que NÃO vai pro HeyGen: erro claro, nunca chute ──────────────────────
@@ -84,8 +117,16 @@ test("arquivo curto/vazio não quebra e não vira jpeg", () => {
 // ── a cópia de 16 bytes não pode alterar a leitura ─────────────────────────
 
 test("imagem grande é lida pelo cabeçalho, sem copiar o corpo", () => {
+  // Usa JPEG (formato aceito) pra provar o caminho POSITIVO: um arquivo de 5MB
+  // é decidido pelos 16 primeiros bytes. Com webp o assert viraria `null` e
+  // passaria por acidente — mediria a recusa, não a leitura do cabeçalho.
+  const grande = new Uint8Array(Buffer.concat([JPEG, Buffer.alloc(5 * 1024 * 1024)]));
+  assert.equal(contentTypeImagemHeygen(grande), "image/jpeg");
+});
+
+test("arquivo grande em WebP também é recusado (não escapa pelo tamanho)", () => {
   const grande = new Uint8Array(Buffer.concat([WEBP, Buffer.alloc(5 * 1024 * 1024)]));
-  assert.equal(contentTypeImagemHeygen(grande), "image/webp");
+  assert.equal(contentTypeImagemHeygen(grande), null);
 });
 
 test("offset de subarray é respeitado (bytes não começam no índice 0 do buffer)", () => {

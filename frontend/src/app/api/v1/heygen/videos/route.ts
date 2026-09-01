@@ -77,7 +77,7 @@ async function imageBytesFromBody(
     if (!res.ok) return "Não foi possível ler a imagem";
     const bytes = new Uint8Array(await res.arrayBuffer());
     const ct = contentTypeImagemHeygen(bytes);
-    if (!ct) return erroImagemNaoSuportada(bytes);
+    if (!ct) return erroImagemNaoSuportada(bytes, "plataforma");
     return { bytes, contentType: ct };
   }
 
@@ -99,21 +99,24 @@ async function imageBytesFromBody(
     if (!res.ok) return "Não foi possível ler a foto do avatar no HeyGen";
     const buf = new Uint8Array(await res.arrayBuffer());
     if (buf.length > MAX_UPLOAD_BYTES * 2) return "Foto do avatar muito grande";
-    // ⚠️ Este é o caminho da queixa: o CDN do HeyGen serve WebP. Ler o header
-    // aqui era o que produzia "Content type not match image/jpeg != image/webp".
+    // ⚠️ Este é o caminho da queixa (#171). O CDN do HeyGen serve WebP, e o
+    // `/v1/asset` DELES aceita só png/jpeg — então não há rótulo que salve:
+    // reenviar o look automaticamente é impossível sem converter. Aqui a única
+    // coisa honesta é recusar com a saída que funciona (mandar por "Enviar
+    // foto"), em vez de subir e colher a recusa crua do HeyGen.
     const ct = contentTypeImagemHeygen(buf);
-    if (!ct) return erroImagemNaoSuportada(buf);
+    if (!ct) return erroImagemNaoSuportada(buf, "look_heygen");
     return { bytes: buf, contentType: ct };
   }
 
   // upload direto (data URL) — o prefixo `data:image/...` é só rótulo mandado
   // pelo browser; quem decide o content-type continua sendo o conteúdo.
   const m = image.data_url?.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/);
-  if (!m) return "Envie uma foto JPG, PNG ou WebP";
+  if (!m) return "Envie uma foto JPG ou PNG";
   const bytes = new Uint8Array(Buffer.from(m[1], "base64"));
   if (bytes.length > MAX_UPLOAD_BYTES) return "Foto muito grande (máx. 8MB)";
   const ct = contentTypeImagemHeygen(bytes);
-  if (!ct) return erroImagemNaoSuportada(bytes);
+  if (!ct) return erroImagemNaoSuportada(bytes, "upload");
   return { bytes, contentType: ct };
 }
 
