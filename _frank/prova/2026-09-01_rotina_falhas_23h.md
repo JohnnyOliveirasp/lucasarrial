@@ -133,7 +133,41 @@ R$ 2.391 no caso do Johnathan, R$ 7.644 na classe.
 
 ## Passo fixo de fim de ronda
 
-Registrado abaixo, depois do commit.
+`git fetch origin` + `git log --oneline origin/main..HEAD` **vazio** (o log desta
+ronda está na main, commit `64f8daf`, empurrado). Nenhum branch criado nesta
+ronda — não houve código. **Nada meu ficou preso.**
+
+**Correção honesta sobre a segunda metade do passo fixo.** A ordem manda conferir
+que não ficou fix preso em branch. Rodei **dois** detectores e os **dois são
+inválidos**, e prefiro escrever isso a publicar o número que eles deram:
+
+- `git rev-list main..<branch>` acusou **55 branches** com commits fora da main.
+  Inútil: squash-merge deixa o commit original fora da main para sempre, então
+  branch já entregue aparece igual a branch esquecido.
+- `git diff main..<branch>` acusou **0** com conteúdo já na main. Igualmente
+  inútil, e pelo motivo oposto: a main andou muito à frente, então toda branch
+  antiga difere da main nos dois sentidos e o teste dá "diverge" para todas.
+
+Um deu 55, o outro deu 0, e a resposta certa não é nenhuma das duas. **Não tenho
+hoje um detector válido de fix preso em branch** — só sei afirmar sobre o que eu
+mesmo criei nesta ronda. Fica registrado como dívida, não como verificação feita.
+
+### O que a varredura das branches pegou de verdade (e vale a pena)
+
+`feat/qa-exhausted-score`, **datada de hoje**, é exatamente o fix de telemetria
+do `#226` que o log das 22hZ disse, com todas as letras, que **não tinha subido**.
+Ele existe: 1 commit (`d11394c`), +79 linhas em 3 arquivos, **com teste**
+(`test_coverage_qa.py`). Conferi que a main **não** tem: em `main`, o
+`loop.py:342` continua logando `best_score` e jogando fora, que é o defeito
+descrito no `#226`.
+
+**Não está rotando escondido: PR #147, OPEN.** Então está visível e no fluxo — a
+decisão de não mergear é legítima e está justificada no log das 22hZ (é
+`runpod-worker`, imagem própria, e buildar não prova que o endpoint do RunPod
+passou a servir). Registro assim mesmo por causa do precedente deste mesmo
+chamado: o **PR #141 ficou 11h aberto sem review** enquanto o aluno esperava.
+**PR aberto não é produção.** Quem pegar a próxima ronda: o `#226` não anda
+enquanto o #147 não estiver rodando *de fato* no endpoint.
 
 ## Estado final, sem maquiagem
 
