@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     if (!res.ok) return badRequest("Não foi possível ler a imagem");
     const bytes = new Uint8Array(await res.arrayBuffer());
     const ct = contentTypeImagemHeygen(bytes);
-    if (!ct) return badRequest(erroImagemNaoSuportada(bytes));
+    if (!ct) return badRequest(erroImagemNaoSuportada(bytes, "plataforma"));
     const { image_key } = await uploadImageAsset(apiKey, bytes, ct);
     const { group_id } = await createPhotoAvatarGroup(apiKey, { name, image_key });
     return jsonOk({ group_id, name }, 201);
