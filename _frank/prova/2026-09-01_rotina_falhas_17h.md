@@ -127,6 +127,28 @@ ronda:
    continua de pé e continua sendo decisão comercial do Johnny. **Depois de
    amanhã.**
 
+## Passo fixo de fim de ronda: cumprido, e o check está quebrado
+
+`git log --oneline origin/main..HEAD` saiu **vazio** e a árvore está limpa. Esta
+ronda não criou branch de código: o único commit é este log, direto na main, já
+no origin. Nada meu ficou preso.
+
+Mas o check dos branches acusou **53 branches locais** com commit fora da main.
+Medi com método correto (comparar os **arquivos tocados** contra a versão atual
+da main — `rev-list` sozinho dá falso positivo em squash merge): **4 falso
+positivo, 49 divergem de verdade.**
+
+**49 linhas de alarme é alarme que ninguém lê.** O detector que existe para
+pegar *um* fix preso hoje esconde esse um dentro de 49 — pior que não ter check,
+porque dá falsa sensação de cobertura. Não vou afirmar que os 49 contêm fix de
+aluno parado: não medi um a um, e chutar aqui seria exatamente o tipo de
+afirmação que esta ronda passou o dia corrigindo. Card **`936eb605`** aberto pro
+`coder` para classificar os 49 e propor um check que dê sinal útil — com o aviso
+de que `feat/fix-image-upload-retry` e `feat/onedrive-401` são **não-mergear**
+documentados e derrubam fix que está no ar.
+
+É problema pré-existente, não criado por esta ronda.
+
 ## Estado final
 
 Um incidente trabalhado até onde dava: **causa medida, registro falso
