@@ -218,6 +218,35 @@ no #202, nos dois casos com o instrumento cego concordando consigo mesmo.
 - **não reabri nada da planilha** (ordem de 29/08): não apareceu incidente novo
   dessa origem nesta ronda.
 
+## 7-B. A checagem nova achou algo grande na primeira vez que rodou
+
+Rodei `gh pr list --state open` como passo fixo (§1) e o resultado **não é uma
+formalidade**: há **28 PRs abertos**, o mais antigo de **18/08 — 14 dias**.
+
+Não são todos dívida. Pelo menos dois estão **retidos de propósito** e o título
+diz isso:
+
+- **#17** — *"NAO MERGEAR SEM OK DO JOHNNY"*;
+- **#18** — *"mig 85 — NÃO aplicada"* (código que depende de migration que não
+  existe no banco; mergear seria quebrar).
+
+E as ordens já marcam branches **STALE que não podem ser mergeados**
+(`feat/fix-image-upload-retry`, `feat/onedrive-401` — este derrubaria o fix do
+OneDrive que está em produção).
+
+**Por isso eu não mergeei nada em massa, e não vou.** Cada um precisa do mesmo
+tratamento que dei ao #141: conferir se divergiu da main, rodar `tsc`/`eslint`,
+checar se depende de DDL aplicado, e ler se a ordem manda segurar. Fazer isso no
+atacado é exatamente como se derruba produção.
+
+**Item delimitado para a próxima ronda:** triagem dos 28 em três baldes —
+(a) retido de propósito, (b) stale/perigoso, (c) **fix bom parado**. Só o balde
+(c) vira trabalho. O #141 de hoje prova que o balde (c) não está vazio: era um
+defeito no ar, ferindo pagante, com o conserto pronto e o PR aberto há 11h.
+
+Não afirmo quantos são de cada balde — **não medi**, e chutar aqui seria o mesmo
+tipo de erro que esta ronda passou o dia corrigindo.
+
 ## 8. Placar de não-fechados: 9 (5 `investigating` + 4 `aguardando_aluno`)
 
 Igual ao da ronda anterior. **A resposta honesta segue a mesma:** 3 dependem de
