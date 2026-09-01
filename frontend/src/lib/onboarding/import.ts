@@ -40,7 +40,13 @@ import { rm } from "node:fs/promises";
 import { dirTemporario } from "./tmp";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { downloadDriveFile, downloadDriveFileToPath, pickExtension, ehArquivoLocal } from "./drive";
+import {
+  downloadDriveFile,
+  downloadDriveFileToPath,
+  pickExtension,
+  ehArquivoLocal,
+  type DriveFile,
+} from "./drive";
 import {
   sniffImagem,
   heicParaJpegViaDrive,
@@ -49,8 +55,10 @@ import {
   descreverArquivo,
 } from "./imagem-tipo";
 import { extrairFramesDeArquivo } from "./video-frames";
+import { extrairAudioDeArquivo } from "./video-audio";
 import { escolherReferenciaFrontal } from "./referencia";
 import { dispararTreinoOnboarding } from "./treino";
+import { decidirVozOnboarding, type VozOnboarding } from "./veredito-audio";
 
 type Admin = SupabaseClient<Database>;
 
@@ -59,6 +67,19 @@ const MAX_IMAGE_BYTES = 30 * 1024 * 1024; // 30MB por foto
 // vídeo com teto próprio e extraímos 3 frames que viram as fotos.
 const MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024; // streaming pra disco — tamanho quase não importa (A248: 878MB)
 const MAX_AUDIO_BYTES = 400 * 1024 * 1024; // 400MB por take (1h WAV cabe)
+// O aluno mandou VÍDEO como fonte de voz e o vídeo passa do teto acima. O que
+// não cabe é o VÍDEO, não a voz dele: streaming pro disco + ffmpeg tira a
+// faixa de áudio, que tem dezenas de MB. Espelha o que o lado das FOTOS já faz
+// desde 14/08 (`importarFramesDoVideo`) e que o lado do ÁUDIO nunca teve.
+// Medido no caso Johnathan (#180, 29/08): 8 dos 15 arquivos morriam aqui, entre
+// eles um de 490MB com 28min22s de fala que SOZINHO abriria a porta de 20min.
+// Os 7 que cabiam somavam 19min15s — ele era reprovado por 45 SEGUNDOS e lia
+// "seu áudio é curto, grave mais": culpado por um teto NOSSO.
+const MAX_AUDIO_SOURCE_BYTES = 4 * 1024 * 1024 * 1024; // 4GB EM DISCO, nunca em Buffer
+// Teto de TEMPO, não de tamanho: a rota tem `maxDuration` de 600s e cada vídeo
+// desses leva minutos pra baixar. Três resolvem o caso real; o que passar disso
+// segue contando como descartado — e agora o descarte APARECE na mensagem.
+const MAX_AUDIO_STREAM_FILES = 3;
 const MAX_IMAGES = 20;
 const MAX_AUDIOS = 20; // mesmo teto do MAX_FILES_PER_VOICE
 /* A régua de 20min brutos vive em @/lib/voices/regua-audio (importada acima). */
@@ -409,6 +430,30 @@ export type AudioImportResult = ImportResult & {
   training: string | null;
 };
 
+/**
+ * Arquivo grande demais pro Buffer: baixa por STREAMING pro disco e devolve só
+ * a FAIXA DE ÁUDIO. Serve tanto pro Drive quanto pro arquivo local vindo de
+ * `abrirLink` (zip/WeTransfer/Dropbox) — `downloadDriveFileToPath` trata os
+ * dois. O nome sintético carrega a extensão real da faixa, que é o que o
+ * `pickExtension` e a régua de extensões leem depois.
+ */
+async function audioDeVideoGrande(fileId: string): Promise<DriveFile> {
+  const dir = await dirTemporario("onbaudsrc-");
+  try {
+    const src = join(dir, "fonte.bin");
+    await downloadDriveFileToPath(fileId, src, MAX_AUDIO_SOURCE_BYTES);
+    const faixa = await extrairAudioDeArquivo(src);
+    const safe = fileId.replace(/[^a-zA-Z0-9_-]/g, "");
+    return {
+      bytes: faixa.bytes,
+      contentType: faixa.mime,
+      filename: `${safe}.${faixa.ext}`,
+    };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /** Tenta disparar o treino (cobrado do aluno); nunca derruba o import. */
 async function tentarTreino(
   admin: Admin,
@@ -446,38 +491,64 @@ export async function importTrainingAudios(
     return { ...result, voice_id: null, voice_status: null, training: null };
   }
 
-  // Idempotência: a voz do onboarding já existe e passou do upload → pronto.
-  const { data: existing } = await admin
+  // Idempotência da voz do onboarding — INCIDENTE 146 (26/08).
+  //
+  // A guarda antiga era `created_at ASC limit 1` + "qualquer status !=
+  // 'uploading' já está pronto". Isso fazia duas coisas erradas ao mesmo tempo:
+  // estado TERMINAL DE FALHA virava "pronto" (material NOVO era pulado sem
+  // download e sem medição, e o veredito velho voltava pro chamador, que o
+  // mandava por e-mail), e a voz escolhida era a MAIS ANTIGA (rafaelleitemacedo,
+  // voz `ready` desde 16/08, foi recusado em 22/08 pela voz reprovada de 13/08).
+  //
+  // Agora quem decide é `decidirVozOnboarding` (lógica pura + testes em
+  // veredito-audio.ts): voz em estado bom manda; falha terminal com o MESMO
+  // material continua pulando (é o que evita o e-mail duplicado — robson levou
+  // 3, itabenke 3, isabella 3); falha terminal com fileId NOVO volta pro fluxo
+  // normal de importação, porque aí o aluno reenviou e o material PRECISA ser
+  // medido. A régua (MIN_TOTAL_SECONDS) não mudou: o portão passa a RODAR, não
+  // a afrouxar.
+  //
+  // ⚠️ COBRANÇA: o fluxo de importação termina em `tentarTreino`, que cobra
+  // TRAINING_CREDIT_COST (treino.ts, `debitCreditsOnboarding`). Por isso o
+  // caminho "importar" só é liberado quando existe fileId NOVO — ou seja, o
+  // aluno mandou material novo e está pedindo o treino. Re-execução da planilha
+  // com o mesmo material NÃO cria cobrança nova.
+  const { data: vozes } = await admin
     .from("voices")
-    .select("id, status")
+    .select("id, status, raw_audio_paths, created_at")
     .eq("user_id", userId)
     .eq("name", ONBOARDING_VOICE_NAME)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: false })
+    .limit(20);
 
-  if (existing && existing.status !== "uploading") {
+  const decisao = decidirVozOnboarding((vozes ?? []) as VozOnboarding[], fileIds);
+
+  if (decisao.acao === "reusar" || decisao.acao === "pular") {
+    const voz = decisao.voz;
     result.skipped = fileIds.length;
     // Reprocesso de conta importada no modelo antigo: voz parada esperando
     // o aluno pagar → dispara o treino agora (idempotente: training/ready
     // não entram aqui).
     let training: string | null = null;
-    if (existing.status === "awaiting_training") {
-      const t = await tentarTreino(admin, userId, existing.id as string);
+    if (voz.status === "awaiting_training") {
+      const t = await tentarTreino(admin, userId, voz.id);
       training = t.nota;
       if (t.status) {
-        return { ...result, voice_id: existing.id as string, voice_status: t.status, training };
+        return { ...result, voice_id: voz.id, voice_status: t.status, training };
       }
     }
     return {
       ...result,
-      voice_id: existing.id as string,
-      voice_status: existing.status as string,
+      voice_id: voz.id,
+      voice_status: voz.status,
       training,
     };
   }
 
-  let voiceId = existing?.id as string | undefined;
+  // "retomar" = importação anterior morreu no meio (voz em "uploading").
+  // "importar" = sem voz, ou falha terminal com material novo → voz nova, para
+  // que as chaves R2 (que levam o voiceId) forcem download e medição de tudo.
+  let voiceId = decisao.acao === "retomar" ? decisao.voz.id : undefined;
   if (!voiceId) {
     const { data: voice, error } = await admin
       .from("voices")
@@ -489,10 +560,33 @@ export async function importTrainingAudios(
   }
 
   const uploadedKeys: string[] = [];
+  let streamsRestantes = MAX_AUDIO_STREAM_FILES;
+  // Teto de RELÓGIO, não só de contagem — medido no próprio caso Johnathan
+  // (29/08): os 3 arquivos que o resgate pegaria somam **4,77 GB**. A 24 MB/s
+  // (throughput real medido contra o Drive) dá ~200s só de download, dentro do
+  // `maxDuration = 600` da rota — mas essa folga é do TAMANHO DA PASTA DELE,
+  // não uma garantia. Uma pasta pior, ou um dia de rede ruim, estoura os 600s
+  // e aí o import inteiro morre: o aluno não recebe recusa, recebe NADA — pior
+  // que a mensagem errada que este commit veio consertar. Com o relógio, o que
+  // não coube vira descarte declarado, e a mensagem agora conta o descarte.
+  const RESGATE_DEADLINE = Date.now() + 300_000;
   for (let i = 0; i < Math.min(fileIds.length, MAX_AUDIOS); i++) {
     const fileId = fileIds[i];
     try {
-      const file = await downloadDriveFile(fileId, MAX_AUDIO_BYTES);
+      let file: DriveFile;
+      try {
+        file = await downloadDriveFile(fileId, MAX_AUDIO_BYTES);
+      } catch (eDown) {
+        const msgDown = eDown instanceof Error ? eDown.message : String(eDown);
+        // SÓ tamanho entra no resgate. Arquivo privado, HTML de login e id
+        // inválido continuam falhando igual: ali o problema não é o teto e
+        // fingir que é esconderia o defeito de verdade.
+        const soTamanho = /teto \d+ ?MB|passa do teto|passou de \d+ ?MB/i.test(msgDown);
+        if (!soTamanho || streamsRestantes <= 0) throw eDown;
+        if (Date.now() > RESGATE_DEADLINE) throw eDown;
+        streamsRestantes--;
+        file = await audioDeVideoGrande(fileId);
+      }
       // 22/08: quem decide é o CONTEÚDO, não o rótulo — a versão de áudio da
       // regra que o sniffImagem já aplica nas fotos. O caso que forçou isso:
       // link do OneDrive devolvia a página de LOGIN da Microsoft (HTML de

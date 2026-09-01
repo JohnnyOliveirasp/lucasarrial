@@ -1,5 +1,7 @@
 import { Search } from "lucide-react";
+import { notFound } from "next/navigation";
 import { getHistory } from "@/lib/admin/queries";
+import { getAdminContext } from "@/lib/admin/guard";
 import { HistoryTabs } from "@/components/admin/history-tabs";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +11,11 @@ export default async function HistoricoPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  // Esta página lê o banco DIRETO (não passa por /api/v1/admin/*), então a
+  // trava de papel precisa estar aqui — o gate da API não a cobre (mig 95).
+  const ctx = await getAdminContext();
+  if (ctx?.role !== "admin") notFound();
+
   // Filtro por e-mail (mig 57, pedido Johnny 02/08): ?q=parte-do-email —
   // acha a voz/geração/pagamento de uma pessoa sem rolar os "últimos 40".
   const { q } = await searchParams;

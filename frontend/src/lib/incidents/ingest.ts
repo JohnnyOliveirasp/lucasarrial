@@ -10,6 +10,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { classifyCause, errorSignature, incidentTitle } from "./classify";
+import { inserirChamadoUnico } from "./gravar";
 import { logger } from "@/lib/logger/server";
 
 type RawFailure = {
@@ -106,10 +107,10 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
         .eq("id", existing.id);
       incidentId = existing.id;
     } else {
-      const { data: insertedRaw, error: insErr } = await admin
-        .from("incidents" as never)
-        .insert({
+      const gravado = await inserirChamadoUnico(admin, {
           kind: f.kind === "voice" ? "training" : f.kind,
+          // Sync de falhas do sistema: sempre fila TÉCNICA (mig 93).
+          categoria: "tecnico",
           cause: classifyCause(error),
           // user_dataset já nasce fechado: estornado + explicado ao aluno.
           status: userError ? "ignored" : "open",
@@ -133,16 +134,15 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
             : {}),
           first_seen_at: f.at,
           last_seen_at: f.at,
-        } as never)
-        .select("id")
-        .single();
-      const inserted = insertedRaw as unknown as { id: string } | null;
-      if (insErr || !inserted) {
-        logger.error("api", "incidents.sync.insert_failed", { error: insErr?.message });
+      });
+      if (!gravado) {
+        logger.error("api", "incidents.sync.insert_failed", { signature });
         continue;
       }
-      incidentId = inserted.id;
-      created++;
+      incidentId = gravado.id;
+      // Chamado que já existia (corrida) não conta como criado — senão o
+      // relatório da ronda diz "abri 6" quando abriu 1.
+      if (!gravado.jaExistia) created++;
     }
 
     await admin.from("incident_occurrences" as never).insert({

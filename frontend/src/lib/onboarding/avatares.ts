@@ -30,7 +30,8 @@ const MAX_REFS = 6; // mesmo teto do /images/generate
 
 /** 3 cenários OFICIAIS (prompts do Johnny 13/08) — likeness em primeiro
  *  lugar, sempre olhando pra câmera, vertical 3:4. */
-const AVATARES: Array<{ nome: string; promptPt: string; promptEn: string }> = [
+type Cenario = { nome: string; promptPt: string; promptEn: string };
+const AVATARES: Cenario[] = [
   {
     nome: "Profissionalismo (escritório)",
     promptPt:
@@ -60,10 +61,23 @@ export type AvataresResult = {
   failed: Array<{ nome: string; error: string }>;
 };
 
+/**
+ * Cenário do SGP (29/08): o "clone de foto" é UMA imagem social séria, neutra
+ * de gênero — o modelo segue a referência. Vale pros dois sexos sem escolher.
+ */
+export const AVATAR_SOCIAL: Cenario = {
+  nome: "Foto social",
+  promptPt:
+    "Eu em uma foto social profissional, do busto para cima, olhando diretamente para a câmera, expressão séria e confiante, fundo neutro e iluminação de estúdio.",
+  promptEn:
+    "The exact same person as in the reference photos — identical face, photorealistic — professional social portrait, chest up, looking directly at the camera with a serious, confident expression, neutral background, soft studio lighting. Vertical portrait.",
+};
+
 export async function gerarAvatares(
   admin: Admin,
   userId: string,
   refKeys: string[],
+  cenarios: readonly Cenario[] = AVATARES,
 ): Promise<AvataresResult> {
   const result: AvataresResult = { created: 0, skipped: 0, failed: [] };
   if (refKeys.length === 0) return result;
@@ -75,7 +89,7 @@ export async function gerarAvatares(
     .eq("user_id", userId)
     .eq("idea", IDEA_MARCA);
   if ((count ?? 0) > 0) {
-    result.skipped = AVATARES.length;
+    result.skipped = cenarios.length;
     return result;
   }
 
@@ -103,7 +117,7 @@ export async function gerarAvatares(
   // avatar é gerado mesmo com o aluno a zero e ele fica negativo até assinar
   // (`debitCreditsOnboarding`, migration 88). Só aqui; o /images/generate
   // normal continua recusando sem saldo.
-  for (const avatar of AVATARES) {
+  for (const avatar of cenarios) {
     try {
       const { taskId } = await kieCreateImageTask(
         {

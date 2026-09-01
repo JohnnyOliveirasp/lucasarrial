@@ -26,6 +26,7 @@ import { gruposDoTime } from "@/lib/support/grupo";
 import { sendAgentText } from "@/lib/agent/provider";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
+import { classificarErro } from "./erro-dono";
 
 const LOGIN_URL = "https://fastcloner.com/login";
 const ASSINAR_URL = "https://fastcloner.com/#planos";
@@ -108,6 +109,34 @@ export async function avisoPrecisamosDeVoce(
 }
 
 /** Final feliz, aluno com assinatura vigente. Texto do Johnny 13/08. */
+/**
+ * SGP — etapa concluída. 29/08 (Johnny): "não recebi nenhum e-mail depois
+ * dizendo que a foto foi gerada, que a voz está em treinamento, que a voz
+ * estava pronta". Um e-mail por etapa, disparado por lib/sgp/etapas.ts.
+ */
+export async function avisoFotoPronta(email: string): Promise<void> {
+  await mandar(
+    email,
+    "Seu clone de foto ficou pronto ✅",
+    `Boa! A sua foto de clone já foi gerada.
+
+` +
+      `Agora estamos treinando a sua VOZ — leva cerca de 30 minutos. ` +
+      `Você recebe outro e-mail quando ela ficar pronta; não precisa fazer nada.`,
+  );
+}
+
+export async function avisoVozPronta(email: string): Promise<void> {
+  await mandar(
+    email,
+    "Sua voz clonada ficou pronta 🎙️",
+    `A sua voz terminou o treino e já está configurada na FastCloner.
+
+` +
+      `Se a sua foto também já ficou pronta, é só entrar na plataforma pra usar as duas.`,
+  );
+}
+
 export async function avisoTudoPronto(email: string): Promise<void> {
   await mandar(
     email,
@@ -128,7 +157,26 @@ export async function avisoTudoPronto(email: string): Promise<void> {
  * estão ok e já processados; falta só o acesso. ⚠️ Por decisão do Johnny
  * (21/08) NÃO fala de saldo nem de cobrança — só que está tudo ok.
  */
-export async function avisoOkMasAssine(email: string): Promise<void> {
+/**
+ * @param semImagem nenhum avatar ficou pronto — o texto NÃO pode dizer que as
+ *   imagens estão ok. Ver o incidente #189 no bloco de `pronto.ts`.
+ */
+export async function avisoOkMasAssine(email: string, semImagem = false): Promise<void> {
+  if (semImagem) {
+    await mandar(
+      email,
+      "Sua voz está pronta — e falta a sua foto",
+      `A sua VOZ terminou o treino e já está configurada na FastCloner. 🎙️\n\n` +
+        `Mas as suas FOTOS não chegaram até nós, então a parte de imagem ainda ` +
+        `não foi feita. É só responder este e-mail com as suas fotos que a gente ` +
+        `termina — você não precisa refazer mais nada.\n\n` +
+        `Para usar a plataforma — gerar vídeos, cenários e áudios com a sua voz — ` +
+        `você também precisa ativar a sua assinatura.\n\n` +
+        `Assine aqui: ${ASSINAR_URL}\n\n` +
+        `Assim que ativar, é só entrar em ${LOGIN_URL}.`,
+    );
+    return;
+  }
   await mandar(
     email,
     "Seus arquivos estão prontos — falta só o acesso",
@@ -210,47 +258,10 @@ export async function escalarNoGrupo(erro: ErroOnboarding): Promise<void> {
 }
 
 /**
- * A quem pertence o erro:
- *   "nosso"    → rede, servidor, bug. O aluno NÃO é incomodado (regra 1).
- *   "planilha" → dado errado na planilha (e-mail inválido, falta senha). Não
- *                dá pra mandar e-mail — muitas vezes o endereço é justamente o
- *                que está quebrado. É o TIME que corrige.
- *   "aluno"    → o material dele. Ele é avisado e a mensagem diz o que fazer.
+ * A régua de culpa (classificarErro / dependeDoAluno / DonoDoErro) mora agora
+ * em `erro-dono.ts`: é decisão PURA e precisa de teste próprio, e este arquivo
+ * importa SMTP/WhatsApp/Resend (não sobe num `node --test`). Re-exportado aqui
+ * pra não mexer em quem já importava daqui — o route.ts do import, por exemplo.
  */
-export type DonoDoErro = "nosso" | "planilha" | "aluno";
-
-/** Erro NOSSO: infra, bug, resposta estranha. Lista fechada, e é de propósito. */
-const NOSSO =
-  /http \d{3}|falha de rede|falha geral|cannot read propert|undefined|enospc|no space left|timeout|econn|socket hang up|ffmpeg|erro interno|internal server|tentativas sem sucesso|não sabemos listar/i;
-
-/** Dado da planilha: não adianta escrever pro aluno, o canal é que está errado. */
-const PLANILHA = /e-?mail inv[aá]lido|faltou e-?mail|faltou.*senha|sem e-?mail/i;
-
-/**
- * Classifica o motivo do erro. 22/08 (Johnny): *"onde é erro que não tem
- * permissão, o suporte manda e-mail informando que não consegue progredir; se
- * for erro técnico que está errada a imagem, é informado que ação ela precisa
- * fazer"*.
- *
- * ⚠️ O PADRÃO FOI INVERTIDO, e essa é a mudança que importa. A versão antiga
- * era uma lista de palavras PERMITIDAS ("permissão", "not found", "teto"…) e
- * quem não casasse ficava calado — resultado medido no dia: WeTransfer
- * vencido (9 linhas, a 2ª maior causa), YouTube/iCloud, PDF no lugar da foto e
- * página HTML do Dropbox/OneDrive **não avisavam ninguém**. O aluno ficava
- * parado sem saber por quê, às vezes por semanas, até o link morrer de vez.
- *
- * Agora só cala o que é COMPROVADAMENTE nosso ou dado da planilha; todo o
- * resto é material do aluno e ele é avisado. O risco trocado é consciente: um
- * erro nosso desconhecido pode gerar um e-mail a mais — muito mais barato do
- * que um aluno esperando em silêncio.
- */
-export function classificarErro(motivo: string): DonoDoErro {
-  if (NOSSO.test(motivo)) return "nosso";
-  if (PLANILHA.test(motivo)) return "planilha";
-  return "aluno";
-}
-
-/** Compat: o aluno recebe e-mail? */
-export function dependeDoAluno(motivo: string): boolean {
-  return classificarErro(motivo) === "aluno";
-}
+export { classificarErro, dependeDoAluno } from "./erro-dono";
+export type { DonoDoErro } from "./erro-dono";

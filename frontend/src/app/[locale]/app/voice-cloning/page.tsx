@@ -138,8 +138,23 @@ export default async function VoiceCloningPage({
                   <span className="text-xs text-[var(--ash)]">
                     {new Date(v.created_at).toLocaleDateString(locale)}
                   </span>
+                  {/* 26/08 (incidente 137): 12 alunos com 20-50min JÁ enviados
+                      ficaram até 43 dias em awaiting_training sem clicar. Nesta
+                      lista o estado aparecia só como um badge `soft` escrito
+                      "Pronta pra treinar" — do lado de "Pronta" (ready) ele lê
+                      como "acabou, está pronta", e nada dizia que faltava um
+                      clique DELE. O passo que falta agora está escrito na linha,
+                      e o badge sai do cinza pra não empatar com os estados em
+                      que o aluno não tem nada a fazer. */}
+                  {v.status === "awaiting_training" && (
+                    <span className="text-xs text-[var(--status-warn)]">
+                      {t("voiceCloning.awaitingHint")}
+                    </span>
+                  )}
                 </div>
-                <Badge variant="soft">
+                <Badge
+                  variant={v.status === "awaiting_training" ? "solid" : "soft"}
+                >
                   {STATUS_KEYS.has(v.status)
                     ? t(`voiceCloning.statuses.${v.status}`)
                     : v.status}

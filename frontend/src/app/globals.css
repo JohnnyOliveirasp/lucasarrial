@@ -220,3 +220,87 @@ body {
 @utility glow-stats {
   background-image: var(--glow-stats);
 }
+
+/* ───────────────────────────────────────────────────────────────
+   SGP — botão de VIDRO (Johnny 29/08; refs em _Bugs/SGP/bugs).
+   Corpo TRANSPARENTE (6% branco + blur do fundo), borda branca real de 1.5px,
+   gloss na metade de cima (::before), reflexo fino embaixo, sombra projetada.
+   Sem gradiente em border-box (vazava por trás e virava cinza chapado).
+   ─────────────────────────────────────────────────────────────── */
+.sgp-btn {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 2.75rem;
+  padding: 0 1.5rem;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  text-decoration: none;
+  box-sizing: border-box;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 12px rgba(255, 255, 255, 0.06),
+    0 10px 28px -10px rgba(0, 0, 0, 0.6);
+  transition:
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+/* gloss: metade de cima mais clara, como vidro polido */
+.sgp-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 50% 0;
+  border-radius: 9999px 9999px 40% 40%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.04));
+  pointer-events: none;
+  z-index: -1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .sgp-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.11);
+    border-color: rgba(255, 255, 255, 0.75);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.65),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.22),
+      inset 0 0 14px rgba(255, 255, 255, 0.1),
+      0 14px 32px -10px rgba(0, 0, 0, 0.7),
+      0 0 22px -6px rgba(255, 255, 255, 0.25);
+  }
+}
+.sgp-btn:active:not(:disabled) { transform: scale(0.97); background: rgba(255, 255, 255, 0.14); }
+.sgp-btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.sgp-btn:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.55); outline-offset: 3px; }
+
+/* variantes */
+.sgp-btn--ghost { border-color: rgba(255, 255, 255, 0.28); background: rgba(255, 255, 255, 0.03); color: var(--silver); }
+.sgp-btn--ghost::before { opacity: 0.6; }
+.sgp-btn--ghost:hover:not(:disabled) { color: var(--ink); border-color: rgba(255, 255, 255, 0.5); }
+.sgp-btn--sm { height: 2.25rem; padding: 0 1.1rem; font-size: 13px; }
+.sgp-btn--xs { height: 1.7rem; padding: 0 0.7rem; font-size: 11px; gap: 0.25rem; border-width: 1px; }
+.sgp-btn--block { width: 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sgp-btn { transition: none; }
+}
+
+/* Barra indeterminada do acompanhamento do SGP (tela 5). */
+@keyframes sgp-desliza {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

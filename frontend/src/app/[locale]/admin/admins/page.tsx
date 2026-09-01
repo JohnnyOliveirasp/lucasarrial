@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Trash2, Plus, ShieldCheck } from "lucide-react";
+import { Trash2, Plus, ShieldCheck, LifeBuoy } from "lucide-react";
+
+type Role = "admin" | "suporte";
 
 type Admin = {
   id: string;
   email: string;
+  role: Role;
   added_by: string | null;
   created_at: string;
 };
@@ -19,6 +22,7 @@ export default function AdminsPage() {
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
+  const [role, setRole] = useState<Role>("admin");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,11 +46,12 @@ export default function AdminsPage() {
     const res = await fetch("/api/v1/admin/admins", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim() }),
+      body: JSON.stringify({ email: email.trim(), role }),
     });
     const json = await res.json().catch(() => ({}));
     if (res.ok) {
       setEmail("");
+      setRole("admin");
       await load();
     } else {
       setError(json?.error?.message || "Falha ao adicionar");
@@ -71,11 +76,13 @@ export default function AdminsPage() {
         </h1>
         <p className="mt-1 text-[14px] text-[var(--mute)]">
           Quem pode acessar o painel <code className="text-[var(--silver)]">/admin</code>.
-          Adicione ou remova a qualquer momento.
+          <strong className="text-[var(--silver)]"> Admin</strong> vê tudo, inclusive
+          financeiro. <strong className="text-[var(--silver)]">Suporte</strong> vê só
+          Falhas e Agente.
         </p>
       </div>
 
-      <form onSubmit={add} className="flex items-center gap-3">
+      <form onSubmit={add} className="flex flex-wrap items-center gap-3">
         <input
           type="email"
           required
@@ -84,6 +91,15 @@ export default function AdminsPage() {
           placeholder="novo-admin@exemplo.com"
           className={INPUT}
         />
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as Role)}
+          aria-label="Nível de acesso"
+          className="h-10 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 text-sm text-[var(--ink)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none"
+        >
+          <option value="admin">Admin — tudo</option>
+          <option value="suporte">Suporte — falhas e agente</option>
+        </select>
         <button type="submit" disabled={busy || !email.trim()} className={PILL}>
           <Plus className="size-4" />
           Adicionar
@@ -117,8 +133,15 @@ export default function AdminsPage() {
                   i > 0 ? "border-t border-[var(--hairline)]" : ""
                 }`}
               >
-                <ShieldCheck className="size-4 flex-none text-[var(--silver)]" />
+                {a.role === "suporte" ? (
+                  <LifeBuoy className="size-4 flex-none text-[var(--mute)]" />
+                ) : (
+                  <ShieldCheck className="size-4 flex-none text-[var(--silver)]" />
+                )}
                 <span className="flex-1 truncate text-sm text-[var(--ink)]">{a.email}</span>
+                <span className="rounded-[var(--radius-full)] border border-[var(--hairline-strong)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[var(--silver)]">
+                  {a.role === "suporte" ? "Suporte" : "Admin"}
+                </span>
                 <span className="hidden font-mono text-[10px] tracking-wide text-[var(--ash)] sm:inline">
                   {new Date(a.created_at).toLocaleDateString("pt-BR")}
                 </span>

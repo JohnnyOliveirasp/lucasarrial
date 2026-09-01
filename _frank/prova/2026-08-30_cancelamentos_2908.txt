@@ -1,0 +1,38 @@
+janela UTC 2026-08-29T00:00:00.000Z -> 2026-08-30T00:00:00.000Z (dia 2026-08-29)
+3 evento(s) de cancelamento -> 3 pessoa(s)
+varredura expire_trial_credits: DESATIVADA — DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas
+
+==========================================================================
+jmo.usa.007@gmail.com  (Johnny Oliveira)
+  ASSINANTE | adesao 2026-06-09 -> cancelou 2026-08-29 = 81 dia(s)
+    assinatura Z8WH93GO CANCELLED_BY_SELLER
+    rec#1 R$    20 COMPLETE        2026-06-09
+    rec#2 R$    20 COMPLETE        2026-07-09
+    rec#3 R$    20 COMPLETE        2026-08-09
+    banco: mensalidade 0 cr | extra 0 cr | acesso ate 2026-09-09
+    marcador trial: nenhum
+==========================================================================
+francielly.mazete@gmail.com  (Francielly Mazete Sousa)
+  TRIAL | adesao 2026-08-26 -> cancelou 2026-08-29 = 3 dia(s)
+    assinatura 1AXO9XAV INACTIVE (trial)
+    assinatura QVFGILKO INACTIVE (trial)
+    assinatura PXWH0XMK INACTIVE (trial)
+    assinatura YRPB1HZU CANCELLED_BY_SELLER (trial)
+    rec#1 R$     0 CANCELLED       
+    rec#1 R$     0 CANCELLED       
+    rec#1 R$     0 CANCELLED       
+    rec#1 R$     0 APPROVED        2026-08-26
+    banco: mensalidade 84035 cr | extra 0 cr | acesso ate 2026-09-02
+    marcador trial: nenhum
+    dia 10 do trial: 2026-09-05 (ainda vai chegar)
+    !! TRIAL ainda no prazo (dia 10 em 2026-09-05), mas a varredura esta DESATIVADA (DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas) — os 84035 cr NAO vao expirar sozinhos.
+==========================================================================
+gabriel.pereira@p-excellence.com.br  (P-EXCELLENCE CONSULTORIAS E TREINAMENTOS LTDA)
+  TRIAL | adesao 2026-08-29 -> cancelou 2026-08-29 = 0 dia(s)
+    assinatura IVU666FZ CANCELLED_BY_SELLER (trial)
+    rec#1 R$     0 APPROVED        2026-08-29
+    banco: SEM CONTA na plataforma
+    !! cancelou na Hotmart mas NAO existe conta na plataforma com esse e-mail
+
+==========================================================================
+2 caso(s) FORA DA REGRA: francielly.mazete@gmail.com, gabriel.pereira@p-excellence.com.br

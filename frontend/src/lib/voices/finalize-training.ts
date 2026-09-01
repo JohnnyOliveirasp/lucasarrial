@@ -6,6 +6,7 @@
  * AMOSTRA automática (linha em generations pro usuário ouvir a voz na hora).
  * Server-only.
  */
+import { logger } from "@/lib/logger/server";
 import { getAdmin } from "@/lib/db/admin";
 import { buildAutoReferenceKey } from "@/lib/r2/presigned";
 import { addExtraCredits } from "@/lib/credits/service";
@@ -29,6 +30,35 @@ export type TrainOutput = {
    * confiança → não gravamos nada e a voz se comporta como antes.
    */
   reference_pause_ms?: number | null;
+  /**
+   * Velocidade natural de fala (palavras/segundo FALANDO), medida no dataset
+   * transcrito do treino (worker: voice_pipeline.pacing.measure_speech_rate_wps).
+   * Vira `voices.speech_rate_wps`, a régua do QA de ritmo — incidente #165:
+   * a coluna era lida em 3 lugares e escrita por ninguém (1.010/1.012 NULL).
+   */
+  speech_rate_wps?: number | null;
+  /**
+   * COMO o `reference_transcript` acima foi produzido — incidente 52.
+   * A 2ª passada de whisper no clipe final (a "cura" do caso Negrini #124) cai
+   * calada no texto previsto quando o whisper falha ou volta mudo, e depois do
+   * fato era impossível dizer qual dos dois aconteceu numa voz. Agora o worker
+   * diz:
+   *   curado         · a 2ª passada rodou e SUBSTITUIU o previsto
+   *   fallback_vazio · whisper voltou vazio → ficou o previsto
+   *   fallback_erro  · whisper explodiu    → ficou o previsto (ver `_erro`)
+   *   sem_previsto   · não havia nem um nem outro → transcript vazio
+   */
+  reference_cura_ramo?: string | null;
+  /** O texto que o seletor havia previsto, ANTES da cura (par antes/depois). */
+  reference_cura_texto_antes?: string | null;
+  /** Mensagem da exceção quando o whisper da cura explodiu. */
+  reference_cura_erro?: string | null;
+  /**
+   * Identidade do build do worker que rodou este job ("<branch>@<sha> pod=..."),
+   * carimbada na imagem pelo CI. "desconhecida" = build sem o carimbo (local),
+   * e é a verdade — nunca um palpite. Responde "esse treino saiu de que build?".
+   */
+  worker_image?: string | null;
   lora_alpha?: number;
   elapsed_seconds?: number;
   steps?: number;
@@ -47,6 +77,14 @@ export type TrainOutput = {
   /** Idioma detectado no áudio de treino (ISO: pt/es/en...) — worker e3ea664+. */
   language?: string | null;
   error?: string;
+  /**
+   * Diagnóstico do subprocess do trainer quando ele morre — incidente #11.
+   * O worker (jobs/train.py:96-101) manda os DOIS tails junto com
+   * `error: "trainer failed"`; até 27/08 o backend declarava os campos aqui e
+   * NUNCA os lia, então o traceback morria na porta e a única cópia ficava no
+   * RunPod, que purga o job (/status devolve 404 poucas horas depois). Agora
+   * `registrarSaidaDoTrainer` os persiste em colunas próprias.
+   */
   stdout_tail?: string;
   stderr_tail?: string;
 };
@@ -137,6 +175,159 @@ async function alertSupportTrainFailure(args: {
   });
 }
 
+/**
+ * Registra COMO o transcript da referência saiu e QUE build do worker rodou.
+ *
+ * Incidente 52 (qa_coverage): a cura do transcript decide calada dentro do
+ * treino, e cada ronda re-investigava do zero se ela tinha rodado numa voz.
+ * Agora o worker diz o ramo; aqui a gente guarda.
+ *
+ * ⚠️ Duas decisões de propósito:
+ *  1. Vai num UPDATE SEPARADO, depois do gate idempotente — nunca junto com o
+ *     claim. A DDL (scripts/96) ainda NÃO foi aplicada, e coluna inexistente
+ *     dentro do claim derrubaria a finalização INTEIRA do treino (voz nunca
+ *     ficaria `ready`). Observabilidade não pode quebrar o produto.
+ *  2. O `logger.info` roda SEMPRE, antes e independente do banco: enquanto a
+ *     DDL não é aplicada, o dado já existe no log — que é o que resolve a
+ *     pergunta na próxima ronda.
+ */
+async function registrarCuraEBuild(
+  runpodJobId: string,
+  voiceId: string,
+  out: TrainOutput,
+): Promise<void> {
+  const ramo = out.reference_cura_ramo ?? null;
+  const textoAntes = out.reference_cura_texto_antes ?? null;
+  const curaErro = out.reference_cura_erro ?? null;
+  const workerImage = out.worker_image ?? null;
+  if (!ramo && !workerImage) return; // worker antigo, sem os campos novos
+
+  logger.info("api", "voice.train.transcript_cura", {
+    voiceId,
+    runpodJobId,
+    ramo,
+    workerImage,
+    curaErro,
+    lenAntes: textoAntes?.length ?? 0,
+    lenDepois: out.reference_transcript?.length ?? 0,
+  });
+
+  try {
+    const { error } = await getAdmin()
+      .from("training_jobs")
+      .update({
+        reference_cura_ramo: ramo,
+        reference_cura_texto_antes: textoAntes,
+        reference_cura_erro: curaErro,
+        worker_image: workerImage,
+      } as never)
+      .eq("runpod_job_id", runpodJobId);
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    // Esperado até a DDL de scripts/96 ser aplicada. O log acima já guardou o
+    // dado; falhar aqui não pode afetar o treino.
+    logger.warn("api", "voice.train.transcript_cura_nao_persistida", {
+      voiceId,
+      runpodJobId,
+      motivo: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+/**
+ * Teto de cada log do trainer no banco. O worker já manda tails curtos
+ * (stdout 4000 / stderr 2000 chars, voice_pipeline/training.py:324-325); o teto
+ * maior aqui é folga pra não ter que mexer nas duas pontas se a janela do
+ * worker crescer.
+ */
+const MAX_TRAINER_LOG_CHARS = 8000;
+
+/**
+ * Guarda o stderr/stdout do subprocess do trainer quando ele morre.
+ *
+ * Incidente #11 ("trainer failed"): aberto desde 21/07, 3 ocorrências, NUNCA
+ * diagnosticado. O worker sempre mandou o diagnóstico (jobs/train.py:96-101) e
+ * o backend jogava fora — `stdout_tail`/`stderr_tail` estavam declarados no
+ * type e nunca eram lidos. A única cópia vivia no RunPod, e o RunPod PURGA: o
+ * /status do job devolve 404 "job not found" ~9h depois da falha, então toda
+ * ronda que ia investigar chegava depois da purga.
+ *
+ * ⚠️ Três decisões de propósito:
+ *  1. Colunas próprias, NUNCA `training_jobs.error_message`. Esse campo vira o
+ *     `error` de admin_failures() e alimenta errorSignature() (incidents/
+ *     classify.ts): para cause='bug' a assinatura de dedup são os primeiros 120
+ *     chars do texto. Traceback varia a cada ocorrência → cada falha viraria um
+ *     incidente NOVO e o #11 se estilhaçaria. error_message continua sendo
+ *     exatamente "trainer failed" (travado por teste em classify.test.ts).
+ *  2. UPDATE SEPARADO, depois do gate idempotente — nunca junto com o claim. A
+ *     DDL (scripts/97) ainda NÃO foi aplicada, e coluna inexistente dentro do
+ *     claim derrubaria a finalização INTEIRA: a voz nunca iria pra `failed` e o
+ *     ESTORNO do aluno nunca rodaria. Observabilidade não pode quebrar o
+ *     produto — muito menos o estorno.
+ *  3. O `logger.error` roda ANTES do UPDATE, mas DENTRO do mesmo try/catch:
+ *     enquanto a DDL não é aplicada, o traceback já fica no log, que é o que
+ *     responde a pergunta na próxima ronda — e mesmo assim ele não pode
+ *     escapar. Esta função é chamada na JANELA entre o claim idempotente e o
+ *     ESTORNO do aluno: exceção que suba daqui deixa o claim já consumido e o
+ *     estorno sem rodar, ou seja, crédito perdido e sem retry. Hoje o logger
+ *     não teria como lançar (o `meta` vem só de JSON.parse do webhook/RunPod,
+ *     então o JSON.stringify de logger/server.ts não quebra), mas o ramo de
+ *     console do writeEntry é o único trecho desprotegido de lá e roda TAMBÉM
+ *     em produção quando level === 'error'. Nesta janela, "provavelmente
+ *     vazia" não serve: nada de observabilidade fica fora do try.
+ *
+ * Caminho feliz não grava nada: o worker devolve `trainer_returncode: 0` sem
+ * tails, e "o treino deu certo" já está em `training_jobs.status`. Escrever aí
+ * seria um UPDATE a mais por treino sem informação nova.
+ */
+async function registrarSaidaDoTrainer(
+  runpodJobId: string,
+  voiceId: string,
+  out: TrainOutput,
+): Promise<void> {
+  const rc = typeof out.trainer_returncode === "number" ? out.trainer_returncode : null;
+  const stderr = typeof out.stderr_tail === "string" ? out.stderr_tail : null;
+  const stdout = typeof out.stdout_tail === "string" ? out.stdout_tail : null;
+  // Nada a diagnosticar: worker antigo (sem os campos) ou caminho feliz (rc 0
+  // e sem tails). Ver decisão 3 acima.
+  if (stderr === null && stdout === null && (rc === null || rc === 0)) return;
+
+  // Tail, não head: o traceback que interessa está no FIM da saída — cortar
+  // pelo começo guardaria o download do modelo e perderia a exceção.
+  const patch: Record<string, unknown> = { trainer_returncode: rc };
+  if (stderr !== null) patch.trainer_stderr = stderr.slice(-MAX_TRAINER_LOG_CHARS);
+  if (stdout !== null) patch.trainer_stdout = stdout.slice(-MAX_TRAINER_LOG_CHARS);
+
+  try {
+    logger.error("api", "voice.train.trainer_failed", {
+      voiceId,
+      runpodJobId,
+      trainerReturncode: rc,
+      workerImage: out.worker_image ?? null,
+      stderrTail: patch.trainer_stderr ?? null,
+      stdoutTail: patch.trainer_stdout ?? null,
+    });
+
+    const { error } = await getAdmin()
+      .from("training_jobs")
+      .update(patch as never)
+      .eq("runpod_job_id", runpodJobId);
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    // Esperado até a DDL de scripts/97 ser aplicada — nesse caso o logger.error
+    // acima JÁ guardou o diagnóstico e só o UPDATE falhou. O catch cobre também
+    // o próprio logger.error (ver decisão 3): se fosse ele a lançar, o warn
+    // abaixo é seguro em produção, porque writeEntry só cai no ramo de console
+    // para level 'error'/'fatal' e a escrita em arquivo tem try/catch próprio.
+    // Em qualquer dos casos: falhar aqui não pode afetar o treino nem o estorno.
+    logger.warn("api", "voice.train.trainer_failed_nao_persistido", {
+      voiceId,
+      runpodJobId,
+      motivo: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
 export async function finalizeTraining(args: {
   voiceId: string;
   userId: string;
@@ -173,6 +364,12 @@ export async function finalizeTraining(args: {
     return { applied: false, status: nextStatus };
   }
 
+  // ── Observabilidade da cura do transcript + build do worker (incidente 52) ─
+  await registrarCuraEBuild(runpodJobId, voiceId, out);
+
+  // ── stderr/stdout do trainer quando o subprocess morre (incidente #11) ────
+  await registrarSaidaDoTrainer(runpodJobId, voiceId, out);
+
   // ── Voz ─────────────────────────────────────────────────────────────────
   const update: VoiceUpdate = {
     status: nextStatus,
@@ -193,12 +390,34 @@ export async function finalizeTraining(args: {
   // com o campo NULO). Gravar aqui faz a voz nova já sair no ritmo certo, em
   // vez de depender de alguém notar e ajustar na mão — como foi o caso Katia.
   // ⚠️ SÓ vozes novas, por decisão do dono (21/08): as antigas não são tocadas.
-  if (success && typeof out.reference_pause_ms === "number" && out.reference_pause_ms > 0) {
-    update.tts_silence_ms = out.reference_pause_ms;
-    // O crossfade padrão do worker é 60ms e ele COME a pausa que acabamos de
-    // inserir (funde o fim de um pedaço com o começo do outro). Zerar junto é
-    // o que foi medido funcionando na Katia: 220/0, e depois 466/0.
-    update.tts_crossfade_ms = 0;
+  //
+  // ⛔ DESLIGADO 24/08 (ordem do Johnny, caso Kessuly): gravar pausa + crossfade 0
+  // no treino deixou a voz "horrível, muito pior" — com crossfade 0 e 1,5-1,9s
+  // de silêncio inserido, cada borda suja de pedaço (respiro, sílaba extra,
+  // chiado) fica exposta sozinha no ar; com crossfade 60 ela é mascarada pelo
+  // pedaço seguinte. Medido no mesmo texto: 85s/27 pausas (antiga) contra
+  // 115s/41 pausas de 0,7s (nova); a montagem antiga sobre a mesma voz voltou a
+  // 88s e o Johnny aprovou de ouvido. 93 vozes treinadas desde 21/08 tinham
+  // isso e foram zeradas (backup em _Bugs/chamado_108_referencias/). O worker
+  // continua MEDINDO `reference_pause_ms` (fica no output/telemetria); só não
+  // vira configuração da voz. Ver memória debug-retreino-kessuly-piorou.
+  if (success && typeof out.reference_pause_ms === "number") {
+    logger.info("api", "voice.train.pacing_measured_not_applied", {
+      voiceId, referencePauseMs: out.reference_pause_ms,
+    });
+  }
+  // Régua do QA de ritmo (#165): só grava valor plausível (1–5 pal/s). Sem
+  // ela a geração cai no fallback (articulação da própria referência), que no
+  // caso Ellen mediu 2,83 contra 1,7–2,2 de fala real — o clone saía acelerado
+  // e o QA aprovava. Retreino sobrescreve: a medida nova é do material atual.
+  if (
+    success &&
+    typeof out.speech_rate_wps === "number" &&
+    Number.isFinite(out.speech_rate_wps) &&
+    out.speech_rate_wps >= 1 &&
+    out.speech_rate_wps <= 5
+  ) {
+    (update as Record<string, unknown>).speech_rate_wps = out.speech_rate_wps;
   }
   if (success && typeof out.language === "string" && out.language) {
     // Idioma detectado no treino — a geração/QA passam a rodar no idioma certo.

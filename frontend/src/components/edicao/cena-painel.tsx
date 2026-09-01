@@ -13,7 +13,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Check, ImageUp, Images, Loader2, RefreshCw, Sparkles, UserRound } from "lucide-react";
+import { Check, ImageUp, Images, Loader2, RefreshCw, Sparkles, UserRound, TriangleAlert } from "lucide-react";
 import { STUDIO_SCENE_COST } from "@/lib/studio/pricing";
 import { IMPROVE_PROMPT_COST } from "@/lib/video/config";
 
@@ -24,6 +24,8 @@ export type CenaDetalhe = {
   video_url?: string | null;
   prompt_en?: string;
   frases?: string[];
+  /** Por que a cena falhou — o aluno precisa LER isso pra saber o que fazer. */
+  error_message?: string | null;
   /** C4: cena gerada com as fotos da pessoa. */
   com_pessoa?: boolean;
 };
@@ -153,6 +155,16 @@ export function CenaPainel({
 
       {cena.video_url && (
         <video src={cena.video_url} controls playsInline preload="metadata" className="max-h-80 w-auto self-start rounded-[var(--radius-sm)] border border-[var(--hairline)]" />
+      )}
+
+      {/* Caso Fabio Fiuza (26/08): a cena falhava por moderação e a tela só
+          mostrava um X. Ele clicava em regerar, caía no mesmo bloqueio e
+          ficava preso, sem nunca saber o motivo nem o que fazer. */}
+      {cena.status === "failed" && cena.error_message && (
+        <p className="flex items-start gap-1.5 rounded-[var(--radius-sm)] border border-red-500/40 bg-red-500/10 px-2.5 py-2 text-[12.5px] leading-snug text-[var(--ink)]">
+          <TriangleAlert className="mt-[1px] size-3.5 shrink-0 text-red-400" />
+          <span>{cena.error_message}</span>
+        </p>
       )}
 
       {(cena.frases ?? []).length > 0 && (

@@ -269,7 +269,21 @@ export async function montarReact(args: {
       ...(viralTemSom
         ? [
             "-filter_complex",
-            `[1:a]volume=0.2,apad=whole_dur=${segundos}[vlow];[2:a]volume=1.0[fala];[vlow][fala]amix=inputs=2:duration=first:dropout_transition=0[a]`,
+            // Johnny 25/08: "a altura da minha voz e do áudio do vídeo são as
+            // mesmas". O volume=0.2 de antes era relativo ao arquivo, e o TTS
+            // sai bem mais baixo que um viral de TikTok (mixado pra rede) — na
+            // prática ficavam iguais. Agora os dois são NIVELADOS (loudnorm) e
+            // só então o viral desce 16 LU (~6x mais baixo) e ainda é abafado
+            // (sidechain) enquanto a fala está soando. amix divide por 2; o
+            // volume=2 devolve o nível e o limiter segura pico.
+            // (loudnorm sobe a taxa pra 192k — aresample de volta; e a CHAVE do
+            // sidechain precisa durar o vídeo inteiro, senão o filtro corta o
+            // áudio onde a fala acaba — medido: saída de 1,3s num vídeo de 6s.)
+            `[2:a]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,asplit=2[fala][chave0];` +
+              `[chave0]apad=whole_dur=${segundos}[chave];` +
+              `[1:a]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,volume=-16dB,apad=whole_dur=${segundos}[vnivel];` +
+              `[vnivel][chave]sidechaincompress=threshold=0.05:ratio=6:attack=30:release=350[vduck];` +
+              `[vduck][fala]amix=inputs=2:duration=first:dropout_transition=0,volume=2.0,alimiter=limit=0.95[a]`,
             "-map", "0:v", "-map", "[a]",
           ]
         : ["-map", "0:v", "-map", "1:a"]),

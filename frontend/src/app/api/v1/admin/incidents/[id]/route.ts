@@ -3,20 +3,20 @@
  * (marcar corrigido, ignorar, reabrir) a partir da aba Falhas.
  */
 import type { NextRequest } from "next/server";
-import { gateAdmin } from "@/lib/admin/api";
+import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { logger } from "@/lib/logger/server";
 
 export const dynamic = "force-dynamic";
 
-const VALID_STATUS = new Set(["open", "investigating", "fixing", "fixed", "ignored"]);
+const VALID_STATUS = new Set(["open", "investigating", "fixing", "aguardando_aluno", "fixed", "ignored"]);
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const g = await gateAdmin(request);
+  const g = await gateAdmin(request, SUPORTE_OK);
   if ("res" in g) return g.res;
   const { id } = await params;
   const body = await request.json().catch(() => ({}));

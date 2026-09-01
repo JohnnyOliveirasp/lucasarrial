@@ -21,7 +21,8 @@ import type { NextRequest } from "next/server";
 import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { runpodGetStatus, inferenceEndpoint } from "@/lib/runpod/client";
-import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
+import { finalizeGenerationSuccess, qaTelemetria, type GenerationOutput } from "@/lib/generations/finalize";
+import { preservaFaseCorrente, errorMessageComFase } from "@/lib/generations/fase-telemetria";
 import { recordRunpodTiming } from "@/lib/generations/runpod-timing";
 import { finalizeTraining, type TrainOutput } from "@/lib/voices/finalize-training";
 import {
@@ -33,6 +34,8 @@ import {
 import { finalizeVideoClone } from "@/lib/video-clone/finalize";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import { verificarOnboardingPronto } from "@/lib/onboarding/pronto";
+import { avancarEtapasDoUsuario } from "@/lib/sgp/etapas";
+import { tentarReenviar } from "@/lib/generations/reenviar";
 
 type RunpodWebhookPayload = {
   id: string;
@@ -44,6 +47,12 @@ type RunpodWebhookPayload = {
     uploaded?: boolean;
     reference_uploaded?: boolean;
     reference_transcript?: string | null;
+    // Observabilidade da cura do transcript + build do worker (incidente 52).
+    // Repassados intactos ao finalizeTraining, que decide o que persistir.
+    reference_cura_ramo?: string | null;
+    reference_cura_texto_antes?: string | null;
+    reference_cura_erro?: string | null;
+    worker_image?: string | null;
     lora_alpha?: number;
     lora_rank?: number;
     elapsed_seconds?: number;
@@ -85,18 +94,26 @@ export async function POST(request: NextRequest) {
     // Voz do onboarding ficou pronta? Pode ser a última peça → e-mail
     // "plataforma pronta" (fire-and-forget; a função filtra não-onboarding).
     void verificarOnboardingPronto(admin, voice.user_id);
+    // SGP: "sua voz ficou pronta" sai daqui, não do polling da tela.
+    void avancarEtapasDoUsuario(voice.user_id);
     return jsonOk({ handled: "training" });
   }
 
   // 2. Tenta achar em generations (inferência)
   const { data: generation } = await admin
     .from("generations")
-    .select("id, user_id, audio_path")
+    .select("id, user_id, audio_path, qa")
     .eq("runpod_job_id", payload.id as never)
     .maybeSingle();
 
   if (generation) {
-    await handleGenerationWebhook(payload, generation.id, generation.user_id, generation.audio_path);
+    await handleGenerationWebhook(
+      payload,
+      generation.id,
+      generation.user_id,
+      generation.audio_path,
+      (generation as { qa?: unknown }).qa ?? null,
+    );
     return jsonOk({ handled: "generation" });
   }
 
@@ -185,6 +202,7 @@ async function handleGenerationWebhook(
   generationId: string,
   userId: string,
   audioPath: string | null,
+  qaAtual: unknown = null,
 ) {
   const out = payload.output ?? {};
 
@@ -211,13 +229,30 @@ async function handleGenerationWebhook(
   // NUNCA concatenar esse dado no error_message: a assinatura do incidente é
   // derivada do texto do erro (src/lib/incidents/classify.ts) e identificador
   // alfanumérico não normaliza — já estilhaçou a mesma falha em 4 incidentes.
+  // ÚNICA exceção sancionada: o sufixo "[fase: ...]" (errorMessageComFase),
+  // de formato FIXO, que a assinatura REMOVE antes de assinar (stripFaseSuffix
+  // em classify.ts) — num timeout, a row passa a NOMEAR a fase pendurada.
+  // #15: worker travado devolve executionTimeout num texto que roda em 90s se
+  // for refeito. Antes de falhar, tenta UMA vez sozinho — sem estorno e sem
+  // novo débito, porque é a mesma geração. Só o timeout entra aqui; qualquer
+  // outro erro segue direto pro caminho de falha de sempre.
+  const reenvio = await tentarReenviar(generationId, rawError);
+  if (reenvio !== "nao_aplica") return;
+
   const failUpdate: {
     status: "failed";
     error_message: string;
     elapsed_seconds?: number;
+    qa?: Record<string, unknown> | null;
   } = {
     status: "failed",
-    error_message: rawError.slice(0, 500),
+    error_message: errorMessageComFase(rawError, qaAtual),
+    // Telemetria do QA (mig 94, #52): na falha é onde ela mais vale — o log
+    // do RunPod expira e a investigação chegava tarde. preservaFaseCorrente:
+    // num timeout o `out` vem vazio e este update REESCREVE a coluna qa — sem
+    // o merge, a falha apagaria a qa.fase_corrente que o heartbeat gravou
+    // (exatamente o dado que nomeia a fase pendurada, incidente d3d8d1b2).
+    qa: preservaFaseCorrente(qaTelemetria(out as GenerationOutput), qaAtual),
   };
   if (typeof payload.executionTime === "number") {
     failUpdate.elapsed_seconds = payload.executionTime / 1000; // RunPod manda em ms

@@ -16,7 +16,7 @@ import type { TemaAcervo } from "@/lib/virais/acervo";
 import { GRADE } from "./virais-estilo";
 import type { Filtros } from "./virais-filtros";
 import { FILTROS_INICIAIS, ViraisFiltros } from "./virais-filtros";
-import { FormBusca, ImportarBuscas } from "./virais-form-busca";
+import { AdicionarPorLink, FormBusca, ImportarBuscas } from "./virais-form-busca";
 import { Miniatura } from "./virais-miniatura";
 import { ViralPlayer } from "./virais-player";
 import type { Viral } from "./virais-tipos";
@@ -185,6 +185,7 @@ export function ViraisBusca() {
   return (
     <div className="flex flex-col gap-6">
       <FormBusca onPronto={carregar} />
+      <AdicionarPorLink onPronto={carregar} />
 
       <section className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-3">

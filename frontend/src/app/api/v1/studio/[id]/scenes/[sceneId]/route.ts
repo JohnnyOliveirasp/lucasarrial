@@ -85,11 +85,14 @@ export async function POST(request: NextRequest, ctx: Ctx) {
 
   const { data: orig } = await admin
     .from("studio_scenes")
-    .select("id, concept, prompt_en, dialect, ref_image_paths")
+    .select("id, concept, prompt_en, dialect, ref_image_paths, status, error_message")
     .eq("id", sceneId)
     .maybeSingle();
   if (!orig) return notFound("Scene");
-  const origRow = orig as Pick<StudioSceneRow, "id" | "concept" | "prompt_en" | "dialect" | "ref_image_paths">;
+  const origRow = orig as Pick<
+    StudioSceneRow,
+    "id" | "concept" | "prompt_en" | "dialect" | "ref_image_paths" | "status" | "error_message"
+  >;
   const origRefs = (origRow.ref_image_paths ?? []).filter(Boolean);
 
   // ── improve: LLM reescreve o prompt (1 cr, cobra só se der certo) ──
@@ -193,6 +196,25 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const virandoBroll =
     action === "redo" && refsEscolhidas.length === 0 && !keepPerson && origRefs.length > 0;
   let prompt = promptDado ?? origRow.prompt_en;
+
+  // MODERAÇÃO BLOQUEOU E O PROMPT NÃO MUDOU (caso Fabio Fiuza, 26/08): repetir
+  // o mesmo texto cai no mesmo bloqueio, sempre — o aluno clica "regerar",
+  // vê o X de novo e fica preso sem saída, com o projeto inteiro travado por
+  // uma cena. Aqui a LLM reescreve a MESMA cena com outras palavras, que é o
+  // que a mensagem de erro pede ("ajuste o trecho e gere de novo") e o aluno
+  // não tinha como fazer sozinho. O prompt que ELE editou é respeitado.
+  const bloqueadaPorModeracao =
+    origRow.status === "failed" && /modera/i.test(origRow.error_message ?? "");
+  const repetindoOMesmo = prompt.trim() === (origRow.prompt_en ?? "").trim();
+  if (action === "redo" && bloqueadaPorModeracao && repetindoOMesmo) {
+    try {
+      const contexto = entries.map((e) => e.text).join(" ").slice(0, 600);
+      prompt = await improveScenePrompt(origRow.prompt_en, contexto, "en");
+    } catch {
+      /* reescrita falhou — segue com o original; a moderação decide de novo */
+    }
+  }
+
   if (virandoBroll && !promptDado) {
     try {
       const contexto = entries.map((e) => e.text).join(" ").slice(0, 600);

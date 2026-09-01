@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { AudioLines, Download, Loader2, AlertTriangle } from "lucide-react";
+import { AudioLines, Download, Loader2, AlertTriangle , Trash2 } from "lucide-react";
 import { formatDuration } from "@/lib/audio/duration";
 import { clientLogger } from "@/lib/logger/client";
 import { SupportError } from "@/components/ui/support-error";
@@ -56,6 +56,15 @@ export function VoiceGenerator({ voiceId }: Props) {
   const [text, setText] = useState("");
   // Pausa entre frases (vai como chunk_silence_ms; backend já aceita).
   const [pauseMs, setPauseMs] = useState<number | null>(null);
+  /** Ritmo (opcao B, Johnny 25/08): regua da pessoa x 0,85 / 1 / 1,15. */
+  const [speed, setSpeed] = useState<"calm" | "normal" | "fast">("normal");
+  /**
+   * "Ajustar ao meu ritmo" — DESLIGADO por padrão (Johnny 29/08: a voz sai
+   * como o modelo gerou; quem decide é o aluno). Ligado, o worker aproxima a
+   * saída da velocidade natural medida da pessoa.
+   */
+  const [ajustarRitmo, setAjustarRitmo] = useState(false);
+  const [copiado, setCopiado] = useState<string | null>(null);
   const [takes, setTakes] = useState<Take[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +125,25 @@ export function VoiceGenerator({ voiceId }: Props) {
     };
   }, [voiceId]);
 
+  /**
+   * Apagar um take aqui mesmo (Johnny 29/08: "não tem botão de delete para
+   * apagar os áudios gerados"). O botão existia só na tela Histórico; quem
+   * está gerando não via saída nenhuma. Mesma rota (DELETE /generations),
+   * que já limpa o arquivo no R2 e a linha no banco.
+   */
+  async function apagarTake(id: string) {
+    setTakes((prev) => prev.filter((t) => t.id !== id));
+    try {
+      await fetch("/api/v1/generations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [id] }),
+      });
+    } catch {
+      /* o take já saiu da tela; o histórico mostra a verdade no próximo load */
+    }
+  }
+
   // Poll dos takes em andamento — atualiza a lista in place.
   useEffect(() => {
     if (!inflight) {
@@ -162,6 +190,8 @@ export function VoiceGenerator({ voiceId }: Props) {
         body: JSON.stringify({
           text: text.trim(),
           ...(pauseMs !== null ? { chunk_silence_ms: pauseMs } : {}),
+          ...(speed !== "normal" ? { speed } : {}),
+          ...(ajustarRitmo ? { rate_qa: true } : {}),
         }),
       });
       if (genRes.status === 402) {
@@ -272,6 +302,72 @@ export function VoiceGenerator({ voiceId }: Props) {
           </div>
         </div>
 
+        {/* Ajuste de ritmo — escolha do aluno (29/08). Padrão desligado. */}
+        <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-deep)] px-3.5 py-3 has-[:checked]:border-[var(--hairline-bright)]">
+          <input
+            type="checkbox"
+            checked={ajustarRitmo}
+            onChange={(e) => {
+              const ligado = e.target.checked;
+              setAjustarRitmo(ligado);
+              // Sem o QA de ritmo o worker DESCARTA o speech_rate_factor
+              // (inference.py:137-138 retorna antes de ler a 145-146). Zerar a
+              // escolha aqui evita que ela fique gravada em request_params e
+              // seja repetida no reenvio automático sem nunca ter efeito.
+              if (!ligado) setSpeed("normal");
+            }}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--pill-bg)]"
+          />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-[13px] font-medium text-[var(--ink)]">{t("generator.rateQaLabel")}</span>
+            <span className="text-[12px] leading-[1.45] text-[var(--mute)]">{t("generator.rateQaHelp")}</span>
+          </span>
+        </label>
+
+        {/* Ritmo (opcao B, 25/08): o QA de ritmo segura o clone na velocidade
+            natural da pessoa (medida no treino); aqui o aluno desloca essa
+            regua em 15% pra baixo ou pra cima.
+            ⚠️ Este seletor SO tem efeito com a caixa acima marcada: ele vira
+            `speech_rate_factor`, que multiplica a REGUA do QA de ritmo
+            (inference.py:145-146). Com o QA desligado nao existe regua, o
+            worker retorna antes (137-138) e `_ajustar_ritmo_global` no-opa
+            (158-159) — o audio sai identico. Ate 30/08 o seletor aparecia
+            sempre e a escolha era descartada em silencio, gastando credito
+            (incidente #200). Se um dia o fator passar a valer sem o QA,
+            remova o `disabled` — nao o contrario. */}
+        <div className="flex flex-col gap-1.5">
+          <span className="font-mono text-[11px] tracking-wide text-[var(--mute)]">
+            {t("generator.speedLabel")}
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {([
+              { v: "calm", label: t("generator.speedCalm") },
+              { v: "normal", label: t("generator.speedNormal") },
+              { v: "fast", label: t("generator.speedFast") },
+            ] as const).map((opt) => (
+              <button
+                key={opt.v}
+                type="button"
+                onClick={() => setSpeed(opt.v)}
+                disabled={!ajustarRitmo}
+                aria-pressed={speed === opt.v}
+                className={`rounded-[var(--radius)] border px-3 py-1.5 font-mono text-[11px] tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  speed === opt.v
+                    ? "border-[var(--hairline-bright)] text-[var(--ink)]"
+                    : `border-[var(--hairline)] text-[var(--ash)] ${ajustarRitmo ? "hover:text-[var(--ink)]" : ""}`
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {!ajustarRitmo && (
+            <span className="text-[12px] leading-[1.45] text-[var(--mute)]">
+              {t("generator.speedNeedsRateQa")}
+            </span>
+          )}
+        </div>
+
         {error && <SupportError action={t("generator.supportAction")} message={error} />}
 
         <button type="submit" disabled={!canSubmit} className={`${PILL} w-fit`}>
@@ -306,10 +402,21 @@ export function VoiceGenerator({ voiceId }: Props) {
                   </>
                 )}
                 {take.status === "failed" && (
-                  <span className="flex items-center gap-2 font-mono text-[11px] text-[var(--status-error)]">
-                    <AlertTriangle className="h-4 w-4" />
-                    {take.error_message || t("generator.failed")}
-                  </span>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="flex items-center gap-2 font-mono text-[11px] text-[var(--status-error)]">
+                      <AlertTriangle className="h-4 w-4" />
+                      {take.error_message || t("generator.failed")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => apagarTake(take.id)}
+                      aria-label={t("generator.deleteAria")}
+                      title={t("generator.deleteAria")}
+                      className="shrink-0 text-[var(--mute)] transition-colors hover:text-[var(--status-error)]"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 )}
                 {take.status === "ready" && take.audio_url && (
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -322,9 +429,49 @@ export function VoiceGenerator({ voiceId }: Props) {
                     >
                       <Download className="h-4 w-4" /> {t("generator.download")}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => apagarTake(take.id)}
+                      aria-label={t("generator.deleteAria")}
+                      title={t("generator.deleteAria")}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] text-[var(--mute)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--status-error)]"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 )}
                 <p className="line-clamp-2 text-[12px] leading-snug text-[var(--mute)]">“{take.text}”</p>
+                {/* 29/08 (Johnny): "não consigo copiar o texto novamente se
+                    quiser" — o texto ficava preso no card, cortado em 2 linhas.
+                    Copiar leva pra área de transferência; Reusar devolve pro
+                    campo de cima, pra gerar de novo com um ajuste. */}
+                <div className="flex flex-wrap gap-3 font-mono text-[10px] tracking-wide">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(take.text);
+                        setCopiado(take.id);
+                        setTimeout(() => setCopiado((c) => (c === take.id ? null : c)), 2000);
+                      } catch {
+                        /* navegador sem permissão: o Reusar ainda resolve */
+                      }
+                    }}
+                    className="text-[var(--silver)] underline decoration-[var(--hairline-bright)] underline-offset-[3px] hover:text-[var(--ink)]"
+                  >
+                    {copiado === take.id ? t("generator.copiado") : t("generator.copiarTexto")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setText(take.text);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className="text-[var(--silver)] underline decoration-[var(--hairline-bright)] underline-offset-[3px] hover:text-[var(--ink)]"
+                  >
+                    {t("generator.reusarTexto")}
+                  </button>
+                </div>
                 <div className="flex gap-3 font-mono text-[10px] tracking-wide text-[var(--ash)]">
                   <span>{new Date(take.startedAt).toLocaleTimeString("pt-BR")}</span>
                   {take.duration_seconds ? <span>· {formatDuration(take.duration_seconds)}</span> : null}

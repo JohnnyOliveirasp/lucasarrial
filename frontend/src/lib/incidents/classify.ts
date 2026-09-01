@@ -45,8 +45,53 @@ export function isCorruptFile(error: string): boolean {
   );
 }
 
+/**
+ * Tira o invólucro "RunPod <STATUS>: " que UM dos dois caminhos de falha
+ * coloca na frente do erro real.
+ *
+ * A MESMA falha chega ao banco escrita de duas formas, e quem escreve depende
+ * de uma CORRIDA, não da causa:
+ *   - webhook (`webhooks/runpod/route.ts`) grava o erro CRU:
+ *       "executionTimeout exceeded"
+ *   - polling da tela do aluno (`generations/[id]/route.ts`) embrulha:
+ *       "RunPod FAILED: executionTimeout exceeded"
+ *
+ * Sem tirar o invólucro, o head da assinatura muda e a mesma causa raiz vira
+ * DOIS incidentes. Medido em 24/08 no `d3d8d1b2` (nº 15, 12 alunos, o mais
+ * antigo do quadro): ele acumulava só a forma crua, então a falha da Janete de
+ * 23/08 23:41 (a mesma `executionTimeout`) não incrementou nada e o
+ * `last_seen_at` ficou congelado em 18/08 — o incidente parecia dormente
+ * enquanto a classe seguia derrubando aluno. Foi o que sustentou, por 11
+ * rondas, o "detector cego" que ninguém conseguia explicar.
+ *
+ * Só desembrulha quando sobra conteúdo: "RunPod FAILED: " sozinho (resp.error
+ * nulo) não vira string vazia, senão falhas sem detalhe nenhum desabariam
+ * todas num único `unknown`.
+ */
+export function stripRunpodWrapper(error: string): string {
+  // `[\s\S]+` em vez de `.+` com flag `s`: o target do projeto é anterior a
+  // es2018 e não aceita dotall. Sem isso, erro com traceback (multi-linha)
+  // não casaria e continuaria embrulhado.
+  const m = /^\s*runpod\s+(failed|cancelled|timed_out)\s*:\s*([\s\S]+)$/i.exec(error || "");
+  return m && m[2].trim() ? m[2].trim() : error || "";
+}
+
+/**
+ * Remove o sufixo de telemetria "[fase: ...]" que `errorMessageComFase`
+ * (lib/generations/fase-telemetria.ts) concatena no error_message de falha por
+ * executionTimeout (incidente d3d8d1b2, #15). O nome da fase VARIA
+ * (geracao.chunk × qa.whisper × model.load...) e não é normalizado pelas regras
+ * numéricas abaixo — sem este strip, cada fase pendurada viraria um incidente
+ * NOVO e a mesma causa raiz se estilhaçaria (a patologia do "detector cego"
+ * medida em 24/08 no próprio d3d8d1b2). Mudou o formato do sufixo lá, muda o
+ * regex aqui — são gêmeos.
+ */
+export function stripFaseSuffix(error: string): string {
+  return (error || "").replace(/\s*\[fase:[^\]]*\]/gi, "").trim();
+}
+
 export function classifyCause(error: string): IncidentCause {
-  const e = (error || "").toLowerCase();
+  const e = stripRunpodWrapper(stripFaseSuffix(error)).toLowerCase();
   if (!e) return "unknown";
   if (
     e.includes("insufficient_audio") ||
@@ -97,7 +142,7 @@ export function errorSignature(kind: string, error: string): string {
   if (cause === "user_dataset") {
     return isCorruptFile(error) ? `${k}:${cause}:corrupt` : `${k}:${cause}`;
   }
-  const head = (error || "")
+  const head = stripRunpodWrapper(stripFaseSuffix(error))
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, "<url>")
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<id>")
@@ -112,7 +157,7 @@ export function errorSignature(kind: string, error: string): string {
 export function incidentTitle(kind: string, error: string): string {
   const cause = classifyCause(error);
   const k = KIND_LABELS[kind] ?? kind;
-  const detail = (error || "").split("\n")[0].slice(0, 80);
+  const detail = stripRunpodWrapper(stripFaseSuffix(error)).split("\n")[0].slice(0, 80);
   if (cause === "user_dataset") {
     return isCorruptFile(error)
       ? `${k}: arquivo enviado corrompido/incompleto`

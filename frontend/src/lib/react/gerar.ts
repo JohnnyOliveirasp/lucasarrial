@@ -25,6 +25,10 @@ import {
   getVideoStatus,
   uploadImageAsset,
 } from "@/lib/heygen/client";
+import {
+  contentTypeImagemHeygen,
+  erroImagemNaoSuportada,
+} from "@/lib/heygen/imagem-content-type";
 import { decryptApiKey } from "@/lib/heygen/crypto";
 import { getAdmin } from "@/lib/db/admin";
 import { montarReact, VERDE_RGB, type LayoutMontagem } from "./montagem";
@@ -241,9 +245,10 @@ export async function dispararCloneHeygen(args: {
     new GetObjectCommand({ Bucket: R2_BUCKETS.generations, Key: args.fotoKey }),
   );
   const bytes = await foto.Body!.transformToByteArray();
-  const tipo = args.fotoKey.toLowerCase().endsWith(".jpg") || args.fotoKey.toLowerCase().endsWith(".jpeg")
-    ? ("image/jpeg" as const)
-    : ("image/png" as const);
+  // Pela EXTENSÃO da chave era o mesmo veneno do header: um .webp no R2 subia
+  // rotulado como image/png e o HeyGen recusava. Quem decide são os bytes.
+  const tipo = contentTypeImagemHeygen(bytes);
+  if (!tipo) throw new Error(erroImagemNaoSuportada(bytes));
   try {
     const { image_key } = await uploadImageAsset(apiKey, bytes, tipo);
     const audioUrl = await createPresignedGet(R2_BUCKETS.generations, args.audioKey, 60 * 60 * 3);

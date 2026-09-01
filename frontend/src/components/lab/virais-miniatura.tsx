@@ -65,16 +65,8 @@ export function Miniatura({
           <span className="absolute bottom-0.5 left-0.5 rounded bg-black/70 px-1 text-[9px] font-medium text-white">
             ❤️ {compacto(v.likes)}
           </span>
-          {/* Selo "N usando": ninguém perde o vídeo, mas todo mundo vê que
-              ele já rodou (decisão do Johnny — mostrar em vez de travar). */}
-          {v.usando > 0 && (
-            <span
-              className="absolute right-0.5 top-0.5 rounded bg-black/70 px-1 text-[9px] text-white/90"
-              title={`${v.usando} ${v.usando === 1 ? "pessoa está usando" : "pessoas estão usando"} este vídeo`}
-            >
-              👤 {v.usando}
-            </span>
-          )}
+          {/* Selo "N usando" REMOVIDO (Johnny 25/08): saber que outra pessoa
+              já usou o vídeo não tem mais interesse. `usando` segue no tipo/API. */}
         </button>
         {/* Reservar é o gesto principal — e NÃO baixa nada: o mp4 só desce
             quando a pessoa for produzir o React. */}

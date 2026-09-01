@@ -6,6 +6,7 @@
  */
 import net from "node:net";
 import tls from "node:tls";
+import { appendToSentFolder } from "./mail-imap";
 
 const HOST = () => process.env.SUPPORT_MAIL_HOST || "mail.privateemail.com";
 const USER = () => process.env.SUPPORT_MAIL_USER || "suporte@fastcloner.com";
@@ -124,6 +125,25 @@ export type SupportMailArgs = {
 /** Envia texto puro como suporte@fastcloner.com. Lança em falha (caller trata). */
 export async function sendSupportMail(args: SupportMailArgs): Promise<void> {
   if (!PASS()) throw new Error("SUPPORT_MAIL_PASSWORD ausente");
+
+  // A mensagem é montada ANTES do envio pra mesma cópia byte a byte ir depois
+  // pra pasta de enviados (auditoria: "esse aluno já foi avisado?").
+  const headers = [
+    `From: Fast - FastCloner <${USER()}>`,
+    `To: ${args.to}`,
+    `Subject: ${encodeHeader(args.subject)}`,
+    `Date: ${new Date().toUTCString()}`,
+    `Message-ID: <fast-${Date.now()}-${Math.random().toString(36).slice(2)}@fastcloner.com>`,
+    ...(args.inReplyTo ? [`In-Reply-To: ${args.inReplyTo}`, `References: ${args.inReplyTo}`] : []),
+    ...(args.replyTo ? [`Reply-To: ${args.replyTo}`] : []),
+    "MIME-Version: 1.0",
+    'Content-Type: text/plain; charset="utf-8"',
+    "Content-Transfer-Encoding: base64",
+  ].join("\r\n");
+  // Corpo em base64 quebrado a 76 colunas (padrão MIME).
+  const body = b64(args.text).replace(/(.{76})/g, "$1\r\n");
+  const message = `${headers}\r\n\r\n${body}`;
+
   const session = new SmtpSession();
   await session.connect();
   try {
@@ -137,23 +157,21 @@ export async function sendSupportMail(args: SupportMailArgs): Promise<void> {
     await session.send(`MAIL FROM:<${USER()}>`, 250);
     const rcpts = [args.to, ...(args.bcc ?? [])];
     for (const r of rcpts) await session.send(`RCPT TO:<${r}>`, 250);
-
-    const headers = [
-      `From: Fast - FastCloner <${USER()}>`,
-      `To: ${args.to}`,
-      `Subject: ${encodeHeader(args.subject)}`,
-      `Date: ${new Date().toUTCString()}`,
-      `Message-ID: <fast-${Date.now()}-${Math.random().toString(36).slice(2)}@fastcloner.com>`,
-      ...(args.inReplyTo ? [`In-Reply-To: ${args.inReplyTo}`, `References: ${args.inReplyTo}`] : []),
-      ...(args.replyTo ? [`Reply-To: ${args.replyTo}`] : []),
-      "MIME-Version: 1.0",
-      'Content-Type: text/plain; charset="utf-8"',
-      "Content-Transfer-Encoding: base64",
-    ].join("\r\n");
-    // Corpo em base64 quebrado a 76 colunas (padrão MIME).
-    const body = b64(args.text).replace(/(.{76})/g, "$1\r\n");
-    await session.data(`${headers}\r\n\r\n${body}`);
+    await session.data(message);
   } finally {
     session.close();
+  }
+
+  // O e-mail JÁ FOI ENTREGUE. Gravar a cópia em enviados é best-effort: a
+  // caixa Sent estava VAZIA (achado 19/08) e sem cópia ninguém audita o que a
+  // Fast respondeu — mas falhar AQUI depois do envio seria pior (o caller
+  // trataria como "não enviado" e reenviaria pro aluno). Loga e segue.
+  try {
+    await appendToSentFolder(message);
+  } catch (e) {
+    console.error(
+      `[agent/mail-smtp] enviado para ${args.to}, mas falhou ao gravar cópia em enviados:`,
+      e instanceof Error ? e.message : e,
+    );
   }
 }

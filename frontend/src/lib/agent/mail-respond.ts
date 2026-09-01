@@ -13,6 +13,8 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
+import { reabrirPorRespostaDoAluno } from "@/lib/incidents/espera";
+import { entregarAoTime } from "@/lib/incidents/entregar";
 import { guardarPrints } from "./mail-anexos";
 import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
@@ -21,6 +23,7 @@ import { extractEscalation } from "./escalate";
 import { agentEnabled } from "./respond";
 import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
 import { sendSupportMail } from "./mail-smtp";
+import { tratarSeForBounce } from "./mail-bounce-registro";
 import { winbackContextByEmail, applyWinbackMarkers } from "@/lib/winback/conversation";
 
 const BODY_MAX = 4000; // o que vai pro modelo (e-mails têm assinatura/quote longos)
@@ -113,7 +116,12 @@ function mailSystemExtra(accountFound: boolean): string {
     accountFound
       ? `A CONTA DO ALUNO FOI IDENTIFICADA pelo e-mail do remetente — use os dados reais abaixo.`
       : `NÃO existe conta na plataforma com o e-mail do remetente. Se a dúvida depender de conta, oriente a informar o e-mail cadastrado (ou criar conta com o e-mail da compra).`,
-    `REEMBOLSO/CANCELAMENTO/COBRANÇA: acolha, lamente e diga que a equipe confirma a solicitação em breve (a garantia Hotmart de 7 dias é respeitada) e finalize com [ESCALAR: resumo]. NUNCA confirme reembolso você mesma.`,
+    // O parêntese "(a garantia Hotmart de 7 dias é respeitada)" saiu daqui no
+    // #198: lido pelo modelo como permissão pra AFIRMAR que a pessoa está na
+    // janela, foi o que produziu o "você está dentro dos 7 primeiros dias"
+    // enviado a uma compra de 12 dias atrás. Quem diz DENTRO/FORA agora é a
+    // linha GARANTIA HOTMART do bloco da conta, calculada em account.ts.
+    `REEMBOLSO/CANCELAMENTO/COBRANÇA: acolha, lamente e diga que a equipe confirma a solicitação em breve; finalize com [ESCALAR: resumo]. NUNCA confirme reembolso você mesma. Sobre a janela de 7 dias, seja obediente à linha GARANTIA HOTMART do bloco da conta: se ela disser FORA, ou não existir, NÃO afirme que há garantia — só diga que a equipe vai verificar.`,
     `Se o e-mail NÃO for um aluno/cliente pedindo ajuda (propaganda, spam, notificação de sistema, corrente), responda APENAS a palavra PULAR.`,
   ].join("\n");
 }
@@ -126,6 +134,8 @@ export type MailSweepSummary = {
   skipped: number;
   escalated: number;
   errors: number;
+  /** Relatórios de entrega que voltaram e viraram caso (#201). */
+  bounces: number;
 };
 
 /**
@@ -146,16 +156,17 @@ async function openIncidentForSentinela(
    *  cancelamento, reembolso, dúvida de conta). Os dois viram incidente desde
    *  19/08 — muda o rótulo, não a existência. */
   technical = true,
-): Promise<void> {
+): Promise<number | null> {
   // O corpo vive em lib/incidents/reportar.ts desde 22/08 — o WhatsApp precisa
   // do MESMO caminho, e duas cópias é como o zap ficou sem chamado até hoje.
-  await abrirChamadoReportado({
+  return abrirChamadoReportado({
     signature: `fast-email:${technical ? "tec" : "atend"}:${fromEmail}`,
     title: `Fast (e-mail${technical ? "" : ", atendimento"}): ${reason.slice(0, 90)}`,
     description: technical
       ? `Relato do aluno por e-mail ao suporte@ — a Fast não conseguiu resolver e escalou. Resumo dela: ${reason}`
       : `Pedido de ATENDIMENTO por e-mail ao suporte@ (cobrança, cancelamento, reembolso ou dúvida de conta) — a Fast não resolve isso sozinha e prometeu ao aluno que a equipe verificaria. Resumo dela: ${reason}`,
     reportedBy: "fast",
+    categoria: technical ? "tecnico" : "atendimento",
     affectedEmails: [fromEmail],
     sampleError: excerpt,
     attachments: prints,
@@ -256,12 +267,30 @@ async function responderAnexoGrande(
   return "replied";
 }
 
-async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "skipped" | "escalated"> {
+async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "skipped" | "escalated" | "bounce"> {
   const raw = mail.raw;
   const fromHeader = header(raw, "From");
   const fromEmail = (fromHeader.match(/<([^>]+)>/)?.[1] ?? fromHeader).trim().toLowerCase();
   const subject = header(raw, "Subject") || "(sem assunto)";
   const messageId = header(raw, "Message-ID") || null;
+
+  // BOUNCE ANTES DE TUDO (#201). A resposta que voltou chega como e-mail comum
+  // na INBOX, e os dois filtros seguintes a matavam em silêncio: `SKIP_FROM`
+  // casa `mailer-daemon`/`privateemail.com` e o `Auto-Submitted: auto-replied`
+  // do relatório casa a regra de auto-submitted. Nos dois casos ia direto pro
+  // markSeen sem ninguém olhar — 21 bounces em 23 dias, nenhum tratado.
+  //
+  // Fica acima do ramo `oversized` de propósito: bounce carrega a mensagem
+  // original anexada e pode passar do teto. Truncado ele ainda serve, porque
+  // o destinatário que falhou vem no cabeçalho (X-Failed-Recipients).
+  const bounce = await tratarSeForBounce(raw);
+  if (bounce) {
+    await markSeen(mail.uid);
+    // "atraso" e bounce de cópia interna não são silêncio de aluno: contam
+    // como skipped pra métrica não inflar e ninguém achar que 5 alunos
+    // ficaram sem resposta quando o servidor só ia tentar de novo.
+    return bounce.tipo === "falha" && bounce.alunos.length > 0 ? "bounce" : "skipped";
+  }
 
   if (mail.oversized) {
     if (shouldSkip(raw, fromEmail) || !fromEmail.includes("@")) {
@@ -277,6 +306,12 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     await markSeen(mail.uid);
     return "skipped";
   }
+
+  // O aluno respondeu: traz de volta o que estava "aguardando o aluno".
+  // Vem ANTES de gerar a resposta — se a Fast resolver sozinha, o time ainda
+  // precisa ver que ele voltou a falar (foi assim que a resposta do Luciano
+  // caiu no vazio 2h17 depois do fechamento, chamado #95).
+  void reabrirPorRespostaDoAluno({ email: fromEmail, trecho: text });
 
   // Link de arquivo (Drive & cia): a Fast não abre, o time abre. Encaminha o
   // e-mail inteiro pra quem vai olhar — ela ainda responde o aluno dizendo que
@@ -355,7 +390,12 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     try {
       // O print é a prova: guarda ANTES de abrir o incidente.
       const prints = await guardarPrints(mail.raw, { fromEmail, uid: mail.uid });
-      await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
+      const numero = await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
+      // ATENDIMENTO = precisa de gente, não de código (#82, Johnny 24/08):
+      // avisa o grupo e FECHA — a responsabilidade é do time, não do quadro.
+      if (numero != null && !technical) {
+        await entregarAoTime({ numero, canal: "e-mail", aluno: fromEmail, resumo: reason, texto: text });
+      }
     } catch (e) {
       console.error("[agent/mail] falha ao abrir incidente:", e instanceof Error ? e.message : e);
     }
@@ -369,7 +409,7 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
 
 /** Uma varredura completa (chamada pelo cron). Best-effort por mensagem. */
 export async function sweepSupportMail(): Promise<MailSweepSummary> {
-  const summary: MailSweepSummary = { scanned: 0, replied: 0, skipped: 0, escalated: 0, errors: 0 };
+  const summary: MailSweepSummary = { scanned: 0, replied: 0, skipped: 0, escalated: 0, errors: 0, bounces: 0 };
   if (!supportMailConfigured() || process.env.AGENT_MAIL_ENABLED !== "1") return summary;
   if (!(await agentEnabled())) return summary; // interruptor geral da Fast vale aqui
 
@@ -397,6 +437,7 @@ export async function sweepSupportMail(): Promise<MailSweepSummary> {
       const outcome = await respondOne(mail, bcc);
       if (outcome === "replied") summary.replied += 1;
       else if (outcome === "escalated") summary.escalated += 1;
+      else if (outcome === "bounce") summary.bounces += 1;
       else summary.skipped += 1;
     } catch (e) {
       // NÃO marca como lida — tenta de novo na próxima varredura.

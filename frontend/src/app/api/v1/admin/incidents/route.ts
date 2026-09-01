@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { gateAdmin } from "@/lib/admin/api";
+import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024; // 8MB (print ou áudio curto)
 
 export async function GET(request: NextRequest) {
-  const g = await gateAdmin(request);
+  const g = await gateAdmin(request, SUPORTE_OK);
   if ("res" in g) return g.res;
   try {
     await syncIncidentsFromFailures();
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const g = await gateAdmin(request);
+  const g = await gateAdmin(request, SUPORTE_OK);
   if ("res" in g) return g.res;
   try {
     const form = await request.formData();

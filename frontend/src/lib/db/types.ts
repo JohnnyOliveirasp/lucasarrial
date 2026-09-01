@@ -63,6 +63,7 @@ export type ProfileRow = {
   last_seen_at: Timestamp | null; // heartbeat p/ "online agora" no /admin
   image_ref_key: string | null; // referência FIXA do estúdio de imagem (mig 68, onboarding via planilha)
   onboarding_ready_email_at: Timestamp | null; // e-mail "plataforma pronta" enviado (13/08)
+  whatsapp: string | null; // dígitos com DDI, informado no SGP (mig 100)
   created_at: Timestamp;
   updated_at: Timestamp;
 };
@@ -89,6 +90,8 @@ export type VoiceRow = {
   lora_alpha: number | null;
   tts_silence_ms: number | null;
   tts_crossfade_ms: number | null;
+  speech_rate_wps: number | null;
+  reference_rate_wps: number | null;
   runpod_job_id: string | null;
   error_message: string | null;
   trained_at: Timestamp | null;
@@ -152,6 +155,8 @@ export type GenerationRow = {
   sample_rate: number | null;
   duration_seconds: number | null;
   elapsed_seconds: number | null;
+  /** Telemetria do QA do worker — mig 94 (#52). */
+  qa: Record<string, unknown> | null;
   /** Fila (delayTime) e execução (executionTime) do RunPod em segundos,
    *  gravados na FALHA — migration 82, incidente d3d8d1b2. */
   delay_seconds: number | null;
@@ -159,6 +164,10 @@ export type GenerationRow = {
   status: GenerationStatus;
   error_message: string | null;
   runpod_job_id: string | null;
+  /** Input mandado ao worker sem as URLs assinadas — mig 99 (#15), p/ reenvio. */
+  request_params: Record<string, unknown> | null;
+  /** Envios ao RunPod desta geração (1 = original) — mig 99 (#15). */
+  request_attempts: number | null;
   created_at: Timestamp;
 };
 export type GenerationInsert = {
@@ -382,11 +391,14 @@ export type ApiKeyUpdate = Partial<ApiKeyRow>;
 export type AdminEmailRow = {
   id: string;
   email: string;
+  /** mig 95 — admin = painel inteiro · suporte = só Falhas + Agente. */
+  role: "admin" | "suporte";
   added_by: string | null;
   created_at: Timestamp;
 };
 export type AdminEmailInsert = {
   email: string;
+  role?: "admin" | "suporte";
   added_by?: string | null;
 };
 export type AdminEmailUpdate = Partial<AdminEmailRow>;

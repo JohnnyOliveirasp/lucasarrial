@@ -19,9 +19,11 @@ import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { runpodGetStatus, inferenceEndpoint } from "@/lib/runpod/client";
 import { finalizeGenerationSuccess } from "@/lib/generations/finalize";
+import { errorMessageComFase } from "@/lib/generations/fase-telemetria";
 import { recordRunpodTiming } from "@/lib/generations/runpod-timing";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { GenerationStatus } from "@/lib/db/types";
+import { tentarReenviar } from "@/lib/generations/reenviar";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -48,11 +50,34 @@ async function failGeneration(
   // alto) de COLD START (tempo baixo) sem depender de log que expira. Nunca
   // concatenar isso no error_message: a assinatura do incidente vem do texto do
   // erro (src/lib/incidents/classify.ts) e já estilhaçou agregação no passado.
+  // ÚNICA exceção sancionada: o sufixo "[fase: ...]" (errorMessageComFase), de
+  // formato FIXO, removido pela assinatura (stripFaseSuffix) — num timeout, a
+  // row nomeia a fase que o heartbeat gravou em qa.fase_corrente (d3d8d1b2).
+  // Busca do qa é best-effort e SÓ no caminho de falha: se falhar, a geração
+  // ainda é marcada failed com o texto de hoje — telemetria nunca trava estorno.
+  // #15: worker travado devolve executionTimeout num texto que roda em 90s se
+  // for refeito. Antes de falhar, tenta UMA vez sozinho — sem estorno e sem
+  // novo débito, porque é a mesma geração. Só o timeout entra aqui; qualquer
+  // outro erro segue direto pro caminho de falha de sempre.
+  const reenvio = await tentarReenviar(generationId, rawError);
+  if (reenvio !== "nao_aplica") return;
+
+  let qaAtual: unknown = null;
+  try {
+    const { data: qaRow } = await getAdmin()
+      .from("generations")
+      .select("qa")
+      .eq("id", generationId)
+      .maybeSingle();
+    qaAtual = (qaRow as { qa?: unknown } | null)?.qa ?? null;
+  } catch {
+    // segue sem fase
+  }
   const failUpdate: {
     status: "failed";
     error_message: string;
     elapsed_seconds?: number;
-  } = { status: "failed", error_message: rawError.slice(0, 500) };
+  } = { status: "failed", error_message: errorMessageComFase(rawError, qaAtual) };
   if (typeof executionTimeMs === "number") {
     failUpdate.elapsed_seconds = executionTimeMs / 1000; // RunPod manda em ms
   }

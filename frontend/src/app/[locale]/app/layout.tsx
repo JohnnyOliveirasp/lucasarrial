@@ -9,7 +9,7 @@ import { PendingPaymentBanner } from "@/components/app/pending-payment-banner";
 import { HelpWidget } from "@/components/app/help-widget";
 import { createClient } from "@/lib/supabase/server";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
-import { isAdmin } from "@/lib/admin/guard";
+import { adminRole } from "@/lib/admin/guard";
 import { socialPublisherAllowedEmail } from "@/lib/social/access";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 
@@ -58,7 +58,10 @@ export default async function AppLayout({
   const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
   const creditsTotal =
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
-  const admin = await isAdmin(email);
+  // Papel (mig 95): `admin` abre a pré-produção e os recursos que gastam
+  // dinheiro; `suporte` só ganha o link do painel.
+  const papel = await adminRole(email);
+  const admin = papel === "admin";
   // Publicador: admin OU liberação individual (modelo "aluno pede", 13/08).
   const publisherAllowed = await socialPublisherAllowedEmail(email);
 
@@ -80,7 +83,7 @@ export default async function AppLayout({
 
   return (
     <div className="grid min-h-svh grid-cols-1 lg:grid-cols-[260px_1fr] bg-[var(--canvas)]">
-      <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} hasReadyVoice={hasReadyVoice} publisherAllowed={publisherAllowed} />
+      <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} podeAbrirPainel={papel !== null} hasReadyVoice={hasReadyVoice} publisherAllowed={publisherAllowed} />
       <div className="flex flex-col">
         <Topbar
           email={profile?.email ?? user.email ?? ""}

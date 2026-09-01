@@ -4,11 +4,16 @@
  * A Fast sinaliza a escalação com um marcador interno na última linha da
  * resposta: "[ESCALAR: resumo do que o aluno precisa]" (instrução no manual).
  * Aqui a gente: extrai/remove o marcador, pausa a IA no chat (mode=human) e
- * avisa a equipe — primeiro por WhatsApp (números em AGENT_TEAM_WHATSAPP),
- * depois por e-mail (allowlist admin_emails + suporte@).
- * ERRO TÉCNICO ([ESCALAR-TECNICO: ...]): avisa SÓ o responsável técnico
- * (AGENT_TECH_WHATSAPP) + e-mail pro suporte@ como registro — decisão do
- * Johnny 2026-07-13: falha de sistema não aciona o resto da equipe.
+ * avisa a equipe no GRUPO "FASTCLONER - Suporte" (lib/support/grupo.ts) +
+ * e-mail (suporte@ + Johnny) como registro.
+ *
+ * ⛔ 24/08 — ORDEM DO JOHNNY: "não é para fazer mais isto no privado, é para
+ * ela mandar somente no grupo". Até aqui a escalação ia em zap PRIVADO para
+ * 4 telefones (AGENT_TEAM_WHATSAPP) — e zap privado some na rolagem: o Pepe
+ * (#123) pediu humano em 18/08, 4 pessoas receberam, ninguém era o dono, e ele
+ * ficou 6 dias sem resposta. Além disso um dos 4 (Edu) recebia tudo sem querer.
+ * AGENT_TEAM_WHATSAPP e AGENT_TECH_WHATSAPP NÃO são mais lidas. Técnico e
+ * humano vão pro mesmo grupo, com rótulo diferente.
  * Best-effort: aviso falhar nunca derruba a resposta ao aluno.
  */
 import { createHash } from "node:crypto";
@@ -17,6 +22,7 @@ import { sendAgentText } from "@/lib/agent/provider";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
+import { gruposDoTime } from "@/lib/support/grupo";
 import type { AgentChatRow } from "@/lib/db/types";
 
 // Caso Anderson 10/08: resumo >300 chars não casava o regex → marcador VAZAVA
@@ -42,26 +48,9 @@ async function teamEmails(): Promise<string[]> {
   return [SUPPORT_EMAIL, "johnny.oliveirasp@gmail.com"];
 }
 
-/** Números (dígitos com país, separados por vírgula) → JIDs. */
-function envJids(name: string): string[] {
-  return (process.env[name] ?? "")
-    .split(",")
-    .map((s) => s.replace(/\D/g, ""))
-    .filter(Boolean)
-    .map((d) => `${d}@s.whatsapp.net`);
-}
-
-/**
- * Pra quem vai o zap da escalação: técnico → AGENT_TECH_WHATSAPP (só o
- * responsável); resto → AGENT_TEAM_WHATSAPP. Técnico sem env configurada
- * cai na equipe (melhor avisar alguém do que ninguém).
- */
-function escalationJids(technical: boolean): string[] {
-  if (technical) {
-    const tech = envJids("AGENT_TECH_WHATSAPP");
-    if (tech.length > 0) return tech;
-  }
-  return envJids("AGENT_TEAM_WHATSAPP");
+/** Pra onde vai o zap da escalação: SÓ o grupo do time (Johnny, 24/08). */
+function escalationJids(): string[] {
+  return gruposDoTime();
 }
 
 /**
@@ -94,7 +83,7 @@ export async function notifyTeamEscalation(args: {
     ]
       .filter(Boolean)
       .join("\n");
-    for (const jid of escalationJids(technical)) {
+    for (const jid of escalationJids()) {
       try {
         await sendAgentText(jid, waText);
       } catch {
@@ -169,6 +158,9 @@ export async function abrirChamadoDaEscalacao(args: {
         : `Pedido por WhatsApp de ${args.chat.name || "aluno sem nome"} (${quem}) — a Carol escalou. ` +
           `Resumo dela: ${args.reason}`,
       reportedBy: grupo ? "carol-grupo" : "carol-zap",
+      // O marcador que ela já usa separa as filas: [ESCALAR-TECNICO] é falha
+      // da plataforma (tem conserto nosso); [ESCALAR] é conversa.
+      categoria: technical ? "tecnico" : "atendimento",
       sampleError: excerpt,
       attachments: args.attachments,
     });

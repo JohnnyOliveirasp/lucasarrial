@@ -5,7 +5,8 @@
  *
  * Mesmo cérebro do WhatsApp (manual + Sonnet + visão), mas identidade vem do
  * LOGIN (sem telefone): o contexto da conta é sempre o do próprio usuário.
- * Escalação [ESCALAR/-TECNICO] → e-mail pra equipe (WhatsApp está pausado).
+ * Escalação [ESCALAR/-TECNICO] → CHAMADO (fila do Frank) + e-mail pra equipe.
+ * O WhatsApp está pausado.
  * Rate-limit por usuário/dia (HELP_RATE_LIMIT_PER_DAY, default 60).
  */
 import type { NextRequest } from "next/server";
@@ -15,6 +16,8 @@ import { getAdmin } from "@/lib/db/admin";
 import { buildAgentReply, type AgentImage } from "@/lib/agent/brain";
 import { buildAccountContext } from "@/lib/agent/account";
 import { extractEscalation } from "@/lib/agent/escalate";
+import { abrirChamadoReportado } from "@/lib/incidents/reportar";
+import { entregarAoTime } from "@/lib/incidents/entregar";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
 import { transcribeAudioBuffer } from "@/lib/video/transcribe";
@@ -97,6 +100,8 @@ async function emailEscalation(args: {
   lastText: string;
   pathname: string | null;
   technical: boolean;
+  /** Chamado aberto pra esta escalação (#150) — o time cita esse número. */
+  numero: number | null;
 }): Promise<void> {
   try {
     // Pedido Johnny 05/08: escalações da Fast só pra ele + suporte@ (era admin_emails inteira).
@@ -105,9 +110,12 @@ async function emailEscalation(args: {
     const to = new Set<string>([SUPPORT_EMAIL, "johnny.oliveirasp@gmail.com"]);
     await sendEmail({
       to: [...to],
-      subject: `${args.technical ? "⚙️ ERRO TÉCNICO" : "🙋 Aluno pedindo humano"} — help do app — ${args.email}`,
+      subject: `${args.technical ? "⚙️ ERRO TÉCNICO" : "🙋 Aluno pedindo humano"} — help do app${args.numero != null ? ` — #${args.numero}` : ""} — ${args.email}`,
       html:
         `<p>Escalação da Fast no <strong>chat de ajuda do app</strong>.</p><ul>` +
+        (args.numero != null
+          ? `<li><strong>Chamado:</strong> #${args.numero} (aba Falhas do /admin)</li>`
+          : `<li><strong>Chamado:</strong> ⚠️ NÃO abriu — este e-mail é o único registro</li>`) +
         `<li><strong>Aluno:</strong> ${escapeHtml(args.email)}</li>` +
         `<li><strong>Situação:</strong> ${escapeHtml(args.reason)}</li>` +
         (args.pathname ? `<li><strong>Página:</strong> ${escapeHtml(args.pathname)}</li>` : "") +
@@ -116,6 +124,70 @@ async function emailEscalation(args: {
     });
   } catch {
     /* best-effort */
+  }
+}
+
+/**
+ * Escalação no chat do app vira CHAMADO — o buraco do incidente #150.
+ *
+ * O bot promete ao aluno "vou chamar alguém da equipe" / "a equipe foi
+ * avisada" e, até 27/08, esse texto não tinha NENHUM caminho até a tabela
+ * `incidents`. Só saía o e-mail do `emailEscalation` — que cai na caixa do
+ * suporte@ atendida pela própria Fast, e que é `try/catch` vazio: se o Resend
+ * falhasse, a escalação evaporava sem rastro. Medido em 27/08: 11 alunos com
+ * promessa de escalação e zero chamado; a Zethe (#151) pediu ajuda 4x em
+ * 1h e o bot prometeu 3 vezes que a equipe sabia. Ninguém sabia.
+ *
+ * É o MESMO defeito que a Viviana expôs no e-mail (19/08) e a Carol no zap
+ * (22/08), pela terceira vez em canal diferente: quem escreveu o caminho de
+ * um canal não replicou no outro.
+ *
+ * Dedupe por `help:<fila>:<email>`, espelhando o e-mail (`fast-email:...`):
+ * no chat do app a identidade é 1 aluno = 1 conversa, então o aluno que
+ * insiste 3x soma 3 ocorrências no MESMO chamado — exatamente o que faltou
+ * pra Zethe — e um pedido novo depois de `fixed` REABRE. Nada novo no banco:
+ * o índice UNIQUE parcial da mig 92 + `inserirChamadoUnico` já resolvem a
+ * corrida (lição do #110, "1 problema virava 6 chamados").
+ *
+ * ATENDIMENTO × TÉCNICO (revisado 28/08, pedido do Johnny — "21 chamados
+ * abertos não faz sentido"): a fila de incidentes mede a saúde do SISTEMA.
+ * Pedido de atendimento (dúvida, "como faço", reclamação de resultado que
+ * precisa de gente) segue a regra #82 do e-mail: abre o chamado como registro,
+ * AVISA O GRUPO DO TIME. Até 28/08 fechava na hora ("entregue ao time");
+ * desde 29/08 (#153, decisão do Johnny) o chamado FICA ABERTO até alguém do
+ * time responder o aluno — fechar em 1,5s escondia o aluno da fila e virava
+ * spam no grupo a cada mensagem nova dele.
+ */
+async function abrirChamadoDoChat(args: {
+  email: string;
+  reason: string;
+  lastText: string;
+  pathname: string | null;
+  technical: boolean;
+}): Promise<number | null> {
+  try {
+    return await abrirChamadoReportado({
+      signature: `help:${args.technical ? "tec" : "atend"}:${args.email}`,
+      title: `Fast (chat do app${args.technical ? "" : ", atendimento"}): ${args.reason.slice(0, 90)}`,
+      description:
+        (args.technical
+          ? `Relato do aluno no CHAT DE AJUDA DENTRO DO APP — a Fast não conseguiu resolver e escalou. Resumo dela: ${args.reason}`
+          : `Pedido de ATENDIMENTO no CHAT DE AJUDA DENTRO DO APP (cobrança, cancelamento, reembolso ou dúvida de conta) — a Fast não resolve isso sozinha e prometeu ao aluno que a equipe verificaria. Resumo dela: ${args.reason}`) +
+        (args.pathname ? `
+
+Página onde ele estava: ${args.pathname}` : "") +
+        `
+
+⚠️ O aluno está esperando DENTRO do app e não recebe resposta humana por lá: responda por e-mail.`,
+      reportedBy: "fast-help",
+      categoria: args.technical ? "tecnico" : "atendimento",
+      affectedEmails: [args.email],
+      sampleError: args.lastText,
+    });
+  } catch (e) {
+    // Best-effort como nos outros canais: nunca derruba a resposta ao aluno.
+    console.error("[help] falha ao abrir chamado:", e instanceof Error ? e.message : e);
+    return null;
   }
 }
 
@@ -244,7 +316,19 @@ export async function POST(request: NextRequest) {
 
   const { clean, reason, technical } = extractEscalation(reply);
   if (reason) {
-    await emailEscalation({ email: auth.email ?? "?", reason, lastText: userContent, pathname, technical });
+    const email = auth.email ?? "?";
+    // O chamado primeiro: é o registro que sobrevive: o e-mail é aviso, não memória.
+    const numero = await abrirChamadoDoChat({ email, reason, lastText: userContent, pathname, technical });
+    await emailEscalation({ email, reason, lastText: userContent, pathname, technical, numero });
+    // ATENDIMENTO = precisa de gente, não de código (#82): avisa o grupo e
+    // fecha. Best-effort: se o grupo não recebeu, o chamado fica aberto.
+    if (numero != null && !technical) {
+      try {
+        await entregarAoTime({ numero, canal: "chat do app", aluno: email, resumo: reason, texto: userContent });
+      } catch (e) {
+        console.error("[help] entrega ao time falhou:", e instanceof Error ? e.message : e);
+      }
+    }
   }
   const finalReply = clean || reply;
 

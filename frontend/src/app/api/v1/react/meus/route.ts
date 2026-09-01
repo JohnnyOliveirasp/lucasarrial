@@ -16,7 +16,10 @@ import type { NextRequest } from "next/server";
 import { gateAdmin } from "@/lib/admin/api";
 import { jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { imagesBucket, R2_BUCKETS } from "@/lib/r2/client";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+
+import { badRequest, notFound } from "@/lib/api/responses";
+import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { objectExists } from "@/lib/r2/exists";
 import { createPresignedGet } from "@/lib/r2/presigned";
 
@@ -98,5 +101,39 @@ export async function GET(request: NextRequest) {
     return jsonOk({ videos });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao listar os seus React");
+  }
+}
+
+/**
+ * DELETE /api/v1/react/meus?id=… — apaga UM React da lista (Johnny 25/08:
+ * "um botão para apagar os que não quero mais"). Só o dono apaga o dele.
+ * O mp4 sai do R2 junto (best-effort: se já expirou pelo TTL, não há o que
+ * apagar); a linha sai sempre.
+ */
+export async function DELETE(request: NextRequest) {
+  const gate = await gateAdmin(request);
+  if ("res" in gate) return gate.res;
+  const id = (request.nextUrl.searchParams.get("id") ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return badRequest("id inválido");
+  try {
+    const admin = getAdmin();
+    const { data: linha } = await admin
+      .from("react_jobs")
+      .select("id, r2_key")
+      .eq("id", id)
+      .eq("user_id", gate.auth.user_id)
+      .maybeSingle();
+    if (!linha) return notFound("React não encontrado");
+    const r2Key = (linha as { r2_key: string | null }).r2_key;
+    if (r2Key) {
+      await r2
+        .send(new DeleteObjectCommand({ Bucket: R2_BUCKETS.generations, Key: r2Key }))
+        .catch(() => undefined);
+    }
+    const { error } = await admin.from("react_jobs").delete().eq("id", id).eq("user_id", gate.auth.user_id);
+    if (error) return serverError(error.message);
+    return jsonOk({ apagado: id });
+  } catch (e) {
+    return serverError(e instanceof Error ? e.message : "Falha ao apagar o React");
   }
 }

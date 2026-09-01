@@ -38,6 +38,7 @@ import {
 import { getAdmin } from "@/lib/db/admin";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { getBalance, debitCredits } from "@/lib/credits/service";
+import { objectExists } from "@/lib/r2/exists";
 import { generationCreditCost } from "@/lib/credits/config";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import {
@@ -46,6 +47,8 @@ import {
   createPresignedPut,
 } from "@/lib/r2/presigned";
 import { runpodSubmitInference, webhookUrlFor } from "@/lib/runpod/client";
+import { faseTelemetriaInput } from "@/lib/generations/fase-telemetria";
+import { inferenceExecutionTimeoutMs } from "@/lib/generations/execucao";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -55,20 +58,6 @@ const PRESIGN_EXPIRES = 60 * 60; // 1h
 // ficar instável em single-shot — se precisar mais, dividir por frase no worker.
 const TEXT_MAX = 2000;
 
-/**
- * Teto de execução do job (policy.executionTimeout), como no treino e nos
- * clones. Esta era a ÚNICA rota sem policy por job: valia o default de 20min
- * do endpoint, que desde o QA anti-eco (777e405: todo chunk transcrito + até
- * 3 tentativas) não comporta texto longo em GPU fria/lenta — 5 alunos
- * estouraram em 06/08 (diagnóstico do Vigia, incidente "tempo de execução
- * estourado"). Chunk de 160 chars espelha TTS_CHUNK_MAX_CHARS do worker.
- * Piso de 30min (07/08: worker FRIO do endpoint B levou >20min só carregando
- * o modelo e matou um texto de 59 chars); 2000 chars ≈ 13 chunks → 41min.
- */
-function inferenceExecutionTimeoutMs(textLen: number): number {
-  const chunks = Math.max(1, Math.ceil(textLen / 160));
-  return Math.max(30 * 60, 15 * 60 + chunks * 2 * 60) * 1000;
-}
 
 type Body = {
   text: string;
@@ -78,7 +67,19 @@ type Body = {
   // da voz (tts_*); sem ela, o worker usa o default global (env).
   chunk_silence_ms?: number;
   chunk_crossfade_ms?: number;
+  /** Ritmo escolhido na tela (opcao B, 25/08): regua da pessoa x 0,85 / 1 / 1,15. */
+  speed?: "calm" | "normal" | "fast";
+  /**
+   * "Ajustar ao meu ritmo" — escolha do ALUNO na tela (29/08). Padrão do
+   * worker é DESLIGADO: a voz sai como o modelo gerou. Ligado, o worker
+   * aproxima a saída da velocidade natural medida da pessoa (útil pra quem
+   * sai acelerado demais); em troca pode ficar um pouco mais lento e mudar
+   * levemente a entonação.
+   */
+  rate_qa?: boolean;
 };
+
+const SPEED_FACTOR: Record<string, number> = { calm: 0.85, normal: 1, fast: 1.15 };
 
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   // aluno (uso interno/suporte).
   let voiceQuery = admin
     .from("voices")
-    .select("id, user_id, status, is_stock, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language")
+    .select("id, user_id, status, is_stock, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language, speech_rate_wps")
     .eq("id", voiceId);
   if (!auth.is_admin) {
     voiceQuery = voiceQuery.or(`user_id.eq.${auth.user_id},is_stock.eq.true`);
@@ -118,6 +119,27 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const canGenerate = Boolean(voice.lora_path) || Boolean(voice.is_stock && voice.reference_audio_path);
   if (voice.status !== "ready" || !canGenerate) {
     return badRequest(`Voice not ready (status=${voice.status})`);
+  }
+
+  // O LoRA ainda EXISTE no R2? (29/08) A voz "Lucas Arrial (cópia teste)"
+  // estava `ready` apontando pra um arquivo apagado: o presign nunca falha,
+  // então a plataforma COBRAVA, mandava pro RunPod e só lá dava "Failed to
+  // download". Conferir aqui custa um HEAD e evita cobrar por algo que vai
+  // falhar 100% das vezes. A voz é marcada como falha pra sair da lista.
+  if (voice.lora_path && !(await objectExists(R2_BUCKETS.voices, voice.lora_path))) {
+    await admin
+      .from("voices")
+      .update({
+        status: "failed",
+        error_message:
+          "O arquivo do treino desta voz não está mais disponível. Ela precisa ser treinada de novo.",
+      })
+      .eq("id", voice.id);
+    return jsonError(
+      "voice_needs_retraining",
+      "Esta voz precisa ser treinada de novo: o arquivo do treino não está mais disponível. Nenhum crédito foi cobrado.",
+      409,
+    );
   }
 
   // Custo em créditos = nº de caracteres (espaços contam), mínimo 400.
@@ -151,6 +173,15 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   // Normaliza o texto pra fala (números/moeda/abreviações → palavras) via Claude
   // Haiku. Sem ANTHROPIC_API_KEY ou em caso de erro, retorna o texto cru.
   const normalizedText = await normalizeTextForTTS(text);
+  // Caractere de substituição U+FFFD (caso Vinicius #162, 28/08): o aluno colou
+  // "Ningu�m te conta isso" (acento perdido na cópia). O NORMALIZADOR reconstrói
+  // a palavra ("Ninguém"); só se ele falhar/pular e o "�" sobrar é que
+  // recusamos — sintetizar isso é cobrar por "Ningu m" na 1ª palavra.
+  if (normalizedText.includes("�")) {
+    return badRequest(
+      "O texto tem um caractere inválido (aparece como ▯ ou �) que não conseguimos reconstruir. Cole o texto de novo a partir da origem.",
+    );
+  }
 
   const generationId = randomUUID();
   const outputKey = buildGenerationKey(auth.user_id, generationId);
@@ -177,10 +208,13 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     );
   }
 
-  const inferenceInput: Record<string, unknown> = {
+  // `params` = tudo que NÃO é URL assinada nem token de telemetria. É
+  // exatamente o que fica gravado em generations.request_params (mig 99, #15)
+  // pro reenvio automático repetir o pedido sem adivinhar nada — inclusive a
+  // escolha de ritmo da tela (speed) e o pacing da voz.
+  const params: Record<string, unknown> = {
     type: "inference",
     text: normalizedText,
-    output_upload_url: outputUploadUrl,
     // Alpha gravado no treino daquela voz (16 p/ antigas, 32 p/ novas). O worker
     // infere com esse alpha — casa com a LoRA. Sem valor, o worker usa 16.
     lora_alpha: typeof voice.lora_alpha === "number" ? voice.lora_alpha : 16,
@@ -197,8 +231,17 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     // transcrição do worker rodam no idioma CERTO (caso Joana: voz es com QA
     // em pt reprovava sempre e virava loteria de retries).
     language: voice.language || "pt",
+    // Regua do QA de ritmo (mig 96): velocidade natural da pessoa em pal/s.
+    // null = o worker mede a propria referencia.
+    ...(typeof voice.speech_rate_wps === "number" ? { speech_rate_wps: voice.speech_rate_wps } : {}),
+    ...(body.speed && SPEED_FACTOR[body.speed] && SPEED_FACTOR[body.speed] !== 1
+      ? { speech_rate_factor: SPEED_FACTOR[body.speed] }
+      : {}),
+    // Ajuste de ritmo LIGADO pelo aluno na tela (29/08). O padrão do worker é
+    // desligado — a voz sai como o modelo gerou. Quem sai acelerado demais
+    // liga aqui e o worker aproxima a saída da régua medida da pessoa.
+    ...(body.rate_qa === true ? { rate_qa: true } : {}),
   };
-  if (loraUrl) inferenceInput.lora_url = loraUrl;
 
   // Pacing entre frases: precedência body > config da voz. Sem nenhum, o worker
   // usa o default global (env) — comportamento inalterado pras vozes sem config.
@@ -210,24 +253,38 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     typeof body.chunk_crossfade_ms === "number"
       ? body.chunk_crossfade_ms
       : voice.tts_crossfade_ms;
-  if (typeof silenceMs === "number") inferenceInput.chunk_silence_ms = silenceMs;
-  if (typeof crossfadeMs === "number") inferenceInput.chunk_crossfade_ms = crossfadeMs;
+  if (typeof silenceMs === "number") params.chunk_silence_ms = silenceMs;
+  if (typeof crossfadeMs === "number") params.chunk_crossfade_ms = crossfadeMs;
 
   // Transcrição da referência efetivamente enviada como prompt_text. Guardada
   // p/ auditoria (debug de "filler"/eco da referência depende de saber QUAL
   // prompt_text foi usado naquela geração).
   let refTranscriptUsed: string | null = null;
   if (refUrl) {
-    inferenceInput.prompt_wav_url = refUrl;
     // A referência é auto-extraída e transcrita no treino. Mandamos o
     // prompt_text salvo → o worker NÃO re-transcreve a cada geração. Se por
     // algum motivo não houver transcrição, o worker cai no Whisper (Caminho A).
     const refTranscript = (voice.reference_transcript ?? "").trim();
     if (refTranscript) {
-      inferenceInput.prompt_text = refTranscript;
+      params.prompt_text = refTranscript;
       refTranscriptUsed = refTranscript;
     }
   }
+
+  // O input real = params + as partes que NÃO se guardam: as URLs assinadas
+  // (expiram em 1h) e o token de telemetria de fase (segredo por job).
+  // Fase corrente do worker → banco (incidente d3d8d1b2): o heartbeat do
+  // worker POSTa a fase que está rodando pra /api/v1/webhooks/runpod-fase e
+  // ela cai em qa.fase_corrente — num estouro de executionTimeout a row diz
+  // qual fase pendurou. Sem a env FASE_TELEMETRIA_SECRET isso devolve {} e o
+  // input fica idêntico ao de hoje.
+  const inferenceInput: Record<string, unknown> = {
+    ...params,
+    output_upload_url: outputUploadUrl,
+    ...faseTelemetriaInput(generationId),
+  };
+  if (loraUrl) inferenceInput.lora_url = loraUrl;
+  if (refUrl) inferenceInput.prompt_wav_url = refUrl;
 
   let runpodJob;
   try {
@@ -251,6 +308,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     reference_transcript: refTranscriptUsed,
     audio_path: outputKey,
     runpod_job_id: runpodJob.id,
+    request_params: params,
   } as never);
 
   if (insertErr) {

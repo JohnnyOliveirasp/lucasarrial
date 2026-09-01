@@ -13,6 +13,7 @@
  * Server-only. As tabelas da mig 47 não estão nos types gerados → `as never`.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { inserirChamadoUnico } from "./gravar";
 
 export type ChamadoReportado = {
   /** Dedupe. Precisa distinguir PEDIDOS, não canais: num grupo o chat é um só,
@@ -28,6 +29,16 @@ export type ChamadoReportado = {
   sampleError?: string | null;
   /** Anexos (chaves no R2), separados por vírgula na coluna. */
   attachments?: string[];
+  /**
+   * Em qual FILA o chamado entra (mig 93).
+   *   "tecnico"     → existe ação NOSSA que resolve: retreinar a voz, refazer
+   *                   a imagem, reprocessar o material, corrigir o bug.
+   *   "atendimento" → reclamação do produto, dúvida, pré-venda, espera de
+   *                   resposta. Precisa de PESSOA falando com o aluno.
+   * O padrão é "atendimento" porque esta função é a porta de quem RELATA —
+   * quem abre por falha de sistema (burst-rule, sync) manda "tecnico".
+   */
+  categoria?: "tecnico" | "atendimento";
 };
 
 /** Devolve o número curto do chamado (#85), que é como as pessoas se referem
@@ -67,9 +78,7 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
     return existing.numero ?? null;
   }
 
-  const { data: criado } = await admin
-    .from("incidents" as never)
-    .insert({
+  const criado = await inserirChamadoUnico(admin, {
       kind: "reported",
       cause: "reported",
       status: "open",
@@ -80,11 +89,12 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
       sample_error: (c.sampleError ?? "").slice(0, 1000) || null,
       description: c.description,
       reported_by: c.reportedBy,
+      categoria: c.categoria ?? "atendimento",
       attachment_path: c.attachments?.length ? c.attachments.join(",") : null,
       first_seen_at: now,
       last_seen_at: now,
-    } as never)
-    .select("numero")
-    .maybeSingle();
-  return (criado as unknown as { numero: number | null } | null)?.numero ?? null;
+  });
+  // Se perdemos a corrida, inserirChamadoUnico já somou a ocorrência no
+  // chamado que venceu e devolve o número DELE — que é o que o time vai citar.
+  return criado?.numero ?? null;
 }

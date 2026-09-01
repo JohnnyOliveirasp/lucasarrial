@@ -45,10 +45,10 @@
       }
     },
     "voiceCloning": {
-      "title": "Generate Voice",
+      "title": "Train Voice",
       "subtitle": "Train your voice however you need — announcer, news content, faster or slower. Upload a few minutes of audio and the AI learns your timbre to generate audio with any text.",
       "empty": "You haven't trained any voice yet.",
-      "createButton": "+ Generate New Voice",
+      "createButton": "+ Train new voice",
       "generateAudioTitle": "Generate Audio",
       "generateAudioSubtitle": "Pick a ready voice and generate audio with any text.",
       "generateAudioEmpty": "You don't have a ready voice yet. Train a voice first.",
@@ -92,12 +92,13 @@
       "statuses": {
         "uploading": "Uploading audio",
         "validating": "Validating",
-        "awaiting_training": "Ready to train",
+        "awaiting_training": "Waiting for you to train",
         "rejected_too_short": "< 20min · Rejected",
         "training": "Training",
         "ready": "Ready",
         "failed": "Failed"
       },
+      "awaitingHint": "One step left: open the voice and click “Start training”.",
       "paywall": {
         "titleNoCredits": "Not enough credits to train",
         "titleNoPlan": "Subscribe to train a voice",
@@ -130,6 +131,8 @@
         "pickFolder": "Pick folder"
       },
       "measuring": "measuring…",
+      "measureFailed": "couldn't measure",
+      "retryMeasure": "Try measuring again",
       "uploading": "Uploading…",
       "submitting": "Preparing…",
       "train": "Train voice ({duration})",
@@ -151,7 +154,16 @@
         "unsupportedSkipped": "{count} file(s) were left out because they are not a recognized audio format: {names}",
         "network": "Network failure. Check your connection.",
         "uploadFailed": "{count} file(s) failed to upload. Try again.",
-        "generic": "Something went wrong. Try again."
+        "generic": "Something went wrong. Try again.",
+        "measureFailed": {
+          "timeout": "took too long to read the duration",
+          "formato": "this browser couldn't open the file",
+          "semDuracao": "the file doesn't report its duration",
+          "navegador": "this browser can't measure this file",
+          "generico": "could not be measured"
+        },
+        "measureBlocked": "{count} file(s) couldn't be measured, so they are NOT counting toward the total — that's why the Train button is off. Ways out: convert them to MP3 or WAV and upload again, remove them from the list, or add more recording until the measured files alone reach {min}min.",
+        "measureNotCounted": "{count} file(s) couldn't be measured and are not counting toward the total. The minimum was already reached without them, and they still get uploaded for training."
       }
     }
   },
@@ -1170,6 +1182,13 @@
       "audioSelected": "Audio selected",
       "sceneEstimate": "~{n} scenes of {s}s"
     },
+    "sceneDelete": {
+      "label": "Delete scene",
+      "title": "Delete scene {n}?",
+      "warning": "This action is <strong>irreversible</strong>. It removes only this scene (image and clip). The other scenes stay. The final video gets shorter than the narration.",
+      "deleting": "Deleting…",
+      "failed": "Couldn't delete the scene"
+    },
     "scenes": {
       "loadFailed": "Couldn't load scenes",
       "generateFailed": "Couldn't generate scenes",
@@ -1439,6 +1458,11 @@
       "pauseNatural": "Natural",
       "pauseMedium": "Medium",
       "pauseLong": "Long",
+      "speedLabel": "Pace",
+      "speedCalm": "Calmer",
+      "speedNormal": "Normal",
+      "speedFast": "Faster",
+      "speedNeedsRateQa": "Pace only changes with \"Match my natural speaking pace\" enabled above. Without it, the audio comes out exactly as the model generated it.",
       "supportAction": "generate the audio",
       "generating": "Generating…",
       "generate": "Generate audio",
@@ -1450,7 +1474,13 @@
       "generatedIn": "· generated in {s}s",
       "savedNote": "All audio is also saved to your History.",
       "latestBar": "Latest audio",
-      "paywallAction": "generate audio"
+      "paywallAction": "generate audio",
+      "deleteAria": "Delete this audio",
+      "rateQaLabel": "Match my natural speaking pace",
+      "rateQaHelp": "Turn this on if the cloned voice comes out faster than you speak. The system pulls the audio towards your natural pace — in exchange it may sound a bit slower and the intonation changes slightly. Off, it comes out exactly as the model generated it.",
+      "copiarTexto": "Copy text",
+      "copiado": "Copied!",
+      "reusarTexto": "Use this text again"
     },
     "panel": {
       "startError": "Failed to start training",
@@ -1908,7 +1938,8 @@
         "bancoAutoCorpo": "The AI reads your script and reuses fitting scenes from the collection automatically — free, already included.",
         "bancoEscolherTitulo": "I want to pick from the bank",
         "bancoEscolherCorpo": "You pick the scenes and the AI places each one on the sentence where it fits best — at no cost.",
-        "gerandoCena": "Please wait, generating the scene…"
+        "gerandoCena": "Please wait, generating the scene…",
+        "cenaFalhou": "Failed — open to see why"
       },
       "cloneOpcoes": {
         "padrao": {
@@ -2116,5 +2147,181 @@
     "server": "The file server failed to receive \"{file}\" (HTTP {status}). We tried 3 times; wait a moment and try again.",
     "rejected": "The upload of \"{file}\" was refused (HTTP {status}). Try again; if it persists, contact support.",
     "unknown": "Failed to upload \"{file}\". Try again; if it persists, contact support."
+  },
+  "sgp": {
+    "selo": "Ready Generation System",
+    "titulo": "Set up your AI Clone",
+    "subtitulo": "Fill in each step carefully. Our team will use this information to build your clone.",
+    "passos": {
+      "aria": "Steps",
+      "dados": "Details",
+      "foto": "Image",
+      "audio": "Audio",
+      "revisao": "Confirm"
+    },
+    "dados": {
+      "titulo": "Your details",
+      "descricao": "We need your details to set up your clone. All information is kept strictly confidential.",
+      "nome": "Full name",
+      "nomePlaceholder": "Your full name",
+      "whatsapp": "WhatsApp",
+      "email": "Email",
+      "dicaCodigo": "We'll email you a 6-digit code. You are NOT creating an account yet: the platform sign-up happens at the end, after the review.",
+      "enviarCodigo": "Send code",
+      "enviandoCodigo": "Sending…",
+      "codigoEnviado": "We sent a code to your email. Check your inbox (and spam).",
+      "codigoEnviadoContaExistente": "This email already has a FastCloner account. We sent a code to confirm it's yours — at the end we attach everything to your account.",
+      "codigoLabel": "Email code",
+      "verificarEContinuar": "Confirm and continue",
+      "verificando": "Verifying…",
+      "reenviar": "Resend code",
+      "reenviarEm": "Resend in {seconds}s",
+      "codigoReenviado": "Code resent.",
+      "codigoInvalido": "Invalid or expired code. Check and try again.",
+      "muitasTentativas": "Too many attempts. Wait 1 minute.",
+      "erroGenerico": "Something went wrong. Try again.",
+      "nomeCurto": "Enter your full name.",
+      "whatsappInvalido": "Enter a valid WhatsApp number with area code.",
+      "mudarEmail": "Change email"
+    },
+    "foto": {
+      "titulo": "Base photo for the Clone",
+      "descricao": "Upload high-quality photos to be the base of your clone. Download the guide below to see exactly how to take the ideal photo.",
+      "guiaTitulo": "Download the Base Photo Guide (PDF)",
+      "guiaDescricao": "Detailed instructions for the ideal clone photo",
+      "confirmeTitulo": "Confirm before uploading your photos:",
+      "ciencia": {
+        "luz": "Good lighting (front light, no shadows on the face)",
+        "fundo": "Clean background, no visual distractions",
+        "enquadramento": "Framed from the chest up, looking at the camera",
+        "nitida": "Sharp, high-resolution photo (no blur)",
+        "sem_acessorios": "No sunglasses, hat or accessories covering the face"
+      },
+      "fotosTitulo": "Your photos",
+      "fotosDica": "Any photo format works (JPG, PNG, iPhone HEIC, WEBP…). Upload {min} to {max} photos of yourself at once: face and body. You need at least one front and one side (profile or 3/4). We only reject images with no one in them or with other people.",
+      "enviando": "Uploading…",
+      "analisando": "Analyzing…",
+      "aprovada": "approved",
+      "reprovada": "rejected",
+      "indeciso": "We couldn't analyze it right now. Try uploading again.",
+      "remover": "Delete",
+      "progresso": "{n} photo(s) approved — minimum {min}",
+      "erroUpload": "We couldn't upload the photo.",
+      "erroAnalise": "We couldn't analyze the photo.",
+      "erroConcluir": "Couldn't continue.",
+      "voltar": "Back",
+      "continuar": "Continue",
+      "salvando": "Saving…",
+      "enviarFotos": "Upload photos",
+      "maximo": "Maximum {max} photos.",
+      "trocar": "Replace"
+    },
+    "audio": {
+      "titulo": "Audio for voice cloning",
+      "descricao": "Record at least 20 minutes of audio to clone your voice with high fidelity. Reading or natural speech both work.",
+      "videoPendente": "⚠️ Lucas's video explaining the recording goes here (pending recording).",
+      "confirmeTitulo": "Confirm before uploading your audio:",
+      "ciencia": {
+        "30min": "I recorded at least 20 minutes of audio",
+        "silencio": "Quiet room, no background noise",
+        "mesmo_ambiente": "All blocks recorded in the same room",
+        "fala_natural": "Natural speech or reading (no whispering or shouting)"
+      },
+      "arquivosTitulo": "Your audio files",
+      "arquivosDica": "Upload one or more files (MP3, WAV, M4A, phone recording…). Minutes add up. The system checks each file: volume, noise, silence and language — only approved speech counts.",
+      "soltarAqui": "Tap to choose audio files",
+      "acumulado": "{atual} of approved speech (minimum {minimo} min)",
+      "maximo": "maximum {max} min",
+      "aprovado": "approved",
+      "deFala": "of speech",
+      "enviando": "Uploading…",
+      "analisando": "Analyzing…",
+      "indeciso": "We couldn't analyze it right now. Try uploading again.",
+      "remover": "Remove",
+      "erroUpload": "We couldn't upload the audio.",
+      "erroAnalise": "We couldn't analyze the audio.",
+      "erroConcluir": "Couldn't continue.",
+      "voltar": "Back",
+      "continuar": "Continue",
+      "salvando": "Saving…",
+      "avisoAfeta": "may affect the cloned voice",
+      "arquivoLongo": "This file is {tem} long — the limit is {max} min per file. Split it into smaller parts and upload again."
+    },
+    "revisao": {
+      "titulo": "Confirmation & Authorization",
+      "descricao": "Review everything before sending. After confirmation, our team starts building your clone.",
+      "dadosPessoais": "Personal details",
+      "nome": "Name",
+      "alterar": "Edit",
+      "fotos": "Approved photos ({n})",
+      "cienciaFoto": "You confirmed {n} of 5 items from the photo guide.",
+      "audios": "Approved audio files ({n}) · {total} of speech",
+      "cienciaAudio": "You confirmed {n} of 4 items from the audio guide.",
+      "lgpdTitulo": "Data Protection (LGPD)",
+      "lgpdTexto": "In accordance with the Brazilian General Data Protection Law (Law 13.709/2018), all personal data provided in this form will be used exclusively to set up your AI clone. Your data is kept strictly confidential, is not shared with third parties and is discarded after the service is complete. You can request deletion at any time by contacting our team.",
+      "declaracao": "I declare the information sent is correct, I authorize the Ready Generation System team to use my data exclusively to set up my AI clone, and I agree to the data processing described above.",
+      "avisoProcessamento": "When you send, the system starts building your clone (photo and voice). You can follow it on the next screen or close — we email you when each step is done.",
+      "confirmarEnviar": "Confirm and Send",
+      "enviando": "Sending…",
+      "erroEnviar": "Could not send.",
+      "voltar": "Back",
+      "acessoTitulo": "Your FastCloner access",
+      "acessoDescricao": "We'll create your account with {email}. Choose a password:",
+      "acessoExistente": "{email} already has a FastCloner account — we'll attach this material to it. After sending, sign in with your usual password.",
+      "senha": "Password",
+      "senhaPlaceholder": "At least 8 characters",
+      "senha2": "Repeat password",
+      "senhasDiferem": "Passwords don't match."
+    },
+    "acompanhar": {
+      "selo": "Ready Generation System",
+      "titulo": "Your clone is being built",
+      "descricao": "Follow each step here. We email you when it is done.",
+      "descricaoPronto": "All set! Your photo and voice are on the platform.",
+      "etapas": {
+        "recebido": {
+          "titulo": "Order received",
+          "feito": "We got your photos and audio.",
+          "andamento": "",
+          "espera": "",
+          "falhou": ""
+        },
+        "foto": {
+          "titulo": "Photo clone",
+          "feito": "Your social photo is ready.",
+          "andamento": "Generating your photo… a few minutes.",
+          "espera": "It shows up here once it starts.",
+          "falhou": "We couldn't generate it. Our team will look."
+        },
+        "voz": {
+          "titulo": "Voice clone",
+          "feito": "Your voice is trained.",
+          "andamento": "Training your voice… about 30 minutes.",
+          "espera": "Starts right after the photo.",
+          "falhou": "Training failed. Our team will look."
+        },
+        "pronto": {
+          "titulo": "Platform ready",
+          "feito": "You can sign in and use it.",
+          "andamento": "",
+          "espera": "Once photo and voice finish, we email you.",
+          "falhou": "Something went wrong — our team will reach out."
+        }
+      },
+      "erroTime": "One step needs our team's attention. Nothing to do on your side — we will fix it and email you.",
+      "podeFechar": "You can close this page — we email you at every finished step. Or leave it open and follow along here.",
+      "irParaPlataforma": "Go to the platform",
+      "prontoTexto": "All set! Sign in with your email and the password you created to see the result.",
+      "entrar": "Go to the platform"
+    },
+    "ajuda": {
+      "botao": "Help",
+      "fechar": "Close",
+      "titulo": "Fast · form help",
+      "saudacao": "Hi! 👋 I'm Fast. Ask me anything about this screen — a rejected photo, a code that didn't arrive, your audio minutes. If I can't solve it, I'll call someone from the team.",
+      "placeholder": "Type your question…",
+      "enviar": "Send",
+      "erro": "I couldn't reply right now — please try again in a moment."
+    }
   }
 }

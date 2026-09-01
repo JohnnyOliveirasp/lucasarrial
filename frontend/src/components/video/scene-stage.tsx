@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { Sparkles, Layers, Loader2, Check, ImageIcon, Wand2 } from "lucide-react";
+import { SceneDeleteButton } from "@/components/video/scene-delete-button";
 
 type Scene = {
   id: string;
@@ -202,6 +203,16 @@ export function SceneStage({ projectId, status, estimatedScenes, onProjectChange
                   )}
                   {t("improve")}
                 </button>
+                <SceneDeleteButton
+                  projectId={projectId}
+                  sceneId={s.id}
+                  idx={s.idx}
+                  disabled={scenes.length <= 1 || improvingId === s.id}
+                  onDeleted={async () => {
+                    await load();
+                    onProjectChanged();
+                  }}
+                />
               </div>
             </div>
 

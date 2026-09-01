@@ -82,6 +82,33 @@ class ImapSession {
     return this.buffer;
   }
 
+  /**
+   * APPEND: grava uma mensagem crua numa pasta (usado pra copiar o que a gente
+   * ENVIA pra pasta de enviados — sem isso a caixa Sent fica vazia e ninguém
+   * consegue responder "esse aluno já foi avisado?", achado de 19/08).
+   *
+   * Protocolo: o literal `{N}` exige esperar a continuação `+` do servidor
+   * antes de mandar os bytes — mandar direto quebra em servidor sem LITERAL+.
+   */
+  async append(mailbox: string, flags: string, data: Buffer): Promise<void> {
+    if (!this.socket) throw new Error("IMAP sem conexão");
+    const tag = `a${++this.seq}`;
+    this.buffer = Buffer.alloc(0);
+    this.socket.write(`${tag} APPEND "${mailbox}" (${flags}) {${data.length}}\r\n`);
+    // Ou o servidor pede continuação ("+ ...") ou já recusa com o tag.
+    const go = await this.waitFor(new RegExp(`(^\\+|^${tag} (OK|NO|BAD))`, "m"));
+    if (new RegExp(`^${tag} (NO|BAD)`, "m").test(go)) {
+      throw new Error(`IMAP APPEND recusado: ${go.slice(-200)}`);
+    }
+    this.buffer = Buffer.alloc(0);
+    this.socket.write(data);
+    this.socket.write("\r\n");
+    const res = await this.waitFor(new RegExp(`^${tag} (OK|NO|BAD)`, "m"));
+    if (!new RegExp(`^${tag} OK`, "m").test(res)) {
+      throw new Error(`IMAP APPEND falhou: ${res.slice(-200)}`);
+    }
+  }
+
   close(): void {
     try {
       this.socket?.write(`a${++this.seq} LOGOUT\r\n`);
@@ -158,8 +185,13 @@ export async function fetchUnseen(limit = 10): Promise<RawMail[]> {
       if (tamanho > MAIL_MAX_BYTES) {
         // Só os cabeçalhos: dá pra saber quem escreveu e sobre o quê, sem
         // arrastar o anexo. Quem responde decide o que fazer (ver mail-respond).
+        //
+        // X-FAILED-RECIPIENTS entrou na lista por causa do #201: bounce carrega
+        // a mensagem original anexada e pode passar do teto. Sem esse cabeçalho
+        // o bounce truncado não diz PARA QUEM a entrega falhou — a triagem
+        // morreria justamente no dado que a torna útil.
         const bufH = await session.commandRaw(
-          `UID FETCH ${uid} BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID REPLY-TO)]`,
+          `UID FETCH ${uid} BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE MESSAGE-ID REPLY-TO X-FAILED-RECIPIENTS)]`,
         );
         const raw = extrairLiteral(bufH);
         out.push({ uid, raw, oversized: true, sizeBytes: tamanho });
@@ -193,6 +225,53 @@ export async function markSeen(uid: number): Promise<void> {
     await session.command(`LOGIN "${USER()}" "${PASS().replace(/(["\\])/g, "\\$1")}"`);
     await session.command("SELECT INBOX");
     await session.command(`UID STORE ${uid} +FLAGS (\\Seen)`);
+  } finally {
+    session.close();
+  }
+}
+
+/**
+ * Descobre o nome da pasta de enviados pelo atributo \Sent do LIST — o nome
+ * MUDA por servidor ("INBOX.Sent", "Sent", "Sent Items"...), então nome fixo
+ * quebra em silêncio (mesma lição do --enviados do ler_caixa.cjs). Cacheado
+ * por processo: a pasta não muda entre um envio e outro.
+ */
+let sentFolderCache: string | null = null;
+
+async function discoverSentFolder(session: ImapSession): Promise<string> {
+  if (sentFolderCache) return sentFolderCache;
+  const linhas = (await session.command(`LIST "" "*"`))
+    .split(/\r?\n/)
+    .filter((l) => l.startsWith("* LIST"));
+  const nome = (l: string): string =>
+    l.match(/"([^"]*)"\s*$/)?.[1] || l.trim().split(/\s+/).pop() || "";
+  const porAtributo = linhas.find((l) => /\\Sent/i.test(l));
+  const achado = porAtributo
+    ? nome(porAtributo)
+    : ["INBOX.Sent", "Sent", "Sent Items", "INBOX.Sent Items"].find((c) =>
+        linhas.some((l) => nome(l).toLowerCase() === c.toLowerCase()),
+      );
+  if (!achado) {
+    throw new Error(`pasta de enviados não encontrada. Caixas: ${linhas.map(nome).join(", ")}`);
+  }
+  sentFolderCache = achado;
+  return achado;
+}
+
+/**
+ * Grava a cópia de um e-mail ENVIADO na pasta de enviados (\Seen, pra não
+ * inflar contador de não-lido). Chamado pelo mail-smtp DEPOIS do envio — quem
+ * chama trata falha como aviso, nunca como erro do envio (o e-mail já saiu).
+ */
+export async function appendToSentFolder(rawMessage: string): Promise<void> {
+  const session = new ImapSession();
+  await session.connect();
+  try {
+    await session.command(`LOGIN "${USER()}" "${PASS().replace(/(["\\])/g, "\\$1")}"`);
+    const folder = await discoverSentFolder(session);
+    // CRLF obrigatório no literal IMAP (mesma normalização do envio SMTP).
+    const data = Buffer.from(rawMessage.replace(/\r?\n/g, "\r\n"), "utf8");
+    await session.append(folder, "\\Seen", data);
   } finally {
     session.close();
   }

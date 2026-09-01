@@ -55,7 +55,8 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 | Assunto | Ordem que vale |
 |---|---|
 | 🗺️ **O FLUXO: quem olha o quê e como se chama socorro** | `2026-08-20_fluxo_quem_olha_o_que.md` |
-| 🌙 Rotina das Falhas 24h (turno da noite) | `2026-08-20_decisoes_55_trancadas_e_turno_noite.md` (item 2) |
+| 🎯 **VIGIA: só erro de SISTEMA vira chamado** (atendimento/processo/decisão vão pro grupo/Telegram; dinheiro exige `ref_id` + `arquivo:linha`) | `2026-08-27_vigia_so_erro_de_sistema.md` |
+| 🌙 Turno da noite: **NÃO roda de madrugada** (Johnny 27/08; Executor 08h–23h BRT) | `2026-08-20_decisoes_55_trancadas_e_turno_noite.md` (item 2, ⛔ superado) |
 | 🔴 Correções da ronda de 20/08 (janela do QA, worktree) | `2026-08-20_correcoes_da_ronda.md` |
 | 💬 Canal: Telegram + git, e como ligar o teu lado | `2026-08-20_canal_telegram.md` |
 | **Crédito: quem perde, quem mantém** | ⭐ `2026-08-20_REGRA_FINAL_CREDITO.md` — substitui TODAS as anteriores do assunto |
@@ -63,10 +64,11 @@ dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 | Congelar a lista + trial × venda | `2026-08-18_ok_para_executar.md` (itens 1 e 3) |
 | Vigia noturno | `2026-08-18_vigia_noturno.md` |
 | Prova de capacidade | `2026-08-18_prova_de_capacidade.md` |
-| Como saber se "já pagou" (migration 79) | `2026-08-18_migration_ja_pagou.md` |
+| ⚠️ **SUSPENSA** — Como saber se "já pagou" (migration 79) | `2026-08-18_migration_ja_pagou.md` — **NÃO use a coluna `profiles.ja_pagou`.** O backfill dela nunca saiu: medido em 25/08, `ja_pagou = false` em **1.515 de 1.515** perfis, `ja_pagou_em`/`ja_pagou_origem` nulos em todos. A coluna carrega ZERO informação e lê **"nunca pagou" para todo mundo, inclusive para pagante** — conferido no mesmo dia num caso real (Rafael, `rafapaga@uol.com.br`, acesso Hotmart até 03/09, `ja_pagou = false`). Quem seguir esta ordem ao pé da letra nega crédito a quem pagou. **Enquanto isso, a fonte de verdade é `_frank/ferramentas/pagou_de_verdade.cjs`** (Hotmart viva: `value > 0` **E** status COMPLETE/APPROVED — `OVERDUE` não é pagamento). Incidente `cfcdd6bb` (#129). |
 | Canal, conta de teste e prioridade | `2026-08-18_ddl_pelo_git_e_prioridade.md` |
 | DDL aprovado + achados da prova | `2026-08-19_ddl_aprovado_e_achados.md` |
 | 🖼️ Imagens: refactor de hoje + branch STALE (não mergear `feat/fix-image-upload-retry`) | `2026-08-19_imagens_refatoradas_branch_stale.md` |
+| ☁️ **OneDrive: corrigido e no ar — branch STALE, não mergear `feat/onedrive-401`** | O incidente `144` (#144) foi fechado em 26/08 pelo **PR #60** (`feat/onedrive-spo-fedauth`), merge `2dd1150`, deploy SUCCESS 14:49Z. O caminho que vale é o módulo `frontend/src/lib/onboarding/onedrive.ts` (cadeia de redirect → cookie **FedAuth** → `_api/v2.0`). ⚠️ **Existe no origin um branch CONCORRENTE, `feat/onedrive-401`**, com uma tentativa ANTERIOR pro mesmo defeito por outro caminho (token "badger"), que reescreve `links.ts` com um `resolverOneDrive` próprio e **não conhece o `onedrive.ts`**. Ele não tem PR. Se alguém abrir e mergear, **derruba o fix que está em produção** — mesmo risco que o `feat/fix-image-upload-retry` já criou em 19/08. Não mergear; se for descartar de vez, apagar no origin. |
 | 🔊 Incidentes do QA de completude: medição pronta, falta curar 2 vozes | `2026-08-19_qa_coverage_incidentes.md` |
 | 🔊 Resposta à passagem das vozes: quase tudo resolvido; falta re-medir 40 entregas (fecha o fb8d29b7) | `2026-08-19_resposta_passagem_vozes.md` |
 

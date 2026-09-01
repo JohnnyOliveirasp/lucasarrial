@@ -252,6 +252,13 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
     você não tem convicção do patch, **não mergeie** — anote a objeção no
     incidente e deixe a branch publicada. Backlog é melhor que regressão.
 
+14-C. **O Vigia abre chamado SÓ para erro de SISTEMA.** (decisão do Johnny,
+    27/08 — ordem `2026-08-27_vigia_so_erro_de_sistema.md`.) Atendimento,
+    processo e decisão vão pro grupo do time / Telegram, não pra fila. Chamado
+    de DINHEIRO exige casamento por `ref_id` (nunca timestamp) e `arquivo:linha`
+    de onde o débito nasce. Medido: 5 de 24 chamados técnicos do Vigia eram
+    falsos, e 3 desses 5 eram acusação de dinheiro feita sem abrir o código.
+
 27. **Conversa entre agentes é CURTA — ordem do Johnny, 21/08.** Token gasto em
     conversa longa entre agentes é desperdício, não zelo. Vale pro canal do
     Telegram, pros recados de `tell_frank` e pras notas de incidente.

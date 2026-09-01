@@ -30,6 +30,8 @@ type Cena = {
   frases?: string[];
   /** C4: cena gerada com as fotos da pessoa. */
   com_pessoa?: boolean;
+  /** Motivo da falha — exibido no painel (caso Fabio Fiuza, 26/08). */
+  error_message?: string | null;
 };
 type Projeto = {
   id: string;
@@ -278,7 +280,10 @@ export function PassoCenas({ draft, onChange, escolher }: Props) {
                     ) : (
                       <span className="grid aspect-[9/16] w-full place-items-center">
                         {c.status === "failed" ? (
-                          <X className="size-4 text-red-400" />
+                          <span className="flex flex-col items-center gap-1 px-1 text-center" title={c.error_message ?? undefined}>
+                            <X className="size-4 text-red-400" />
+                            <span className="text-[9.5px] leading-tight text-red-400">{t("cenaFalhou")}</span>
+                          </span>
                         ) : (
                           // Spinner sozinho não comunica (pedido Johnny 13/08).
                           <span className="flex flex-col items-center gap-1 px-1 text-center">

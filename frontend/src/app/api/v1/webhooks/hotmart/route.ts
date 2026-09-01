@@ -36,8 +36,10 @@ import {
   extractOfferCode,
   extractProductCode,
   extractPurchaseStatus,
+  extractSubscriptionStatus,
   extractTransactionId,
   isUnknownExternalId,
+  subscriptionIsDead,
 } from "@/lib/payments/hotmart-payload";
 import type { EntitlementStatus, Json } from "@/lib/db/types";
 
@@ -188,6 +190,29 @@ async function processEvent(
       accessUntil: extractNextChargeIso(data), // recorrente: acesso até a próxima cobrança; NULL se único
       rawEvent: data,
     });
+
+    // #161 (27/08): a ASSINATURA pode já estar morta dentro de um evento de
+    // COMPRA. A Hotmart manda o COMPLETE ~7,8 dias depois do APPROVED; quem
+    // cancelou nesse meio recebe o COMPLETE com subscription.status=CANCELED
+    // e NENHUM SUBSCRIPTION_CANCELLATION separado. Até hoje isso regravava o
+    // entitlement como `active` (190 casos: o Cassio seguiu recebendo "seus
+    // créditos te esperam" depois de cancelar; o #66 fechado voltou a active
+    // por um COMPLETE de 24/08). O grant acima continua valendo — ele é quem
+    // traz a data de renovação e o período PAGO fica preservado no
+    // access_until (regra 9: canceled com data futura mantém o acesso). Só o
+    // STATUS deixa de mentir. Crédito não muda: o pagamento aconteceu.
+    const subscriptionStatus = extractSubscriptionStatus(data);
+    let handledSuffix = "";
+    if (subscriptionIsDead(subscriptionStatus)) {
+      await revokeAccess({
+        provider: PROVIDER,
+        externalId,
+        status: subscriptionStatus === "EXPIRED" ? "expired" : "canceled",
+        accessUntil: extractNextChargeIso(data),
+        rawEvent: data,
+      });
+      handledSuffix = `:subscription_${subscriptionStatus.toLowerCase()}`;
+    }
     const userId = await resolveUserIdByEmail(buyerEmail);
     if (userId) {
       // CRÉDITO SÓ NO APPROVED (10/08). A Hotmart avisa a MESMA cobrança duas
@@ -221,7 +246,7 @@ async function processEvent(
       await alertOrphanPurchase(buyerEmail, externalId);
     }
     await setPendingPayment(buyerEmail, null); // pagou → limpa o pendente
-    return ok("granted");
+    return ok("granted" + handledSuffix);
   }
 
   // aguardando pagamento: Pix/boleto GERADO mas ainda não pago → banner no app.

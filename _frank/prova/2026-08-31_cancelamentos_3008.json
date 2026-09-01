@@ -1,0 +1,218 @@
+{
+  "dia": "2026-08-30",
+  "janela": "janela UTC 2026-08-30T00:00:00.000Z -> 2026-08-31T00:00:00.000Z (dia 2026-08-30)",
+  "eventos": 4,
+  "varredura": {
+    "estado": "desativada",
+    "motivo": "DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas"
+  },
+  "pessoas": [
+    {
+      "email": "natanaelvarela@hotmail.com",
+      "nome": "Natanael Bezerra Varela",
+      "tipo": "ASSINANTE",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 12,
+      "adesao": "2026-08-18",
+      "cancelamento": "2026-08-30",
+      "trialVenceEm": null,
+      "trialJaVenceu": null,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "4JEV39ES",
+            "status": "CANCELLED_BY_SELLER",
+            "trial": false,
+            "adesao": 1787094243000,
+            "fim": 1788090719000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "4JEV39ES",
+            "valor": 17,
+            "status": "APPROVED",
+            "rec": 1,
+            "quando": 1787094473000
+          }
+        ]
+      },
+      "banco": {
+        "id": "edf55e1f-a0e3-4e72-8956-85cfbbe721c3",
+        "sub": 4426,
+        "extra": 525,
+        "acessoAte": "2026-09-18T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": []
+    },
+    {
+      "email": "julia_azambuja@outlook.com",
+      "nome": "Julia azambuja rodrigues",
+      "tipo": "TRIAL",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 25,
+      "adesao": "2026-08-05",
+      "cancelamento": "2026-08-30",
+      "trialVenceEm": "2026-08-15",
+      "trialJaVenceu": true,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "ETUW1OJ1",
+            "status": "CANCELLED_BY_CUSTOMER",
+            "trial": true,
+            "adesao": 1785970911000,
+            "fim": 1788090822000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "ETUW1OJ1",
+            "valor": 0,
+            "status": "COMPLETE",
+            "rec": 1,
+            "quando": 1785970910000
+          },
+          {
+            "code": "ETUW1OJ1",
+            "valor": 97,
+            "status": "OVERDUE",
+            "rec": 2,
+            "quando": null
+          }
+        ]
+      },
+      "banco": {
+        "id": "c87501e0-585b-4212-bf9b-f880e15fa3d4",
+        "sub": 73500,
+        "extra": 0,
+        "acessoAte": "2026-09-05T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": [
+        "TRIAL passou do dia 10 (venceu 2026-08-15) e ainda tem 73500 cr — a varredura NAO pegou."
+      ]
+    },
+    {
+      "email": "victorbsb@gmail.com",
+      "nome": "Victor Rudson Martins Vieira",
+      "tipo": "ASSINANTE",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 32,
+      "adesao": "2026-07-29",
+      "cancelamento": "2026-08-30",
+      "trialVenceEm": null,
+      "trialJaVenceu": null,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "EIV9AFCV",
+            "status": "CANCELLED_BY_SELLER",
+            "trial": true,
+            "adesao": 1785360058000,
+            "fim": 1788098628000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "EIV9AFCV",
+            "valor": 0,
+            "status": "COMPLETE",
+            "rec": 1,
+            "quando": 1785360057000
+          },
+          {
+            "code": "EIV9AFCV",
+            "valor": 97,
+            "status": "COMPLETE",
+            "rec": 2,
+            "quando": 1785939830000
+          },
+          {
+            "code": "EIV9AFCV",
+            "valor": 97,
+            "status": "APPROVED",
+            "rec": 3,
+            "quando": 1788011826000
+          }
+        ]
+      },
+      "banco": {
+        "id": "a67aa919-1c6c-43cb-9fb8-13389eb76c13",
+        "sub": 200000,
+        "extra": 0,
+        "acessoAte": "2026-09-29T12:00:00+00:00",
+        "marca": {
+          "outcome": "paid",
+          "debited": 0,
+          "trial_start": "2026-07-29T21:21:09.904154+00:00",
+          "resolved_at": "2026-08-18T18:45:05.025576+00:00"
+        },
+        "zeramentos": []
+      },
+      "alertas": []
+    },
+    {
+      "email": "rossiclinicas@gmail.com",
+      "nome": "Regis Rossi",
+      "tipo": "ASSINANTE",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 53,
+      "adesao": "2026-07-08",
+      "cancelamento": "2026-08-30",
+      "trialVenceEm": null,
+      "trialJaVenceu": null,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "7YJ9TJHJ",
+            "status": "CANCELLED_BY_SELLER",
+            "trial": true,
+            "adesao": 1783529792000,
+            "fim": 1788104763000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "7YJ9TJHJ",
+            "valor": 0,
+            "status": "COMPLETE",
+            "rec": 1,
+            "quando": 1783529791000
+          },
+          {
+            "code": "7YJ9TJHJ",
+            "valor": 97,
+            "status": "COMPLETE",
+            "rec": 2,
+            "quando": 1784126271000
+          },
+          {
+            "code": "7YJ9TJHJ",
+            "valor": 97,
+            "status": "COMPLETE",
+            "rec": 3,
+            "quando": 1786199160000
+          }
+        ]
+      },
+      "banco": {
+        "id": "cfb0194c-597f-474f-ab04-8c2720bfaec5",
+        "sub": 100000,
+        "extra": 10000,
+        "acessoAte": "2026-09-08T12:00:00+00:00",
+        "marca": {
+          "outcome": "paid",
+          "debited": 0,
+          "trial_start": "2026-07-08T16:56:44.007192+00:00",
+          "resolved_at": "2026-08-18T18:45:05.025576+00:00"
+        },
+        "zeramentos": []
+      },
+      "alertas": []
+    }
+  ]
+}

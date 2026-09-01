@@ -12,7 +12,7 @@
  * "não está mais disponível" em vez de mostrar um play que não toca.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Download, Loader2, RefreshCw } from "lucide-react";
+import { Download, Loader2, Play, RefreshCw, Trash2, X } from "lucide-react";
 
 type ReactPronto = {
   id: string;
@@ -45,6 +45,9 @@ function quando(iso: string): string {
 export function ReactMeusVideos() {
   const [videos, setVideos] = useState<ReactPronto[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  /** Miniaturas na lista, player só ao clicar (Johnny 25/08: os cards
+      gigantes de 3 por linha viravam a tela inteira). */
+  const [aberto, setAberto] = useState<ReactPronto | null>(null);
 
   const carregar = useCallback(async () => {
     setErro(null);
@@ -66,6 +69,19 @@ export function ReactMeusVideos() {
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  /** Apagar um React (Johnny 25/08). Some da lista na hora; se o servidor
+      recusar, volta. */
+  async function apagar(v: ReactPronto) {
+    if (!window.confirm("Apagar este React? Ele não volta.")) return;
+    setVideos((atual) => (atual ?? []).filter((x) => x.id !== v.id));
+    setAberto((a) => (a && a.id === v.id ? null : a));
+    const r = await fetch(`/api/v1/react/meus?id=${encodeURIComponent(v.id)}`, { method: "DELETE" });
+    if (!r.ok) {
+      setErro("Não consegui apagar — tente de novo.");
+      void carregar();
+    }
+  }
 
   if (videos === null) {
     return <p className="text-[13px] text-[var(--mute)]">Carregando os seus React…</p>;
@@ -94,58 +110,111 @@ export function ReactMeusVideos() {
         </p>
       )}
 
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {videos.map((v) => (
-          <li
-            key={v.id}
-            className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface)] p-2.5"
-          >
-            {v.video_url ? (
-              <video
-                src={v.video_url}
-                controls
-                playsInline
-                preload="metadata"
-                poster={v.thumb_url ?? undefined}
-                className="aspect-[9/16] w-full rounded-[var(--radius-sm)] border border-[var(--hairline)] object-cover"
-              />
-            ) : (
-              <div className="grid aspect-[9/16] w-full place-items-center rounded-[var(--radius-sm)] border border-[var(--hairline)] bg-[var(--surface-deep)]">
-                {v.status === "erro" || v.expirado ? (
-                  <span className="px-3 text-center text-[12px] text-[var(--mute)]">
-                    {v.expirado ? "não está mais disponível" : (v.erro ?? "falhou")}
+      <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
+        {videos.map((v) => {
+          const falhou = v.status === "erro" || v.expirado;
+          const rotulo = v.expirado ? "não está mais disponível" : (v.erro ?? "falhou");
+          return (
+            <li key={v.id} className="relative flex flex-col gap-0.5" title={falhou ? rotulo : "Abrir para assistir"}>
+              <button
+                type="button"
+                onClick={() => v.video_url && setAberto(v)}
+                disabled={!v.video_url}
+                className="relative block aspect-[9/16] w-full overflow-hidden rounded-[var(--radius-sm)] border border-[var(--hairline)] bg-black/80 disabled:cursor-default"
+              >
+                {v.thumb_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={v.thumb_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                ) : v.video_url ? (
+                  <video src={v.video_url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+                ) : null}
+                {v.video_url ? (
+                  <span className="absolute inset-0 grid place-items-center">
+                    <Play className="size-6 text-white drop-shadow" />
+                  </span>
+                ) : falhou ? (
+                  <span className="absolute inset-0 grid place-items-center px-1 text-center text-[10px] leading-tight text-white/70">
+                    {v.expirado ? "expirou" : "falhou"}
                   </span>
                 ) : (
-                  <Loader2 className="size-5 animate-spin text-[var(--mute)]" />
+                  <span className="absolute inset-0 grid place-items-center">
+                    <Loader2 className="size-5 animate-spin text-white/70" />
+                  </span>
                 )}
-              </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px] text-[var(--ink)]">
-                  {v.autor ? `@${v.autor}` : "React"}
-                </span>
-                <span className="block truncate font-mono text-[10.5px] text-[var(--ash)]">
-                  {quando(v.criado_em)} · {ROTULO[v.status] ?? v.status}
-                  {v.segundos > 0 && ` · ${v.segundos}s`}
-                </span>
+                {v.segundos > 0 && (
+                  <span className="absolute bottom-0.5 right-0.5 rounded bg-black/70 px-1 text-[9px] text-white">
+                    {v.segundos}s
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => void apagar(v)}
+                title="Apagar este React"
+                aria-label="Apagar"
+                className="absolute right-0.5 top-0.5 z-10 grid size-5 place-items-center rounded bg-black/60 text-white/80 hover:bg-red-600 hover:text-white"
+              >
+                <Trash2 className="size-3" />
+              </button>
+              <span className="truncate text-[9px] leading-tight text-[var(--mute)]">
+                {v.autor ? `@${v.autor}` : "React"} · {quando(v.criado_em)}
               </span>
-              {v.video_url && (
-                <a
-                  href={v.video_url}
-                  download
-                  title="Baixar"
-                  aria-label="Baixar"
-                  className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] text-[var(--mute)]"
-                >
-                  <Download className="size-4" />
-                </a>
-              )}
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
+
+      {aberto && aberto.video_url && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4"
+          onClick={() => setAberto(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="flex max-h-full flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+            <video
+              src={aberto.video_url}
+              controls
+              autoPlay
+              playsInline
+              poster={aberto.thumb_url ?? undefined}
+              className="max-h-[80vh] rounded-[var(--radius)] border border-[var(--hairline)]"
+            />
+            <div className="flex items-center gap-2 text-[12.5px] text-white">
+              <span className="min-w-0 flex-1 truncate">
+                {aberto.autor ? `@${aberto.autor}` : "React"} · {quando(aberto.criado_em)} · {ROTULO[aberto.status] ?? aberto.status}
+                {aberto.segundos > 0 && ` · ${aberto.segundos}s`}
+              </span>
+              <a
+                href={aberto.video_url}
+                download
+                title="Baixar"
+                aria-label="Baixar"
+                className="grid size-8 place-items-center rounded-[var(--radius-sm)] border border-white/30"
+              >
+                <Download className="size-4" />
+              </a>
+              <button
+                type="button"
+                onClick={() => void apagar(aberto)}
+                title="Apagar este React"
+                aria-label="Apagar"
+                className="grid size-8 place-items-center rounded-[var(--radius-sm)] border border-white/30 hover:bg-red-600"
+              >
+                <Trash2 className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setAberto(null)}
+                aria-label="Fechar"
+                className="grid size-8 place-items-center rounded-[var(--radius-sm)] border border-white/30"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

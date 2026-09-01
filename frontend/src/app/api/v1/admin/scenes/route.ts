@@ -17,7 +17,7 @@ import { createPresignedGet } from "@/lib/r2/presigned";
 
 export async function GET() {
   const ctx = await getAdminContext();
-  if (!ctx) return unauthorized();
+  if (!ctx || ctx.role !== "admin") return unauthorized(); // acervo de cenas: admin cheio (mig 95)
 
   const { data, error } = await getAdmin()
     .from("studio_scenes")
@@ -49,7 +49,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const ctx = await getAdminContext();
-  if (!ctx) return unauthorized();
+  if (!ctx || ctx.role !== "admin") return unauthorized(); // acervo de cenas: admin cheio (mig 95)
 
   let body: { scene_id?: unknown; shared?: unknown } = {};
   try {

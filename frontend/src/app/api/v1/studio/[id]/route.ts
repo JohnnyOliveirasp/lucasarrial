@@ -113,6 +113,9 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     /** C4: cena gerada com as fotos da pessoa (painel mostra as 2 opções
      *  de regerar: com a foto × sem mim). */
     com_pessoa: boolean;
+    /** Motivo da falha — sem isto a tela só mostrava um X e o aluno ficava
+     *  preso repetindo a mesma coisa (caso Fabio Fiuza, 26/08). */
+    error_message: string | null;
   }[] = [];
   const plan = (current.scene_plan ?? []) as StudioScenePlanItem[];
   if (Array.isArray(plan) && plan.length > 0) {
@@ -166,6 +169,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
         prompt_en: s.prompt_en,
         frases: plan.filter((x) => x.scene_id === s.id).map((x) => x.text),
         com_pessoa: (s.ref_image_paths ?? []).length > 0,
+        error_message: s.error_message ?? null,
       });
     }
   }

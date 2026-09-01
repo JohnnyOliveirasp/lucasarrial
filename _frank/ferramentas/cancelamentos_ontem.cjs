@@ -40,6 +40,47 @@ const VIVA = new Set(["ACTIVE", "STARTED", "DELAYED"]);
 const GRACA_DIAS = 10;
 const DIA = 86400000;
 
+/**
+ * A varredura que DEVERIA agir está viva, ou é um stub?
+ *
+ * ⚠️ Isto existe porque em 24/08 este relatório imprimiu "nenhum caso fora da
+ * regra" para 5 trials — e estava tecnicamente certo (nenhum tinha passado do
+ * dia 10) e materialmente errado: a `expire_trial_credits` está DESATIVADA
+ * desde 18/08, então quando o dia 10 chegasse não ia acontecer nada. Relatório
+ * que só olha o prazo, e nunca a máquina que cumpre o prazo, dá "tudo certo"
+ * enquanto o crédito vaza.
+ *
+ * Lê o CORPO VIVO da função (pg_get_functiondef). NÃO chama a RPC de
+ * propósito: chamar EXECUTARIA a varredura, e o dia em que ela estiver ativa
+ * de novo isso mexeria em saldo de gente de verdade a partir de um relatório
+ * somente-leitura. Ler o corpo é inerte; executar não é.
+ *
+ * Sem SUPABASE_ACCESS_TOKEN devolve "desconhecido" — nunca "está tudo bem".
+ * Não saber conferir não é o mesmo que ter conferido (regra: zero de um
+ * endpoint não é prova de nada).
+ */
+async function varreduraViva() {
+  const tok = process.env.SUPABASE_ACCESS_TOKEN;
+  const ref = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").match(/https:\/\/([a-z0-9]+)\./)?.[1];
+  if (!tok || !ref) return { estado: "desconhecido", motivo: "SUPABASE_ACCESS_TOKEN/URL ausente no .env.local" };
+  try {
+    const r = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query: `select pg_get_functiondef(oid) as def from pg_proc where proname='expire_trial_credits'` }),
+    });
+    const raw = await r.text();
+    if (r.status !== 200 && r.status !== 201) return { estado: "desconhecido", motivo: `HTTP ${r.status}: ${raw.slice(0, 200)}` };
+    const linhas = JSON.parse(raw);
+    if (!linhas.length) return { estado: "inexistente", motivo: "expire_trial_credits não existe no banco" };
+    const def = linhas[0].def || "";
+    const mexe = /\b(debit_credits|update\s+profiles|insert\s+into\s+credit_transactions)\b/i.test(def);
+    return mexe ? { estado: "ativa" } : { estado: "desativada", motivo: (def.match(/--\s*(DESATIVADA[^\n]*)/i)?.[1] || "corpo não mexe em saldo").trim() };
+  } catch (e) {
+    return { estado: "desconhecido", motivo: e.message };
+  }
+}
+
 const argv = process.argv.slice(2);
 const JSON_OUT = argv.includes("--json");
 const diaArg = argv[argv.indexOf("--dia") + 1];
@@ -141,6 +182,7 @@ function classificar(hm) {
 (async () => {
   const { ini, fim, dia } = janela();
   const db = supa();
+  const varredura = await varreduraViva();
 
   const { data: evs, error } = await db.from("payment_events")
     .select("id,received_at,payload")
@@ -160,10 +202,16 @@ function classificar(hm) {
     // zero de um endpoint nao e prova: mostra que a tabela responde
     const { count } = await db.from("payment_events")
       .select("id", { count: "exact", head: true }).eq("event_type", "SUBSCRIPTION_CANCELLATION");
-    const out = { dia, janela: cab, eventos: 0, totalHistorico: count ?? null, pessoas: [] };
+    const out = { dia, janela: cab, eventos: 0, totalHistorico: count ?? null, varredura, pessoas: [] };
     if (JSON_OUT) return console.log(JSON.stringify(out, null, 2));
     console.log(cab);
     console.log(`0 eventos na janela. Prova de que a consulta funciona: ${count} SUBSCRIPTION_CANCELLATION no historico.`);
+    // dia sem cancelamento nao isenta a varredura: ela cobre o backlog inteiro
+    if (varredura.estado !== "ativa") {
+      console.log(`\n!! varredura expire_trial_credits: ${varredura.estado.toUpperCase()}`
+        + `${varredura.motivo ? ` — ${varredura.motivo}` : ""}`);
+      console.log("   ninguem cancelou hoje, mas o trial de quem cancelou antes tambem nao esta expirando.");
+    }
     return;
   }
 
@@ -223,6 +271,12 @@ function classificar(hm) {
       if (tipo === "TRIAL" && jaVenceu && banco.sub > 0 && !outrasVivas.length) {
         alertas.push(`TRIAL passou do dia ${GRACA_DIAS} (venceu ${venceEm.toISOString().slice(0, 10)}) e ainda tem ${banco.sub} cr — a varredura NAO pegou.`);
       }
+      // Trial DENTRO do prazo, mas a maquina que cumpre o prazo esta parada:
+      // sem isto o relatorio diz "tudo certo" e o credito nunca expira.
+      if (tipo === "TRIAL" && !jaVenceu && banco.sub > 0 && !outrasVivas.length && varredura.estado !== "ativa") {
+        alertas.push(`TRIAL ainda no prazo (dia ${GRACA_DIAS} em ${venceEm?.toISOString().slice(0, 10)}), mas a varredura esta ${varredura.estado.toUpperCase()}`
+          + `${varredura.motivo ? ` (${varredura.motivo})` : ""} — os ${banco.sub} cr NAO vao expirar sozinhos.`);
+      }
       if (outrasVivas.length && banco.sub === 0 && banco.extra === 0) {
         alertas.push(`tem assinatura VIVA (${outrasVivas.map((a) => `${a.code}/${a.status}`).join(", ")}) e esta com saldo zerado.`);
       }
@@ -242,10 +296,12 @@ function classificar(hm) {
     });
   }
 
-  if (JSON_OUT) return console.log(JSON.stringify({ dia, janela: cab, eventos: evs.length, pessoas: saida }, null, 2));
+  if (JSON_OUT) return console.log(JSON.stringify({ dia, janela: cab, eventos: evs.length, varredura, pessoas: saida }, null, 2));
 
   console.log(cab);
-  console.log(`${evs.length} evento(s) de cancelamento -> ${saida.length} pessoa(s)\n`);
+  console.log(`${evs.length} evento(s) de cancelamento -> ${saida.length} pessoa(s)`);
+  console.log(`varredura expire_trial_credits: ${varredura.estado.toUpperCase()}`
+    + `${varredura.motivo ? ` — ${varredura.motivo}` : ""}\n`);
   for (const s of saida) {
     console.log("=".repeat(74));
     if (s.erro) { console.log(`${s.email}\n  ERRO: ${s.erro}`); continue; }

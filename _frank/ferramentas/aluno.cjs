@@ -83,7 +83,26 @@ if (!EMAIL) {
 
   const pronta = (vs ?? []).some((v) => v.status === "ready");
   if (ativo && saldo > 0 && !pronta) {
-    console.log("\n   🚨 PAGANTE SEM VOZ PRONTA — é o sintoma que resume tudo. Investigue.");
+    // ⚠️ O CRITÉRIO AQUI É `ativo` (access_until > now) + saldo — e acesso vivo
+    // NÃO é pagamento. Trial R$0 tem acesso vivo igual a assinante.
+    // Este é o MESMO defeito do incidente 138, que foi corrigido na
+    // `varredura_travados.cjs` (commit 9cd5e82) e sobreviveu aqui — e aqui é
+    // pior, porque o README manda rodar o `aluno.cjs` ANTES de responder
+    // qualquer reclamação: é a última coisa que alguém lê antes de falar com o
+    // aluno e de decidir crédito.
+    // Medido em 26/08 (incidente 139): os dois alunos do chamado —
+    // `ycarlosk` e `definidameta` — recebiam a palavra "PAGANTE" desta linha e
+    // NUNCA pagaram (`pagou_de_verdade`: R$0 APPROVED nos dois). São
+    // exatamente 2 dos 4 nomes que o commit 9cd5e82 já tinha citado como
+    // rotulados errado.
+    // Quem for DECIDIR CRÉDITO tem que cruzar com `pagou_de_verdade.cjs`
+    // (Hotmart viva: value > 0 E COMPLETE/APPROVED — OVERDUE não é pagamento).
+    // O rótulo abaixo diz só o que o critério de fato mede.
+    console.log(
+      "\n   🚨 ACESSO VIVO, COM CRÉDITO E SEM VOZ PRONTA — é o sintoma que resume tudo. Investigue." +
+        "\n      (acesso vivo ≠ pagou — inclui trial R$0. Antes de decidir crédito," +
+        " cruze com pagou_de_verdade.cjs — incidentes 138/139)",
+    );
   }
 
   // Produção recente

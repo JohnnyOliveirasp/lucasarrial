@@ -16,7 +16,10 @@
  *     ou BODY[ sem .PEEK derruba o processo antes de ir pro socket.
  *   - Anexo nunca é baixado: mensagem acima de 2MB (mesmo teto da Fast) só
  *     tem cabeçalho + BODYSTRUCTURE lidos (foi anexo de 33MB que deixou a
- *     Fast 2 dias muda em 08/08).
+ *     Fast 2 dias muda em 08/08) — MAIS a parte MIME de texto sozinha, via
+ *     BODY.PEEK[n], que tem poucos KB. Desistir do corpo inteiro por causa do
+ *     anexo deixou 5 alunos sem resposta (um deles 62h): o anexo continua sem
+ *     ser baixado, mas o que o aluno ESCREVEU sempre aparece.
  *
  * Uso:
  *   node _frank/ferramentas/ler_caixa.cjs --de aluno@exemplo.com
@@ -33,6 +36,7 @@
  * (SUPPORT_MAIL_HOST / SUPPORT_MAIL_USER / SUPPORT_MAIL_PASSWORD).
  * Nenhum segredo é impresso.
  */
+const fs = require("node:fs");
 const path = require("node:path");
 const tls = require("node:tls");
 
@@ -47,6 +51,17 @@ const PASS = process.env.SUPPORT_MAIL_PASSWORD || "";
 
 // Mesmo teto da Fast (mail-imap.ts): acima disso, só cabeçalhos.
 const MAX_BYTES = Number(process.env.AGENT_MAIL_MAX_BYTES ?? 2_000_000);
+
+/**
+ * Teto PRÓPRIO da parte de texto, deliberadamente separado do MAX_BYTES.
+ * MAX_BYTES olha a mensagem INTEIRA (anexo incluso) e existe pra nunca arrastar
+ * 33MB pelo socket. Mas mensagem grande quase sempre é grande POR CAUSA DO
+ * ANEXO: o text/plain do aluno tem poucos KB e cabe num BODY.PEEK[n] sozinho.
+ * 200KB é folgado pra qualquer e-mail escrito por humano (e pra html pesado de
+ * cliente de e-mail) e continua barato — se estourar isso, é anexo disfarçado
+ * de texto e a gente prefere não baixar.
+ */
+const MAX_PARTE_TEXTO_BYTES = 200_000;
 
 // ---------- sessão IMAP (porte fiel do ImapSession de mail-imap.ts) ----------
 
@@ -220,6 +235,168 @@ function anexosDoBodystructure(resposta) {
   return out;
 }
 
+// ---------- BODYSTRUCTURE: parser espelhado de _anexos.cjs ----------
+//
+// _anexos.cjs exporta só { baixarAnexos, MAX_ANEXO_BYTES }; o parser interno
+// dele (tokenizar / montarArvore / paresParaObjeto / coletarPartes / ehAnexo /
+// decodificarParte) NÃO é exportável, e mexer naquele arquivo estava fora do
+// escopo desta correção. Então o parser está espelhado aqui SEM mudança de
+// comportamento — é a mesma lógica já testada pelo --anexos.
+// SE um dia _anexos.cjs passar a exportar essas funções: apague este bloco e
+// troque por um require. Não deixe as duas cópias divergirem.
+
+/** Tokeniza a resposta: parênteses, strings quotadas (com \" escapado) e átomos. */
+function tokenizar(s) {
+  const toks = [];
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === "(" || c === ")") {
+      toks.push(c);
+      i++;
+    } else if (c === '"') {
+      let j = i + 1;
+      let val = "";
+      while (j < s.length && s[j] !== '"') {
+        if (s[j] === "\\" && j + 1 < s.length) {
+          val += s[j + 1];
+          j += 2;
+        } else {
+          val += s[j];
+          j++;
+        }
+      }
+      toks.push({ str: val });
+      i = j + 1;
+    } else if (/\s/.test(c)) {
+      i++;
+    } else if (c === "{") {
+      // Literal {n} no BODYSTRUCTURE (raro). Não suportado — falhar com verdade
+      // é melhor do que apontar pra parte errada.
+      throw new Error("BODYSTRUCTURE veio com literal {n} — parser não suporta; me avise");
+    } else {
+      let j = i;
+      while (j < s.length && !/[\s()"]/.test(s[j])) j++;
+      toks.push({ atom: s.slice(i, j) });
+      i = j;
+    }
+  }
+  return toks;
+}
+
+/** Monta a árvore de listas a partir dos tokens. */
+function montarArvore(toks) {
+  let pos = 0;
+  function lista() {
+    const out = [];
+    while (pos < toks.length) {
+      const t = toks[pos];
+      if (t === "(") {
+        pos++;
+        out.push(lista());
+      } else if (t === ")") {
+        pos++;
+        return out;
+      } else {
+        pos++;
+        out.push("str" in t ? t.str : t.atom === "NIL" ? null : t.atom);
+      }
+    }
+    return out;
+  }
+  while (pos < toks.length && toks[pos] !== "(") pos++;
+  if (pos >= toks.length) throw new Error("BODYSTRUCTURE sem lista — resposta inesperada");
+  pos++;
+  return lista();
+}
+
+/** (key value key value ...) → { KEY: value } */
+function paresParaObjeto(lista) {
+  const out = {};
+  if (!Array.isArray(lista)) return out;
+  for (let i = 0; i + 1 < lista.length; i += 2) {
+    if (typeof lista[i] === "string") out[lista[i].toUpperCase()] = lista[i + 1];
+  }
+  return out;
+}
+
+/** Numera as partes como o IMAP numera (1, 2, 1.1, ...) e devolve as folhas. */
+function coletarPartes(no, prefixo) {
+  if (Array.isArray(no) && Array.isArray(no[0])) {
+    const partes = [];
+    let i = 0;
+    while (i < no.length && Array.isArray(no[i])) {
+      const numero = prefixo ? `${prefixo}.${i + 1}` : String(i + 1);
+      partes.push(...coletarPartes(no[i], numero));
+      i++;
+    }
+    return partes;
+  }
+  const [tipo, subtipo, params, , , encoding, tamanho, ...resto] = no;
+  const paramsObj = paresParaObjeto(params);
+  let dispTipo = null;
+  let dispParams = {};
+  for (const el of resto) {
+    if (Array.isArray(el) && typeof el[0] === "string" && (Array.isArray(el[1]) || el[1] === null)) {
+      dispTipo = el[0].toUpperCase();
+      dispParams = paresParaObjeto(el[1]);
+      break;
+    }
+  }
+  const nome = dispParams.FILENAME || dispParams["FILENAME*"] || paramsObj.NAME || paramsObj["NAME*"] || null;
+  return [
+    {
+      numero: prefixo || "1", // mensagem não-multipart: a parte única é a "1"
+      tipo: String(tipo || "").toUpperCase(),
+      subtipo: String(subtipo || "").toUpperCase(),
+      encoding: String(encoding || "").toUpperCase(),
+      bytes: Number(tamanho) || 0,
+      nome,
+      disposition: dispTipo,
+    },
+  ];
+}
+
+/** É anexo? Disposition ATTACHMENT, ou qualquer parte com nome de arquivo. */
+function ehAnexo(p) {
+  return p.disposition === "ATTACHMENT" || !!p.nome;
+}
+
+/** Decodifica o bloco baixado conforme o encoding declarado no BODYSTRUCTURE. */
+function decodificarParte(textoLatin1, encoding) {
+  if (encoding === "BASE64") return Buffer.from(textoLatin1.replace(/\s+/g, ""), "base64");
+  if (encoding === "QUOTED-PRINTABLE") {
+    const s = textoLatin1.replace(/=\r?\n/g, "").replace(/=([0-9A-F]{2})/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)));
+    return Buffer.from(s, "latin1");
+  }
+  // 7BIT / 8BIT / BINARY: latin1 preserva byte a byte
+  return Buffer.from(textoLatin1, "latin1");
+}
+
+/** Folhas do BODYSTRUCTURE de uma resposta de UID FETCH (lança se não parsear). */
+function partesDoBodystructure(resposta) {
+  const linhaFetch = resposta.split(/\r?\n/).find((l) => /^\* \d+ FETCH/i.test(l) && /BODYSTRUCTURE/i.test(l));
+  if (!linhaFetch) throw new Error("sem linha de BODYSTRUCTURE na resposta");
+  const idx = linhaFetch.search(/BODYSTRUCTURE/i);
+  return coletarPartes(montarArvore(tokenizar(linhaFetch.slice(idx + "BODYSTRUCTURE".length))), "");
+}
+
+/** Primeira parte de texto LEGÍVEL (text/plain > text/html) que não é anexo. */
+function parteDeTexto(partes) {
+  const corpoDeTexto = (p) => p.tipo === "TEXT" && !ehAnexo(p);
+  return (
+    partes.find((p) => corpoDeTexto(p) && p.subtipo === "PLAIN") ||
+    partes.find((p) => corpoDeTexto(p) && p.subtipo === "HTML") ||
+    null
+  );
+}
+
+/** Buffer → string: tenta utf8 e cai pra latin1 se vier caractere de troca. */
+function textoDoBuffer(buf) {
+  const utf8 = buf.toString("utf8");
+  return /�/.test(utf8) ? buf.toString("latin1") : utf8;
+}
+
 const fmtBytes = (b) =>
   b >= 1_000_000 ? `${(b / 1_000_000).toFixed(1)}MB` : b >= 1000 ? `${Math.round(b / 1000)}KB` : `${b}B`;
 
@@ -258,6 +435,45 @@ async function acharEnviados(sessao) {
   const porFlag = linhas.find((l) => /\\Sent\b/i.test(l));
   const porNome = linhas.find((l) => /(Sent(?: Items| Messages)?|INBOX\.Sent)"?\s*$/i.test(l));
   return nomeDaPasta(porFlag || porNome) || "Sent";
+}
+
+/**
+ * Envios que SAÍRAM mas cuja cópia não entrou em Enviados (incidente #210).
+ * O `enviar_email.cjs` grava esses casos em `_frank/prova/enviados_local.jsonl`
+ * depois de 3 tentativas de APPEND falharem. Sem ler este arquivo aqui, a ronda
+ * seguinte enxerga silêncio onde houve resposta e escreve de novo pro aluno —
+ * que é exatamente o dano que o incidente descreve. Registro que ninguém lê não
+ * conserta nada, então a leitura mora do lado da consulta.
+ */
+function registroLocalDeEnvios(para) {
+  const arquivo = path.join(RAIZ, "_frank", "prova", "enviados_local.jsonl");
+  if (!fs.existsSync(arquivo)) return [];
+  return fs
+    .readFileSync(arquivo, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .filter((r) => !para || String(r.para || "").toLowerCase() === para.toLowerCase());
+}
+
+function mostrarRegistroLocal(para) {
+  const linhas = registroLocalDeEnvios(para);
+  if (!linhas.length) return;
+  console.log("");
+  console.log("⚠️  ENVIOS SEM CÓPIA EM ENVIADOS (registro local — incidente #210)");
+  console.log("   O e-mail SAIU (SMTP aceitou). O que falhou foi gravar a cópia.");
+  console.log("   NÃO trate como silêncio e NÃO reenvie só por não achar acima.");
+  for (const r of linhas) {
+    console.log(`   · ${r.at} → ${r.para} · "${r.assunto}"`);
+    console.log(`     message-id ${r.message_id} · motivo: ${r.motivo}`);
+  }
 }
 
 async function main() {
@@ -374,6 +590,9 @@ async function main() {
 
     if (!uids.length) {
       console.log(`nada encontrado em "${caixa}" com: ${criterio}`);
+      // Este é o caminho perigoso do #210: "nada encontrado" lido como "nunca
+      // foi respondido". Se houver envio registrado localmente, ele aparece.
+      if (enviados) mostrarRegistroLocal(para);
       return;
     }
     console.log(`caixa "${caixa}" · critério: ${criterio} · ${todos.length} no total, mostrando ${uids.length}\n`);
@@ -402,11 +621,47 @@ async function main() {
         );
         raw = extrairLiteral(bufH);
         corpo = `(corpo NÃO baixado — mensagem de ${fmtBytes(tam)}, acima do teto de ${fmtBytes(MAX_BYTES)})`;
+        let partes = [];
         try {
           const bs = await sessao.command(`UID FETCH ${uid} BODYSTRUCTURE`);
           anexos = anexosDoBodystructure(bs).map((nome) => ({ nome, bytes: 0 }));
+          try {
+            partes = partesDoBodystructure(bs);
+          } catch {
+            /* parser é best-effort: sem partes, cai no aviso de corpo não baixado */
+          }
         } catch {
           /* estrutura é best-effort */
+        }
+
+        // A mensagem é grande POR CAUSA DO ANEXO — o texto que o aluno escreveu
+        // é um MIME part de poucos KB e dá pra buscar SOZINHO com BODY.PEEK[n],
+        // sem arrastar o anexo. Antes disso, 5 alunos escreveram com anexo
+        // grande e o texto deles nunca foi lido por ninguém (uma aluna ficou 62h
+        // sem resposta). Se qualquer passo falhar, o aviso acima FICA: degradar
+        // pra corpo vazio, em silêncio, é o que causou o incidente.
+        const pt = parteDeTexto(partes);
+        if (pt && pt.bytes > 0 && pt.bytes <= MAX_PARTE_TEXTO_BYTES) {
+          try {
+            // PEEK também aqui: buscar o texto não pode marcar \Seen (regra 1).
+            const bufT = await sessao.commandRaw(`UID FETCH ${uid} BODY.PEEK[${pt.numero}]`);
+            const bruto = extrairLiteral(bufT);
+            if (bruto) {
+              const cru = textoDoBuffer(decodificarParte(bruto, pt.encoding));
+              // Mesmo tratamento do caminho normal (mailText): html vira texto,
+              // plain só colapsa espaço em branco.
+              const texto = pt.subtipo === "HTML" ? stripHtml(cru) : cru.replace(/\s+/g, " ").trim();
+              if (texto) {
+                corpo = [
+                  `(anexo não baixado — mensagem de ${fmtBytes(tam)}; texto abaixo é a parte MIME ${pt.numero})`,
+                  "",
+                  texto.slice(0, maxCorpo),
+                ].join("\n");
+              }
+            }
+          } catch {
+            /* mantém o aviso de corpo não baixado — nunca vira vazio */
+          }
         }
       } else {
         const buf = await sessao.commandRaw(`UID FETCH ${uid} BODY.PEEK[]`);
@@ -431,6 +686,8 @@ async function main() {
         ].join("\n"),
       );
     }
+    // Mesmo achando cópias, pode haver envio MAIS RECENTE que não foi gravado.
+    if (enviados) mostrarRegistroLocal(para);
   } finally {
     sessao.close();
   }

@@ -1,0 +1,9 @@
+{
+ "bucket_aluno": "voices-clone-ai-verse",
+ "bucket_worker": "voices-clone-ai-verse",
+ "amostra": 200,
+ "ok": 200,
+ "sem_path": 0,
+ "so_no_worker": 0,
+ "faltando": []
+}

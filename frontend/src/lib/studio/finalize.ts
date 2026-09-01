@@ -103,6 +103,10 @@ export async function finalizeStudioAudio(args: {
       debitRefType: "studio_audio",
       refundRefType: "studio_audio_refund",
       alertSupport: !isInputError(out),
+      // Único ponto do código que classifica INPUT do aluno de verdade. O
+      // `openBurstIncident` lê ESTE campo (não o `alertSupport`) pra decidir
+      // se a rajada nasce `ignored` — ver `userInputError` em failure-alert.
+      userInputError: isInputError(out),
     });
   }
   return { applied: true };

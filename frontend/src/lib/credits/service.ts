@@ -125,8 +125,77 @@ export async function grantSubscriptionCredits(args: {
   const r = (data ?? {}) as RpcResult;
   // ⚠️ O aviso de "você tem 0" fica gravado na voz e NAO se atualiza sozinho.
   // Aqui e o unico instante em que ele pode ter virado mentira. Nao lanca.
-  if (r.ok) await destravarAvisoDeCredito(args.userId, r.balance ?? 0);
+  if (r.ok) {
+    await perdoarNegativoDoOnboarding(args.userId);
+    await destravarAvisoDeCredito(args.userId, r.balance ?? 0);
+  }
   return { ok: r.ok, balance: r.balance ?? 0 };
+}
+
+/**
+ * QUEM ASSINA NÃO ENTRA DEVENDO (decisão do Johnny, 30/08/2026).
+ *
+ * O onboarding (planilha e agora o SGP) debita o material entregue — treino de
+ * voz 10k + avatares 525 cada — e deixa o saldo NEGATIVO de propósito: o aluno
+ * só usa a plataforma depois de assinar (mig 88). O buraco estava no encontro
+ * das duas regras: `grant_subscription_credits` credita em
+ * `credits_subscription`, e o negativo mora em `credits_extra`. Resultado: a
+ * pessoa pagava R$97, recebia 100.000 e via **88.425** — "paguei e vieram menos
+ * créditos", que é exatamente a reclamação que ninguém consegue responder bem.
+ *
+ * Medido em 30/08: 41 alunos da planilha travados nessa situação, 345.125
+ * créditos no total (~R$186 a preço de venda). O saldo deles foi perdoado de
+ * uma vez (`_Bugs/_correcoes/_perdoar_negativo_onboarding.cjs`); esta função é
+ * a metade que impede o caso de voltar a nascer.
+ *
+ * Só zera o que está NEGATIVO e só quando a origem é o onboarding — não é
+ * bônus: ninguém ganha crédito positivo por aqui. Best-effort de propósito:
+ * falhar aqui não pode derrubar a liberação de uma assinatura paga.
+ */
+async function perdoarNegativoDoOnboarding(userId: string): Promise<void> {
+  try {
+    const admin = getAdmin();
+    const { data: prof } = await admin
+      .from("profiles")
+      .select("credits_subscription, credits_extra")
+      .eq("id", userId)
+      .maybeSingle();
+    const extra = (prof as { credits_extra?: number } | null)?.credits_extra ?? 0;
+    if (extra >= 0) return;
+
+    // A origem tem que ser o onboarding — negativo de outra causa não é nosso
+    // pra perdoar, e virar regra cega aqui esconderia bug de cobrança.
+    const { data: doOnboarding } = await admin
+      .from("credit_transactions")
+      .select("id")
+      .eq("user_id", userId)
+      .ilike("note", "%onboarding%")
+      .limit(1);
+    if (!doOnboarding?.length) return;
+
+    const subscription = (prof as { credits_subscription?: number } | null)?.credits_subscription ?? 0;
+    const { error } = await admin
+      .from("profiles")
+      .update({ credits_extra: 0, updated_at: new Date().toISOString() })
+      .eq("id", userId);
+    if (error) return;
+
+    await admin.from("credit_transactions").insert({
+      user_id: userId,
+      kind: "adjustment",
+      amount: -extra,
+      balance_after: subscription,
+      ref_type: "perdao_negativo_onboarding",
+      ref_id: userId,
+      note:
+        "Perdao do saldo negativo do onboarding no momento da assinatura " +
+        "(decisao do Johnny, 30/08/2026): o material entregue no onboarding nao " +
+        "pode ser descontado de quem acabou de pagar a mensalidade.",
+    } as never);
+    console.log(`[credits] negativo do onboarding perdoado ao assinar: ${userId} (+${-extra})`);
+  } catch (e) {
+    console.error("[credits] perdao do onboarding falhou:", e instanceof Error ? e.message : e);
+  }
 }
 
 /** Credita um pacote avulso (acumula, não expira). */

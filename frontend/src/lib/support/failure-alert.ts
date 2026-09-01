@@ -8,6 +8,7 @@
  * (regras extras: dataset vs técnico, bypassesBilling, custo fixo).
  */
 import { getAdmin } from "@/lib/db/admin";
+import { inserirChamadoUnico } from "@/lib/incidents/gravar";
 import { addExtraCredits } from "@/lib/credits/service";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 
@@ -25,8 +26,34 @@ export type TechFailureArgs = {
   debitRefType?: string;
   /** ref_type do estorno (aparece no extrato; também é a chave de idempotência). */
   refundRefType?: string;
-  /** false = só estorna, sem e-mail (erro de INPUT do usuário, não falha nossa). */
+  /**
+   * false = só estorna, sem e-mail.
+   *
+   * ⚠️ ESTE CAMPO ESTÁ SOBRECARREGADO — NÃO o use para saber se a falha é do
+   * aluno. Ele quer dizer apenas "não mande e-mail agora", e há duas razões
+   * MUITO diferentes pra isso:
+   *   - erro de INPUT do aluno (studio/finalize.ts:105) — não é falha nossa;
+   *   - falha TÉCNICA NOSSA cujo e-mail já saiu por outro caminho:
+   *     `studio/face.ts:174` (o alerta já foi por segmento, aqui é só o
+   *     estorno) e `studio/scenes.ts:261` (cena reprovada no QA de texto
+   *     ilegível — defeito da NOSSA geração).
+   * Quem precisa da classificação input×técnico usa `userInputError`.
+   */
   alertSupport?: boolean;
+  /**
+   * true = quem chamou classificou a falha como erro do ARQUIVO do aluno
+   * (no_speech, audio_too_long, video_too_long, video_sem_audio). É o único
+   * sinal válido pro `inputError` do `openBurstIncident` (#183).
+   *
+   * POR QUE EXISTE (medido 01/09): a primeira versão do #183 leu
+   * `alertSupport === false` como "erro do aluno". Como os dois call sites
+   * acima passam `false` em falha TÉCNICA, uma rajada de F4-rosto ou de cena
+   * reprovada no QA nasceria `ignored` — e `reopened = closed && !userError`
+   * faz ela NUNCA mais reabrir. Trocaria 1 falso positivo (ruído) por 2 falsos
+   * NEGATIVOS (cegueira em defeito nosso), que é o caro. Sem ocorrência
+   * medida ainda: a correção é antes do primeiro caso, não depois.
+   */
+  userInputError?: boolean;
 };
 
 /**
@@ -142,6 +169,15 @@ export async function escalateStuckUser(a: {
       userEmail: a.userEmail ?? "(sem e-mail)",
       count: fails,
       rawError: a.rawError,
+      // Este caminho é, POR DEFINIÇÃO, erro de input do aluno: o finalize-training
+      // só chama aqui pra falha que ele mesmo classificou como "dataset do
+      // usuário" e por isso não alerta o suporte. Marcar `inputError: true` é a
+      // verdade — e mesmo assim o chamado NASCE ABERTO, porque `stuck: true`
+      // manda no `!a.stuck` do openBurstIncident. É exatamente pra isto que esta
+      // função existe (linhas 111-120: erro do usuário que vira problema nosso
+      // por REPETIÇÃO — foi calando este sinal que o bug do chunking rodou 18
+      // dias). Se um dia alguém trocar este `true`, o sinal some sem barulho.
+      inputError: true,
       windowLabel:
         rule.windowMs >= 60 * 60 * 1000
           ? `${Math.round(rule.windowMs / 3_600_000)}h`
@@ -176,6 +212,29 @@ function isModerationBlock(rawError: string): boolean {
   return /nsfw|moderation|moderaç|conteúdo impróprio|content policy|flagged/i.test(rawError || "");
 }
 
+/**
+ * A decisão "esta rajada nasce fechada?" isolada do banco, PRA PODER SER
+ * TESTADA. Ela mora aqui e não inline no `openBurstIncident` porque foi
+ * exatamente esta linha que errou duas vezes: primeiro descartando a
+ * classificação (chamado #183), depois lendo o sinal errado (`alertSupport`,
+ * sobrecarregado — ver `userInputError` no tipo).
+ *
+ * Duas válvulas, que NÃO são a mesma coisa:
+ *  - moderação (regra do Johnny 17/08): nasce fechada SEMPRE;
+ *  - erro de INPUT: nasce fechada SÓ SE o aluno não estiver travado — erro de
+ *    input repetido em aluno sem nenhuma voz pronta é o sinal que o
+ *    `escalateStuckUser` existe pra não perder (foi calando esse sinal que o
+ *    bug do chunking rodou 18 dias).
+ */
+export function rajadaNasceFechada(a: {
+  rawError: string;
+  /** SÓ o classificador de input do aluno seta isto. Nunca `alertSupport`. */
+  inputError: boolean;
+  stuck: boolean;
+}): boolean {
+  return isModerationBlock(a.rawError) || (a.inputError && !a.stuck);
+}
+
 async function openBurstIncident(a: {
   refundRefType: string;
   feature: string;
@@ -184,9 +243,19 @@ async function openBurstIncident(a: {
   rawError: string;
   windowLabel: string;
   stuck: boolean;
+  /**
+   * true = quem chamou JÁ classificou a falha como erro de INPUT do aluno
+   * (no_speech, audio_too_long, video_too_long, video_sem_audio —
+   * studio/finalize.ts:47-50). Chamado #183.
+   *
+   * ⚠️ Vem do `userInputError`, NÃO de `alertSupport === false`: aquele campo
+   * também é false em falha técnica nossa (face.ts:174, scenes.ts:261).
+   */
+  inputError: boolean;
 }): Promise<void> {
   const admin = getAdmin();
-  const userError = isModerationBlock(a.rawError);
+  const moderationBlock = isModerationBlock(a.rawError);
+  const userError = rajadaNasceFechada({ rawError: a.rawError, inputError: a.inputError, stuck: a.stuck });
   const signature = `fail-burst:${a.refundRefType}:${a.userEmail}`;
   const now = new Date().toISOString();
   const { data: existingRaw } = await admin
@@ -216,7 +285,7 @@ async function openBurstIncident(a: {
       .eq("id", existing.id);
     return;
   }
-  await admin.from("incidents" as never).insert({
+  await inserirChamadoUnico(admin, {
     kind: "reported",
     cause: "reported",
     status: userError ? "ignored" : "open",
@@ -238,17 +307,29 @@ async function openBurstIncident(a: {
           `passou 18 dias despercebido.`
         : ""),
     reported_by: "burst-rule",
+    categoria: "tecnico", // rajada de falha de sistema: conserto é nosso
+
+    // A nota diz QUAL das duas válvulas fechou o chamado. Nota genérica em
+    // chamado auto-fechado é como não ter nota: quem lê depois não sabe se
+    // confia no fechamento (regra 14: "investigating sem nota é o mesmo que
+    // não ter olhado" — vale igual pro ignored).
     ...(userError
       ? {
-          resolution_note:
-            "Fechado automaticamente (regra 17/08): moderação de conteúdo bloqueou o pedido — " +
-            "o produto funcionou como devia. Fica só como registro.",
+          resolution_note: moderationBlock
+            ? "Fechado automaticamente (regra 17/08): moderação de conteúdo bloqueou o pedido — " +
+              "o produto funcionou como devia. Fica só como registro."
+            : "Fechado automaticamente (chamado #183): a própria operação classificou esta " +
+              "falha como erro de INPUT do aluno (arquivo sem fala, longo demais ou sem " +
+              "áudio), não como defeito nosso — o estorno saiu e o detector acertou. Fica " +
+              "só como registro de repetição. ⚠️ Se este aluno ficar SEM NENHUMA VOZ PRONTA, " +
+              "a próxima rajada dele nasce ABERTA de propósito: erro de input repetido em " +
+              "aluno travado é sinal nosso, não dele.",
           resolved_at: now,
         }
       : {}),
     first_seen_at: now,
     last_seen_at: now,
-  } as never);
+  });
 }
 
 /**
@@ -299,6 +380,12 @@ export async function handleTechFailure(a: TechFailureArgs): Promise<void> {
           // Aluno TRAVADO (nenhuma voz pronta) é o sinal mais forte de churn:
           // vai embora calado. Entra no título pro Sentinela priorizar.
           stuck: await hasNoReadyVoice(a.userId),
+          // Chamado #183: passa a classificação adiante em vez de descartá-la.
+          // ⚠️ Sinal PRÓPRIO, não `alertSupport === false` — ver o comentário
+          // de `userInputError` no tipo: `alertSupport` também é false em
+          // falha técnica NOSSA (face.ts:174, scenes.ts:261), e lê-lo aqui
+          // faria essas duas classes nascerem `ignored` pra sempre.
+          inputError: a.userInputError === true,
         });
       }
     }

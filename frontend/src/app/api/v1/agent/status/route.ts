@@ -4,14 +4,14 @@
  * escanear em Aparelhos conectados. Admin-only.
  */
 import type { NextRequest } from "next/server";
-import { gateAdmin } from "@/lib/admin/api";
+import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
 import { jsonOk } from "@/lib/api/responses";
 import { connectionState, instanceLabel, qrCode } from "@/lib/agent/provider";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateAdmin(request, SUPORTE_OK);
   if ("res" in gate) return gate.res;
 
   const state = await connectionState();

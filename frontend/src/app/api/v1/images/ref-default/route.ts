@@ -54,3 +54,14 @@ export async function GET(request: NextRequest) {
   if (!url) return jsonOk({ key: null });
   return jsonOk({ key: entregue, url });
 }
+
+/**
+ * DELETE — o aluno tirou a foto do quadro (#79, 24/08). Sem isto o padrão do
+ * servidor ressuscitava a referência removida no próximo carregamento.
+ */
+export async function DELETE(request: NextRequest) {
+  const auth = await authenticate(request);
+  if (!auth) return unauthorized();
+  await getAdmin().from("profiles").update({ image_ref_key: null }).eq("id", auth.user_id);
+  return jsonOk({ key: null });
+}

@@ -16,6 +16,7 @@ import { syncImageVideo } from "@/lib/images/video-sync";
 import { syncSceneImage } from "@/lib/video/image-sync";
 import { syncSceneVideo } from "@/lib/video/video-sync";
 import { verificarOnboardingPronto } from "@/lib/onboarding/pronto";
+import { avancarEtapasDoUsuario } from "@/lib/sgp/etapas";
 
 function extractTaskId(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
@@ -59,6 +60,9 @@ export async function POST(request: NextRequest) {
     // "plataforma pronta" (fire-and-forget, nunca atrasa o webhook).
     if (row.idea === "onboarding_avatar") {
       void verificarOnboardingPronto(admin, row.user_id);
+      // SGP: carimba a etapa e manda o "clone de foto pronto" mesmo com o
+      // aluno longe da tela (Johnny 29/08).
+      void avancarEtapasDoUsuario(row.user_id);
     }
     return jsonOk({ handled: "image" });
   }

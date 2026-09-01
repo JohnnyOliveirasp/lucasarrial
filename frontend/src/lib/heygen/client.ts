@@ -11,6 +11,8 @@
  * Server-only.
  */
 
+import type { ContentTypeHeygen } from "./imagem-content-type.ts";
+
 const API = "https://api.heygen.com";
 const UPLOAD = "https://upload.heygen.com";
 const TIMEOUT_MS = 30_000;
@@ -154,11 +156,18 @@ export async function listGroupLooks(apiKey: string, groupId: string): Promise<H
 
 // ───────── escrita (conta do ALUNO; consome créditos DELE) ─────────
 
-/** Sobe uma imagem e devolve o image_key exigido pelo av4/generate. */
+/**
+ * Sobe uma imagem e devolve o image_key exigido pelo av4/generate.
+ *
+ * ⚠️ O HeyGen CONFERE o content-type contra os bytes e recusa a divergência
+ * ("Content type not match image/jpeg != image/webp", 28/08). Quem chama tem
+ * que passar o tipo VERDADEIRO — use `contentTypeImagemHeygen(bytes)`, nunca
+ * o header da resposta nem a extensão da chave.
+ */
 export async function uploadImageAsset(
   apiKey: string,
   bytes: Uint8Array,
-  contentType: "image/jpeg" | "image/png",
+  contentType: ContentTypeHeygen,
 ): Promise<{ image_key: string }> {
   const data = await call<{ image_key?: string; url?: string }>(apiKey, "/v1/asset", {
     base: UPLOAD,
@@ -193,7 +202,23 @@ export async function createPhotoAvatarGroup(
   return { group_id: id };
 }
 
-/** Gera vídeo Avatar IV a partir de foto + áudio (URL pública/presigned). */
+/** Gera vídeo Avatar IV a partir de foto + áudio (URL pública/presigned).
+ *
+ * ⚠️ O CAMPO DO TÍTULO CHAMA-SE `video_title`, NÃO `title` (incidente 169).
+ * Medido em 28/08: enquanto mandávamos `title`, o `/v2/video/av4/generate`
+ * recusava TODA chamada com `video_title is invalid: Field required` — o
+ * `title` era ignorado como campo desconhecido e o obrigatório chegava vazio.
+ * O aluno preenchia o título na tela e mesmo assim lia "campo obrigatório",
+ * o que fazia o erro parecer da tela dele e não da nossa chamada.
+ *
+ * Isso NUNCA funcionou para ninguém: no dia do conserto a tabela
+ * `heygen_videos` tinha ZERO linhas, e a linha só é inserida DEPOIS de esta
+ * função responder — ou seja, nenhuma geração Avatar IV jamais passou daqui.
+ *
+ * Que os OUTROS campos estão certos, o próprio erro sugere: ele nomeou
+ * `video_title` e mais nada, então `image_key` e `audio_url` não foram
+ * apontados como ausentes na mesma chamada.
+ */
 export async function generateAvatarIV(
   apiKey: string,
   args: {
@@ -209,7 +234,7 @@ export async function generateAvatarIV(
     body: JSON.stringify({
       image_key: args.image_key,
       audio_url: args.audio_url,
-      title: args.title ?? "FastCloner",
+      video_title: args.title ?? "FastCloner",
       ...(args.custom_motion_prompt
         ? { custom_motion_prompt: args.custom_motion_prompt }
         : {}),

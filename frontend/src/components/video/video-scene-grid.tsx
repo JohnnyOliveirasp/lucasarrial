@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Loader2, Wand2, RefreshCw, AlertTriangle, Film, ServerCrash, Download
 } from "lucide-react";
+import { SceneDeleteButton } from "@/components/video/scene-delete-button";
 import { getTier } from "@/lib/video/tiers";
 
 export type VideoScene = {
@@ -295,6 +296,14 @@ function SceneCard({
           )}
           ✨
         </button>
+        <SceneDeleteButton
+          projectId={projectId}
+          sceneId={scene.id}
+          idx={scene.idx}
+          compact
+          disabled={!!busy || inflight}
+          onDeleted={onReload}
+        />
       </div>
     </li>
   );

@@ -1,3 +1,11 @@
+// --teste (24/08): manda o job pro endpoint ISOLADO de teste (imagem da dev),
+// nunca pra producao. Setado ANTES do dotenv (dotenv nao sobrescreve env ja
+// definida). Ver memoria project-runpod-endpoint-teste-dev.
+if (process.argv.includes("--teste")) {
+  process.env.RUNPOD_ENDPOINT_TRAIN_ID = "vtfxcwcb0ohvdn";
+  process.env.RUNPOD_ENDPOINT_INFERENCE_ID = "vtfxcwcb0ohvdn";
+  console.log("⚠️  MODO TESTE: endpoint vtfxcwcb0ohvdn (fast_cloner_TESTE_dev)");
+}
 /**
  * 19/08 — REFAZER uma geração de áudio POR CONTA DA CASA (sem cobrar).
  *
@@ -39,10 +47,40 @@ const { randomUUID } = require("node:crypto");
 
 const GEN_ID = process.argv[2];
 const CONFIRMAR = process.argv.includes("--confirmar");
+/** --texto-arquivo <path>: manda OUTRO texto pra GPU, no lugar do
+ * `text_normalized` gravado. Existe pro caso Katia (incidente 47/ce6e157d):
+ * o defeito dela não é a voz nem o texto, é ONDE o chunker corta — 7 das 8
+ * marcações dela caem em início/fim de chunk, e a pior ("Minha missão é...
+ * sem peso") é uma frase colada na cauda de um chunk de 160 chars. Quebrar o
+ * MESMO texto em parágrafos (`\n\n`) põe cada frase no seu próprio chunk sem
+ * mexer em uma linha do worker. ⚠️ O conteúdo FALADO tem que ser o mesmo:
+ * isto é pra REFORMATAR, não pra reescrever o texto do aluno. O script
+ * confere isso sozinho e ABORTA se as palavras não baterem. */
+const iTexto = process.argv.indexOf("--texto-arquivo");
+const TEXTO_ARQUIVO = iTexto > -1 ? process.argv[iTexto + 1] : null;
+/** --nome "<rótulo>": rótulo da geração, pra distinguir variantes num A/B.
+ * O prefixo "Conta da casa —" é mantido SEMPRE (é o que o detector de
+ * "entregue e não cobrada" usa pra não acusar vazamento de receita, #125). */
+const iNome = process.argv.indexOf("--nome");
+const NOME = iNome > -1 ? process.argv[iNome + 1] : null;
 if (!GEN_ID) {
-  console.error("uso: node refazer_audio_conta_da_casa.cjs <generationId> [--confirmar]");
+  console.error(
+    'uso: node refazer_audio_conta_da_casa.cjs <generationId> [--texto-arquivo <path>] [--nome "<rotulo>"] [--confirmar]',
+  );
   process.exit(1);
 }
+
+/** Palavras comparáveis: só letras/dígitos, minúsculas, sem pontuação nem
+ * espaço. É a trava do `--texto-arquivo` — reformatar mantém a sequência de
+ * palavras idêntica; reescrever, não. */
+const palavras = (s) =>
+  (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
 
 const PRESIGN_EXPIRES = 2 * 60 * 60;
 
@@ -101,8 +139,28 @@ function timeoutMs(textLen) {
   if (ePerfil) throw new Error(`consulta profiles: ${ePerfil.message}`);
   if (!perfil) throw new Error("perfil do aluno não encontrado");
 
-  const texto = (origem.text_normalized || origem.text_raw || "").trim();
-  if (!texto) throw new Error("geração de origem sem texto");
+  const textoOriginal = (origem.text_normalized || origem.text_raw || "").trim();
+  if (!textoOriginal) throw new Error("geração de origem sem texto");
+
+  // --texto-arquivo: reformatação do MESMO texto. A trava compara a sequência
+  // de palavras e ABORTA se mudou — sem ela, um erro de copiar/colar manda um
+  // texto diferente pra GPU e o aluno recebe um áudio que ele não escreveu.
+  let texto = textoOriginal;
+  if (TEXTO_ARQUIVO) {
+    texto = require("node:fs").readFileSync(TEXTO_ARQUIVO, "utf8").trim();
+    if (!texto) throw new Error(`--texto-arquivo vazio: ${TEXTO_ARQUIVO}`);
+    const a = palavras(textoOriginal);
+    const b = palavras(texto);
+    if (a.join(" ") !== b.join(" ")) {
+      const i = a.findIndex((w, k) => w !== b[k]);
+      throw new Error(
+        `--texto-arquivo NÃO é reformatação: a sequência de palavras mudou ` +
+          `(original ${a.length} palavras, arquivo ${b.length}; 1ª diferença na posição ${i}: ` +
+          `"${a[i] ?? "(fim)"}" vs "${b[i] ?? "(fim)"}"). Abortei sem disparar nada.`,
+      );
+    }
+  }
+
   const custoQueNaoSeraCobrado = Math.max(400, (origem.text_raw || "").length);
 
   console.log("=".repeat(64));
@@ -111,7 +169,7 @@ function timeoutMs(textLen) {
   console.log(`SALDO : ${(perfil.credits_subscription ?? 0) + (perfil.credits_extra ?? 0)}`);
   console.log(`VOZ   : ${voz.id} [${voz.status}] lang=${voz.language} alpha=${voz.lora_alpha ?? 16}`);
   console.log(`ORIGEM: ${origem.id} (${origem.status}, ${origem.created_at})`);
-  console.log(`TEXTO : ${texto.length} chars`);
+  console.log(`TEXTO : ${texto.length} chars${TEXTO_ARQUIVO ? ` — REFORMATADO de ${TEXTO_ARQUIVO} (mesmas ${palavras(texto).length} palavras, conferido)` : ""}`);
   console.log(`CUSTO : ${custoQueNaoSeraCobrado} cr — NÃO SERÁ COBRADO (conta da casa)`);
   console.log(`TIMEOUT: ${timeoutMs(texto.length) / 60000} min`);
   console.log("-".repeat(64));
@@ -184,6 +242,10 @@ function timeoutMs(textLen) {
     reference_transcript: (voz.reference_transcript ?? "").trim() || null,
     audio_path: outputKey,
     runpod_job_id: job.id,
+    // #125 (24/08): geracao da equipe SEM debito precisa ser reconhecivel no
+    // banco — sem nome, o detector de 'entregue e nao cobrada' a confunde com
+    // vazamento de receita (28% falso). Nome = rotulo + data.
+    name: `Conta da casa — ${new Date().toISOString().slice(0, 10)}${NOME ? ` — ${NOME}` : ""}`,
   });
   if (eIns) throw new Error(`insert generations: ${eIns.message} (job ${job.id} JÁ disparado)`);
 

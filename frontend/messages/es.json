@@ -45,10 +45,10 @@
       }
     },
     "voiceCloning": {
-      "title": "Generar Voz",
+      "title": "Entrenar Voz",
       "subtitle": "Entrena tu voz como necesites — locutor, contenido periodístico, más rápida o más pausada. Sube unos minutos de audio y la IA aprende tu timbre para generar audio con cualquier texto.",
       "empty": "Aún no has entrenado ninguna voz.",
-      "createButton": "+ Generar Nueva Voz",
+      "createButton": "+ Entrenar nueva voz",
       "generateAudioTitle": "Generar Audio",
       "generateAudioSubtitle": "Elige una voz lista y genera audio con cualquier texto.",
       "generateAudioEmpty": "Aún no tienes una voz lista. Entrena una voz primero.",
@@ -92,12 +92,13 @@
       "statuses": {
         "uploading": "Subiendo audios",
         "validating": "Validando",
-        "awaiting_training": "Lista para entrenar",
+        "awaiting_training": "Falta que la entrenes",
         "rejected_too_short": "< 20min · Rechazado",
         "training": "Entrenando",
         "ready": "Lista",
         "failed": "Falló"
       },
+      "awaitingHint": "Falta 1 paso: abre la voz y haz clic en “Iniciar entrenamiento”.",
       "paywall": {
         "titleNoCredits": "Créditos insuficientes para entrenar",
         "titleNoPlan": "Suscríbete para entrenar una voz",
@@ -130,6 +131,8 @@
         "pickFolder": "Elegir carpeta"
       },
       "measuring": "midiendo…",
+      "measureFailed": "no se pudo medir",
+      "retryMeasure": "Intentar medir de nuevo",
       "uploading": "Subiendo archivos…",
       "submitting": "Preparando…",
       "train": "Entrenar voz ({duration})",
@@ -151,7 +154,16 @@
         "unsupportedSkipped": "{count} archivo(s) quedaron fuera porque no son un formato de audio reconocido: {names}",
         "network": "Fallo de red. Verifica tu conexión.",
         "uploadFailed": "{count} archivo(s) fallaron al subir. Intenta de nuevo.",
-        "generic": "Algo salió mal. Inténtalo de nuevo."
+        "generic": "Algo salió mal. Inténtalo de nuevo.",
+        "measureFailed": {
+          "timeout": "tardó demasiado en leer la duración",
+          "formato": "este navegador no pudo abrir el archivo",
+          "semDuracao": "el archivo no informa la duración",
+          "navegador": "este navegador no sabe medir este archivo",
+          "generico": "no se pudo medir"
+        },
+        "measureBlocked": "{count} archivo(s) no se pudieron medir, así que NO están sumando en el total — por eso el botón Entrenar está apagado. Salidas: convierte esos archivos a MP3 o WAV y súbelos de nuevo, quítalos de la lista, o agrega más grabación hasta llegar a {min}min solo con los medidos.",
+        "measureNotCounted": "{count} archivo(s) no se pudieron medir y no están sumando en el total. El mínimo ya se alcanzó sin ellos, y de todos modos se suben para el entrenamiento."
       }
     }
   },
@@ -801,7 +813,7 @@
       "stepAudio": "2. Audio con el habla (hasta {max}s)",
       "stepQuality": "3. Calidad",
       "perSecond": "{n} créditos/segundo de audio",
-      "tierNote": "¿Cuál elegir? Ambos usan el motor nuevo, en 480p. Estándar 2.0 es el recomendado: resultado consistente — la misma foto con el mismo audio genera siempre el mismo video. Turbo es la opción económica: misma calidad, corta el video exactamente al final del audio y cada generación puede variar un poco.",
+      "tierNote": "¿Cuál elegir? Ambos usan el motor nuevo, en 480p. Estándar 2.0 es el recomendado: repetible — la misma foto con el mismo audio genera siempre el mismo video. En audios largos (más de ~40s) el rostro puede alejarse de la foto a lo largo del video — es una limitación del modelo, en ambos modos: prefiere videos cortos. Turbo es la opción económica: misma calidad, corta el video exactamente al final del audio y cada generación puede variar un poco.",
       "cost": "Costo: {seconds}s × {rate} = {cost} créditos",
       "costBalance": "(tienes {have})",
       "pickToSeeCost": "Elige la foto y el audio para ver el costo",
@@ -1170,6 +1182,13 @@
       "audioSelected": "Audio seleccionado",
       "sceneEstimate": "~{n} escenas de {s}s"
     },
+    "sceneDelete": {
+      "label": "Eliminar escena",
+      "title": "¿Eliminar la escena {n}?",
+      "warning": "Acción <strong>irreversible</strong>. Elimina solo esta escena (imagen y clip). Las demás escenas se mantienen. El video final queda más corto que la narración.",
+      "deleting": "Eliminando…",
+      "failed": "No se pudo eliminar la escena"
+    },
     "scenes": {
       "loadFailed": "No se pudieron cargar las escenas",
       "generateFailed": "No se pudieron generar las escenas",
@@ -1439,6 +1458,11 @@
       "pauseNatural": "Natural",
       "pauseMedium": "Media",
       "pauseLong": "Larga",
+      "speedLabel": "Ritmo",
+      "speedCalm": "Más calmo",
+      "speedNormal": "Normal",
+      "speedFast": "Más rápido",
+      "speedNeedsRateQa": "El ritmo solo cambia con \"Ajustar a mi ritmo de habla\" activado arriba. Sin eso, el audio sale exactamente como lo generó el modelo.",
       "supportAction": "generar el audio",
       "generating": "Generando…",
       "generate": "Generar audio",
@@ -1450,7 +1474,13 @@
       "generatedIn": "· generado en {s}s",
       "savedNote": "Todos los audios también quedan guardados en el Historial.",
       "latestBar": "Último audio",
-      "paywallAction": "generar audio"
+      "paywallAction": "generar audio",
+      "deleteAria": "Eliminar este audio",
+      "rateQaLabel": "Ajustar a mi ritmo de habla",
+      "rateQaHelp": "Actívalo si la voz clonada sale más acelerada de lo que hablas. El sistema acerca el audio a tu velocidad natural — a cambio puede quedar un poco más lento y la entonación cambia levemente. Desactivado, sale tal como lo generó el modelo.",
+      "copiarTexto": "Copiar texto",
+      "copiado": "¡Copiado!",
+      "reusarTexto": "Usar este texto de nuevo"
     },
     "panel": {
       "startError": "No se pudo iniciar el entrenamiento",
@@ -1908,7 +1938,8 @@
         "bancoAutoCorpo": "La IA lee tu guion y reutiliza sola las escenas del acervo que encajan — gratis, ya incluido.",
         "bancoEscolherTitulo": "Quiero elegir del banco",
         "bancoEscolherCorpo": "Tú marcas las escenas y la IA coloca cada una en la frase donde mejor encaja — sin costo.",
-        "gerandoCena": "Espera, generando la escena…"
+        "gerandoCena": "Espera, generando la escena…",
+        "cenaFalhou": "Falló — abre para ver"
       },
       "cloneOpcoes": {
         "padrao": {
@@ -2116,5 +2147,181 @@
     "server": "El servidor de archivos falló al recibir \"{file}\" (HTTP {status}). Lo intentamos 3 veces; espera un momento e inténtalo de nuevo.",
     "rejected": "La subida de \"{file}\" fue rechazada (HTTP {status}). Inténtalo de nuevo; si persiste, contacta al soporte.",
     "unknown": "No se pudo subir \"{file}\". Inténtalo de nuevo; si persiste, contacta al soporte."
+  },
+  "sgp": {
+    "selo": "Sistema de Generación Lista",
+    "titulo": "Configuración de tu Clon de IA",
+    "subtitulo": "Completa cada etapa con atención. Nuestro equipo usará esta información para construir tu clon.",
+    "passos": {
+      "aria": "Etapas",
+      "dados": "Datos",
+      "foto": "Imagen",
+      "audio": "Audio",
+      "revisao": "Confirmación"
+    },
+    "dados": {
+      "titulo": "Tus datos",
+      "descricao": "Necesitamos tus datos para configurar tu clon. Toda la información se trata con total confidencialidad.",
+      "nome": "Nombre completo",
+      "nomePlaceholder": "Tu nombre completo",
+      "whatsapp": "WhatsApp",
+      "email": "E-mail",
+      "dicaCodigo": "Te enviaremos un código de 6 dígitos por e-mail. Todavía NO estás creando cuenta: el registro ocurre al final, después de la revisión.",
+      "enviarCodigo": "Enviar código",
+      "enviandoCodigo": "Enviando…",
+      "codigoEnviado": "Enviamos un código a tu e-mail. Revisa la bandeja de entrada (y el spam).",
+      "codigoEnviadoContaExistente": "Este e-mail ya tiene cuenta en FastCloner. Enviamos un código para confirmar que es tuyo — al final adjuntamos todo a tu cuenta.",
+      "codigoLabel": "Código del e-mail",
+      "verificarEContinuar": "Confirmar y continuar",
+      "verificando": "Verificando…",
+      "reenviar": "Reenviar código",
+      "reenviarEm": "Reenviar en {seconds}s",
+      "codigoReenviado": "Código reenviado.",
+      "codigoInvalido": "Código inválido o vencido. Revisa e intenta de nuevo.",
+      "muitasTentativas": "Demasiados intentos. Espera 1 minuto.",
+      "erroGenerico": "Algo salió mal. Intenta de nuevo.",
+      "nomeCurto": "Ingresa tu nombre completo.",
+      "whatsappInvalido": "Ingresa un WhatsApp válido con código de área.",
+      "mudarEmail": "Cambiar e-mail"
+    },
+    "foto": {
+      "titulo": "Foto base para el Clon",
+      "descricao": "Sube fotos de alta calidad que serán la base de tu clon. Descarga la guía para saber exactamente cómo tomar la foto ideal.",
+      "guiaTitulo": "Descargar Guía de la Foto Base (PDF)",
+      "guiaDescricao": "Instrucciones detalladas para la foto ideal de tu clon",
+      "confirmeTitulo": "Confirma antes de enviar tus fotos:",
+      "ciencia": {
+        "luz": "Buena iluminación (luz de frente, sin sombras en el rostro)",
+        "fundo": "Fondo limpio y sin distracciones",
+        "enquadramento": "Encuadre del busto hacia arriba, mirando a la cámara",
+        "nitida": "Foto nítida y en alta resolución (sin blur)",
+        "sem_acessorios": "Sin gafas de sol, gorra o accesorios que cubran el rostro"
+      },
+      "fotosTitulo": "Tus fotos",
+      "fotosDica": "Aceptamos cualquier formato (JPG, PNG, HEIC de iPhone, WEBP…). Sube de {min} a {max} fotos tuyas de una vez: de rostro y de cuerpo. Necesitas al menos una de frente y una de lado (perfil o 3/4). Solo rechazamos imágenes donde no aparece nadie o donde aparecen otras personas.",
+      "enviando": "Subiendo…",
+      "analisando": "Analizando…",
+      "aprovada": "aprobada",
+      "reprovada": "rechazada",
+      "indeciso": "No pudimos analizarla ahora. Intenta subirla de nuevo.",
+      "remover": "Eliminar",
+      "progresso": "{n} foto(s) aprobada(s) — mínimo {min}",
+      "erroUpload": "No pudimos subir la foto.",
+      "erroAnalise": "No pudimos analizar la foto.",
+      "erroConcluir": "No se pudo continuar.",
+      "voltar": "Volver",
+      "continuar": "Continuar",
+      "salvando": "Guardando…",
+      "enviarFotos": "Subir fotos",
+      "maximo": "Máximo {max} fotos.",
+      "trocar": "Cambiar"
+    },
+    "audio": {
+      "titulo": "Audio para clonar la voz",
+      "descricao": "Graba al menos 20 minutos de audio para clonar tu voz con alta fidelidad. Puede ser lectura o habla natural.",
+      "videoPendente": "⚠️ Aquí va el video de Lucas explicando la grabación (pendiente de grabar).",
+      "confirmeTitulo": "Confirma antes de enviar tu audio:",
+      "ciencia": {
+        "30min": "Grabé al menos 20 minutos de audio",
+        "silencio": "Ambiente silencioso, sin ruidos de fondo",
+        "mesmo_ambiente": "Todos los bloques grabados en el mismo ambiente",
+        "fala_natural": "Habla natural o lectura (sin susurros ni gritos)"
+      },
+      "arquivosTitulo": "Tus audios",
+      "arquivosDica": "Sube uno o varios archivos (MP3, WAV, M4A, grabación del celular…). Los minutos se acumulan. El sistema analiza cada archivo: volumen, ruido, silencio e idioma — solo cuenta el habla aprobada.",
+      "soltarAqui": "Toca para elegir los archivos de audio",
+      "acumulado": "{atual} de habla aprobada (mínimo {minimo} min)",
+      "maximo": "máximo {max} min",
+      "aprovado": "aprobado",
+      "deFala": "de habla",
+      "enviando": "Subiendo…",
+      "analisando": "Analizando…",
+      "indeciso": "No pudimos analizarlo ahora. Intenta subirlo de nuevo.",
+      "remover": "Quitar",
+      "erroUpload": "No pudimos subir el audio.",
+      "erroAnalise": "No pudimos analizar el audio.",
+      "erroConcluir": "No se pudo continuar.",
+      "voltar": "Volver",
+      "continuar": "Continuar",
+      "salvando": "Guardando…",
+      "avisoAfeta": "puede afectar la voz clonada",
+      "arquivoLongo": "Este archivo tiene {tem} — el límite es {max} min por archivo. Córtalo en partes más pequeñas y envíalo de nuevo."
+    },
+    "revisao": {
+      "titulo": "Confirmación y Autorización",
+      "descricao": "Revisa toda la información antes de enviar. Tras la confirmación, nuestro equipo empieza a construir tu clon.",
+      "dadosPessoais": "Datos personales",
+      "nome": "Nombre",
+      "alterar": "Cambiar",
+      "fotos": "Fotos aprobadas ({n})",
+      "cienciaFoto": "Confirmaste {n} de 5 ítems de la guía de la foto.",
+      "audios": "Audios aprobados ({n}) · {total} de habla",
+      "cienciaAudio": "Confirmaste {n} de 4 ítems de la guía del audio.",
+      "lgpdTitulo": "Protección de Datos (LGPD)",
+      "lgpdTexto": "De acuerdo con la Ley General de Protección de Datos de Brasil (Ley 13.709/2018), todos los datos personales de este formulario se usarán exclusivamente para configurar tu clon de IA. Tus datos se tratan con total confidencialidad, no se comparten con terceros y se descartan al concluir el servicio. Puedes pedir su eliminación en cualquier momento contactando a nuestro equipo.",
+      "declaracao": "Declaro que la información enviada es correcta, autorizo al equipo del Sistema de Generación Lista a usar mis datos exclusivamente para configurar mi clon de IA y acepto el tratamiento de datos descrito arriba.",
+      "avisoProcessamento": "Al enviar, el sistema empieza a construir tu clon (foto y voz). Puedes seguirlo en la siguiente pantalla o cerrar — te avisamos por e-mail al terminar cada etapa.",
+      "confirmarEnviar": "Confirmar y Enviar",
+      "enviando": "Enviando…",
+      "erroEnviar": "No se pudo enviar.",
+      "voltar": "Volver",
+      "acessoTitulo": "Tu acceso a FastCloner",
+      "acessoDescricao": "Crearemos tu cuenta con {email}. Elige una contraseña:",
+      "acessoExistente": "{email} ya tiene cuenta en FastCloner — adjuntaremos este material a ella. Después de enviar, entra con tu contraseña habitual.",
+      "senha": "Contraseña",
+      "senhaPlaceholder": "Mínimo 8 caracteres",
+      "senha2": "Repite la contraseña",
+      "senhasDiferem": "Las contraseñas no coinciden."
+    },
+    "acompanhar": {
+      "selo": "Sistema de Generación Lista",
+      "titulo": "Tu clon se está construyendo",
+      "descricao": "Sigue cada etapa aquí. Te avisamos por e-mail al terminar.",
+      "descricaoPronto": "¡Listo! Tu foto y tu voz ya están en la plataforma.",
+      "etapas": {
+        "recebido": {
+          "titulo": "Pedido recibido",
+          "feito": "Recibimos tus fotos y audios.",
+          "andamento": "",
+          "espera": "",
+          "falhou": ""
+        },
+        "foto": {
+          "titulo": "Clon de foto",
+          "feito": "Tu foto social está lista.",
+          "andamento": "Generando tu foto… unos minutos.",
+          "espera": "Aparece aquí en cuanto empiece.",
+          "falhou": "No pudimos generarla. Nuestro equipo lo revisará."
+        },
+        "voz": {
+          "titulo": "Clon de voz",
+          "feito": "Tu voz está entrenada.",
+          "andamento": "Entrenando tu voz… unos 30 minutos.",
+          "espera": "Empieza justo después de la foto.",
+          "falhou": "El entrenamiento falló. Nuestro equipo lo revisará."
+        },
+        "pronto": {
+          "titulo": "Plataforma lista",
+          "feito": "Ya puedes entrar y usarla.",
+          "andamento": "",
+          "espera": "Cuando terminen foto y voz, te avisamos por e-mail.",
+          "falhou": "Algo salió mal — nuestro equipo te contactará."
+        }
+      },
+      "erroTime": "Una etapa necesitó atención de nuestro equipo. No tienes que hacer nada — lo resolvemos y te avisamos por e-mail.",
+      "podeFechar": "Puedes cerrar esta página — te avisamos por e-mail en cada etapa. O déjala abierta y sigue por aquí.",
+      "irParaPlataforma": "Ir a la plataforma",
+      "prontoTexto": "¡Listo! Entra con tu e-mail y la contraseña que creaste para ver el resultado.",
+      "entrar": "Ir a la plataforma"
+    },
+    "ajuda": {
+      "botao": "Ayuda",
+      "fechar": "Cerrar",
+      "titulo": "Fast · ayuda del formulario",
+      "saudacao": "¡Hola! 👋 Soy Fast. Pregúntame lo que quieras de esta pantalla — foto rechazada, código que no llegó, minutos del audio. Si no lo resuelvo, llamo a alguien del equipo.",
+      "placeholder": "Escribe tu duda…",
+      "enviar": "Enviar",
+      "erro": "No pude responder ahora — inténtalo de nuevo en unos instantes."
+    }
   }
 }

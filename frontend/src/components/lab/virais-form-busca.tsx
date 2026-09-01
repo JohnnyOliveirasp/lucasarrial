@@ -19,6 +19,96 @@ const PERIODOS = [
   { id: "ALL_TIME", rotulo: "Qualquer data" },
 ];
 
+/**
+ * Adicionar UM vídeo por link (Johnny 25/08): a pessoa cola a URL do vídeo
+ * do TikTok e ele entra no acervo — que é de TODO MUNDO (o acervo é global;
+ * o que é pessoal é só reservar/descartar). Reusa a busca por `links`
+ * (Apify `postURLs`): 1 item, sem cobrar diferente do que a busca já cobra.
+ */
+export function AdicionarPorLink({ onPronto }: { onPronto: () => Promise<void> }) {
+  const [link, setLink] = useState("");
+  const [rodando, setRodando] = useState(false);
+  const [situacao, setSituacao] = useState<string | null>(null);
+  const valido = /^https?:\/\/(www\.|vm\.|vt\.)?tiktok\.com\//i.test(link.trim());
+
+  async function adicionar(e: React.FormEvent) {
+    e.preventDefault();
+    if (rodando) return;
+    if (!valido) {
+      setSituacao("Cole o link de um vídeo do TikTok (tiktok.com/…/video/…).");
+      return;
+    }
+    setRodando(true);
+    setSituacao("Buscando o vídeo…");
+    try {
+      const r = await fetch("/api/v1/virais/buscar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nichos: "", perfis: "", hashtags: "", links: link.trim(), periodo: "ALL_TIME", max_itens: 1 }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setSituacao(j?.error?.message ?? "Não consegui buscar esse link.");
+        return;
+      }
+      const runId = j.run?.id as string;
+      for (let i = 0; i < 40; i++) {
+        await new Promise((s) => setTimeout(s, 5000));
+        const st = await fetch(
+          `/api/v1/virais/buscar?run=${encodeURIComponent(runId)}&termo=${encodeURIComponent("link")}`,
+        );
+        const sj = await st.json();
+        if (!st.ok) {
+          setSituacao(sj?.error?.message ?? "Perdi o contato com a busca.");
+          return;
+        }
+        if (sj.terminou) {
+          setSituacao(sj.gravados > 0 ? "Adicionado ao acervo — todo mundo já vê." : sj.aviso ?? "Não achei vídeo nesse link.");
+          if (sj.gravados > 0) setLink("");
+          await onPronto();
+          return;
+        }
+        const status = sj.run?.status;
+        if (status && status !== "RUNNING" && status !== "READY") {
+          setSituacao(`A busca terminou como ${status}.`);
+          return;
+        }
+      }
+      setSituacao("Está demorando — dá pra trazer depois lá embaixo.");
+    } catch {
+      setSituacao("Falha de rede.");
+    } finally {
+      setRodando(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={adicionar}
+      className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface)] p-3"
+    >
+      <p className="text-[13px] text-[var(--ink)]">
+        <strong>Adicionar um vídeo por link</strong>{" "}
+        <span className="text-[var(--mute)]">— entra no acervo de todo mundo.</span>
+      </p>
+      <div className="flex gap-2">
+        <input
+          className={CAMPO}
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+          placeholder="https://www.tiktok.com/@perfil/video/123…"
+          inputMode="url"
+          disabled={rodando}
+        />
+        <button type="submit" className={BOTAO} disabled={rodando || !valido}>
+          {rodando ? "Adicionando…" : "Adicionar"}
+        </button>
+      </div>
+      {situacao && <p className="text-[12.5px] text-[var(--mute)]">{situacao}</p>}
+    </form>
+  );
+}
+
 export function FormBusca({ onPronto }: { onPronto: () => Promise<void> }) {
   const [nichos, setNichos] = useState("");
   const [perfis, setPerfis] = useState("");

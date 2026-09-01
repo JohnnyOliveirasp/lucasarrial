@@ -35,6 +35,8 @@
 const path = require("path");
 const { execFileSync } = require("child_process");
 const c = require(path.join(__dirname, "_comum.cjs"));
+// A lista de verdade dos ref_type de estorno (chamado #113).
+const { POR_FEATURE } = require(path.join(__dirname, "_estornos.cjs"));
 
 /**
  * Descobre quando a regua que esta NO AR entrou no ar de verdade.
@@ -184,10 +186,15 @@ function resume(linhas, rotulo) {
         ).slice(0, 70)}`
       );
     }
-    console.log(
-      "\nEstorno se confere por ref_type='generation_refund' em credit_transactions,"
-    );
-    console.log("NUNCA por kind (o estorno grava kind='extra_purchase').");
+    // ⚠️ Corrigido 23/08 (chamado #113): a instrução antiga mandava conferir
+    // por ref_type='generation_refund', e era repetida a cada ronda. São NOVE
+    // ref_type de estorno; esse é 9,4% deles, e o falso negativo daí paga o
+    // aluno em dobro. Lista completa em _estornos.cjs.
+    console.log("\nEstorno se confere por ref_type em credit_transactions, NUNCA por kind");
+    console.log("(o estorno grava kind='extra_purchase'). São NOVE ref_type de estorno —");
+    console.log(`para ÁUDIO é '${POR_FEATURE.audio}'; a lista completa está em _estornos.cjs.`);
+    console.log("⚠️ 'estorno_de_engano' e 'estorno' NÃO terminam em _refund: filtrar");
+    console.log("   por LIKE '%_refund' também deixa 17 linhas de fora.");
   } else {
     console.log("\nNenhuma falha de aluno na janela.");
   }

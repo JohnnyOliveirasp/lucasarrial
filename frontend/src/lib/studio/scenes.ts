@@ -26,15 +26,23 @@ const STILL_MODEL = "gpt-image-2-text-to-image";
 const VIDEO_MODEL = "grok-imagine-video-1-5-preview";
 // E3 (MAQUINA_EDICAO_AUTOMATICA.md §2.5): ritmo REAL — sem o pedido explícito
 // o Grok entrega tudo em câmera lenta/flutuante (regra 4 validada em produção).
+// SEM FALA (caso Fabio Fiuza, 26/08): o Grok inventa diálogo quando o prompt
+// não proíbe — e como todo o prompt é em inglês, as pessoas da cena falavam
+// INGLÊS por cima da narração do aluno. A fala do vídeo final vem SEMPRE do
+// clone de voz; a cena é b-roll e não deve falar nada.
+const SEM_FALA = "no speech, no dialogue, no talking, mouth closed, no lip movement";
+
 const MOTION_PROMPT =
   "subtle handheld camera movement, natural ambient motion, realistic, " +
-  "real-time everyday pacing, brisk — NOT slow-motion, not dreamy or floaty, no faces";
+  "real-time everyday pacing, brisk — NOT slow-motion, not dreamy or floaty, no faces, " +
+  SEM_FALA;
 
 /** C4: cena COM a pessoa — mesma pegada, sem o "no faces". */
 const MOTION_PROMPT_PERSON =
   "subtle handheld camera movement, natural ambient motion, realistic, " +
   "real-time everyday pacing, brisk — NOT slow-motion, not dreamy or floaty, " +
-  "keep the person's face consistent and natural";
+  "keep the person's face consistent and natural, " +
+  SEM_FALA;
 
 /**
  * C4: sufixo do still COM a pessoa (fotos de referência via image-to-image).
@@ -358,7 +366,31 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
         .update({ status: "ready", video_path: key, error_message: null } as never)
         .eq("id", scene.id);
     } catch (e) {
-      await failScene(scene, e instanceof Error ? `salvar cena: ${e.message}` : "salvar cena falhou");
+      // ⚠️ NÃO reprovar a cena aqui (incidente 147/148, 27/08).
+      //
+      // Chegar neste ponto significa que o Kie JÁ ENTREGOU o vídeo com sucesso
+      // (`info.state === "success"` acima) e que o problema foi NOSSO: baixar o
+      // arquivo ou gravá-lo no R2. Antes, o catch chamava `failScene`, que marca
+      // a cena `failed` e estorna — ou seja, tratava falha de INFRA como se a
+      // geração tivesse falhado, e jogava fora um vídeo que existia.
+      //
+      // Foi exatamente isso que matou 8 cenas de 3 alunos em 71 segundos: uma
+      // execução com `R2_BUCKET_*` ausente fez `imagesBucket()` devolver "" e o
+      // SDK estourar "No value provided for input HTTP label: Bucket". As 8
+      // tasks seguiam `state=success` no Kie, com os arquivos íntegros (1,1MB a
+      // 4,2MB) — recuperadas depois à mão, uma delas esperando havia 14 dias.
+      //
+      // A cena FICA em `animating`: o resultado continua no Kie e o sweep de 5
+      // min (`lib/studio/sweep-stuck-scenes.ts`) tenta de novo. Assim o erro se
+      // cura sozinho quando a causa (config, rede, R2 fora) passa, em vez de
+      // virar prejuízo permanente pro aluno. Só registra o motivo, sem estornar
+      // e sem mexer no status.
+      const motivo = e instanceof Error ? `salvar cena: ${e.message}` : "salvar cena falhou";
+      console.error("[studio-scene] falha ao GUARDAR resultado pronto", scene.id, motivo);
+      await admin
+        .from("studio_scenes")
+        .update({ error_message: motivo.slice(0, 300) } as never)
+        .eq("id", scene.id);
     }
   }
 }

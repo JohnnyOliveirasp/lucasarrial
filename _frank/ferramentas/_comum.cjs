@@ -12,6 +12,19 @@ const RAIZ = path.resolve(__dirname, "..", "..");
 const ENV = path.join(RAIZ, "frontend", ".env.local");
 require(path.join(RAIZ, "frontend", "node_modules", "dotenv")).config({ path: ENV });
 
+// O supabase-js monta um RealtimeClient no construtor e exige WebSocket global.
+// O Node 18 do servidor de producao nao tem (so veio no 22), e a ferramenta
+// morria antes de rodar uma linha: "Node.js 18 detected without native
+// WebSocket support". Nenhuma ferramenta daqui usa realtime — e so REST — entao
+// um stub inerte basta pra passar da construcao. Em Node novo isto nao faz nada.
+if (typeof globalThis.WebSocket === "undefined") {
+  globalThis.WebSocket = class {
+    constructor() {
+      throw new Error("realtime nao e usado pelas ferramentas do Frank");
+    }
+  };
+}
+
 const { createClient } = require(path.join(RAIZ, "frontend", "node_modules", "@supabase/supabase-js"));
 const s3 = require(path.join(RAIZ, "frontend", "node_modules", "@aws-sdk", "client-s3"));
 const presign = require(path.join(RAIZ, "frontend", "node_modules", "@aws-sdk", "s3-request-presigner"));
