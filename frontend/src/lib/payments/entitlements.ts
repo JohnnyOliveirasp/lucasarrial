@@ -7,10 +7,14 @@
  * rápido (middleware não precisa varrer entitlements a cada request).
  *
  * Mapeamento comprador↔usuário é por e-mail (lowercase). Se o e-mail da compra
- * não casar com nenhum usuário, o entitlement fica "órfão" (user_id NULL) e é
+ * não casar com nenhum usuário, o entitlement NASCE "órfão" (user_id NULL) e é
  * reconciliado quando o usuário aparecer (reconcileUserEntitlements).
+ *
+ * ⚠️ Órfã só NASCE órfã: o lookup por e-mail nunca DESVINCULA uma linha que já
+ * tem dono (incidente #222 — ver a guarda em `grantAccess` e `vinculo.ts`).
  */
 import { getAdmin } from "@/lib/db/admin";
+import { donoDoEntitlement } from "@/lib/payments/vinculo";
 import type {
   EntitlementStatus,
   EntitlementUpdate,
@@ -40,7 +44,32 @@ type RevokeInput = {
 export async function grantAccess(input: GrantInput): Promise<void> {
   const admin = getAdmin();
   const email = input.buyerEmail.trim().toLowerCase();
-  const userId = await findUserIdByEmail(email);
+
+  // ⚠️ O lookup por e-mail só ADICIONA dono, nunca REMOVE (incidente #222).
+  //
+  // Quando a compra foi feita com um e-mail que não tem perfil (comprou com um
+  // e-mail, criou a conta com outro), `findUserIdByEmail` devolve NULL. Sem a
+  // guarda abaixo o upsert gravava esse NULL POR CIMA do dono, desligando a
+  // compra da conta no próximo evento da Hotmart daquela assinatura — e, como
+  // `userId` ficava null, nem `recomputeProfileAccess` era chamado: o aluno
+  // perdia o acesso em silêncio. Era isso que fazia o conserto manual desses
+  // casos apodrecer sozinho, então a guarda tem que existir ANTES de vincular
+  // órfã na mão.
+  //
+  // Não achar perfil para o e-mail da compra é ausência de informação, não é
+  // a informação "esta compra não tem dono". A decisão mora em `vinculo.ts`,
+  // sob teste (`vinculo.test.ts`).
+  const userIdDoEmail = await findUserIdByEmail(email);
+  let userId = userIdDoEmail;
+  if (!userIdDoEmail) {
+    const { data: atual } = await admin
+      .from("entitlements")
+      .select("user_id")
+      .eq("provider", input.provider)
+      .eq("external_id", input.externalId)
+      .maybeSingle();
+    userId = donoDoEntitlement(userIdDoEmail, atual?.user_id ?? null);
+  }
 
   await admin.from("entitlements").upsert(
     {
