@@ -27,16 +27,33 @@ export type TechFailureArgs = {
   /** ref_type do estorno (aparece no extrato; também é a chave de idempotência). */
   refundRefType?: string;
   /**
-   * false = só estorna, sem e-mail (erro de INPUT do usuário, não falha nossa).
+   * false = só estorna, sem e-mail.
    *
-   * ⚠️ Isto NÃO é só sobre e-mail — é a classificação input×técnico, e ela vale
-   * também pro incidente da rajada (chamado #183, 29/08). Antes, o portão que
-   * lê este campo ficava DEPOIS do openBurstIncident, então o arquivo do aluno
-   * virava chamado técnico ABERTO na mesma fila em que o Johnny olha se o
-   * PRODUTO está quebrado. Hoje a informação é passada adiante em vez de
-   * descartada — ver `inputError` em openBurstIncident.
+   * ⚠️ ESTE CAMPO ESTÁ SOBRECARREGADO — NÃO o use para saber se a falha é do
+   * aluno. Ele quer dizer apenas "não mande e-mail agora", e há duas razões
+   * MUITO diferentes pra isso:
+   *   - erro de INPUT do aluno (studio/finalize.ts:105) — não é falha nossa;
+   *   - falha TÉCNICA NOSSA cujo e-mail já saiu por outro caminho:
+   *     `studio/face.ts:174` (o alerta já foi por segmento, aqui é só o
+   *     estorno) e `studio/scenes.ts:261` (cena reprovada no QA de texto
+   *     ilegível — defeito da NOSSA geração).
+   * Quem precisa da classificação input×técnico usa `userInputError`.
    */
   alertSupport?: boolean;
+  /**
+   * true = quem chamou classificou a falha como erro do ARQUIVO do aluno
+   * (no_speech, audio_too_long, video_too_long, video_sem_audio). É o único
+   * sinal válido pro `inputError` do `openBurstIncident` (#183).
+   *
+   * POR QUE EXISTE (medido 01/09): a primeira versão do #183 leu
+   * `alertSupport === false` como "erro do aluno". Como os dois call sites
+   * acima passam `false` em falha TÉCNICA, uma rajada de F4-rosto ou de cena
+   * reprovada no QA nasceria `ignored` — e `reopened = closed && !userError`
+   * faz ela NUNCA mais reabrir. Trocaria 1 falso positivo (ruído) por 2 falsos
+   * NEGATIVOS (cegueira em defeito nosso), que é o caro. Sem ocorrência
+   * medida ainda: a correção é antes do primeiro caso, não depois.
+   */
+  userInputError?: boolean;
 };
 
 /**
@@ -195,6 +212,29 @@ function isModerationBlock(rawError: string): boolean {
   return /nsfw|moderation|moderaç|conteúdo impróprio|content policy|flagged/i.test(rawError || "");
 }
 
+/**
+ * A decisão "esta rajada nasce fechada?" isolada do banco, PRA PODER SER
+ * TESTADA. Ela mora aqui e não inline no `openBurstIncident` porque foi
+ * exatamente esta linha que errou duas vezes: primeiro descartando a
+ * classificação (chamado #183), depois lendo o sinal errado (`alertSupport`,
+ * sobrecarregado — ver `userInputError` no tipo).
+ *
+ * Duas válvulas, que NÃO são a mesma coisa:
+ *  - moderação (regra do Johnny 17/08): nasce fechada SEMPRE;
+ *  - erro de INPUT: nasce fechada SÓ SE o aluno não estiver travado — erro de
+ *    input repetido em aluno sem nenhuma voz pronta é o sinal que o
+ *    `escalateStuckUser` existe pra não perder (foi calando esse sinal que o
+ *    bug do chunking rodou 18 dias).
+ */
+export function rajadaNasceFechada(a: {
+  rawError: string;
+  /** SÓ o classificador de input do aluno seta isto. Nunca `alertSupport`. */
+  inputError: boolean;
+  stuck: boolean;
+}): boolean {
+  return isModerationBlock(a.rawError) || (a.inputError && !a.stuck);
+}
+
 async function openBurstIncident(a: {
   refundRefType: string;
   feature: string;
@@ -205,26 +245,17 @@ async function openBurstIncident(a: {
   stuck: boolean;
   /**
    * true = quem chamou JÁ classificou a falha como erro de INPUT do aluno
-   * (`alertSupport: false`, ex.: no_speech, audio_too_long, video_too_long,
-   * video_sem_audio em studio/finalize.ts:47-50). Chamado #183.
+   * (no_speech, audio_too_long, video_too_long, video_sem_audio —
+   * studio/finalize.ts:47-50). Chamado #183.
+   *
+   * ⚠️ Vem do `userInputError`, NÃO de `alertSupport === false`: aquele campo
+   * também é false em falha técnica nossa (face.ts:174, scenes.ts:261).
    */
   inputError: boolean;
 }): Promise<void> {
   const admin = getAdmin();
-  // Duas válvulas de "isto não é defeito nosso", e elas NÃO são a mesma coisa:
-  //
-  //  - moderação (regra do Johnny 17/08): nasce fechada SEMPRE. Comportamento
-  //    inalterado de propósito — é ordem dele, não é meu de mexer.
-  //  - erro de INPUT (chamado #183): nasce fechada SÓ SE o aluno não estiver
-  //    travado. O `!a.stuck` aqui é deliberado e é a parte que não pode sumir:
-  //    erro de input REPETIDO num aluno sem nenhuma voz pronta é exatamente o
-  //    sinal que o escalateStuckUser existe pra não perder (comentário das
-  //    linhas 111-120: foi calando esse sinal que o bug do chunking rodou 18
-  //    dias). Silenciar aluno travado trocaria o ruído de hoje por uma
-  //    cegueira cara.
   const moderationBlock = isModerationBlock(a.rawError);
-  const inputErrorSilenciavel = a.inputError && !a.stuck;
-  const userError = moderationBlock || inputErrorSilenciavel;
+  const userError = rajadaNasceFechada({ rawError: a.rawError, inputError: a.inputError, stuck: a.stuck });
   const signature = `fail-burst:${a.refundRefType}:${a.userEmail}`;
   const now = new Date().toISOString();
   const { data: existingRaw } = await admin
@@ -350,10 +381,11 @@ export async function handleTechFailure(a: TechFailureArgs): Promise<void> {
           // vai embora calado. Entra no título pro Sentinela priorizar.
           stuck: await hasNoReadyVoice(a.userId),
           // Chamado #183: passa a classificação adiante em vez de descartá-la.
-          // Quem chamou já sabe se a falha é nossa ou do arquivo do aluno; essa
-          // informação morria aqui porque o portão `alertSupport === false` só
-          // aparece DEPOIS desta chamada, e por isso calava apenas o e-mail.
-          inputError: a.alertSupport === false,
+          // ⚠️ Sinal PRÓPRIO, não `alertSupport === false` — ver o comentário
+          // de `userInputError` no tipo: `alertSupport` também é false em
+          // falha técnica NOSSA (face.ts:174, scenes.ts:261), e lê-lo aqui
+          // faria essas duas classes nascerem `ignored` pra sempre.
+          inputError: a.userInputError === true,
         });
       }
     }
