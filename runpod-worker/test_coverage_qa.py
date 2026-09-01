@@ -893,6 +893,57 @@ class ChunkAlucinadoTest(unittest.TestCase):
         self.assertEqual(stats["exhausted"], 1)
 
 
+class ExhaustedScoreTest(unittest.TestCase):
+    """#226: o score do chunk ENTREGUE quando o QA esgota as tentativas.
+
+    Ate 01/09 so a CONTAGEM (`exhausted`) ia pro banco e o `best_score` morria
+    no log do worker — entao "esgotou" nao distinguia "20% rapido demais" de
+    "comeu uma palavra". Sem o numero, a flag nao prioriza nada."""
+
+    def test_esgotou_grava_score_e_lista(self):
+        # 1a ~0, 2a meia, 3a ~0 -> esgota entregando a MEIA (cobertura ~0,52).
+        seqs = iter([CHUNK_WORDS[:1], HALF_WORDS, CHUNK_WORDS[:1]])
+        stats = fresh_stats()
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(seqs)):
+            tts_qa.run_chunk_qa(
+                make_seg(), 0, CHUNK, regen_fn=make_seg,
+                qa_stats=stats, **qa_kwargs(coverage_qa_retries=3),
+            )
+        self.assertEqual(stats["exhausted"], 1)
+        # Faixa GRAVE: falta texto, entao o peso de cobertura (100+) tem que
+        # aparecer. E' isso que separa este caso de um desvio so de ritmo.
+        self.assertGreaterEqual(stats["exhausted_score_max"], 100)
+        self.assertEqual(stats["exhausted_scores"], [stats["exhausted_score_max"]])
+
+    def test_sem_esgotar_nao_grava_score(self):
+        # Cobertura cheia na 1a tentativa: score 0, sai pelo break limpo.
+        stats = fresh_stats()
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=CHUNK_WORDS):
+            tts_qa.run_chunk_qa(
+                make_seg(), 0, CHUNK, regen_fn=make_seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertEqual(stats["exhausted"], 0)
+        # Ausente, nao zero: "nao esgotou" e' diferente de "esgotou com 0".
+        self.assertNotIn("exhausted_score_max", stats)
+        self.assertNotIn("exhausted_scores", stats)
+
+    def test_score_max_guarda_o_PIOR_entre_chunks(self):
+        """O campo e' por GERACAO (o dict de stats atravessa os chunks): tem de
+        ficar com o pior chunk, senao o ultimo chunk mascara o estrago."""
+        stats = fresh_stats()
+        for _ in range(2):
+            seqs = iter([CHUNK_WORDS[:1], HALF_WORDS, CHUNK_WORDS[:1]])
+            with mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(seqs)):
+                tts_qa.run_chunk_qa(
+                    make_seg(), 0, CHUNK, regen_fn=make_seg,
+                    qa_stats=stats, **qa_kwargs(coverage_qa_retries=3),
+                )
+        self.assertEqual(stats["exhausted"], 2)
+        self.assertEqual(len(stats["exhausted_scores"]), 2)
+        self.assertEqual(stats["exhausted_score_max"], max(stats["exhausted_scores"]))
+
+
 class SplitBelowSentenceTest(unittest.TestCase):
     """split_below_sentence: o nivel 2 do resgate parte ABAIXO da frase —
     o split por frase nunca desce disso e deixava 'frase_unica' sem saida."""

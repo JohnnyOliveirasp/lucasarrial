@@ -341,6 +341,29 @@ def run_chunk_qa(
         if attempt >= max_attempts:
             _log("error", "inference.qa.exhausted", idx=idx, best_score=best_score)
             qa_stats["exhausted"] += 1
+            # O SCORE DO CHUNK ENTREGUE (#226): ate 01/09 o `exhausted` ia pro
+            # banco como CONTAGEM e o `best_score` morria no log do worker —
+            # entao "esgotou" era indistinguivel entre "saiu 20% rapido demais"
+            # e "comeu uma palavra". Sem o numero, a flag nao prioriza nada.
+            #
+            # COMO LER O SCORE (as faixas saem dos pesos deste mesmo laco):
+            #   < 50   -> so ritmo (int(60*desvio)): audio integro, so fora da
+            #             regua de velocidade. E' o caso BENIGNO.
+            #   50..99 -> intrusao (50 por intrusa): fala algo que nao estava
+            #             no texto; gate macio de proposito (fb8d29b7).
+            #   >= 100 -> cobertura (100+) ou fim abrupto (100): FALTA texto ou
+            #             o audio corta no meio da palavra. E' o caso GRAVE.
+            # Um score alto pode somar varios eixos; use como severidade, nao
+            # como diagnostico de um defeito unico.
+            pior = qa_stats.get("exhausted_score_max")
+            if pior is None or best_score > pior:
+                qa_stats["exhausted_score_max"] = best_score
+            # Lista pra distribuicao (nao so o pior). Teto de 50 pra nao inchar
+            # o jsonb num texto muito longo; o `exhausted` continua sendo a
+            # contagem verdadeira quando a lista satura.
+            scores = qa_stats.setdefault("exhausted_scores", [])
+            if len(scores) < 50:
+                scores.append(best_score)
             break
         qa_stats["regens"] += 1
         seg = regen_fn()
