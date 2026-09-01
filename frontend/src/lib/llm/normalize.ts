@@ -11,6 +11,8 @@
  * Usa fetch direto (sem @anthropic-ai/sdk) pra não exigir instalar dependência.
  */
 
+import { aplicaGuardaDeMandato } from "./mandato-normalizacao";
+
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const OPENAI_API = "https://api.openai.com/v1/chat/completions";
 
@@ -268,7 +270,14 @@ export async function normalizeTextForTTS(text: string): Promise<string> {
   for (const motor of [viaOpenAI, viaAnthropic]) {
     try {
       const out = await motor(text);
-      if (out && keepsOriginalWords(text, out)) return sanitizeForTTS(out);
+      if (out && keepsOriginalWords(text, out)) {
+        // GUARDA DE MANDATO (#192): desfaz a troca de palavra do aluno que o
+        // modelo faz fora do mandato ("clica" -> "clique"). `keepsOriginalWords`
+        // NÃO pega isso — ela exige 50% das palavras preservadas, e trocar 2
+        // palavras em 81 passa folgado. Roda ANTES do sanitize porque compara
+        // com o texto CRU do aluno, que é o que o sanitize ainda não tocou.
+        return sanitizeForTTS(aplicaGuardaDeMandato(text, out).texto);
+      }
     } catch {
       /* timeout, rede, parse — tenta o próximo motor */
     }
