@@ -15,6 +15,7 @@ import { filterAudioFiles, gatherAudioFromDataTransfer } from "@/lib/audio/colle
 import { listClips, deleteClip, type StoredClip } from "@/lib/audio/clip-store";
 import { MAX_ARQUIVOS_TREINO } from "@/lib/audio/entrega-gravador";
 import {
+  descontarDaMarca,
   lerMarcaGravacao,
   limparMarcaGravacao,
   type MarcaGravacao,
@@ -429,6 +430,7 @@ export function VoiceCreator() {
   }, [files.length, t, msgDescartados, medirItem]);
 
   function removeFile(id: string) {
+    const alvo = files.find((f) => f.id === id);
     setFiles((prev) => prev.filter((f) => f.id !== id));
     // Clipe do Gravador removido da lista → some do IndexedDB também
     // (senão ele reapareceria na próxima visita).
@@ -436,6 +438,10 @@ export function VoiceCreator() {
       const clipId = id.slice(4);
       recorderClipIds.current = recorderClipIds.current.filter((c) => c !== clipId);
       deleteClip(clipId).catch(() => {});
+      // O clipe deixou de existir — o bilhete tem que encolher junto. Sem
+      // isto ele continua dizendo "8 gravações, 22:14" e a tela acusa o aluno
+      // de ter PERDIDO gravações que ele mesmo acabou de remover.
+      setMarcaGravador(descontarDaMarca(alvo?.duration ?? 0));
     }
   }
 
@@ -692,7 +698,18 @@ export function VoiceCreator() {
         </p>
       )}
 
-      {leituraClipes !== "lendo" && files.length === 0 && (marcaGravador || leituraClipes === "erro") && (
+      {/*
+        `!recorderImport` é o que separa PERDA de REMOÇÃO. Se a importação
+        trouxe clipes nesta visita, o Gravador foi encontrado — uma lista vazia
+        depois disso é obra do próprio aluno (removeu tudo para subir arquivos
+        do disco), e acusá-lo de "gravação perdida" seria um susto falso numa
+        tela que está funcionando. Perda de verdade é chegar aqui SEM ter
+        importado nada, com bilhete existindo ou com a leitura quebrada.
+      */}
+      {leituraClipes !== "lendo" &&
+        !recorderImport &&
+        files.length === 0 &&
+        (marcaGravador || leituraClipes === "erro") && (
         <div className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-card)] px-3 py-3 text-sm leading-relaxed text-[var(--ink)]">
           <p className="font-medium text-[var(--status-warn)]">
             {marcaGravador

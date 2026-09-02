@@ -11,7 +11,7 @@ import {
   MAX_ARQUIVOS_TREINO,
   resumirEntregaDoGravador,
 } from "@/lib/audio/entrega-gravador";
-import { marcarGravacao } from "@/lib/audio/marca-gravacao";
+import { sincronizarMarcaGravacao } from "@/lib/audio/marca-gravacao";
 import { clientLogger } from "@/lib/logger/client";
 
 const SPEECH_RMS = 0.015; // acima disso considera fala
@@ -62,6 +62,12 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
   // estado vira aviso na tela.
   const [falhaLeitura, setFalhaLeitura] = useState(false);
   const [clipesNaoSalvos, setClipesNaoSalvos] = useState(0);
+  /**
+   * A lista de clipes já veio do IndexedDB? Enquanto for `false`, uma lista
+   * vazia NÃO é prova de que não há gravação — é só o estado inicial. Sem esta
+   * distinção o efeito da marca apagava o bilhete no mount (ver abaixo).
+   */
+  const [leituraConfiavel, setLeituraConfiavel] = useState(false);
 
   const ctxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -87,6 +93,8 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
       (stored) => {
         if (!alive) return;
         setClips(stored.map(toView));
+        // Só a partir daqui uma lista vazia significa "não há gravação".
+        setLeituraConfiavel(true);
       },
       (e: unknown) => {
         // Não dá pra ler o armazenamento deste navegador. Antes isso era
@@ -108,12 +116,20 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
   // Deixa o bilhete num armário DIFERENTE do IndexedDB (localStorage). É ele
   // que permite a tela de criar voz dizer "você gravou aqui e eu não achei
   // as gravações" em vez de abrir um formulário mudo (#235).
+  //
+  // ⚠️ Este efeito roda no MOUNT, quando `clips` ainda é `[]` porque o
+  // `listClips()` acima nem respondeu. Marcar zero aqui APAGARIA o bilhete só
+  // de abrir a página — e apagaria justamente para quem tem a leitura do
+  // IndexedDB quebrada, que é a vítima do #235. Por isso a decisão de apagar
+  // depende de `leituraConfiavel`, e mora em `sincronizarMarcaGravacao`
+  // (testada em marca-gravacao.test.ts).
   useEffect(() => {
-    marcarGravacao(
+    sincronizarMarcaGravacao(
+      leituraConfiavel,
       clips.length,
       clips.reduce((s, c) => s + c.seconds, 0),
     );
-  }, [clips]);
+  }, [clips, leituraConfiavel]);
 
   function teardownAudio() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);

@@ -31,15 +31,73 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
+/**
+ * Roda um pedido dentro de uma transação e só resolve quando a transação
+ * COMITA.
+ *
+ * 🐛 #235 (Alana): antes isto resolvia em `req.onsuccess`, que dispara ANTES
+ * do commit, e a transação em si não tinha `onabort` nem `onerror`. Um commit
+ * abortado — a forma típica de estourar cota / sofrer eviction no Safari iOS e
+ * no WebView antigo do Android — deixava a promise resolvida PARA SEMPRE:
+ * `saveClip()` dizia "salvei", o clipe entrava na lista da tela, a barra subia,
+ * a CTA liberava, e o áudio não existia em lugar nenhum. Era o mecanismo mais
+ * provável dos "20 min gravados e sumiu", e nenhum `.catch()` no chamador podia
+ * pegá-lo, porque nada rejeitava.
+ *
+ * Agora: `oncomplete` (commit feito) resolve; `onabort` e `onerror` rejeitam; e
+ * a conexão fecha nos TRÊS caminhos — antes só o commit feliz fechava, então
+ * cada abort vazava um IDBDatabase aberto.
+ */
 function tx<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest): Promise<T> {
   return openDb().then(
     (db) =>
       new Promise<T>((resolve, reject) => {
-        const t = db.transaction(STORE, mode);
-        const req = fn(t.objectStore(STORE));
-        req.onsuccess = () => resolve(req.result as T);
-        req.onerror = () => reject(req.error);
-        t.oncomplete = () => db.close();
+        let fechado = false;
+        const fechar = () => {
+          if (fechado) return;
+          fechado = true;
+          try {
+            db.close();
+          } catch {
+            /* já fechado pelo navegador — nada a fazer */
+          }
+        };
+
+        let t: IDBTransaction;
+        let req: IDBRequest;
+        try {
+          t = db.transaction(STORE, mode);
+          req = fn(t.objectStore(STORE));
+        } catch (e) {
+          // `transaction()` joga síncrono quando o store não existe ou o db já
+          // está fechando. Sem isto a promise ficava pendente para sempre.
+          fechar();
+          reject(e);
+          return;
+        }
+
+        let resultado: T | undefined;
+        let erroDoPedido: DOMException | null = null;
+        req.onsuccess = () => {
+          // Guarda o resultado, mas NÃO resolve: nada está salvo antes do
+          // commit. Quem resolve é `t.oncomplete`.
+          resultado = req.result as T;
+        };
+        req.onerror = () => {
+          // O erro sobe para a transação e a aborta; guardamos a causa real
+          // para a mensagem não sair vazia.
+          erroDoPedido = req.error;
+        };
+        t.oncomplete = () => {
+          fechar();
+          resolve(resultado as T);
+        };
+        const falhar = (rotulo: string) => () => {
+          fechar();
+          reject(t.error ?? erroDoPedido ?? new Error(rotulo));
+        };
+        t.onabort = falhar("IndexedDB: transação abortada");
+        t.onerror = falhar("IndexedDB: erro na transação");
       }),
   );
 }
