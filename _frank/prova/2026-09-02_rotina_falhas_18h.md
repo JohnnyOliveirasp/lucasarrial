@@ -103,6 +103,58 @@ afrouxou. Fica `investigating`, com nota 38.
 - Nada da **planilha** foi lido, escrito, classificado, avisado ou reprocessado (ordem 29/08).
 - Grupo: postado com `notify-grupo.sh`. **Nada foi para o privado do Johnny** (ordem 31/08).
 
+## Segundo caso: `d48e6a45` / `#235` + `b444afcb` / `#220` (Alana) — peguei e devolvi sem escrever
+
+O item da Katia saiu do meu colo (bola com ela), então segui para o próximo, como manda a
+regra 8. Aqui **não escrevi para a aluna, de propósito**, e a razão importa.
+
+### O que eu medi
+
+- **ZERO linhas em `voices`** para o user `70fca289`. Não é voz travada nem voz falhada: os
+  ~20min que ela e o marido gravaram em 01/09 **nunca criaram registro**.
+- Conta: criada 01/09, acesso ativo até **08/09**, **99.475 créditos**, compra 01/09
+  `canceled`. Único consumo: −525 de uma imagem em 02/09. **Crédito intacto**, nada cobrado
+  indevidamente.
+- `pagou_de_verdade`: **sob este e-mail** não há pagamento em Hotmart nem Stripe; a assinatura
+  do FastCloner é **R$ 0 trial**. Com a ressalva do próprio script (pode ter comprado com
+  outro e-mail). Pelos e-mails dela, o dinheiro foi em **dois cursos do Lucas**, e é deles que
+  ela pediu reembolso. **O risco comercial está do lado do Lucas, não numa cobrança nossa.**
+
+### A causa já estava achada — e o conserto não está no ar
+
+Card `c9d3e5d0` (coder, hoje 13:27→13:41) achou o que sangra:
+`saveClip(clip).catch(() => {})` em `voice-recorder.tsx`. O `setClips` roda de qualquer jeito,
+então **o clipe aparece na lista, a barra sobe, o CTA libera — e o áudio nunca foi salvo.**
+Explica os dois relatos dela: o de 01/09 ("gravamos 20min e sumiu") e o de hoje ("aparecem mas
+não deixam enviar").
+
+⚠️ **Conferido por mim, não pelo card:** o **PR #154** (`feat/gravador-nao-perde-audio`,
+commit `16bd72e`, 8 arquivos, +630/−58) foi aberto hoje **17:39:56Z** e está **OPEN**.
+`git log main..origin/feat/gravador-nao-perde-audio` devolve o commit — ou seja, **não está na
+main e não deployou**. *Card `completed` não é produção*, e esta é a terceira vez que a
+rotina registra isso.
+
+### Por que NÃO escrevi para ela
+
+Outra mão está na thread **agora**: uid 460 (17:28) e uid 462 (17:45) saíram minutos antes
+desta ronda. Escrever agora repetiria **exatamente** a falha que eu passei a primeira metade
+desta ronda consertando no `#47`. Um incidente, um dono.
+
+### A promessa que não dá para cumprir hoje
+
+O uid 462 prometeu a ela, às 17:45: *"alguém te acompanha passo a passo **até a voz ficar
+pronta**"*. **Com o PR #154 fora de produção, acompanhar ela agora a faz falhar de novo** — o
+clipe vai continuar aparecendo na lista sem ter sido salvo. Seria o **quarto dia**. A ordem
+correta é mergear e deployar primeiro, confirmar em produção, e **só então** acompanhá-la.
+
+### Por que não mergeei
+
+Não é recusa de decidir. O PR toca o caminho do gravador de **todos** os alunos, foi aberto há
+15 minutos, e este repositório já tem histórico de branch stale derrubando fix em produção
+(`onedrive-401`, `fix-image-upload-retry`, os 2 da cura de referência). Merge que muda
+produção para todo mundo eu **subo para decisão humana** — subi no grupo, com o link, marcado
+urgente. Nota 3 gravada no `d48e6a45`.
+
 ## Limites da minha prova, ditos na cara
 
 1. **Não ouvi o áudio.** Toda a minha afirmação é de **envelope** (forma do decaimento), não
@@ -114,3 +166,13 @@ afrouxou. Fica `investigating`, com nota 38.
    pausa do s5). Disse a ela que **não** resolve, o que é o lado seguro da afirmação.
 4. **Não sei se ela vai ficar.** Ela não respondeu até o fim desta ronda (último e-mail dela
    é o uid 423, 16:38). A bola está com ela, e o item saiu do meu colo.
+5. **No caso da Alana, não reproduzi o defeito do gravador.** Aceitei a causa do card
+   `c9d3e5d0` porque ela explica os dois relatos dela e o `saveClip(...).catch(() => {})` é
+   verificável por leitura. O que eu **medi** foi o efeito (zero linhas em `voices`) e o
+   estado do PR. **Não rodei o gravador no navegador.**
+6. **Não conferi se o `#220` e o `#235` são o mesmo defeito** ou dois. Tratei como a mesma
+   família porque a causa achada explica os dois, mas não provei que o menu sumido de 01/09
+   e o envio travado de 02/09 têm a mesma raiz.
+7. **Deixei `_frank/ferramentas/assinatura_em_dobro.cjs` untracked.** Não é meu e não é desta
+   ronda. Registro em vez de commitar trabalho de outro agente em silêncio — mesma posição
+   que o Vigia tomou em 16h.
