@@ -146,6 +146,7 @@ def measure_speech_rate_wps(
             passo = len(wavs) / RATE_MAX_CHUNKS
             wavs = [wavs[int(i * passo)] for i in range(RATE_MAX_CHUNKS)]
         amostras: list[float] = []
+        descartadas = 0
         for wav in wavs:
             txt = wav.with_suffix(".txt")
             if not txt.exists():
@@ -157,16 +158,24 @@ def measure_speech_rate_wps(
             falando = dur - sum(_silences_ms(wav)) / 1000.0
             if falando < 1.0:
                 continue
-            amostras.append(palavras / falando)
+            amostra = palavras / falando
+            # Amostra fora de [piso, teto] nao e fala rapida/lenta: e chunk cujo
+            # .txt nao casa com o .wav (ou silencio descontado em dobro). Entrar
+            # na mediana envenena a regua — caso Dr. Paulo (01/09): gravou 4,25
+            # quando a medicao oficial nos brutos da 2,95, e duas vozes de 31/08
+            # foram gravadas com o TETO (5,0) como se fosse medida.
+            if amostra < RATE_FLOOR_WPS or amostra > RATE_CEIL_WPS:
+                descartadas += 1
+                continue
+            amostras.append(amostra)
         if len(amostras) < RATE_MIN_CHUNKS:
-            log(level="info", event="train.rate.skipped", reason="poucas amostras", n=len(amostras))
+            log(level="info", event="train.rate.skipped", reason="poucas amostras",
+                n=len(amostras), descartadas=descartadas)
             return None
         amostras.sort()
-        bruto = amostras[len(amostras) // 2]
-        wps = round(max(RATE_FLOOR_WPS, min(RATE_CEIL_WPS, bruto)), 3)
-        log(level="info", event="train.rate.measured", n=len(amostras), bruto_wps=round(bruto, 3),
-            wps=wps, bateu_piso=wps == RATE_FLOOR_WPS and bruto < RATE_FLOOR_WPS,
-            bateu_teto=wps == RATE_CEIL_WPS and bruto > RATE_CEIL_WPS)
+        wps = round(amostras[len(amostras) // 2], 3)
+        log(level="info", event="train.rate.measured", n=len(amostras),
+            descartadas=descartadas, wps=wps)
         return wps
     except Exception as exc:
         log(level="error", event="train.rate.crashed", error=str(exc)[:300])

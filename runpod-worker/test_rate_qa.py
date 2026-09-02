@@ -201,11 +201,15 @@ class MeasureSpeechRateNoTreinoTest(unittest.TestCase):
         d = self._dataset(8, palavras_por_trecho=20, segundos=8.0, com_txt=False)
         self.assertIsNone(pacing.measure_speech_rate_wps(d))
 
-    def test_piso_e_teto(self):
+    def test_amostra_artefato_nao_vira_regua(self):
+        # 01/09: duas vozes de 31/08 foram gravadas com o TETO (5,0) como se
+        # fosse medida — o clamp transformava artefato (txt que nao casa com o
+        # wav) em regua persistida. Artefato agora e DESCARTADO por amostra, e
+        # sem amostras validas a medicao devolve None (QA fica no fallback).
         from voice_pipeline import pacing
         d = self._dataset(8, palavras_por_trecho=80, segundos=8.0)   # 10 pal/s: artefato
         with mock.patch.object(pacing, "_silences_ms", return_value=[]):
-            self.assertEqual(pacing.measure_speech_rate_wps(d), pacing.RATE_CEIL_WPS)
+            self.assertIsNone(pacing.measure_speech_rate_wps(d))
 
     def test_nunca_levanta(self):
         from voice_pipeline import pacing

@@ -167,6 +167,12 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
   opção de gravar pelo celular.
 - É PRA CÁ que vai todo mundo que pergunta "onde clico pra gravar", "cadê o
   microfone", "não acho o botão de gravar", "como gravo a minha voz".
+- Se o pathname do aluno é /app/voice-cloning/script, ele JÁ ESTÁ NO GRAVADOR.
+  🚫 NUNCA mande quem está aqui "ir pro menu Vozes → Gravador" (é mandar a
+  pessoa pra onde ela já está — incidente #217: a aluna do #215 voltou, a Fast
+  chamou a tela dela de "Nova voz" e a mandou pro Gravador, onde ela estava).
+  A resposta certa aqui é dizer que ela está no lugar certo e apontar o botão
+  de iniciar gravação NESTA tela (e o roteiro pra ler em voz alta).
 
 **(B) ENVIAR ÁUDIO JÁ GRAVADO → botão "+ Treinar nova voz"** (/app/voice-cloning/new)
 - Tela "Nova voz". É SÓ UPLOAD: arrasta ou escolhe arquivos de áudio/vídeo que
