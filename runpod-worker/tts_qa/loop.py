@@ -158,6 +158,68 @@ def registrar_cobertura(qa_stats: dict, best_coverage: "float | None") -> None:
     qa_stats["coverage_medio"] = round(soma / n, 4)
 
 
+def registrar_tail_interno(qa_stats: dict, tail_interno: "bool | None") -> None:
+    """Acumula o veredito de FRONTEIRA INTERNA do pedaco ENTREGUE (#234).
+
+    DUAS METRICAS DIFERENTES, e confundi-las foi o defeito que este codigo
+    conserta (02/09). Elas medem coisas distintas e as duas servem:
+
+      tail_interno_checked / _flagged / _sombra  (contadores POR TENTATIVA,
+        incrementados dentro do laco de `run_chunk_qa`)
+        -> medem PRESSAO DE REGEN: quantas TENTATIVAS ganhariam +100 se a
+           chave `TTS_TAIL_QA_INTERNO_MODO` virasse pra "reprovando". Contam
+           tentativas DESCARTADAS de proposito — e' exatamente isso que a
+           estimativa de custo do rollout precisa saber. NAO descrevem o audio
+           que o aluno recebeu.
+
+      tail_interno_entregue / _entregue_n  (registrados AQUI, pelo chamador)
+        -> medem a ENTREGA: de todos os pedacos que viraram audio do aluno,
+           quantos tinham a fronteira interna decepada. E' o numero que
+           responde "o #234 ainda chega no aluno?".
+
+    Prova de que uma nao substitui a outra: a geracao 97464f01 tem regens=19 e
+    tail_interno_checked=37 — 37 checagens pra um numero de chunks muito menor,
+    porque cada regen re-checa. Ler aquele 37 como "37 fronteiras entregues"
+    reportaria um alcance varias vezes maior que o real.
+
+    Campos:
+      tail_interno_entregue    — NUMERADOR: pedacos entregues com a fronteira
+                                 interna reprovada;
+      tail_interno_entregue_n  — DENOMINADOR: pedacos entregues em que a
+                                 fronteira interna teve VEREDITO (sem ele o
+                                 numerador nao distingue "bom" de "nao mediu",
+                                 mesmo motivo do `coverage_medido_n`);
+      tail_interno_entregue_sem_veredito — pedacos entregues SEM veredito
+                                 (ultimo chunk do arquivo, julgamento interno
+                                 desligado, ou medida inconclusiva/audio mudo).
+                                 Fecha a conta: entregues = n + sem_veredito.
+
+    ⚠️ QUEM CHAMA E' O CHAMADOR, DE PROPOSITO — mesma razao de
+    `registrar_cobertura` (leia o aviso de la, 26/08): o audio julgado dentro
+    de `run_chunk_qa` ainda pode ser jogado fora pelo resgate por subdivisao, e
+    no resgate quem entrega sao os SUB-PEDACOS. So o chamador sabe o que virou
+    entrega. Por isso a chamada mora nos mesmos pontos de
+    `registrar_cobertura` e NAO dentro do laco.
+
+    ⚠️ LIMITE HONESTO, igual ao da cobertura: os contadores so descrevem
+    entrega quando a geracao termina `ready`. Se um chunk posterior derrubar o
+    job, os pedacos ja registrados continuam na conta e o aluno nao recebeu
+    nada — leia estes campos filtrando por `status='ready'`.
+    """
+    if tail_interno is None:
+        qa_stats["tail_interno_entregue_sem_veredito"] = (
+            qa_stats.get("tail_interno_entregue_sem_veredito", 0) + 1
+        )
+        return
+    qa_stats["tail_interno_entregue_n"] = qa_stats.get("tail_interno_entregue_n", 0) + 1
+    # O numerador nasce em 0 junto com o denominador: campo AUSENTE com o
+    # denominador presente seria de novo "nao mediu" indistinguivel de "mediu e
+    # deu zero".
+    qa_stats["tail_interno_entregue"] = (
+        qa_stats.get("tail_interno_entregue", 0) + (1 if tail_interno else 0)
+    )
+
+
 def run_chunk_qa(
     seg,
     idx: int,
@@ -193,10 +255,17 @@ def run_chunk_qa(
     tentativas → devolve a MELHOR tentativa (menos eco; 1a palavra errada e
     texto faltando pesam mais), não a última.
 
-    Devolve (melhor_seg, cobertura_da_melhor). O CHAMADOR decide o que fazer
-    quando a cobertura da melhor tentativa ficou abaixo do mínimo: falhar o
-    job explícito, nunca entregar incompleto em silêncio (caso Katia 19/08 —
+    Devolve (melhor_seg, cobertura_da_melhor, maior_lacuna_da_melhor,
+    fronteira_interna_da_melhor). O CHAMADOR decide o que fazer quando a
+    cobertura da melhor tentativa ficou abaixo do mínimo: falhar o job
+    explícito, nunca entregar incompleto em silêncio (caso Katia 19/08 —
     ~30% do texto ausente saiu [ready] e custou 555 créditos).
+
+    O 4o valor (`bool | None`) é o veredito de fronteira INTERNA da tentativa
+    VENCEDORA — o que de fato vira entrega. None = sem veredito (último chunk
+    do arquivo, julgamento interno desligado, ou medida inconclusiva). Quem
+    acumula é o chamador, via `registrar_tail_interno`, pelo mesmo motivo da
+    cobertura: só ele sabe qual áudio virou entrega.
     """
     attempt = 0
     max_attempts = max(
@@ -205,6 +274,11 @@ def run_chunk_qa(
     )
     best_seg, best_score, best_coverage = seg, None, None
     best_lacuna = None
+    # Veredito de fronteira INTERNA da tentativa VENCEDORA (a que vira entrega).
+    # Os contadores `tail_interno_*` do laco contam TENTATIVA — inclusive as
+    # descartadas —, e por isso nao respondem "o aluno recebeu decepado?".
+    # Ver `registrar_tail_interno`.
+    best_tail_interno = None
     # Chunk ALUCINADO (#52, 27/08): cobertura ~0 nao e' "faltou um pedaco", e'
     # audio que nao e' o texto. Entre uma tentativa e outra NADA muda (mesmo
     # texto, mesmos parametros, sem seed) — o Ronald viu 6 falhas seguidas no
@@ -216,6 +290,9 @@ def run_chunk_qa(
         score = 0
         coverage = None
         lacuna_desta = None
+        # Resetado a cada volta DE PROPOSITO: e' o veredito DESTA tentativa,
+        # nao o acumulado. None = a fronteira interna nao foi julgada aqui.
+        interno_cortado_desta = None
         # Caso Katia 19/08: o `idx == 0` que havia aqui limitava o QA de 1a
         # palavra ao PRIMEIRO chunk — do 2o em diante o áudio podia começar no
         # meio do texto sem ninguém conferir (foi exatamente onde quebrou: o
@@ -331,7 +408,16 @@ def run_chunk_qa(
                     _log("info", "inference.tail_qa.palavra_curta", idx=idx,
                          attempt=attempt, interno=interno)
                     cortado = True
+            # ⚠️ ESTES CONTADORES SAO POR TENTATIVA (inclusive as descartadas):
+            # medem PRESSAO DE REGEN, "quantas tentativas ganhariam +100 se a
+            # chave virasse". Quem mede a ENTREGA e' `tail_interno_entregue*`,
+            # registrado pelo CHAMADOR a partir do valor devolvido aqui embaixo
+            # — a confusao entre as duas quase virou numero errado em relatorio
+            # (02/09). Os dois servem; nao troque um pelo outro.
             qa_stats[f"{pref}_checked"] = qa_stats.get(f"{pref}_checked", 0) + 1
+            if interno:
+                # `cortado` ja incorpora a 2a prova (palavra), quando ligada.
+                interno_cortado_desta = cortado
             if cortado is None:
                 qa_stats[f"{pref}_none"] = qa_stats.get(f"{pref}_none", 0) + 1
             elif cortado:
@@ -369,6 +455,7 @@ def run_chunk_qa(
         if best_score is None or score < best_score:
             best_seg, best_score, best_coverage = seg, score, coverage
             best_lacuna = lacuna_desta
+            best_tail_interno = interno_cortado_desta
         if score == 0:
             break
         attempt += 1
@@ -445,7 +532,8 @@ def run_chunk_qa(
             if cov2 is not None and cov2 > best_coverage:
                 qa_stats["coverage_idioma_corrigido"] = qa_stats.get("coverage_idioma_corrigido", 0) + 1
                 best_coverage, best_lacuna = cov2, lac2
-    # NAO registra a cobertura aqui: este audio ainda pode ser DESCARTADO pelo
-    # resgate por subdivisao. Quem registra e' o chamador, quando sabe o que
-    # virou entrega — ver `registrar_cobertura`.
-    return best_seg, best_coverage, best_lacuna
+    # NAO registra a cobertura nem a fronteira interna aqui: este audio ainda
+    # pode ser DESCARTADO pelo resgate por subdivisao. Quem registra e' o
+    # chamador, quando sabe o que virou entrega — ver `registrar_cobertura` e
+    # `registrar_tail_interno`.
+    return best_seg, best_coverage, best_lacuna, best_tail_interno

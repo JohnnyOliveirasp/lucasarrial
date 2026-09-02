@@ -6,7 +6,8 @@ loop.py, e a normalização de texto/número em text.py e numbers.py.
 
 Os 38 testes de test_coverage_qa.py cobrem exatamente estas funções.
 """
-from .loop import registrar_cobertura, run_chunk_qa, start_word_ok, transcribe_seg
+from .loop import (registrar_cobertura, registrar_tail_interno, run_chunk_qa,
+                   start_word_ok, transcribe_seg)
 from .metrics import chunk_coverage, chunk_intrusions, echo_leak_count, maior_lacuna
 from .numbers import digits_to_words
 from .text import norm_words
@@ -19,6 +20,7 @@ __all__ = [
     "maior_lacuna",
     "norm_words",
     "registrar_cobertura",
+    "registrar_tail_interno",
     "run_chunk_qa",
     "start_word_ok",
     "transcribe_seg",

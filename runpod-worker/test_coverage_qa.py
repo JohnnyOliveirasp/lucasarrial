@@ -124,7 +124,7 @@ class RunChunkQATest(unittest.TestCase):
         with mock.patch.object(
             tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(transcripts)
         ):
-            best, cov, _lac = tts_qa.run_chunk_qa(
+            best, cov, _lac, _ti = tts_qa.run_chunk_qa(
                 seg_ruim, 1, CHUNK, regen_fn=lambda: seg_bom,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -141,7 +141,7 @@ class RunChunkQATest(unittest.TestCase):
         stats = fresh_stats()
         transcriber = mock.Mock()
         with mock.patch.object(tts_qa.loop, "transcribe_seg", transcriber):
-            _best, cov, _lac = tts_qa.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.run_chunk_qa(
                 seg_mudo, 3, CHUNK, regen_fn=lambda: seg_mudo,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -167,7 +167,7 @@ class RunChunkQATest(unittest.TestCase):
         with mock.patch.object(
             tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(it)
         ):
-            _best, cov, _lac = tts_qa.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.run_chunk_qa(
                 make_seg(), 2, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -206,7 +206,7 @@ class RunChunkQATest(unittest.TestCase):
         # Transcrição None (whisper FALHOU) = inconclusivo → entrega sem regen.
         stats = fresh_stats()
         with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=None):
-            _best, cov, _lac = tts_qa.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.run_chunk_qa(
                 make_seg(), 1, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -325,7 +325,7 @@ class IntrusionLoopTest(unittest.TestCase):
         with mock.patch.object(
             tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(it)
         ):
-            best, cov, _lac = tts_qa.run_chunk_qa(
+            best, cov, _lac, _ti = tts_qa.run_chunk_qa(
                 seg_sujo, 0, CHUNK, regen_fn=lambda: seg_limpo,
                 qa_stats=stats, **qa_kwargs(intrusion_qa_enabled=True),
             )
@@ -339,7 +339,7 @@ class IntrusionLoopTest(unittest.TestCase):
         suja = tts_qa.norm_words("Por menos, " + CHUNK)
         stats = fresh_stats()
         with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=suja):
-            _best, cov, _lac = tts_qa.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.run_chunk_qa(
                 make_seg(), 0, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(intrusion_qa_enabled=True),
             )
@@ -485,7 +485,7 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
             tts_qa.loop, "transcribe_seg_autodetect",
             return_value=(self.EN_CERTO, "en", 0.99),
         ) as auto:
-            _best, cov, lac = tts_qa.loop.run_chunk_qa(
+            _best, cov, lac, _ti = tts_qa.loop.run_chunk_qa(
                 seg, 0, self.EN, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -507,7 +507,7 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
             tts_qa.loop, "transcribe_seg_autodetect",
             return_value=(HALF_WORDS, "pt", 0.99),
         ) as auto:
-            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -524,7 +524,7 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect"
         ) as auto:
-            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -540,7 +540,7 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
         ):
-            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -556,7 +556,7 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=([], "en", 0.5)
         ):
-            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -606,7 +606,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                _b, cov, _l = tts_qa.loop.run_chunk_qa(
+                _b, cov, _l, _ti = tts_qa.loop.run_chunk_qa(
                     seg, idx, CHUNK, regen_fn=lambda: seg,
                     qa_stats=stats, **qa_kwargs(),
                 )
@@ -629,7 +629,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                _b, cov, _l = tts_qa.loop.run_chunk_qa(
+                _b, cov, _l, _ti = tts_qa.loop.run_chunk_qa(
                     seg, idx, CHUNK, regen_fn=lambda: seg,
                     qa_stats=stats, **qa_kwargs(),
                 )
@@ -646,7 +646,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
         ) as auto:
-            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -668,7 +668,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                _b, cov, _l = tts_qa.loop.run_chunk_qa(
+                _b, cov, _l, _ti = tts_qa.loop.run_chunk_qa(
                     seg, idx, CHUNK, regen_fn=lambda: seg,
                     qa_stats=stats, **qa_kwargs(),
                 )
@@ -706,7 +706,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
         ):
-            _b, cov, _l = tts_qa.loop.run_chunk_qa(
+            _b, cov, _l, _ti = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg, qa_stats=stats, **qa_kwargs(),
             )
         self.assertEqual(round(cov, 4), round(cov_ruim, 4))
@@ -721,7 +721,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                _b, cov_sub, _l = tts_qa.loop.run_chunk_qa(
+                _b, cov_sub, _l, _ti = tts_qa.loop.run_chunk_qa(
                     seg, sub, CHUNK, regen_fn=lambda: seg, qa_stats=stats, **qa_kwargs(),
                 )
             entregar(stats, cov_sub)
@@ -757,7 +757,7 @@ class TelemetriaSegundaOpiniaoTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=(HALF_WORDS, "pt", 0.97)
         ) as auto:
-            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -780,7 +780,7 @@ class TelemetriaSegundaOpiniaoTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=([], "en", 0.88)
         ):
-            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -800,7 +800,7 @@ class TelemetriaSegundaOpiniaoTest(unittest.TestCase):
             tts_qa.loop, "transcribe_seg_autodetect",
             return_value=(tts_qa.norm_words(self.EN, "en"), "en", 0.99),
         ):
-            _best, cov, _lac = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
                 seg, 0, self.EN, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -859,7 +859,7 @@ class ChunkAlucinadoTest(unittest.TestCase):
     def test_duas_alucinadas_seguidas_param_o_laco(self):
         stats = fresh_stats()
         with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=CHUNK_WORDS[:1]):
-            _b, cov, _l = tts_qa.run_chunk_qa(
+            _b, cov, _l, _ti = tts_qa.run_chunk_qa(
                 make_seg(), 0, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(coverage_qa_retries=3),
             )
@@ -873,7 +873,7 @@ class ChunkAlucinadoTest(unittest.TestCase):
         seqs = iter([CHUNK_WORDS[:1], HALF_WORDS, CHUNK_WORDS[:1]])
         stats = fresh_stats()
         with mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(seqs)):
-            _b, cov, _l = tts_qa.run_chunk_qa(
+            _b, cov, _l, _ti = tts_qa.run_chunk_qa(
                 make_seg(), 0, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(coverage_qa_retries=3),
             )

@@ -267,6 +267,49 @@ class InferenciaPontaAPontaTest(unittest.TestCase):
         self.assertEqual(r["qa"]["regens"], 0)
         self.assertGreater(r["qa"]["coverage_checked"], 0, "o QA de completude rodou")
 
+    def _ouviu_tudo(self, seg, sr, m, lang, label):
+        return tts_qa.norm_words(FakeVoxCPM.gerados[-1], lang)
+
+    def test_fronteira_interna_e_registrada_por_PEDACO_ENTREGUE(self):
+        """#234 (02/09): a metrica de ENTREGA sai do caminho que grava o `qa`.
+
+        O texto vira 2 chunks: o 0 tem fronteira INTERNA (tem veredito) e o 1 e'
+        o fim do ARQUIVO (nao e' fronteira interna, entra em `_sem_veredito`).
+        A conta fecha em PEDACOS ENTREGUES, nao em tentativas.
+        """
+        with mock.patch.object(tts_qa.loop, "transcribe_seg",
+                               side_effect=self._ouviu_tudo):
+            r = handler.handler({"input": _clone_job()})
+        self.assertNotIn("error", r)
+        qa = r["qa"]
+        self.assertEqual(qa["regens"], 0, "nada regenerou: 1 tentativa por chunk")
+        self.assertEqual(qa["tail_interno_entregue_n"], 1)
+        self.assertEqual(qa["tail_interno_entregue"], 0, "o fake decai: nao e' decepado")
+        self.assertEqual(qa["tail_interno_entregue_sem_veredito"], 1, "o ultimo chunk")
+        # entregues = com veredito + sem veredito = os 2 chunks
+        self.assertEqual(qa["tail_interno_entregue_n"]
+                         + qa["tail_interno_entregue_sem_veredito"], 2)
+
+    def test_regen_NAO_infla_a_metrica_de_entrega(self):
+        """O defeito que este conserto mata: com regen, o contador por
+        TENTATIVA dispara (era ele que ia pro relatorio — 97464f01 tinha
+        tail_interno_checked=37 com regens=19) enquanto a ENTREGA continua
+        sendo 1 pedaco. Aqui toda tentativa sai decepada, no modo reprovando.
+        """
+        with mock.patch.dict(os.environ, {"TTS_TAIL_QA_INTERNO_MODO": "reprovando"}), \
+             mock.patch.object(tts_qa.loop, "transcribe_seg",
+                               side_effect=self._ouviu_tudo), \
+             mock.patch.object(tts_qa.loop, "fim_abrupto", return_value=True):
+            r = handler.handler({"input": _clone_job()})
+        self.assertNotIn("error", r)
+        qa = r["qa"]
+        self.assertGreater(qa["regens"], 0, "peso 100 regenerou")
+        self.assertGreater(qa["tail_interno_checked"], qa["tail_interno_entregue_n"],
+                           "o contador por tentativa TEM que ser maior — e' regen")
+        # ...e a entrega continua sendo UM pedaco interno, decepado.
+        self.assertEqual(qa["tail_interno_entregue_n"], 1)
+        self.assertEqual(qa["tail_interno_entregue"], 1)
+
     def test_buraco_CONTINUO_derruba_o_job_sem_subir_audio(self):
         # Metade final sumindo = o modelo comeu um pedaco (caso Katia 19/08).
         def so_a_metade(seg, sr, m, lang, label):
