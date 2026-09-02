@@ -8,12 +8,22 @@ FastCloner vai no **grupo**), `2026-08-29_desligar_vigia_e_frank.md` (planilha d
 
 | | entrada | saída |
 |---|---|---|
-| abertos (`open`+`investigating`) | **7** | **8** |
+| abertos (`open`+`investigating`) | **7** | **4** |
 | aguardando aluno | 10 | 10 |
 
-**A fila sobe de 7 para 8 porque eu REABRI um chamado que estava fechado errado.** Não é fila
-crescendo por descuido: é um defeito de 148 alunos que estava marcado como resolvido e seguia
-entregando. Manter o placar em 7 exigiria deixar a mentira no lugar.
+⚠️ **CORRIJO O MEU PRÓPRIO PLACAR — a primeira versão deste registro dizia "7 → 8" e estava
+errada.** Escrevi o número no meio da ronda e só fui conferir no banco depois de commitar. O que
+aconteceu: às **22:44:43–22:44:59Z**, enquanto eu trabalhava, **outro agente assinando `frank`
+fechou quatro chamados** — `#232`, `#235`, `#236` e `#238`. Somando a minha reabertura do `#226`,
+a fila fecha a ronda em **4 abertos**: `#47`, `#226`, `#234`, `#237`.
+
+O meu efeito sobre o placar foi **+1 (a reabertura)**, não a queda — a queda é trabalho de outro.
+Registro a distinção porque um placar que cai sozinho, lido daqui a uma semana, viraria crédito
+meu por serviço que não foi meu.
+
+**A reabertura continua sendo a entrega desta ronda.** É um defeito de 148 alunos que estava
+marcado como resolvido e seguia entregando; manter o placar menor exigiria deixar a mentira no
+lugar.
 
 ## Ordem serial — por que o `#226`
 
@@ -147,7 +157,36 @@ resolução**. 13 → 567 chars, 1 linha afetada, conferido na releitura.
 
 ---
 
-## §3 — `#236` (Animar Imagem com voz em inglês): por que NÃO fechei
+## §3 — `#236` (Animar Imagem com voz em inglês): eu não fechei, outro fechou, e eu concordo
+
+⚠️ **Este parágrafo foi reescrito depois que o banco me contradisse.** Deixo o raciocínio original
+abaixo porque ele ainda vale em parte — mas primeiro a correção, porque ela é contra mim.
+
+Decidi **não** fechar o `#236` alegando que a 2ª metade (PR #158) ainda não estava no ar: às
+**22:41Z** eu vi o deploy do `4782871` como `in_progress`. **Ele fechou verde às 22:43:46Z**, dois
+minutos depois, e outro agente fechou o chamado às 22:44:44Z citando exatamente isso. **A
+afirmação dele estava certa e a minha estava desatualizada** — conferi o run `33691576307` por
+conta própria antes de escrever isto.
+
+**Não reabri**, e o motivo importa para não virar zelo performático: a força da evidência aqui é
+oposta à do `#226`. Lá o `resolved_commit` era de outro subsistema e o código nunca mudou. Aqui o
+código é do subsistema certo, está na main, o deploy fechou verde e eu **conferi na máquina** a
+dependência que poderia tornar tudo um no-op silencioso — `stripAudioTrack` tem falha segura e
+devolve o vídeo **com** áudio se o ffmpeg faltar; entrei por ssh no servidor de produção e o
+binário está instalado, versão **6.1.1**.
+
+**O que continua sem prova, e deixei anotado no card com a receita:** **nenhum aluno animou imagem
+desde o deploy.** `image_generations` com `video_path` não nulo e `created_at > 21:30Z` devolve
+**zero** linhas; a última entrega `ready` é de 21:21:42Z, anterior às duas metades. O chamado está
+fechado com **prova de deploy, não com prova de entrega** — que é a mesma distinção que produziu o
+fechamento falso do `#226` às 16:59Z. A diferença é que aqui as outras evidências sustentam o
+fechamento e lá não sustentavam nenhuma.
+
+Receita anotada no `#236` para a próxima ronda (2 minutos, sem GPU e sem crédito): primeira linha
+`ready` posterior a 22:01:24Z, baixar o objeto do R2, `ffprobe` nos streams, zero `codec_type=audio`
+fecha a prova. Priorizando **tier Bronze** — Gold já saía mudo antes, então Gold mudo não prova nada.
+
+### Raciocínio original (mantido para histórico)
 
 Trabalhei, cheguei perto, e parei por falta de prova de produção. Registro onde parou:
 
