@@ -8,6 +8,7 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { r2, imagesBucket } from "@/lib/r2/client";
 import { getAdmin } from "@/lib/db/admin";
 import { kieGetTask, friendlyKieError } from "@/lib/kie/client";
+import { stripAudioTrack } from "@/lib/video/strip-audio";
 
 function pickExt(url: string, contentType: string | null): string {
   if (contentType?.includes("webm")) return "webm";
@@ -41,8 +42,37 @@ export async function finalizeSceneVideo(
 
   const contentType = res.headers.get("content-type");
   const ext = pickExt(resultUrl, contentType);
-  const bytes = Buffer.from(await res.arrayBuffer());
+  const baixado = Buffer.from(await res.arrayBuffer());
   const key = sceneVideoKey(userId, projectId, sceneId, ext);
+
+  // Tira a faixa de áudio ANTES de subir (mesmo tratamento do Animar Imagem,
+  // incidente #236 / PR #155). A cena usa os MESMOS modelos do Kie e o defeito
+  // se repete aqui: MEDIDO em 03/09 sobre clipes já em produção — 24/24 bronze
+  // (grok) e 11/11 prata (kling) subiram COM faixa aac, várias com pico de
+  // -2,7 dBFS (som alto, não resíduo); 8/8 gold (seedance) já sobem mudos,
+  // porque só a família seedance tem `generate_audio` em `buildVideoInput`.
+  // Grok, Kling v3-turbo e Hailuo 2.3 têm input fechado, sem campo de áudio,
+  // e o fallback de contingência troca o modelo por baixo (bronze→hailuo,
+  // gold→kling) — então gatear por tier não protege e o corte é incondicional.
+  //
+  // Onde isso aparecia pro aluno: `video-scene-grid.tsx` toca o clipe com
+  // `controls` e SEM `muted`, na tela de aprovação das cenas.
+  //
+  // SEGURO PARA A MONTAGEM FINAL (conferido em `render/worker.mjs` antes de
+  // aplicar): o worker já normaliza cada clipe com `-an` e monta o áudio final
+  // a partir do TTS (`-map 1:a` do audio.mp3), ou com `-an` quando
+  // `sem_narracao`. A trilha final NUNCA vem do clipe da cena, então remover a
+  // faixa aqui não muda um byte do render. Medido no clipe real 2576c81e: o
+  // h264 sai com o MESMO md5 e o quadro normalizado pelo worker também.
+  //
+  // Efeito colateral medido e aceito: o `-c copy -an` usa a seleção padrão do
+  // ffmpeg e, junto com o áudio, descarta a CAPA embutida (stream mjpeg com
+  // `attached_pic=1`) que o Grok manda. Não faz falta — o pôster do player vem
+  // de `scene.image_url` (a imagem da cena no R2), não da capa do contêiner —
+  // e ainda deixa a escolha de stream do worker sem ambiguidade.
+  //
+  // Nunca lança: se o ffmpeg falhar, volta o original e a entrega segue.
+  const bytes = await stripAudioTrack(baixado, ext);
 
   await r2.send(
     new PutObjectCommand({
