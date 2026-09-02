@@ -1588,7 +1588,9 @@
       "publisher": "Publicador",
       "lockPlan": "Suscríbete al plan para desbloquear esta herramienta.",
       "lockCredits": "Compra créditos para desbloquear esta herramienta.",
-      "lockCreditsMin": "Necesitas {n} créditos para usar esta herramienta."
+      "lockCreditsMin": "Necesitas {n} créditos para usar esta herramienta.",
+      "openMenu": "Abrir menú",
+      "closeMenu": "Cerrar menú"
     },
     "apiDocs": {
       "copied": "Copiado",

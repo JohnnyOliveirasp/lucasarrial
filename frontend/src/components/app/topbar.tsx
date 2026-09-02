@@ -3,10 +3,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
-import { LogOut, ChevronDown, Coins, UserCircle } from "lucide-react";
+import { LogOut, ChevronDown, Coins, UserCircle, Menu } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar } from "@/components/ui";
 import { LanguageToggle } from "@/components/language-toggle";
+import { useMobileNav } from "./mobile-nav";
 
 type Props = {
   email: string;
@@ -21,6 +22,7 @@ export function Topbar({ email, displayName, avatarUrl, creditsTotal, unlimited 
   const tShell = useTranslations("shell.topbar");
   const router = useRouter();
   const supabase = createClient();
+  const { open: menuAberto, alternar: alternarMenu } = useMobileNav();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -42,21 +44,35 @@ export function Topbar({ email, displayName, avatarUrl, creditsTotal, unlimited 
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-[var(--hairline)] bg-[var(--canvas)] px-6 lg:px-12">
-      <Link
-        href="/app/credits"
-        className="group flex items-center gap-2 font-mono text-[12px] tracking-[-0.01em] text-[var(--mute)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:text-[var(--ink)]"
-        title={tShell("creditsTitle")}
-      >
-        <Coins className="h-4 w-4 text-[var(--silver)] transition-colors group-hover:text-[var(--ink)]" />
-        {unlimited ? (
-          <span>{tShell("creditsUnlimited")}</span>
-        ) : (
-          <span>
-            <span className="text-[var(--ink)]">{creditsTotal.toLocaleString("pt-BR")}</span>{" "}
-            {tShell("credits")}
-          </span>
-        )}
-      </Link>
+      <div className="flex min-w-0 items-center gap-2">
+        {/* Hamburguer: só abaixo de lg, onde a sidebar é display:none. Sem ele
+            o aluno de celular fica sem navegação nenhuma (incidente #220). */}
+        <button
+          type="button"
+          onClick={alternarMenu}
+          aria-label={tShell("openMenu")}
+          aria-expanded={menuAberto}
+          aria-controls="menu-mobile"
+          className="-ml-2 inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--mute)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--surface-elevated)] hover:text-[var(--ink)] lg:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <Link
+          href="/app/credits"
+          className="group flex items-center gap-2 font-mono text-[12px] tracking-[-0.01em] text-[var(--mute)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:text-[var(--ink)]"
+          title={tShell("creditsTitle")}
+        >
+          <Coins className="h-4 w-4 text-[var(--silver)] transition-colors group-hover:text-[var(--ink)]" />
+          {unlimited ? (
+            <span>{tShell("creditsUnlimited")}</span>
+          ) : (
+            <span>
+              <span className="text-[var(--ink)]">{creditsTotal.toLocaleString("pt-BR")}</span>{" "}
+              {tShell("credits")}
+            </span>
+          )}
+        </Link>
+      </div>
       <div className="flex items-center gap-3">
         <LanguageToggle />
         <div ref={ref} className="relative">

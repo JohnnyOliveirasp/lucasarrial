@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { Sidebar } from "@/components/app/sidebar";
 import { Topbar } from "@/components/app/topbar";
+import { MobileNavProvider } from "@/components/app/mobile-nav";
 import { ConsentGate } from "@/components/app/consent-gate";
 import { PresencePinger } from "@/components/admin/presence-pinger";
 import { PurchaseAutoRefresh } from "@/components/app/purchase-auto-refresh";
@@ -82,23 +83,27 @@ export default async function AppLayout({
   const hasReadyVoice = (readyVoices ?? 0) > 0;
 
   return (
-    <div className="grid min-h-svh grid-cols-1 lg:grid-cols-[260px_1fr] bg-[var(--canvas)]">
-      <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} podeAbrirPainel={papel !== null} hasReadyVoice={hasReadyVoice} publisherAllowed={publisherAllowed} />
-      <div className="flex flex-col">
-        <Topbar
-          email={profile?.email ?? user.email ?? ""}
-          displayName={profile?.display_name ?? null}
-          avatarUrl={profile?.avatar_url ?? null}
-          creditsTotal={creditsTotal}
-          unlimited={unlimited}
-        />
-        {showPendingBanner && <PendingPaymentBanner />}
-        <main className="flex-1 px-6 py-10 lg:px-12">{children}</main>
+    // MobileNavProvider: o hamburguer mora na Topbar e o drawer mora na
+    // Sidebar — são irmãos, então o estado de aberto/fechado vive acima dos dois.
+    <MobileNavProvider>
+      <div className="grid min-h-svh grid-cols-1 lg:grid-cols-[260px_1fr] bg-[var(--canvas)]">
+        <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} podeAbrirPainel={papel !== null} hasReadyVoice={hasReadyVoice} publisherAllowed={publisherAllowed} />
+        <div className="flex flex-col">
+          <Topbar
+            email={profile?.email ?? user.email ?? ""}
+            displayName={profile?.display_name ?? null}
+            avatarUrl={profile?.avatar_url ?? null}
+            creditsTotal={creditsTotal}
+            unlimited={unlimited}
+          />
+          {showPendingBanner && <PendingPaymentBanner />}
+          <main className="flex-1 px-6 py-10 lg:px-12">{children}</main>
+        </div>
+        <ConsentGate />
+        <PresencePinger />
+        <PurchaseAutoRefresh />
+        <HelpWidget />
       </div>
-      <ConsentGate />
-      <PresencePinger />
-      <PurchaseAutoRefresh />
-      <HelpWidget />
-    </div>
+    </MobileNavProvider>
   );
 }

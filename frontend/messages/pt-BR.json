@@ -1588,7 +1588,9 @@
       "publisher": "Publicador",
       "lockPlan": "Assine o plano para liberar esta ferramenta.",
       "lockCredits": "Compre créditos para liberar esta ferramenta.",
-      "lockCreditsMin": "Você precisa de {n} créditos para usar esta ferramenta."
+      "lockCreditsMin": "Você precisa de {n} créditos para usar esta ferramenta.",
+      "openMenu": "Abrir menu",
+      "closeMenu": "Fechar menu"
     },
     "apiDocs": {
       "copied": "Copiado",
