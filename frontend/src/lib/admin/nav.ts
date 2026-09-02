@@ -15,13 +15,19 @@ export type AdminNavItem = {
   roles?: readonly AdminRole[];
 };
 
-/** O suporte trabalha em duas telas: chamados e o painel da Fast. */
+/**
+ * O suporte trabalha em chamados, no painel da Fast e — desde 02/09 — na fila
+ * do SGP. O SGP entra pro suporte DE PROPÓSITO: a tela foi pedida pelo Lucas
+ * justamente pra equipe dele ver sozinha quem já foi feito e quem precisa ser
+ * cobrado. Sem `roles`, ela nasceria admin-only e não serviria pra nada.
+ */
 const AMBOS = ["admin", "suporte"] as const;
 
 export const ADMIN_NAV: readonly AdminNavItem[] = [
   { href: "/admin", label: "Visão geral", exact: true },
   { href: "/admin/usuarios", label: "Usuários", exact: false },
   { href: "/admin/falhas", label: "Falhas", exact: false, roles: AMBOS },
+  { href: "/admin/sgp", label: "SGP", exact: false, roles: AMBOS },
   { href: "/admin/campanhas", label: "Campanhas", exact: false },
   { href: "/admin/cortesias", label: "Cortesias", exact: false },
   { href: "/admin/agente", label: "Agente", exact: false, roles: AMBOS },
