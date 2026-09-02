@@ -6,6 +6,7 @@ import { useRouter } from "@/i18n/navigation";
 import { IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
 import { putToR2 } from "@/lib/images/upload";
 import { paraFormatoAceito } from "@/lib/images/qualquer-formato";
+import { criarFila } from "@/lib/sgp/fila";
 import { CIENCIA_FOTO, SGP_FOTOS_MAX, SGP_FOTOS_MIN, type SgpFoto } from "@/lib/sgp/types";
 import { SgpFotoCard, type EstadoFoto } from "./sgp-foto-card";
 import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
@@ -24,6 +25,9 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement | null>(null);
   const trocando = useRef<string | null>(null);
+  // Só a CONFIRMAÇÃO anda uma de cada vez; o upload pro R2 segue paralelo.
+  // Defesa em profundidade do #238 — a trava de verdade é no banco.
+  const fila = useRef(criarFila());
 
   const [fotos, setFotos] = useState<EstadoFoto[]>(() =>
     iniciais.map(({ foto, url }) =>
@@ -83,11 +87,13 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
       await putToR2(upload_url, file, file.type);
 
       patch(id, { id, preview, fase: "analisando" });
-      const j = await fetch("/api/v1/sgp/foto", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key }),
-      });
+      const j = await fila.current(() =>
+        fetch("/api/v1/sgp/foto", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key }),
+        }),
+      );
       if (j.status === 202) return patch(id, { id, preview, fase: "indeciso", mensagem: t("indeciso") });
       if (!j.ok) throw new Error(await mensagemDe(j, t("erroAnalise")));
       const { foto } = (await j.json()) as { foto: SgpFoto };

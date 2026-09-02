@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { formatDuration, measureAudioDuration } from "@/lib/audio/duration";
 import { putToR2 } from "@/lib/images/upload";
+import { criarFila } from "@/lib/sgp/fila";
 import { CIENCIA_AUDIO, SGP_AUDIO_MAX_SEGUNDOS, SGP_AUDIO_MIN_SEGUNDOS, type SgpAudio } from "@/lib/sgp/types";
 import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
 
@@ -26,6 +27,9 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
   const t = useTranslations("sgp.audio");
   const router = useRouter();
   const input = useRef<HTMLInputElement | null>(null);
+  // Confirmação uma de cada vez (o upload segue paralelo) — defesa em
+  // profundidade do #238. A trava de verdade é no banco.
+  const fila = useRef(criarFila());
   const [itens, setItens] = useState<Item[]>(() =>
     iniciais.map((a) =>
       a.status === "aprovado"
@@ -85,11 +89,13 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
       await putToR2(upload_url, file, tipo);
 
       patch(id, { id, nome, fase: "analisando" });
-      const j = await fetch("/api/v1/sgp/audio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, nome }),
-      });
+      const j = await fila.current(() =>
+        fetch("/api/v1/sgp/audio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, nome }),
+        }),
+      );
       if (j.status === 202) return patch(id, { id, nome, fase: "indeciso", mensagem: t("indeciso"), key });
       if (!j.ok) throw new Error(await mensagemDe(j, t("erroAnalise")));
       const { audio } = (await j.json()) as { audio: SgpAudio };

@@ -9,9 +9,7 @@ import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedPut, isAllowedAudioMime } from "@/lib/r2/presigned";
 import { pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
-import { SGP_AUDIO_MAX_SEGUNDOS } from "@/lib/sgp/types";
-
-const MAX_ARQUIVOS = 20;
+import { SGP_AUDIO_MAX_ARQUIVOS as MAX_ARQUIVOS, SGP_AUDIO_MAX_SEGUNDOS } from "@/lib/sgp/types";
 
 export async function POST(request: NextRequest) {
   let body: { filename?: unknown; content_type?: unknown };
