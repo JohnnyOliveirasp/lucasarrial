@@ -24,6 +24,7 @@
  * três avisos do mesmo problema.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { limparFechamento } from "@/lib/incidents/closure";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { parseBounce, planoDoBounce, type AcaoDeBounce, type Bounce } from "./mail-bounce";
 
@@ -103,7 +104,15 @@ async function reabrirPorBounce(email: string, motivo: string): Promise<number[]
       const nota = { at: agora, by: "sistema", note: `Reaberto: a resposta NÃO chegou no aluno. ${motivo}` };
       const { error } = await admin
         .from("incidents" as never)
-        .update({ status: "open", last_seen_at: agora, agent_notes: [...(l.agent_notes ?? []), nota] } as never)
+        .update({
+          status: "open",
+          // Reabre linha que estava "fixed" (ver STATUS_QUE_O_BOUNCE_DESMENTE):
+          // sem limpar, o chamado volta pra open carregando o carimbo do
+          // fechamento que o bounce acabou de desmentir.
+          ...limparFechamento(),
+          last_seen_at: agora,
+          agent_notes: [...(l.agent_notes ?? []), nota],
+        } as never)
         .eq("id", l.id);
       if (!error && l.numero != null) reabertos.push(l.numero);
     }
