@@ -49,7 +49,7 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
 
   const { data: existingRaw } = await admin
     .from("incidents" as never)
-    .select("id, numero, status, occurrences, affected_emails")
+    .select("id, numero, status, occurrences, affected_emails, title")
     .eq("signature", c.signature)
     .order("last_seen_at", { ascending: false })
     .limit(1)
@@ -60,10 +60,37 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
     status: string;
     occurrences: number;
     affected_emails: string[];
+    title: string | null;
   } | null;
 
   if (existing) {
     const reopened = existing.status === "fixed" || existing.status === "ignored";
+    const tituloNovo = c.title.slice(0, 120);
+    /**
+     * ⚠️ TÍTULO E DESCRIÇÃO TÊM QUE ANDAR JUNTOS (#213, 31/08).
+     *
+     * Até aqui a ocorrência nova sobrescrevia a `description` e NÃO mexia no
+     * `title`. Como a assinatura do chat é por PESSOA (`help:atend:<email>`,
+     * help/route.ts:170) e não por problema, o mesmo aluno perguntando outra
+     * coisa cai no MESMO chamado — e o registro passava a se contradizer:
+     * título do pedido VELHO, descrição do pedido NOVO.
+     *
+     * Não é cosmético. No #213 o título dizia "aluno quer saber como apagar
+     * fotos" (já respondido e fechado às 19h38Z) enquanto a descrição, às
+     * 20h45Z, já era "insatisfeito com o realismo dos dentes no Vídeo Clone".
+     * Quem pega a fila pelo título trabalha no problema errado, e a reclamação
+     * que está de fato esperando fica invisível.
+     *
+     * Agora os dois andam juntos. E o título velho NÃO é destruído em
+     * silêncio: quando o assunto muda, ele fica preservado no corpo da
+     * descrição, porque o pedido anterior pode ter ficado sem resposta.
+     */
+    const mudouDeAssunto = !!existing.title && existing.title !== tituloNovo;
+    const description = mudouDeAssunto
+      ? `${c.description}\n\n⚠️ ASSUNTO MUDOU (ocorrência ${(existing.occurrences ?? 1) + 1}). ` +
+        `O pedido anterior deste mesmo chamado era: "${existing.title}". ` +
+        `Confira se ELE já foi respondido antes de tratar só o de agora.`
+      : c.description;
     await admin
       .from("incidents" as never)
       .update({
@@ -71,7 +98,8 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
         occurrences: (existing.occurrences ?? 1) + 1,
         last_seen_at: now,
         sample_error: (c.sampleError ?? "").slice(0, 1000) || null,
-        description: c.description,
+        title: tituloNovo,
+        description,
         ...(c.attachments?.length ? { attachment_path: c.attachments.join(",") } : {}),
       } as never)
       .eq("id", existing.id);
