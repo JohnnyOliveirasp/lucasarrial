@@ -19,7 +19,12 @@
  *
  * Uso (de qualquer pasta):
  *   node _frank/ferramentas/fabricar_referencia.cjs <voiceId> [--confirmar] [--top 5] [--escolher 2]
- *   Cache: a transcrição fica em frontend/_Bugs/chamado_108_referencias/<voz>/raw.whisper.json
+ *                                                            [--sem-prompt]
+ *   Cache: a transcrição fica em frontend/_Bugs/chamado_108_referencias/<voz>/
+ *          raw.whisper.<prompt|cru>.json — a CHAVE inclui o prompt, então
+ *          trocar o prompt não lê a transcrição velha por engano (e a antiga
+ *          fica guardada pra comparação). `raw.whisper.json` (sem sufixo, das
+ *          medições até 30/08) continua sendo lido como cache do modo cru.
  */
 const path = require("node:path");
 const fs = require("node:fs");
@@ -29,11 +34,33 @@ require(path.join(c.RAIZ, "frontend", "node_modules", "dotenv")).config({ path: 
 
 const VOICE = process.argv[2];
 const CONFIRMAR = process.argv.includes("--confirmar");
+const SEM_PROMPT = process.argv.includes("--sem-prompt");
 const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
 const TOP = parseInt(arg("--top") || "5", 10);
 const ESCOLHER = parseInt(arg("--escolher") || "1", 10); // qual candidata aplicar (1 = melhor)
 const ALVO = -23, MIN_S = 18, MAX_S = 30, PAUSA_MAX = 1.2;
-if (!VOICE) { console.log(fs.readFileSync(__filename, "utf8").split("*/")[0]); process.exit(0); }
+
+/** PROMPT do whisper — é o que devolve a PONTUAÇÃO, e sem pontuação a
+ *  ferramenta não tem como achar fim de frase.
+ *
+ *  POR QUE (voz 1d332ef0, medido 02/09): a chamada era feita SEM `prompt`. Na
+ *  gravação de 3597s o whisper devolveu **10 fins de frase em 4.866 palavras**
+ *  (um a cada ~487) e portanto **0 candidatas** — nenhuma janela de 18-30s cai
+ *  entre duas marcas tão raras. A ferramenta anunciava "nenhuma candidata", que
+ *  o operador lê como "esta voz não tem trecho aproveitável": falso impossível.
+ *  Raiz DIFERENTE do bug da Katia (#233): lá a pontuação existia e caía no meio
+ *  do segmento (curado em marcarFimDeFrase); aqui ela não existia no texto.
+ *
+ *  O `prompt` do whisper entra como "texto anterior" e enviesa o ESTILO da
+ *  saída, inclusive a pontuação. Não é heurística de energia nem de pausa
+ *  (as duas proibidas pela ordem de 20/08): continua sendo o whisper marcando
+ *  fim de frase, só que agora ele marca. */
+const PROMPT_PT = "Olá, tudo bem? Então, deixa eu te contar uma coisa. " +
+  "Hoje eu vou falar sobre o meu trabalho, sobre o que eu faço no dia a dia. " +
+  "Muita gente me pergunta como começar. A resposta é simples: comece. " +
+  "Você entendeu? Ótimo. Vamos em frente, que eu tenho bastante coisa pra mostrar.";
+
+if (!VOICE && require.main === module) { console.log(fs.readFileSync(__filename, "utf8").split("*/")[0]); process.exit(0); }
 
 const ff = (args) => { const r = spawnSync("ffmpeg", args, { encoding: "utf8" }); return (r.stderr || "") + (r.stdout || ""); };
 function medir(file) {
@@ -44,12 +71,21 @@ function medir(file) {
 const TERMINAL = /[.!?…]["»”)]*$/;
 const RETICENCIAS = /\.\.\.$|…$/;
 
-async function transcrever(mp3, dest) {
+/** Caminho do cache da passada longa. A chave inclui o prompt: transcrição com
+ *  prompt e sem prompt são saídas DIFERENTES e não podem dividir o mesmo
+ *  arquivo (foi o que quase escondeu esta medição). O modo cru continua caindo
+ *  no `raw.whisper.json` histórico, então nada do que já foi medido se perde. */
+function cacheTranscricao(dir, prompt) {
+  return path.join(dir, prompt ? "raw.whisper.prompt.json" : "raw.whisper.json");
+}
+
+async function transcrever(mp3, dest, prompt) {
   if (fs.existsSync(dest)) return JSON.parse(fs.readFileSync(dest, "utf8"));
   const fd = new FormData();
   fd.append("file", new Blob([fs.readFileSync(mp3)], { type: "audio/mpeg" }), "raw.mp3");
   fd.append("model", "whisper-1"); fd.append("language", "pt"); fd.append("response_format", "verbose_json");
   fd.append("timestamp_granularities[]", "word"); fd.append("timestamp_granularities[]", "segment");
+  if (prompt) fd.append("prompt", prompt);
   const r = await fetch("https://api.openai.com/v1/audio/transcriptions", { method: "POST", headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, body: fd });
   const j = await r.json(); if (!r.ok) throw new Error("whisper: " + JSON.stringify(j).slice(0, 200));
   fs.writeFileSync(dest, JSON.stringify(j)); return j;
@@ -148,7 +184,7 @@ function pontuar(cands, raw, dir, total) {
   return pre.sort((a, b) => b.score - a.score);
 }
 
-(async () => {
+async function principal() {
   const s = c.supa();
   const { data: v } = await s.from("voices").select("id,name,user_id,raw_audio_paths,reference_audio_path,reference_transcript,language").eq("id", VOICE).single();
   if (!v) throw new Error("voz não encontrada");
@@ -168,7 +204,9 @@ function pontuar(cands, raw, dir, total) {
   if (!fs.existsSync(mp3)) execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", raw, "-ac", "1", "-ar", "16000", "-b:a", "48k", mp3]);
   const total = parseFloat(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", raw]).toString());
   console.log(`voz "${v.name}" · bruto ${Math.round(total)}s · ref atual: ${v.reference_audio_path}\n  transcript atual: …${(v.reference_transcript || "").slice(-70)}`);
-  const j = await transcrever(mp3, path.join(dir, "raw.whisper.json"));
+  const prompt = SEM_PROMPT ? null : PROMPT_PT;
+  const j = await transcrever(mp3, cacheTranscricao(dir, prompt), prompt);
+  console.log(`transcrição: ${prompt ? "COM prompt de pontuação" : "crua (--sem-prompt)"} · cache ${path.basename(cacheTranscricao(dir, prompt))}`);
   const al = marcarFimDeFrase(j.words, j.segments);
   const fins = al.W.filter((w) => w.fim).length;
   const fimDeSegmento = j.segments.filter((g) => TERMINAL.test((g.text || "").trim())).length;
@@ -220,4 +258,12 @@ function pontuar(cands, raw, dir, total) {
   if (upd[0].reference_transcript !== TRANSCRIPT) throw new Error("o banco devolveu texto diferente do gravado");
   console.log(`✅ referência fabricada no lugar · backup áudio: ${bak} · transcript antigo em ${dir}`);
   console.log(`   conferido DEPOIS de gravar: 1 linha, transcript do banco == transcript do clipe (${soLetras2(upd[0].reference_transcript).length} palavras)`);
-})().catch((e) => { console.error("FALHOU:", e.message); process.exit(1); });
+}
+
+// Exporta as partes PURAS pra medir sem tocar em banco, R2 nem GPU
+// (usado por medir_pontuacao.cjs). Só roda de verdade quando chamado direto.
+module.exports = { marcarFimDeFrase, candidatas, transcrever, cacheTranscricao, PROMPT_PT, TERMINAL, MIN_S, MAX_S, PAUSA_MAX };
+
+if (require.main === module) {
+  principal().catch((e) => { console.error("FALHOU:", e.message); process.exit(1); });
+}
