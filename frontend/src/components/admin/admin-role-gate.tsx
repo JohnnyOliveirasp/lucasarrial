@@ -31,7 +31,7 @@ export function AdminRoleGate({
           Esta área não faz parte do seu acesso
         </h1>
         <p className="mt-1 text-sm text-[var(--mute)]">
-          Seu perfil é de suporte: você trabalha em Falhas e no Agente.
+          Seu perfil é de suporte: você trabalha em Falhas, SGP e no Agente.
         </p>
       </div>
       <Link
