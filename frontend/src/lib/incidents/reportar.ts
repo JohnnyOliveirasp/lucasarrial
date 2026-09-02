@@ -13,6 +13,7 @@
  * Server-only. As tabelas da mig 47 não estão nos types gerados → `as never`.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { limparFechamento } from "./closure";
 import { inserirChamadoUnico } from "./gravar";
 
 export type ChamadoReportado = {
@@ -95,6 +96,20 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
       .from("incidents" as never)
       .update({
         status: reopened ? "open" : existing.status,
+        /**
+         * REABERTURA AUTOMÁTICA LIMPA O CARIMBO (02/09).
+         *
+         * Só quando `reopened`: aqui a mesma escrita também serve pro bump de
+         * ocorrência de um chamado que continua no status em que estava. Se a
+         * limpeza fosse incondicional, uma ocorrência nova num chamado ainda
+         * FECHADO apagaria a data do fechamento legítimo dele.
+         *
+         * Sem isto o chamado voltava pra "open" carregando resolved_at/by/
+         * commit do fechamento anterior — o registro afirmava aberto E
+         * resolvido ao mesmo tempo. É o sexto conserto desta família; o
+         * porquê de ela reincidir está em ./closure.ts.
+         */
+        ...(reopened ? limparFechamento() : {}),
         occurrences: (existing.occurrences ?? 1) + 1,
         last_seen_at: now,
         sample_error: (c.sampleError ?? "").slice(0, 1000) || null,

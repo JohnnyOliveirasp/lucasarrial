@@ -18,6 +18,7 @@
  * ⚠️ Não é "aguardando_aluno" — a bola está com o time, não com o aluno.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { limparFechamento } from "./closure";
 import { sendAgentText } from "@/lib/agent/provider";
 import { gruposDoTime } from "@/lib/support/grupo";
 
@@ -111,8 +112,10 @@ export async function entregarAoTime(e: EntregaAoTime): Promise<boolean> {
       .from("incidents" as never)
       .update({
         status: "investigating",
-        resolved_at: null,
-        resolved_by: null,
+        // Era `resolved_at: null, resolved_by: null` escrito na mão — e
+        // esquecia `resolved_commit`. Foi esta linha que deixou #171, #192,
+        // #202 e #226 em "investigating" com commit de fechamento órfão.
+        ...limparFechamento(),
         agent_notes: [...(linha.agent_notes ?? []), { at: agora, by: "carol", note: nota }],
       } as never)
       .eq("id", linha.id);

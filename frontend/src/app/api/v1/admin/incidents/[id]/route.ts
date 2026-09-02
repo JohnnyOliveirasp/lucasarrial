@@ -6,6 +6,7 @@ import type { NextRequest } from "next/server";
 import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { closureFields } from "@/lib/incidents/closure";
 import { logger } from "@/lib/logger/server";
 
 export const dynamic = "force-dynamic";
@@ -35,18 +36,16 @@ export async function PATCH(
   // ficava sem resolved_at e sumia de qualquer consulta que filtra por data
   // de fechamento. Quem fecha nao pode precisar LEMBRAR de gravar o campo -
   // no dia 20/08 quem sabia do incidente esqueceu assim mesmo.
-  if (status === "fixed" || status === "ignored") {
-    update.resolved_by = g.auth.email;
-    update.resolved_at = new Date().toISOString();
-  } else {
-    // REABERTURA limpa os campos (20/08). Sem isto o incidente volta pra
-    // open/investigating carregando a data de quando foi fechado, e vira
-    // um registro que se contradiz: aberto e resolvido ao mesmo tempo.
-    // Achado vivo: ce6e157d estava investigating com resolved_at de 19/08.
-    update.resolved_by = null;
-    update.resolved_at = null;
-    update.resolved_commit = null;
-  }
+  //
+  // A regra dos 3 campos mora em @/lib/incidents/closure. Estava escrita
+  // INLINE aqui e copiada na rota do agente; a cópia em entregar.ts saiu com
+  // 2 dos 3 campos e foi assim que nasceram os órfãos de resolved_commit.
+  //
+  // `email` é `string | null` no AuthResult. Cai pro `user_id` (sempre
+  // presente) em vez de gravar null: um fechamento sem dono identificável foi
+  // exatamente o buraco do conserto (2). Não inventa nome — o user_id é
+  // rastreável.
+  Object.assign(update, closureFields(status, g.auth.email ?? g.auth.user_id));
 
   try {
     const { error } = await getAdmin()

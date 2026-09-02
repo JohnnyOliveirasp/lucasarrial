@@ -16,6 +16,7 @@
  * espera — e a espera tem quem a encerre.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { limparFechamento } from "./closure";
 
 const STATUS_ESPERA = "aguardando_aluno";
 
@@ -69,6 +70,11 @@ export async function reabrirPorRespostaDoAluno(args: {
         .from("incidents" as never)
         .update({
           status: "open",
+          // "aguardando_aluno" hoje chega pelas rotas que já limpam, então
+          // na prática o carimbo costuma estar nulo aqui. Passa pelo helper
+          // mesmo assim: é o tipo de "na prática não acontece" que vira o
+          // sétimo conserto quando alguém mudar como se entra nesse status.
+          ...limparFechamento(),
           last_seen_at: agora,
           agent_notes: [...(l.agent_notes ?? []), nota],
         } as never)

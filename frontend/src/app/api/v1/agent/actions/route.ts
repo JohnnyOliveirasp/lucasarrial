@@ -12,6 +12,7 @@ import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { agentTokenOk } from "@/lib/incidents/agent-auth";
+import { closureFields } from "@/lib/incidents/closure";
 import { sendEmail } from "@/lib/email/resend";
 import { sendAgentText } from "@/lib/agent/provider";
 import { createPresignedGet } from "@/lib/r2/presigned";
@@ -113,18 +114,9 @@ export async function POST(request: NextRequest) {
       // ficava sem resolved_at e sumia de qualquer consulta que filtra por data
       // de fechamento. Quem fecha nao pode precisar LEMBRAR de gravar o campo -
       // no dia 20/08 quem sabia do incidente esqueceu assim mesmo.
-      if (status === "fixed" || status === "ignored") {
-        update.resolved_by = "agent";
-        update.resolved_at = new Date().toISOString();
-      } else {
-        // REABERTURA limpa os campos (20/08). Sem isto o incidente volta pra
-        // open/investigating carregando a data de quando foi fechado, e vira
-        // um registro que se contradiz: aberto e resolvido ao mesmo tempo.
-        // Achado vivo: ce6e157d estava investigating com resolved_at de 19/08.
-        update.resolved_by = null;
-        update.resolved_at = null;
-        update.resolved_commit = null;
-      }
+      // A regra dos 3 campos mora em @/lib/incidents/closure — ver lá por que
+      // ela saiu de dentro desta rota.
+      Object.assign(update, closureFields(status, "agent"));
       await admin
         .from("incidents" as never)
         .update(update as never)
