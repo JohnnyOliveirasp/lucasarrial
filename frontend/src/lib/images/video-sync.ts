@@ -13,6 +13,7 @@ import { kieGetTask, kieCreateVideoTask, kieCallbackUrl, friendlyKieError } from
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import { getVideoFallback, FALLBACK_MOVEMENT_PROMPT_EN } from "@/lib/video/tiers";
 import { pickVideoAspectRatio } from "@/lib/video/config";
+import { stripAudioTrack } from "@/lib/video/strip-audio";
 
 function pickExt(url: string, contentType: string | null): string {
   if (contentType?.includes("webm")) return "webm";
@@ -45,8 +46,15 @@ export async function finalizeImageVideo(
 
   const contentType = res.headers.get("content-type");
   const ext = pickExt(resultUrl, contentType);
-  const bytes = Buffer.from(await res.arrayBuffer());
+  const baixado = Buffer.from(await res.arrayBuffer());
   const key = imageVideoKey(userId, imageId, ext);
+
+  // O Animar Imagem é MUDO por contrato, mas só o seedance (Gold) aceita
+  // `generate_audio:false` — Grok (Bronze), Kling e Hailuo não têm campo de
+  // áudio nenhum na Kie, e o Grok em particular anima a foto FALANDO inglês
+  // (incidente #236). Por isso o corte é no que SOBE, não no que se pede à API.
+  // Nunca lança: se o ffmpeg falhar, volta o original e a entrega segue.
+  const bytes = await stripAudioTrack(baixado, ext);
 
   await r2.send(
     new PutObjectCommand({
