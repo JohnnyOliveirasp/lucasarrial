@@ -48,7 +48,7 @@ export type Money = {
   revenuePeriod: number;
   /** Custo variável (ferramentas Kie/RunPod) no período. */
   costPeriod: number;
-  /** Custo fixo de infra (Hetzner + RunPod HD) pró-rateado no período. */
+  /** Custo fixo de infra (Hetzner + RunPod HD + Supabase) pró-rateado no período. */
   infraPeriod: number;
   feePeriod: number;
   profitPeriod: number;

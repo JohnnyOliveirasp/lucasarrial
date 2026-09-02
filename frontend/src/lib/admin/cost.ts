@@ -96,9 +96,12 @@ export const INFRA_USD_MONTH = {
   /** RunPod Network Volume (HD dos modelos InfiniteTalk, 80GB EU-NL-1 —
    *  crescido de 60 p/ 80GB em 2026-07-09 pros modelos do Turbo). */
   runpodStorage: 5.6,
+  /** Supabase Pro (banco + auth + storage) — incluído 2026-09-02 a pedido do Johnny. */
+  supabase: 35,
 } as const;
 
-export const INFRA_TOTAL_USD_MONTH = INFRA_USD_MONTH.hetzner + INFRA_USD_MONTH.runpodStorage;
+export const INFRA_TOTAL_USD_MONTH =
+  INFRA_USD_MONTH.hetzner + INFRA_USD_MONTH.runpodStorage + INFRA_USD_MONTH.supabase;
 
 /** Infra em R$ pró-rateada: dia ≈ mensal/30,44; mês ≈ cheio; ano = 12×. */
 export function infraCostBrl(rangeDays: number): number {

@@ -10,7 +10,7 @@
  */
 import { Wallet, Gift, BadgeDollarSign, TrendingUp } from "lucide-react";
 import type { Finance, Money } from "@/lib/admin/queries";
-import { PLAN_PRICE_BRL } from "@/lib/admin/cost";
+import { PLAN_PRICE_BRL, INFRA_USD_MONTH } from "@/lib/admin/cost";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { TrialPanel } from "@/components/admin/trial-panel";
 import { Donut, type DonutSlice } from "@/components/admin/donut";
@@ -27,6 +27,14 @@ const TOOL_COLORS: Record<string, string> = {
   image: "#0d9488",
   video: "#a855f7",
 };
+
+/** Estornos (reembolso + chargeback da Hotmart) — rosa, separado do vermelho
+ *  de Ferramentas pra não confundir custo operacional com dinheiro devolvido. */
+const REFUND_COLOR = "#ec4899";
+
+/** Texto da infra gerado do cost.ts — o detalhe hardcoded mentia ("US$15" com
+ *  o código em 5,6) e não ia enxergar o Supabase entrando. Fonte única. */
+const INFRA_DETAIL = `Hetzner US$${INFRA_USD_MONTH.hetzner} + RunPod HD US$${INFRA_USD_MONTH.runpodStorage} + Supabase US$${INFRA_USD_MONTH.supabase}/mês`;
 
 type Segment = { key: string; label: string; brl: number; detail: string; color: string };
 
@@ -87,8 +95,12 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
   const isLoss = money.profitPeriod < 0;
   // Opção B: caixa e "com promoção" sempre lado a lado.
   const combined = money.profitPeriod - promoValue;
-  // Tudo que sai no período: ferramentas + infra fixa + taxa Hotmart.
-  const totalOut = toolsCost + money.infraPeriod + money.feePeriod;
+  // Tudo que sai no período: ferramentas + infra fixa + taxa Hotmart + estornos.
+  // Estornos entram aqui porque já descontam do lucro (queries.ts) — sem a
+  // fatia, "Entrou − Saiu" não fechava com o Lucro mostrado.
+  const refunds = fin.refundTotal;
+  const totalOut = toolsCost + money.infraPeriod + money.feePeriod + refunds;
+  const refundDetail = `${num(fin.refundCount)} devolução(ões) Hotmart (reembolso + chargeback)`;
 
   const toolSlices: DonutSlice[] = fin.slices.map((s) => ({
     ...s,
@@ -122,7 +134,7 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
           value={brl2(totalOut)}
           tone="cost"
           icon={BadgeDollarSign}
-          hint={`ferramentas ${brl2(toolsCost)} + infra ${brl2(money.infraPeriod)} + taxa ${brl2(money.feePeriod)}`}
+          hint={`ferramentas ${brl2(toolsCost)} + infra ${brl2(money.infraPeriod)} + taxa ${brl2(money.feePeriod)}${refunds > 0 ? ` + estornos ${brl2(refunds)}` : ""}`}
         />
         <KpiCard
           label={isLoss ? "Prejuízo (caixa)" : "Lucro (caixa)"}
@@ -201,8 +213,9 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
               color: "var(--status-warn)",
             },
             { key: "tools", label: "Ferramentas", brl: toolsCost, detail: "custo Kie/RunPod", color: "var(--status-error)" },
-            { key: "infra", label: "Infraestrutura", brl: money.infraPeriod, detail: "Hetzner US$25 + RunPod HD US$15/mês", color: "#94a3b8" },
+            { key: "infra", label: "Infraestrutura", brl: money.infraPeriod, detail: INFRA_DETAIL, color: "#94a3b8" },
             { key: "fee", label: "Taxa Hotmart", brl: money.feePeriod, detail: "9,9% + $1/venda", color: "var(--ash)" },
+            { key: "refund", label: "Estornos", brl: refunds, detail: refundDetail, color: REFUND_COLOR },
           ]}
           centerLabel={isLoss ? "Prejuízo (caixa)" : "Lucro (caixa)"}
           centerValue={Math.abs(money.profitPeriod)}
@@ -226,13 +239,14 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
         ) : null}
       </ChartCard>
 
-      {/* 3) SAÍDAS — tudo que sai do bolso, detalhado */}
-      <ChartCard title="Saídas — pra onde vai o dinheiro (ferramentas + infra + taxa)">
+      {/* 3) SAÍDAS — tudo que sai do bolso, detalhado (estornos incluídos 02/09) */}
+      <ChartCard title="Saídas — pra onde vai o dinheiro (ferramentas + infra + taxa + estornos)">
         <Donut
           slices={[
             ...toolSlices,
-            { key: "infra", label: "Infraestrutura", brl: money.infraPeriod, detail: "Hetzner US$25 + RunPod HD US$15/mês", color: "#94a3b8" },
+            { key: "infra", label: "Infraestrutura", brl: money.infraPeriod, detail: INFRA_DETAIL, color: "#94a3b8" },
             { key: "fee", label: "Taxa Hotmart", brl: money.feePeriod, detail: "9,9% + $1/venda", color: "var(--ash)" },
+            { key: "refund", label: "Estornos", brl: refunds, detail: refundDetail, color: REFUND_COLOR },
           ]}
           centerLabel="Saiu no total"
           centerSub={periodLabel}
