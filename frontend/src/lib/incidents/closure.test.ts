@@ -10,7 +10,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CLOSED_STATUSES, closureFields, limparFechamento } from "./closure";
+// Extensão explícita: o `node --test` não resolve import extensionless (lição
+// do PR #159, rajada-nasce-fechada).
+import { CLOSED_STATUSES, closureFields, limparFechamento } from "./closure.ts";
 
 test("limparFechamento devolve os TRÊS campos nulos, não dois", () => {
   const campos = limparFechamento();

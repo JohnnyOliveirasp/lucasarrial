@@ -1336,7 +1336,16 @@
   "voiceCreate": {
     "recorderImport": {
       "loaded": "{count, plural, one {# grabación del Grabador cargada automáticamente.} other {# grabaciones del Grabador cargadas automáticamente.}}",
-      "skipped": "({skipped} clip(s) más cortos quedaron fuera — límite de {max} archivos.)"
+      "skipped": "({skipped} clip(s) más cortos quedaron fuera — límite de {max} archivos.)",
+      "readError": "No pude leer las grabaciones de este navegador. Abre esta página en el mismo dispositivo y navegador en que grabaste, fuera de la pestaña privada. Si grabaste en otro lugar, las grabaciones siguen allí — nunca se enviaron a nosotros.",
+      "phoneError": "No pude buscar las grabaciones que hiciste con el celular. Recarga la página; si sigue igual, habla con soporte antes de grabar todo de nuevo.",
+      "phonePartial": "{count, plural, one {# grabación del celular no se pudo descargar y NO entró al entrenamiento.} other {# grabaciones del celular no se pudieron descargar y NO entraron al entrenamiento.}} Recarga la página para intentarlo de nuevo.",
+      "missingTitle": "Grabaste {count, plural, one {# audio} other {# audios}} ({duration}) en este navegador, pero ahora no encuentro esas grabaciones.",
+      "missingTitleSemMarca": "No encontré ninguna grabación para cargar aquí.",
+      "missingSameDevice": "Las grabaciones quedan en el dispositivo y navegador donde se hicieron — si grabaste en el celular y abriste esto en la computadora (o cambiaste de navegador), ábrelo de nuevo donde grabaste.",
+      "missingCleared": "Si borraste el historial o los datos del navegador después de grabar, se eliminaron y no se pueden recuperar.",
+      "missingPrivate": "La pestaña privada borra todo al cerrarse — en ese caso hay que grabar de nuevo en una ventana normal.",
+      "missingBackToRecorder": "Volver al Grabador"
     },
     "fileList": {
       "remove": "Quitar"
@@ -1369,8 +1378,12 @@
       "errors": {
         "micDenied": "Permiso de micrófono denegado — habilita el mic en el navegador e inténtalo de nuevo.",
         "micGeneric": "No pude acceder al micrófono.",
-        "muteClip": "La grabación salió muda (no se captó ninguna voz) y fue descartada. Verifica el micrófono y graba de nuevo."
-      }
+        "muteClip": "La grabación salió muda (no se captó ninguna voz) y fue descartada. Verifica el micrófono y graba de nuevo.",
+        "saveFailed": "{count, plural, one {# grabación no se pudo guardar en este navegador y se perderá al cerrar la página.} other {# grabaciones no se pudieron guardar en este navegador y se perderán al cerrar la página.}} Envía ahora lo que ya tienes, o graba en otro navegador (sin pestaña privada y sin bloqueo de almacenamiento).",
+        "storageUnreadable": "No pude leer las grabaciones guardadas en este navegador. Si ya habías grabado antes, abre esta página en el mismo dispositivo y navegador, fuera de la pestaña privada — lo que esté aquí puede no aparecer."
+      },
+      "localOnly": "Atención: mientras no las envíes al entrenamiento, estas grabaciones quedan guardadas SOLO en este navegador y en este dispositivo. No borres los datos del navegador, no grabes en pestaña privada y termina el envío aquí mismo — si sales, pueden perderse.",
+      "overFileCap": "Grabaste lo suficiente, pero en demasiados clips: solo los {max} más largos entran al entrenamiento y los otros {extra} quedan fuera — quedan {usable}, por debajo de los {minutes} min necesarios. Borra los clips más cortos y graba tomas más largas (o sigue grabando) para habilitar el envío."
     },
     "script": {
       "pickPrompt": "Pega tu propio guion abajo — o deja que la IA genere un texto de lectura para ti.",

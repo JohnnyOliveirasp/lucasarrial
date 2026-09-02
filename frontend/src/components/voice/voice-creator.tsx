@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
-import { Upload, X, AudioLines, Check, FolderUp, Mic, ArrowRight } from "lucide-react";
+import { Upload, X, AudioLines, Check, FolderUp, Mic, ArrowRight, AlertCircle } from "lucide-react";
 import { medirDuracao, formatDuration, type MotivoFalhaMedicao } from "@/lib/audio/duration";
 import {
   chaveDoMotivo,
@@ -12,7 +12,14 @@ import {
   vaiAdiantarTentarDeNovo,
 } from "@/lib/audio/medicao";
 import { filterAudioFiles, gatherAudioFromDataTransfer } from "@/lib/audio/collect";
-import { listClips, deleteClip } from "@/lib/audio/clip-store";
+import { listClips, deleteClip, type StoredClip } from "@/lib/audio/clip-store";
+import { MAX_ARQUIVOS_TREINO } from "@/lib/audio/entrega-gravador";
+import {
+  descontarDaMarca,
+  lerMarcaGravacao,
+  limparMarcaGravacao,
+  type MarcaGravacao,
+} from "@/lib/audio/marca-gravacao";
 import { clientLogger } from "@/lib/logger/client";
 
 const MIN_DURATION_SECONDS = 20 * 60; // 20 minutos
@@ -20,7 +27,10 @@ const MIN_DURATION_SECONDS = 20 * 60; // 20 minutos
 // (visto em prod 21/07: 79min → executionTimeout). 60min treina com folga.
 const MAX_DURATION_SECONDS = 60 * 60;
 const REC_DURATION_SECONDS = 30 * 60; // 30 minutos
-const MAX_FILES = 20;
+// Teto de arquivos por voz. Mora em lib/audio/entrega-gravador.ts porque o
+// GRAVADOR precisa do mesmo número pra não liberar a CTA contando clipe que
+// esta tela vai descartar (#235).
+const MAX_FILES = MAX_ARQUIVOS_TREINO;
 // Vídeo entra junto, de propósito — o worker extrai a faixa de áudio.
 // Ver AUDIO_EXT_RE em lib/audio/collect.ts. `.mov` (nativo do iPhone)
 // faltava aqui e no filtro, e era descartado como "não-áudio".
@@ -101,6 +111,19 @@ export function VoiceCreator() {
   const [error, setError] = useState<string | null>(null);
   const [overallProgress, setOverallProgress] = useState(0);
   const [recorderImport, setRecorderImport] = useState<{ count: number; skipped: number } | null>(null);
+  /**
+   * #235 (Alana): ler o Gravador podia falhar em silêncio (`catch(() => {})`)
+   * e a tela abria um formulário MUDO — indistinguível de quem nunca gravou.
+   * Agora a leitura tem desfecho explícito e a tela é obrigada a falar.
+   */
+  const [leituraClipes, setLeituraClipes] = useState<"lendo" | "ok" | "erro">("lendo");
+  /** Bilhete deixado pelo Gravador (localStorage, fora do IndexedDB). */
+  const [marcaGravador, setMarcaGravador] = useState<MarcaGravacao | null>(null);
+  /** Desfecho da importação dos takes do celular (R2). */
+  const [takesCelular, setTakesCelular] = useState<{ falhados: number; erro: boolean }>({
+    falhados: 0,
+    erro: false,
+  });
   const recorderClipIds = useRef<string[]>([]);
   // Takes do "gravar pelo celular" (R2) importados pro treino — apagados
   // do R2 depois do envio, igual à limpeza do IndexedDB.
@@ -117,39 +140,61 @@ export function VoiceCreator() {
   // carregadas aqui — quem gravava 20min caía num upload vazio e ficava em
   // loop no formulário. Agora os clipes entram automaticamente como arquivos.
   useEffect(() => {
-    listClips()
-      .then((clips) => {
-        if (clips.length === 0) return;
-        // Teto do backend: 20 arquivos/voz — mantém os MAIORES clipes.
-        const sorted = [...clips].sort((a, b) => b.seconds - a.seconds);
-        const kept = sorted.slice(0, MAX_FILES);
-        const additions: LocalFile[] = kept
-          .sort((a, b) => a.createdAt - b.createdAt)
-          .map((c, i): LocalFile => {
-            // O Gravador atual salva WAV (encodeWav); clipes antigos podem ser
-            // webm/opus do MediaRecorder. Nomeia pelo tipo REAL do blob — o
-            // rótulo errado (.webm em bytes WAV) já atrapalhou diagnóstico de
-            // treino falho (caso VOZ MAE 2, 21/07). Mime normalizado sem
-            // ";codecs=..." porque o backend valida por igualdade exata.
-            const isWav = (c.blob.type || "").toLowerCase().includes("wav");
-            return {
-              id: `rec-${c.id}`,
-              file: new File([c.blob], `gravacao-${String(i + 1).padStart(2, "0")}.${isWav ? "wav" : "webm"}`, {
-                type: isWav ? "audio/wav" : "audio/webm",
-              }),
-              // Duração medida pelo próprio gravador (blobs do MediaRecorder
-              // reportam Infinity no <audio> — não dá pra re-medir).
-              duration: c.seconds,
-              progress: 0,
-              state: "idle",
-            };
-          });
-        recorderClipIds.current = kept.map((c) => c.id);
-        setFiles((prev) => mesclarSemRepetir(additions, prev));
-        setRecorderImport({ count: kept.length, skipped: clips.length - kept.length });
-      })
-      .catch(() => {});
+    let alive = true;
+    // O bilhete é lido ANTES: se o IndexedDB vier vazio, é ele que separa
+    // "essa pessoa nunca gravou" de "essa pessoa gravou e eu não achei".
+    setMarcaGravador(lerMarcaGravacao());
+
+    void (async () => {
+      let clips: StoredClip[];
+      try {
+        clips = await listClips();
+      } catch (e: unknown) {
+        // ⚠️ ERA AQUI: `.catch(() => {})`. O aluno que gravou 20 min via um
+        // formulário vazio e nenhuma explicação — o defeito do #235.
+        if (!alive) return;
+        setLeituraClipes("erro");
+        clientLogger.warn("voz: nao consegui ler as gravacoes do Gravador (IndexedDB)", {
+          erro: e instanceof Error ? e.name : String(e),
+        });
+        return;
+      }
+      if (!alive) return;
+      setLeituraClipes("ok");
+      if (clips.length === 0) return;
+
+      // Teto do backend: 20 arquivos/voz — mantém os MAIORES clipes.
+      const sorted = [...clips].sort((a, b) => b.seconds - a.seconds);
+      const kept = sorted.slice(0, MAX_FILES);
+      const additions: LocalFile[] = kept
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .map((c, i): LocalFile => {
+          // O Gravador atual salva WAV (encodeWav); clipes antigos podem ser
+          // webm/opus do MediaRecorder. Nomeia pelo tipo REAL do blob — o
+          // rótulo errado (.webm em bytes WAV) já atrapalhou diagnóstico de
+          // treino falho (caso VOZ MAE 2, 21/07). Mime normalizado sem
+          // ";codecs=..." porque o backend valida por igualdade exata.
+          const isWav = (c.blob.type || "").toLowerCase().includes("wav");
+          return {
+            id: `rec-${c.id}`,
+            file: new File([c.blob], `gravacao-${String(i + 1).padStart(2, "0")}.${isWav ? "wav" : "webm"}`, {
+              type: isWav ? "audio/wav" : "audio/webm",
+            }),
+            // Duração medida pelo próprio gravador (blobs do MediaRecorder
+            // reportam Infinity no <audio> — não dá pra re-medir).
+            duration: c.seconds,
+            progress: 0,
+            state: "idle",
+          };
+        });
+      recorderClipIds.current = kept.map((c) => c.id);
+      setFiles((prev) => mesclarSemRepetir(additions, prev));
+      setRecorderImport({ count: kept.length, skipped: clips.length - kept.length });
+    })();
     // roda 1x no mount — os clipes vêm da página do Gravador
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // ☁️ 02/09: gravações do Gravador do navegador SALVAS NO SERVIDOR também
@@ -188,16 +233,40 @@ export function VoiceCreator() {
   useEffect(() => {
     let alive = true;
     (async () => {
+      // Sessão do celular: falhar aqui é "o recurso não está disponível",
+      // NÃO um erro do aluno — segue calado, como antes.
+      let token: string;
       try {
         const s = await fetch("/api/v1/recorder-test/session", { cache: "no-store" }).then((r) => r.json());
         if (!alive || !s?.token) return;
-        phoneToken.current = s.token as string;
+        token = s.token as string;
+        phoneToken.current = token;
+      } catch {
+        return;
+      }
+
+      // Daqui pra baixo JÁ EXISTE sessão de celular: se a listagem falhar, o
+      // aluno que gravou pelo celular veria a lista vazia sem saber que o
+      // problema foi nosso. Antes era `catch {}` — o silêncio do #235.
+      let takes: { key: string; name: string; url: string }[] = [];
+      try {
         const j = await fetch("/api/v1/recorder-test/takes", {
-          headers: { "x-recorder-token": s.token as string },
+          headers: { "x-recorder-token": token },
         }).then((r) => r.json());
-        const takes = (j?.takes ?? []) as { key: string; name: string; url: string }[];
+        takes = (j?.takes ?? []) as { key: string; name: string; url: string }[];
+      } catch (e: unknown) {
+        if (!alive) return;
+        setTakesCelular((p) => ({ ...p, erro: true }));
+        clientLogger.warn("voz: nao consegui listar os takes do celular", {
+          erro: e instanceof Error ? e.name : String(e),
+        });
+        return;
+      }
+
+      try {
         if (!alive || takes.length === 0) return;
         const additions: LocalFile[] = [];
+        let falhados = 0;
         for (const t of takes) {
           try {
             const blob = await fetch(t.url).then((r) => r.blob());
@@ -216,9 +285,19 @@ export function VoiceCreator() {
               state: "idle",
             });
             phoneTakeKeys.current.push(t.key);
-          } catch { /* take individual falhou — segue os outros */ }
+          } catch (e: unknown) {
+            // Take individual falhou — segue os outros, MAS conta e diz na
+            // tela: take que some calado é minuto de fala que o aluno acha
+            // que enviou (#235).
+            falhados++;
+            clientLogger.warn("voz: take do celular nao pode ser baixado", {
+              erro: e instanceof Error ? e.name : String(e),
+            });
+          }
         }
-        if (alive && additions.length > 0) setFiles((prev) => mesclarSemRepetir(additions, prev));
+        if (!alive) return;
+        if (additions.length > 0) setFiles((prev) => mesclarSemRepetir(additions, prev));
+        if (falhados > 0) setTakesCelular((p) => ({ ...p, falhados }));
       } catch { /* sem takes do celular — segue normal */ }
     })();
     return () => { alive = false; };
@@ -385,6 +464,7 @@ export function VoiceCreator() {
   }, [files.length, t, msgDescartados, medirItem]);
 
   function removeFile(id: string) {
+    const alvo = files.find((f) => f.id === id);
     setFiles((prev) => prev.filter((f) => f.id !== id));
     // Clipe do Gravador removido da lista → some do IndexedDB também
     // (senão ele reapareceria na próxima visita).
@@ -392,6 +472,10 @@ export function VoiceCreator() {
       const clipId = id.slice(4);
       recorderClipIds.current = recorderClipIds.current.filter((c) => c !== clipId);
       deleteClip(clipId).catch(() => {});
+      // O clipe deixou de existir — o bilhete tem que encolher junto. Sem
+      // isto ele continua dizendo "8 gravações, 22:14" e a tela acusa o aluno
+      // de ter PERDIDO gravações que ele mesmo acabou de remover.
+      setMarcaGravador(descontarDaMarca(alvo?.duration ?? 0));
     }
     // Gravação do servidor removida da lista → apaga do R2 (senão reaparece).
     if (id.startsWith("srv-")) {
@@ -517,6 +601,9 @@ export function VoiceCreator() {
     for (const clipId of recorderClipIds.current) {
       deleteClip(clipId).catch(() => {});
     }
+    // O áudio saiu do navegador — o bilhete do Gravador não faz mais sentido
+    // (senão a próxima voz abriria acusando gravação perdida que já foi).
+    limparMarcaGravacao();
     // Takes do celular enviados → apaga do R2 (mesma lógica, best-effort).
     for (const key of phoneTakeKeys.current) {
       void fetch(`/api/v1/recorder-test/takes?key=${encodeURIComponent(key)}`, {
@@ -617,6 +704,79 @@ export function VoiceCreator() {
               : ""}
           </span>
         </p>
+      )}
+
+      {/*
+        ───── #235 (Alana): nenhum caminho pode terminar em tela muda ─────
+        Ela gravou 20 min, chegou aqui e viu um formulário vazio: nem erro,
+        nem explicação, nem saída. Os três blocos abaixo cobrem as três
+        formas de chegar vazio — leitura quebrada, celular quebrado, e lista
+        vazia com bilhete de gravação existindo.
+      */}
+      {leituraClipes === "erro" && (
+        <p
+          role="alert"
+          className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-2.5 text-sm leading-relaxed text-[var(--status-error)]"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>{tc("recorderImport.readError")}</span>
+        </p>
+      )}
+
+      {takesCelular.erro && (
+        <p
+          role="alert"
+          className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-card)] px-3 py-2.5 text-sm leading-relaxed text-[var(--status-warn)]"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>{tc("recorderImport.phoneError")}</span>
+        </p>
+      )}
+
+      {takesCelular.falhados > 0 && (
+        <p
+          role="alert"
+          className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-card)] px-3 py-2.5 text-sm leading-relaxed text-[var(--status-warn)]"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>{tc("recorderImport.phonePartial", { count: takesCelular.falhados })}</span>
+        </p>
+      )}
+
+      {/*
+        `!recorderImport` é o que separa PERDA de REMOÇÃO. Se a importação
+        trouxe clipes nesta visita, o Gravador foi encontrado — uma lista vazia
+        depois disso é obra do próprio aluno (removeu tudo para subir arquivos
+        do disco), e acusá-lo de "gravação perdida" seria um susto falso numa
+        tela que está funcionando. Perda de verdade é chegar aqui SEM ter
+        importado nada, com bilhete existindo ou com a leitura quebrada.
+      */}
+      {leituraClipes !== "lendo" &&
+        !recorderImport &&
+        files.length === 0 &&
+        (marcaGravador || leituraClipes === "erro") && (
+        <div className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-card)] px-3 py-3 text-sm leading-relaxed text-[var(--ink)]">
+          <p className="font-medium text-[var(--status-warn)]">
+            {marcaGravador
+              ? tc("recorderImport.missingTitle", {
+                  count: marcaGravador.clipes,
+                  duration: formatDuration(marcaGravador.segundos),
+                })
+              : tc("recorderImport.missingTitleSemMarca")}
+          </p>
+          <ul className="list-disc space-y-1 pl-5 text-[var(--mute)]">
+            <li>{tc("recorderImport.missingSameDevice")}</li>
+            <li>{tc("recorderImport.missingCleared")}</li>
+            <li>{tc("recorderImport.missingPrivate")}</li>
+          </ul>
+          <Link
+            href="/app/voice-cloning/script"
+            className="inline-flex items-center gap-1.5 font-medium text-[var(--ink)] underline-offset-4 hover:underline"
+          >
+            {tc("recorderImport.missingBackToRecorder")}
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
       )}
 
       {files.length > 0 && (
