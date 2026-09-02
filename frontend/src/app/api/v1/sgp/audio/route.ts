@@ -6,9 +6,10 @@
  */
 import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
+import { anexarAudio, mensagemDaRecusaDeAudio, removerAudio } from "@/lib/sgp/anexar";
 import { medirAudio } from "@/lib/sgp/medir-audio";
-import { atualizarSessao, pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
-import { SGP_AUDIO_MAX_SEGUNDOS, type SgpAudio } from "@/lib/sgp/types";
+import { pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
+import { SGP_AUDIO_MAX_ARQUIVOS, SGP_AUDIO_MAX_SEGUNDOS, type SgpAudio } from "@/lib/sgp/types";
 
 export const maxDuration = 300;
 
@@ -53,8 +54,11 @@ export async function POST(request: NextRequest) {
       motivos,
       avisos: m.avisos,
     };
-    const audios = (pedido.audios ?? []).filter((a) => a.key !== key).concat(audio);
-    await atualizarSessao(pedido.sessao, { audios });
+    // Append atômico (linha travada). A janela de corrida aqui é ainda maior
+    // que a da foto: `maxDuration = 300` porque o ffmpeg pode demorar minutos,
+    // e o cliente enfileira vários arquivos de uma vez. Ver #238.
+    const r = await anexarAudio(pedido.sessao, audio, SGP_AUDIO_MAX_ARQUIVOS);
+    if (!r.ok) return badRequest(mensagemDaRecusaDeAudio(r.motivo, SGP_AUDIO_MAX_ARQUIVOS));
     return jsonOk({ audio, bruto_segundos: Math.round(m.segundos) });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao analisar o áudio");
@@ -66,7 +70,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const pedido = await pedidoDaSessaoOuNull();
     if (!pedido) return badRequest("Comece pela tela de dados.");
-    await atualizarSessao(pedido.sessao, { audios: (pedido.audios ?? []).filter((a) => a.key !== key) });
+    await removerAudio(pedido.sessao, key);
     return jsonOk({ ok: true });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao remover o áudio");
