@@ -1588,7 +1588,9 @@
       "publisher": "Publisher",
       "lockPlan": "Subscribe to unlock this tool.",
       "lockCredits": "Buy credits to unlock this tool.",
-      "lockCreditsMin": "You need {n} credits to use this tool."
+      "lockCreditsMin": "You need {n} credits to use this tool.",
+      "openMenu": "Open menu",
+      "closeMenu": "Close menu"
     },
     "apiDocs": {
       "copied": "Copied",
