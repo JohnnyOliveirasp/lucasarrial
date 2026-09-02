@@ -1368,6 +1368,10 @@
       "stopRecording": "Detener grabación",
       "deleteClip": "Borrar clip",
       "clipsRecorded": "Audios grabados ({count})",
+      "clipSaved": "guardada en tu cuenta — puedes cambiar de dispositivo",
+      "clipSaving": "guardando en tu cuenta…",
+      "clipOnlyLocal": "solo en este navegador — aún no se guardó en tu cuenta.",
+      "clipRetrySave": "guardar ahora",
       "targetMet": "Meta de {minutes} min alcanzada",
       "sendToTraining": "Enviar a entrenamiento",
       "keepRecording": "Puedes seguir grabando si quieres mejorar — cuanto más limpio el audio, mejor la voz clonada.",
@@ -1378,7 +1382,7 @@
         "saveFailed": "{count, plural, one {# grabación no se pudo guardar en este navegador y se perderá al cerrar la página.} other {# grabaciones no se pudieron guardar en este navegador y se perderán al cerrar la página.}} Envía ahora lo que ya tienes, o graba en otro navegador (sin pestaña privada y sin bloqueo de almacenamiento).",
         "storageUnreadable": "No pude leer las grabaciones guardadas en este navegador. Si ya habías grabado antes, abre esta página en el mismo dispositivo y navegador, fuera de la pestaña privada — lo que esté aquí puede no aparecer."
       },
-      "localOnly": "Atención: mientras no las envíes al entrenamiento, estas grabaciones quedan guardadas SOLO en este navegador y en este dispositivo. No borres los datos del navegador, no grabes en pestaña privada y termina el envío aquí mismo — si sales, pueden perderse.",
+      "localOnly": "Atención: alguna grabación todavía no subió a tu cuenta y está SOLO en este navegador, en este dispositivo — cada línea de abajo dice dónde está. Mientras sea así, no borres los datos del navegador ni cierres la página; si una línea sigue en \"solo en este navegador\", usa su \"guardar ahora\".",
       "overFileCap": "Grabaste lo suficiente, pero en demasiados clips: solo los {max} más largos entran al entrenamiento y los otros {extra} quedan fuera — quedan {usable}, por debajo de los {minutes} min necesarios. Borra los clips más cortos y graba tomas más largas (o sigue grabando) para habilitar el envío."
     },
     "script": {

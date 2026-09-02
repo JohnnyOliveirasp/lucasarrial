@@ -27,7 +27,12 @@ const IDADE_ORFAO_MS = 30 * 60 * 1000;
 // `onbaud-` a faixa extraída; o `finally` que apaga os dois não roda quando o
 // pm2 mata o processo no deploy — que é exatamente como nasceram as 6 pastas
 // órfãas de ~3GB e o `ENOSPC` de 22/08 documentado no topo deste arquivo.
-const PREFIXOS = ["onbdl-", "onbvid-", "onbvidbuf-", "onbaudsrc-", "onbaud-"];
+// `vidmute-` não é do onboarding: é o corte da faixa de áudio do Animar Imagem
+// (lib/video/strip-audio.ts, incidente #236). Entra nesta lista porque a faxina
+// é esta — prefixo de fora dela vira órfão que ninguém apaga. Segura só um
+// clipe de 4-6s por alguns milissegundos, então na prática só sobra órfão se o
+// pm2 matar o processo exatamente no meio do corte.
+const PREFIXOS = ["onbdl-", "onbvid-", "onbvidbuf-", "onbaudsrc-", "onbaud-", "vidmute-"];
 
 let baseCache: string | null = null;
 
