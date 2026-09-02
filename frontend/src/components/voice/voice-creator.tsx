@@ -117,6 +117,16 @@ export function VoiceCreator() {
    * Agora a leitura tem desfecho explícito e a tela é obrigada a falar.
    */
   const [leituraClipes, setLeituraClipes] = useState<"lendo" | "ok" | "erro">("lendo");
+  /**
+   * Desfecho da busca das gravações salvas na CONTA (02/09). Desde que o
+   * Gravador passou a subir cada clipe, esta virou a fonte PRINCIPAL — e
+   * enquanto ela está "lendo", lista vazia não prova nada. Sem este estado a
+   * tela piscaria "não encontrei suas gravações" antes de o servidor
+   * responder: o susto falso do #235 com o sinal trocado.
+   */
+  const [leituraServidor, setLeituraServidor] = useState<"lendo" | "ok" | "erro">("lendo");
+  /** Quantas gravações da conta entraram nesta visita. */
+  const [clipesDoServidor, setClipesDoServidor] = useState(0);
   /** Bilhete deixado pelo Gravador (localStorage, fora do IndexedDB). */
   const [marcaGravador, setMarcaGravador] = useState<MarcaGravacao | null>(null);
   /** Desfecho da importação dos takes do celular (R2). */
@@ -203,26 +213,47 @@ export function VoiceCreator() {
   useEffect(() => {
     let alive = true;
     (async () => {
+      let clips: { key: string; name: string; seconds: number; url: string }[];
       try {
         const j = await fetch("/api/v1/voice-clips", { cache: "no-store" }).then((r) => r.json());
-        const clips = (j?.clips ?? []) as { key: string; name: string; seconds: number; url: string }[];
-        if (!alive || clips.length === 0) return;
-        const additions: LocalFile[] = [];
-        for (const c of clips) {
-          try {
-            const blob = await fetch(c.url).then((r) => r.blob());
-            additions.push({
-              id: `srv-${c.key}`,
-              file: new File([blob], c.name, { type: "audio/mpeg" }),
-              duration: c.seconds > 0 ? c.seconds : null,
-              progress: 0,
-              state: "idle",
-            });
-            serverClipKeys.current.push(c.key);
-          } catch { /* clipe individual falhou — segue os outros */ }
+        clips = (j?.clips ?? []) as { key: string; name: string; seconds: number; url: string }[];
+      } catch (e: unknown) {
+        // #235: a busca na conta falhou. Não dá pra afirmar "você não tem
+        // gravação" nem prometer que tem — o desfecho vira estado e a tela
+        // decide o que dizer com ele (nunca um formulário mudo).
+        if (!alive) return;
+        setLeituraServidor("erro");
+        clientLogger.warn("voz: nao consegui listar as gravacoes salvas na conta", {
+          erro: e instanceof Error ? e.name : String(e),
+        });
+        return;
+      }
+      if (!alive) return;
+      setLeituraServidor("ok");
+      if (clips.length === 0) return;
+      const additions: LocalFile[] = [];
+      for (const c of clips) {
+        try {
+          const blob = await fetch(c.url).then((r) => r.blob());
+          additions.push({
+            id: `srv-${c.key}`,
+            file: new File([blob], c.name, { type: "audio/mpeg" }),
+            duration: c.seconds > 0 ? c.seconds : null,
+            progress: 0,
+            state: "idle",
+          });
+          serverClipKeys.current.push(c.key);
+        } catch (e: unknown) {
+          // Clipe individual falhou — segue os outros, mas não some calado:
+          // minuto de fala que o aluno acha que enviou é o defeito do #235.
+          clientLogger.warn("voz: gravacao da conta nao pode ser baixada", {
+            erro: e instanceof Error ? e.name : String(e),
+          });
         }
-        if (alive && additions.length > 0) setFiles((prev) => mesclarSemRepetir(additions, prev));
-      } catch { /* sem gravações no servidor — segue normal */ }
+      }
+      if (!alive || additions.length === 0) return;
+      setClipesDoServidor(additions.length);
+      setFiles((prev) => mesclarSemRepetir(additions, prev));
     })();
     return () => { alive = false; };
   }, []);
@@ -472,16 +503,23 @@ export function VoiceCreator() {
       const clipId = id.slice(4);
       recorderClipIds.current = recorderClipIds.current.filter((c) => c !== clipId);
       deleteClip(clipId).catch(() => {});
-      // O clipe deixou de existir — o bilhete tem que encolher junto. Sem
-      // isto ele continua dizendo "8 gravações, 22:14" e a tela acusa o aluno
-      // de ter PERDIDO gravações que ele mesmo acabou de remover.
-      setMarcaGravador(descontarDaMarca(alvo?.duration ?? 0));
     }
     // Gravação do servidor removida da lista → apaga do R2 (senão reaparece).
     if (id.startsWith("srv-")) {
       const key = id.slice(4);
       serverClipKeys.current = serverClipKeys.current.filter((k) => k !== key);
       void fetch(`/api/v1/voice-clips?key=${encodeURIComponent(key)}`, { method: "DELETE" }).catch(() => {});
+    }
+    // O clipe deixou de existir — o bilhete tem que encolher junto. Sem isto
+    // ele continua dizendo "8 gravações, 22:14" e a tela acusa o aluno de ter
+    // PERDIDO gravações que ele mesmo acabou de remover.
+    //
+    // Vale para as DUAS origens: o bilhete é escrito pelo Gravador a partir da
+    // lista que ele mostra, e desde 02/09 essa lista inclui as gravações da
+    // conta (`srv-`). Descontar só as do IndexedDB deixaria o bilhete inflado
+    // exatamente para quem já está com tudo salvo no servidor.
+    if (id.startsWith("rec-") || id.startsWith("srv-")) {
+      setMarcaGravador(descontarDaMarca(alvo?.duration ?? 0));
     }
   }
 
@@ -713,7 +751,15 @@ export function VoiceCreator() {
         formas de chegar vazio — leitura quebrada, celular quebrado, e lista
         vazia com bilhete de gravação existindo.
       */}
-      {leituraClipes === "erro" && (
+      {/*
+        ⚠️ `clipesDoServidor === 0` foi acrescentado no merge de 02/09: o texto
+        deste aviso manda o aluno voltar ao aparelho onde gravou e afirma que
+        as gravações "não foram enviadas para nós". Depois que o Gravador
+        passou a subir cada clipe pra CONTA isso deixou de ser verdade sempre —
+        se as gravações vieram do servidor, a falha de leitura local é ruído e
+        repetir esse texto seria mandar o aluno procurar o que já está aqui.
+      */}
+      {leituraClipes === "erro" && clipesDoServidor === 0 && (
         <p
           role="alert"
           className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-2.5 text-sm leading-relaxed text-[var(--status-error)]"
@@ -750,8 +796,15 @@ export function VoiceCreator() {
         do disco), e acusá-lo de "gravação perdida" seria um susto falso numa
         tela que está funcionando. Perda de verdade é chegar aqui SEM ter
         importado nada, com bilhete existindo ou com a leitura quebrada.
+
+        ⚠️ `leituraServidor !== "lendo"` entrou no merge de 02/09 e é
+        obrigatório: as gravações agora chegam TAMBÉM da conta, por uma busca
+        assíncrona mais lenta que a do IndexedDB. Sem esta espera a tela
+        acusaria "não encontrei suas gravações" no instante em que elas ainda
+        estão vindo do servidor — o mesmo susto do #235, só que ao contrário.
       */}
       {leituraClipes !== "lendo" &&
+        leituraServidor !== "lendo" &&
         !recorderImport &&
         files.length === 0 &&
         (marcaGravador || leituraClipes === "erro") && (

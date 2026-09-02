@@ -32,15 +32,27 @@ export async function uploadClipToServer(blob: Blob, seconds: number): Promise<s
   }
 }
 
-/** Lista as gravações guardadas no servidor (qualquer aparelho). */
-export async function listServerClips(): Promise<ServerClip[]> {
+/**
+ * Desfecho da listagem, não só o resultado.
+ *
+ * ⚠️ Isto NÃO é preciosismo (merge do #235 com o fix de 02/09): devolver `[]`
+ * tanto para "a conta não tem gravação" quanto para "não consegui perguntar"
+ * fazia o Gravador APAGAR a marca de gravação (localStorage) num simples
+ * soluço de rede — destruindo justamente a prova que permite a tela seguinte
+ * dizer "você gravou e eu não achei". Lista vazia por falha nunca pode valer
+ * como lista vazia de verdade.
+ */
+export type ListaDoServidor = { ok: boolean; clips: ServerClip[] };
+
+/** Lista as gravações guardadas no servidor (qualquer aparelho). Nunca lança. */
+export async function listServerClips(): Promise<ListaDoServidor> {
   try {
     const r = await fetch("/api/v1/voice-clips", { cache: "no-store" });
-    if (!r.ok) return [];
+    if (!r.ok) return { ok: false, clips: [] };
     const j = (await r.json()) as { clips?: ServerClip[] };
-    return j?.clips ?? [];
+    return { ok: true, clips: j?.clips ?? [] };
   } catch {
-    return [];
+    return { ok: false, clips: [] };
   }
 }
 

@@ -1382,7 +1382,7 @@
         "saveFailed": "{count, plural, one {# gravação não pôde ser salva neste navegador e vai se perder ao fechar a página.} other {# gravações não puderam ser salvas neste navegador e vão se perder ao fechar a página.}} Envie agora o que já tem, ou grave em outro navegador (sem aba anônima e sem bloqueio de armazenamento).",
         "storageUnreadable": "Não consegui ler as gravações salvas neste navegador. Se você já tinha gravado antes, abra esta página no mesmo aparelho e navegador de antes, fora da aba anônima — o que estiver aqui pode não aparecer."
       },
-      "localOnly": "Atenção: enquanto você não enviar para treinamento, estas gravações ficam salvas SÓ neste navegador e neste aparelho. Não limpe os dados do navegador, não grave em aba anônima e termine o envio aqui mesmo — se sair, elas podem se perder.",
+      "localOnly": "Atenção: alguma gravação ainda não subiu para a sua conta e está SÓ neste navegador, neste aparelho — cada linha abaixo diz onde ela está. Enquanto for assim, não limpe os dados do navegador e não feche a página; se ficar parada em \"só neste navegador\", use o \"salvar agora\" da linha.",
       "overFileCap": "Você gravou o suficiente, mas em clipes demais: só os {max} maiores vão para o treino, e os outros {extra} ficam de fora — sobra {usable}, abaixo dos {minutes} min necessários. Apague os clipes mais curtos e grave trechos mais longos (ou continue gravando) para liberar o envio."
     },
     "script": {

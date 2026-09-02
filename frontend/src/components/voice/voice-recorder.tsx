@@ -65,13 +65,18 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
   const noiseEmaRef = useRef<number | null>(null);
   const lastSoundRef = useRef(0);
   const [clips, setClips] = useState<ClipView[]>([]);
-  // 🐛 #235 (Alana): o IndexedDB é o ÚNICO lugar onde a gravação existe até o
-  // envio, e os dois acessos a ele eram `.catch(() => {})`. Gravação que não
-  // salvou continuava aparecendo na lista, a barra subia, a CTA liberava — e
-  // a tela seguinte abria vazia. Falha de armazenamento agora é ESTADO, e
-  // estado vira aviso na tela.
+  // 🐛 #235 (Alana): os dois acessos ao IndexedDB eram `.catch(() => {})`.
+  // Gravação que não salvou continuava aparecendo na lista, a barra subia, a
+  // CTA liberava — e a tela seguinte abria vazia. Falha de armazenamento agora
+  // é ESTADO, e estado vira aviso na tela.
   const [falhaLeitura, setFalhaLeitura] = useState(false);
-  const [clipesNaoSalvos, setClipesNaoSalvos] = useState(0);
+  /**
+   * Ids de clipes que NÃO conseguiram entrar no IndexedDB. Desde 02/09 o clipe
+   * também sobe pra conta, então isto sozinho não significa perda: o aviso na
+   * tela cruza esta lista com o upload (`clipesPerdidos`) para nunca dizer
+   * "vai se perder" de uma gravação que já está guardada no servidor.
+   */
+  const [semDisco, setSemDisco] = useState<string[]>([]);
   /**
    * A lista de clipes já veio do IndexedDB? Enquanto for `false`, uma lista
    * vazia NÃO é prova de que não há gravação — é só o estado inicial. Sem esta
@@ -116,24 +121,27 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
   useEffect(() => {
     let alive = true;
     (async () => {
-      // Servidor primeiro (fb06a43): as gravações da CONTA aparecem em
-      // qualquer aparelho — inclusive quando o IndexedDB local morreu.
-      const server = await listServerClips();
-      let local: StoredClip[] = [];
-      let leuLocal = true;
-      try {
-        local = await listClips();
-      } catch (e) {
-        // Não dá pra ler o armazenamento deste navegador. Antes isso era
-        // engolido e a pessoa recomeçava do zero achando que nunca gravou.
-        leuLocal = false;
-        if (alive) setFalhaLeitura(true);
-        clientLogger.warn("gravador: nao consegui LER as gravacoes (IndexedDB)", {
-          erro: e instanceof Error ? e.name : String(e),
-        });
-      }
+      // O servidor é a fonte de verdade (02/09) e o IndexedDB é o que sobrou
+      // pra trás. Mas a LEITURA do IndexedDB pode falhar (aba privada, cota,
+      // storage bloqueado) e falha engolida foi o defeito do #235 — por isso
+      // aqui interessa o DESFECHO da leitura, não só o resultado dela.
+      const [server, local] = await Promise.all([
+        listServerClips(),
+        listClips().then(
+          (stored) => ({ ok: true, stored }),
+          (e: unknown) => {
+            clientLogger.warn("gravador: nao consegui LER as gravacoes (IndexedDB)", {
+              erro: e instanceof Error ? e.name : String(e),
+            });
+            return { ok: false, stored: [] as StoredClip[] };
+          },
+        ),
+      ]);
       if (!alive) return;
-      const doServidor: ClipView[] = server.map((s) => ({
+      // Não dá pra ler o armazenamento deste navegador. Antes isso era
+      // engolido e a pessoa recomeçava do zero achando que nunca gravou.
+      if (!local.ok) setFalhaLeitura(true);
+      const doServidor: ClipView[] = server.clips.map((s) => ({
         id: s.key,
         seconds: s.seconds,
         createdAt: s.at ? Date.parse(s.at) : 0,
@@ -141,12 +149,15 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
         saved: "server",
         serverKey: s.key,
       }));
-      const locais = local.map((c) => ({ ...toView(c), saved: "failed" as SavedState }));
+      const locais = local.stored.map((c) => ({ ...toView(c), saved: "failed" as SavedState }));
       setClips([...doServidor, ...locais].sort((a, b) => a.createdAt - b.createdAt));
-      // Só a partir daqui uma lista vazia significa "não há gravação".
-      if (leuLocal) setLeituraConfiavel(true);
-      // Retry automático dos locais que ficaram pra trás (visitas antigas).
-      for (const c of local) void syncRef.current(c.id, c.blob, c.seconds);
+      // Só a partir daqui uma lista vazia significa "não há gravação" — e só
+      // quando AS DUAS leituras deram certo. Se qualquer uma falhou, vazio não
+      // é prova de nada, e apagar o bilhete destruiria a prova da vítima do
+      // #235 (é `leituraConfiavel` que autoriza o efeito da marca a apagar).
+      if (local.ok && server.ok) setLeituraConfiavel(true);
+      // Retry automático dos que ficaram pra trás (inclusive de visitas antigas).
+      for (const c of local.stored) void syncRef.current(c.id, c.blob, c.seconds);
     })();
     return () => {
       alive = false;
@@ -199,12 +210,16 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
       seconds: secs,
       createdAt: Date.now(),
     };
-    // IndexedDB primeiro (anti-crash), servidor em seguida (anti-perda real,
-    // fb06a43). ⚠️ #235: falha no SALVAR local não é mais engolida — vira
-    // contagem e aviso na tela; e mesmo com o IndexedDB quebrado o clipe
-    // ainda sobe pra conta pelo syncClip (o blob está em memória).
+    // IndexedDB primeiro (anti-crash), servidor em seguida (anti-perda real).
+    //
+    // ⚠️ #235: gravar SEM conseguir salvar é o pior caminho da tela — o clipe
+    // aparece na lista, a barra sobe, a CTA libera, e o áudio morre quando a
+    // aba fecha. O erro precisa CHEGAR NO ALUNO enquanto ele ainda pode reagir
+    // (não fechar a aba, trocar de navegador, sair do modo anônimo). Depois de
+    // 02/09 o clipe TAMBÉM sobe pra conta, então falhar aqui só é fatal se o
+    // upload falhar junto — quem cruza as duas coisas é `clipesPerdidos`.
     void saveClip(clip).catch((e: unknown) => {
-      setClipesNaoSalvos((n) => n + 1);
+      setSemDisco((prev) => (prev.includes(clip.id) ? prev : [...prev, clip.id]));
       clientLogger.warn("gravador: nao consegui SALVAR a gravacao (IndexedDB)", {
         erro: e instanceof Error ? e.name : String(e),
         segundos: Math.round(secs),
@@ -362,6 +377,13 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
   // lib/audio/entrega-gravador.ts.
   const entrega = resumirEntregaDoGravador(clips, extraSeconds, TARGET_SECONDS);
   const totalSeconds = entrega.totalGravado;
+  // Gravação que não entrou no IndexedDB E também não subiu pra conta: essa
+  // sim morre ao fechar a aba. Se o upload deu certo (`saved === "server"`),
+  // falhar no disco do navegador deixou de ser perda — e prometer perda que
+  // não existe é o mesmo tipo de mentira que o #235 combate.
+  const clipesPerdidos = clips.filter((c) => c.saved !== "server" && semDisco.includes(c.id)).length;
+  // Enquanto houver clipe fora da conta, o aviso de "só neste navegador" vale.
+  const temClipeForaDaConta = clips.some((c) => c.saved !== "server");
   const pct = Math.min(100, Math.round((totalSeconds / TARGET_SECONDS) * 100));
   const meterPct = Math.round(level * 100);
   const showPill = status === "ready" || status === "recording";
@@ -489,13 +511,13 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
         #235: as duas falhas de armazenamento que a tela engolia. Ficam no
         TOPO das ações porque a hora de reagir é ANTES de gravar mais 20 min.
       */}
-      {clipesNaoSalvos > 0 && (
+      {clipesPerdidos > 0 && (
         <p
           role="alert"
           className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-deep)] px-3 py-2 text-[12px] leading-relaxed text-[var(--status-error)]"
         >
           <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-          <span>{t("errors.saveFailed", { count: clipesNaoSalvos })}</span>
+          <span>{t("errors.saveFailed", { count: clipesPerdidos })}</span>
         </p>
       )}
 
@@ -538,16 +560,24 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
             {t("clipsRecorded", { count: clips.length })}
           </span>
           {/*
-            #235 (Alana): enquanto não envia, a gravação existe SÓ aqui — no
-            armazenamento deste navegador, neste aparelho. Ela gravou 20 min,
-            abriu a tela seguinte e não havia nada; ninguém tinha avisado que
-            era assim. Perder 20 min de gravação em silêncio é o pior sintoma
+            #235 (Alana): a gravação que ainda não subiu pra conta existe SÓ
+            aqui — no armazenamento deste navegador, neste aparelho. Ela gravou
+            20 min, abriu a tela seguinte e não havia nada; ninguém tinha
+            avisado que era assim. Perder 20 min em silêncio é o pior sintoma
             desta tela, então o risco fica escrito ANTES de acontecer.
+
+            ⚠️ O aviso é CONDICIONAL de propósito: desde 02/09 o clipe sobe pra
+            conta e cada linha já diz onde ela está. Repetir "isto está só no
+            navegador" com tudo salvo no servidor seria mentira na direção
+            oposta — e a régua dos dois consertos é a mesma: a tela não promete
+            o que não guardou, nem assusta com perda que não existe.
           */}
-          <p className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-2 text-[12px] leading-relaxed text-[var(--mute)]">
-            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--status-warn)]" />
-            <span>{t("localOnly")}</span>
-          </p>
+          {temClipeForaDaConta && (
+            <p className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-2 text-[12px] leading-relaxed text-[var(--mute)]">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--status-warn)]" />
+              <span>{t("localOnly")}</span>
+            </p>
+          )}
           {clips.map((c, i) => (
             <div key={c.id} className="flex flex-col gap-1">
               <div className="flex items-center gap-3">
