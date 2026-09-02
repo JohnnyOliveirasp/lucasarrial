@@ -1336,7 +1336,16 @@
   "voiceCreate": {
     "recorderImport": {
       "loaded": "{count, plural, one {# gravação do Gravador carregada automaticamente.} other {# gravações do Gravador carregadas automaticamente.}}",
-      "skipped": "({skipped} clipe(s) menores ficaram de fora — limite de {max} arquivos.)"
+      "skipped": "({skipped} clipe(s) menores ficaram de fora — limite de {max} arquivos.)",
+      "readError": "Não consegui ler as gravações deste navegador. Abra esta página no mesmo aparelho e no mesmo navegador em que você gravou, fora da aba anônima. Se você gravou em outro lugar, as gravações estão lá — não foram enviadas para nós.",
+      "phoneError": "Não consegui buscar as gravações que você fez pelo celular. Recarregue a página; se continuar assim, fale com o suporte antes de gravar tudo de novo.",
+      "phonePartial": "{count, plural, one {# gravação do celular não pôde ser baixada e NÃO entrou no treino.} other {# gravações do celular não puderam ser baixadas e NÃO entraram no treino.}} Recarregue a página para tentar de novo.",
+      "missingTitle": "Você gravou {count, plural, one {# áudio} other {# áudios}} ({duration}) neste navegador, mas não encontrei essas gravações agora.",
+      "missingTitleSemMarca": "Não encontrei nenhuma gravação para carregar aqui.",
+      "missingSameDevice": "As gravações ficam no aparelho e no navegador em que foram feitas — se você gravou no celular e abriu no computador (ou trocou de navegador), abra de novo onde gravou.",
+      "missingCleared": "Se você limpou o histórico ou os dados do navegador depois de gravar, elas foram apagadas e não dá para recuperar.",
+      "missingPrivate": "Aba anônima/privada apaga tudo ao fechar — nesse caso é preciso gravar de novo em uma janela normal.",
+      "missingBackToRecorder": "Voltar ao Gravador"
     },
     "fileList": {
       "remove": "Remover"
@@ -1365,8 +1374,12 @@
       "errors": {
         "micDenied": "Permissão de microfone negada — libere o mic no navegador e tente de novo.",
         "micGeneric": "Não consegui acessar o microfone.",
-        "muteClip": "A gravação saiu muda (nenhuma voz captada) e foi descartada. Verifique o microfone e grave de novo."
-      }
+        "muteClip": "A gravação saiu muda (nenhuma voz captada) e foi descartada. Verifique o microfone e grave de novo.",
+        "saveFailed": "{count, plural, one {# gravação não pôde ser salva neste navegador e vai se perder ao fechar a página.} other {# gravações não puderam ser salvas neste navegador e vão se perder ao fechar a página.}} Envie agora o que já tem, ou grave em outro navegador (sem aba anônima e sem bloqueio de armazenamento).",
+        "storageUnreadable": "Não consegui ler as gravações salvas neste navegador. Se você já tinha gravado antes, abra esta página no mesmo aparelho e navegador de antes, fora da aba anônima — o que estiver aqui pode não aparecer."
+      },
+      "localOnly": "Atenção: enquanto você não enviar para treinamento, estas gravações ficam salvas SÓ neste navegador e neste aparelho. Não limpe os dados do navegador, não grave em aba anônima e termine o envio aqui mesmo — se sair, elas podem se perder.",
+      "overFileCap": "Você gravou o suficiente, mas em clipes demais: só os {max} maiores vão para o treino, e os outros {extra} ficam de fora — sobra {usable}, abaixo dos {minutes} min necessários. Apague os clipes mais curtos e grave trechos mais longos (ou continue gravando) para liberar o envio."
     },
     "script": {
       "pickPrompt": "Cole seu próprio roteiro abaixo — ou deixe a IA gerar um texto de leitura pra você.",

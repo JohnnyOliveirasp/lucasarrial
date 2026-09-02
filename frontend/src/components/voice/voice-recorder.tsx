@@ -7,6 +7,12 @@ import { Mic, Square, Trash2, AlertCircle, AlertTriangle, Check, ArrowRight } fr
 import { workletUrl, rms, concatFloat32, encodeWav } from "@/lib/audio/recorder";
 import { formatDuration } from "@/lib/audio/duration";
 import { saveClip, listClips, deleteClip, type StoredClip } from "@/lib/audio/clip-store";
+import {
+  MAX_ARQUIVOS_TREINO,
+  resumirEntregaDoGravador,
+} from "@/lib/audio/entrega-gravador";
+import { marcarGravacao } from "@/lib/audio/marca-gravacao";
+import { clientLogger } from "@/lib/logger/client";
 
 const SPEECH_RMS = 0.015; // acima disso considera fala
 const SILENCE_MS = 20000; // silêncio após falar → para automaticamente (20s, Johnny 04/08: 2s cortava pausas de leitura)
@@ -49,6 +55,13 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
   const noiseEmaRef = useRef<number | null>(null);
   const lastSoundRef = useRef(0);
   const [clips, setClips] = useState<ClipView[]>([]);
+  // 🐛 #235 (Alana): o IndexedDB é o ÚNICO lugar onde a gravação existe até o
+  // envio, e os dois acessos a ele eram `.catch(() => {})`. Gravação que não
+  // salvou continuava aparecendo na lista, a barra subia, a CTA liberava — e
+  // a tela seguinte abria vazia. Falha de armazenamento agora é ESTADO, e
+  // estado vira aviso na tela.
+  const [falhaLeitura, setFalhaLeitura] = useState(false);
+  const [clipesNaoSalvos, setClipesNaoSalvos] = useState(0);
 
   const ctxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -70,18 +83,37 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
   // Carrega clipes salvos (sobrevivem a reload) + cleanup.
   useEffect(() => {
     let alive = true;
-    listClips()
-      .then((stored) => {
+    listClips().then(
+      (stored) => {
         if (!alive) return;
         setClips(stored.map(toView));
-      })
-      .catch(() => {});
+      },
+      (e: unknown) => {
+        // Não dá pra ler o armazenamento deste navegador. Antes isso era
+        // engolido e a pessoa recomeçava do zero achando que nunca gravou.
+        if (!alive) return;
+        setFalhaLeitura(true);
+        clientLogger.warn("gravador: nao consegui LER as gravacoes (IndexedDB)", {
+          erro: e instanceof Error ? e.name : String(e),
+        });
+      },
+    );
     return () => {
       alive = false;
       teardownAudio();
       clipsRef.current.forEach((c) => URL.revokeObjectURL(c.url));
     };
   }, []);
+
+  // Deixa o bilhete num armário DIFERENTE do IndexedDB (localStorage). É ele
+  // que permite a tela de criar voz dizer "você gravou aqui e eu não achei
+  // as gravações" em vez de abrir um formulário mudo (#235).
+  useEffect(() => {
+    marcarGravacao(
+      clips.length,
+      clips.reduce((s, c) => s + c.seconds, 0),
+    );
+  }, [clips]);
 
   function teardownAudio() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -107,7 +139,18 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
       seconds: secs,
       createdAt: Date.now(),
     };
-    void saveClip(clip).catch(() => {});
+    // ⚠️ #235: gravar SEM conseguir salvar é o pior caminho da tela — o clipe
+    // aparece na lista, a barra sobe, a CTA libera, e o áudio morre quando a
+    // aba fecha. O erro precisa CHEGAR NO ALUNO enquanto ele ainda pode
+    // reagir (não fechar a aba, trocar de navegador, sair do modo anônimo).
+    void saveClip(clip).catch((e: unknown) => {
+      setClipesNaoSalvos((n) => n + 1);
+      clientLogger.warn("gravador: nao consegui SALVAR a gravacao (IndexedDB)", {
+        erro: e instanceof Error ? e.name : String(e),
+        segundos: Math.round(secs),
+        bytes: blob.size,
+      });
+    });
     setClips((prev) => [...prev, toView(clip)]);
   }, []);
 
@@ -244,11 +287,16 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
 
   // extraSeconds = fala gravada PELO CELULAR (takes no R2) — soma na barra,
   // porque tudo entra no mesmo treino (pedido Johnny 03/08).
-  const totalSeconds = clips.reduce((s, c) => s + c.seconds, 0) + extraSeconds;
+  // 🐛 #235: a CTA NÃO pode olhar o total da barra — ela tem que olhar o que
+  // a tela de destino consegue importar sozinha (os MAX_ARQUIVOS_TREINO
+  // maiores clipes + os takes do celular). Régua pura e testada em
+  // lib/audio/entrega-gravador.ts.
+  const entrega = resumirEntregaDoGravador(clips, extraSeconds, TARGET_SECONDS);
+  const totalSeconds = entrega.totalGravado;
   const pct = Math.min(100, Math.round((totalSeconds / TARGET_SECONDS) * 100));
   const meterPct = Math.round(level * 100);
   const showPill = status === "ready" || status === "recording";
-  const targetMet = totalSeconds >= TARGET_SECONDS;
+  const targetMet = entrega.liberaEnvio;
 
   return (
     <>
@@ -368,6 +416,30 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
         </p>
       )}
 
+      {/*
+        #235: as duas falhas de armazenamento que a tela engolia. Ficam no
+        TOPO das ações porque a hora de reagir é ANTES de gravar mais 20 min.
+      */}
+      {clipesNaoSalvos > 0 && (
+        <p
+          role="alert"
+          className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-deep)] px-3 py-2 text-[12px] leading-relaxed text-[var(--status-error)]"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>{t("errors.saveFailed", { count: clipesNaoSalvos })}</span>
+        </p>
+      )}
+
+      {falhaLeitura && (
+        <p
+          role="alert"
+          className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-deep)] px-3 py-2 text-[12px] leading-relaxed text-[var(--status-error)]"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>{t("errors.storageUnreadable")}</span>
+        </p>
+      )}
+
       {/* Ações */}
       <div className="flex flex-wrap gap-3">
         {(status === "idle" || status === "denied") && (
@@ -396,6 +468,17 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
           <span className="font-mono text-[10px] tracking-wide text-[var(--mute)]">
             {t("clipsRecorded", { count: clips.length })}
           </span>
+          {/*
+            #235 (Alana): enquanto não envia, a gravação existe SÓ aqui — no
+            armazenamento deste navegador, neste aparelho. Ela gravou 20 min,
+            abriu a tela seguinte e não havia nada; ninguém tinha avisado que
+            era assim. Perder 20 min de gravação em silêncio é o pior sintoma
+            desta tela, então o risco fica escrito ANTES de acontecer.
+          */}
+          <p className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-2 text-[12px] leading-relaxed text-[var(--mute)]">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--status-warn)]" />
+            <span>{t("localOnly")}</span>
+          </p>
           {clips.map((c, i) => (
             <div key={c.id} className="flex items-center gap-3">
               <span className="w-6 font-mono text-[10px] tabular-nums text-[var(--ash)]">{i + 1}</span>
@@ -416,8 +499,32 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
         </div>
       )}
 
-      {/* CTA enviar pra treinamento — aparece ao bater 20min. Usuário
-          pode continuar gravando (CTA fica disponível, não bloqueia). */}
+      {/*
+        #235: a barra bateu a meta mas a tela de destino NÃO consegue somar
+        tudo isso (clipes além do teto de arquivos ficam de fora). Sumir com a
+        CTA e não dizer nada seria o mesmo botão mudo de sempre — aqui a tela
+        explica o que aconteceu e o que fazer.
+      */}
+      {entrega.metaIlusoria && (
+        <p
+          role="alert"
+          className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-deep)] px-3 py-2 text-[12px] leading-relaxed text-[var(--status-warn)]"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>
+            {t("overFileCap", {
+              extra: entrega.clipesForaDoTeto,
+              max: MAX_ARQUIVOS_TREINO,
+              usable: formatDuration(entrega.aproveitados),
+              minutes: TARGET_SECONDS / 60,
+            })}
+          </span>
+        </p>
+      )}
+
+      {/* CTA enviar pra treinamento — aparece ao bater 20min DE ÁUDIO QUE A
+          TELA SEGUINTE CONSEGUE IMPORTAR (ver `entrega`). Usuário pode
+          continuar gravando (CTA fica disponível, não bloqueia). */}
       {targetMet && (
         <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] p-4">
           <p className="flex items-center gap-2 font-mono text-[10px] tracking-wide text-[var(--status-online)]">

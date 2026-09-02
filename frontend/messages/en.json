@@ -1336,7 +1336,16 @@
   "voiceCreate": {
     "recorderImport": {
       "loaded": "{count, plural, one {# Recorder clip loaded automatically.} other {# Recorder clips loaded automatically.}}",
-      "skipped": "({skipped} shorter clip(s) were left out — limit of {max} files.)"
+      "skipped": "({skipped} shorter clip(s) were left out — limit of {max} files.)",
+      "readError": "I couldn't read this browser's recordings. Open this page on the same device and browser you recorded on, outside a private window. If you recorded somewhere else, the audio is still there — it was never sent to us.",
+      "phoneError": "I couldn't fetch the recordings you made on your phone. Reload the page; if it keeps failing, contact support before recording everything again.",
+      "phonePartial": "{count, plural, one {# phone recording could not be downloaded and was NOT included in training.} other {# phone recordings could not be downloaded and were NOT included in training.}} Reload the page to try again.",
+      "missingTitle": "You recorded {count, plural, one {# clip} other {# clips}} ({duration}) in this browser, but I can't find those recordings now.",
+      "missingTitleSemMarca": "I couldn't find any recording to load here.",
+      "missingSameDevice": "Recordings stay on the device and browser where they were made — if you recorded on your phone and opened this on a computer (or switched browsers), open it again where you recorded.",
+      "missingCleared": "If you cleared your browser history or data after recording, they were deleted and can't be recovered.",
+      "missingPrivate": "A private window erases everything when closed — in that case you'll need to record again in a normal window.",
+      "missingBackToRecorder": "Back to the Recorder"
     },
     "fileList": {
       "remove": "Remove"
@@ -1365,8 +1374,12 @@
       "errors": {
         "micDenied": "Microphone permission denied — allow the mic in your browser and try again.",
         "micGeneric": "Couldn't access the microphone.",
-        "muteClip": "The recording came out silent (no voice captured) and was discarded. Check your microphone and record again."
-      }
+        "muteClip": "The recording came out silent (no voice captured) and was discarded. Check your microphone and record again.",
+        "saveFailed": "{count, plural, one {# recording could not be saved in this browser and will be lost when you close the page.} other {# recordings could not be saved in this browser and will be lost when you close the page.}} Send what you have now, or record in another browser (not a private window, storage not blocked).",
+        "storageUnreadable": "I couldn't read the recordings saved in this browser. If you recorded before, open this page on the same device and browser you used, outside a private window — anything stored here may not show up."
+      },
+      "localOnly": "Heads up: until you send them for training, these recordings are stored ONLY in this browser on this device. Don't clear your browser data, don't record in a private window, and finish sending from here — if you leave, they can be lost.",
+      "overFileCap": "You recorded enough, but in too many clips: only the {max} longest go into training and the other {extra} are left out — that leaves {usable}, below the {minutes} min required. Delete the shortest clips and record longer takes (or keep recording) to unlock sending."
     },
     "script": {
       "pickPrompt": "Paste your own script below — or let AI generate a reading text for you.",
