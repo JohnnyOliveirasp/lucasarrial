@@ -23,6 +23,23 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
    - Nos dois casos, **o que dispara o deploy é a `main`**. A regra 1 não
      muda: nada chega no servidor por outro caminho.
 
+5-B. **"Está no ar" se prova com TRÊS coisas, e `grep` no bundle não é
+   nenhuma delas.** (medido em 02/09, prova em
+   `_frank/prova/2026-09-02_prova_de_deploy_grep_no_bundle_e_falso_negativo.md`)
+   1. **hash do fonte no servidor == hash do commit** (`md5sum` em
+      `/mnt/volume/aiverse/frontend/src/...` contra o seu);
+   2. **`BUILD_ID`** novo, com mtime posterior ao commit;
+   3. **uptime do pm2** batendo com o fim do Action — build sem restart é
+      código que ninguém está executando.
+   ⚠️ **Nunca `grep` de identificador no `.next/server`**: o minificador
+   renomeia. Procurei `donoDoEntitlement` e não achei; procurei `grantAccess`,
+   que está lá há meses, e **também não achei**. Instrumento que não enxerga o
+   que existe não pode concluir ausência. Agulha ASCII (armadilha de 01/09)
+   resolve acento, não resolve minificação.
+   ⚠️ Toda busca que volta VAZIA pede a mesma contraprova: rode contra algo
+   que você SABE que está lá. É a regra do "consulta que erra volta vazia"
+   (`03_ROTINA.md`) aplicada ao `grep`.
+
 ## Dinheiro do aluno
 
 6. **Falha nossa não se cobra.** Se o produto quebrou, o aluno não paga — e se
