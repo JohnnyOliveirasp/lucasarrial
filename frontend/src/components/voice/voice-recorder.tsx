@@ -7,6 +7,7 @@ import { Mic, Square, Trash2, AlertCircle, AlertTriangle, Check, ArrowRight } fr
 import { workletUrl, rms, concatFloat32, encodeWav } from "@/lib/audio/recorder";
 import { formatDuration } from "@/lib/audio/duration";
 import { saveClip, listClips, deleteClip, type StoredClip } from "@/lib/audio/clip-store";
+import { uploadClipToServer, listServerClips, deleteServerClip } from "@/lib/audio/clip-sync";
 
 const SPEECH_RMS = 0.015; // acima disso considera fala
 const SILENCE_MS = 20000; // silêncio após falar → para automaticamente (20s, Johnny 04/08: 2s cortava pausas de leitura)
@@ -30,12 +31,21 @@ const PILL_TOOLTIP =
   "pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-2 py-1 font-sans text-[11px] font-medium text-[var(--ink)] opacity-0 shadow-[var(--elevation-popover)] transition-opacity duration-[var(--dur-base)] group-hover:opacity-100";
 
 type Status = "idle" | "requesting" | "ready" | "recording" | "denied";
-type ClipView = { id: string; seconds: number; createdAt: number; url: string };
+/**
+ * saved: onde a gravação está guardada.
+ *  - "server": no R2 — sobrevive a troca de navegador/aparelho.
+ *  - "saving": subindo agora.
+ *  - "failed": upload falhou — está SÓ neste navegador; a tela oferece retry.
+ * (caso Allan/Alana 02/09: IndexedDB sozinho perdia 20min de gravação em troca
+ *  de navegador/limpeza de dados, e o aluno lia como "apagaram meu áudio".)
+ */
+type SavedState = "server" | "saving" | "failed";
+type ClipView = { id: string; seconds: number; createdAt: number; url: string; saved: SavedState; serverKey?: string };
 
 /**
  * Gravador guiado: a pessoa lê o roteiro e grava CLIPES curtos (auto-stop por
- * silêncio). Cada clipe é persistido em IndexedDB (anti-perda) e listado. Slice
- * 2 vai subir os clipes do IndexedDB pro R2.
+ * silêncio). Cada clipe vai pro IndexedDB (anti-crash) E sobe pro servidor na
+ * hora — gravou = guardado, de qualquer aparelho.
  */
 export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = {}) {
   const t = useTranslations("voiceCreate.recorder");
@@ -67,19 +77,50 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
   const clipsRef = useRef<ClipView[]>([]);
   clipsRef.current = clips;
 
-  // Carrega clipes salvos (sobrevivem a reload) + cleanup.
+  /** Sobe um clipe local pro servidor e atualiza a linha dele na lista. */
+  const syncClip = useCallback(async (id: string, blob: Blob, seconds: number) => {
+    setClips((prev) => prev.map((c) => (c.id === id ? { ...c, saved: "saving" } : c)));
+    const key = await uploadClipToServer(blob, seconds);
+    if (key) {
+      // Confirmado no R2 → o IndexedDB deixa de ser a única cópia.
+      void deleteClip(id).catch(() => {});
+      setClips((prev) => prev.map((c) => (c.id === id ? { ...c, saved: "server", serverKey: key } : c)));
+    } else {
+      setClips((prev) => prev.map((c) => (c.id === id ? { ...c, saved: "failed" } : c)));
+    }
+  }, []);
+  const syncRef = useRef(syncClip);
+  syncRef.current = syncClip;
+
+  // Carrega gravações do SERVIDOR (qualquer aparelho) + clipes locais que
+  // ainda não subiram (crash/upload falho) — e tenta subir esses na hora.
   useEffect(() => {
     let alive = true;
-    listClips()
-      .then((stored) => {
-        if (!alive) return;
-        setClips(stored.map(toView));
-      })
-      .catch(() => {});
+    (async () => {
+      const [server, local] = await Promise.all([
+        listServerClips().catch(() => []),
+        listClips().catch(() => [] as StoredClip[]),
+      ]);
+      if (!alive) return;
+      const doServidor: ClipView[] = server.map((s) => ({
+        id: s.key,
+        seconds: s.seconds,
+        createdAt: s.at ? Date.parse(s.at) : 0,
+        url: s.url,
+        saved: "server",
+        serverKey: s.key,
+      }));
+      const locais = local.map((c) => ({ ...toView(c), saved: "failed" as SavedState }));
+      setClips([...doServidor, ...locais].sort((a, b) => a.createdAt - b.createdAt));
+      // Retry automático dos que ficaram pra trás (inclusive de visitas antigas).
+      for (const c of local) void syncRef.current(c.id, c.blob, c.seconds);
+    })();
     return () => {
       alive = false;
       teardownAudio();
-      clipsRef.current.forEach((c) => URL.revokeObjectURL(c.url));
+      clipsRef.current.forEach((c) => {
+        if (c.url.startsWith("blob:")) URL.revokeObjectURL(c.url);
+      });
     };
   }, []);
 
@@ -107,9 +148,11 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
       seconds: secs,
       createdAt: Date.now(),
     };
+    // IndexedDB primeiro (anti-crash), servidor em seguida (anti-perda real).
     void saveClip(clip).catch(() => {});
-    setClips((prev) => [...prev, toView(clip)]);
-  }, []);
+    setClips((prev) => [...prev, { ...toView(clip), saved: "saving" as SavedState }]);
+    void syncClip(clip.id, blob, secs);
+  }, [syncClip]);
 
   const stopRecording = useCallback(() => {
     if (!recordingRef.current) return;
@@ -237,9 +280,17 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
 
   async function removeClip(id: string) {
     const c = clipsRef.current.find((x) => x.id === id);
-    if (c) URL.revokeObjectURL(c.url);
+    if (c?.url.startsWith("blob:")) URL.revokeObjectURL(c.url);
     setClips((prev) => prev.filter((x) => x.id !== id));
+    if (c?.serverKey) await deleteServerClip(c.serverKey).catch(() => {});
     await deleteClip(id).catch(() => {});
+  }
+
+  /** Retry manual do upload de um clipe que ficou só neste navegador. */
+  async function retrySave(id: string) {
+    const stored = await listClips().catch(() => [] as StoredClip[]);
+    const c = stored.find((x) => x.id === id);
+    if (c) void syncClip(c.id, c.blob, c.seconds);
   }
 
   // extraSeconds = fala gravada PELO CELULAR (takes no R2) — soma na barra,
@@ -397,20 +448,42 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
             {t("clipsRecorded", { count: clips.length })}
           </span>
           {clips.map((c, i) => (
-            <div key={c.id} className="flex items-center gap-3">
-              <span className="w-6 font-mono text-[10px] tabular-nums text-[var(--ash)]">{i + 1}</span>
-              <audio src={c.url} controls className="h-9 flex-1" preload="metadata" />
-              <span className="w-10 text-right font-mono text-[10px] tabular-nums text-[var(--mute)]">
-                {formatDuration(c.seconds)}
-              </span>
-              <button
-                type="button"
-                onClick={() => removeClip(c.id)}
-                aria-label={t("deleteClip")}
-                className="text-[var(--mute)] transition-colors hover:text-[var(--status-error)]"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+            <div key={c.id} className="flex flex-col gap-1">
+              <div className="flex items-center gap-3">
+                <span className="w-6 font-mono text-[10px] tabular-nums text-[var(--ash)]">{i + 1}</span>
+                <audio src={c.url} controls className="h-9 flex-1" preload="metadata" />
+                <span className="w-10 text-right font-mono text-[10px] tabular-nums text-[var(--mute)]">
+                  {formatDuration(c.seconds)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeClip(c.id)}
+                  aria-label={t("deleteClip")}
+                  className="text-[var(--mute)] transition-colors hover:text-[var(--status-error)]"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+              {/* Onde a gravação está — a tela nunca mais promete o que não
+                  guardou (caso Allan/Alana 02/09). */}
+              {c.saved === "server" ? (
+                <span className="pl-9 font-mono text-[10px] tracking-wide text-[var(--status-online)]">
+                  ✓ {t("clipSaved")}
+                </span>
+              ) : c.saved === "saving" ? (
+                <span className="pl-9 font-mono text-[10px] tracking-wide text-[var(--mute)]">{t("clipSaving")}</span>
+              ) : (
+                <span className="flex items-center gap-2 pl-9 font-mono text-[10px] tracking-wide text-[var(--status-warn)]">
+                  <AlertTriangle className="h-3 w-3" /> {t("clipOnlyLocal")}
+                  <button
+                    type="button"
+                    onClick={() => retrySave(c.id)}
+                    className="underline underline-offset-2 transition-colors hover:text-[var(--ink)]"
+                  >
+                    {t("clipRetrySave")}
+                  </button>
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -439,7 +512,7 @@ export function VoiceRecorder({ extraSeconds = 0 }: { extraSeconds?: number } = 
   );
 }
 
-function toView(c: StoredClip): ClipView {
+function toView(c: StoredClip): Omit<ClipView, "saved"> {
   return { id: c.id, seconds: c.seconds, createdAt: c.createdAt, url: URL.createObjectURL(c.blob) };
 }
 

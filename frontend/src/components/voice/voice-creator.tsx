@@ -106,6 +106,10 @@ export function VoiceCreator() {
   // do R2 depois do envio, igual à limpeza do IndexedDB.
   const phoneTakeKeys = useRef<string[]>([]);
   const phoneToken = useRef<string | null>(null);
+  // Gravações do Gravador do NAVEGADOR salvas no servidor (02/09, caso
+  // Allan/Alana) — mesma vida dos takes do celular: entram no treino e são
+  // apagadas do R2 depois do envio.
+  const serverClipKeys = useRef<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -146,6 +150,36 @@ export function VoiceCreator() {
       })
       .catch(() => {});
     // roda 1x no mount — os clipes vêm da página do Gravador
+  }, []);
+
+  // ☁️ 02/09: gravações do Gravador do navegador SALVAS NO SERVIDOR também
+  // entram — é o que faz "gravei no PC de casa, treino no do trabalho"
+  // funcionar. MP3 do nosso ffmpeg, duração vem no nome (sem re-medir).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const j = await fetch("/api/v1/voice-clips", { cache: "no-store" }).then((r) => r.json());
+        const clips = (j?.clips ?? []) as { key: string; name: string; seconds: number; url: string }[];
+        if (!alive || clips.length === 0) return;
+        const additions: LocalFile[] = [];
+        for (const c of clips) {
+          try {
+            const blob = await fetch(c.url).then((r) => r.blob());
+            additions.push({
+              id: `srv-${c.key}`,
+              file: new File([blob], c.name, { type: "audio/mpeg" }),
+              duration: c.seconds > 0 ? c.seconds : null,
+              progress: 0,
+              state: "idle",
+            });
+            serverClipKeys.current.push(c.key);
+          } catch { /* clipe individual falhou — segue os outros */ }
+        }
+        if (alive && additions.length > 0) setFiles((prev) => mesclarSemRepetir(additions, prev));
+      } catch { /* sem gravações no servidor — segue normal */ }
+    })();
+    return () => { alive = false; };
   }, []);
 
   // 📱 Graduação 03/08: takes do "gravar pelo celular" (R2) também entram
@@ -359,6 +393,12 @@ export function VoiceCreator() {
       recorderClipIds.current = recorderClipIds.current.filter((c) => c !== clipId);
       deleteClip(clipId).catch(() => {});
     }
+    // Gravação do servidor removida da lista → apaga do R2 (senão reaparece).
+    if (id.startsWith("srv-")) {
+      const key = id.slice(4);
+      serverClipKeys.current = serverClipKeys.current.filter((k) => k !== key);
+      void fetch(`/api/v1/voice-clips?key=${encodeURIComponent(key)}`, { method: "DELETE" }).catch(() => {});
+    }
   }
 
   function onDropzoneFiles(list: FileList | null) {
@@ -483,6 +523,11 @@ export function VoiceCreator() {
         method: "DELETE",
         headers: { "x-recorder-token": phoneToken.current ?? "" },
       }).catch(() => {});
+    }
+    // Gravações do navegador salvas no servidor → mesma limpeza pós-treino
+    // (elas já vivem em raw/ da voz agora; a cópia do gravador seria eco).
+    for (const key of serverClipKeys.current) {
+      void fetch(`/api/v1/voice-clips?key=${encodeURIComponent(key)}`, { method: "DELETE" }).catch(() => {});
     }
 
     setStep("done");
