@@ -12,11 +12,11 @@
  * Os casos (c) e (d) abaixo são exatamente esse falso negativo. Eles passam
  * hoje porque `inputError` só chega true do classificador de input de verdade.
  *
- * roda: cd frontend && npx tsx --test src/lib/support/rajada-nasce-fechada.test.ts
+ * roda: cd frontend && node --test src/lib/support/rajada-nasce-fechada.test.ts
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { rajadaNasceFechada } from "./failure-alert";
+import { rajadaNasceFechada } from "./rajada-nasce-fechada.ts";
 
 test("(a) erro de INPUT do aluno, aluno NÃO travado -> nasce fechada", () => {
   assert.equal(rajadaNasceFechada({ rawError: "no_speech", inputError: true, stuck: false }), true);
