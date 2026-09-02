@@ -11,6 +11,9 @@ import { getAdmin } from "@/lib/db/admin";
 import { inserirChamadoUnico } from "@/lib/incidents/gravar";
 import { addExtraCredits } from "@/lib/credits/service";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
+// Lógica pura da decisão "nasce fechada?" — mora fora daqui porque este módulo
+// é server-only e o teste dela precisa rodar no `node --test` (sem alias `@/`).
+import { isModerationBlock, rajadaNasceFechada } from "./rajada-nasce-fechada.ts";
 
 export const SUPPORT_EMAIL = "suporte@fastcloner.com";
 
@@ -201,38 +204,6 @@ async function hasNoReadyVoice(userId: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/**
- * Moderação bloqueando conteúdo = PRODUTO FUNCIONANDO, não falha. Regra do
- * Johnny (17/08): rajada de nsfw nasce fechada ("ignored") e reincidência não
- * reabre — registro fica pro histórico, mas não vira fila de ninguém.
- */
-function isModerationBlock(rawError: string): boolean {
-  return /nsfw|moderation|moderaç|conteúdo impróprio|content policy|flagged/i.test(rawError || "");
-}
-
-/**
- * A decisão "esta rajada nasce fechada?" isolada do banco, PRA PODER SER
- * TESTADA. Ela mora aqui e não inline no `openBurstIncident` porque foi
- * exatamente esta linha que errou duas vezes: primeiro descartando a
- * classificação (chamado #183), depois lendo o sinal errado (`alertSupport`,
- * sobrecarregado — ver `userInputError` no tipo).
- *
- * Duas válvulas, que NÃO são a mesma coisa:
- *  - moderação (regra do Johnny 17/08): nasce fechada SEMPRE;
- *  - erro de INPUT: nasce fechada SÓ SE o aluno não estiver travado — erro de
- *    input repetido em aluno sem nenhuma voz pronta é o sinal que o
- *    `escalateStuckUser` existe pra não perder (foi calando esse sinal que o
- *    bug do chunking rodou 18 dias).
- */
-export function rajadaNasceFechada(a: {
-  rawError: string;
-  /** SÓ o classificador de input do aluno seta isto. Nunca `alertSupport`. */
-  inputError: boolean;
-  stuck: boolean;
-}): boolean {
-  return isModerationBlock(a.rawError) || (a.inputError && !a.stuck);
 }
 
 async function openBurstIncident(a: {
