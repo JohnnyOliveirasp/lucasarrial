@@ -79,6 +79,11 @@ class InferenceJob:
             "coverage_idioma_corrigido": 0,
             "intrusion_checked": 0, "intrusion_flagged": 0, "intrusion_none": 0,
             "regens": 0, "exhausted": 0,
+            # #226: severidade do que foi ENTREGUE com o QA reprovando. O
+            # `exhausted` sozinho e' so contagem — nao separa "20% rapido
+            # demais" de "comeu uma palavra". Faixas documentadas em
+            # tts_qa/loop.py, no ponto que grava estes campos.
+            "exhausted_score_max": None, "exhausted_scores": [],
             "tail_checked": 0, "tail_flagged": 0, "tail_none": 0, "tail_healed": 0,
             "tail_word_flagged": 0,
         }
