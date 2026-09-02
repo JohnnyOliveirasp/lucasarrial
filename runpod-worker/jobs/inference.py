@@ -86,6 +86,15 @@ class InferenceJob:
             "exhausted_score_max": None, "exhausted_scores": [],
             "tail_checked": 0, "tail_flagged": 0, "tail_none": 0, "tail_healed": 0,
             "tail_word_flagged": 0,
+            # FRONTEIRA INTERNA (#234, 02/09) — contadores SEPARADOS de
+            # proposito: `tail_flagged` tem historico e significa "fim do
+            # arquivo". Misturar os dois apagaria a serie que ja existe e
+            # inflaria o numero antigo de um dia pro outro. Inicializados em 0
+            # (nao criados sob demanda) pra que a telemetria distinga "a sombra
+            # rodou e nao viu nada" de "a sombra nao rodou".
+            "tail_interno_checked": 0, "tail_interno_flagged": 0,
+            "tail_interno_none": 0, "tail_interno_sombra": 0,
+            "tail_interno_word_flagged": 0,
         }
         # Instrumentação d3d8d1b2: tentativa POR CHUNK (1 = geração original,
         # 2+ = regen do QA) — sem isso o heartbeat não distingue os dois.
@@ -322,6 +331,9 @@ class InferenceJob:
             rate_retries=c.rate_qa_retries,
             rate_model=c.rate_qa_model,
             eh_ultimo_chunk=eh_ultimo,
+            tail_qa_interno_enabled=c.tail_qa_interno_enabled,
+            tail_qa_interno_modo=c.tail_qa_interno_modo,
+            tail_qa_interno_palavra=c.tail_qa_interno_palavra,
         )
 
     def _entregar_mesmo_com_cobertura_baixa(self, idx, chunk, coverage, lacuna) -> bool:

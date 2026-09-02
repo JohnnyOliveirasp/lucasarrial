@@ -183,6 +183,9 @@ def run_chunk_qa(
     rate_retries: int = 0,
     rate_model: "str | None" = None,
     eh_ultimo_chunk: bool = False,
+    tail_qa_interno_enabled: bool = True,
+    tail_qa_interno_modo: str = "sombra",
+    tail_qa_interno_palavra: bool = False,
     alucinacao_min: float = 0.3,
     alucinacao_max_seguidas: int = 2,
 ):
@@ -285,29 +288,65 @@ def run_chunk_qa(
         # motivo do ritmo: e' um defeito que NENHUM criterio textual ve, porque
         # o whisper reconstroi a palavra truncada e a cobertura da 100%. Peso
         # 100 (mesmo nivel de palavra faltando): audio que corta no meio da
-        # palavra e' entrega quebrada. So o ULTIMO chunk e' julgado — no meio
-        # do texto a emenda com o proximo chunk cobre a transicao.
-        if eh_ultimo_chunk:
+        # palavra e' entrega quebrada.
+        #
+        # ⚠️ 02/09 (#234) — A PREMISSA QUE CAIU. Ate aqui este teste vinha
+        # dentro de `if eh_ultimo_chunk:`, com o comentario "no meio do texto a
+        # emenda com o proximo chunk cobre a transicao". E' FALSO: o chunk
+        # interno ja chega DECAPITADO na montagem, e a emenda so cola dois
+        # pedacos — ela nao devolve a silaba que o modelo nao gerou.
+        # MEDIDO no _frank/prova/cauda_decepada.jsonl (regua release_ms <= 35
+        # E plato_db > -40, que e' o envelope visto de fora): 4.258 geracoes,
+        # 10.663 fronteiras internas, 1.371 fronteiras ruins em 623 geracoes
+        # (14,6%), 244 alunos e 281 VOZES — espalhado assim e' defeito de
+        # PRODUTO, nao de voz. Cronico de 27/07 a 01/09, nao e' regressao.
+        # Caso-indice 81d4f3f4 (a aluna reclamou de "voce" cortado no s34): das
+        # 6 fronteiras, 5 decaem a ~-50 dB em 115-305 ms e a do s34,494 desliga
+        # em 10 ms ainda a -27,9 dB. O ouvido dela estava certo.
+        #
+        # POR QUE SOMBRA (padrao): ligar o peso 100 na fronteira interna
+        # multiplica REGEN em ~15% das geracoes de um dia pro outro — o mesmo
+        # tipo de salto que virou tempestade em 19/08 e a razao de a intrusao
+        # ter ficado com gate macio. Primeiro mede-se em producao, depois vira
+        # a chave por env (TTS_TAIL_QA_INTERNO_MODO=reprovando), sem deploy.
+        if eh_ultimo_chunk or tail_qa_interno_enabled:
+            interno = not eh_ultimo_chunk
+            pref = "tail_interno" if interno else "tail"
             cortado = fim_abrupto(seg, sample_rate)
             # 2a prova, mais dura que o envelope (o envelope sozinho deixou
             # passar o 0,027 que o Johnny pegou de ouvido): a ULTIMA palavra
             # cabe no tempo que ela levou? Só roda quando o envelope aprovou —
             # se já reprovou, não gasta um whisper a mais.
-            if cortado is False:
+            # Na fronteira INTERNA ela e' OPCIONAL (TTS_TAIL_QA_INTERNO_PALAVRA)
+            # e vem desligada: seriam N whispers com timestamp por palavra por
+            # geracao em vez de 1, e a regua que mediu o alcance do #234 e' a do
+            # ENVELOPE — ligar a palavra na sombra mediria coisa diferente da
+            # estimativa que justificou a mudanca.
+            if cortado is False and (not interno or tail_qa_interno_palavra):
                 truncada = ultima_palavra_truncada(
                     palavras_com_tempo(seg, sample_rate, echo_qa_model, qa_language)
                 )
                 if truncada:
-                    qa_stats["tail_word_flagged"] = qa_stats.get("tail_word_flagged", 0) + 1
-                    _log("info", "inference.tail_qa.palavra_curta", idx=idx, attempt=attempt)
+                    qa_stats[f"{pref}_word_flagged"] = qa_stats.get(f"{pref}_word_flagged", 0) + 1
+                    _log("info", "inference.tail_qa.palavra_curta", idx=idx,
+                         attempt=attempt, interno=interno)
                     cortado = True
-            qa_stats["tail_checked"] = qa_stats.get("tail_checked", 0) + 1
+            qa_stats[f"{pref}_checked"] = qa_stats.get(f"{pref}_checked", 0) + 1
             if cortado is None:
-                qa_stats["tail_none"] = qa_stats.get("tail_none", 0) + 1
+                qa_stats[f"{pref}_none"] = qa_stats.get(f"{pref}_none", 0) + 1
             elif cortado:
-                qa_stats["tail_flagged"] = qa_stats.get("tail_flagged", 0) + 1
-                _log("info", "inference.tail_qa", idx=idx, attempt=attempt, abrupto=True)
-                score += 100
+                qa_stats[f"{pref}_flagged"] = qa_stats.get(f"{pref}_flagged", 0) + 1
+                # SOMBRA: a fronteira interna reprovada e' CONTADA e LOGADA, e
+                # nao mexe no score — nenhuma entrega muda de rumo por causa
+                # dela nesta fase. O ultimo chunk continua pontuando como
+                # sempre pontuou (nao ha regressao no que ja protegia).
+                pontua = (not interno) or (str(tail_qa_interno_modo).lower() == "reprovando")
+                _log("info", "inference.tail_qa", idx=idx, attempt=attempt,
+                     abrupto=True, interno=interno, pontua=pontua)
+                if pontua:
+                    score += 100
+                else:
+                    qa_stats["tail_interno_sombra"] = qa_stats.get("tail_interno_sombra", 0) + 1
 
         # RITMO (caso Ellen/Johnny 25/08) dentro do MESMO laco: a tentativa e'
         # julgada por conteudo E velocidade juntos — o regen por ritmo nunca

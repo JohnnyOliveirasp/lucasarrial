@@ -62,10 +62,6 @@ class FimAbruptoTest(unittest.TestCase):
         self.assertFalse(fim_abrupto(_fala(amp=0.010), SR))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class CuraDoFimTest(unittest.TestCase):
     """A cura gera ALÉM do texto do aluno (frase-isca) e corta no fim da última
     palavra dele, com o tempo vindo do whisper. Medido em 26/08: só ter fala
@@ -211,3 +207,151 @@ class FimAindaRuimTest(unittest.TestCase):
         j = self._job([])
         self.assertTrue(j._fim_ainda_ruim(_fala()))
         self.assertEqual(chamou, [], "envelope ja reprovou: nao gasta whisper")
+
+
+class FronteiraInternaTest(unittest.TestCase):
+    """#234 (02/09): a fronteira INTERNA passou a ser julgada — em SOMBRA.
+
+    A premissa antiga ("no meio do texto a emenda com o proximo chunk cobre a
+    transicao") e' falsa: o chunk interno ja chega decapitado na montagem.
+    Medido no _frank/prova/cauda_decepada.jsonl (release_ms <= 35 E
+    plato_db > -40): 1.371 fronteiras internas ruins em 623 de 4.258 geracoes
+    (14,6%), 244 alunos, 281 vozes.
+
+    O que estes testes travam:
+      1. chunk INTERNO decepado e' CONTADO e nao mexe no score (ninguem
+         regenera, ninguem falha) — modo sombra, o padrao;
+      2. com o modo "reprovando" o mesmo audio pontua e REGENERA;
+      3. o ULTIMO chunk continua exatamente como era (sem regressao) e nao
+         contamina os contadores novos;
+      4. TTS_TAIL_QA_INTERNO=0 desliga o julgamento interno;
+      5. a sombra NAO gasta whisper na fronteira interna (o custo era o risco);
+      6. o default de env e' sombra — virar a chave e' env, nao deploy.
+    """
+
+    def _stats(self) -> dict:
+        return {
+            "echo_checked": 0, "echo_flagged": 0, "echo_none": 0,
+            "coverage_checked": 0, "coverage_flagged": 0, "coverage_none": 0,
+            "intrusion_checked": 0, "intrusion_flagged": 0, "intrusion_none": 0,
+            "regens": 0, "exhausted": 0,
+        }
+
+    def _kwargs(self, **over):
+        """So o QA de fim ligado: `coverage_qa_retries=2` existe apenas pra dar
+        DUAS voltas no laco (max_attempts) — nenhum whisper roda aqui."""
+        base = dict(
+            sample_rate=SR, prompt_text=None, qa_language="pt",
+            start_qa_enabled=False, start_qa_retries=0, start_qa_model="small",
+            echo_qa_enabled=False, echo_qa_retries=0, echo_qa_model="large-v3-turbo",
+            coverage_qa_enabled=False, coverage_qa_retries=2, coverage_qa_min=0.85,
+            intrusion_qa_enabled=False, intrusion_qa_retries=0,
+        )
+        base.update(over)
+        return base
+
+    def _rodar(self, seg, **over):
+        from tts_qa.loop import run_chunk_qa
+        stats = self._stats()
+        # regen_fn devolve audio BOM: se o laco pontuar, a 2a tentativa passa.
+        run_chunk_qa(seg, 0, "sua nutricionista", regen_fn=lambda: _com_decaimento(),
+                     qa_stats=stats, **self._kwargs(**over))
+        return stats
+
+    def test_chunk_interno_decepado_e_contado_em_sombra(self):
+        s = self._rodar(_fala(), eh_ultimo_chunk=False)
+        self.assertEqual(s["tail_interno_checked"], 1)
+        self.assertEqual(s["tail_interno_flagged"], 1)
+        self.assertEqual(s["tail_interno_sombra"], 1)
+        # SOMBRA = nao mexe no score: ninguem regenerou, nada esgotou.
+        self.assertEqual(s["regens"], 0)
+        self.assertEqual(s["exhausted"], 0)
+        # e nao encosta no contador historico do fim do arquivo
+        self.assertNotIn("tail_flagged", s)
+
+    def test_chunk_interno_bom_passa(self):
+        s = self._rodar(_com_decaimento(), eh_ultimo_chunk=False)
+        self.assertEqual(s["tail_interno_checked"], 1)
+        self.assertEqual(s.get("tail_interno_flagged", 0), 0)
+        self.assertEqual(s["regens"], 0)
+
+    def test_modo_reprovando_pontua_e_regenera(self):
+        s = self._rodar(_fala(), eh_ultimo_chunk=False,
+                        tail_qa_interno_modo="reprovando")
+        self.assertEqual(s["tail_interno_flagged"], 1)
+        self.assertEqual(s.get("tail_interno_sombra", 0), 0, "reprovando nao e' sombra")
+        self.assertEqual(s["regens"], 1, "peso 100 tem que regenerar o chunk")
+
+    def test_ultimo_chunk_nao_mudou(self):
+        """Sem regressao: o fim do ARQUIVO continua pontuando como sempre."""
+        s = self._rodar(_fala(), eh_ultimo_chunk=True)
+        # 2 tentativas (a 1a decepada reprovou e regenerou; a 2a passou), 1 so
+        # sinalizada — e' exatamente o comportamento que ja existia.
+        self.assertEqual(s["tail_checked"], 2)
+        self.assertEqual(s["tail_flagged"], 1)
+        self.assertEqual(s["regens"], 1)
+        self.assertEqual(s.get("tail_interno_checked", 0), 0,
+                         "ultimo chunk nao e' interno")
+
+    def test_desligado_nao_julga_fronteira_interna(self):
+        s = self._rodar(_fala(), eh_ultimo_chunk=False, tail_qa_interno_enabled=False)
+        self.assertNotIn("tail_interno_checked", s)
+        self.assertEqual(s["regens"], 0)
+
+    def test_sombra_nao_gasta_whisper_na_fronteira_interna(self):
+        """O custo era o risco: 1 whisper com timestamp por chunk, e nao por
+        geracao. A 2a prova (palavra) fica FORA da sombra por padrao."""
+        import tts_qa.loop as loop
+        chamou = []
+        orig = loop.palavras_com_tempo
+        loop.palavras_com_tempo = lambda *a, **k: chamou.append(1) or []
+        try:
+            self._rodar(_com_decaimento(), eh_ultimo_chunk=False)
+            self.assertEqual(chamou, [], "sombra nao paga whisper por chunk")
+            self._rodar(_com_decaimento(), eh_ultimo_chunk=False,
+                        tail_qa_interno_palavra=True)
+            self.assertEqual(len(chamou), 1, "com a flag ligada, a 2a prova roda")
+        finally:
+            loop.palavras_com_tempo = orig
+
+    def _settings(self):
+        """Carrega jobs/tts_settings.py SEM passar pelo `jobs/__init__.py` — ele
+        importa a inference inteira (torch/huggingface), que nao existe nesta
+        maquina de teste. O modulo de config so depende de os/dataclasses."""
+        import importlib.util
+        import pathlib
+        import sys
+        p = pathlib.Path(__file__).parent / "jobs" / "tts_settings.py"
+        spec = importlib.util.spec_from_file_location("tts_settings_isolado", p)
+        mod = importlib.util.module_from_spec(spec)
+        # sys.modules ANTES do exec: @dataclass resolve as anotacoes pelo
+        # __module__ da classe e quebra se o modulo nao estiver registrado.
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        return mod.TtsSettings
+
+    def test_default_de_env_e_sombra(self):
+        """Virar a chave e' env, nao deploy — e o default NAO reprova ninguem."""
+        import os
+        TtsSettings = self._settings()
+        for k in ("TTS_TAIL_QA_INTERNO", "TTS_TAIL_QA_INTERNO_MODO",
+                  "TTS_TAIL_QA_INTERNO_PALAVRA"):
+            os.environ.pop(k, None)
+        c = TtsSettings.do_job({})
+        self.assertTrue(c.tail_qa_interno_enabled)
+        self.assertEqual(c.tail_qa_interno_modo, "sombra")
+        self.assertFalse(c.tail_qa_interno_palavra)
+        os.environ["TTS_TAIL_QA_INTERNO_MODO"] = "reprovando"
+        try:
+            self.assertEqual(self._settings().do_job({}).tail_qa_interno_modo,
+                             "reprovando")
+        finally:
+            os.environ.pop("TTS_TAIL_QA_INTERNO_MODO", None)
+
+
+# ⚠️ Fica no FIM do arquivo de proposito: ate 02/09 este `unittest.main()`
+# estava no meio (logo apos FimAbruptoTest) e, rodando o arquivo direto
+# (`python3 test_tail_qa.py`), as classes definidas DEPOIS nem existiam ainda —
+# CuraDoFimTest e UltimaPalavraTruncadaTest nunca rodavam por esse caminho.
+if __name__ == "__main__":
+    unittest.main()

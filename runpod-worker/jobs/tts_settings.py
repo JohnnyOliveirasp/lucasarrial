@@ -103,6 +103,24 @@ class TtsSettings:
     job (23/40 entregas recentes tem o defeito; gate duro = tempestade de
     estorno)."""
 
+    tail_qa_interno_enabled: bool
+    tail_qa_interno_modo: str
+    tail_qa_interno_palavra: bool
+    """QA de FIM ABRUPTO na fronteira INTERNA (#234, 02/09). Ate 01/09 so o
+    ULTIMO chunk era julgado, com a premissa de que "a emenda com o proximo
+    chunk cobre a transicao" — falsa: o chunk interno ja chega DECAPITADO na
+    montagem, a emenda so cola dois pedacos. Medido (regua release_ms <= 35 E
+    plato_db > -40, em 4.258 geracoes): 1.371 fronteiras internas ruins em 623
+    geracoes (14,6%), 244 alunos, 281 vozes.
+    `modo` = "sombra" (PADRAO) conta e loga sem mexer no score: NENHUMA entrega
+    muda de rumo nesta fase. "reprovando" liga o peso 100 (= regen do chunk) —
+    basta virar TTS_TAIL_QA_INTERNO_MODO=reprovando, sem deploy novo.
+    `palavra` (TTS_TAIL_QA_INTERNO_PALAVRA, padrao 0) liga tambem a 2a prova por
+    whisper com timestamp na fronteira interna: cara (N whispers por geracao em
+    vez de 1) e FORA da regua que mediu o alcance — por isso desligada na sombra.
+    TTS_TAIL_QA_INTERNO=0 desliga o julgamento interno inteiro (valvula: o
+    envelope e' numpy puro, mas roda por chunk e por tentativa)."""
+
     reference_wav_too: bool
     """Passa a referencia tambem em reference_wav_path (README: 'maximum
     cloning similarity'). TTS_REFERENCE_WAV_TOO=0 desliga."""
@@ -184,6 +202,11 @@ class TtsSettings:
             coverage_qa_gap_min=int(os.environ.get("TTS_COVERAGE_QA_GAP_MIN", "6")),
             intrusion_qa_enabled=_ligado("TTS_INTRUSION_QA"),
             intrusion_qa_retries=int(os.environ.get("TTS_INTRUSION_QA_RETRIES", "3")),
+            tail_qa_interno_enabled=_ligado("TTS_TAIL_QA_INTERNO"),
+            # SOMBRA e' o padrao DELIBERADO (#234): a 1a fase so mede. Trocar o
+            # default aqui sem olhar a telemetria e' repetir 19/08.
+            tail_qa_interno_modo=os.environ.get("TTS_TAIL_QA_INTERNO_MODO", "sombra"),
+            tail_qa_interno_palavra=_ligado("TTS_TAIL_QA_INTERNO_PALAVRA", "0"),
             reference_wav_too=_ligado("TTS_REFERENCE_WAV_TOO"),
             # DESLIGADO por padrao desde 29/08 (Johnny, no ouvido): ele comparou
             # o MESMO texto na voz do Lucas com e sem o QA de ritmo e aprovou o
