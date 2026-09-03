@@ -1674,6 +1674,27 @@
       "canceling": "Canceling…",
       "confirm": "Confirm cancellation"
     },
+    "changePassword": {
+      "eyebrow": "Password",
+      "title": "Change password",
+      "description": "Set a new sign-in password. You stay logged in on this device.",
+      "newLabel": "New password",
+      "newPlaceholder": "At least 8 characters",
+      "confirmLabel": "Confirm new password",
+      "confirmPlaceholder": "Repeat the new password",
+      "tooShort": "Use at least 8 characters.",
+      "mismatch": "Passwords don't match.",
+      "submit": "Save new password",
+      "submitting": "Saving…",
+      "success": "Password changed. Use the new one next time you sign in.",
+      "errors": {
+        "reauth": "For security, sign in again and retry: your session is too old to change the password.",
+        "same": "The new password must be different from the current one.",
+        "weak": "Password too short: use at least 8 characters.",
+        "rateLimited": "Too many attempts. Wait 1 minute and try again.",
+        "generic": "Couldn't change the password. Please try again."
+      }
+    },
     "consent": {
       "registerError": "Failed to record your acceptance",
       "genericError": "Error",

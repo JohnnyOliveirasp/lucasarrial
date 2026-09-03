@@ -1674,6 +1674,27 @@
       "canceling": "Cancelando…",
       "confirm": "Confirmar cancelación"
     },
+    "changePassword": {
+      "eyebrow": "Contraseña",
+      "title": "Cambiar contraseña",
+      "description": "Define una nueva contraseña de acceso. Sigues conectado en este dispositivo.",
+      "newLabel": "Nueva contraseña",
+      "newPlaceholder": "Mínimo 8 caracteres",
+      "confirmLabel": "Confirmar nueva contraseña",
+      "confirmPlaceholder": "Repite la nueva contraseña",
+      "tooShort": "Usa al menos 8 caracteres.",
+      "mismatch": "Las contraseñas no coinciden.",
+      "submit": "Guardar nueva contraseña",
+      "submitting": "Guardando…",
+      "success": "Contraseña cambiada. Úsala la próxima vez que entres.",
+      "errors": {
+        "reauth": "Por seguridad, vuelve a entrar en la cuenta e inténtalo de nuevo: tu sesión es demasiado antigua para cambiar la contraseña.",
+        "same": "La nueva contraseña debe ser diferente de la actual.",
+        "weak": "Contraseña muy corta: usa al menos 8 caracteres.",
+        "rateLimited": "Demasiados intentos. Espera 1 minuto e inténtalo de nuevo.",
+        "generic": "No se pudo cambiar la contraseña. Inténtalo de nuevo."
+      }
+    },
     "consent": {
       "registerError": "Error al registrar la aceptación",
       "genericError": "Error",
