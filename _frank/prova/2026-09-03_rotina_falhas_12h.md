@@ -158,7 +158,7 @@ Não postei a medição do `#234`: é progresso parcial, não fato consumado. Va
 | Decisão comercial: compra de CURSO dá crédito? (`#202`/`#173`/Cristina/Robert) | 6ª ronda |
 | Decisão de produto do `#226` (QA esgota: falhar sem cobrar ou entregar avisando?) | 7ª ronda |
 | ~~3 patches do Vigia parados~~ | ✅ **zerada** (eram 3 obsoletos + ferramenta quebrada) |
-| 16 recados `para_frank_*` na fila, o mais velho de 29/08 | **não mexi nesta ronda** |
+| **17** recados `para_frank_*` na fila, o mais velho de 29/08 | cresceu (16 → 17); **li e ataquei 1** (`a6e3288b`, o do Vinícius, chegado 11:24Z → grupo). Os outros 16 não foram lidos nesta ronda |
 | PRs #41/#42 (teto de 2MB) | 15º dia |
 | Migration 102 (`#232`) sem aplicar | **10ª ronda** |
 | `aluno.cjs` "compras: NENHUMA" lido como verdade de pagamento | aberta desde 03/09 01h |
