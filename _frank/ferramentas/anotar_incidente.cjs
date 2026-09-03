@@ -148,9 +148,26 @@ function normalizarNotas(atual) {
     // relatorio que le resolved_at mente. Aconteceu no #65 em 25/08: fechado
     // 21/08 18:41, movido pra aguardando_aluno, e o banco seguia dizendo que
     // tinha sido resolvido em 21/08.
-    if (!STATUS_FECHADO.includes(status) && antes.resolved_at) {
+    // Os TRES campos de fechamento saem JUNTOS. Limpar so `resolved_at` e
+    // `resolved_by` deixa o `resolved_commit` ORFAO: o incidente volta pra
+    // `investigating` carregando o sha de um fechamento que nao vale mais, e
+    // quem ler o card depois acredita que aquele commit resolveu o caso.
+    // Medido no #226 em 02/09: fechado as 16:59Z com `resolved_commit=e4cc692`
+    // (enquadramento de rosto no clone de VIDEO, outro subsistema) e o defeito
+    // seguia entregando; reabrir pela versao antiga desta ferramenta manteria o
+    // e4cc692 colado num chamado aberto. E' o mesmo defeito que o PR #150 (#232)
+    // corrigiu no lado do app, em `lib/incidents/closure.ts:limparFechamento()`
+    // — que limpa os tres. Esta ferramenta ficou de fora daquele PR e era o
+    // unico caminho de reabertura que o dono da fila usa na mao.
+    //
+    // A guarda olha os TRES campos, nao so `resolved_at`: um `resolved_commit`
+    // orfao (ja gravado por alguma rota antiga) precisa sair mesmo quando a
+    // data ja esta nula, senao a limpeza nunca alcanca quem mais precisa dela.
+    const temCarimbo = antes.resolved_at || antes.resolved_by || antes.resolved_commit;
+    if (!STATUS_FECHADO.includes(status) && temCarimbo) {
       patch.resolved_at = null;
       patch.resolved_by = null;
+      patch.resolved_commit = null;
     }
     if (STATUS_FECHADO.includes(status)) {
       const jaEstavaFechado = STATUS_FECHADO.includes(antes.status);
@@ -175,6 +192,14 @@ function normalizarNotas(atual) {
   if (resolucao) {
     console.log(
       `  resolution_note: ${(antes.resolution_note || "").length} -> ${patch.resolution_note.length} chars (concatenado)`,
+    );
+  }
+  // A reabertura precisa aparecer no ENSAIO. Sem esta linha, apagar o carimbo
+  // era efeito invisivel: quem roda sem --confirmar nao via que o
+  // `resolved_commit` ia embora e so descobria depois de gravar.
+  if ("resolved_commit" in patch && patch.resolved_commit === null) {
+    console.log(
+      `  reabertura: LIMPA resolved_at/resolved_by/resolved_commit (era commit=${antes.resolved_commit || "-"}, em=${antes.resolved_at || "-"})`,
     );
   }
 
