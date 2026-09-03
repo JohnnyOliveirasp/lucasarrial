@@ -2331,6 +2331,13 @@
           "falhou": "Algo salió mal — nuestro equipo te contactará."
         }
       },
+      "previa": {
+        "titulo": "Tu clon",
+        "foto": "Tu foto clon, generada a partir de las fotos que enviaste.",
+        "fotoAlt": "Tu foto clon generada",
+        "audio": "Tu voz clonada hablando. Así va a sonar en tus videos.",
+        "semPlayer": "Tu navegador no puede reproducir audio."
+      },
       "erroTime": "Una etapa necesitó atención de nuestro equipo. No tienes que hacer nada — lo resolvemos y te avisamos por e-mail.",
       "podeFechar": "Puedes cerrar esta página — te avisamos por e-mail en cada etapa. O déjala abierta y sigue por aquí.",
       "irParaPlataforma": "Ir a la plataforma",

@@ -2331,6 +2331,13 @@
           "falhou": "Something went wrong — our team will reach out."
         }
       },
+      "previa": {
+        "titulo": "Your clone",
+        "foto": "Your clone photo, generated from the photos you sent.",
+        "fotoAlt": "Your generated clone photo",
+        "audio": "Your cloned voice speaking. This is how it will sound in your videos.",
+        "semPlayer": "Your browser cannot play audio."
+      },
       "erroTime": "One step needs our team's attention. Nothing to do on your side — we will fix it and email you.",
       "podeFechar": "You can close this page — we email you at every finished step. Or leave it open and follow along here.",
       "irParaPlataforma": "Go to the platform",
