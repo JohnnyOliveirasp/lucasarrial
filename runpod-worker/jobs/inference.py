@@ -19,7 +19,8 @@ import soundfile as sf
 from audio_ops import crossfade_concat, trim_silence, wav_to_base64
 from tts_qa.rate import measure_file_rate, measure_seg_rate, stretch
 from model_loader import free_cuda
-from tts_qa import norm_words, registrar_cobertura, run_chunk_qa
+from tts_qa import (norm_words, registrar_cobertura, registrar_tail_interno,
+                    run_chunk_qa)
 from tts_qa.metrics import fim_abrupto, ultima_palavra_truncada
 from tts_qa.loop import palavras_com_tempo
 from tts_text import split_text_for_tts, split_below_sentence
@@ -384,7 +385,7 @@ class InferenceJob:
                 # Fase "pai" do QA do chunk: os whispers rodam aqui dentro e um
                 # regen empilha inference.chunk.generate por cima.
                 with _phase("inference.chunk.qa", chunk=idx):
-                    seg, coverage, lacuna = self._rodar_qa(
+                    seg, coverage, lacuna, tail_interno = self._rodar_qa(
                         seg, idx, chunk, eh_ultimo=(idx == len(chunks) - 1))
                 if idx == len(chunks) - 1 and self._fim_ainda_ruim(seg):
                     seg = self._curar_fim_abrupto(seg, idx, chunk)
@@ -398,14 +399,16 @@ class InferenceJob:
                         self.qa_stats["coverage_exhausted"] += 1
                         return pieces, {"chunk_idx": idx, "coverage": coverage,
                                         "maior_lacuna": lacuna}
-                    # ENTREGA E' O RESGATE, nao este `seg`. A cobertura deste
-                    # chunk NAO entra na telemetria: quem registra sao os
-                    # sub-pedacos, dentro de _resgatar_por_subdivisao.
+                    # ENTREGA E' O RESGATE, nao este `seg`. Nem a cobertura nem
+                    # a fronteira interna deste chunk entram na telemetria:
+                    # quem registra sao os sub-pedacos, dentro de
+                    # _resgatar_por_subdivisao.
                     seg = resgate
                 else:
                     # Este audio e' o que vai pro aluno (aprovado ou entregue
                     # pela escotilha de lacuna espalhada): registra.
                     registrar_cobertura(self.qa_stats, coverage)
+                    registrar_tail_interno(self.qa_stats, tail_interno)
 
             _log(
                 "info", "inference.chunk", idx=idx, total=len(chunks),
@@ -456,13 +459,14 @@ class InferenceJob:
             sub_idx = idx * 100 + j + 1  # rotulo unico no log/heartbeat
             if nivel1:
                 seg = self._aparar(self._gerar(parte, sub_idx), idx)
-                seg, cov, lacuna = self._rodar_qa(seg, sub_idx, parte)
+                seg, cov, lacuna, tail_interno = self._rodar_qa(seg, sub_idx, parte)
                 ok = not (cov is not None and cov < self.cfg.coverage_qa_min
                           and not self._entregar_mesmo_com_cobertura_baixa(sub_idx, parte, cov, lacuna))
                 if ok:
                     # Este sub-pedaco entra no audio final: e ELE que o aluno
                     # recebe, nao o chunk original que reprovou.
                     registrar_cobertura(self.qa_stats, cov)
+                    registrar_tail_interno(self.qa_stats, tail_interno)
                     pedacos.append(seg)
                     continue
                 _log("warn", "inference.coverage.rescue.nivel1_falhou", idx=idx, parte=j,
@@ -492,13 +496,14 @@ class InferenceJob:
         for k, pz in enumerate(pedacos_txt):
             sub = base_idx * 10 + k + 1
             seg = self._aparar(self._gerar(pz, sub, cfg_value=cfg2), base_idx)
-            seg, cov, lacuna = self._rodar_qa(seg, sub, pz, cfg_value=cfg2)
+            seg, cov, lacuna, tail_interno = self._rodar_qa(seg, sub, pz, cfg_value=cfg2)
             if (cov is not None and cov < c.coverage_qa_min
                     and not self._entregar_mesmo_com_cobertura_baixa(sub, pz, cov, lacuna)):
                 _log("error", "inference.coverage.rescue.nivel2_falhou", idx=base_idx,
                      pedaco=k, coverage=cov, maior_lacuna=lacuna)
                 return None
             registrar_cobertura(self.qa_stats, cov)
+            registrar_tail_interno(self.qa_stats, tail_interno)
             out.append(seg)
         return np.concatenate(out)
 

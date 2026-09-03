@@ -128,7 +128,7 @@ class RitmoNoLacoUnicoTest(unittest.TestCase):
                                     "intrusion_checked", "intrusion_none", "regens", "exhausted",
                                     "echo_flagged", "coverage_flagged", "intrusion_flagged")}
             seg0 = np.zeros(SR * 2, dtype=np.float32)
-            best, cov, _ = loop.run_chunk_qa(
+            best, cov, _, _ti = loop.run_chunk_qa(
                 seg0, 0, "texto de teste", regen, SR, None, "pt",
                 start_qa_enabled=False, start_qa_retries=0, start_qa_model="s",
                 echo_qa_enabled=True, echo_qa_retries=3, echo_qa_model="t",

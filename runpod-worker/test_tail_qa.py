@@ -349,6 +349,197 @@ class FronteiraInternaTest(unittest.TestCase):
             os.environ.pop("TTS_TAIL_QA_INTERNO_MODO", None)
 
 
+class FronteiraInternaEntregaTest(unittest.TestCase):
+    """A metrica de ENTREGA da fronteira interna (conserto de 02/09).
+
+    O DEFEITO QUE ISTO TRAVA: os contadores `tail_interno_*` sobem DENTRO do
+    laco de tentativas, entao contam tentativa DESCARTADA. Prova em producao:
+    a geracao 97464f01 tem regens=19 e tail_interno_checked=37 — 37 checagens
+    pra um numero de chunks muito menor. Lido como "fronteiras entregues",
+    aquele 37 reportaria um alcance varias vezes maior que o real.
+
+    E' o MESMO defeito ja diagnosticado em 26/08 na cobertura (leia o aviso em
+    `registrar_cobertura`), e a correcao e' a mesma: o laco devolve o veredito
+    da tentativa VENCEDORA e o CHAMADOR registra, porque so ele sabe qual audio
+    virou entrega.
+
+    Os contadores por tentativa CONTINUAM existindo com o nome de sempre: eles
+    medem PRESSAO DE REGEN (quantas tentativas ganhariam +100 se a chave
+    virasse). O que faltava era a metrica de ENTREGA ao lado.
+    """
+
+    def _stats(self) -> dict:
+        return {
+            "echo_checked": 0, "echo_flagged": 0, "echo_none": 0,
+            "coverage_checked": 0, "coverage_flagged": 0, "coverage_none": 0,
+            "intrusion_checked": 0, "intrusion_flagged": 0, "intrusion_none": 0,
+            "regens": 0, "exhausted": 0,
+        }
+
+    def _kwargs(self, **over):
+        base = dict(
+            sample_rate=SR, prompt_text=None, qa_language="pt",
+            start_qa_enabled=False, start_qa_retries=0, start_qa_model="small",
+            echo_qa_enabled=False, echo_qa_retries=0, echo_qa_model="large-v3-turbo",
+            coverage_qa_enabled=False, coverage_qa_retries=2, coverage_qa_min=0.85,
+            intrusion_qa_enabled=False, intrusion_qa_retries=0,
+        )
+        base.update(over)
+        return base
+
+    def _rodar(self, seg, regen=None, **over):
+        """Devolve (stats, veredito_de_fronteira_interna_da_ENTREGA)."""
+        from tts_qa.loop import run_chunk_qa
+        stats = self._stats()
+        _seg, _cov, _lac, tail_interno = run_chunk_qa(
+            seg, 0, "sua nutricionista",
+            regen_fn=(regen or (lambda: _com_decaimento())),
+            qa_stats=stats, **self._kwargs(**over))
+        return stats, tail_interno
+
+    # (a) tentativa DESCARTADA com a flag interna NAO conta na entrega ────────
+    def test_tentativa_descartada_nao_conta_na_entrega(self):
+        """O caso 97464f01 em miniatura: a 1a tentativa sai decepada e e'
+        JOGADA FORA; a 2a, boa, e' a que o aluno recebe."""
+        from tts_qa.loop import registrar_tail_interno
+        s, entregue = self._rodar(_fala(), eh_ultimo_chunk=False,
+                                  tail_qa_interno_modo="reprovando")
+        # por TENTATIVA: a decepada foi vista e cobrada com regen
+        self.assertEqual(s["tail_interno_checked"], 2)
+        self.assertEqual(s["tail_interno_flagged"], 1)
+        self.assertEqual(s["regens"], 1)
+        # na ENTREGA: quem ficou foi a tentativa BOA
+        self.assertIs(entregue, False)
+        registrar_tail_interno(s, entregue)
+        self.assertEqual(s["tail_interno_entregue"], 0, "a descartada vazou")
+        self.assertEqual(s["tail_interno_entregue_n"], 1)
+
+    def test_descartada_em_SOMBRA_tambem_fica_de_fora(self):
+        """Em sombra a flag interna nao derruba tentativa nenhuma — mas OUTRO
+        eixo derruba, e ai a decepada tambem e' descartada. Aqui a 1a palavra
+        reprova na 1a tentativa (peso 100) e passa na 2a."""
+        import tts_qa.loop as loop
+        from tts_qa.loop import registrar_tail_interno
+        respostas = [False, True]
+        orig = loop.start_word_ok
+        loop.start_word_ok = lambda *a, **k: respostas.pop(0)
+        try:
+            s, entregue = self._rodar(_fala(), eh_ultimo_chunk=False,
+                                      start_qa_enabled=True, start_qa_retries=2)
+        finally:
+            loop.start_word_ok = orig
+        self.assertEqual(s["regens"], 1, "quem regenerou foi a 1a palavra")
+        self.assertEqual(s["tail_interno_flagged"], 1)
+        self.assertEqual(s["tail_interno_sombra"], 1, "segue sem pontuar")
+        self.assertIs(entregue, False)
+        registrar_tail_interno(s, entregue)
+        self.assertEqual(s["tail_interno_entregue"], 0)
+        self.assertEqual(s["tail_interno_entregue_n"], 1)
+
+    # (b) tentativa VENCEDORA com a flag interna CONTA ───────────────────────
+    def test_tentativa_vencedora_com_flag_conta_na_entrega(self):
+        """Sombra: a decepada NAO regenera (de proposito) e e' entregue. E'
+        exatamente este pedaco que o #234 descreve chegando no aluno."""
+        from tts_qa.loop import registrar_tail_interno
+        s, entregue = self._rodar(_fala(), eh_ultimo_chunk=False)
+        self.assertEqual(s["regens"], 0, "sombra nao regenera")
+        self.assertIs(entregue, True)
+        registrar_tail_interno(s, entregue)
+        self.assertEqual(s["tail_interno_entregue"], 1)
+        self.assertEqual(s["tail_interno_entregue_n"], 1)
+
+    # (c) o modo "reprovando" segue pontuando ────────────────────────────────
+    def test_modo_reprovando_segue_pontuando_e_a_entrega_e_honesta(self):
+        """Regen nao e' garantia de conserto: quando TODA tentativa sai
+        decepada, o audio entregue continua decepado — e a metrica de entrega
+        tem que dizer isso, nao esconder atras do regen."""
+        from tts_qa.loop import registrar_tail_interno
+        s, entregue = self._rodar(_fala(), regen=lambda: _fala(),
+                                  eh_ultimo_chunk=False,
+                                  tail_qa_interno_modo="reprovando")
+        self.assertEqual(s["regens"], 1, "peso 100 tem que regenerar")
+        self.assertEqual(s["exhausted"], 1)
+        self.assertEqual(s["tail_interno_flagged"], 2, "as duas sairam ruins")
+        self.assertIs(entregue, True)
+        registrar_tail_interno(s, entregue)
+        self.assertEqual(s["tail_interno_entregue"], 1)
+        self.assertEqual(s["tail_interno_entregue_n"], 1)
+
+    # (d) o ULTIMO chunk nao regride ─────────────────────────────────────────
+    def test_ultimo_chunk_nao_regride_e_nao_tem_veredito_interno(self):
+        """O fim do ARQUIVO continua pontuando como sempre pontuou, e NAO
+        entra na metrica de fronteira interna (nao e' fronteira interna)."""
+        from tts_qa.loop import registrar_tail_interno
+        s, entregue = self._rodar(_fala(), eh_ultimo_chunk=True)
+        self.assertEqual(s["tail_checked"], 2)
+        self.assertEqual(s["tail_flagged"], 1)
+        self.assertEqual(s["regens"], 1)
+        self.assertEqual(s.get("tail_interno_checked", 0), 0)
+        self.assertIsNone(entregue)
+        registrar_tail_interno(s, entregue)
+        self.assertNotIn("tail_interno_entregue_n", s)
+        self.assertEqual(s["tail_interno_entregue_sem_veredito"], 1)
+
+    def test_julgamento_desligado_nao_tem_veredito(self):
+        s, entregue = self._rodar(_fala(), eh_ultimo_chunk=False,
+                                  tail_qa_interno_enabled=False)
+        self.assertNotIn("tail_interno_checked", s)
+        self.assertIsNone(entregue)
+
+    def test_audio_mudo_e_inconclusivo_nao_vira_veredito(self):
+        """`fim_abrupto` devolve None em audio mudo: inconclusivo NAO e' "ok".
+        Fica fora do denominador e aparece em `_sem_veredito`."""
+        from tts_qa.loop import registrar_tail_interno
+        s, entregue = self._rodar(np.zeros(SR, dtype=np.float32),
+                                  eh_ultimo_chunk=False)
+        self.assertEqual(s["tail_interno_checked"], 1)
+        self.assertEqual(s["tail_interno_none"], 1)
+        self.assertIsNone(entregue)
+        registrar_tail_interno(s, entregue)
+        self.assertNotIn("tail_interno_entregue_n", s)
+        self.assertEqual(s["tail_interno_entregue_sem_veredito"], 1)
+
+
+class RegistrarTailInternoTest(unittest.TestCase):
+    """O acumulador em si: numerador, denominador e a conta que fecha."""
+
+    def test_acumula_numerador_e_denominador(self):
+        from tts_qa.loop import registrar_tail_interno
+        s = {}
+        for v in (True, False, False, True, False):
+            registrar_tail_interno(s, v)
+        self.assertEqual(s["tail_interno_entregue"], 2)
+        self.assertEqual(s["tail_interno_entregue_n"], 5)
+
+    def test_numerador_nasce_em_zero_com_o_denominador(self):
+        """Campo ausente com denominador presente seria de novo "nao mediu"
+        indistinguivel de "mediu e deu zero" — a armadilha do coverage_medido_n.
+        """
+        from tts_qa.loop import registrar_tail_interno
+        s = {}
+        registrar_tail_interno(s, False)
+        self.assertEqual(s["tail_interno_entregue"], 0)
+        self.assertEqual(s["tail_interno_entregue_n"], 1)
+
+    def test_sem_veredito_fecha_a_conta_de_pedacos_entregues(self):
+        from tts_qa.loop import registrar_tail_interno
+        s = {}
+        for v in (True, None, False, None):
+            registrar_tail_interno(s, v)
+        self.assertEqual(s["tail_interno_entregue_n"], 2)
+        self.assertEqual(s["tail_interno_entregue_sem_veredito"], 2)
+        self.assertEqual(
+            s["tail_interno_entregue_n"] + s["tail_interno_entregue_sem_veredito"],
+            4, "entregues = com veredito + sem veredito")
+
+    def test_none_nao_cria_denominador(self):
+        from tts_qa.loop import registrar_tail_interno
+        s = {}
+        registrar_tail_interno(s, None)
+        self.assertNotIn("tail_interno_entregue_n", s)
+        self.assertNotIn("tail_interno_entregue", s)
+
+
 # ⚠️ Fica no FIM do arquivo de proposito: ate 02/09 este `unittest.main()`
 # estava no meio (logo apos FimAbruptoTest) e, rodando o arquivo direto
 # (`python3 test_tail_qa.py`), as classes definidas DEPOIS nem existiam ainda —
