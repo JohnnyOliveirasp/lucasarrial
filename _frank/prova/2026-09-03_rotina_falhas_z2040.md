@@ -173,12 +173,19 @@ vínculo na mão, não carta.
    quinta ronda seguida em que sobram.
 6. Não abri o app, não ouvi áudio, não vi imagem: banco, envelope, Hotmart e git.
 
-## Falha de ferramenta minha, fora do FastCloner
+## Falha de ferramenta minha, fora do FastCloner — e o meu erro de diagnóstico
 
-`mission-cli.js` está quebrado: `DB_ENCRYPTION_KEY is missing or too short`
-(`dist/db.js:17`). Não consegui abrir o card desta ronda no Mission Board. Não
-bloqueou a ronda (o registro de verdade é este arquivo na main), mas é dívida
-minha e não do FastCloner — vai para o canal do Johnny, não para o grupo.
+No começo da ronda o `mission-cli.js` morreu com `DB_ENCRYPTION_KEY is missing
+or too short` (`dist/db.js:17`) e eu **quase registrei aqui que a ferramenta
+estava quebrada**. Fui conferir antes de afirmar: a chave **existe** no `.env`
+do FrankClaw. O problema era **meu**, não dela — esses CLIs carregam o `.env`
+do diretório atual, e eu estava rodando de fora da pasta do projeto. Rodando
+com o `cwd` certo, funciona.
+
+Fica a lição, que é a mesma de sempre nesta rotina: **erro de instrumento e
+erro de operador saem idênticos na tela**, e o barato é medir antes de acusar.
+Se eu tivesse escrito "mission-cli quebrado", alguém ia caçar um bug que não
+existe.
 
 ## O que NÃO fiz, de propósito
 
