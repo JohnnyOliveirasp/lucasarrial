@@ -106,7 +106,11 @@ e promete que **eu acerto na mão** se passar — sem prometer prazo nem mecanis
 - `--dry-run` conferido (destinatário, remetente, corpo inteiro na tela).
 - Enviada pelo SMTP do `suporte@fastcloner.com` — **uid 498**, tentativa 1,
   **cópia CONFIRMADA** em Enviados.
-- Nota no #222: **12 → 13**, 1 linha afetada, conferida na releitura.
+- Nota no #222: **12 → 14**, duas notas, 1 linha afetada cada, conferidas na
+  releitura. A nota 13 (20:44:42Z) é o tratamento da órfã; a **14** (20:48:32Z)
+  é a armadilha de moeda da seção abaixo. *(Esta linha dizia "12 → 13" — foi
+  escrita antes da segunda nota existir e o arquivo foi commitado 8s depois
+  dela. Corrigida na conferência de fechamento; contagem no banco: 14.)*
 - Fato consumado postado **no grupo** (`notify-grupo.sh`).
 
 ## ⚠️ Armadilha de instrumento — achada e CORRIGIDA nesta ronda
@@ -147,11 +151,46 @@ depois:  PAGOU | avulsas pagas: 2 (918549.20 PYG)
 
 ## Fila restante do #222
 
-Onze dos quinze já têm carta de órfão (480, 481, 483, 488, 491, 492, 493, 494,
-495, 496, **498**). Dois saem da fila por serem cobrança em dobro, não falta de
-acesso (`caplastica`, `jkakorio`). Restam **três**:
+> **Conferência de fechamento — a conta desta seção não fechava e eu fui medir.**
+> Como estava escrito, dava 11 + 2 + 3 = **16** para uma fila de **15** (e a
+> ronda anterior tinha o mesmo furo: 10 + 2 + 4 = 16). Reproduzi o funil e
+> conferi a caixa de Enviados **um a um**, nos 15. O furo era **`jkakorio`
+> contado duas vezes**: ele está na lista das cartas (**uid 480**, 03/09
+> 09:23Z) *e* na dupla "sai por cobrança em dobro". Só `caplastica` sai por
+> esse motivo. O total de três restantes estava certo — pelo motivo errado.
+
+Funil reproduzido agora: **1.082** entitlements → **92** órfãos → **46**
+`active` → **26** com janela vigente → **15** com preço > 0. *(Preço pelo
+caminho **direto** do `raw_event`: o caminho `data`, que é o certo em
+`payment_events`, lê **0 de 26** aqui — a armadilha que a ronda das 20hZ
+levantou, e na qual eu bati de novo hoje antes de corrigir.)*
+
+**Onze dos quinze têm carta individual** — conferido no Enviados, não herdado:
+
+| # | aluno | carta | # | aluno | carta |
+|---|---|---|---|---|---|
+| 1 | `sbtirp` | 483 | 9 | `flaviamalavazi` | 496 |
+| 2 | `max@md2net` | 491 | 10 | `qooqi.criacoes` | — |
+| 3 | `cris_evangelista22` | 488 | 11 | `caplastica` | — |
+| 4 | `josephgois` | 492 | 12 | `scandovieri41` | 481 |
+| 5 | `isaias.enf` | 493 | 13 | `fmgimael` | — |
+| 6 | `rmf174` | 495 | 14 | `malmeida313` | — |
+| 7 | `jkakorio` | **480** | 15 | `dropweb` | 494 |
+| 8 | `rutifortuna8` | **498** | | | |
+
+**11 com carta + 4 sem = 15.** Agora fecha.
+
+Dos **quatro** sem carta, um sai da fila: **`caplastica`** — cobrança em dobro,
+**tem acesso**; carta de órfão nele seria erro (a ronda das 21hZ já tinha
+pegado isso). Restam **três** de fato:
 
 `qooqi.criacoes` 21/09 · `fmgimael` 29/09 · `malmeida313` 30/09
+
+**Achado lateral da conferência, não investigado:** `caplastica` e
+`qooqi.criacoes` têm **zero** mensagens no Enviados — nem a régua automática
+chegou neles, enquanto `fmgimael` (317, 452) e `malmeida313` (372) receberam.
+Não sei se é falha de alcance da régua ou exclusão legítima. **Não medi**, fica
+como pista para a próxima ronda.
 
 **Próximo da ordem: `qooqi.criacoes` (21/09)**, e nele a pista da ronda das 21hZ
 segue pronta: perguntar se `moyses.filipe@gmail.com` é dele. Aqui a checagem por
@@ -205,3 +244,22 @@ Um item levado até o fim (aluna avisada, nota gravada, grupo avisado), uma
 armadilha de instrumento achada **e corrigida em produção** (PR #170, merge
 `4cd9775`), a dívida do nome dos arquivos de log quitada, e duas urgências
 aparentes conferidas e descartadas com medição em vez de palpite.
+
+**Adendo da conferência de fechamento (20:55Z).** Reli este arquivo contra o
+banco e a caixa antes de dar a ronda por encerrada, e ele tinha **dois erros
+meus** — nenhum deles no que foi entregue à aluna, os dois no registro:
+
+1. **"Nota no #222: 12 → 13"** — são **14** notas no banco. Escrevi a linha
+   antes da segunda nota existir e commitei 8 segundos depois dela.
+2. **A conta da fila não fechava** (11 + 2 + 3 = 16 para uma fila de 15), e a
+   ronda anterior já carregava o mesmo furo sem ninguém notar. `jkakorio`
+   estava contado **duas vezes**. Conferi os 15 um a um no Enviados.
+
+O número final de restantes (**três**) estava certo nas duas rondas — o que
+estava errado era o caminho até ele. Um total certo por raciocínio errado é
+pior que um total errado, porque não dá sinal nenhum de que precisa conferir.
+Se a próxima ronda tivesse partido daquela lista, ia procurar um décimo-sexto
+aluno que não existe, ou escrever de novo pro `jkakorio` — que já tem a carta.
+
+Nada disso mudou o que a Ruti recebeu: uid 498 conferido em Enviados, com
+`118.887 Gs` no corpo, moeda certa.
