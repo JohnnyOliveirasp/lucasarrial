@@ -111,12 +111,29 @@ function conferir(texto) {
   const v = r.data.value ?? {};
 
   if (APAGAR) {
-    const u = await db.from("agent_state").update({ value: null }).eq("key", CHAVE);
+    // ⚠️ DELETE de verdade, não `update({value:null})`.
+    // `agent_state.value` é NOT NULL: a versão anterior tentava zerar o campo
+    // e o Postgres devolvia 23502 ("null value in column value ... violates
+    // not-null constraint"). Ou seja: --apagar NUNCA apagou nada desde que
+    // existe. Medido em 03/09 — as 3 chaves de patch da fila recusaram as 3.
+    // Consequência real: a fila de patches do Vigia não drenava, e as rondas
+    // vinham contando "3 patches parados" como dívida crescente enquanto os
+    // três já tinham sido resolvidos por outro caminho. O mesmo defeito já
+    // tinha aparecido em 29/08 nas chaves `para_frank_orfa_*`, curado na mão
+    // com DELETE em vez de na ferramenta.
+    const u = await db.from("agent_state").delete().eq("key", CHAVE).select("key");
     if (u.error) {
       console.error("ERRO ao apagar:", u.error.message);
       process.exit(1);
     }
-    console.log(`${CHAVE} apagada — não volta na próxima ronda.`);
+    // `.select()` depois de gravar: DELETE por chave inexistente afeta 0 linhas
+    // EM SILÊNCIO, e "apagada" impresso em cima de 0 linhas é fechamento falso.
+    const n = (u.data ?? []).length;
+    if (n !== 1) {
+      console.error(`ERRO: o DELETE afetou ${n} linha(s), esperado 1. NÃO considere apagada.`);
+      process.exit(1);
+    }
+    console.log(`${CHAVE} apagada (1 linha) — não volta na próxima ronda.`);
     return;
   }
 
