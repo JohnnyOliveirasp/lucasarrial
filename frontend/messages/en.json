@@ -1382,7 +1382,7 @@
         "saveFailed": "{count, plural, one {# recording could not be saved in this browser and will be lost when you close the page.} other {# recordings could not be saved in this browser and will be lost when you close the page.}} Send what you have now, or record in another browser (not a private window, storage not blocked).",
         "storageUnreadable": "I couldn't read the recordings saved in this browser. If you recorded before, open this page on the same device and browser you used, outside a private window — anything stored here may not show up."
       },
-      "localOnly": "Heads up: until you send them for training, these recordings are stored ONLY in this browser on this device. Don't clear your browser data, don't record in a private window, and finish sending from here — if you leave, they can be lost.",
+      "localOnly": "Heads up: at least one recording hasn't been uploaded to your account yet and is stored ONLY in this browser, on this device — each line below shows where it is. Until that changes, don't clear your browser data and don't close the page; if a line stays on \"only in this browser\", use its \"save now\".",
       "overFileCap": "You recorded enough, but in too many clips: only the {max} longest go into training and the other {extra} are left out — that leaves {usable}, below the {minutes} min required. Delete the shortest clips and record longer takes (or keep recording) to unlock sending."
     },
     "script": {
