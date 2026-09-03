@@ -12,6 +12,7 @@ import { sendSupportMail } from "@/lib/agent/mail-smtp";
 import { hasActiveAccess } from "@/lib/credits/access";
 import { ONBOARDING_VOICE_NAME } from "./import";
 import { avisoOkMasAssine } from "./avisos";
+import { registrarAviso } from "./registrar-aviso";
 
 type Admin = SupabaseClient<Database>;
 
@@ -199,16 +200,48 @@ export async function verificarOnboardingPronto(admin: Admin, userId: string): P
     // pro SGP, que usa este mesmo statusOnboarding.
     const semImagem = st.avatares_prontos === 0;
 
+    // 03/09: o gatilho, em texto curto, pra tabela `avisos_enviados` — é o que
+    // explica POR QUE o e-mail saiu neste instante. No caso do Celso Slompo
+    // isto teria gravado "voz ready, avatares 5/5", e a pergunta "ele foi
+    // avisado?" viraria uma consulta em vez de um chute.
+    const referencia = `voz ${st.voz}, avatares ${st.avatares_prontos}/${st.avatares_total}`;
+    const assunto = semImagem ? EMAIL_ASSUNTO_SEM_IMAGEM : EMAIL_ASSUNTO;
+
     try {
       if (ativo) {
-        await sendSupportMail({
-          to: email,
-          subject: semImagem ? EMAIL_ASSUNTO_SEM_IMAGEM : EMAIL_ASSUNTO,
-          text: semImagem ? EMAIL_TEXTO_SEM_IMAGEM : EMAIL_TEXTO,
-          bcc: BCC_ADMINS,
+        try {
+          await sendSupportMail({
+            to: email,
+            subject: assunto,
+            text: semImagem ? EMAIL_TEXTO_SEM_IMAGEM : EMAIL_TEXTO,
+            bcc: BCC_ADMINS,
+          });
+        } catch (e) {
+          // Registrar a FALHA antes de propagar: é justamente ela que nunca
+          // ninguém enxergou (só existia como console de servidor, que o
+          // FrontendServer.log do Hetzner nem captura).
+          await registrarAviso(admin, {
+            email,
+            userId,
+            aviso: semImagem ? "onboarding_pronto_sem_imagem" : "onboarding_pronto",
+            assunto,
+            referencia,
+            ok: false,
+            erro: e instanceof Error ? e.message : String(e),
+          });
+          throw e;
+        }
+        await registrarAviso(admin, {
+          email,
+          userId,
+          aviso: semImagem ? "onboarding_pronto_sem_imagem" : "onboarding_pronto",
+          assunto,
+          referencia,
+          ok: true,
         });
       } else {
-        await avisoOkMasAssine(email, semImagem);
+        // Este caminho registra sozinho (passa pelo `mandar` de avisos.ts).
+        await avisoOkMasAssine(email, semImagem, { userId, referencia });
       }
       console.log(
         `[onboarding/pronto] e-mail enviado (${ativo ? "pronto" : "assine"}${semImagem ? ", sem imagem" : ""}): ${email}`,

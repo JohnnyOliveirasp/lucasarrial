@@ -76,7 +76,7 @@ export async function estadoDasEtapas(pedido: SgpPedidoRow): Promise<EtapasSgp> 
       .is("foto_pronta_em", null)
       .select("email");
     const email = (data?.[0] as { email?: string } | undefined)?.email;
-    if (email) await avisoFotoPronta(email).catch(() => {});
+    if (email) await avisoFotoPronta(email, `etapa foto do pedido ${pedido.id}`).catch(() => {});
   }
   if (vozPronta && !pedido.voz_pronta_em) {
     const { data } = await admin
@@ -86,7 +86,7 @@ export async function estadoDasEtapas(pedido: SgpPedidoRow): Promise<EtapasSgp> 
       .is("voz_pronta_em", null)
       .select("email");
     const email = (data?.[0] as { email?: string } | undefined)?.email;
-    if (email) await avisoVozPronta(email).catch(() => {});
+    if (email) await avisoVozPronta(email, `etapa voz do pedido ${pedido.id}`).catch(() => {});
   }
 
   const status: SgpStatus = s.pronto ? "pronto" : s.falhou ? "falhou" : "processando";
