@@ -5,8 +5,11 @@
  * libera/revoga acesso na nossa base. Esta é a URL que o produtor cadastra em
  * Ferramentas → Webhook (API e notificações).
  *
- * Segurança: valida o token `hottok` (header X-HOTMART-HOTTOK) contra
- * HOTMART_HOTTOK do ambiente, em tempo constante.
+ * Segurança: valida o token `hottok` (header X-HOTMART-HOTTOK) contra os tokens
+ * do ambiente, em tempo constante — ver @/lib/payments/hottok. São aceitos
+ * `HOTMART_HOTTOK` (um token, ou vários separados por vírgula) e o opcional
+ * `HOTMART_HOTTOK_SGP`, porque o webhook atende MAIS DE UM produto da mesma
+ * conta. Continua sendo lista fechada: quem não está nela toma 401.
  *
  * Idempotência: a Hotmart reenvia o mesmo evento até 5×. Gravamos cada evento
  * em `payment_events` (UNIQUE provider+event_id); só processamos uma vez.
@@ -16,7 +19,6 @@
  * Modelo do produto: assinatura recorrente mensal (R$ 97), 7 dias de garantia.
  * Payload 2.0: { id, creation_date, event, version, data }.
  */
-import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { jsonOk, jsonError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
@@ -29,6 +31,7 @@ import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
 import { avisarCompraOrfa } from "@/lib/payments/aviso-orfao";
 import { canaisDaCasa, estadoDosAvisos } from "@/lib/payments/aviso-orfao-canal";
+import { hottokValido, tokensEsperados } from "@/lib/payments/hottok";
 import {
   extractBuyerEmail,
   extractBuyerName,
@@ -330,11 +333,9 @@ function mapRevokeStatus(eventType: string): Exclude<EntitlementStatus, "active"
 
 // ── extração defensiva do payload 2.0: ver @/lib/payments/hotmart-payload ───
 
+// A comparação em si mora em @/lib/payments/hottok (pura e testada em
+// hottok.test.ts). Aqui fica só a leitura do ambiente, que não é testável.
+// NUNCA logar `received` nem os esperados: é o segredo que autentica o webhook.
 function validHottok(received: string | null): boolean {
-  const expected = process.env.HOTMART_HOTTOK ?? "";
-  if (!received || !expected) return false;
-  const a = Buffer.from(received);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+  return hottokValido(received, tokensEsperados(process.env));
 }
