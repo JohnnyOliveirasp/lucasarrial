@@ -77,6 +77,49 @@ const { supa } = require("./_comum.cjs");
 const BASE = process.env.HOTMART_API_BASE ?? "https://developers.hotmart.com/payments/api/v1";
 const PAGO = new Set(["COMPLETE", "APPROVED"]);
 
+/**
+ * MOEDA — armadilha medida em 03/09, na ronda da Ruti (Assunção/PY).
+ *
+ * Este script imprimia `R$` fixo em TODA linha e somava valores de moedas
+ * diferentes num único total. Para a Ruti, que pagou em guaranis, a saída foi:
+ *
+ *     PAGOU | avulsas pagas: 2 (R$ 918549.20)
+ *     assinatura rec#1 R$118887 COMPLETE
+ *
+ * O valor real da assinatura dela é 118.887 Gs (~R$88). Quem lesse a linha
+ * como reais concluiria "cliente de R$918 mil" — e qualquer soma de receita
+ * que passasse por aqui ficaria envenenada. Não é caso isolado: medido na
+ * nossa base, 247 de 4.142 eventos com preço (6%) NÃO são BRL —
+ * 120 USD, 98 EUR, 7 PYG, 6 ARS, 5 JPY, 4 CHF, 3 GBP, 2 AUD, 2 CAD.
+ * Em JPY o erro é o inverso e pior: ¥2.000 sairia como "R$2000".
+ *
+ * A regra passou a ser: valor NUNCA aparece sem a moeda ao lado, e total só
+ * existe POR MOEDA. Nada de conversão — não temos câmbio da data e chutar
+ * cotação para dizer número a aluno é pior que mostrar duas moedas.
+ *
+ * O veredito (`pagou`) não muda: ele olha `value > 0` + status, que independe
+ * de moeda. O que estava errado era só o que a gente LIA na tela.
+ */
+function somarPorMoeda(itens) {
+  const m = {};
+  for (const i of itens) m[i.moeda || "?"] = (m[i.moeda || "?"] ?? 0) + (i.valor ?? 0);
+  return m;
+}
+
+/** "118887 PYG" — valor colado na moeda, alinhado, sem inventar símbolo. */
+function fmtValor(valor, moeda, largura = 10) {
+  const n = Number(valor ?? 0);
+  const txt = Number.isInteger(n) ? String(n) : n.toFixed(2);
+  return `${txt.padStart(largura)} ${String(moeda || "?").padEnd(3)}`;
+}
+
+/** { BRL: 97, PYG: 918549.2 } -> "97 BRL + 918549.20 PYG" */
+function fmtMoeda(porMoeda) {
+  const e = Object.entries(porMoeda || {}).filter(([, v]) => v);
+  if (!e.length) return "";
+  return e.map(([m, v]) => `${Number.isInteger(v) ? v : v.toFixed(2)} ${m}`).join(" + ");
+}
+
 async function token() {
   const u = `https://api-sec-vlc.hotmart.com/security/oauth/token?grant_type=client_credentials`
     + `&client_id=${encodeURIComponent(process.env.HOTMART_CLIENT_ID)}`
@@ -110,6 +153,7 @@ async function pagouDeVerdade(email, H, db) {
     for (const c of lista) cobrancas.push({
       code,
       valor: c.price?.value ?? 0,
+      moeda: c.price?.currency_value || c.price?.currency_code || "?",
       status: c.status,
       rec: c.recurrency_number ?? c.recurrence_number,
       data: c.approved_date ? new Date(c.approved_date).toISOString().slice(0, 10) : null,
@@ -146,6 +190,7 @@ async function pagouDeVerdade(email, H, db) {
       data: ev.received_at ? ev.received_at.slice(0, 10) : null,
     };
   }).filter((s) => s.status === "paid" && s.valor > 0 && s.live);
+  const totalStripePorMoeda = somarPorMoeda(stripePagas);
   const totalStripe = stripePagas.reduce((s, v) => s + v.valor, 0);
 
   // TERCEIRA fonte, e a que faltava: VENDAS. É aqui que mora a compra avulsa,
@@ -161,6 +206,7 @@ async function pagouDeVerdade(email, H, db) {
   const vendas = vendasBrutas.map((i) => ({
     produto: (i.product?.name ?? "").trim() || "(sem nome)",
     valor: i.purchase?.price?.value ?? 0,
+    moeda: i.purchase?.price?.currency_value || i.purchase?.price?.currency_code || "?",
     status: i.purchase?.status,
     modo: i.purchase?.offer?.payment_mode,
     // is_subscription vem da Hotmart; só tratamos como avulsa quando ela diz
@@ -171,6 +217,9 @@ async function pagouDeVerdade(email, H, db) {
   }));
   const vendasPagas = vendas.filter((v) => v.valor > 0 && PAGO.has(v.status));
   const avulsasPagas = vendasPagas.filter((v) => v.avulsa);
+  const totalAvulsoPorMoeda = somarPorMoeda(avulsasPagas);
+  // mantido só para quem já lia esta chave; é a soma CRUA, sem moeda. Não use
+  // para dizer valor a ninguém — use `totalAvulsoPorMoeda`.
   const totalAvulso = avulsasPagas.reduce((s, v) => s + v.valor, 0);
 
   return {
@@ -188,12 +237,14 @@ async function pagouDeVerdade(email, H, db) {
     vendas,
     avulsasPagas,
     totalAvulso,
+    totalAvulsoPorMoeda,
     stripePagas,
     totalStripe,
+    totalStripePorMoeda,
   };
 }
 
-module.exports = { pagouDeVerdade, PAGO };
+module.exports = { pagouDeVerdade, PAGO, somarPorMoeda, fmtMoeda, fmtValor };
 
 if (require.main === module) (async () => {
   const emails = process.argv.slice(2);
@@ -216,19 +267,26 @@ if (require.main === module) (async () => {
       : "SEM PAGAMENTO ENCONTRADO NESTE E-MAIL (hotmart + stripe)";
     console.log(`${e}\n  ${veredito}`
       + ` | assinaturas: ${r.assinaturas} | PURCHASE_APPROVED>0 no nosso banco: ${r.aprovadosNoBanco}`
-      + ` | avulsas pagas: ${r.avulsasPagas.length}${r.totalAvulso ? ` (R$ ${r.totalAvulso.toFixed(2)})` : ""}`
-      + ` | stripe pago: ${r.stripePagas.length}${r.totalStripe ? ` (R$ ${r.totalStripe.toFixed(2)})` : ""}`);
+      + ` | avulsas pagas: ${r.avulsasPagas.length}${fmtMoeda(r.totalAvulsoPorMoeda) ? ` (${fmtMoeda(r.totalAvulsoPorMoeda)})` : ""}`
+      + ` | stripe pago: ${r.stripePagas.length}${fmtMoeda(r.totalStripePorMoeda) ? ` (${fmtMoeda(r.totalStripePorMoeda)})` : ""}`);
+    // moeda SEMPRE ao lado do valor — ver o bloco MOEDA no topo do arquivo
+    const moedas = new Set([...r.cobrancas, ...r.vendas, ...r.stripePagas]
+      .filter((x) => x.valor > 0).map((x) => x.moeda || "?"));
+    if (moedas.size > 1 || (moedas.size === 1 && !moedas.has("BRL"))) {
+      console.log(`    ⚠️  moeda diferente de real nesta conta: ${[...moedas].join(", ")}.`
+        + " Os valores abaixo NAO sao reais e NAO foram convertidos — leia a moeda ao lado.");
+    }
     for (const c of r.cobrancas) {
-      console.log(`    assinatura rec#${c.rec} R$${String(c.valor).padStart(5)} ${String(c.status).padEnd(16)} ${c.data ?? ""}`
+      console.log(`    assinatura rec#${c.rec} ${fmtValor(c.valor, c.moeda, 9)} ${String(c.status).padEnd(16)} ${c.data ?? ""}`
         + `${c.valor > 0 && !PAGO.has(c.status) ? "   <-- cobranca EXISTE mas NAO foi paga" : ""}`);
     }
     for (const v of r.vendas) {
-      console.log(`    venda     ${(v.avulsa ? "AVULSA" : "assin.").padEnd(7)} R$${String(v.valor).padStart(8)}`
+      console.log(`    venda     ${(v.avulsa ? "AVULSA" : "assin.").padEnd(7)} ${fmtValor(v.valor, v.moeda)}`
         + ` ${String(v.status).padEnd(16)} ${v.data ?? "sem data"} ${v.transacao ?? ""} ${v.produto}`
         + `${v.valor > 0 && !PAGO.has(v.status) ? "   <-- venda EXISTE mas NAO foi paga" : ""}`);
     }
     for (const s of r.stripePagas) {
-      console.log(`    stripe    CREDITO R$${String(s.valor.toFixed(2)).padStart(8)}`
+      console.log(`    stripe    CREDITO ${fmtValor(s.valor, s.moeda)}`
         + ` ${String(s.status).padEnd(16)} ${s.data ?? "sem data"} ${s.sessao ?? ""}`
         + `${s.creditos ? ` ${s.creditos} creditos` : ""}`);
     }
