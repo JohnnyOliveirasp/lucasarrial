@@ -92,6 +92,22 @@ export function extractProductCode(data: Record<string, unknown>): string | null
   return id != null ? String(id) : null;
 }
 
+/** Nome do produto (data.product.name) — só pro texto do aviso, nunca pra decisão. */
+export function extractProductName(data: Record<string, unknown>): string | null {
+  const name = asRecord(data.product).name;
+  return typeof name === "string" && name.trim() ? name.trim() : null;
+}
+
+/**
+ * Nome do comprador (data.buyer.name). Serve pra pessoa saber COM QUEM falar
+ * no aviso de compra órfã — NUNCA pra casar comprador com conta: casar por
+ * nome é chute, e chute aqui libera produto pago pra quem não pagou.
+ */
+export function extractBuyerName(data: Record<string, unknown>): string | null {
+  const name = asRecord(data.buyer).name;
+  return typeof name === "string" && name.trim() ? name.trim() : null;
+}
+
 export function extractOfferCode(data: Record<string, unknown>): string | null {
   const code = asRecord(asRecord(data.purchase).offer).code;
   return typeof code === "string" ? code : null;
