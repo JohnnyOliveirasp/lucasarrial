@@ -24,6 +24,33 @@
  * esses, "ocorrências depois do fechamento" não tem contagem exata; o script
  * diz isso em vez de imprimir 0 enganoso.
  *
+ * ⚠️ O PONTO CEGO QUE ESTE SCRIPT NÃO ENXERGAVA — e que custou 7h06 (#226, 02/09).
+ *
+ * As DUAS famílias comparam `last_seen_at` contra `resolved_at`. Só que
+ * `last_seen_at` não anda sozinho: quem o move é (a) uma ocorrência NOVA com a
+ * MESMA `signature` (`ingest.ts`, `reportar.ts`, `failure-alert.ts`,
+ * `gravar.ts`) ou (b) um evento de e-mail do aluno afetado (`espera.ts`,
+ * `mail-bounce-registro.ts`). Chamado aberto NA MÃO, com `signature` inventada
+ * na hora e sem aluno escrevendo, não tem nem um nem outro: o carimbo congela
+ * no insert e a máquina NUNCA reaudita aquele fechamento.
+ *
+ * Medido em 02/09: dos 217 fechados, 120 (55%) nunca tiveram o `last_seen_at`
+ * movido uma única vez. E o único que a família A pegou em toda a base (`#8`,
+ * `training:user_dataset`) é justamente o único cuja signature EXISTE no código
+ * — as demais (`transcode:mp3-sem-xing-header`, `image:pending_sem_reconciliador`,
+ * `qa_exhausted_entrega_silenciosa`…) aparecem em ZERO arquivos. Ou seja:
+ * "1 de 217" nunca foi taxa baixa de zumbi; era cobertura quase total de ~97 e
+ * cobertura ZERO dos outros 120.
+ *
+ * Pior sub-classe: 18 fechados com `occurrences > 1` que nunca andaram — número
+ * DIGITADO à mão no insert (dois deles com 2.625 e 2.585). Têm cara de chamado
+ * bem instrumentado e são exatamente os que ninguém reaudita.
+ *
+ * Por isso o resumo agora separa AUDITÁVEL de CEGO. Um "0 vivos" sobre 217 lia
+ * como "conferi 217"; era falso, e foi assim que o #226 seguiu entregando 7h06
+ * depois de um `fixed` falso sem nada no sistema piscar. Régua nenhuma mudou —
+ * o que muda é o script parar de anunciar cobertura que não tem.
+ *
  * SÓ .select(). Nenhuma escrita.
  */
 const { supa } = require("./_comum.cjs");
@@ -85,6 +112,49 @@ async function lerTudo(db, tabela, colunas, aplicarFiltro) {
     `  ${comResolvedAt.length} com resolved_at preenchido; ${semResolvedAt.length} sem resolved_at ` +
       `(esses não dá pra comparar — listados à parte no fim).`,
   );
+
+  // ------------------------------------------------------------------
+  // COBERTURA REAL — quantos destes o script CONSEGUE reauditar (ver
+  // "PONTO CEGO" no cabeçalho). Sem isto, o denominador acima é promessa
+  // que as duas famílias não cumprem.
+  // ------------------------------------------------------------------
+  const andou = (i) =>
+    i.last_seen_at && i.first_seen_at &&
+    new Date(i.last_seen_at).getTime() > new Date(i.first_seen_at).getTime();
+
+  const auditaveis = comResolvedAt.filter(andou);
+  const cegos = comResolvedAt.filter((i) => !andou(i));
+  // A sub-classe que engana: contador digitado no insert, alto, e imóvel.
+  const cegosComNumero = cegos
+    .filter((i) => (i.occurrences || 0) > 1)
+    .sort((a, b) => (b.occurrences || 0) - (a.occurrences || 0));
+
+  const pct = (n) => ((n / (comResolvedAt.length || 1)) * 100).toFixed(1);
+  console.log(
+    `\nCOBERTURA REAL DESTA MEDIÇÃO (não confunda com o denominador acima):\n` +
+      `  AUDITÁVEL: ${auditaveis.length} (${pct(auditaveis.length)}%) — last_seen_at já se moveu ` +
+      `alguma vez, então existe produtor e um disparo novo apareceria aqui.\n` +
+      `  CEGO:      ${cegos.length} (${pct(cegos.length)}%) — last_seen_at CONGELADO desde o insert. ` +
+      `Para estes, as duas famílias abaixo são incapazes de acusar qualquer coisa:\n` +
+      `             família A (last_seen > resolved) é aritmeticamente impossível, e a família B\n` +
+      `             só mede a distância insert→fechamento, que não diz nada sobre reincidência.\n` +
+      `  Um fechamento FALSO dentro dos ${cegos.length} cegos não é detectado por este script. ` +
+      `Foi o caso do #226.`,
+  );
+
+  if (cegosComNumero.length) {
+    console.log(
+      `\n  ⚠️ ${cegosComNumero.length} dos cegos carregam occurrences > 1 DIGITADO no insert — ` +
+        `número que nunca mais anda.\n  São os mais enganosos: têm cara de chamado instrumentado ` +
+        `e são os que ninguém reaudita.`,
+    );
+    for (const i of cegosComNumero) {
+      console.log(
+        `    #${i.numero} ${i.id.slice(0, 8)} [${i.status}] occurrences=${i.occurrences} ` +
+          `· ${i.signature || "(sem signature)"}`,
+      );
+    }
+  }
 
   // 2) fechados com last_seen_at DEPOIS do resolved_at
   const zumbis = comResolvedAt.filter(
@@ -192,6 +262,13 @@ async function lerTudo(db, tabela, colunas, aplicarFiltro) {
   console.log(
     `\nTOTAL DAS DUAS FAMÍLIAS: ${linhas.length + linhasB.length} fechados com sinal de vida ` +
       `(${vivos.length + vivosB.length} vivos nas últimas 48h).`,
+  );
+  // Sem esta linha o total acima lê como "conferi os 217". Não conferi.
+  console.log(
+    `  ↳ este total vale sobre os ${auditaveis.length} AUDITÁVEIS. Sobre os ${cegos.length} CEGOS ` +
+      `o script não tem opinião —\n    não é "nenhum disparou", é "não dá pra saber por aqui". ` +
+      `Fechado cego só é reauditado por consulta\n    própria ao fato (foi o que reabriu o #226), ` +
+      `não por este detector.`,
   );
 
   if (semResolvedAt.length) {
