@@ -27,14 +27,16 @@ import {
 } from "@/lib/credits/service";
 import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
-import { sendEmail, escapeHtml } from "@/lib/email/resend";
-import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
+import { avisarCompraOrfa } from "@/lib/payments/aviso-orfao";
+import { canaisDaCasa, estadoDosAvisos } from "@/lib/payments/aviso-orfao-canal";
 import {
   extractBuyerEmail,
+  extractBuyerName,
   extractExternalId,
   extractNextChargeIso,
   extractOfferCode,
   extractProductCode,
+  extractProductName,
   extractPurchaseStatus,
   extractSubscriptionStatus,
   extractTransactionId,
@@ -238,15 +240,39 @@ async function processEvent(
       // janela de uma campanha ativa, credita o bônus no saldo extra. No-op se
       // não houver campanha; idempotente (não dá bônus 2x na renovação).
       await applyPurchaseCampaignBonus(userId, externalId);
-    } else {
+    }
+    let avisoError: string | null = null;
+    if (!userId) {
       // Compra aprovada SEM conta correspondente: o entitlement fica órfão e o
       // login resgata sozinho quando a conta nascer com ESTE e-mail (claim.ts).
-      // Se a pessoa criar a conta com OUTRO e-mail (caso Juliano 2026-07-13),
-      // só um humano resolve — então avisamos a equipe na hora.
-      await alertOrphanPurchase(buyerEmail, externalId);
+      // Se a pessoa criar a conta com OUTRO e-mail (caso Juliano 13/07, caso
+      // Tiago #239 em 02/09), só um humano resolve — então avisamos na hora.
+      const aviso = await avisarCompraOrfa(
+        {
+          eventType,
+          buyerEmail,
+          buyerName: extractBuyerName(data),
+          productCode,
+          productName: extractProductName(data),
+          transaction: extractTransactionId(data),
+          externalId,
+        },
+        process.env.HOTMART_PRODUCT_ID ?? null,
+        estadoDosAvisos(),
+        canaisDaCasa(),
+        new Date().toISOString(),
+      );
+      // #239: o aviso antigo descartava o resultado do envio, então "não avisou
+      // ninguém" e "avisou" eram a MESMA coisa vista de fora — 46 aprovações
+      // órfãs em 29 dias e zero e-mails, sem uma linha em lugar nenhum. Agora,
+      // aviso novo que não entrou em NENHUM canal vira erro registrado em
+      // `payment_events.error` (HTTP segue 200: reenvio da Hotmart não resolve).
+      if (aviso.avisou && aviso.canais.length === 0) {
+        avisoError = `compra órfã sem canal de aviso: ${buyerEmail} [${externalId}]`;
+      }
     }
     await setPendingPayment(buyerEmail, null); // pagou → limpa o pendente
-    return ok("granted" + handledSuffix);
+    return { handled: "granted" + handledSuffix, processError: avisoError };
   }
 
   // aguardando pagamento: Pix/boleto GERADO mas ainda não pago → banner no app.
@@ -289,35 +315,10 @@ async function processEvent(
   return ok("ignored");
 }
 
-/**
- * Aprovação sem conta na plataforma → e-mail pra equipe (best-effort).
- * O acesso em si NÃO se perde (entitlement órfão + resgate no login); o aviso
- * existe pro caso do e-mail da compra ≠ e-mail da conta, que exige humano.
- */
-async function alertOrphanPurchase(buyerEmail: string, externalId: string): Promise<void> {
-  try {
-    const admin = getAdmin();
-    const to = new Set<string>([SUPPORT_EMAIL]);
-    const { data } = await admin.from("admin_emails").select("email");
-    for (const r of (data ?? []) as { email: string | null }[]) {
-      if (r.email) to.add(r.email.toLowerCase());
-    }
-    await sendEmail({
-      to: [...to],
-      subject: `⚠️ Compra aprovada SEM conta na plataforma: ${buyerEmail}`,
-      html:
-        `<p>A Hotmart aprovou uma compra, mas não existe conta na plataforma com o e-mail do comprador — os créditos ficam pendentes.</p>` +
-        `<ul>` +
-        `<li><strong>E-mail da compra:</strong> ${escapeHtml(buyerEmail)}</li>` +
-        `<li><strong>Assinatura/transação:</strong> ${escapeHtml(externalId)}</li>` +
-        `</ul>` +
-        `<p>Se a pessoa criar a conta com ESTE e-mail, o sistema credita sozinho no primeiro login. ` +
-        `Se ela usar outro e-mail (ex.: login Google diferente do e-mail do checkout), é preciso vincular manualmente — confirme com o aluno qual e-mail ele usa pra logar.</p>`,
-    });
-  } catch {
-    /* aviso é best-effort; nunca derruba o webhook */
-  }
-}
+// O aviso de compra órfã saiu daqui: decisão e texto em @/lib/payments/aviso-orfao
+// (puro, testado em aviso-orfao.test.ts), canais em aviso-orfao-canal.ts. A versão
+// antiga era só e-mail, descartava o resultado do envio e engolia exceção — por
+// isso nunca chegou em ninguém e ninguém percebeu (incidente #239).
 
 function mapRevokeStatus(eventType: string): Exclude<EntitlementStatus, "active"> | null {
   if (eventType === "SUBSCRIPTION_CANCELLATION") return "canceled";
