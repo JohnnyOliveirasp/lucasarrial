@@ -11,7 +11,6 @@ import {
   USD_BRL,
   genCostBrl,
   trainCostBrl,
-  hotmartFeeBrl,
   imagesCostBrl,
   infraCostBrl,
   kieCreditsCostBrl,
@@ -46,6 +45,8 @@ export type AdminMetrics = {
 export type Money = {
   mrr: number;
   revenuePeriod: number;
+  /** LÍQUIDO real do produtor no período (comissão PRODUCER, mig 105). */
+  liquidPeriod: number;
   /** Custo variável (ferramentas Kie/RunPod) no período. */
   costPeriod: number;
   /** Custo fixo de infra (Hetzner + RunPod HD + Supabase) pró-rateado no período. */
@@ -72,6 +73,9 @@ export type Finance = {
   paidTotal: number;
   paidCountPeriod: number;
   paidTotalPeriod: number;
+  /** Líquido real (PRODUCER) — desde o início e no período. */
+  paidLiquidTotal: number;
+  paidLiquidPeriod: number;
   offerCount: number;
   offerCountPeriod: number;
   /** R$ dados em promoção no período (ofertas R$0 × preço do plano). */
@@ -107,6 +111,8 @@ type FinanceRaw = {
   paid_total: number;
   paid_count_period: number;
   paid_total_period: number;
+  paid_liquid?: number;
+  paid_liquid_period?: number;
   offer_count: number;
   offer_count_period: number;
   test_count: number;
@@ -208,12 +214,20 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
 
   // ---- dinheiro REAL (Hotmart, produto da plataforma, sem testes) ----
   const revenuePeriod = fin.paid_total_period ?? 0;
+  // LÍQUIDO real do produtor (mig 105, pedido Johnny 03/09): a comissão
+  // PRODUCER do webhook — taxa real (~6,5%) e conversão de moeda já
+  // descontadas NA FONTE. É o número que bate com o que o Lucas vê na Hotmart.
+  // Fallback pro bruto só se o RPC antigo ainda estiver no ar (deploy no meio).
+  const liquidPeriod = fin.paid_liquid_period ?? revenuePeriod;
   // TODAS as fatias da pizza entram no gasto — e a parte RunPod usa o gasto
   // REAL medido quando o período tem leituras (decisão Johnny 25/07: as
   // cobranças do cartão têm que refletir no lucro); sem leituras (períodos
   // antigos), cai na estimativa por job.
   const costPeriod = (gpuRealPeriod ?? gpuEstimatePeriod) + imageCost + videoCost;
-  const feePeriod = hotmartFeeBrl(revenuePeriod, fin.paid_count_period ?? 0);
+  // Taxa REAL = bruto − líquido do webhook (inclui o spread de conversão das
+  // vendas internacionais). A fórmula 9,9%+R$1 (hotmartFeeBrl) superestimava
+  // ~R$4/venda e o lucro saía menor que o verdadeiro — conciliação de 02/09.
+  const feePeriod = Math.max(0, revenuePeriod - liquidPeriod);
   const refunds = fin.refund_total ?? 0;
   // Decisão Johnny 2026-07-06 (opção B): lucro/prejuízo = CAIXA REAL; a promoção
   // (assinaturas R$0 valorizadas a preço de tabela) aparece SEPARADA ao lado,
@@ -233,13 +247,15 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
   const effUntil = Math.min(new Date(until).getTime(), Date.now());
   const rangeDays = Math.max((effUntil - effSince) / 86_400_000, 0);
   const infraPeriod = infraCostBrl(rangeDays);
-  const profitPeriod = revenuePeriod - feePeriod - costPeriod - infraPeriod - refunds;
-  const marginPct = revenuePeriod > 0 ? (profitPeriod / revenuePeriod) * 100 : 0;
+  // Lucro real = LÍQUIDO que a Hotmart repassa − ferramentas − infra − estornos.
+  // (equivale a bruto − taxa real − ..., mas parte do número que bate com o Lucas)
+  const profitPeriod = liquidPeriod - costPeriod - infraPeriod - refunds;
+  const marginPct = liquidPeriod > 0 ? (profitPeriod / liquidPeriod) * 100 : 0;
 
   return {
     metrics,
     money: {
-      mrr, revenuePeriod, costPeriod, infraPeriod, feePeriod, profitPeriod, marginPct,
+      mrr, revenuePeriod, liquidPeriod, costPeriod, infraPeriod, feePeriod, profitPeriod, marginPct,
       gpuEstimatePeriod, gpuRealPeriod,
       runpodBalanceUsd: billing?.balanceUsd ?? null,
       runpodSpendPerHrUsd: billing?.spendPerHrUsd ?? null,
@@ -249,6 +265,8 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
       paidTotal: fin.paid_total ?? 0,
       paidCountPeriod: fin.paid_count_period ?? 0,
       paidTotalPeriod: fin.paid_total_period ?? 0,
+      paidLiquidTotal: fin.paid_liquid ?? fin.paid_total ?? 0,
+      paidLiquidPeriod: liquidPeriod,
       offerCount: fin.offer_count ?? 0,
       offerCountPeriod: fin.offer_count_period ?? 0,
       offerValuePeriod,

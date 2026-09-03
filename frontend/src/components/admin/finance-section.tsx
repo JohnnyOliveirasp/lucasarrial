@@ -95,11 +95,14 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
   const isLoss = money.profitPeriod < 0;
   // Opção B: caixa e "com promoção" sempre lado a lado.
   const combined = money.profitPeriod - promoValue;
-  // Tudo que sai no período: ferramentas + infra fixa + taxa Hotmart + estornos.
-  // Estornos entram aqui porque já descontam do lucro (queries.ts) — sem a
-  // fatia, "Entrou − Saiu" não fechava com o Lucro mostrado.
+  // LUCRO REAL (mig 105, 03/09): a base virou o LÍQUIDO que a Hotmart repassa
+  // (comissão PRODUCER) — a taxa real já saiu na fonte, então ela é INFO no
+  // KPI, não uma "saída" que a gente paga do bolso. Saídas = ferramentas +
+  // infra + estornos, e "Entrou(líquido) − Saiu = Lucro" fecha exato.
+  const liquido = money.liquidPeriod;
+  const taxaPct = money.revenuePeriod > 0 ? (money.feePeriod / money.revenuePeriod) * 100 : 0;
   const refunds = fin.refundTotal;
-  const totalOut = toolsCost + money.infraPeriod + money.feePeriod + refunds;
+  const totalOut = toolsCost + money.infraPeriod + refunds;
   const refundDetail = `${num(fin.refundCount)} devolução(ões) Hotmart (reembolso + chargeback)`;
 
   const toolSlices: DonutSlice[] = fin.slices.map((s) => ({
@@ -116,11 +119,11 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
       {/* KPIs — a verdade em 4 números */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
-          label="Entrou (real)"
-          value={brl2(money.revenuePeriod)}
+          label="Entrou (líquido real)"
+          value={brl2(liquido)}
           tone="revenue"
           icon={Wallet}
-          hint={`${num(fin.paidCountPeriod)} venda(s) · desde o início ${brl2(fin.paidTotal)} (${num(fin.paidCount)})`}
+          hint={`${num(fin.paidCountPeriod)} venda(s) · bruto ${brl2(money.revenuePeriod)} − taxa real Hotmart ${brl2(money.feePeriod)} (${taxaPct.toFixed(1)}%) · desde o início ${brl2(fin.paidLiquidTotal)} líquidos`}
         />
         <KpiCard
           label="Promoção (dado)"
@@ -134,7 +137,7 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
           value={brl2(totalOut)}
           tone="cost"
           icon={BadgeDollarSign}
-          hint={`ferramentas ${brl2(toolsCost)} + infra ${brl2(money.infraPeriod)} + taxa ${brl2(money.feePeriod)}${refunds > 0 ? ` + estornos ${brl2(refunds)}` : ""}`}
+          hint={`ferramentas ${brl2(toolsCost)} + infra ${brl2(money.infraPeriod)}${refunds > 0 ? ` + estornos ${brl2(refunds)}` : ""} · taxa Hotmart já saiu do líquido`}
         />
         <KpiCard
           label={isLoss ? "Prejuízo (caixa)" : "Lucro (caixa)"}
@@ -143,10 +146,10 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
           icon={TrendingUp}
           hint={
             promoValue > 0
-              ? `c/ promoção: ${brl2(combined)}${money.revenuePeriod > 0 ? ` · ${Math.abs(money.marginPct).toFixed(0)}% sobre o que entrou` : ""}`
+              ? `c/ promoção: ${brl2(combined)}${money.revenuePeriod > 0 ? ` · ${Math.abs(money.marginPct).toFixed(0)}% sobre o líquido` : ""}`
               : money.revenuePeriod > 0
-                ? `${Math.abs(money.marginPct).toFixed(0)}% sobre o que entrou · taxa ${brl2(money.feePeriod)}`
-                : `sem receita no período · taxa ${brl2(money.feePeriod)}`
+                ? `${Math.abs(money.marginPct).toFixed(0)}% sobre o líquido`
+                : `sem receita no período`
           }
         />
       </div>
@@ -200,9 +203,9 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
           slices={[
             {
               key: "in",
-              label: "Entrou (pago)",
-              brl: money.revenuePeriod,
-              detail: `${num(fin.paidCountPeriod)} venda(s)`,
+              label: "Entrou (líquido)",
+              brl: liquido,
+              detail: `${num(fin.paidCountPeriod)} venda(s) · taxa real já descontada`,
               color: "var(--status-online)",
             },
             {
@@ -214,7 +217,6 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
             },
             { key: "tools", label: "Ferramentas", brl: toolsCost, detail: "custo Kie/RunPod", color: "var(--status-error)" },
             { key: "infra", label: "Infraestrutura", brl: money.infraPeriod, detail: INFRA_DETAIL, color: "#94a3b8" },
-            { key: "fee", label: "Taxa Hotmart", brl: money.feePeriod, detail: "9,9% + $1/venda", color: "var(--ash)" },
             { key: "refund", label: "Estornos", brl: refunds, detail: refundDetail, color: REFUND_COLOR },
           ]}
           centerLabel={isLoss ? "Prejuízo (caixa)" : "Lucro (caixa)"}
@@ -223,7 +225,7 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
             promoValue > 0
               ? `c/ promoção: ${brl2(combined)}`
               : money.revenuePeriod > 0
-                ? `${Math.abs(money.marginPct).toFixed(0)}% sobre o que entrou`
+                ? `${Math.abs(money.marginPct).toFixed(0)}% sobre o líquido`
                 : "sem receita no período"
           }
           emptyText="sem movimento no período"
@@ -239,13 +241,14 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
         ) : null}
       </ChartCard>
 
-      {/* 3) SAÍDAS — tudo que sai do bolso, detalhado (estornos incluídos 02/09) */}
-      <ChartCard title="Saídas — pra onde vai o dinheiro (ferramentas + infra + taxa + estornos)">
+      {/* 3) SAÍDAS — tudo que sai do bolso, detalhado. A taxa Hotmart NÃO está
+          aqui de propósito (03/09): o "Entrou" agora é líquido, a taxa já saiu
+          na fonte — ela aparece no hint do KPI Entrou. */}
+      <ChartCard title="Saídas — pra onde vai o dinheiro (ferramentas + infra + estornos)">
         <Donut
           slices={[
             ...toolSlices,
             { key: "infra", label: "Infraestrutura", brl: money.infraPeriod, detail: INFRA_DETAIL, color: "#94a3b8" },
-            { key: "fee", label: "Taxa Hotmart", brl: money.feePeriod, detail: "9,9% + $1/venda", color: "var(--ash)" },
             { key: "refund", label: "Estornos", brl: refunds, detail: refundDetail, color: REFUND_COLOR },
           ]}
           centerLabel="Saiu no total"
