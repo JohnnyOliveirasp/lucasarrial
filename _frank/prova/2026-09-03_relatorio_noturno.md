@@ -137,3 +137,53 @@ em `_frank/prova/` — conferi com `--stat`, nenhum toca código.
   devolução de dinheiro não é minha decisão.
 - Não subi o PR #165 pra produção: mexe no webhook de pagamento e merece
   segunda leitura.
+
+---
+
+## ⚠️ RETRATAÇÃO acrescentada em 03/09 01h55Z (ronda das falhas)
+
+**Johnny: duas afirmações deste relatório estão erradas, e a decisão que ele te
+pede está apoiada numa delas.** Não reescrevi as linhas originais de propósito —
+ficam como estavam, com a correção aqui embaixo.
+
+**1. "`vlorandi@gmail.com` — NENHUMA compra" (linha 66) está errado.** Medido
+agora pela fonte de verdade (`pagou_de_verdade.cjs`, Hotmart viva):
+
+| data | valor | transação | status |
+|---|---|---|---|
+| 29/08 | R$ 297,00 | HP3517088140 | APPROVED |
+| 29/08 | R$ 597,00 | HP2540995505 | APPROVED |
+| 30/08 | R$ 1.803,60 | HP0167002846 | APPROVED |
+| | **R$ 2.697,60** | | **no próprio e-mail dele** |
+
+O que é verdade é outra coisa, e não é a mesma: ele não tem compra **do
+FastCloner**. `aluno.cjs` (nosso banco) diz "compras: NENHUMA" por isso. Ler
+esse campo como verdade de pagamento é a cegueira do **#173** reencenada por
+outro instrumento — as duas frases são verdadeiras em ferramentas diferentes e
+foram somadas como se fossem uma.
+
+**2. "Não procurei na Hotmart: não tenho acesso à conta. Só o Johnny ou o Lucas
+confirmam pagamento lá" (linhas 132-133) está errado.** Temos acesso desde o
+**PR #138** (`c5955f7`, em produção 31/08 19:39Z): o `pagou_de_verdade.cjs` lê
+`/sales/history?buyer_email=`. Rodei nesta ronda, nos dois nomes citados.
+
+**Zica Santos não precisava de busca nenhuma:** o caso dela (**#214**) já estava
+apurado desde 31/08 nas notas do próprio chamado — a assinatura dela está paga e
+ativa em **`zicasantos08@hotmail.com`** (entitlement até 19/09, +100.000
+créditos), e ela entra na conta gratuita do gmail. Ela já foi avisada por e-mail
+(uid 402) e já está usando a conta paga.
+
+**Por que isso importa pra tua decisão:** o relatório te apresenta o caso do
+Vinícius como *"não dá pra saber se ele pagou"*. Dá, e está medido: **ele pagou
+R$ 2.697,60**. A pergunta que é tua não é se houve pagamento — é se **compra de
+CURSO dá direito a crédito dentro do FastCloner**, a mesma do #173 (Johnathan,
+R$ 2.391,00), da Cristina (R$ 185,61) e do Robert (R$ 684,92).
+
+**O risco concreto de deixar a frase errada de pé:** a conclusão *"só a busca por
+CPF/nome/cartão confirma"* manda a próxima ronda pedir o CPF ao Vinícius — prova
+da qual ele já foi dispensado **por escrito** em 31/08, depois de termos pedido
+a ele uma vez e ao Johnathan duas. Seria a quarta vez que a casa pede a um
+pagante que prove uma compra que está na nossa mão.
+
+Detalhe e medição na nota 9 do **#202** e no log
+`_frank/prova/2026-09-03_rotina_falhas_02h.md`.
