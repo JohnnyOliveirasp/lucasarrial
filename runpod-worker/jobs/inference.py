@@ -394,7 +394,8 @@ class InferenceJob:
                         and not self._entregar_mesmo_com_cobertura_baixa(
                             idx, chunk, coverage, lacuna)):
                     # Buraco continuo grande: o modelo comeu um pedaco mesmo.
-                    resgate = self._resgatar_por_subdivisao(chunk, idx)
+                    resgate = self._resgatar_por_subdivisao(
+                        chunk, idx, eh_ultimo=(idx == len(chunks) - 1))
                     if resgate is None:
                         self.qa_stats["coverage_exhausted"] += 1
                         return pieces, {"chunk_idx": idx, "coverage": coverage,
@@ -427,7 +428,7 @@ class InferenceJob:
                 pieces.append(np.zeros(self.silence_samples, dtype=np.float32))
         return pieces, None
 
-    def _resgatar_por_subdivisao(self, chunk: str, idx: int):
+    def _resgatar_por_subdivisao(self, chunk: str, idx: int, eh_ultimo: bool = False):
         """Chunk esgotou o QA com buraco CONTINUO -> muda de ESTRATEGIA.
 
         Nivel 1 (24/08): parte nas FRASES e gera cada uma com o mesmo QA.
@@ -446,6 +447,31 @@ class InferenceJob:
 
         Devolve o audio concatenado, ou None se mesmo no nivel 2 um pedaco
         vier comido — ai o job cai como antes.
+
+        ⚠️ `eh_ultimo` (03/09, achado do #234): quando o chunk resgatado e' o
+        ULTIMO do texto, quem termina o arquivo do aluno e' o ULTIMO SUB-PEDACO
+        daqui — e ate hoje ele vinha sem esse aviso. Consequencia medida no
+        banco: o resgate chamava `_rodar_qa` com o default `eh_ultimo=False`,
+        entao o fim REAL do arquivo era julgado pela regua INTERNA, que esta em
+        SOMBRA (`pontua=False`) — ou seja, o unico ponto do audio que sempre
+        teve gate duro ficava sem gate NENHUM justamente na geracao que ja
+        tinha dado problema. Assinatura no banco: a a8caaae1 (03/09 11:11Z)
+        e' a unica das 7 geracoes com a regua nova que tem
+        `tail_interno_entregue_sem_veredito` = 0, e e' exatamente a que tem
+        `coverage_rescue` = 1. Nas outras 6 o campo vale 1 (o ultimo chunk, que
+        nao tem fronteira interna depois dele) e fecha a conta
+        `entregue_n + sem_veredito = coverage_medido_n` — 9, 16, 16, 4, 8 e 4.
+        Repassando o `eh_ultimo` a conta volta a fechar tambem no resgate, o
+        que importa alem do gate: e' o denominador da regua que decide a
+        chave `TTS_TAIL_QA_INTERNO_MODO`.
+
+        ⚠️ O que este conserto NAO faz, de proposito: nao aplica
+        `_curar_fim_abrupto` no audio resgatado. A cura REGENERA o chunk
+        inteiro de uma vez com a frase-isca, e este chunk chegou aqui
+        justamente porque o modelo comia um pedaco quando gerado inteiro —
+        ela so e' guardada por `_fim_ainda_ruim`, que nao olha cobertura, e
+        trocaria um fim decepado por texto faltando. Fim mal cortado se
+        conserta pelo regen do sub-pedaco, que passa pelo QA de cobertura.
         """
         partes = [c for c, _ in split_text_for_tts(chunk, max_chars=1)]
         nivel1 = len(partes) >= 2
@@ -457,9 +483,13 @@ class InferenceJob:
         pedacos: list[np.ndarray] = []
         for j, parte in enumerate(partes):
             sub_idx = idx * 100 + j + 1  # rotulo unico no log/heartbeat
+            # So a ULTIMA ponta do ULTIMO chunk e' o fim do arquivo; as outras
+            # continuam sendo fronteira interna (e continuam na sombra).
+            ponta_final = eh_ultimo and j == len(partes) - 1
             if nivel1:
                 seg = self._aparar(self._gerar(parte, sub_idx), idx)
-                seg, cov, lacuna, tail_interno = self._rodar_qa(seg, sub_idx, parte)
+                seg, cov, lacuna, tail_interno = self._rodar_qa(
+                    seg, sub_idx, parte, eh_ultimo=ponta_final)
                 ok = not (cov is not None and cov < self.cfg.coverage_qa_min
                           and not self._entregar_mesmo_com_cobertura_baixa(sub_idx, parte, cov, lacuna))
                 if ok:
@@ -471,7 +501,7 @@ class InferenceJob:
                     continue
                 _log("warn", "inference.coverage.rescue.nivel1_falhou", idx=idx, parte=j,
                      coverage=cov, maior_lacuna=lacuna)
-            seg2 = self._resgatar_nivel_2(parte, sub_idx)
+            seg2 = self._resgatar_nivel_2(parte, sub_idx, eh_ultimo=ponta_final)
             if seg2 is None:
                 _log("error", "inference.coverage.rescue.failed", idx=idx, parte=j)
                 self.qa_stats["coverage_rescue_failed"] = self.qa_stats.get("coverage_rescue_failed", 0) + 1
@@ -481,9 +511,13 @@ class InferenceJob:
         _log("info", "inference.coverage.rescued", idx=idx, partes=len(partes))
         return np.concatenate(pedacos)
 
-    def _resgatar_nivel_2(self, texto: str, base_idx: int):
+    def _resgatar_nivel_2(self, texto: str, base_idx: int, eh_ultimo: bool = False):
         """Parte ABAIXO da frase e gera com cfg mais alto. None se algum
-        pedaco ainda vier comido."""
+        pedaco ainda vier comido.
+
+        `eh_ultimo` desce pelo mesmo motivo do nivel 1: se este resgate termina
+        o arquivo, quem fecha e' o ULTIMO pedaco daqui, e e' ele que precisa do
+        gate duro de fim abrupto em vez da regua interna em sombra."""
         c = self.cfg
         pedacos_txt = split_below_sentence(texto, max_chars=c.rescue_word_chars)
         if not pedacos_txt:
@@ -496,7 +530,9 @@ class InferenceJob:
         for k, pz in enumerate(pedacos_txt):
             sub = base_idx * 10 + k + 1
             seg = self._aparar(self._gerar(pz, sub, cfg_value=cfg2), base_idx)
-            seg, cov, lacuna, tail_interno = self._rodar_qa(seg, sub, pz, cfg_value=cfg2)
+            seg, cov, lacuna, tail_interno = self._rodar_qa(
+                seg, sub, pz, eh_ultimo=(eh_ultimo and k == len(pedacos_txt) - 1),
+                cfg_value=cfg2)
             if (cov is not None and cov < c.coverage_qa_min
                     and not self._entregar_mesmo_com_cobertura_baixa(sub, pz, cov, lacuna)):
                 _log("error", "inference.coverage.rescue.nivel2_falhou", idx=base_idx,

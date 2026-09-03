@@ -310,6 +310,88 @@ class InferenciaPontaAPontaTest(unittest.TestCase):
         self.assertEqual(qa["tail_interno_entregue_n"], 1)
         self.assertEqual(qa["tail_interno_entregue"], 1)
 
+    def test_ULTIMO_chunk_RESGATADO_ainda_e_o_fim_do_ARQUIVO(self):
+        """#234 (03/09): o resgate por subdivisao apagava o fim do arquivo.
+
+        Quando o ULTIMO chunk cai no resgate, quem termina o audio do aluno e'
+        o ultimo SUB-PEDACO — e ele ia pro `_rodar_qa` com o default
+        `eh_ultimo=False`. Efeito: o unico ponto do audio com gate DURO de fim
+        abrupto passava a ser julgado pela regua INTERNA, que esta em sombra
+        (`pontua=False`), ou seja, sem gate nenhum.
+
+        Assinatura que denunciou no banco (7 geracoes com a regua nova, 03/09
+        04:01Z-11:29Z): `entregue_n + sem_veredito == coverage_medido_n` em
+        todas — 9, 16, 21, 16, 4, 8, 4 — e `sem_veredito` == 1 em 6 delas (o
+        ultimo chunk, que nao tem fronteira interna depois). A excecao era a
+        a8caaae1, com sem_veredito 0, e ela e' justamente a unica com
+        `coverage_rescue` == 1.
+        """
+        ultimo = "Hoje o dia e outro e a escolha e sua. E ela comeca agora mesmo."
+        texto = (
+            "Eu sei que existe uma parte de voce que esta cansada de viver no "
+            "piloto automatico. Esperando o momento perfeito que nunca chega "
+            "para comecar. " + ultimo
+        )
+
+        def come_o_ultimo_chunk_inteiro(seg, sr, m, lang, label):
+            # So o ULTIMO CHUNK inteiro sai comido (buraco CONTINUO grande ->
+            # resgate). As frases dele, geradas separadas, saem limpas — e' o
+            # que faz o resgate ter sucesso em vez de derrubar o job.
+            # ⚠️ Tem que sobrar POUCA palavra: tirar so metade cai na escotilha
+            # de "lacuna espalhada" (20/08) e o chunk e' ENTREGUE sem resgate.
+            pedido = FakeVoxCPM.gerados[-1]
+            w = tts_qa.norm_words(pedido, lang)
+            return w[:2] if pedido == ultimo else w
+
+        with mock.patch.object(tts_qa.loop, "transcribe_seg",
+                               side_effect=come_o_ultimo_chunk_inteiro), \
+             mock.patch.object(tts_qa.loop, "transcribe_seg_autodetect",
+                               return_value=([], "pt", 0.0)):
+            r = handler.handler({"input": _clone_job(text=texto)})
+
+        self.assertNotIn("error", r, r.get("error"))
+        qa = r["qa"]
+        self.assertEqual(qa["coverage_rescued"], 1, "o ultimo chunk foi resgatado")
+        # O QUE ESTE TESTE PROTEGE: exatamente UM pedaco entregue e' o fim do
+        # arquivo. Antes do conserto isto vinha 0 — o fim virava fronteira
+        # interna e sumia dentro da sombra.
+        self.assertEqual(qa["tail_interno_entregue_sem_veredito"], 1,
+                         "o fim do arquivo tem que continuar sem fronteira interna")
+        # ...e a conta da regua de ENTREGA fecha nos pedacos entregues, que e'
+        # o denominador que decide a chave TTS_TAIL_QA_INTERNO_MODO.
+        self.assertEqual(qa["tail_interno_entregue_n"]
+                         + qa["tail_interno_entregue_sem_veredito"],
+                         qa["coverage_medido_n"])
+
+    def test_resgate_de_chunk_do_MEIO_nao_inventa_fim_de_arquivo(self):
+        """O contrapeso do teste acima: resgate no chunk 0 nao pode marcar
+        ponta final nenhuma. Se marcasse, a regua passaria a contar dois fins
+        de arquivo e o denominador mentiria pro outro lado."""
+        primeiro = ("Eu sei que existe uma parte de voce que esta cansada de "
+                    "viver no piloto automatico. Esperando o momento perfeito "
+                    "que nunca chega para comecar.")
+        texto = primeiro + " Hoje o dia e outro e a escolha e sua."
+
+        def come_o_primeiro_chunk_inteiro(seg, sr, m, lang, label):
+            pedido = FakeVoxCPM.gerados[-1]
+            w = tts_qa.norm_words(pedido, lang)
+            return w[:2] if pedido == primeiro else w
+
+        with mock.patch.object(tts_qa.loop, "transcribe_seg",
+                               side_effect=come_o_primeiro_chunk_inteiro), \
+             mock.patch.object(tts_qa.loop, "transcribe_seg_autodetect",
+                               return_value=([], "pt", 0.0)):
+            r = handler.handler({"input": _clone_job(text=texto)})
+
+        self.assertNotIn("error", r, r.get("error"))
+        qa = r["qa"]
+        self.assertEqual(qa["coverage_rescued"], 1)
+        self.assertEqual(qa["tail_interno_entregue_sem_veredito"], 1,
+                         "so o ultimo chunk, que nem foi resgatado")
+        self.assertEqual(qa["tail_interno_entregue_n"]
+                         + qa["tail_interno_entregue_sem_veredito"],
+                         qa["coverage_medido_n"])
+
     def test_buraco_CONTINUO_derruba_o_job_sem_subir_audio(self):
         # Metade final sumindo = o modelo comeu um pedaco (caso Katia 19/08).
         def so_a_metade(seg, sr, m, lang, label):
