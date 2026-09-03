@@ -26,6 +26,8 @@ import { gruposDoTime } from "@/lib/support/grupo";
 import { sendAgentText } from "@/lib/agent/provider";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
+import { getAdmin } from "@/lib/db/admin";
+import { registrarAviso, type ChaveAviso } from "./registrar-aviso";
 import { classificarErro } from "./erro-dono";
 
 const LOGIN_URL = "https://fastcloner.com/login";
@@ -45,12 +47,38 @@ const ASSINATURA = "\n\n— Equipe FastCloner";
  */
 const grupoJids = gruposDoTime;
 
-async function mandar(to: string, subject: string, text: string): Promise<void> {
+/**
+ * Ponto único por onde TODA a régua sai — e, desde 03/09, o único lugar que
+ * precisa registrar. Sucesso e falha viram linha em `avisos_enviados`: era
+ * justamente a FALHA que ninguém enxergava (o `catch` abaixo só logava, e log
+ * de servidor não sobrevive no Hetzner).
+ */
+async function mandar(
+  to: string,
+  subject: string,
+  text: string,
+  aviso: ChaveAviso,
+  extra?: { userId?: string | null; referencia?: string | null },
+): Promise<void> {
+  let ok = true;
+  let erro: string | null = null;
   try {
     await sendSupportMail({ to, subject, text: text + ASSINATURA });
   } catch (e) {
-    console.error(`[onboarding/avisos] e-mail "${subject}" → ${to}:`, e instanceof Error ? e.message : e);
+    ok = false;
+    erro = e instanceof Error ? e.message : String(e);
+    console.error(`[onboarding/avisos] e-mail "${subject}" → ${to}:`, erro);
   }
+  // Best-effort: registrar nunca derruba o aviso (nem quando a tabela não existe).
+  await registrarAviso(getAdmin(), {
+    email: to,
+    userId: extra?.userId ?? null,
+    aviso,
+    assunto: subject,
+    referencia: extra?.referencia ?? null,
+    ok,
+    erro,
+  });
 }
 
 // ── A régua ────────────────────────────────────────────────────────────────
@@ -63,6 +91,7 @@ export async function avisoComecamos(email: string, nome: string | null): Promis
       `Recebemos o seu material e já começamos: estamos fazendo o upload dos seus ` +
       `arquivos e analisando as imagens e os áudios que você enviou.\n\n` +
       `Você vai receber um e-mail a cada etapa. Não precisa fazer nada por enquanto.`,
+    "onboarding_comecamos",
   );
 }
 
@@ -73,6 +102,7 @@ export async function avisoProcessandoImagens(email: string): Promise<void> {
     `As suas imagens chegaram e estão sendo processadas agora. ` +
       `Elas vão virar a sua referência visual na plataforma.\n\n` +
       `Em seguida passamos para o áudio.`,
+    "onboarding_processando_imagens",
   );
 }
 
@@ -84,6 +114,7 @@ export async function avisoProcessandoAudio(email: string): Promise<void> {
       `você enviou. Precisamos de pelo menos 20 minutos de fala para treinar ` +
       `a sua voz com qualidade.\n\n` +
       `Quando terminar, você recebe o resultado aqui.`,
+    "onboarding_processando_audio",
   );
 }
 
@@ -105,6 +136,7 @@ export async function avisoPrecisamosDeVoce(
       `O que precisamos de você:\n${oQueFazer}\n\n` +
       `Assim que ajustar, responda este e-mail ou avise no suporte que a gente ` +
       `retoma de onde parou — o que já deu certo está guardado.`,
+    "onboarding_precisamos_de_voce",
   );
 }
 
@@ -114,7 +146,7 @@ export async function avisoPrecisamosDeVoce(
  * dizendo que a foto foi gerada, que a voz está em treinamento, que a voz
  * estava pronta". Um e-mail por etapa, disparado por lib/sgp/etapas.ts.
  */
-export async function avisoFotoPronta(email: string): Promise<void> {
+export async function avisoFotoPronta(email: string, ref?: string | null): Promise<void> {
   await mandar(
     email,
     "Seu clone de foto ficou pronto ✅",
@@ -123,10 +155,12 @@ export async function avisoFotoPronta(email: string): Promise<void> {
 ` +
       `Agora estamos treinando a sua VOZ — leva cerca de 30 minutos. ` +
       `Você recebe outro e-mail quando ela ficar pronta; não precisa fazer nada.`,
+    "sgp_foto_pronta",
+    { referencia: ref },
   );
 }
 
-export async function avisoVozPronta(email: string): Promise<void> {
+export async function avisoVozPronta(email: string, ref?: string | null): Promise<void> {
   await mandar(
     email,
     "Sua voz clonada ficou pronta 🎙️",
@@ -134,23 +168,25 @@ export async function avisoVozPronta(email: string): Promise<void> {
 
 ` +
       `Se a sua foto também já ficou pronta, é só entrar na plataforma pra usar as duas.`,
+    "sgp_voz_pronta",
+    { referencia: ref },
   );
 }
 
-export async function avisoTudoPronto(email: string): Promise<void> {
-  await mandar(
-    email,
-    "Sua plataforma está pronta! 🎉",
-    `Sua plataforma está pronta! 🎉\n\n` +
-      `Já configuramos sua imagem e sua voz na FastCloner e testamos: está funcionando. ` +
-      `Agora você pode entrar na plataforma e gerar quantos vídeos e cenários quiser, ` +
-      `a partir da sua imagem e da sua voz treinada.\n\n` +
-      `Se preferir, volte às aulas da Fábrica de Conteúdo Invisível — a Aula 7 mostra ` +
-      `o passo a passo de como gerar seus próprios vídeos, e a Aula 8 te dá o mapa do ` +
-      `que postar toda semana.\n\n` +
-      `Acesse: ${LOGIN_URL}`,
-  );
-}
+/**
+ * 03/09 — `avisoTudoPronto` MORAVA AQUI e foi REMOVIDA. Ela era código morto
+ * (zero chamadores em todo o frontend/src) que se passava por vivo: era o
+ * e-mail mais definitivo do repositório, então quem lia este arquivo concluía
+ * que era ele que saía no "plataforma pronta". Não era.
+ *
+ * Quem manda de verdade é `verificarOnboardingPronto` (lib/onboarding/pronto.ts),
+ * com EMAIL_ASSUNTO/EMAIL_TEXTO. Não dava pra só "passar a usar" esta função no
+ * lugar de lá: a de lá é ESTRITAMENTE mais completa — tem o desvio `semImagem`
+ * do #189 (não afirmar "sua imagem está configurada" pra quem tem zero avatar
+ * pronto) e manda BCC pros admins. Reaproveitar esta aqui REGREDIRIA o #189 e
+ * apagaria o BCC. Por isso: apagada, não promovida. O texto dela sobrevive
+ * idêntico em EMAIL_TEXTO.
+ */
 
 /**
  * Final para quem NÃO tem assinatura vigente (ou nunca entrou). Os arquivos
@@ -161,7 +197,11 @@ export async function avisoTudoPronto(email: string): Promise<void> {
  * @param semImagem nenhum avatar ficou pronto — o texto NÃO pode dizer que as
  *   imagens estão ok. Ver o incidente #189 no bloco de `pronto.ts`.
  */
-export async function avisoOkMasAssine(email: string, semImagem = false): Promise<void> {
+export async function avisoOkMasAssine(
+  email: string,
+  semImagem = false,
+  extra?: { userId?: string | null; referencia?: string | null },
+): Promise<void> {
   if (semImagem) {
     await mandar(
       email,
@@ -174,6 +214,8 @@ export async function avisoOkMasAssine(email: string, semImagem = false): Promis
         `você também precisa ativar a sua assinatura.\n\n` +
         `Assine aqui: ${ASSINAR_URL}\n\n` +
         `Assim que ativar, é só entrar em ${LOGIN_URL}.`,
+      "onboarding_ok_mas_assine_sem_imagem",
+      extra,
     );
     return;
   }
@@ -186,6 +228,8 @@ export async function avisoOkMasAssine(email: string, semImagem = false): Promis
       `você precisa ativar a sua assinatura da plataforma.\n\n` +
       `Assine aqui: ${ASSINAR_URL}\n\n` +
       `Assim que ativar, é só entrar em ${LOGIN_URL} e está tudo lá te esperando.`,
+    "onboarding_ok_mas_assine",
+    extra,
   );
 }
 
