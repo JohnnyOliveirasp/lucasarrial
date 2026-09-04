@@ -96,6 +96,17 @@ class TtsSettings:
     derrubar o job — abaixo disso, cobertura baixa e' lida como
     texto-que-nao-se-fala e o audio e' ENTREGUE."""
 
+    qa_faltantes_amostra_max: int
+    """TETO da amostra de palavras perdidas gravada no `qa` da geracao
+    (702cc916, 04/09). TELEMETRIA PURA: nenhum portao le isto, nenhum job cai
+    por causa dele — ele so nomeia o buraco que `coverage_qa_min` e
+    `coverage_qa_gap_min` ja mediam sem nomear, que e' o dado que falta pra
+    decidir se a escotilha de lacuna espalhada entregou markup (certo) ou
+    palavra do aluno (errado).
+    20 palavras bastam pra reconhecer o padrao e cabem no jsonb; o campo
+    `faltantes_pior_n` fica ao lado justamente pra denunciar corte. `0` e'
+    valido e desliga so a amostra — os contadores continuam."""
+
     intrusion_qa_enabled: bool
     intrusion_qa_retries: int
     """QA de INTRUSAO (incidente fb8d29b7, 19/08): palavra a mais/trocada.
@@ -200,6 +211,8 @@ class TtsSettings:
             coverage_qa_min=float(os.environ.get("TTS_COVERAGE_QA_MIN", "0.85")),
             coverage_qa_retries=int(os.environ.get("TTS_COVERAGE_QA_RETRIES", "3")),
             coverage_qa_gap_min=int(os.environ.get("TTS_COVERAGE_QA_GAP_MIN", "6")),
+            qa_faltantes_amostra_max=_do_job_ou_env(
+                inp, "qa_faltantes_amostra_max", "TTS_QA_FALTANTES_AMOSTRA_MAX", "20"),
             intrusion_qa_enabled=_ligado("TTS_INTRUSION_QA"),
             intrusion_qa_retries=int(os.environ.get("TTS_INTRUSION_QA_RETRIES", "3")),
             tail_qa_interno_enabled=_ligado("TTS_TAIL_QA_INTERNO"),

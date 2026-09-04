@@ -124,7 +124,7 @@ class RunChunkQATest(unittest.TestCase):
         with mock.patch.object(
             tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(transcripts)
         ):
-            best, cov, _lac, _ti = tts_qa.run_chunk_qa(
+            best, cov, _lac, _ti, _falt = tts_qa.run_chunk_qa(
                 seg_ruim, 1, CHUNK, regen_fn=lambda: seg_bom,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -141,7 +141,7 @@ class RunChunkQATest(unittest.TestCase):
         stats = fresh_stats()
         transcriber = mock.Mock()
         with mock.patch.object(tts_qa.loop, "transcribe_seg", transcriber):
-            _best, cov, _lac, _ti = tts_qa.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.run_chunk_qa(
                 seg_mudo, 3, CHUNK, regen_fn=lambda: seg_mudo,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -167,7 +167,7 @@ class RunChunkQATest(unittest.TestCase):
         with mock.patch.object(
             tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(it)
         ):
-            _best, cov, _lac, _ti = tts_qa.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.run_chunk_qa(
                 make_seg(), 2, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -206,7 +206,7 @@ class RunChunkQATest(unittest.TestCase):
         # Transcrição None (whisper FALHOU) = inconclusivo → entrega sem regen.
         stats = fresh_stats()
         with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=None):
-            _best, cov, _lac, _ti = tts_qa.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.run_chunk_qa(
                 make_seg(), 1, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -325,7 +325,7 @@ class IntrusionLoopTest(unittest.TestCase):
         with mock.patch.object(
             tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(it)
         ):
-            best, cov, _lac, _ti = tts_qa.run_chunk_qa(
+            best, cov, _lac, _ti, _falt = tts_qa.run_chunk_qa(
                 seg_sujo, 0, CHUNK, regen_fn=lambda: seg_limpo,
                 qa_stats=stats, **qa_kwargs(intrusion_qa_enabled=True),
             )
@@ -339,7 +339,7 @@ class IntrusionLoopTest(unittest.TestCase):
         suja = tts_qa.norm_words("Por menos, " + CHUNK)
         stats = fresh_stats()
         with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=suja):
-            _best, cov, _lac, _ti = tts_qa.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.run_chunk_qa(
                 make_seg(), 0, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(intrusion_qa_enabled=True),
             )
@@ -485,7 +485,7 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
             tts_qa.loop, "transcribe_seg_autodetect",
             return_value=(self.EN_CERTO, "en", 0.99),
         ) as auto:
-            _best, cov, lac, _ti = tts_qa.loop.run_chunk_qa(
+            _best, cov, lac, _ti, _falt = tts_qa.loop.run_chunk_qa(
                 seg, 0, self.EN, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -507,7 +507,7 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
             tts_qa.loop, "transcribe_seg_autodetect",
             return_value=(HALF_WORDS, "pt", 0.99),
         ) as auto:
-            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -524,7 +524,7 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect"
         ) as auto:
-            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -540,7 +540,7 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
         ):
-            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -556,7 +556,7 @@ class SegundaOpiniaoIdiomaTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=([], "en", 0.5)
         ):
-            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -606,7 +606,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                _b, cov, _l, _ti = tts_qa.loop.run_chunk_qa(
+                _b, cov, _l, _ti, _falt = tts_qa.loop.run_chunk_qa(
                     seg, idx, CHUNK, regen_fn=lambda: seg,
                     qa_stats=stats, **qa_kwargs(),
                 )
@@ -629,7 +629,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                _b, cov, _l, _ti = tts_qa.loop.run_chunk_qa(
+                _b, cov, _l, _ti, _falt = tts_qa.loop.run_chunk_qa(
                     seg, idx, CHUNK, regen_fn=lambda: seg,
                     qa_stats=stats, **qa_kwargs(),
                 )
@@ -646,7 +646,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
         ) as auto:
-            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -668,7 +668,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                _b, cov, _l, _ti = tts_qa.loop.run_chunk_qa(
+                _b, cov, _l, _ti, _falt = tts_qa.loop.run_chunk_qa(
                     seg, idx, CHUNK, regen_fn=lambda: seg,
                     qa_stats=stats, **qa_kwargs(),
                 )
@@ -706,7 +706,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
         ):
-            _b, cov, _l, _ti = tts_qa.loop.run_chunk_qa(
+            _b, cov, _l, _ti, _falt = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg, qa_stats=stats, **qa_kwargs(),
             )
         self.assertEqual(round(cov, 4), round(cov_ruim, 4))
@@ -721,7 +721,7 @@ class TelemetriaCoberturaEntregueTest(unittest.TestCase):
             ), mock.patch.object(
                 tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
             ):
-                _b, cov_sub, _l, _ti = tts_qa.loop.run_chunk_qa(
+                _b, cov_sub, _l, _ti, _falt = tts_qa.loop.run_chunk_qa(
                     seg, sub, CHUNK, regen_fn=lambda: seg, qa_stats=stats, **qa_kwargs(),
                 )
             entregar(stats, cov_sub)
@@ -757,7 +757,7 @@ class TelemetriaSegundaOpiniaoTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=(HALF_WORDS, "pt", 0.97)
         ) as auto:
-            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -780,7 +780,7 @@ class TelemetriaSegundaOpiniaoTest(unittest.TestCase):
         ), mock.patch.object(
             tts_qa.loop, "transcribe_seg_autodetect", return_value=([], "en", 0.88)
         ):
-            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.loop.run_chunk_qa(
                 seg, 0, CHUNK, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -800,7 +800,7 @@ class TelemetriaSegundaOpiniaoTest(unittest.TestCase):
             tts_qa.loop, "transcribe_seg_autodetect",
             return_value=(tts_qa.norm_words(self.EN, "en"), "en", 0.99),
         ):
-            _best, cov, _lac, _ti = tts_qa.loop.run_chunk_qa(
+            _best, cov, _lac, _ti, _falt = tts_qa.loop.run_chunk_qa(
                 seg, 0, self.EN, regen_fn=lambda: seg,
                 qa_stats=stats, **qa_kwargs(),
             )
@@ -859,7 +859,7 @@ class ChunkAlucinadoTest(unittest.TestCase):
     def test_duas_alucinadas_seguidas_param_o_laco(self):
         stats = fresh_stats()
         with mock.patch.object(tts_qa.loop, "transcribe_seg", return_value=CHUNK_WORDS[:1]):
-            _b, cov, _l, _ti = tts_qa.run_chunk_qa(
+            _b, cov, _l, _ti, _falt = tts_qa.run_chunk_qa(
                 make_seg(), 0, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(coverage_qa_retries=3),
             )
@@ -873,7 +873,7 @@ class ChunkAlucinadoTest(unittest.TestCase):
         seqs = iter([CHUNK_WORDS[:1], HALF_WORDS, CHUNK_WORDS[:1]])
         stats = fresh_stats()
         with mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(seqs)):
-            _b, cov, _l, _ti = tts_qa.run_chunk_qa(
+            _b, cov, _l, _ti, _falt = tts_qa.run_chunk_qa(
                 make_seg(), 0, CHUNK, regen_fn=make_seg,
                 qa_stats=stats, **qa_kwargs(coverage_qa_retries=3),
             )
@@ -942,6 +942,296 @@ class ExhaustedScoreTest(unittest.TestCase):
         self.assertEqual(stats["exhausted"], 2)
         self.assertEqual(len(stats["exhausted_scores"]), 2)
         self.assertEqual(stats["exhausted_score_max"], max(stats["exhausted_scores"]))
+
+
+class PalavrasFaltantesTest(unittest.TestCase):
+    """palavras_faltantes: O QUE sumiu (incidente 702cc916, 04/09).
+
+    A pergunta que o QA nao sabia responder, e que trava o caso Katia: com
+    cobertura 0,800 e buraco espalhado a escotilha
+    `_entregar_mesmo_com_cobertura_baixa` ENTREGA, apostando que "espalhado"
+    significa "texto que ninguem fala". Os dois mundos testados aqui sao
+    numericamente IDENTICOS pra `chunk_coverage` e pra `maior_lacuna` — as
+    duas unicas reguas que a escotilha consulta — e so um deles e' entrega
+    honesta. Nomear as palavras e' o que separa os dois.
+    """
+
+    def test_markup_aparece_com_nome(self):
+        # O que o aluno escreve e o locutor NAO fala: **negrito**, [pausa],
+        # emoji. O audio esta BOM — aqui a escotilha acerta ao entregar.
+        texto = "Olha **negrito** que legal [pausa] e entao vamos 🙂 comecar agora"
+        falado = tts_qa.norm_words("Olha que legal e entao vamos comecar agora")
+        faltantes = tts_qa.palavras_faltantes(falado, texto)
+        self.assertEqual(faltantes, ["negrito", "pausa"])
+        # ⚠️ ACHADO, e importa pra quem for ler o campo: o EMOJI nem chega
+        # aqui. `norm_words` derruba tudo que nao e' [a-z0-9], entao o 🙂 some
+        # do `expected` — ele nunca custou cobertura nenhuma. Quem derruba
+        # cobertura e' a PALAVRA solta dentro do markup ("negrito", "pausa"),
+        # nao o simbolo.
+        self.assertNotIn("🙂", faltantes)
+
+    def test_perda_real_aparece_com_nome(self):
+        # Mesmo FORMATO de buraco (palavras soltas, espalhadas), mundo oposto:
+        # sumiu palavra do texto do aluno. A lista denuncia.
+        texto = "Eu sei que voce nao acredita muito nisso hoje mas amanha muda"
+        comidas = {"voce", "nao", "muito"}
+        falado = [w for w in tts_qa.norm_words(texto) if w not in comidas]
+        self.assertEqual(tts_qa.palavras_faltantes(falado, texto),
+                         ["voce", "nao", "muito"])
+
+    def test_os_dois_mundos_sao_indistinguiveis_pelas_reguas_antigas(self):
+        """A prova de que este campo era NECESSARIO, e nao enfeite."""
+        markup = "Olha **negrito** que legal [pausa] e entao vamos comecar ja"
+        m_falado = tts_qa.norm_words("Olha que legal e entao vamos comecar ja")
+        real = "Olha que legal e entao vamos comecar ja mesmo agora tudo bem"
+        r_comidas = {"legal", "vamos"}
+        r_falado = [w for w in tts_qa.norm_words(real) if w not in r_comidas]
+
+        # As duas reguas que a escotilha le nao separam os dois casos:
+        self.assertEqual(tts_qa.maior_lacuna(m_falado, markup),
+                         tts_qa.maior_lacuna(r_falado, real))
+        self.assertEqual(len(tts_qa.palavras_faltantes(m_falado, markup)),
+                         len(tts_qa.palavras_faltantes(r_falado, real)))
+        # ...e so aqui eles se separam:
+        self.assertEqual(tts_qa.palavras_faltantes(m_falado, markup),
+                         ["negrito", "pausa"])
+        self.assertEqual(tts_qa.palavras_faltantes(r_falado, real),
+                         ["legal", "vamos"])
+
+    def test_whisper_falhou_e_None(self):
+        # MESMO contrato de chunk_coverage: inconclusivo nao vira lista vazia.
+        self.assertIsNone(tts_qa.palavras_faltantes(None, CHUNK))
+
+    def test_nada_faltando_e_lista_vazia(self):
+        self.assertEqual(tts_qa.palavras_faltantes(CHUNK_WORDS, CHUNK), [])
+
+    def test_chunk_sem_palavras_e_None(self):
+        self.assertIsNone(tts_qa.palavras_faltantes(CHUNK_WORDS, "..."))
+
+    def test_chunk_mudo_devolve_o_texto_inteiro(self):
+        # Chunk 3 da Katia: audio mudo NAO e' inconclusivo, e' perda total.
+        self.assertEqual(tts_qa.palavras_faltantes([], CHUNK),
+                         [w for w in CHUNK_WORDS if len(w) >= 2])
+
+    def test_sigla_soletrada_nao_polui_a_lista(self):
+        # Mesma correcao de 24/08 do `maior_lacuna` (incidente 37bacb68):
+        # "B P C, L O A S" normaliza pra 7 tokens de 1 letra e o whisper
+        # escreve "BPC LOAS". Reportar 7 palavras perdidas encheria a amostra
+        # de lixo justamente no chunk que parece pior.
+        texto = "O beneficio B P C do L O A S garante o direito"
+        falado = tts_qa.norm_words("O beneficio do garante o direito")
+        self.assertEqual(tts_qa.palavras_faltantes(falado, texto), [])
+
+    def test_palavra_curta_de_verdade_CONTA(self):
+        # O corte e' 1 letra, e NAO as 3 de `chunk_intrusions`: la o filtro
+        # descarta ruido que o whisper INVENTA; aqui a lista vem do texto do
+        # proprio aluno, onde "de"/"um" sumido e' perda real.
+        texto = "quero um cafe de manha bem cedo"
+        falado = tts_qa.norm_words("quero cafe manha bem cedo")
+        self.assertEqual(tts_qa.palavras_faltantes(falado, texto), ["um", "de"])
+
+    def test_ordem_do_texto_e_preservada(self):
+        texto = "primeira segunda terceira quarta quinta sexta setima"
+        falado = tts_qa.norm_words("primeira terceira quinta setima")
+        self.assertEqual(tts_qa.palavras_faltantes(falado, texto),
+                         ["segunda", "quarta", "sexta"])
+
+
+class TelemetriaFaltantesEntregueTest(unittest.TestCase):
+    """registrar_faltantes: o que vai pro banco, com TETO.
+
+    Mesma disciplina de `registrar_cobertura`/`registrar_tail_interno`: quem
+    registra e' o CHAMADOR, so o que virou ENTREGA conta, e o denominador
+    nasce junto do numerador pra "0" nao ficar indistinguivel de "nao mediu".
+    """
+
+    def test_soma_o_total_e_guarda_o_pior(self):
+        stats = fresh_stats()
+        tts_qa.registrar_faltantes(stats, ["um", "dois"])
+        tts_qa.registrar_faltantes(stats, ["tres", "quatro", "cinco"])
+        tts_qa.registrar_faltantes(stats, [])
+        self.assertEqual(stats["faltantes_medido_n"], 3)      # o DENOMINADOR
+        self.assertEqual(stats["faltantes_total"], 5)
+        self.assertEqual(stats["faltantes_pior_n"], 3)
+        self.assertEqual(stats["faltantes_amostra"], ["tres", "quatro", "cinco"])
+
+    def test_audio_integro_nasce_com_zero_e_nao_some(self):
+        # "nada faltou" tem que ser LEGIVEL: total 0 COM denominador 1 e a
+        # amostra vazia PRESENTE — nao campo ausente.
+        stats = fresh_stats()
+        tts_qa.registrar_faltantes(stats, [])
+        self.assertEqual(stats["faltantes_medido_n"], 1)
+        self.assertEqual(stats["faltantes_total"], 0)
+        self.assertEqual(stats["faltantes_pior_n"], 0)
+        self.assertEqual(stats["faltantes_amostra"], [])
+
+    def test_inconclusivo_fica_fora_e_fecha_a_conta(self):
+        stats = fresh_stats()
+        tts_qa.registrar_faltantes(stats, ["um"])
+        tts_qa.registrar_faltantes(stats, None)
+        self.assertEqual(stats["faltantes_medido_n"], 1)
+        self.assertEqual(stats["faltantes_sem_veredito"], 1)
+        self.assertEqual(stats["faltantes_total"], 1)
+
+    def test_TETO_corta_a_amostra_mas_nao_a_contagem(self):
+        # O campo vira jsonb no banco: chunk mudo = texto INTEIRO do aluno. A
+        # amostra corta em N; `faltantes_pior_n` e `faltantes_total` continuam
+        # inteiros — e' o par que DENUNCIA que a amostra esta cortada.
+        muitas = [f"palavra{i}" for i in range(50)]
+        stats = fresh_stats()
+        tts_qa.registrar_faltantes(stats, muitas, amostra_max=20)
+        self.assertEqual(len(stats["faltantes_amostra"]), 20)
+        self.assertEqual(stats["faltantes_amostra"], muitas[:20])
+        self.assertEqual(stats["faltantes_pior_n"], 50)   # a verdade inteira
+        self.assertEqual(stats["faltantes_total"], 50)
+
+    def test_teto_zero_desliga_so_a_amostra(self):
+        stats = fresh_stats()
+        tts_qa.registrar_faltantes(stats, ["um", "dois"], amostra_max=0)
+        self.assertEqual(stats["faltantes_amostra"], [])
+        self.assertEqual(stats["faltantes_total"], 2)      # contador intacto
+        self.assertEqual(stats["faltantes_pior_n"], 2)
+
+    def test_empate_nao_troca_o_dono_da_amostra(self):
+        stats = fresh_stats()
+        tts_qa.registrar_faltantes(stats, ["a1", "a2"])
+        tts_qa.registrar_faltantes(stats, ["b1", "b2"])
+        self.assertEqual(stats["faltantes_amostra"], ["a1", "a2"])
+
+    def test_chunk_DESCARTADO_pelo_resgate_nao_entra_na_amostra(self):
+        """A armadilha que ja mordeu duas vezes (26/08 e 02/09) — e aqui ela
+        seria PIOR: o chunk que reprova e vai pro resgate e' justamente o que
+        perdeu MAIS palavras. Se `run_chunk_qa` registrasse sozinho, ele seria
+        o "pior" de quase toda geracao resgatada, e a amostra descreveria
+        audio que o aluno NUNCA ouviu logo na primeira leitura do campo.
+        """
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        comido = CHUNK_WORDS[:2]        # buraco continuo: vai pro resgate
+
+        # 1) chunk original reprova. O chamador NAO registra.
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: comido
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+        ):
+            _b, cov, _l, _ti, falt_ruim = tts_qa.loop.run_chunk_qa(
+                seg, 0, CHUNK, regen_fn=lambda: seg, qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertLess(cov, 0.85)
+        self.assertGreater(len(falt_ruim), 10)                   # perdeu MUITO
+        self.assertEqual(stats.get("faltantes_medido_n", 0), 0)  # e nao contou
+
+        # 2) os sub-pedacos do resgate saem limpos — E' ISSO que o aluno ouve.
+        for sub in (1, 2):
+            with mock.patch.object(
+                tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: CHUNK_WORDS
+            ), mock.patch.object(
+                tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+            ):
+                _b, _c, _l, _ti, falt_sub = tts_qa.loop.run_chunk_qa(
+                    seg, sub, CHUNK, regen_fn=lambda: seg, qa_stats=stats, **qa_kwargs(),
+                )
+            tts_qa.registrar_faltantes(stats, falt_sub)
+
+        self.assertEqual(stats["faltantes_medido_n"], 2)   # so os 2 entregues
+        self.assertEqual(stats["faltantes_total"], 0)      # o descartado nao somou
+        self.assertEqual(stats["faltantes_amostra"], [])
+
+
+class FaltantesNoLacoTest(unittest.TestCase):
+    """A lista devolvida por `run_chunk_qa` descreve a tentativa VENCEDORA."""
+
+    def test_lista_e_a_da_tentativa_que_venceu(self):
+        # 1a tentativa comida, 2a limpa: quem vira entrega e' a 2a, e a lista
+        # tem que ser a DELA (vazia) — nao a da tentativa jogada fora.
+        transcripts = iter([HALF_WORDS, CHUNK_WORDS])
+        stats = fresh_stats()
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(transcripts)
+        ):
+            _b, cov, _l, _ti, falt = tts_qa.loop.run_chunk_qa(
+                make_seg(), 0, CHUNK, regen_fn=lambda: make_seg(2.0),
+                qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertEqual(cov, 1.0)
+        self.assertEqual(falt, [])
+        self.assertEqual(stats["regens"], 1)
+
+    def test_tentativa_perdedora_nao_deixa_lista(self):
+        # O inverso: a 2a tentativa e' PIOR, entao vence a 1a — e a lista tem
+        # que voltar a ser a da 1a, nao a ultima medida.
+        # ⚠️ Os 4 `retries` iguais NAO sao decoracao: `max_attempts` e' o MAIOR
+        # deles, e uma volta a mais que o coverage nao julga sai com score 0 e
+        # vence tudo (comportamento antigo, vale igual pra `coverage`).
+        transcripts = iter([HALF_WORDS, []])
+        stats = fresh_stats()
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: next(transcripts)
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+        ):
+            _b, cov, _l, _ti, falt = tts_qa.loop.run_chunk_qa(
+                make_seg(), 0, CHUNK, regen_fn=lambda: make_seg(),
+                qa_stats=stats, **qa_kwargs(
+                    coverage_qa_retries=2, echo_qa_retries=2,
+                    intrusion_qa_retries=2, start_qa_retries=2),
+            )
+        self.assertIsNotNone(cov)
+        # a 1a (metade do texto) venceu a 2a (muda): lista da 1a, nao do mudo
+        self.assertEqual(falt, tts_qa.palavras_faltantes(HALF_WORDS, CHUNK))
+        self.assertLess(len(falt), len([w for w in CHUNK_WORDS if len(w) >= 2]))
+
+    def test_segunda_opiniao_de_idioma_recalcula_a_lista(self):
+        """Se a 2a leitura (idioma detectado) e' ADOTADA, a lista tem que vir
+        DELA. Manter a da 1a seria pior que nao ter lista nenhuma: o whisper
+        forcado TRADUZIU o texto, entao aquelas "faltantes" sao artefato da
+        traducao — a amostra acusaria palavra perdida num audio que a propria
+        2a opiniao acabou de inocentar."""
+        stats = fresh_stats()
+        seg = make_seg(3.0)
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg",
+            side_effect=lambda *a, **k: SegundaOpiniaoIdiomaTest.EN_TRADUZIDO,
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect",
+            return_value=(SegundaOpiniaoIdiomaTest.EN_CERTO, "en", 0.99),
+        ):
+            _b, cov, _l, _ti, falt = tts_qa.loop.run_chunk_qa(
+                seg, 0, SegundaOpiniaoIdiomaTest.EN, regen_fn=lambda: seg,
+                qa_stats=stats, **qa_kwargs(),
+            )
+        self.assertEqual(cov, 1.0)              # a 2a opiniao salvou o audio
+        self.assertEqual(falt, [])              # ...e a lista acompanhou
+        self.assertEqual(stats["coverage_idioma_corrigido"], 1)
+
+    def test_log_info_nao_despeja_o_texto_do_aluno(self):
+        """Privacidade/volume: o log de nivel info leva a CONTAGEM, nunca as
+        palavras. Num chunk mudo "o que faltou" E' o texto inteiro do aluno, e
+        isso sairia a cada tentativa de cada chunk de cada geracao."""
+        vistos = []
+        with mock.patch.object(
+            tts_qa.loop, "transcribe_seg", side_effect=lambda *a, **k: []
+        ), mock.patch.object(
+            tts_qa.loop, "transcribe_seg_autodetect", return_value=(None, None, 0.0)
+        ), mock.patch.object(
+            tts_qa.loop, "_log",
+            side_effect=lambda lvl, msg, **kw: vistos.append((lvl, msg, kw)),
+        ):
+            tts_qa.loop.run_chunk_qa(
+                make_seg(), 0, CHUNK, regen_fn=make_seg,
+                qa_stats=fresh_stats(), **qa_kwargs(),
+            )
+        cov_logs = [kw for _lvl, msg, kw in vistos if msg == "inference.coverage_qa"]
+        self.assertTrue(cov_logs, "o log de cobertura tem que ter saido")
+        for kw in cov_logs:
+            self.assertIn("faltantes_n", kw)
+            self.assertIsInstance(kw["faltantes_n"], int)   # contagem, nao lista
+            self.assertGreater(kw["faltantes_n"], 0)        # e mediu de verdade
+        # ...e nenhuma palavra do texto do aluno vazou em campo NENHUM de log
+        planos = " ".join(str(v) for _l, _m, kw in vistos for v in kw.values())
+        for palavra in ("cansada", "automatico", "esperando", "piloto"):
+            self.assertNotIn(palavra, planos)
 
 
 class SplitBelowSentenceTest(unittest.TestCase):

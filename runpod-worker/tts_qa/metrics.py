@@ -1,9 +1,10 @@
 """As RÉGUAS do QA de chunk — cada uma mede um defeito diferente.
 
-  echo_leak_count   texto SOBRANDO (eco da referência)
-  chunk_coverage    quanto do texto pedido está no áudio (0..1)
-  chunk_intrusions  palavra A MAIS ou TROCADA
-  maior_lacuna      FORMA do buraco: maior trecho contínuo que sumiu
+  echo_leak_count     texto SOBRANDO (eco da referência)
+  chunk_coverage      QUANTO do texto pedido está no áudio (0..1)
+  chunk_intrusions    palavra A MAIS ou TROCADA
+  maior_lacuna        FORMA do buraco: maior trecho contínuo que sumiu
+  palavras_faltantes  O QUE sumiu — TELEMETRIA PURA, nenhum gate a consulta
 
 Todas devolvem None quando o resultado é inconclusivo — QA aqui é rede de
 segurança, nunca portão que derruba job por dúvida.
@@ -65,6 +66,62 @@ def chunk_coverage(got, chunk_text, language: str = "pt"):
     sm = difflib.SequenceMatcher(None, expected, got)
     matched = sum(b.size for b in sm.get_matching_blocks())
     return round(matched / len(expected), 3)
+
+
+def palavras_faltantes(got, chunk_text, language: str = "pt"):
+    """QUAIS palavras do texto não saíram no áudio, na ordem do texto.
+
+    ⚠️ NÃO É RÉGUA — é TELEMETRIA. Nada aqui entra em score, e nenhum portão
+    de entrega consulta esta função. Ela só descreve, pra quem lê o banco
+    depois, o que as outras réguas já mediram sem nomear.
+
+    POR QUE EXISTE (incidente 702cc916, 04/09 — e é o que trava o caso Katia):
+    hoje o QA sabe QUANTO sumiu (`chunk_coverage`) e a FORMA do buraco
+    (`maior_lacuna`), e a escotilha `_entregar_mesmo_com_cobertura_baixa`
+    ENTREGA áudio abaixo da régua quando o buraco é espalhado, apostando que
+    "espalhado = texto que ninguém fala". A aposta é razoável e não dá pra
+    auditar: com cobertura 0,800 e buraco espalhado, os dois mundos abaixo são
+    numericamente IDÊNTICOS e só um deles é entrega honesta:
+
+      • sumiu "negrito", "pausa", rótulo de locutor → markup, o áudio está bom;
+      • sumiu "voce", "nao", "muito" → o modelo comeu palavra do aluno.
+
+    Sem o NOME do que sumiu, decidir entre os dois é chute. Com ele, é leitura.
+    Sai de graça: o `chunk_coverage` já monta o `SequenceMatcher`; as palavras
+    perdidas caem dos opcodes `delete`/`replace` no lado do `expected`, o
+    espelho exato do que `chunk_intrusions` já faz pro lado do `got`.
+
+    CONTRATO, o MESMO de `chunk_coverage` (não invente outro ao ler isto):
+      None  = inconclusivo — whisper falhou (`got is None`) ou o chunk não tem
+              palavra nenhuma pra comparar;
+      []    = nada faltou;
+      lista = as palavras ausentes, na ordem em que aparecem no texto.
+    Chunk MUDO (`got == []`) não é inconclusivo: é a informação real "o áudio
+    não falou nada" (caso Katia, chunk 3) e devolve o texto inteiro — o
+    `SequenceMatcher` já resolve isso num único opcode `delete`, sem atalho.
+
+    ⚠️ TOKEN DE 1 LETRA NÃO CONTA, a mesma regra de "palavra FALÁVEL" do
+    `maior_lacuna` (correção 24/08, incidente 37bacb68): sigla soletrada
+    ("B P C, L O A S") normaliza pra 7 tokens de 1 letra que o whisper escreve
+    juntos ("BPC LOAS") — reportá-los como "sumiram 7 palavras" encheria a
+    amostra de lixo justamente no chunk que parece pior.
+    Aqui o corte é 1 letra, e NÃO as 3 de `chunk_intrusions`: lá o filtro
+    existe pra descartar ruído que o whisper INVENTA no lado do `got`; aqui a
+    lista vem do texto do PRÓPRIO ALUNO, onde "de"/"um"/"já" sumido é perda
+    real — é exatamente o tipo de palavra curta e comum que separa o caso
+    Katia do markup.
+    """
+    expected = norm_words(chunk_text, language)
+    if not expected:
+        return None
+    if got is None:
+        return None
+    sm = difflib.SequenceMatcher(None, expected, got)
+    faltantes: list[str] = []
+    for tag, i1, i2, _j1, _j2 in sm.get_opcodes():
+        if tag in ("delete", "replace"):
+            faltantes.extend(w for w in expected[i1:i2] if len(w) >= 2)
+    return faltantes
 
 
 def chunk_intrusions(got, chunk_text, language="pt"):
