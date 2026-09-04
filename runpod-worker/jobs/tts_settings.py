@@ -131,8 +131,16 @@ class TtsSettings:
     100% abaixo da regua, pior caso 0,333. A escotilha e' a porta unica.
 
     Abaixo deste piso o chunk vai pro resgate por subdivisao, exatamente como
-    ja acontece no ramo de lacuna CONTINUA — nao falha o job direto. Custo
-    medido do piso em resgates a mais (janela de 2,6 dias): 0,60 -> 4 entregas
+    ja acontece no ramo de lacuna CONTINUA — nao falha o job direto.
+
+    ⚠️ O piso NAO vale no gate TERMINAL (dentro de `_resgatar_nivel_2`), porque
+    la nao existe proximo nivel: reprovar no fim da linha nao troca audio ruim
+    por audio melhor, troca por JOB FALHO + ESTORNO automatico. No fim da linha
+    entregamos a menos ruim, igual a hoje, e so CONTAMOS
+    (`coverage_espalhada_piso_terminal`). O porque completo esta no docstring de
+    `_entregar_mesmo_com_cobertura_baixa`.
+
+    Custo medido do piso em resgates a mais (janela de 2,6 dias): 0,60 -> 4 entregas
     (3,0%); 0,65 -> 7 (5,3%); 0,70 -> 10 (7,6%); 0,80 -> 15 (11,4%). Default
     0,65: bounded (~2,7 resgates a mais por dia), longe da tempestade de 19/08.
     `TTS_COVERAGE_ESPALHADA_MIN=0` desliga o piso (volta ao de antes) sem
