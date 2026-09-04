@@ -95,6 +95,14 @@ export type SgpPedidoRow = {
   voz_pronta_em: string | null;
   voice_id: string | null;
   erro: string | null;
+  /**
+   * "Já cobrei" do time no /admin/sgp (migration 106). OPCIONAIS de propósito:
+   * enquanto a 106 não for aplicada as colunas não existem e a rota do painel
+   * devolve a linha sem elas — a tela tem que continuar de pé. Ausente e `null`
+   * significam a mesma coisa aqui: ninguém cobrou.
+   */
+  cobrado_em?: string | null;
+  cobrado_por?: string | null;
 };
 
 /** Só dígitos, com DDI. "+55 (11) 99999-8888" → "5511999998888". */
