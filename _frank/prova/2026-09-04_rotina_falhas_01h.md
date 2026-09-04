@@ -143,8 +143,37 @@ mergeei PR e não toquei em nada da planilha.
 4. **#234:** virar o `TTS_TAIL_QA_INTERNO_MODO` (+16-19% de GPU)? Trava o #47.
 5. **Migration 102** (`102_incidents_resolved_guard.sql`) segue não aplicada.
 
-## 7. Registro
+## 7. 🔴 O passo fixo pegou 3 conserto(s) fora da main — 1 é de aluno esperando
+
+A segunda metade do passo fixo (`git branch` + `git rev-list main..<branch>`)
+achou três branches com commit que a main não tem e **sem PR nenhum**:
+
+| branch | à frente | atrás da main | no origin? | PR |
+|---|---|---|---|---|
+| `feat/trocar-senha-conta` | 1 | **9** | **não** | nenhum |
+| `fix/cancelamentos-email-gmail` | 1 | **23** | **não** | nenhum |
+| `feat/gravador-nao-perde-audio` | 1 | **63** | sim | nenhum |
+
+**O que dói é o primeiro:** o commit é
+`feat(conta): bloco "Alterar senha" na tela Minha conta (chamados #243/#244)`,
+de 03/09 17:37 — ou seja, **o conserto dos chamados #243 e #244 existe, está
+escrito, e nunca saiu da máquina.** Os dois chamados estão na fila de
+`aguardando_aluno` neste momento, abertos há 0 dia, com 1 aluno cada, sobre
+exatamente isso (trocar senha / botão Configurações). É a falha de 19/08
+repetida: fix de aluno preso em branch, invisível.
+
+**Não empurrei e não abri PR, de propósito.** Os três estão **atrás** da main
+(9, 23 e 63 commits). Um merge como estão **desfaz** trabalho que já está em
+produção — é a mesma classe de estrago já documentada no `feat/onedrive-401` e
+no PR #54. Cada um precisa de rebase antes do PR, e além disso eu não escrevi
+esse código nem o testei: abrir PR nele seria endossar o que eu não vi.
+
+Fica registrado como pendência com dono humano, que é o certo pra hoje.
+
+## 8. Registro
 
 Nota gravada no #246 (`agent_notes` 9 → 10, 1 linha afetada, conferida na
 releitura). Nenhum incidente fechado nesta ronda — e não fechei nenhum porque
 nenhum estava resolvido, não para fechar mais rápido do que resolvo.
+
+Passo fixo: `origin/main..HEAD` **vazio** (conferido depois do push).
