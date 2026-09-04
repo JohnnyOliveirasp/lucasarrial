@@ -28,7 +28,13 @@ export async function GET(request: NextRequest) {
       .select("*")
       .order("last_seen_at", { ascending: false })
       .limit(200);
-    return jsonOk({ incidents: data ?? [] });
+    // `role` viaja junto de propósito: a aba Falhas é client component e
+    // precisa saber se quem está olhando pode FORÇAR o fechamento de um
+    // chamado com defeito vivo (ver a trava em [id]/route.ts). A alternativa
+    // era plumbar o papel pelo layout inteiro do /admin só por causa de um
+    // botão. Não é gate: o gate de verdade é o `g.role` conferido na rota de
+    // escrita — aqui é só pra tela não oferecer o que vai levar 409.
+    return jsonOk({ incidents: data ?? [], role: g.role });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Failed to load incidents");
   }

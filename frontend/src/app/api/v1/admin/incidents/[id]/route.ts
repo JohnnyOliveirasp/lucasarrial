@@ -1,17 +1,17 @@
 /**
  * PATCH /api/v1/admin/incidents/[id] → muda status/nota de um incidente
- * (marcar corrigido, ignorar, reabrir) a partir da aba Falhas.
+ * (marcar corrigido, ignorar, reabrir, pedir suporte) a partir da aba Falhas.
  */
 import type { NextRequest } from "next/server";
 import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
-import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
+import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { closureFields } from "@/lib/incidents/closure";
+import { defeitoVivo, motivoDefeitoVivo, type IncidenteParaBaixa } from "@/lib/incidents/baixa";
+import { CLOSED_STATUSES, closureFields } from "@/lib/incidents/closure";
+import { isIncidentStatus } from "@/lib/incidents/status";
 import { logger } from "@/lib/logger/server";
 
 export const dynamic = "force-dynamic";
-
-const VALID_STATUS = new Set(["open", "investigating", "fixing", "aguardando_aluno", "fixed", "ignored"]);
 
 export async function PATCH(
   request: NextRequest,
@@ -22,7 +22,46 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
   const status = String(body?.status ?? "");
-  if (!VALID_STATUS.has(status)) return badRequest("Invalid 'status'");
+  if (!isIncidentStatus(status)) return badRequest("Invalid 'status'");
+
+  const admin = getAdmin();
+
+  /**
+   * A TRAVA DO FECHAMENTO (pedido do Lucas, 04/09).
+   *
+   * Fechar um chamado cujo defeito ainda está acontecendo em escala apaga
+   * dívida técnica que afeta centenas de alunos, e ninguém descobre depois.
+   * As duas réguas e o porquê estão em @/lib/incidents/baixa.
+   *
+   * `ignored` entra junto de propósito: ele TAMBÉM é fechamento (é a lição
+   * inteira do closure.ts) e some do quadro do mesmo jeito. Travar só o
+   * "fixed" seria deixar a porta dos fundos aberta ao lado da porta trancada.
+   *
+   * A saída existe e é deliberada: `force: true`, e SÓ pro papel `admin`. Quem
+   * consertou o defeito de verdade fecha pelo caminho técnico (o agente, em
+   * /api/v1/agent/actions, ou as ferramentas de _frank/) — que continua livre,
+   * porque lá o fechamento vem com commit e nota de correção.
+   */
+  if (CLOSED_STATUSES.has(status)) {
+    const { data: atual } = await admin
+      .from("incidents" as never)
+      .select("occurrences, affected_emails")
+      .eq("id", id)
+      .maybeSingle();
+    const inc = (atual ?? null) as IncidenteParaBaixa | null;
+    if (inc && defeitoVivo(inc)) {
+      const forcado = body?.force === true && g.role === "admin";
+      if (!forcado) {
+        logger.info("audit", "incidents.fechamento_barrado", {
+          by: g.auth.email, incident: id, status, role: g.role,
+        });
+        return jsonError("defeito_ainda_vivo", motivoDefeitoVivo(inc) ?? "Defeito ainda ativo", 409);
+      }
+      logger.info("audit", "incidents.fechamento_forcado", {
+        by: g.auth.email, incident: id, status,
+      });
+    }
+  }
 
   const update: Record<string, unknown> = { status };
   if (typeof body.resolution_note === "string") {
@@ -48,7 +87,7 @@ export async function PATCH(
   Object.assign(update, closureFields(status, g.auth.email ?? g.auth.user_id));
 
   try {
-    const { error } = await getAdmin()
+    const { error } = await admin
       .from("incidents" as never)
       .update(update as never)
       .eq("id", id);
