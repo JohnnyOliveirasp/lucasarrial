@@ -13,7 +13,7 @@ import { authenticate, type AuthResult } from "@/lib/api/auth";
 import { adminRole, type AdminRole } from "@/lib/admin/guard";
 import { forbidden, unauthorized } from "@/lib/api/responses";
 
-/** Falhas e Agente sao o trabalho do suporte (mig 95) — os dois papeis entram. */
+/** Falhas, SGP e Agente sao o trabalho do suporte (mig 95) — os dois papeis entram. */
 export const SUPORTE_OK = { allow: ["admin", "suporte"] } as const;
 
 export type AdminGate =
