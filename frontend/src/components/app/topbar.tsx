@@ -20,6 +20,9 @@ type Props = {
 export function Topbar({ email, displayName, avatarUrl, creditsTotal, unlimited }: Props) {
   const t = useTranslations("app");
   const tShell = useTranslations("shell.topbar");
+  // openMenu/closeMenu são o par de controles do drawer mobile e moram juntos
+  // em shell.sidebar (ver mobile-drawer.tsx, que lê closeMenu do mesmo lugar).
+  const tSidebar = useTranslations("shell.sidebar");
   const router = useRouter();
   const supabase = createClient();
   const { open: menuAberto, alternar: alternarMenu } = useMobileNav();
@@ -50,7 +53,7 @@ export function Topbar({ email, displayName, avatarUrl, creditsTotal, unlimited 
         <button
           type="button"
           onClick={alternarMenu}
-          aria-label={tShell("openMenu")}
+          aria-label={tSidebar("openMenu")}
           aria-expanded={menuAberto}
           aria-controls="menu-mobile"
           className="-ml-2 inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-[var(--mute)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[var(--surface-elevated)] hover:text-[var(--ink)] lg:hidden"
