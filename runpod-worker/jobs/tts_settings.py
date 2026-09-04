@@ -26,6 +26,14 @@ def _do_job_ou_env(inp: dict, chave: str, env: str, default: str) -> int:
     return int(v) if v is not None else int(os.environ.get(env, default))
 
 
+def _do_job_ou_env_float(inp: dict, chave: str, env: str, default: str) -> float:
+    """Gemeo FLOAT do `_do_job_ou_env` — mesma regra (`0` e' valor VALIDO, ai
+    desliga o piso, entao a checagem e' `is not None`), so que sem arredondar a
+    fracao: o piso de cobertura e' 0,65, nao um numero inteiro de ms."""
+    v = inp.get(chave)
+    return float(v) if v is not None else float(os.environ.get(env, default))
+
+
 @dataclass(frozen=True)
 class TtsSettings:
     # ── Geracao ────────────────────────────────────────────────────────────
@@ -110,6 +118,25 @@ class TtsSettings:
     20 palavras bastam pra reconhecer o padrao e cabem no jsonb; o campo
     `faltantes_pior_n` fica ao lado justamente pra denunciar corte. `0` e'
     valido e desliga so a amostra — os contadores continuam."""
+
+    coverage_espalhada_min: float
+    """PISO da escotilha de lacuna espalhada (04/09, incidente 702cc916). A
+    escotilha acima ("buraco pequeno = markup, entrega") nao tinha piso: ela
+    entregou um audio com cobertura 0,333 — UM TERCO do texto — porque as
+    palavras faltantes vinham de 1 em 1.
+
+    Medido em producao (generations com qa, desde 02/09 02:32Z): das 132
+    entregas, as 108 SEM escotilha tiveram ZERO cobertura abaixo da regua
+    (inclusive as 37 que esgotaram as tentativas); as 24 COM escotilha estao
+    100% abaixo da regua, pior caso 0,333. A escotilha e' a porta unica.
+
+    Abaixo deste piso o chunk vai pro resgate por subdivisao, exatamente como
+    ja acontece no ramo de lacuna CONTINUA — nao falha o job direto. Custo
+    medido do piso em resgates a mais (janela de 2,6 dias): 0,60 -> 4 entregas
+    (3,0%); 0,65 -> 7 (5,3%); 0,70 -> 10 (7,6%); 0,80 -> 15 (11,4%). Default
+    0,65: bounded (~2,7 resgates a mais por dia), longe da tempestade de 19/08.
+    `TTS_COVERAGE_ESPALHADA_MIN=0` desliga o piso (volta ao de antes) sem
+    deploy; `coverage_espalhada_min` no input ajusta UMA geracao."""
 
     intrusion_qa_enabled: bool
     intrusion_qa_retries: int
@@ -219,6 +246,8 @@ class TtsSettings:
             coverage_qa_gap_min=int(os.environ.get("TTS_COVERAGE_QA_GAP_MIN", "6")),
             qa_faltantes_amostra_max=_do_job_ou_env(
                 inp, "qa_faltantes_amostra_max", "TTS_QA_FALTANTES_AMOSTRA_MAX", "20"),
+            coverage_espalhada_min=_do_job_ou_env_float(
+                inp, "coverage_espalhada_min", "TTS_COVERAGE_ESPALHADA_MIN", "0.65"),
             intrusion_qa_enabled=_ligado("TTS_INTRUSION_QA"),
             intrusion_qa_retries=int(os.environ.get("TTS_INTRUSION_QA_RETRIES", "3")),
             tail_qa_interno_enabled=_ligado("TTS_TAIL_QA_INTERNO"),
