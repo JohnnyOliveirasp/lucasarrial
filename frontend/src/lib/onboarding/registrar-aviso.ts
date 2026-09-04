@@ -43,7 +43,9 @@ export type ChaveAviso =
   | "onboarding_ok_mas_assine"
   | "onboarding_ok_mas_assine_sem_imagem"
   | "sgp_foto_pronta"
-  | "sgp_voz_pronta";
+  | "sgp_voz_pronta"
+  /** boas-vindas da COMPRA do SGP na Hotmart, mandando preencher o /sgp */
+  | "sgp_compra_boas_vindas";
 
 export type AvisoRegistro = {
   email: string;

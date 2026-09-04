@@ -33,6 +33,13 @@ import { avisarCompraOrfa } from "@/lib/payments/aviso-orfao";
 import { canaisDaCasa, estadoDosAvisos } from "@/lib/payments/aviso-orfao-canal";
 import { hottokValido, tokensEsperados } from "@/lib/payments/hottok";
 import {
+  mandarBoasVindasSgp,
+  roteamentoDoProduto,
+  SGP_PRODUCT_ID_PADRAO,
+  type RotaDoProduto,
+} from "@/lib/payments/sgp-boas-vindas";
+import { canaisDoSgp, estadoDasBoasVindas } from "@/lib/payments/sgp-boas-vindas-canal";
+import {
   extractBuyerEmail,
   extractBuyerName,
   extractExternalId,
@@ -77,12 +84,27 @@ export async function POST(request: NextRequest) {
   const data = (payload.data ?? {}) as Record<string, unknown>;
 
   // A conta Hotmart é COMPARTILHADA com outros produtos (ex.: outros cursos do
-  // mesmo produtor). Só processamos o NOSSO produto (HOTMART_PRODUCT_ID). Evento
-  // de outro produto → 200 (pra Hotmart parar de reenviar) SEM gravar nada:
-  // não liberamos acesso indevido nem guardamos PII de cliente de terceiro.
+  // mesmo produtor). Evento de produto que não é nosso → 200 (pra Hotmart parar
+  // de reenviar) SEM gravar nada: não liberamos acesso indevido nem guardamos
+  // PII de cliente de terceiro.
+  //
+  // ⚠️ ABERTURA DE 03/09: o SGP (curso do MESMO produtor, entregue por dentro do
+  // FastCloner em /sgp) passa a ser aceito — só pra mandar o e-mail que manda o
+  // aluno preencher o portal. Ele NÃO ganha acesso, crédito nem entitlement:
+  // `processEvent` desvia antes de qualquer coisa disso.
+  //
+  // Por que isto estava fechado, e por que a "prova" de que a Hotmart não
+  // mandava era circular: este descarte subiu em 4688e40 (09/06 18h50Z) e é
+  // ANTES do insert em `payment_events`. Os 13 eventos do 7283229 no banco param
+  // em 09/06 17h37Z — 73 min antes do commit — e entre eles há 4
+  // PURCHASE_APPROVED com status APPROVED. Ou seja: a Hotmart MANDAVA, e quem
+  // parou de registrar fomos nós. Procurar o produto em `payment_events` depois
+  // de 09/06 só reencontra o efeito deste `return`.
   const ourProduct = process.env.HOTMART_PRODUCT_ID;
+  const produtoSgp = process.env.HOTMART_SGP_PRODUCT_ID ?? SGP_PRODUCT_ID_PADRAO;
   const eventProduct = extractProductCode(data);
-  if (ourProduct && eventProduct && eventProduct !== ourProduct) {
+  const rota = roteamentoDoProduto({ eventProduct, nossoProduto: ourProduct, produtoSgp });
+  if (rota === "de_fora") {
     return jsonOk({ handled: "ignored_other_product" });
   }
 
@@ -114,7 +136,7 @@ export async function POST(request: NextRequest) {
 
   // 3. Processa o evento
   try {
-    const { handled, processError } = await processEvent(eventType, data, buyerEmail);
+    const { handled, processError } = await processEvent(eventType, data, buyerEmail, rota);
     // processError ≠ exceção: o evento é marcado como processado (200 → a
     // Hotmart para de reenviar; reenviar não resolveria), mas o erro fica
     // REGISTRADO em payment_events.error em vez de sumir como sucesso limpo.
@@ -166,10 +188,19 @@ async function processEvent(
   eventType: string,
   data: Record<string, unknown>,
   buyerEmail: string | null,
+  rota: RotaDoProduto,
 ): Promise<ProcessResult> {
   const externalId = extractExternalId(data, eventType);
   const productCode = extractProductCode(data);
   const purchaseStatus = extractPurchaseStatus(data);
+
+  // SGP: CURSO, não assinatura. Desvia ANTES de tudo — nada abaixo desta linha
+  // pode rodar pra ele. Regra do Lucas (31/08): comprar o SGP não dá o
+  // FastCloner; quem quiser a plataforma assina à parte. Um `grantAccess` aqui
+  // entregaria o produto pago de graça pra 129 pessoas por semana.
+  if (rota === "sgp") {
+    return await processarCompraSgp(eventType, data, buyerEmail, productCode, externalId);
+  }
 
   // libera/renova
   // Na Hotmart fica SÓ a assinatura recorrente. Os créditos avulsos são vendidos
@@ -316,6 +347,62 @@ async function processEvent(
   }
 
   return ok("ignored");
+}
+
+/**
+ * Compra do SGP (curso). O ÚNICO efeito é o e-mail de boas-vindas mandando o
+ * aluno preencher o portal /sgp — sem acesso, sem crédito, sem entitlement.
+ *
+ * O evento fica gravado em `payment_events` (o insert já rodou no POST): é ele
+ * que dá a idempotência do reenvio da Hotmart e, de quebra, devolve à casa a
+ * visibilidade de compra de curso que se perdeu em 09/06.
+ *
+ * Nenhuma falha daqui derruba o webhook: e-mail que não sai vira
+ * `payment_events.error` e uma linha `ok=false` em `avisos_enviados`. Devolver
+ * 500 faria a Hotmart reenviar, e reenviar não conserta SMTP fora do ar.
+ */
+async function processarCompraSgp(
+  eventType: string,
+  data: Record<string, unknown>,
+  buyerEmail: string | null,
+  productCode: string | null,
+  externalId: string,
+): Promise<ProcessResult> {
+  if (!buyerEmail) return ok("sgp:sem_email");
+
+  const produtoSgp = process.env.HOTMART_SGP_PRODUCT_ID ?? SGP_PRODUCT_ID_PADRAO;
+  try {
+    const r = await mandarBoasVindasSgp(
+      {
+        eventType,
+        buyerEmail,
+        buyerName: extractBuyerName(data),
+        productCode,
+        productName: extractProductName(data),
+        transaction: extractTransactionId(data),
+        externalId,
+        purchaseStatus: extractPurchaseStatus(data),
+      },
+      produtoSgp,
+      estadoDasBoasVindas(),
+      canaisDoSgp(),
+      new Date().toISOString(),
+    );
+    // Enviou mas nenhum canal aceitou = o aluno NÃO recebeu. Vira erro
+    // registrado (HTTP segue 200: reenvio da Hotmart não conserta isso).
+    const processError =
+      r.enviou && r.canais.length === 0
+        ? `boas-vindas do SGP não saíram: ${buyerEmail} [${externalId}]`
+        : null;
+    return { handled: `sgp:${r.motivo}`, processError };
+  } catch (e) {
+    // Blindagem: o orquestrador já trata o throw do envio, mas um erro
+    // inesperado (Supabase fora) não pode transformar compra de curso em 500.
+    return {
+      handled: "sgp:erro",
+      processError: `boas-vindas do SGP falharam: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
 }
 
 // O aviso de compra órfã saiu daqui: decisão e texto em @/lib/payments/aviso-orfao
