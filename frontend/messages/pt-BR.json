@@ -785,6 +785,7 @@
       "uploadButton": "Enviar áudio",
       "uploadHint": "MP3/WAV/M4A/OGG · máx. {max}s · a transcrição do que você fala substitui o roteiro",
       "errors": {
+        "generic": "Algo deu errado. Tente novamente.",
         "generationFailed": "A geração do áudio falhou.",
         "timeout": "A geração demorou demais — veja o Histórico e tente anexar de novo.",
         "generate": "Erro ao gerar o áudio.",

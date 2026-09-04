@@ -785,6 +785,7 @@
       "uploadButton": "Upload audio",
       "uploadHint": "MP3/WAV/M4A/OGG · max {max}s · the transcription of what you say replaces the script",
       "errors": {
+        "generic": "Something went wrong. Please try again.",
         "generationFailed": "The audio generation failed.",
         "timeout": "The generation took too long — check History and try attaching again.",
         "generate": "Error generating the audio.",

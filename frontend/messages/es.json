@@ -785,6 +785,7 @@
       "uploadButton": "Subir audio",
       "uploadHint": "MP3/WAV/M4A/OGG · máx. {max}s · la transcripción de lo que dices reemplaza el guion",
       "errors": {
+        "generic": "Algo salió mal. Inténtalo de nuevo.",
         "generationFailed": "La generación del audio falló.",
         "timeout": "La generación tardó demasiado — revisa el Historial e intenta adjuntar de nuevo.",
         "generate": "Error al generar el audio.",
