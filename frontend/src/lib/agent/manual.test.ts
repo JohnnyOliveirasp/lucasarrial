@@ -109,6 +109,42 @@ test("gravar e enviar arquivo não voltam pra mesma frase", () => {
   }
 });
 
+/** A seção de créditos, isolada do resto do manual. */
+function secaoDeCreditos(): string {
+  const inicio = FONTE.indexOf("## Créditos (moeda da plataforma)");
+  assert.notEqual(
+    inicio,
+    -1,
+    "a seção de créditos sumiu ou foi renomeada — se renomear de propósito, ajuste este teste junto",
+  );
+  const fim = FONTE.indexOf("## Ferramentas e preços", inicio);
+  assert.notEqual(fim, -1, "a seção seguinte (Ferramentas e preços) sumiu");
+  return FONTE.slice(inicio, fim);
+}
+
+test("o manual não promete estorno automático em toda falha", () => {
+  // 04/09, chamado 47: a Fast escreveu a uma aluna PAGANTE "seus créditos já
+  // foram estornados automaticamente (tanto da primeira quanto dessa segunda
+  // tentativa)". O extrato dela não tinha NENHUMA transação no período — a
+  // geração fora por conta da casa, então não houve débito e não havia o que
+  // estornar. A frase saiu do manual, que dizia "Falha TÉCNICA em qualquer
+  // ferramenta → os créditos são estornados AUTOMATICAMENTE": uma regra
+  // categórica que o código não cumpre (support/failure-alert.ts:88 devolve
+  // "nada cobrado", :107 devolve "ESTORNO FALHOU" e :321 devolve "sem estorno
+  // automático configurado pra esta operação").
+  const secao = secaoDeCreditos();
+  assert.doesNotMatch(
+    secao,
+    /qualquer ferramenta[^.]*estornad/i,
+    "o manual voltou a prometer estorno em QUALQUER ferramenta — o código tem três saídas em que ele não sai",
+  );
+  assert.match(
+    secao,
+    /NUNCA afirme[\s\S]{0,120}estorno[\s\S]{0,200}extrato/i,
+    "sumiu a proibição de afirmar estorno sem ver a linha no extrato da pessoa",
+  );
+});
+
 test("a seção vai inteira pro system prompt da Fast", () => {
   // buildAgentSystem() é o que a brain.ts manda pro modelo. Se ele parar de
   // interpolar o manual, o conserto acima não chega na Fast.
