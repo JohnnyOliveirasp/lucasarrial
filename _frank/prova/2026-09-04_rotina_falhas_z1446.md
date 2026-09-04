@@ -91,6 +91,35 @@ compra órfã batendo por CPF/telefone recebe *"achamos uma compra sua, é você
 **confirma**. Vínculo por confirmação, não automático. É decisão de produto —
 está com o Johnny, no grupo.
 
+## 6-B. A segunda chave óbvia também foi medida — e também não serve
+
+Descartado o CPF, testei **normalização de e-mail**: gmail ignora ponto e
+ignora `+sufixo`, então `f.m.gimael@` e `fmgimael@` são **provadamente a mesma
+caixa** — chave com risco **zero** de ambiguidade, ao contrário do CPF.
+
+A pista não é invenção minha: existe conserto **neste repo** pra esse exato
+defeito — `fix/cancelamentos-email-gmail`, commit `6c83211` (*"e-mail do gmail
+com ponto dava 'sem conta' em quem tem conta"*). Só que ele conserta o
+`cancelamentos_ontem.cjs`, **ferramenta de relatório**, não o caminho de
+produção. (Esse branch está **só nesta máquina** — ver §11.)
+
+**Medição:** normalizando os dois lados e cruzando as 42 órfãs ativas contra
+`profiles` → **0 casariam**. Não ganha um caso.
+
+### Consolidado das duas medições
+
+| chave | resgata |
+|---|---|
+| e-mail exato (é o que roda hoje) | **0** de 42 |
+| e-mail normalizado (ponto / `+sufixo`) | **0** de 42 |
+| CPF | **2** de 42 — e 9 casariam com **mais de uma** conta |
+
+Isso é evidência de que **o defeito não se resolve casando melhor**: essas
+pessoas não têm conta nenhuma pra casar. Por isso o **vínculo por confirmação
+no cadastro** não é preferência de estilo — é a única que atua onde a conta
+**passa a existir**. Registrado no card pra próxima ronda não gastar o turno
+redescobrindo as mesmas duas chaves.
+
 ## 7. O que foi pro grupo
 
 1. **Urgente:** prazo do **Solon é 06/09** (2 dias), ~24h sem resposta; e o
@@ -128,3 +157,27 @@ não mais um e-mail.
    **15 de 16** linhas desses produtos estão órfãs.
 6. **`#234`:** virar o `TTS_TAIL_QA_INTERNO_MODO`.
 7. **Migration 102** (`102_incidents_resolved_guard.sql`) segue não aplicada.
+8. **14 branches que só existem nesta máquina** — §11.
+
+## 11. Passo fixo: `origin/main..HEAD` vazio, mas **14 branches só locais**
+
+`git fetch && git log --oneline origin/main..HEAD` → **vazio**. O log desta
+ronda está na main (`78e8203`, pushado).
+
+A ronda das 13:49Z achou **1** conserto preso só nesta máquina
+(`feat/trocar-senha-conta`, hoje PR **#174**). Rodei o mesmo detector
+(`merge-base --is-ancestor` + `branch -r --contains`) em **todos** os branches
+locais: **14 não estão em nenhum lugar do servidor.** Se esta máquina morrer,
+morrem com ela.
+
+**Não vou inflar isso em "14 incêndios":** boa parte tem cara de rascunho
+(`prova/…`, `frank/cancelamentos-2908`, `pr48-review`, `test/ref16-merged`).
+Mas pelo menos um carrega trabalho real e útil — o `6c83211` do §6-B.
+
+⚠️ **Tentei separar rascunho de conserto e o separador NÃO separou** — vou
+dizer em vez de esconder: comparar `origin/main..<branch>` por nº de arquivos
+devolve 7 a 353, e esse número é dominado por **o quanto o branch está atrasado
+em relação à main**, não pelo que ele tem de único. **Não triei os 14**, e não
+tenho base pra afirmar quantos carregam trabalho que a main não tem.
+
+Fica como pendência declarada, com o método que **não** funciona já registrado.
