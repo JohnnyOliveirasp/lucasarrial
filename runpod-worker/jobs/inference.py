@@ -365,7 +365,8 @@ class InferenceJob:
             tail_qa_interno_palavra=c.tail_qa_interno_palavra,
         )
 
-    def _entregar_mesmo_com_cobertura_baixa(self, idx, chunk, coverage, lacuna) -> bool:
+    def _entregar_mesmo_com_cobertura_baixa(self, idx, chunk, coverage, lacuna,
+                                            terminal: bool = False) -> bool:
         """DUAS CONDICOES pra derrubar o job (mudanca de 20/08):
           (1) cobertura abaixo do minimo, E
           (2) o que falta e' um TRECHO CONTINUO grande.
@@ -393,6 +394,31 @@ class InferenceJob:
 
         True = ENTREGA assim mesmo. False = vai pro resgate por subdivisao (que
         pode salvar o chunk; so se ele tambem falhar e' que o job cai).
+
+        ⚠️ `terminal=True` — O PISO NAO VALE NO FIM DA LINHA (04/09, mesmo
+        incidente). Esta funcao tem TRES chamadores e o que `False` significa
+        MUDA de um pro outro:
+
+          1. `_gerar_todos_os_chunks`  -> False manda pro resgate (nivel 1).
+          2. `_resgatar_por_subdivisao`-> False escala pro nivel 2.
+          3. `_resgatar_nivel_2`       -> False faz `return None`, que sobe
+             como `coverage_rescue_failed`, vira `resgate is None` la no laco
+             principal e termina em `_resultado_incompleto`: o webhook marca a
+             geracao FAILED e ESTORNA (handleTechFailure). NAO HA proximo
+             nivel.
+
+        Nos dois primeiros o piso troca "audio ruim" por "audio melhor" — e
+        isso e' o ganho todo do PR. No TERCEIRO ele trocaria "audio ruim
+        entregue" por "JOB FALHO + ESTORNO AUTOMATICO", que e' exatamente o
+        mecanismo da tempestade de falha+estorno de 19/08. Pior: la os pedacos
+        tem ~12 palavras (`rescue_word_chars`=70), entao cada palavra que some
+        vale ~8 pontos de cobertura e o piso morde MAIS forte justo onde ele e'
+        FATAL — a taxa medida do caminho do resgate ja e' 1 job falho a cada 3.
+
+        Entao no gate terminal o piso so CONTA (`coverage_espalhada_piso_
+        terminal`) e entrega a menos ruim, exatamente como hoje. O contador
+        existe pra medir, sem custar estorno, quantas vezes o fim da linha
+        entregaria audio abaixo do piso.
         """
         palavras_chunk = len(norm_words(chunk, self.cfg.qa_language))
         limite_lacuna = max(self.cfg.coverage_qa_gap_min, int(palavras_chunk * 0.20))
@@ -402,14 +428,25 @@ class InferenceJob:
         # `coverage is None` = whisper nao mediu: inconclusivo nao aciona piso
         # (quem trata o None e' o chamador, que nem chega aqui).
         if coverage is not None and coverage < piso:
-            self.qa_stats["coverage_espalhada_piso"] = (
-                self.qa_stats.get("coverage_espalhada_piso", 0) + 1)
-            _log(
-                "warn", "inference.coverage.espalhada.piso", idx=idx,
-                coverage=coverage, piso=piso, maior_lacuna=lacuna,
-                limite=limite_lacuna, palavras=palavras_chunk,
-            )
-            return False
+            if terminal:
+                # Fim da linha: `False` aqui nao resgata nada, so mata o job e
+                # estorna. Marca e entrega a menos ruim (igual a hoje).
+                self.qa_stats["coverage_espalhada_piso_terminal"] = (
+                    self.qa_stats.get("coverage_espalhada_piso_terminal", 0) + 1)
+                _log(
+                    "warn", "inference.coverage.espalhada.piso_terminal", idx=idx,
+                    coverage=coverage, piso=piso, maior_lacuna=lacuna,
+                    limite=limite_lacuna, palavras=palavras_chunk,
+                )
+            else:
+                self.qa_stats["coverage_espalhada_piso"] = (
+                    self.qa_stats.get("coverage_espalhada_piso", 0) + 1)
+                _log(
+                    "warn", "inference.coverage.espalhada.piso", idx=idx,
+                    coverage=coverage, piso=piso, maior_lacuna=lacuna,
+                    limite=limite_lacuna, palavras=palavras_chunk,
+                )
+                return False
         # Cobertura baixa MAS espalhada: e' texto que nao se fala, nao fala que
         # sumiu. ENTREGA — e deixa o rastro no log pra medir se essa decisao
         # esta certa na pratica.
@@ -586,8 +623,13 @@ class InferenceJob:
             seg, cov, lacuna, tail_interno, faltantes = self._rodar_qa(
                 seg, sub, pz, eh_ultimo=(eh_ultimo and k == len(pedacos_txt) - 1),
                 cfg_value=cfg2)
+            # `terminal=True`: daqui pra baixo nao existe outro nivel. Um
+            # `False` neste ponto nao manda o pedaco pra lugar nenhum — devolve
+            # None, o job cai e o aluno e' estornado. O piso da escotilha fica
+            # desligado aqui de proposito (veja o docstring dela).
             if (cov is not None and cov < c.coverage_qa_min
-                    and not self._entregar_mesmo_com_cobertura_baixa(sub, pz, cov, lacuna)):
+                    and not self._entregar_mesmo_com_cobertura_baixa(
+                        sub, pz, cov, lacuna, terminal=True)):
                 _log("error", "inference.coverage.rescue.nivel2_falhou", idx=base_idx,
                      pedaco=k, coverage=cov, maior_lacuna=lacuna)
                 return None

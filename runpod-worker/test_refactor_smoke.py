@@ -447,6 +447,46 @@ class InferenciaPontaAPontaTest(unittest.TestCase):
                          "abaixo do piso NAO pode sair pela escotilha")
         self.assertEqual(qa["coverage_rescued"], 1, "foi pro resgate, e ele salvou")
         self.assertGreater(len(r["audio_base64"]), 0)
+        # As frases do resgate sairam limpas: o gate terminal nem foi consultado.
+        self.assertEqual(qa.get("coverage_espalhada_piso_terminal", 0), 0)
+
+    def test_nivel2_ABAIXO_DO_PISO_entrega_em_vez_de_MATAR_o_job(self):
+        """O buraco de escopo do piso (04/09): o gate TERMINAL nao tem piso.
+
+        Aqui o whisper come 2 de cada 3 palavras em TODO texto gerado — chunk,
+        frase do nivel 1 e pedaco do nivel 2. Entao o piso reprova nos dois
+        primeiros gates (que TEM pra onde escalar: resgate e nivel 2) e chega
+        no nivel 2, onde `False` nao manda pra lugar nenhum: faz
+        `_resgatar_nivel_2` devolver None -> coverage_rescue_failed ->
+        `_resultado_incompleto` -> job FAILED e ESTORNO automatico.
+
+        Sem `terminal=True` este job MORRE. Com ele, entregamos a menos ruim
+        exatamente como antes do piso existir: zero falha nova, zero estorno
+        novo. O piso vira ganho puro (resgate onde hoje nao havia nenhum) sem
+        pagar o preco de 19/08.
+        """
+        def come_dois_de_cada_tres_em_TUDO(seg, sr, m, lang, label):
+            # Sem corte por tamanho: os pedacos de ~12 palavras do nivel 2
+            # voltam tao ruins quanto o chunk. E' o pior caso real — la cada
+            # palavra que some vale ~8 pontos de cobertura.
+            return tts_qa.norm_words(FakeVoxCPM.gerados[-1], lang)[::3]
+
+        with mock.patch.object(tts_qa.loop, "transcribe_seg",
+                               side_effect=come_dois_de_cada_tres_em_TUDO), \
+             mock.patch.object(tts_qa.loop, "transcribe_seg_autodetect",
+                               return_value=([], "pt", 0.0)):
+            r = handler.handler({"input": _clone_job()})
+        qa = r["qa"]
+        self.assertNotIn("error", r, r.get("error"))          # <- o teste que faltava
+        self.assertEqual(qa.get("coverage_rescue_failed", 0), 0,
+                         "o gate terminal nao pode derrubar o resgate")
+        self.assertGreater(qa.get("coverage_espalhada_piso", 0), 0,
+                           "o piso continua mordendo nos gates COM fallback")
+        self.assertGreater(qa.get("coverage_rescue_nivel2", 0), 0,
+                           "chegou ao nivel 2, que e' onde mora o gate terminal")
+        self.assertGreater(qa.get("coverage_espalhada_piso_terminal", 0), 0,
+                           "o fim da linha viu cobertura sub-piso e ENTREGOU")
+        self.assertGreater(len(r["audio_base64"]), 0)
 
     def test_piso_DESLIGADO_entrega_como_antes(self):
         """Valvula: TTS_COVERAGE_ESPALHADA_MIN=0 volta ao comportamento de
@@ -680,8 +720,11 @@ class DecisaoDeEntregaCongeladaTest(unittest.TestCase):
         # recebe a lista e o corpo dela nao a menciona — nao existe caminho.
         import inspect
         alvo = jobs.inference.InferenceJob._entregar_mesmo_com_cobertura_baixa
+        # `terminal` (04/09) e' o unico parametro que entrou depois: ele diz se
+        # existe proximo nivel de resgate, nao QUAIS palavras sumiram. A lista
+        # de faltantes continua sem caminho ate aqui.
         self.assertEqual(list(inspect.signature(alvo).parameters),
-                         ["self", "idx", "chunk", "coverage", "lacuna"])
+                         ["self", "idx", "chunk", "coverage", "lacuna", "terminal"])
         self.assertNotIn("faltante", inspect.getsource(alvo))
 
     def test_nenhum_score_do_laco_de_QA_le_a_lista(self):
@@ -712,10 +755,10 @@ class PisoDaEscotilhaTest(unittest.TestCase):
         with mock.patch.dict(os.environ, env or {}):
             return jobs.inference.InferenceJob(_clone_job(**(inp or {})), TEXTO)
 
-    def _decidir(self, coverage, lacuna=1, env=None, inp=None):
+    def _decidir(self, coverage, lacuna=1, env=None, inp=None, terminal=False):
         job = self._job(env, inp)
         entregou = job._entregar_mesmo_com_cobertura_baixa(
-            0, self.CHUNK, coverage, lacuna)
+            0, self.CHUNK, coverage, lacuna, terminal=terminal)
         return entregou, job.qa_stats
 
     def test_default_e_065(self):
@@ -787,6 +830,45 @@ class PisoDaEscotilhaTest(unittest.TestCase):
         job = self._job(env={"TTS_COVERAGE_ESPALHADA_MIN": "0.80"},
                         inp={"coverage_espalhada_min": 0})
         self.assertEqual(job.cfg.coverage_espalhada_min, 0.0)
+
+    # (e) gate TERMINAL: piso desligado de proposito -----------------------
+    def test_TERMINAL_abaixo_do_piso_ENTREGA(self):
+        # No nivel 2 `False` nao manda pro resgate: devolve None, o job cai e
+        # o aluno e' estornado. La o piso nao vale — entrega a menos ruim.
+        entregou, stats = self._decidir(0.333, terminal=True)
+        self.assertTrue(entregou, "fim da linha nao pode matar o job pelo piso")
+        self.assertEqual(stats["coverage_espalhada"], 1)
+
+    def test_TERMINAL_conta_o_que_o_piso_teria_pego(self):
+        # A medida continua existindo: da pra saber quantas vezes o fim da
+        # linha entregou sub-piso sem pagar isso em estorno.
+        _, stats = self._decidir(0.333, terminal=True)
+        self.assertEqual(stats["coverage_espalhada_piso_terminal"], 1)
+        self.assertEqual(stats.get("coverage_espalhada_piso", 0), 0,
+                         "o contador do gate COM fallback nao pode ser poluido")
+
+    def test_TERMINAL_nao_afrouxa_a_lacuna_CONTINUA(self):
+        # O que o gate terminal ignora e' o PISO, e so ele. Buraco continuo
+        # grande (caso Katia) continua derrubando o pedaco no nivel 2 — e' a
+        # protecao que sempre existiu, e ela nao muda.
+        entregou, stats = self._decidir(0.99, lacuna=99, terminal=True)
+        self.assertFalse(entregou)
+        self.assertEqual(stats.get("coverage_espalhada", 0), 0)
+        self.assertEqual(stats.get("coverage_espalhada_piso_terminal", 0), 0)
+
+    def test_TERMINAL_acima_do_piso_e_igual_ao_normal(self):
+        entregou, stats = self._decidir(0.75, terminal=True)
+        self.assertTrue(entregou)
+        self.assertEqual(stats["coverage_espalhada"], 1)
+        self.assertEqual(stats.get("coverage_espalhada_piso_terminal", 0), 0)
+
+    def test_default_do_parametro_e_o_gate_COM_fallback(self):
+        # Quem chamar sem passar nada continua com o piso ligado: so o
+        # callsite do nivel 2 opta por sair.
+        entregou, stats = self._decidir(0.333)
+        self.assertFalse(entregou)
+        self.assertEqual(stats["coverage_espalhada_piso"], 1)
+        self.assertEqual(stats.get("coverage_espalhada_piso_terminal", 0), 0)
 
 
 class PecasPurasTest(unittest.TestCase):
