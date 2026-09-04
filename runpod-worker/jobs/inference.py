@@ -61,6 +61,17 @@ class InferenceJob:
         self.model = None
         self.sample_rate = 0
         self.t0 = 0.0
+        # #15: `elapsed_s` conta a partir do t0, que só começa DEPOIS do setup
+        # (e o upload acontece depois de fechada a conta). Então o número que o
+        # app grava em generations.elapsed_seconds no caminho de SUCESSO mede
+        # só a geração dos chunks — enquanto o executionTimeout do RunPod, que
+        # é quem mata o job, corre sobre o job INTEIRO. Medir uma coisa e
+        # limitar outra foi o que deixou a régua curta sem ninguém ver: o p99
+        # de 271s que calibrou o teto de 8min saiu de 1.186 linhas desse campo
+        # setup-cego. `setup_s` existe pra fechar esse buraco na próxima
+        # medição, sem mudar o significado do campo antigo (que tem série
+        # histórica e é usado pra comparar geração com geração).
+        self.setup_s = 0.0
         # Observabilidade do QA (29/07): devolvida no output do job — tira a
         # adivinhacao por timing na hora de validar se o QA esta mesmo agindo.
         # coverage_* (19/08): mede se o remedio do caso Katia esta pegando.
@@ -103,12 +114,28 @@ class InferenceJob:
 
     # ── Orquestracao ───────────────────────────────────────────────────────
     def run(self) -> dict:
-        lora_path = baixar_lora(self.inp.get("lora_url"))
-        self.prompt_wav_local, self.prompt_text = preparar_referencia(
-            self.inp, self.inp.get("prompt_wav_url"), self.prompt_text,
-            self.cfg.ref_tail_silence_ms,
-        )
-        self.model, self.sample_rate = carregar_modelo(self.inp, lora_path)
+        # ── Instrumentação #15 (d3d8d1b2) ──────────────────────────────────
+        # O setup era o único trecho PESADO fora de _phase: baixar o LoRA,
+        # preparar a referência e carregar o modelo são três downloads/cargas
+        # e nenhum tinha fase. Como o heartbeat só sabe o topo da pilha, um job
+        # pendurado aqui era reportado como "(sem fase instrumentada)" — e é
+        # exatamente isso que apareceu na geração 86254b30 (04/09, 751 chars,
+        # morreu no teto de 480s com a fase VAZIA). Na a07e9278 do mesmo dia a
+        # fase era `inference.chunk.generate` com running_s=4,9: avançando, não
+        # pendurada. Ou seja: as duas ocorrências novas apontam para cá, e sem
+        # estas três fases a investigação continua cega no único lugar que
+        # sobrou.
+        t_setup = time.monotonic()
+        with _phase("inference.setup.lora"):
+            lora_path = baixar_lora(self.inp.get("lora_url"))
+        with _phase("inference.setup.reference"):
+            self.prompt_wav_local, self.prompt_text = preparar_referencia(
+                self.inp, self.inp.get("prompt_wav_url"), self.prompt_text,
+                self.cfg.ref_tail_silence_ms,
+            )
+        with _phase("inference.setup.model"):
+            self.model, self.sample_rate = carregar_modelo(self.inp, lora_path)
+        self.setup_s = round(time.monotonic() - t_setup, 2)
         self._medir_em_amostras()
         self._definir_regua_de_ritmo()
 
@@ -119,7 +146,7 @@ class InferenceJob:
             crossfade_ms=self.cfg.crossfade_ms, trim=self.cfg.trim_enabled,
             trim_thresh=self.cfg.trim_threshold,
             has_clone=bool(self.prompt_wav_local), has_lora=bool(lora_path),
-            timesteps=self.cfg.inference_timesteps,
+            timesteps=self.cfg.inference_timesteps, setup_s=self.setup_s,
         )
         self.t0 = time.monotonic()
 
@@ -130,6 +157,7 @@ class InferenceJob:
         wav = self._ajustar_ritmo_global(self._montar(pieces))
         elapsed = time.monotonic() - self.t0
         _log("info", "inference.done", elapsed_s=round(elapsed, 2),
+             setup_s=self.setup_s, total_s=round(self.setup_s + elapsed, 2),
              samples=len(wav), chunks=len(chunks))
         # Modelo nao e' mais necessario (wav pronto) — solta a VRAM ANTES do
         # upload pra o proximo job deste worker (inclusive um treino) nascer
@@ -587,6 +615,11 @@ class InferenceJob:
             "sample_rate": self.sample_rate,
             "duration_s": round(len(wav) / self.sample_rate, 3),
             "elapsed_s": round(elapsed, 2),
+            # #15: tempo de setup (LoRA + referência + carga do modelo) que o
+            # `elapsed_s` NÃO conta. Vai na entrega pra que a próxima medição
+            # da régua possa somar os dois em vez de calibrar o teto do RunPod
+            # em cima de um número que ignora o setup.
+            "setup_s": self.setup_s,
             # A REGUA vai junto na entrega (26/08), mesmo campo que ja existia
             # no payload de falha: `qa.coverage_min_visto` medido sem o limiar
             # ao lado nao responde "passou por quanto".
