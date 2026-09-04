@@ -25,6 +25,7 @@
  *   node _frank/ferramentas/cancelar_assinatura.cjs --aluno maria@exemplo.com
  *   node _frank/ferramentas/cancelar_assinatura.cjs --aluno maria@exemplo.com --confirmar
  *   ... --incidente <id>   registra o cancelamento como nota no incidente
+ *   ... --orfa             compra ÓRFÃ (#222): sem perfil nosso. Ver secao 3-B.
  */
 const path = require("node:path");
 const { supa } = require("./_comum.cjs");
@@ -37,6 +38,8 @@ const arg = (n) => {
 const EMAIL = (arg("--aluno") || "").toLowerCase().trim();
 const INCIDENTE = arg("--incidente");
 const CONFIRMAR = argv.includes("--confirmar");
+/** Compra órfã (#222): sem perfil nosso. Só vale com pedido POR ESCRITO do titular. */
+const ORFA = argv.includes("--orfa");
 
 const BASE = "https://developers.hotmart.com/payments/api/v1";
 const db = supa();
@@ -152,7 +155,8 @@ async function get(url, H) {
   // ---- 3. CONFERE que bate com o nosso banco ---------------------------
   console.log("\n=== CONFERÊNCIA DE TITULARIDADE ===");
   const problemas = [];
-  if (!perfil.data) {
+  const semPerfil = !perfil.data;
+  if (semPerfil) {
     problemas.push("não existe perfil nosso com este e-mail (pode ser conta com outro e-mail)");
   }
   if (!ents.data.length) {
@@ -161,14 +165,56 @@ async function get(url, H) {
   if (canceláveis.length > 1) {
     problemas.push(`${canceláveis.length} assinaturas ativas — diga QUAL cancelar, não cancele em lote`);
   }
-  if (problemas.length) {
+
+  // ---- 3-B. COMPRA ÓRFÃ (classe do #222): o perfil NUNCA vai existir ----
+  // Por que este caminho existe: "sem perfil com este e-mail" é um PROXY pra
+  // "não sei de quem é esta assinatura". Na compra órfã o proxy é falso por
+  // construção — órfã É a compra que nunca ligou em conta nenhuma, então o
+  // perfil não existe por DEFEITO nosso (`claim.ts:39`), não por dúvida de
+  // titularidade. Sem esta porta a ferramenta recusa 100% das vezes justamente
+  // na classe que mais precisa dela: em 04/09 o Neto pediu por escrito pra
+  // cancelar, o teste venceu, e a cobrança indevida seguiu de pé porque a
+  // salvaguarda barrou o caso certo.
+  //
+  // A troca é por uma prova MAIS FORTE que a existência de perfil: o
+  // `external_id` do NOSSO entitlement tem que ser idêntico ao code da ÚNICA
+  // assinatura ativa na Hotmart. Isso prova que o registro nosso e o da Hotmart
+  // são a MESMA assinatura — um perfil só provaria que existe alguém com o
+  // e-mail. Se o code divergir, recusa mesmo com --orfa.
+  const soFaltaPerfil = semPerfil && ents.data.length === 1 && canceláveis.length === 1;
+  const codeHotmart =
+    canceláveis[0]?.subscriber_code || canceláveis[0]?.subscriber?.code || canceláveis[0]?.code;
+  const casaExternalId =
+    soFaltaPerfil && String(ents.data[0].external_id ?? "") === String(codeHotmart ?? "");
+
+  if (problemas.length && ORFA && soFaltaPerfil && casaExternalId) {
+    console.log("  ⚠️  COMPRA ÓRFÃ confirmada (classe do #222) — seguindo por --orfa:");
+    console.log(`     - nenhum perfil nosso com ${EMAIL} (a compra nunca ligou em conta)`);
+    console.log(`     - 1 entitlement nosso: external_id ${ents.data[0].external_id}`);
+    console.log(`     - 1 assinatura ativa na Hotmart: code ${codeHotmart}`);
+    console.log("     - os dois codes são IDÊNTICOS → é a mesma assinatura, identidade provada");
+    console.log("  ⚠️  Isto NÃO dispensa o pedido POR ESCRITO do titular (regra 9-C).");
+  } else if (problemas.length) {
     console.log("  ⚠️  DIVERGÊNCIA:");
     for (const p of problemas) console.log(`     - ${p}`);
+    if (ORFA && soFaltaPerfil && !casaExternalId) {
+      console.log(
+        `     - --orfa NÃO se aplica: nosso external_id (${ents.data[0].external_id}) != code da Hotmart (${codeHotmart})`,
+      );
+    } else if (!ORFA && soFaltaPerfil && casaExternalId) {
+      console.log(
+        "\n  ℹ️  Isto parece uma COMPRA ÓRFÃ (#222) e o external_id bate com a Hotmart.",
+      );
+      console.log(
+        "     Se o titular pediu POR ESCRITO, repita com --orfa (leia o porquê no código).",
+      );
+    }
     console.log("\n  NÃO vou cancelar. Confirme com o aluno qual é o e-mail da COMPRA");
     console.log("  e rode de novo com ele. Cancelar a assinatura errada não tem desfazer.");
     process.exit(1);
+  } else {
+    console.log("  ok — 1 assinatura ativa, e o e-mail bate com perfil e entitlement nossos.");
   }
-  console.log("  ok — 1 assinatura ativa, e o e-mail bate com perfil e entitlement nossos.");
 
   const alvo = canceláveis[0];
   const code = alvo.subscriber_code || alvo.subscriber?.code || alvo.code;
