@@ -383,11 +383,32 @@ class InferenceJob:
         maior entre COVERAGE_QA_GAP_MIN palavras e 20% do chunk (chunk curto nao
         pode ser derrubado por um buraco de 6 palavras que e' metade dele).
 
-        True = ENTREGA assim mesmo. False = o job cai.
+        TERCEIRA CONDICAO (04/09, incidente 702cc916): a escotilha so vale
+        ACIMA de um PISO de cobertura (`coverage_espalhada_min`). Ela nasceu sem
+        piso e por isso entregou um audio com cobertura 0,333 — um terco do
+        texto — classificado como "lacuna espalhada". A medicao de producao
+        mostrou que ela e' a porta UNICA: 108 entregas sem escotilha, nenhuma
+        abaixo da regua; 24 com escotilha, 24 abaixo. Muita palavra sumindo de
+        1 em 1 nao e' markup, e' audio faltando.
+
+        True = ENTREGA assim mesmo. False = vai pro resgate por subdivisao (que
+        pode salvar o chunk; so se ele tambem falhar e' que o job cai).
         """
         palavras_chunk = len(norm_words(chunk, self.cfg.qa_language))
         limite_lacuna = max(self.cfg.coverage_qa_gap_min, int(palavras_chunk * 0.20))
         if lacuna is None or lacuna >= limite_lacuna:
+            return False
+        piso = self.cfg.coverage_espalhada_min
+        # `coverage is None` = whisper nao mediu: inconclusivo nao aciona piso
+        # (quem trata o None e' o chamador, que nem chega aqui).
+        if coverage is not None and coverage < piso:
+            self.qa_stats["coverage_espalhada_piso"] = (
+                self.qa_stats.get("coverage_espalhada_piso", 0) + 1)
+            _log(
+                "warn", "inference.coverage.espalhada.piso", idx=idx,
+                coverage=coverage, piso=piso, maior_lacuna=lacuna,
+                limite=limite_lacuna, palavras=palavras_chunk,
+            )
             return False
         # Cobertura baixa MAS espalhada: e' texto que nao se fala, nao fala que
         # sumiu. ENTREGA — e deixa o rastro no log pra medir se essa decisao
@@ -396,7 +417,7 @@ class InferenceJob:
         _log(
             "info", "inference.coverage.espalhada", idx=idx,
             coverage=coverage, maior_lacuna=lacuna,
-            limite=limite_lacuna, palavras=palavras_chunk,
+            limite=limite_lacuna, palavras=palavras_chunk, piso=piso,
         )
         return True
 
