@@ -124,5 +124,29 @@ não está resolvido.
    `#47` junto.
 4. **`#246`/Jesus Peres:** compra avulsa do curso dá acesso ao FastCloner?
 5. **Migration 102** (`102_incidents_resolved_guard.sql`) segue não aplicada.
-6. Os **3 branches com conserto fora da main** (fix dos chamados #243/#244, com
-   aluno esperando) seguem atrás da main e precisam de rebase.
+6. Os **3 branches com conserto fora da main** seguem atrás da main e precisam
+   de rebase. **Corrigi o diagnóstico de um deles — está pior do que registrado**
+   (ver §10).
+
+## 10. Achado do passo fixo: o fix do #243/#244 não está nem no origin
+
+As rondas anteriores registraram esse conserto como *"preso fora da main"*. Está
+**pior**: o commit `250abf6` (*"feat(conta): bloco Alterar senha na tela Minha
+conta"*) vive na branch **local** `feat/trocar-senha-conta` e
+**`git branch -r --contains 250abf6` volta vazio** — nunca foi pushado. Não está
+na main, não está em PR e **não está no servidor**. Se esta máquina morrer, o
+conserto morre, e **#243 e #244 são dois alunos esperando**.
+
+Não pushei nem abri PR eu mesmo: push é ação pro mundo externo e a branch está
+atrás da main — mergear como está desfaz produção, que é exatamente o defeito
+das 3 branches STALE já registradas no README (`onedrive-401`,
+`fix-image-upload-retry`, `referencia-fronteira-de-frase-por-palavra`). Abri
+card pro **`coder`** (`066257cc`) pra rebasear em `origin/main`, conferir build,
+pushar e abrir PR **sem mergear**.
+
+**Nota sobre o instrumento:** `git rev-list main..<branch>` acusou **46 branches
+"fora da main"**, e a grande maioria é artefato de *squash merge* (o commit
+original fica inalcançável mesmo depois de mergeado). O sinal do passo fixo é
+**ruidoso** — quem confiar na contagem crua acha 46 incêndios e não olha nenhum.
+O que separa artefato de conserto perdido é `git merge-base --is-ancestor` mais
+`git branch -r --contains`, e foi assim que este apareceu.
