@@ -391,7 +391,7 @@ export type ApiKeyUpdate = Partial<ApiKeyRow>;
 export type AdminEmailRow = {
   id: string;
   email: string;
-  /** mig 95 — admin = painel inteiro · suporte = só Falhas + Agente. */
+  /** mig 95 — admin = painel inteiro · suporte = só Falhas + SGP + Agente. */
   role: "admin" | "suporte";
   added_by: string | null;
   created_at: Timestamp;
