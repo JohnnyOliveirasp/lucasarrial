@@ -26,6 +26,23 @@ import { SGP_FOTOS_MIN, SGP_PASSOS } from "./types.ts";
 export const SGP_PARADO_HORAS = 48;
 const PARADO_MS = SGP_PARADO_HORAS * 60 * 60 * 1000;
 
+/**
+ * Quanto tempo um "já cobrei" segura o alerta (pedido do Lucas, 04/09).
+ *
+ * NÃO É "resolvido". O time cobrou a aluna no WhatsApp, mas ela CONTINUA parada
+ * (1 de 4 fotos, sem mexer há dias) — sumir com a linha sumiria com o alerta e
+ * não com o problema, e o problema é uma aluna que pagou. Então a marca só
+ * cala o vermelho por este período; vencido, a linha volta a alertar sozinha.
+ *
+ * Um clique não pode calar pra sempre. É por isso que isto é uma JANELA e não
+ * um booleano.
+ *
+ * Configurável por `SGP_COBRANCA_SILENCIO_HORAS` — mas a leitura do env mora na
+ * rota (server-only), porque este módulo é puro e roda também no browser.
+ */
+export const SGP_COBRANCA_SILENCIO_HORAS = 48;
+export const SGP_COBRANCA_SILENCIO_MS = SGP_COBRANCA_SILENCIO_HORAS * 60 * 60 * 1000;
+
 /** O passo é do wizard (a bola está com o ALUNO) ou já é processamento nosso? */
 export function noWizard(status: SgpStatus): boolean {
   return (SGP_PASSOS as readonly string[]).includes(status);
@@ -62,10 +79,23 @@ export type LinhaPainel = {
   /** Quanto tempo desde a última movimentação do pedido. */
   paradoMs: number;
   paradoTexto: string;
-  /** Passou de 48h no mesmo passo do wizard, sem enviar. */
+  /**
+   * Passou de 48h no mesmo passo do wizard, sem enviar — E ninguém cobrou
+   * dentro da janela de silêncio. É o que pinta a linha de vermelho e o que o
+   * contador do topo soma.
+   */
   parado: boolean;
   /** Precisa de gente: cobrar o aluno ou tratar erro. Manda na ordenação. */
   precisaAcao: boolean;
+  /**
+   * Está parado de verdade, mas o time já cobrou e a janela ainda não venceu.
+   * A linha CONTINUA na tabela (o aluno segue travado) — só não grita.
+   */
+  silenciado: boolean;
+  /** "cobrado há 3h por fulano@x.com", pra tela. `null` = ninguém cobrou. */
+  cobradoTexto: string | null;
+  /** "volta a avisar em 45h" enquanto a marca está valendo. */
+  voltaAAvisarTexto: string | null;
   foto: string;
   voz: string;
   enviadoEm: string | null;
@@ -106,11 +136,61 @@ function colunaVoz(p: SgpPedidoRow): string {
   return "gerando";
 }
 
+/** O "já cobrei" ainda valendo, já interpretado. `null` = não há marca viva. */
+export type Cobranca = {
+  /** Quando clicaram (ISO). */
+  em: string;
+  /** Quem clicou. Nunca vazio: a rota grava e-mail ou id, nunca nada. */
+  por: string;
+  /** Há quanto tempo cobraram. */
+  desdeMs: number;
+  /** Ainda dentro da janela de silêncio. */
+  silenciado: boolean;
+  /** Quanto falta pra voltar a alertar. */
+  restaMs: number;
+};
+
+/**
+ * Lê a marca de cobrança da linha. Devolve `null` quando ela não vale mais.
+ *
+ * Três motivos pra não valer, e o terceiro é o requisito 4 do pedido:
+ *  1. ninguém cobrou (ou a migration 106 ainda não entrou e a coluna nem existe);
+ *  2. a data veio ilegível — dado torto nunca pode calar um alerta;
+ *  3. O ALUNO MEXEU DEPOIS. Aí a marca virou irrelevante sozinha, sem ninguém
+ *     precisar limpar nada: `atualizado_em` andou pra frente do `cobrado_em`.
+ *     (É o gatilho da migration 106 que garante que a própria cobrança não
+ *     empurra `atualizado_em` — senão TODA marca se auto-invalidaria na hora.)
+ */
+export function lerCobranca(
+  p: SgpPedidoRow,
+  agora: number,
+  silencioMs: number = SGP_COBRANCA_SILENCIO_MS,
+): Cobranca | null {
+  if (!p.cobrado_em) return null;
+  const em = new Date(p.cobrado_em).getTime();
+  if (!Number.isFinite(em)) return null;
+  if (new Date(p.atualizado_em).getTime() > em) return null;
+
+  // Relógio adiantado do banco não pode virar tempo negativo na tela.
+  const desdeMs = Math.max(0, agora - em);
+  return {
+    em: p.cobrado_em,
+    por: p.cobrado_por?.trim() || "alguém do time",
+    desdeMs,
+    silenciado: desdeMs <= silencioMs,
+    restaMs: Math.max(0, silencioMs - desdeMs),
+  };
+}
+
 /**
  * A frase de ação. Nunca promete prazo (regra do Johnny/Lucas), nunca cita
  * arquivo, nunca manda o atendente "abrir card".
  */
-export function oQueFazer(p: SgpPedidoRow, paradoMs: number): string {
+export function oQueFazer(
+  p: SgpPedidoRow,
+  paradoMs: number,
+  cobranca: Cobranca | null = null,
+): string {
   if (p.status === "falhou") {
     return "Deu erro no sistema. O time técnico já é acionado automaticamente — avise o aluno que estamos resolvendo e NÃO prometa prazo.";
   }
@@ -128,16 +208,50 @@ export function oQueFazer(p: SgpPedidoRow, paradoMs: number): string {
   // Wizard: a bola está com o aluno.
   const falta = FALTA_NO_WIZARD[p.status] ?? "continuar o cadastro";
   if (paradoMs > PARADO_MS) {
+    // Já cobraram e a janela ainda vale: não manda cobrar de novo, mas também
+    // não deixa o atendente achar que o caso está resolvido — ele NÃO está.
+    if (cobranca?.silenciado) {
+      return (
+        `Já cobraram há ${tempoHumano(cobranca.desdeMs)} (${cobranca.por}). ` +
+        `Nada a fazer agora: espere o aluno responder. Ele continua parado há ` +
+        `${tempoHumano(paradoMs)}, e se não mexer isto volta a aparecer em vermelho ` +
+        `daqui a ${tempoHumano(cobranca.restaMs)}.`
+      );
+    }
+    // Cobraram, a janela venceu e o aluno não mexeu. Volta pro vermelho — mas
+    // avisando que já teve uma tentativa, pra não parecer a mesma cobrança.
+    if (cobranca) {
+      return (
+        `Cobrar o aluno DE NOVO: ${cobranca.por} já cobrou há ` +
+        `${tempoHumano(cobranca.desdeMs)} e ele continua sem mexer. ` +
+        `Chame no WhatsApp e peça pra ele ${falta}. Está parado há ${tempoHumano(paradoMs)}.`
+      );
+    }
     return `Cobrar o aluno: chame no WhatsApp e peça pra ele ${falta}. Está parado há ${tempoHumano(paradoMs)}.`;
   }
   return `Aguardar. O aluno ainda está no meio do cadastro — só cobre se passar de ${SGP_PARADO_HORAS}h parado.`;
 }
 
-/** Uma linha da tabela, pronta pra desenhar. `agora` entra por fora (testável). */
-export function montarLinha(p: SgpPedidoRow, agora: number): LinhaPainel {
+/**
+ * Uma linha da tabela, pronta pra desenhar. `agora` entra por fora (testável),
+ * e `silencioMs` também — quem lê o env é a rota, este módulo continua puro.
+ */
+export function montarLinha(
+  p: SgpPedidoRow,
+  agora: number,
+  silencioMs: number = SGP_COBRANCA_SILENCIO_MS,
+): LinhaPainel {
   const paradoMs = agora - new Date(p.atualizado_em).getTime();
-  const parado = noWizard(p.status) && paradoMs > PARADO_MS;
+  const cobranca = lerCobranca(p, agora, silencioMs);
+
+  // Travado no wizard há +48h. Isto NÃO depende da cobrança: o aluno está
+  // parado do mesmo jeito, e é o que a linha continua mostrando na tela.
+  const travado = noWizard(p.status) && paradoMs > PARADO_MS;
+  // O que GRITA. Um "já cobrei" recente tira o vermelho e o contador — e só.
+  const silenciado = travado && !!cobranca?.silenciado;
+  const parado = travado && !silenciado;
   const precisaAcao = parado || p.status === "falhou";
+
   return {
     id: p.id,
     nome: p.nome?.trim() || "(sem nome)",
@@ -149,11 +263,15 @@ export function montarLinha(p: SgpPedidoRow, agora: number): LinhaPainel {
     paradoTexto: tempoHumano(paradoMs),
     parado,
     precisaAcao,
+    silenciado,
+    cobradoTexto: cobranca ? `cobrado há ${tempoHumano(cobranca.desdeMs)} por ${cobranca.por}` : null,
+    voltaAAvisarTexto:
+      cobranca?.silenciado ? `volta a avisar em ${tempoHumano(cobranca.restaMs)}` : null,
     foto: colunaFoto(p),
     voz: colunaVoz(p),
     enviadoEm: p.enviado_em,
     erro: p.erro,
-    oQueFazer: oQueFazer(p, paradoMs),
+    oQueFazer: oQueFazer(p, paradoMs, cobranca),
   };
 }
 
@@ -166,6 +284,12 @@ export function montarLinha(p: SgpPedidoRow, agora: number): LinhaPainel {
 export function ordenar(linhas: LinhaPainel[]): LinhaPainel[] {
   return [...linhas].sort((a, b) => {
     if (a.precisaAcao !== b.precisaAcao) return a.precisaAcao ? -1 : 1;
+    // 2º degrau (04/09): quem já foi cobrado desce do vermelho, mas NÃO pode
+    // cair no meio dos pedidos entregues. Sem isto, um aluno travado há 5 dias
+    // que o time acabou de cobrar apareceria embaixo de uma entrega de 30 dias
+    // atrás — a linha continuaria "na tabela" e, na prática, escondida. O caso
+    // ainda está aberto: ele fica logo abaixo do que grita, não no fim.
+    if (a.silenciado !== b.silenciado) return a.silenciado ? -1 : 1;
     return b.paradoMs - a.paradoMs;
   });
 }
@@ -173,6 +297,12 @@ export function ordenar(linhas: LinhaPainel[]): LinhaPainel[] {
 export type ResumoPainel = {
   total: number;
   parados: number;
+  /**
+   * Parados que o time JÁ cobrou e ainda estão na janela de silêncio.
+   * Contador separado de propósito: some do "precisam ser cobrados" sem sumir
+   * da tela. Se este número só cresce, a cobrança não está resolvendo nada.
+   */
+  cobrados: number;
   porEtapa: Array<{ status: SgpStatus; etapa: string; n: number }>;
 };
 
@@ -183,6 +313,7 @@ export function resumir(linhas: LinhaPainel[]): ResumoPainel {
   return {
     total: linhas.length,
     parados: linhas.filter((l) => l.parado).length,
+    cobrados: linhas.filter((l) => l.silenciado).length,
     porEtapa: (Object.keys(ETAPA_HUMANA) as SgpStatus[])
       .filter((s) => contagem.has(s))
       .map((s) => ({ status: s, etapa: ETAPA_HUMANA[s], n: contagem.get(s) ?? 0 })),
