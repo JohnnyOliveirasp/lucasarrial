@@ -149,9 +149,53 @@ migration, não mergeei PR, não escrevi código, não mandei e-mail para aluno
 do endpoint, e **deploy não é meu** (regra 2). Fiz o que era meu — diagnosticar,
 provar, escalar com o diagnóstico pronto e travar a condição de fechamento.
 
+## 10-B. O conserto já existia (PR #190) — e eu só vi no fim
+
+No passo fixo de fim de ronda (`git branch`) apareceu
+`feat/wav2vec-caminho-certo`. É o **PR #190**, commit `bba4253`, aberto
+**15h41:06Z** contra a main, 2 arquivos, +189/−13, não-draft, sem revisor.
+
+**A causa raiz dele é melhor que a minha e corrige meu entendimento.** Eu parei
+em "o diretório do modelo está vazio". O #190 explica *por quê*:
+
+- o node resolve em `/comfyui/models/transformers/...` porque o `start.sh` da
+  imagem base não passa `--base-directory` nem `--models-directory`;
+- o pré-cache gravava em `HF_HOME=/runpod-volume/hf`, **outro lugar**;
+- logo **o pré-cache nunca protegeu o node**. Só funcionava porque worker quente
+  já tinha baixado o modelo em runtime.
+
+**Corrijo o §5:** eu mandei procurar um deploy dentro da janela de 3h36. Está
+errado. Não quebrou hoje — é **defeito latente desde sempre**, e qualquer
+reciclagem de worker derruba a ferramenta. A janela é justamente quando os
+workers reciclaram. Não há deploy para achar.
+
+O PR ainda cura dois vizinhos que não vi: o Demucs do `AudioSeparation` com o
+mesmo padrão (`TORCH_HOME` efêmero) e um `|| echo AVISO` que fazia pré-cache
+quebrado **sair verde** — irmão exato do health verde do RunPod do §4. Duas
+fontes de falso-verde no mesmo caminho.
+
+⚠️ **Mergear o #190 não basta**: é mudança de Dockerfile do worker, exige
+**rebuild da imagem** e atualização do endpoint. Merge sem rebuild deixa a main
+parecendo consertada com a produção caída — o modo de falha clássico da casa.
+
+### Falha de coordenação, registrada de propósito
+
+O PR saiu **15h41:06Z**; minha ronda começou **15h41**. Dois agentes
+investigaram o mesmo incidente do zero, em paralelo, sem se ver. **Eu dupliquei
+o diagnóstico e cheguei numa versão pior.**
+
+O que esta ronda agregou de fato: a conferência do dinheiro (10 estornos por
+`ref_id`), a armadilha do health verde do RunPod, a dívida dos 3 e-mails
+prometidos e a janela real de incerteza. O resto foi retrabalho meu.
+
+**Lição:** antes de investigar incidente, rodar `gh pr list` e olhar branches
+recentes pelo nome do defeito. Custa segundos e teria poupado a ronda inteira.
+
 ## 11. O que continua aberto
 
-- **Vídeo Clone fora do ar**, ~50 gerações/dia paradas. Esperando deploy.
+- **Vídeo Clone fora do ar**, ~50 gerações/dia paradas. **Bloqueado em revisão do
+  PR #190 + rebuild da imagem do worker** — não é falta de conserto, é falta de
+  quem mergeie e reconstrua.
 - **3 alunos** com e-mail prometido para quando voltar.
 - Herdado da ronda das 14h e **não tocado hoje**: `#265` (57 alunos com janela de
   garantia errada), migration 82 travando o `#15`, 20 PRs parados, Luciano
@@ -159,8 +203,11 @@ provar, escalar com o diagnóstico pronto e travar a condição de fechamento.
 
 ## 12. Próxima ronda começa por aqui
 
-1. **Vídeo Clone voltou?** Não confie no health do RunPod nem no deploy ter
-   subido — confira uma geração real com sucesso no banco.
+0. **Antes de tudo: `gh pr list` e branches recentes pelo nome do defeito.** Foi
+   o que me faltou hoje e custou uma ronda de retrabalho.
+1. **Vídeo Clone voltou?** Não confie no health do RunPod, nem no PR #190 ter
+   sido mergeado, nem no deploy ter subido — confira uma **geração real com
+   sucesso no banco**. Sem rebuild da imagem, merge não conserta nada.
 2. **Se voltou:** mandar os 3 e-mails prometidos ANTES de fechar `#264` e os 4
    irmãos (`#266`, `#267`, `#268`, `#269`).
 3. **Se não voltou:** cobrar de novo no grupo, e a cada hora parada são ~2-3
