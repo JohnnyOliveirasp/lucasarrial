@@ -1675,6 +1675,27 @@
       "canceling": "Cancelando…",
       "confirm": "Confirmar cancelamento"
     },
+    "changePassword": {
+      "eyebrow": "Senha",
+      "title": "Alterar senha",
+      "description": "Defina uma nova senha de acesso. Você continua conectado neste dispositivo.",
+      "newLabel": "Nova senha",
+      "newPlaceholder": "Mínimo 8 caracteres",
+      "confirmLabel": "Confirmar nova senha",
+      "confirmPlaceholder": "Repita a nova senha",
+      "tooShort": "Use pelo menos 8 caracteres.",
+      "mismatch": "As senhas não conferem.",
+      "submit": "Salvar nova senha",
+      "submitting": "Salvando…",
+      "success": "Senha alterada. Use a nova senha no próximo login.",
+      "errors": {
+        "reauth": "Por segurança, entre na conta de novo e tente outra vez: sua sessão está antiga demais para trocar a senha.",
+        "same": "A nova senha precisa ser diferente da atual.",
+        "weak": "Senha muito curta: use pelo menos 8 caracteres.",
+        "rateLimited": "Muitas tentativas. Aguarde 1 minuto e tente de novo.",
+        "generic": "Não foi possível alterar a senha. Tente novamente."
+      }
+    },
     "consent": {
       "registerError": "Falha ao registrar o aceite",
       "genericError": "Erro",

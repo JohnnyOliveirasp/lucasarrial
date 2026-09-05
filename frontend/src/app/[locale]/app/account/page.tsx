@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { createClient } from "@/lib/supabase/server";
 import { CancelSubscription } from "@/components/app/cancel-subscription";
+import { ChangePassword } from "@/components/app/change-password";
 import { DeleteAccount } from "@/components/app/delete-account";
 import { Eyebrow } from "@/components/ui";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
@@ -39,6 +40,18 @@ export default async function AccountPage({
   const accessUntil = profile?.access_until
     ? new Date(profile.access_until).toLocaleDateString("pt-BR")
     : null;
+
+  // Só quem entrou com e-mail+senha tem senha NOSSA pra trocar. Conta de Google
+  // não tem — mostrar o campo pra ela só criaria chamado novo. O Supabase
+  // guarda a lista de provedores em app_metadata.providers (e o último usado em
+  // app_metadata.provider); quem vinculou os dois tem "email" na lista e cai
+  // certo no true.
+  const providers = Array.isArray(user.app_metadata?.providers)
+    ? (user.app_metadata.providers as string[])
+    : user.app_metadata?.provider
+      ? [user.app_metadata.provider as string]
+      : [];
+  const hasEmailPassword = providers.includes("email");
 
   return (
     <div className="flex flex-col gap-12">
@@ -78,6 +91,9 @@ export default async function AccountPage({
           </div>
         </div>
       </section>
+
+      {/* Senha — só pra conta de e-mail (chamados #243/#244). */}
+      {hasEmailPassword && <ChangePassword />}
 
       {/* Assinatura */}
       <section className="flex flex-col gap-4">
