@@ -416,6 +416,91 @@ class InferenciaPontaAPontaTest(unittest.TestCase):
         self.assertNotIn("error", r)
         self.assertGreater(r["qa"].get("coverage_espalhada", 0), 0)
 
+    # ── Palavras faltantes: TELEMETRIA (702cc916, 04/09) ───────────────────
+    # A regra do card e' dura: nenhum gate novo, nenhuma decisao de entrega
+    # alterada, nenhum job passa a falhar. Os dois testes abaixo sao o PAR que
+    # prova isso ponta a ponta — mesmos cenarios dos dois testes acima, mesmos
+    # vereditos, agora tambem com o campo novo preenchido.
+
+    def test_buraco_ESPALHADO_entrega_E_nomeia_o_que_sumiu(self):
+        # MESMO cenario do teste acima (i % 4 == 0 sumindo, espalhado): tem que
+        # continuar ENTREGANDO, e agora dizer QUAIS palavras sumiram — que e' o
+        # dado que faltava pra auditar se a escotilha acertou.
+        def salpicado(seg, sr, m, lang, label):
+            w = tts_qa.norm_words(FakeVoxCPM.gerados[-1], lang)
+            return [x for i, x in enumerate(w) if i % 4 != 0]
+
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=salpicado):
+            r = handler.handler({"input": _clone_job()})
+        qa = r["qa"]
+        # 1) o VEREDITO nao mudou: entregou, pela mesma escotilha, sem erro.
+        self.assertNotIn("error", r)
+        self.assertIn("audio_base64", r)
+        self.assertGreater(qa.get("coverage_espalhada", 0), 0)
+        # 2) ...e agora sabemos O QUE sumiu.
+        self.assertGreater(qa["faltantes_total"], 0)
+        self.assertGreater(qa["faltantes_pior_n"], 0)
+        self.assertTrue(qa["faltantes_amostra"])
+        # As palavras sao do TEXTO pedido, e o teto foi respeitado.
+        do_texto = set(tts_qa.norm_words(TEXTO, "pt"))
+        self.assertTrue(set(qa["faltantes_amostra"]) <= do_texto)
+        self.assertLessEqual(len(qa["faltantes_amostra"]), 20)
+        # 3) a conta fecha com o denominador da cobertura: os MESMOS pedacos
+        # entregues foram medidos pelas duas reguas.
+        self.assertEqual(qa["faltantes_medido_n"]
+                         + qa.get("faltantes_sem_veredito", 0),
+                         qa["coverage_medido_n"])
+
+    def test_buraco_CONTINUO_continua_derrubando_o_job(self):
+        # O contrapeso: o caso Katia nao pode virar entrega por causa da
+        # telemetria nova. MESMO cenario do teste de cima, MESMO veredito.
+        def so_a_metade(seg, sr, m, lang, label):
+            w = tts_qa.norm_words(FakeVoxCPM.gerados[-1], lang)
+            return w[len(w) // 2:]
+
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=so_a_metade):
+            r = handler.handler({"input": _clone_job()})
+        self.assertIn("qa_coverage", r["error"])
+        self.assertNotIn("audio_base64", r)
+        # E o chunk DESCARTADO nao deixou amostra: o job caiu sem entregar
+        # nada, entao nao existe "palavra faltante do audio do aluno".
+        self.assertEqual(r["qa"].get("faltantes_medido_n", 0), 0)
+        self.assertEqual(r["qa"].get("faltantes_total", 0), 0)
+
+    def test_audio_perfeito_registra_zero_COM_denominador(self):
+        # "nada faltou" tem que ser legivel no banco: total 0 ao lado de um
+        # denominador > 0. Sem o par, zero e' indistinguivel de "nao mediu" —
+        # a licao de 01/09 do qa_coverage (portao ausente e portao passando
+        # dao o mesmo zero).
+        def ouviu_tudo(seg, sr, m, lang, label):
+            return tts_qa.norm_words(FakeVoxCPM.gerados[-1], lang)
+
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=ouviu_tudo):
+            r = handler.handler({"input": _clone_job()})
+        qa = r["qa"]
+        self.assertNotIn("error", r)
+        self.assertEqual(qa["faltantes_total"], 0)
+        self.assertGreater(qa["faltantes_medido_n"], 0)      # o DENOMINADOR
+        self.assertEqual(qa["faltantes_pior_n"], 0)
+        self.assertEqual(qa["faltantes_amostra"], [])
+
+    def test_teto_da_amostra_e_configuravel_pelo_job(self):
+        # `qa_faltantes_amostra_max` desce pelo input (padrao TtsSettings: a
+        # env manda, o request manda mais). Chunk MUDO = pior caso: TODAS as
+        # palavras faltando. A amostra corta; os contadores nao.
+        def mudo_no_primeiro(seg, sr, m, lang, label):
+            w = tts_qa.norm_words(FakeVoxCPM.gerados[-1], lang)
+            return [x for i, x in enumerate(w) if i % 4 != 0]
+
+        with mock.patch.object(tts_qa.loop, "transcribe_seg",
+                               side_effect=mudo_no_primeiro):
+            r = handler.handler({"input": _clone_job(qa_faltantes_amostra_max=3)})
+        qa = r["qa"]
+        self.assertNotIn("error", r)
+        self.assertLessEqual(len(qa["faltantes_amostra"]), 3)
+        # o corte da amostra NAO mentiu sobre o tamanho do estrago
+        self.assertGreater(qa["faltantes_pior_n"], len(qa["faltantes_amostra"]))
+
     def test_log_do_chunk_separa_bruto_de_aparado(self):
         # samples_raw e medido ANTES do trim. Se os dois virarem o mesmo numero,
         # perdemos a unica medida de quanto silencio o VoxCPM deixa nas pontas.
@@ -481,6 +566,76 @@ class InferenciaPontaAPontaTest(unittest.TestCase):
             r = handler.handler({"input": {"type": "inference", "text": TEXTO}})
         self.assertNotIn("error", r)
         t.assert_not_called()
+
+
+class DecisaoDeEntregaCongeladaTest(unittest.TestCase):
+    """A ESCOTILHA nao mudou (702cc916, 04/09) — a prova mais direta.
+
+    `_entregar_mesmo_com_cobertura_baixa` e' o UNICO ponto que entrega audio
+    abaixo da regua (medido em 04/09: 24 entregas sub-regua, todas por aqui).
+    A telemetria de palavras faltantes anda ao lado dela e nao pode encostar.
+    Aqui a funcao de decisao e' chamada DIRETO, sem whisper e sem modelo, e a
+    tabela de veredito fica congelada: se um dia alguem fizer a lista de
+    faltantes pesar no destino do audio, uma destas linhas quebra.
+    """
+
+    # (lacuna, palavras_no_chunk, gap_min, entrega?)
+    # limite = max(gap_min, 20% das palavras do chunk); entrega se lacuna < limite
+    CASOS = [
+        # ⚠️ `lacuna is None` NAO entrega: sem medida da FORMA do buraco a
+        # escotilha nao se aplica e o job cai. Escrevi "entrega" na 1a versao
+        # desta tabela e o teste me corrigiu — e' o comportamento conservador
+        # certo, e agora esta congelado.
+        (None, 30, 6, False),
+        (0,    30, 6, True),    # nada continuo (markup espalhado): entrega
+        (5,    30, 6, True),    # buraco menor que o limite (6): entrega
+        (6,    30, 6, False),   # bate o gap_min: cai
+        (20,   30, 6, False),   # pedacao comido (caso Katia): cai
+        (6,    50, 6, True),    # chunk longo: limite vira 20% = 10 -> entrega
+        (10,   50, 6, False),   # ...e 10 ja cai
+        # Quem manda e' o MAIOR dos dois. Com 30 palavras os 20% valem 6:
+        (3,    30, 2, True),    # gap_min 2 nao aperta nada, os 6 dominam
+        (8,    30, 10, True),   # agora o gap_min (10) e' que manda
+        (10,   30, 10, False),
+    ]
+
+    def _decidir(self, lacuna, palavras, gap_min):
+        # `palavraum palavradois ...` -> 1 token cada (sem digito, sem expansao)
+        nomes = ["alfa", "beta", "gama", "delta", "epsilon", "zeta", "eta",
+                 "teta", "iota", "kapa"]
+        chunk = " ".join(nomes[i % len(nomes)] + "x" * (i // len(nomes))
+                         for i in range(palavras))
+        self.assertEqual(len(tts_qa.norm_words(chunk, "pt")), palavras,
+                         "o chunk sintetico tem que ter o nº de palavras pedido")
+        obj = jobs.inference.InferenceJob.__new__(jobs.inference.InferenceJob)
+        obj.qa_stats = {}
+        obj.cfg = types.SimpleNamespace(qa_language="pt", coverage_qa_gap_min=gap_min)
+        return obj._entregar_mesmo_com_cobertura_baixa(0, chunk, 0.80, lacuna)
+
+    def test_tabela_de_veredito_congelada(self):
+        for lacuna, palavras, gap_min, esperado in self.CASOS:
+            with self.subTest(lacuna=lacuna, palavras=palavras, gap_min=gap_min):
+                self.assertIs(self._decidir(lacuna, palavras, gap_min), esperado)
+
+    def test_a_escotilha_nao_enxerga_palavras_faltantes(self):
+        # Prova ESTRUTURAL, complementar a tabela: a assinatura da decisao nao
+        # recebe a lista e o corpo dela nao a menciona — nao existe caminho.
+        import inspect
+        alvo = jobs.inference.InferenceJob._entregar_mesmo_com_cobertura_baixa
+        self.assertEqual(list(inspect.signature(alvo).parameters),
+                         ["self", "idx", "chunk", "coverage", "lacuna"])
+        self.assertNotIn("faltante", inspect.getsource(alvo))
+
+    def test_nenhum_score_do_laco_de_QA_le_a_lista(self):
+        # A outra metade do "nada muda": dentro de `run_chunk_qa` a lista nao
+        # pode encostar no `score` (que e' quem manda regenerar e quem decide
+        # a tentativa vencedora). Prova textual: nenhuma linha que mexe em
+        # `score` menciona faltantes.
+        import inspect
+        fonte = inspect.getsource(tts_qa.loop.run_chunk_qa)
+        for linha in fonte.splitlines():
+            if "score" in linha and "faltante" in linha:
+                self.fail(f"a telemetria encostou no score: {linha.strip()}")
 
 
 class PecasPurasTest(unittest.TestCase):

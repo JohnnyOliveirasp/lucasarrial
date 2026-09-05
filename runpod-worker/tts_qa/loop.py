@@ -11,7 +11,7 @@ import soundfile as sf
 from worker_log import log as _log
 
 from .metrics import (chunk_coverage, chunk_intrusions, echo_leak_count, fim_abrupto,
-                      maior_lacuna, ultima_palavra_truncada)
+                      maior_lacuna, palavras_faltantes, ultima_palavra_truncada)
 from .rate import measure_seg_rate
 from .text import norm_words
 
@@ -220,6 +220,77 @@ def registrar_tail_interno(qa_stats: dict, tail_interno: "bool | None") -> None:
     )
 
 
+def registrar_faltantes(qa_stats: dict, faltantes, amostra_max: int = 20) -> None:
+    """Acumula QUAIS palavras sumiram do pedaco ENTREGUE (702cc916, 04/09).
+
+    TELEMETRIA PURA: nao decide nada. Nenhum portao le estes campos, nenhum job
+    passa a falhar por causa deles. Existem pra que o proximo caso Katia seja
+    LIDO em vez de adivinhado — ver `palavras_faltantes` em metrics.py pro
+    porque (cobertura 0,800 com buraco espalhado e' indistinguivel entre
+    "sumiu **negrito**" e "sumiu voce/nao/muito", e a escotilha
+    `_entregar_mesmo_com_cobertura_baixa` entrega os dois).
+
+    Campos:
+      faltantes_total          — palavras perdidas somando TODOS os pedacos
+                                 entregues da geracao;
+      faltantes_medido_n       — DENOMINADOR: pedacos entregues em que deu pra
+                                 medir. Sem ele, `faltantes_total` = 0 nao
+                                 distingue "audio integro" de "nao mediu" —
+                                 mesmo motivo do `coverage_medido_n` e do
+                                 `tail_interno_entregue_n`;
+      faltantes_sem_veredito   — pedacos entregues sem medida (whisper falhou,
+                                 ou chunk sem palavra). Fecha a conta:
+                                 entregues = medido_n + sem_veredito;
+      faltantes_pior_n         — quantas palavras sumiram no PIOR pedaco;
+      faltantes_amostra        — as `amostra_max` PRIMEIRAS palavras perdidas
+                                 desse pior pedaco, na ordem do texto.
+
+    PIOR = o pedaco que perdeu MAIS palavras (nao o de menor cobertura). Os
+    dois eixos ja tem dono e respondem perguntas diferentes: quem responde
+    "qual pedaco ficou proporcionalmente mais fraco" e' `coverage_min_visto`.
+    Aqui a pergunta e' "onde foi parar o texto que sumiu", e a resposta e'
+    contagem absoluta — um chunk longo com cobertura 0,90 pode ter comido mais
+    palavras que um curto com 0,60. Empate mantem o primeiro: sem criterio de
+    desempate a amostra trocaria de dono a cada geracao, sem ganho de leitura.
+
+    ⚠️ TETO OBRIGATORIO. `qa_stats` vira jsonb no banco; despejar a lista
+    inteira seria gravar o texto do aluno a cada geracao com chunk mudo (chunk
+    mudo = TODAS as palavras faltando). `amostra_max=0` e' valido e desliga so
+    a amostra — os CONTADORES continuam, que e' o que responde "piorou?".
+    `faltantes_pior_n` fica ao lado justamente pra denunciar quando a amostra
+    esta cortada (pior_n > len(amostra)) em vez de fingir que aquilo e' tudo.
+
+    ⚠️ QUEM CHAMA E' O CHAMADOR, DE PROPOSITO — a mesma razao de
+    `registrar_cobertura` (26/08) e `registrar_tail_interno` (02/09), e aqui
+    ela pesa MAIS que nos dois: o audio julgado dentro de `run_chunk_qa` ainda
+    pode ser jogado fora pelo resgate por subdivisao, e um chunk descartado e'
+    exatamente o que perde MAIS palavras — ele viraria o "pior" de quase toda
+    geracao resgatada e a amostra descreveria audio que o aluno nunca ouviu.
+    So o chamador sabe o que virou entrega.
+
+    ⚠️ LIMITE HONESTO, igual ao dos outros dois: os contadores so descrevem
+    entrega quando a geracao termina `ready`. Se um chunk posterior derrubar o
+    job, os pedacos ja registrados continuam na conta e o aluno nao recebeu
+    nada — leia estes campos filtrando por `status='ready'`.
+    """
+    if faltantes is None:
+        qa_stats["faltantes_sem_veredito"] = qa_stats.get("faltantes_sem_veredito", 0) + 1
+        return
+    # O total nasce em 0 junto com o denominador: campo AUSENTE com o
+    # denominador presente seria de novo "nao mediu" indistinguivel de "mediu e
+    # nao faltou nada".
+    qa_stats["faltantes_medido_n"] = qa_stats.get("faltantes_medido_n", 0) + 1
+    qa_stats["faltantes_total"] = qa_stats.get("faltantes_total", 0) + len(faltantes)
+    # `is None` e nao `> 0`: no 1o pedaco medido os dois campos tem que NASCER,
+    # mesmo com zero faltando — `faltantes_pior_n` ausente ao lado de um
+    # denominador presente cairia na mesma armadilha que o resto deste arquivo
+    # passa a vida evitando. Empate nao troca o dono da amostra.
+    pior = qa_stats.get("faltantes_pior_n")
+    if pior is None or len(faltantes) > pior:
+        qa_stats["faltantes_pior_n"] = len(faltantes)
+        qa_stats["faltantes_amostra"] = list(faltantes[:max(0, int(amostra_max))])
+
+
 def run_chunk_qa(
     seg,
     idx: int,
@@ -256,7 +327,8 @@ def run_chunk_qa(
     texto faltando pesam mais), não a última.
 
     Devolve (melhor_seg, cobertura_da_melhor, maior_lacuna_da_melhor,
-    fronteira_interna_da_melhor). O CHAMADOR decide o que fazer quando a
+    fronteira_interna_da_melhor, palavras_faltantes_da_melhor).
+    O CHAMADOR decide o que fazer quando a
     cobertura da melhor tentativa ficou abaixo do mínimo: falhar o job
     explícito, nunca entregar incompleto em silêncio (caso Katia 19/08 —
     ~30% do texto ausente saiu [ready] e custou 555 créditos).
@@ -266,6 +338,12 @@ def run_chunk_qa(
     do arquivo, julgamento interno desligado, ou medida inconclusiva). Quem
     acumula é o chamador, via `registrar_tail_interno`, pelo mesmo motivo da
     cobertura: só ele sabe qual áudio virou entrega.
+
+    O 5o valor (`list | None`) são as PALAVRAS que sumiram na tentativa
+    VENCEDORA (702cc916, 04/09) — telemetria pura, não pesa no score e não
+    muda decisão nenhuma; acompanha a cobertura porque descreve o MESMO áudio
+    que ela mede. Quem acumula é o chamador, via `registrar_faltantes`, pela
+    terceira vez pelo mesmo motivo.
     """
     attempt = 0
     max_attempts = max(
@@ -274,6 +352,10 @@ def run_chunk_qa(
     )
     best_seg, best_score, best_coverage = seg, None, None
     best_lacuna = None
+    # Palavras perdidas na tentativa VENCEDORA (a que vira entrega). Anda junto
+    # de `best_lacuna` de proposito: as duas descrevem o MESMO buraco, uma pela
+    # forma e a outra pelo nome. Ver `registrar_faltantes`.
+    best_faltantes = None
     # Veredito de fronteira INTERNA da tentativa VENCEDORA (a que vira entrega).
     # Os contadores `tail_interno_*` do laco contam TENTATIVA — inclusive as
     # descartadas —, e por isso nao respondem "o aluno recebeu decepado?".
@@ -290,6 +372,7 @@ def run_chunk_qa(
         score = 0
         coverage = None
         lacuna_desta = None
+        faltantes_desta = None
         # Resetado a cada volta DE PROPOSITO: e' o veredito DESTA tentativa,
         # nao o acumulado. None = a fronteira interna nao foi julgada aqui.
         interno_cortado_desta = None
@@ -327,6 +410,9 @@ def run_chunk_qa(
         if coverage_qa_enabled and attempt < coverage_qa_retries:
             coverage = chunk_coverage(got, chunk, qa_language)
             lacuna = maior_lacuna(got, chunk, qa_language)
+            # Telemetria pura, na carona da MESMA transcricao e do MESMO
+            # alinhamento: nao paga whisper nem entra no `score`.
+            faltantes = palavras_faltantes(got, chunk, qa_language)
             qa_stats["coverage_checked"] += 1
             if coverage is None:
                 qa_stats["coverage_none"] += 1
@@ -334,6 +420,12 @@ def run_chunk_qa(
                 _log(
                     "info", "inference.coverage_qa", idx=idx, attempt=attempt,
                     coverage=coverage, maior_lacuna=lacuna,
+                    # ⚠️ SO A CONTAGEM no log de nivel info. A LISTA das
+                    # palavras vai pro `qa_stats` (banco, com teto), e nao pro
+                    # log: num chunk mudo "as palavras que faltaram" E' o texto
+                    # inteiro do aluno, e o log do worker nao e' lugar de
+                    # despejar isso a cada tentativa.
+                    faltantes_n=(None if faltantes is None else len(faltantes)),
                 )
                 if coverage < coverage_qa_min:
                     qa_stats["coverage_flagged"] += 1
@@ -346,6 +438,7 @@ def run_chunk_qa(
                 else:
                     alucinadas_seguidas = 0
             lacuna_desta = lacuna
+            faltantes_desta = faltantes
         if intrusion_qa_enabled and attempt < intrusion_qa_retries:
             intrusoes = chunk_intrusions(got, chunk, qa_language)
             qa_stats["intrusion_checked"] += 1
@@ -456,6 +549,7 @@ def run_chunk_qa(
             best_seg, best_score, best_coverage = seg, score, coverage
             best_lacuna = lacuna_desta
             best_tail_interno = interno_cortado_desta
+            best_faltantes = faltantes_desta
         if score == 0:
             break
         attempt += 1
@@ -532,8 +626,15 @@ def run_chunk_qa(
             if cov2 is not None and cov2 > best_coverage:
                 qa_stats["coverage_idioma_corrigido"] = qa_stats.get("coverage_idioma_corrigido", 0) + 1
                 best_coverage, best_lacuna = cov2, lac2
-    # NAO registra a cobertura nem a fronteira interna aqui: este audio ainda
-    # pode ser DESCARTADO pelo resgate por subdivisao. Quem registra e' o
-    # chamador, quando sabe o que virou entrega — ver `registrar_cobertura` e
-    # `registrar_tail_interno`.
-    return best_seg, best_coverage, best_lacuna, best_tail_interno
+                # A lista tem que vir da leitura ADOTADA. Manter a da 1a
+                # leitura aqui seria pior que nao ter lista nenhuma: o texto
+                # foi transcrito no idioma errado (whisper TRADUZIU), entao
+                # "sumiu" ali dentro e' a traducao, nao o audio — e a amostra
+                # apontaria palavra perdida em audio que acabou de ser
+                # inocentado. Recalcula no idioma detectado, sem whisper novo.
+                best_faltantes = palavras_faltantes(got2, chunk, lang2)
+    # NAO registra a cobertura, a fronteira interna nem as palavras faltantes
+    # aqui: este audio ainda pode ser DESCARTADO pelo resgate por subdivisao.
+    # Quem registra e' o chamador, quando sabe o que virou entrega — ver
+    # `registrar_cobertura`, `registrar_tail_interno` e `registrar_faltantes`.
+    return best_seg, best_coverage, best_lacuna, best_tail_interno, best_faltantes

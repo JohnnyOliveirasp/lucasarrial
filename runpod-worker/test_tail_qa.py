@@ -391,7 +391,7 @@ class FronteiraInternaEntregaTest(unittest.TestCase):
         """Devolve (stats, veredito_de_fronteira_interna_da_ENTREGA)."""
         from tts_qa.loop import run_chunk_qa
         stats = self._stats()
-        _seg, _cov, _lac, tail_interno = run_chunk_qa(
+        _seg, _cov, _lac, tail_interno, _falt = run_chunk_qa(
             seg, 0, "sua nutricionista",
             regen_fn=(regen or (lambda: _com_decaimento())),
             qa_stats=stats, **self._kwargs(**over))
