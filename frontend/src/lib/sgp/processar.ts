@@ -9,7 +9,8 @@
  *     pagamento (`claimPurchasesOnLogin` religa compra dele, se houver)
  *  2. copia as fotos aprovadas pra `{user}/refs/` e define a referência padrão
  *  3. cria a voz e copia os áudios aprovados pra `{user}/{voice}/raw/`
- *  4. e-mail "começamos" · clone de FOTO (Kie, 525 cr) · TREINO (10k cr)
+ *  4. e-mail "começamos" · "processando imagens" + clone de FOTO (Kie, 525 cr)
+ *     · "processando áudio" + TREINO (10k cr)
  *     — o débito deixa o saldo NEGATIVO de propósito (mig 88): o aluno só usa
  *     a plataforma depois de assinar.
  */
@@ -17,7 +18,7 @@ import { randomUUID } from "node:crypto";
 import { CopyObjectCommand } from "@aws-sdk/client-s3";
 import { getAdmin } from "@/lib/db/admin";
 import { AVATAR_SOCIAL, gerarAvatares } from "@/lib/onboarding/avatares";
-import { avisoComecamos } from "@/lib/onboarding/avisos";
+import { avisoComecamos, avisoProcessandoAudio, avisoProcessandoImagens } from "@/lib/onboarding/avisos";
 import { ONBOARDING_VOICE_NAME } from "@/lib/onboarding/import";
 import { dispararTreinoOnboarding } from "@/lib/onboarding/treino";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
@@ -174,12 +175,28 @@ async function processarMaterial(pedido: SgpPedidoRow, userId: string, email: st
   }
 
   // 4. AVISO + CLONE DE FOTO + TREINO
+  //
+  // A RÉGUA DE 4 AVISOS (Johnny 29/08): "processando foto" → "foto concluída" →
+  // "processando áudio" → "áudio concluído". O /sgp só mandava TRÊS: os dois
+  // "processando" existiam escritos em lib/onboarding/avisos.ts mas só eram
+  // chamados de app/api/v1/onboarding/import/route.ts — a rota da PLANILHA,
+  // desligada por ordem de 29/08. Morreram junto com ela e ninguém percebeu.
+  // Aqui eles voltam, no ponto EQUIVALENTE do fluxo novo: o instante em que
+  // cada coisa COMEÇA (o Kie é chamado / o treino é submetido ao RunPod).
+  //
+  // "UMA VEZ SÓ" vem do lugar, não de carimbo novo: `processarMaterial` roda
+  // uma vez por pedido (o POST /sgp/enviar recusa quem já está em
+  // `processando`/`pronto`), e NÃO está no caminho do polling — que é onde o
+  // risco de repetir a cada 8s existiria. Mesma garantia do `avisoComecamos`
+  // logo abaixo, sem coluna nova (e portanto sem migration).
   await avisoComecamos(email, pedido.nome).catch(() => {});
   if (refs.length) {
+    await avisoProcessandoImagens(email).catch(() => {});
     const foto = await gerarAvatares(admin, userId, refs, [AVATAR_SOCIAL]);
     for (const f of foto.failed) erros.push(`clone de foto: ${f.error}`);
   }
   if (voiceId) {
+    await avisoProcessandoAudio(email).catch(() => {});
     try {
       const t = await dispararTreinoOnboarding(admin, userId, voiceId);
       if (!t.ok) erros.push(`treino da voz: ${t.reason}`);
