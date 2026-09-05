@@ -29,7 +29,27 @@ RUN pip install --no-cache-dir sageattention==1.0.6 boto3==1.34.162
 COPY custom_nodes/aiverse_io /comfyui/custom_nodes/aiverse_io
 
 # --- Modelos ficam no Network Volume (/runpod-volume/models/...) ---
+# O yaml cobre SO as categorias registradas do ComfyUI (checkpoints, loras, vae...).
 COPY extra_model_paths.yaml /comfyui/extra_model_paths.yaml
 
-# Cache HF (wav2vec) persistido no volume
+# --- Ponte para os modelos que NAO passam pelo extra_model_paths.yaml ---
+# Incidente 85c9a45a (05/09/2026): o node DownloadAndLoadWav2VecModel resolve o
+# caminho com os.path.join(folder_paths.models_dir, "transformers", model)
+# (ComfyUI-WanVideoWrapper@088128b22424, fantasytalking/nodes.py:52). Como o
+# start.sh da imagem base sobe o ComfyUI sem --base-directory / --models-directory,
+# folder_paths.models_dir e /comfyui/models — diretorio EFEMERO do container. O node
+# nao consulta folder_paths.get_folder_paths(), entao por definicao o yaml acima nao
+# tem como redirecionar isso: a unica ponte possivel e este symlink.
+# Sem ele o modelo era baixado em runtime e sumia em toda reciclagem do worker.
+RUN rm -rf /comfyui/models/transformers \
+    && mkdir -p /comfyui/models \
+    && ln -s /runpod-volume/models/transformers /comfyui/models/transformers
+
+# Cache HF persistido no volume (nao cobre o node acima: ele usa local_dir proprio)
 ENV HF_HOME=/runpod-volume/hf
+
+# Cache do torch.hub no volume. O node AudioSeparation carrega o Demucs via
+# torchaudio.utils._download_asset, que grava em torch.hub.get_dir()/torchaudio/...
+# e pula o download se o caminho existir. Sem isto o destino e /root/.cache/torch
+# (efemero) e o Demucs cai na primeira reciclagem, igual ao wav2vec.
+ENV TORCH_HOME=/runpod-volume/torch
