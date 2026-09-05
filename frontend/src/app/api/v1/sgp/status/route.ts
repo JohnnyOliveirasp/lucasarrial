@@ -6,6 +6,7 @@
  */
 import { jsonOk, serverError } from "@/lib/api/responses";
 import { estadoDasEtapas } from "@/lib/sgp/etapas";
+import { previaDoPedido } from "@/lib/sgp/previa";
 import { pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 
 export async function GET() {
@@ -13,10 +14,14 @@ export async function GET() {
     const pedido = await pedidoDaSessaoOuNull();
     if (!pedido) return jsonOk({ pedido: null });
     const estado = await estadoDasEtapas(pedido);
+    // A prévia sai pela MESMA sessão que já autorizou o estado acima — não há
+    // id na URL. Ver lib/sgp/previa-pure.ts pra régua do que pode aparecer.
+    const previa = await previaDoPedido(pedido, estado);
     return jsonOk({
       email: pedido.email,
       enviado: !!pedido.enviado_em,
       ...estado,
+      previa,
     });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao ler o pedido");

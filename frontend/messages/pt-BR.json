@@ -2353,6 +2353,13 @@
           "falhou": "Algo não deu certo — nosso time entra em contato."
         }
       },
+      "previa": {
+        "titulo": "O seu clone",
+        "foto": "Sua foto clone, gerada a partir das fotos que você enviou.",
+        "fotoAlt": "Sua foto clone gerada",
+        "audio": "Sua voz clonada falando. É assim que ela vai soar nos seus vídeos.",
+        "semPlayer": "Seu navegador não consegue tocar áudio."
+      },
       "erroTime": "Uma etapa precisou de atenção do nosso time. Você não precisa fazer nada — vamos resolver e avisar por e-mail.",
       "podeFechar": "Pode fechar esta página — avisamos por e-mail a cada etapa concluída. Se preferir, deixe aberta e acompanhe por aqui.",
       "irParaPlataforma": "Ir para a plataforma",
