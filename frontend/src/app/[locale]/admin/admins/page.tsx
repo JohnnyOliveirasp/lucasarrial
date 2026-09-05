@@ -78,7 +78,7 @@ export default function AdminsPage() {
           Quem pode acessar o painel <code className="text-[var(--silver)]">/admin</code>.
           <strong className="text-[var(--silver)]"> Admin</strong> vê tudo, inclusive
           financeiro. <strong className="text-[var(--silver)]">Suporte</strong> vê só
-          Falhas e Agente.
+          Falhas, SGP e Agente.
         </p>
       </div>
 
@@ -98,7 +98,7 @@ export default function AdminsPage() {
           className="h-10 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3 text-sm text-[var(--ink)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none"
         >
           <option value="admin">Admin — tudo</option>
-          <option value="suporte">Suporte — falhas e agente</option>
+          <option value="suporte">Suporte — falhas, SGP e agente</option>
         </select>
         <button type="submit" disabled={busy || !email.trim()} className={PILL}>
           <Plus className="size-4" />

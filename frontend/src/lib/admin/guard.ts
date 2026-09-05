@@ -7,8 +7,10 @@
  *
  * PAPÉIS (mig 95, pedido do Johnny 24/08):
  *   admin   → painel inteiro, inclusive dinheiro.
- *   suporte → SÓ Falhas + Agente. Quem é gerente de suporte não precisa ver
- *             faturamento, lucro nem a base de usuários pra fazer o trabalho.
+ *   suporte → SÓ Falhas + SGP + Agente. Quem é gerente de suporte não precisa
+ *             ver faturamento, lucro nem a base de usuários pra fazer o
+ *             trabalho. A lista que MANDA é `roles` em lib/admin/nav.ts —
+ *             este comentário só descreve; ao mudar lá, atualize aqui.
  * Quem entra pela env é sempre `admin` (bootstrap não tem como ter papel).
  */
 import { getAdmin } from "@/lib/db/admin";

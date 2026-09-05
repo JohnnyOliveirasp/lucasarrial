@@ -9,9 +9,10 @@ import { AdminRoleGate } from "@/components/admin/admin-role-gate";
  * Gate do /admin (server-side). Não-admin recebe 404 — o painel nem revela que
  * existe. Allowlist na tabela admin_emails (gerenciável) + fallback env.
  *
- * PAPEL (mig 95): quem é `suporte` entra, mas só enxerga Falhas e Agente — o
- * menu vem filtrado e o AdminRoleGate barra a URL digitada na mão. A trava que
+ * PAPEL (mig 95): quem é `suporte` entra, mas só enxerga Falhas, SGP e Agente —
+ * o menu vem filtrado e o AdminRoleGate barra a URL digitada na mão. A trava que
  * vale é a das rotas de API (gateAdmin); esta camada é menu e recado.
+ * A lista que MANDA é `roles` em lib/admin/nav.ts — este comentário só descreve.
  */
 export default async function AdminLayout({
   children,
