@@ -41,9 +41,15 @@ const path = require("node:path");
 const tls = require("node:tls");
 
 const RAIZ = path.resolve(__dirname, "..", "..");
-require(path.join(RAIZ, "frontend", "node_modules", "dotenv")).config({
-  path: path.join(RAIZ, "frontend", ".env.local"),
-});
+try {
+  require(path.join(RAIZ, "frontend", "node_modules", "dotenv")).config({
+    path: path.join(RAIZ, "frontend", ".env.local"),
+  });
+} catch {
+  // Sem dotenv instalado (worktree limpo, CI) o arquivo continua REQUERÍVEL
+  // e as funções puras dão pra testar. Sem credencial a CLI não roda: o
+  // `if (!PASS)` do main() barra com mensagem clara, em vez de stack trace.
+}
 
 const HOST = process.env.SUPPORT_MAIL_HOST || "mail.privateemail.com";
 const USER = process.env.SUPPORT_MAIL_USER || "suporte@fastcloner.com";
@@ -171,10 +177,16 @@ function stripHtml(s) {
     .trim();
 }
 
-function mailText(raw, maxChars) {
-  const plainIdx = raw.search(/Content-Type:\s*text\/plain/i);
-  const htmlIdx = raw.search(/Content-Type:\s*text\/html/i);
-  const idx = plainIdx >= 0 ? plainIdx : htmlIdx;
+/**
+ * Recorta e decodifica UMA parte MIME. Espelho do `extrairParte` de
+ * `frontend/src/lib/agent/mail-corpo.ts` — as duas cópias existem porque esta
+ * ferramenta é .cjs solta e aquela é o caminho de produção; se uma mudar, a
+ * outra muda junto, senão a ferramenta volta a ser cega pro bug da produção.
+ *
+ * Tudo é derivado do `idx` recebido, headBlock incluso: é o que torna seguro
+ * chamar duas vezes com partes diferentes (ver a armadilha em mail-corpo.ts).
+ */
+function extrairParte(raw, idx, html) {
   let seg = idx >= 0 ? raw.slice(idx) : raw;
   const headBlock = seg.slice(0, 400);
   const start = seg.search(/\r?\n\r?\n/);
@@ -190,14 +202,40 @@ function mailText(raw, maxChars) {
       /* fica como está */
     }
   }
-  let text = idx === htmlIdx && idx >= 0 ? stripHtml(seg) : seg.replace(/\s+/g, " ").trim();
+  let text = html ? stripHtml(seg) : seg.replace(/\s+/g, " ").trim();
   try {
     const round = Buffer.from(text, "latin1").toString("utf8");
     if (!/�/.test(round)) text = round;
   } catch {
     /* mantém */
   }
-  return text.slice(0, maxChars);
+  return text;
+}
+
+/**
+ * Texto do e-mail. MESMA correção do #261 que entrou na produção: a parte é
+ * escolhida pelo CONTEÚDO, não pela presença do cabeçalho. text/plain vazio
+ * cai pro text/html em vez de devolver "" (que aqui virava a linha
+ * "(sem corpo em texto)" — o sintoma do #248, fechado como ignored porque
+ * ninguém tinha reproduzido a causa ainda).
+ *
+ * Era esta cegueira que impedia a ferramenta de mostrar o bug da Fast: quem
+ * abrisse a caixa pra conferir via o mesmo nada que ela viu.
+ */
+function mailText(raw, maxChars) {
+  const plainIdx = raw.search(/Content-Type:\s*text\/plain/i);
+  const htmlIdx = raw.search(/Content-Type:\s*text\/html/i);
+
+  const tentativas = [];
+  if (plainIdx >= 0) tentativas.push({ idx: plainIdx, html: false });
+  if (htmlIdx >= 0) tentativas.push({ idx: htmlIdx, html: true });
+  if (tentativas.length === 0) tentativas.push({ idx: -1, html: false });
+
+  for (const t of tentativas) {
+    const texto = extrairParte(raw, t.idx, t.html);
+    if (texto.trim()) return texto.slice(0, maxChars);
+  }
+  return "";
 }
 
 /** Anexos pelo MIME cru: só NOME e tamanho estimado — o conteúdo nunca é usado. */
@@ -381,10 +419,24 @@ function partesDoBodystructure(resposta) {
   return coletarPartes(montarArvore(tokenizar(linhaFetch.slice(idx + "BODYSTRUCTURE".length))), "");
 }
 
-/** Primeira parte de texto LEGÍVEL (text/plain > text/html) que não é anexo. */
+/**
+ * Primeira parte de texto LEGÍVEL (text/plain > text/html) que não é anexo.
+ *
+ * A MESMA CEGUEIRA DO #261, na versão BODYSTRUCTURE: escolher o PLAIN só
+ * porque ele existe. Quando o plain vem com 0 byte (Apple Mail/Gmail em
+ * multipart/alternative), quem chama testa `pt.bytes > 0`, desiste, e a
+ * mensagem sai como "(corpo NÃO baixado)" — com o texto do aluno inteirinho
+ * no html ao lado, nunca olhado. Aqui a preferência passa a ser por parte que
+ * TEM conteúdo; a ordem plain > html só decide entre as que têm.
+ */
 function parteDeTexto(partes) {
   const corpoDeTexto = (p) => p.tipo === "TEXT" && !ehAnexo(p);
+  const comConteudo = (p) => corpoDeTexto(p) && p.bytes > 0;
   return (
+    partes.find((p) => comConteudo(p) && p.subtipo === "PLAIN") ||
+    partes.find((p) => comConteudo(p) && p.subtipo === "HTML") ||
+    // Nenhuma com bytes: devolve a que existe pra quem chama decidir (ele já
+    // trata `bytes <= 0` mantendo o aviso de corpo não baixado).
     partes.find((p) => corpoDeTexto(p) && p.subtipo === "PLAIN") ||
     partes.find((p) => corpoDeTexto(p) && p.subtipo === "HTML") ||
     null
@@ -491,9 +543,10 @@ async function main() {
   const maxCorpo = Number(pega("--corpo") || 4000);
   const caixaForcada = pega("--caixa");
   const anexosUid = Number(pega("--anexos") || 0);
+  const mimeUid = Number(pega("--mime") || 0);
   const salvarEm = pega("--salvar-em");
 
-  if (!de && !ultimos && !enviados && !fila && !caixas && !anexosUid) {
+  if (!de && !ultimos && !enviados && !fila && !caixas && !anexosUid && !mimeUid) {
     console.log(
       [
         "ler_caixa — leitura da caixa do suporte@ SEM marcar nada como lido",
@@ -505,7 +558,10 @@ async function main() {
         "  --fila                    só a CONTAGEM de não-lidos (a fila é da Fast)",
         "  --caixas                  lista as pastas e quantas mensagens tem em cada",
         "  --anexos <uid>            baixa os anexos desse uid (INBOX) pra disco",
-        "  --salvar-em <dir>         destino dos anexos (default _Bugs/anexos/<uid>/)",
+        "  --mime <uid>              grava o MIME CRU desse uid num .eml (pra virar",
+        "                            amostra de teste quando o parser erra — #261)",
+        "  --salvar-em <dir|arq>     destino dos anexos (default _Bugs/anexos/<uid>/)",
+        "                            ou do .eml (default _Bugs/mime/<uid>.eml)",
         "  --corpo <N>               chars do corpo (default 4000) · --caixa <nome>",
       ].join("\n"),
     );
@@ -571,6 +627,44 @@ async function main() {
       console.log("");
       console.log(`salvos: ${salvos.length} arquivo(s) em ${dir}`);
       console.log(`flags do uid ${anexosUid} antes: [${flagsAntes}] · depois: [${flagsDepois}] ${flagsAntes === flagsDepois ? "✓ intactas" : "⚠️ MUDARAM — avise o Johnny"}`);
+      console.log(`não-lidos no INBOX antes: ${filaAntes} · depois: ${filaDepois} ${filaAntes === filaDepois ? "✓ fila da Fast intacta" : "⚠️ MUDOU — avise o Johnny"}`);
+      return;
+    }
+
+    if (mimeUid) {
+      // MIME CRU de UM uid, pra disco. Nasceu do #261: o parser devolvia corpo
+      // vazio e não existia jeito sancionado de olhar a mensagem que causou
+      // isso — sem a amostra, o teste vira chute. As regras não mudam: EXAMINE
+      // (read-only no protocolo) + BODY.PEEK (não marca \Seen), e a prova de
+      // que nada mexeu sai impressa, igual ao --anexos.
+      //
+      // Vai pra ARQUIVO, nunca pro stdout: MIME de aluno tem dado pessoal e
+      // este repositório é público. _Bugs/ é ignorado pelo git de propósito.
+      await sessao.command("EXAMINE INBOX");
+      const flagsDe = async () =>
+        (await sessao.command(`UID FETCH ${mimeUid} (FLAGS)`)).match(/FLAGS \(([^)]*)\)/)?.[1] ?? "(uid não encontrado)";
+      const naoLidos = async () => uidsDaBusca(await sessao.command("UID SEARCH UNSEEN")).length;
+
+      const [flagsAntes, filaAntes] = [await flagsDe(), await naoLidos()];
+      const buf = await sessao.commandRaw(`UID FETCH ${mimeUid} BODY.PEEK[]`);
+      const raw = extrairLiteral(buf);
+      const [flagsDepois, filaDepois] = [await flagsDe(), await naoLidos()];
+
+      if (!raw) {
+        console.error(`uid ${mimeUid}: nada veio do BODY.PEEK[] — esse uid existe no INBOX?`);
+        process.exit(1);
+      }
+      const destino = salvarEm || path.join(RAIZ, "_Bugs", "mime", `${mimeUid}.eml`);
+      fs.mkdirSync(path.dirname(destino), { recursive: true });
+      // extrairLiteral devolve string LATIN1 (byte a byte). Gravar como latin1
+      // devolve o MIME idêntico ao que veio do socket — se gravasse em utf8,
+      // a amostra sairia corrompida justo nos acentos, que é onde o parser erra.
+      fs.writeFileSync(destino, Buffer.from(raw, "latin1"));
+
+      const texto = mailText(raw, maxCorpo);
+      console.log(`MIME cru do uid ${mimeUid} salvo em ${destino} (${fmtBytes(raw.length)})`);
+      console.log(`o parser tira deste MIME: ${texto ? `${texto.length} chars` : "NADA — é um caso do #261"}`);
+      console.log(`flags do uid ${mimeUid} antes: [${flagsAntes}] · depois: [${flagsDepois}] ${flagsAntes === flagsDepois ? "✓ intactas" : "⚠️ MUDARAM — avise o Johnny"}`);
       console.log(`não-lidos no INBOX antes: ${filaAntes} · depois: ${filaDepois} ${filaAntes === filaDepois ? "✓ fila da Fast intacta" : "⚠️ MUDOU — avise o Johnny"}`);
       return;
     }
@@ -693,7 +787,17 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error("ler_caixa falhou:", e instanceof Error ? e.message : e);
-  process.exit(1);
-});
+// Só roda a CLI quando chamada direto. Ser `require`-ável é o que permite
+// testar as funções puras sem abrir socket com o servidor de e-mail
+// (`node --test _frank/ferramentas/ler_caixa.test.cjs`) — mesmo padrão do
+// dryrun_trial_expiry_v2.cjs.
+if (require.main === module) {
+  main().catch((e) => {
+    console.error("ler_caixa falhou:", e instanceof Error ? e.message : e);
+    process.exit(1);
+  });
+}
+
+// Só as funções PURAS (zero IO). Nada de Sessao/login/main aqui: esta
+// ferramenta não vira biblioteca de leitura de caixa pra ninguém.
+module.exports = { mailText, stripHtml, parteDeTexto, extrairParte };

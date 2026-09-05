@@ -24,12 +24,26 @@ import { agentEnabled } from "./respond";
 import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
 import { sendSupportMail } from "./mail-smtp";
 import { tratarSeForBounce } from "./mail-bounce-registro";
+import { mailText } from "./mail-corpo";
 import { winbackContextByEmail, applyWinbackMarkers } from "@/lib/winback/conversation";
 
-const BODY_MAX = 4000; // o que vai pro modelo (e-mails têm assinatura/quote longos)
+// O parser do corpo virou módulo próprio no #261 (puro, sem IO — dá pra testar
+// com `node --test`, o que aqui é impossível por causa dos imports de banco).
+// Reexportado porque `mailText` sempre foi público a partir deste arquivo.
+export { mailText } from "./mail-corpo";
+
 const BATCH = 8; // por varredura (cron 5min) — o resto fica pra próxima
 
-// ---------- parse MIME mínimo (texto legível de um e-mail cru) ----------
+/**
+ * A partir de quantos bytes de mensagem CRUA um corpo vazio deixa de ser ruído
+ * e vira EVENTO (#261). Abaixo disso é ping de robô, cabeçalho solto, mensagem
+ * sem nada dentro — barulho que não vale acordar ninguém. Acima, tem conteúdo
+ * ali e a gente simplesmente não conseguiu ler: alguém escreveu e está
+ * esperando. A mensagem que gerou a regra tinha 7 KB.
+ */
+const CORPO_ILEGIVEL_MIN_BYTES = 2_000;
+
+// ---------- parse MIME mínimo (cabeçalhos de um e-mail cru) ----------
 
 function decodeWord(s: string): string {
   return s.replace(/=\?([^?]+)\?([BQ])\?([^?]*)\?=/gi, (m, _cs, enc, data) => {
@@ -48,49 +62,6 @@ function decodeWord(s: string): string {
 function header(raw: string, name: string): string {
   const m = raw.match(new RegExp(`^${name}: (.*(?:\\r?\\n[ \\t].*)*)`, "mi"));
   return m ? decodeWord(m[1].replace(/\r?\n[ \t]+/g, " ").trim()) : "";
-}
-
-function stripHtml(s: string): string {
-  return s
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** Extrai o texto do e-mail: parte text/plain (ou html sem tags). */
-export function mailText(raw: string): string {
-  const plainIdx = raw.search(/Content-Type:\s*text\/plain/i);
-  const htmlIdx = raw.search(/Content-Type:\s*text\/html/i);
-  const idx = plainIdx >= 0 ? plainIdx : htmlIdx;
-  let seg = idx >= 0 ? raw.slice(idx) : raw;
-  const headBlock = seg.slice(0, 400);
-  const start = seg.search(/\r?\n\r?\n/);
-  seg = start >= 0 ? seg.slice(start) : seg;
-  const boundary = seg.search(/\r?\n--[-=_a-zA-Z0-9]{6,}/);
-  if (boundary > 0) seg = seg.slice(0, boundary);
-  if (/quoted-printable/i.test(headBlock)) {
-    seg = seg.replace(/=\r?\n/g, "").replace(/=([0-9A-F]{2})/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)));
-  } else if (/base64/i.test(headBlock)) {
-    try {
-      seg = Buffer.from(seg.replace(/\s+/g, ""), "base64").toString("utf8");
-    } catch {
-      /* fica como está */
-    }
-  }
-  let text = idx === htmlIdx && idx >= 0 ? stripHtml(seg) : seg.replace(/\s+/g, " ").trim();
-  // Bytes UTF-8 lidos como latin1 → reconverte se sair limpo.
-  try {
-    const round = Buffer.from(text, "latin1").toString("utf8");
-    if (!/�/.test(round)) text = round;
-  } catch {
-    /* mantém */
-  }
-  return text.slice(0, BODY_MAX);
 }
 
 // ---------- filtros: em quem a Fast NUNCA mexe ----------
@@ -267,6 +238,80 @@ async function responderAnexoGrande(
   return "replied";
 }
 
+/**
+ * CORPO VAZIO NUMA MENSAGEM COM CONTEÚDO (#261). A gente não conseguiu extrair
+ * uma linha de texto de uma mensagem que claramente tem alguma coisa dentro.
+ *
+ * O que NÃO pode acontecer é o que acontecia antes: `markSeen` calado. Sem
+ * resposta, sem escalação, sem incidente e sem log — o aluno some da fila
+ * achando que foi lido, e a gente nunca descobre que existe um formato de
+ * e-mail que a Fast não sabe abrir. Foi assim que a Gleide ficou ~20h no vazio
+ * em 04/09 e o caso só apareceu porque alguém foi olhar a caixa na mão.
+ *
+ * Então aqui a mensagem gera as TRÊS coisas que faltavam: incidente na fila do
+ * Sentinela, e-mail pro time com o material, e uma resposta honesta pro aluno
+ * — a mesma que foi escrita à mão pra ela ("chegou ilegível, foi falha nossa,
+ * me reescreve").
+ *
+ * ORDEM IMPORTA: incidente ANTES do envio. Se o SMTP falhar, a varredura não
+ * marca como lida e tenta de novo — e o `signature` do incidente segura a
+ * segunda passada. Na ordem inversa, o aluno receberia a mesma carta duas
+ * vezes, que é exatamente o acidente que a regra 14-A existe pra evitar.
+ */
+async function responderCorpoIlegivel(
+  mail: RawMail,
+  fromEmail: string,
+  subject: string,
+  messageId: string | null,
+  bcc: string[],
+): Promise<"escalated"> {
+  const kb = Math.max(1, Math.round(mail.raw.length / 1000));
+  const resumo = `e-mail chegou sem texto legível (${kb} KB) — a Fast não conseguiu ler o que o aluno escreveu`;
+
+  try {
+    // O anexo costuma ser justamente o motivo da mensagem não abrir: guarda
+    // antes, senão o incidente nasce cego (mesma lição do caso Claudia).
+    const prints = await guardarPrints(mail.raw, { fromEmail, uid: mail.uid });
+    await openIncidentForSentinela(
+      fromEmail,
+      resumo,
+      `(sem corpo em texto — uid ${mail.uid} do INBOX, mensagem de ${kb} KB)`,
+      prints,
+      true,
+    );
+  } catch (e) {
+    console.error("[agent/mail] corpo ilegível: falha ao abrir incidente:", e instanceof Error ? e.message : e);
+  }
+
+  const texto =
+    "Oi! Tudo bem?\n\n" +
+    "Recebi seu e-mail, mas ele chegou aqui sem texto legível — foi uma falha nossa na " +
+    "leitura, não sua. Por isso ainda não consegui entender o que você precisa, e não " +
+    "quero responder chutando.\n\n" +
+    "Você pode me reescrever em poucas linhas o que aconteceu? Se tiver print ou arquivo, " +
+    "pode colar a imagem no corpo do e-mail ou mandar um link (Google Drive, WeTransfer).\n\n" +
+    "Já avisei a equipe que sua mensagem chegou, então ninguém vai perder você de vista.\n\n" +
+    "Desculpe o transtorno!\n\n" +
+    "Fast — FastCloner";
+
+  await sendSupportMail({
+    to: fromEmail,
+    subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
+    text: texto,
+    inReplyTo: messageId,
+    bcc,
+  });
+  await encaminharParaRevisao({
+    fromEmail,
+    subject,
+    corpo: `(a Fast não conseguiu extrair texto desta mensagem de ${kb} KB — o original está na caixa do suporte@, uid ${mail.uid})`,
+    motivo: "corpo ilegível",
+  });
+  await markSeen(mail.uid);
+  console.log(`[agent/mail] corpo ILEGÍVEL uid=${mail.uid} de=${fromEmail} (${kb}KB) — aluno avisado, INCIDENTE aberto`);
+  return "escalated";
+}
+
 async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "skipped" | "escalated" | "bounce"> {
   const raw = mail.raw;
   const fromHeader = header(raw, "From");
@@ -303,6 +348,13 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   const skip = shouldSkip(raw, fromEmail);
   const text = skip ? "" : mailText(raw);
   if (skip || text.length < 5) {
+    // #261: "não consegui ler" e "não tem nada pra ler" são coisas diferentes,
+    // e antes as duas davam no mesmo markSeen mudo. Mensagem de gente, com
+    // tamanho de gente, e mesmo assim sem uma linha de texto = a Fast está
+    // cega, não a caixa está vazia. Isso vira caso, não silêncio.
+    if (!skip && fromEmail.includes("@") && raw.length >= CORPO_ILEGIVEL_MIN_BYTES) {
+      return responderCorpoIlegivel(mail, fromEmail, subject, messageId, bcc);
+    }
     await markSeen(mail.uid);
     return "skipped";
   }
