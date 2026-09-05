@@ -37,12 +37,24 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
   const failures = (data ?? []) as unknown as RawFailure[];
   if (!failures.length) return 0;
 
-  // Falhas já contabilizadas (uma query só)
-  const { data: seenRaw } = await admin
-    .from("incident_occurrences" as never)
-    .select("kind, ref_id")
-    .in("ref_id", failures.map((f) => f.id));
-  const seen = (seenRaw ?? []) as unknown as Array<{ kind: string; ref_id: string }>;
+  // Falhas já contabilizadas — a GUARDA do dedupe. ⚠️ Teto de 1000 do
+  // PostgREST (incidente 72a4c9db): .in() com a lista inteira devolve no
+  // máximo 1000 linhas em silêncio; com o dedupe cego a MESMA falha seria
+  // recontada (occurrences inflado, incidente fechado reaberto à toa).
+  // Blocos de 200 ref_ids: URL curta e, no pior caso teórico (3 kinds pro
+  // mesmo ref_id), 600 linhas por bloco — sempre abaixo do teto.
+  // Guarda que falha ABORTA (throw): seguir com Set vazio é recontar tudo.
+  const seen: Array<{ kind: string; ref_id: string }> = [];
+  const refIds = failures.map((f) => f.id).filter(Boolean);
+  const CHUNK = 200;
+  for (let i = 0; i < refIds.length; i += CHUNK) {
+    const { data: seenRaw, error: seenErr } = await admin
+      .from("incident_occurrences" as never)
+      .select("kind, ref_id")
+      .in("ref_id", refIds.slice(i, i + CHUNK));
+    if (seenErr) throw new Error(`[incidents.sync] guarda do dedupe falhou: ${seenErr.message}`);
+    seen.push(...((seenRaw ?? []) as unknown as Array<{ kind: string; ref_id: string }>));
+  }
   const seenSet = new Set(seen.map((s) => `${s.kind}|${s.ref_id}`));
 
   let created = 0;

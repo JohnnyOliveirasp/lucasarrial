@@ -9,6 +9,7 @@
  * cancela direto no Hotmart não tem motivo aqui — a UI mostra isso.
  */
 import type { getAdmin } from "@/lib/db/admin";
+import { fetchAllPages } from "@/lib/db/paginate";
 
 /** Produto da plataforma na Hotmart (mesmo id usado nas análises de venda). */
 const HOTMART_PRODUCT_ID = "7851642";
@@ -45,28 +46,56 @@ export type ChurnSummary = {
 };
 
 export async function computeChurn(admin: ReturnType<typeof getAdmin>): Promise<ChurnSummary> {
-  const [cancelRes, approvedRes, surveyRes] = await Promise.all([
-    admin
-      .from("payment_events")
-      .select("payload, received_at")
-      .eq("event_type", "SUBSCRIPTION_CANCELLATION"),
-    admin.from("payment_events").select("buyer_email, payload").eq("event_type", "PURCHASE_APPROVED"),
-    admin
-      .from("subscription_cancellations")
-      .select("user_id, reason, detail, created_at")
-      .order("created_at", { ascending: false }),
+  // ⚠️ Teto silencioso de 1000 do PostgREST (incidente 72a4c9db): .select()
+  // sem .range() devolve NO MÁXIMO 1000 linhas, sem erro. payment_events
+  // passou de 1000 PURCHASE_APPROVED em 19/08 (1099 medidas) e os Sets
+  // paid/freeOnly ficaram cegos pra ~99 compras — o churn pago×trial do
+  // /admin saía ERRADO. Paginar sempre, com ordem estável, até a página vir
+  // incompleta; falha ABORTA (nunca degradar pra Set vazio).
+  const [cancelRows, approvedRows, surveyRowsRaw] = await Promise.all([
+    fetchAllPages("payment_events SUBSCRIPTION_CANCELLATION", (from, to) =>
+      admin
+        .from("payment_events")
+        .select("payload, received_at")
+        .eq("event_type", "SUBSCRIPTION_CANCELLATION")
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllPages("payment_events PURCHASE_APPROVED", (from, to) =>
+      admin
+        .from("payment_events")
+        .select("buyer_email, payload")
+        .eq("event_type", "PURCHASE_APPROVED")
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    // created_at desc preserva a semântica "1ª resposta vista = mais recente";
+    // id desempata (created_at pode colidir) pra ordem ser estável entre páginas.
+    fetchAllPages("subscription_cancellations", (from, to) =>
+      admin
+        .from("subscription_cancellations")
+        .select("user_id, reason, detail, created_at")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
   // user_id → e-mail (FK da pesquisa aponta pra auth.users, sem embed)
-  const surveyRows = (surveyRes.data ?? []) as Array<{
+  const surveyRows = surveyRowsRaw as Array<{
     user_id: string | null;
     reason: string | null;
     detail: string | null;
   }>;
   const surveyUserIds = [...new Set(surveyRows.map((r) => r.user_id).filter(Boolean))] as string[];
   const emailById = new Map<string, string>();
-  if (surveyUserIds.length > 0) {
-    const { data: profs } = await admin.from("profiles").select("id, email").in("id", surveyUserIds);
+  // .in() em blocos de 500 (mesmo padrão do fix do orphan-outreach, c5f67bd):
+  // URL não estoura e cada bloco devolve ≤500 linhas, abaixo do teto de 1000.
+  const CHUNK = 500;
+  for (let i = 0; i < surveyUserIds.length; i += CHUNK) {
+    const chunk = surveyUserIds.slice(i, i + CHUNK);
+    const { data: profs, error } = await admin.from("profiles").select("id, email").in("id", chunk);
+    if (error) throw new Error(`[churn] profiles falhou: ${error.message}`);
     for (const p of (profs ?? []) as { id: string; email: string | null }[]) {
       if (p.email) emailById.set(p.id, p.email.toLowerCase());
     }
@@ -75,7 +104,7 @@ export async function computeChurn(admin: ReturnType<typeof getAdmin>): Promise<
   // Assinante é PAGANTE se alguma compra aprovada teve valor > 0.
   const paid = new Set<string>();
   const freeOnly = new Set<string>();
-  for (const row of (approvedRes.data ?? []) as { buyer_email: string | null; payload: CancelPayload }[]) {
+  for (const row of approvedRows as { buyer_email: string | null; payload: CancelPayload }[]) {
     const email = (row.buyer_email ?? "").toLowerCase();
     const d = row.payload?.data;
     if (isTestEmail(email) || String(d?.product?.id ?? "") !== HOTMART_PRODUCT_ID) continue;
@@ -89,7 +118,7 @@ export async function computeChurn(admin: ReturnType<typeof getAdmin>): Promise<
 
   // 1º cancelamento de cada e-mail (o mesmo assinante pode gerar 2+ eventos)
   const canceledAt = new Map<string, string>();
-  for (const row of (cancelRes.data ?? []) as { payload: CancelPayload; received_at: string }[]) {
+  for (const row of cancelRows as { payload: CancelPayload; received_at: string }[]) {
     const d = row.payload?.data;
     const email = (d?.subscriber?.email || d?.buyer?.email || "").toLowerCase();
     const product = String(d?.product?.id ?? d?.subscription?.product?.id ?? "");

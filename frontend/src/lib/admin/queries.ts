@@ -4,6 +4,7 @@
  * em cima do modelo de custo travado.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { fetchAllPages } from "@/lib/db/paginate";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import {
@@ -128,23 +129,37 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
   const admin = getAdmin();
   const { since, until } = range;
 
-  const [mRes, fRes, cRes, spendRes, billing, courtesyRes, trialRes] = await Promise.all([
+  const [mRes, fRes, cRes, spendRows, billing, courtesyRows, trialRes] = await Promise.all([
     admin.rpc("admin_metrics", { p_since: since, p_until: until }),
     admin.rpc("admin_finance", { p_since: since, p_until: until }),
     admin.rpc("admin_video_clones", { p_since: since, p_until: until }),
-    admin
-      .from("runpod_spend_log")
-      .select("at, balance_usd")
-      .gte("at", since)
-      .lt("at", until)
-      .order("at", { ascending: true }),
+    // ⚠️ Teto de 1000 do PostgREST (incidente 72a4c9db): num período longo
+    // (ano inteiro) as leituras passam de 1000 e o gasto REAL de GPU do
+    // período encolheria em silêncio → lucro inflado. PK é `at` → ordem
+    // estável; falha aborta em vez de calcular custo com lista incompleta.
+    fetchAllPages("runpod_spend_log período", (from, to) =>
+      admin
+        .from("runpod_spend_log")
+        .select("at, balance_usd")
+        .gte("at", since)
+        .lt("at", until)
+        .order("at", { ascending: true })
+        .range(from, to),
+    ),
     getRunpodBilling(),
-    // Cortesias (mig 53) concedidas no período — entram no KPI "Promoção (dado)"
-    admin
-      .from("courtesy_grants")
-      .select("amount")
-      .gte("granted_at", since)
-      .lt("granted_at", until),
+    // Cortesias (mig 53) concedidas no período — entram no KPI "Promoção (dado)".
+    // Mesmo teto de 1000: campanha grande truncaria o KPI em silêncio.
+    // Ordem estável = PK (campaign_id, email).
+    fetchAllPages("courtesy_grants período", (from, to) =>
+      admin
+        .from("courtesy_grants")
+        .select("amount")
+        .gte("granted_at", since)
+        .lt("granted_at", until)
+        .order("campaign_id", { ascending: true })
+        .order("email", { ascending: true })
+        .range(from, to),
+    ),
     admin.rpc("admin_trial_stats"),
   ]);
 
@@ -204,7 +219,7 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
 
   // ---- GPU RunPod REAL (mig 52): queda de saldo entre leituras no período.
   // Recarga faz o saldo SUBIR → o par fica negativo → ignorado (max 0).
-  const readings = ((spendRes.data ?? []) as unknown as { at: string; balance_usd: number }[]);
+  const readings = spendRows as unknown as { at: string; balance_usd: number }[];
   let gpuRealUsd = 0;
   for (let i = 1; i < readings.length; i++) {
     gpuRealUsd += Math.max(0, readings[i - 1].balance_usd - readings[i].balance_usd);
@@ -233,7 +248,7 @@ export async function getAdminData(range: DateRange): Promise<AdminData> {
   // (assinaturas R$0 valorizadas a preço de tabela) aparece SEPARADA ao lado,
   // com o "total c/ promoção" escrito — os dois números sempre visíveis.
   // Cortesias valorizadas na régua do plano (180k cr = R$97) somam à promoção.
-  const courtesyCredits = ((courtesyRes.data ?? []) as { amount: number }[]).reduce(
+  const courtesyCredits = (courtesyRows as { amount: number }[]).reduce(
     (s, g) => s + g.amount,
     0,
   );

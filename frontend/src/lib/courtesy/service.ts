@@ -15,6 +15,7 @@
  * Server-only (service_role). NUNCA importar no client.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { fetchAllPages } from "@/lib/db/paginate";
 import { addExtraCredits, resolveUserIdByEmail } from "@/lib/credits/service";
 import type { CourtesyCampaignRow } from "@/lib/db/types";
 
@@ -41,17 +42,32 @@ const refIdOf = (campaignId: string, email: string) => `${campaignId}:${email}`;
 /** Lista campanhas + estatísticas de concessão/expiração (painel admin). */
 export async function listCourtesyCampaigns(): Promise<CourtesyCampaignWithStats[]> {
   const admin = getAdmin();
-  const [campsRes, grantsRes] = await Promise.all([
-    admin.from("courtesy_campaigns").select("*").order("created_at", { ascending: false }),
-    admin
-      .from("courtesy_grants")
-      .select("campaign_id, amount, granted_at, expired_at, remaining_expired"),
+  // ⚠️ Teto de 1000 do PostgREST (incidente 72a4c9db): .select() sem .range()
+  // corta em 1000 linhas em silêncio — uma campanha grande (>1000 e-mails)
+  // mostraria estatística truncada no painel. Paginado com ordem estável
+  // (created_at+id nas campanhas; PK campaign_id+email nos grants); falha
+  // aborta (fetchAllPages lança), mesmo comportamento dos throws antigos.
+  const [camps, grants] = await Promise.all([
+    fetchAllPages("courtesy_campaigns", (from, to) =>
+      admin
+        .from("courtesy_campaigns")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllPages("courtesy_grants stats", (from, to) =>
+      admin
+        .from("courtesy_grants")
+        .select("campaign_id, amount, granted_at, expired_at, remaining_expired")
+        .order("campaign_id", { ascending: true })
+        .order("email", { ascending: true })
+        .range(from, to),
+    ),
   ]);
-  if (campsRes.error) throw new Error(campsRes.error.message);
-  if (grantsRes.error) throw new Error(grantsRes.error.message);
 
   const stats = new Map<string, Omit<CourtesyCampaignWithStats, keyof CourtesyCampaignRow>>();
-  for (const g of grantsRes.data ?? []) {
+  for (const g of grants) {
     const s = stats.get(g.campaign_id) ?? {
       people: 0,
       granted_count: 0,
@@ -70,7 +86,7 @@ export async function listCourtesyCampaigns(): Promise<CourtesyCampaignWithStats
     }
     stats.set(g.campaign_id, s);
   }
-  return (campsRes.data ?? []).map((c) => ({
+  return camps.map((c) => ({
     ...c,
     ...(stats.get(c.id) ?? {
       people: 0,
