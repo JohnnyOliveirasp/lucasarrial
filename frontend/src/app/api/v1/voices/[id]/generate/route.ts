@@ -47,10 +47,37 @@ import {
   createPresignedPut,
 } from "@/lib/r2/presigned";
 import { runpodSubmitInference, webhookUrlFor } from "@/lib/runpod/client";
-import { faseTelemetriaInput } from "@/lib/generations/fase-telemetria";
+import {
+  faseTelemetriaInput,
+  faseTelemetriaMotivoDesligada,
+} from "@/lib/generations/fase-telemetria";
 import { inferenceExecutionTimeoutMs } from "@/lib/generations/execucao";
+import { logger } from "@/lib/logger/server";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+// Telemetria de fase desligada avisa UMA vez por processo (incidente
+// d3d8d1b2, #15). Uma vez, não por geração: senão vira ruído em cima de um
+// fato que é sempre o mesmo e o log deixa de ser lido. O flag é por instância
+// — cada boot volta a avisar, que é o momento em que alguém pode agir.
+let faseTelemetriaAvisada = false;
+
+function avisaSeTelemetriaDeFaseDesligada(): void {
+  try {
+    if (faseTelemetriaAvisada) return;
+    const motivo = faseTelemetriaMotivoDesligada();
+    if (!motivo) return;
+    faseTelemetriaAvisada = true;
+    logger.warn("api", "fase_telemetria.desligada", {
+      motivo,
+      incidente: "d3d8d1b2 (#15)",
+      efeito:
+        "gerações que estourarem o executionTimeout não vão registrar qa.fase_corrente — a fase pendurada se perde",
+    });
+  } catch {
+    // Um aviso de telemetria JAMAIS pode derrubar a geração do aluno.
+  }
+}
 
 const PRESIGN_EXPIRES = 60 * 60; // 1h
 // Cobre ~2 min de fala em pt-BR (~150 wpm). Bate com o TEXT_MAX da UI
@@ -283,6 +310,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     output_upload_url: outputUploadUrl,
     ...faseTelemetriaInput(generationId),
   };
+  avisaSeTelemetriaDeFaseDesligada();
   if (loraUrl) inferenceInput.lora_url = loraUrl;
   if (refUrl) inferenceInput.prompt_wav_url = refUrl;
 
