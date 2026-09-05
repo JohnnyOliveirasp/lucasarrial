@@ -112,6 +112,45 @@ function jobLines(lines: JobLine[]): string {
     .join("\n");
 }
 
+/**
+ * COMO O EXTRATO É ROTULADO PRO MODELO (#260, 05/09).
+ *
+ * O QUE ACONTECEU: a Fast AFIRMOU pra uma aluna um estorno que não existia.
+ * O extrato que ia pro prompt trazia só `kind` e `note`, e todo estorno é
+ * gravado por `add_extra_credits` (scripts/13_credits.sql:131) com
+ * kind='extra_purchase' e note='pacote avulso' FIXOS. Ou seja: no texto que o
+ * modelo lia, estorno e compra de pacote eram a MESMA linha, palavra por
+ * palavra. Ele leu três estornos de 19/08 como compras avulsas.
+ *
+ * A ÚNICA coisa que distingue os dois é `ref_type` — que não vinha no select.
+ * É a mesma armadilha já registrada na casa: estorno se confere por
+ * `ref_type`, NUNCA por `kind`.
+ *
+ * NÃO é só `generation_refund`: existem 12 ref_types de estorno hoje
+ * (generation, video_clone, voice_train, image, image_video, studio_audio,
+ * studio_face, studio_montage, studio_scene, edicao_broll, edicao_captions),
+ * e todos caem no mesmo 'extra_purchase / pacote avulso'. Por isso a regra é o
+ * SUFIXO `_refund`, e não uma lista fixa — ferramenta nova que estorne amanhã
+ * já nasce rotulada certo em vez de virar o próximo #260.
+ */
+export function rotuloTransacao(t: { kind: string; ref_type: string | null; amount: number }): string {
+  const ref = (t.ref_type ?? "").toLowerCase();
+  if (ref.endsWith("_refund")) return "ESTORNO — devolução de crédito por falha nossa (NÃO é compra)";
+  if (ref === "courtesy_grant") return "cortesia dada pela equipe (NÃO é compra)";
+  if (t.amount < 0) return "consumo (crédito gasto em um trabalho)";
+  if (t.kind === "subscription_grant") return "créditos do plano (renovação da assinatura)";
+  if (t.kind === "extra_purchase") return "compra de pacote avulso";
+  return t.kind;
+}
+
+/**
+ * Janela do extrato mandado pro modelo. Movimentação velha lida como "recente"
+ * foi parte do #260 — os estornos que ele citou eram de 17 dias antes. O bloco
+ * diz a janela em voz alta (ver `buildAccountContext`), porque uma lista vazia
+ * aqui NÃO pode ser lida como "esta conta nunca teve movimentação".
+ */
+const EXTRATO_DIAS = 7;
+
 /** Janela de garantia da Hotmart, em dias, contada da aprovação da compra. */
 const GARANTIA_DIAS = 7;
 
@@ -214,7 +253,16 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       // das 16 cenas" e era o projeto ERRADO (1 cena) — ela apagou esse. Sem o
       // número de cenas o bot não tem como distinguir um projeto do outro.
       recent("video_projects", "name,status,error_message,created_at,scene_count"),
-      admin.from("credit_transactions").select("kind,amount,note,created_at").eq("user_id", profileId).order("created_at", { ascending: false }).limit(6),
+      // ref_type/ref_id são OBRIGATÓRIOS aqui (#260): sem eles estorno e compra
+      // avulsa chegam idênticos no prompt. Janela de 7 dias pra não apresentar
+      // movimentação velha como recente.
+      admin
+        .from("credit_transactions")
+        .select("kind,amount,note,ref_type,ref_id,created_at")
+        .eq("user_id", profileId)
+        .gte("created_at", new Date(Date.now() - EXTRATO_DIAS * 24 * 60 * 60 * 1000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(6),
     ]);
 
     type R = { name?: string | null; status?: string | null; error_message?: string | null; created_at?: string | null; scene_count?: number | null };
@@ -235,8 +283,23 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       ...lines("Vídeo História", videos.data),
     ];
 
-    const txLines = ((txs.data ?? []) as { kind: string; amount: number; note: string | null; created_at: string }[])
-      .map((t) => `  - ${dtBR(t.created_at)}: ${t.amount > 0 ? "+" : ""}${t.amount} cr (${t.kind}${t.note ? ` — ${t.note.slice(0, 80)}` : ""})`)
+    // Cada linha vai ROTULADA pelo ref_type (#260). O rótulo vem antes do
+    // kind/note crus de propósito: 'extra_purchase — pacote avulso' foi
+    // literalmente o texto que o modelo leu como compra num estorno.
+    const txLines = (
+      (txs.data ?? []) as {
+        kind: string;
+        amount: number;
+        note: string | null;
+        ref_type: string | null;
+        ref_id: string | null;
+        created_at: string;
+      }[]
+    )
+      .map((t) => {
+        const cru = `${t.kind}${t.ref_type ? `/${t.ref_type}` : ""}${t.note ? ` — ${t.note.slice(0, 80)}` : ""}`;
+        return `  - ${dtBR(t.created_at)}: ${t.amount > 0 ? "+" : ""}${t.amount} cr · ${rotuloTransacao(t)} [${cru}]`;
+      })
       .join("\n");
 
     const saldo = (profile.credits_subscription ?? 0) + (profile.credits_extra ?? 0);
@@ -257,7 +320,14 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       `Cadastro em: ${dtBR(profile.created_at)}`,
       garantia,
       jobs.length ? `Últimos trabalhos (3 por produto):\n${jobLines(jobs)}` : "Nenhum trabalho ainda (conta sem uso).",
-      txLines ? `Últimas movimentações de crédito:\n${txLines}` : "",
+      // A janela precisa estar ESCRITA, e o vazio precisa dizer o que é. Sem
+      // isto o #260 só troca de lado: uma lista vazia por causa do recorte de
+      // 7 dias seria lida como "esta conta nunca comprou/nunca foi estornada",
+      // e a Fast afirmaria a ausência com a mesma confiança com que afirmou o
+      // estorno inexistente.
+      txLines
+        ? `Movimentações de crédito nos últimos ${EXTRATO_DIAS} dias (o rótulo depois do "·" é o que MANDA — obedeça a ele, não ao texto entre colchetes):\n${txLines}`
+        : `Nenhuma movimentação de crédito nos últimos ${EXTRATO_DIAS} dias. ATENÇÃO: isto é só a janela consultada — NÃO afirme que a pessoa nunca comprou, nunca gastou ou nunca foi estornada. Se ela perguntar de algo mais antigo, diga que a equipe vai conferir.`,
     ]
       .filter(Boolean)
       .join("\n");
