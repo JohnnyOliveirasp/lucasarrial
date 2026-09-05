@@ -59,6 +59,7 @@ import { extrairAudioDeArquivo } from "./video-audio";
 import { escolherReferenciaFrontal } from "./referencia";
 import { dispararTreinoOnboarding } from "./treino";
 import { decidirVozOnboarding, type VozOnboarding } from "./veredito-audio";
+import { decidirResgate } from "./resgate-audio";
 
 type Admin = SupabaseClient<Database>;
 
@@ -578,12 +579,25 @@ export async function importTrainingAudios(
         file = await downloadDriveFile(fileId, MAX_AUDIO_BYTES);
       } catch (eDown) {
         const msgDown = eDown instanceof Error ? eDown.message : String(eDown);
-        // SÓ tamanho entra no resgate. Arquivo privado, HTML de login e id
-        // inválido continuam falhando igual: ali o problema não é o teto e
-        // fingir que é esconderia o defeito de verdade.
-        const soTamanho = /teto \d+ ?MB|passa do teto|passou de \d+ ?MB/i.test(msgDown);
-        if (!soTamanho || streamsRestantes <= 0) throw eDown;
-        if (Date.now() > RESGATE_DEADLINE) throw eDown;
+        // SÓ tamanho entra no resgate, e só quando o arquivo CABE no teto do
+        // próprio resgate. Arquivo privado, HTML de login e id inválido
+        // continuam falhando igual: ali o problema não é o teto e fingir que é
+        // esconderia o defeito de verdade.
+        //
+        // #194 (29/08): a vaga era debitada ANTES de saber se o arquivo cabia,
+        // então os dois .mp4 de 10,9GB e 9,4GB que abrem a pasta do Johnathan
+        // queimavam duas das três vagas sem entregar byte nenhum — e o de
+        // 490MB, que sozinho tem os 28min22s que abrem a porta de 20min, ficava
+        // sem vaga. A decisão virou função pura e testada, e só `resgatar: true`
+        // gasta vaga.
+        const decisao = decidirResgate({
+          msgErro: msgDown,
+          streamsRestantes,
+          agoraMs: Date.now(),
+          deadlineMs: RESGATE_DEADLINE,
+          tetoResgateBytes: MAX_AUDIO_SOURCE_BYTES,
+        });
+        if (!decisao.resgatar) throw eDown;
         streamsRestantes--;
         file = await audioDeVideoGrande(fileId);
       }
