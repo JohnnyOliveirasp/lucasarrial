@@ -15,26 +15,12 @@ import { mp3KeyFromWav, transcodeGenerationToMp3 } from "@/lib/audio/transcode";
 import { logger } from "@/lib/logger/server";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
 
-export type GenerationOutput = {
-  sample_rate?: number;
-  duration_s?: number;
-  elapsed_s?: number;
-  /** Telemetria do QA do worker (mig 94, #52): echo/coverage/intrusion/regens/rescue. */
-  qa?: Record<string, unknown>;
-  coverage_failed_chunk?: number;
-  coverage_best?: number;
-  coverage_min?: number;
-};
-
-/** O que vai pra `generations.qa` — o bloco `qa` + os campos coverage_* da falha. */
-export function qaTelemetria(out: GenerationOutput): Record<string, unknown> | null {
-  const extra: Record<string, unknown> = {};
-  if (typeof out.coverage_failed_chunk === "number") extra.coverage_failed_chunk = out.coverage_failed_chunk;
-  if (typeof out.coverage_best === "number") extra.coverage_best = out.coverage_best;
-  if (typeof out.coverage_min === "number") extra.coverage_min = out.coverage_min;
-  if (!out.qa && Object.keys(extra).length === 0) return null;
-  return { ...(out.qa ?? {}), ...extra };
-}
+// O contrato de saída do worker e a lista branca do `qa` moram em
+// `telemetria-saida.ts`: lógica pura, coberta por `node --test`, que este
+// arquivo (server-only, com R2/Supabase/ffmpeg) não conseguiria carregar.
+// Reexportados aqui pra não mexer em quem já importa daqui.
+export { qaTelemetria, type GenerationOutput } from "./telemetria-saida";
+import { qaTelemetria, type GenerationOutput } from "./telemetria-saida";
 
 /**
  * Teto FÍSICO de letras por segundo. Acima disso o áudio não contém o texto —
