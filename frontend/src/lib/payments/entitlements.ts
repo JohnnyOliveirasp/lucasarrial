@@ -15,6 +15,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { donoDoEntitlement } from "@/lib/payments/vinculo";
+import { resolveGrantStatus, resolveRevokeStatus } from "./entitlement-status";
 import type {
   EntitlementStatus,
   EntitlementUpdate,
@@ -30,6 +31,13 @@ type GrantInput = {
   offerCode?: string | null;
   accessUntil?: string | null; // ISO; NULL = vitalício (pagamento único)
   rawEvent?: unknown;
+  /**
+   * Este evento é DINHEIRO NOVO confirmado (PURCHASE_APPROVED pago)? Só ele
+   * pode reativar um entitlement marcado como estornado/contestado. O
+   * PURCHASE_COMPLETE (eco da garantia, mesma cobrança) NÃO é — foi ele que
+   * apagou a marca de chargeback do Marlon em 28/08. Ver entitlement-status.ts.
+   */
+  newPayment?: boolean;
 };
 
 type RevokeInput = {
@@ -40,10 +48,52 @@ type RevokeInput = {
   rawEvent?: unknown;
 };
 
+export type GrantResult = {
+  /** status que ficou gravado no entitlement */
+  statusFinal: EntitlementStatus;
+  /** true = havia estorno/contestação e NADA foi reescrito (a prova ficou de pé) */
+  terminalPreservado: boolean;
+};
+
+export type RevokeResult = {
+  /** false = nenhum entitlement com esse external_id (o caller decide se é erro) */
+  found: boolean;
+  /**
+   * Dono do entitlement (null se órfão ou não encontrado). Vem junto pro caller
+   * agir sobre a MESMA pessoa da compra — é por ele que o estorno acha de quem
+   * zerar o crédito de mensalidade (mig 108), sem depender do e-mail do payload.
+   */
+  userId: string | null;
+  /** status que ficou (ou já estava) gravado no entitlement */
+  statusFinal: EntitlementStatus | null;
+  /** true = o status pedido era mais fraco que o atual e foi IGNORADO */
+  terminalPreservado: boolean;
+};
+
 /** Libera/renova acesso. Idempotente por (provider, external_id). */
-export async function grantAccess(input: GrantInput): Promise<void> {
+export async function grantAccess(input: GrantInput): Promise<GrantResult> {
   const admin = getAdmin();
   const email = input.buyerEmail.trim().toLowerCase();
+
+  // Estado ANTES de escrever: um evento de compra que chega DEPOIS de um
+  // estorno/contestação não pode apagar essa marca (ver entitlement-status.ts).
+  // A MESMA linha traz o `user_id` usado pela guarda do #222 logo abaixo.
+  const { data: existing } = await admin
+    .from("entitlements")
+    .select("status, user_id")
+    .eq("provider", input.provider)
+    .eq("external_id", input.externalId)
+    .maybeSingle();
+
+  const current = (existing?.status ?? null) as EntitlementStatus | null;
+  const statusFinal = resolveGrantStatus(current, input.newPayment === true);
+
+  if (statusFinal !== "active") {
+    // Terminal preservado: não reescrevemos NADA — nem access_until, nem
+    // raw_event, nem updated_at. O payload da contestação/estorno é a prova e
+    // fica intacto, com o carimbo de tempo do evento que realmente mandou.
+    return { statusFinal, terminalPreservado: true };
+  }
 
   // ⚠️ O lookup por e-mail só ADICIONA dono, nunca REMOVE (incidente #222).
   //
@@ -62,13 +112,7 @@ export async function grantAccess(input: GrantInput): Promise<void> {
   const userIdDoEmail = await findUserIdByEmail(email);
   let userId = userIdDoEmail;
   if (!userIdDoEmail) {
-    const { data: atual } = await admin
-      .from("entitlements")
-      .select("user_id")
-      .eq("provider", input.provider)
-      .eq("external_id", input.externalId)
-      .maybeSingle();
-    userId = donoDoEntitlement(userIdDoEmail, atual?.user_id ?? null);
+    userId = donoDoEntitlement(userIdDoEmail, existing?.user_id ?? null);
   }
 
   await admin.from("entitlements").upsert(
@@ -88,27 +132,53 @@ export async function grantAccess(input: GrantInput): Promise<void> {
   );
 
   if (userId) await recomputeProfileAccess(userId);
+  return { statusFinal, terminalPreservado: false };
 }
 
 /**
  * Revoga/suspende acesso. Idempotente.
- * Devolve true se um entitlement foi encontrado e atualizado; false se o
- * externalId não casa com nenhum (revoke antes do grant, OU id extraído
- * errado do payload — o caller decide se isso é erro e registra).
+ *
+ * `found` = o entitlement existe; false quando o externalId não casa com
+ * nenhum (revoke antes do grant, OU id extraído errado do payload — o caller
+ * decide se isso é erro e registra).
+ *
+ * Um status mais FRACO que o atual é ignorado: "canceled"/"expired" não
+ * sobrescrevem "chargeback"/"refunded" (ver entitlement-status.ts).
+ *
+ * ⚠️ `terminalPreservado` fala do STATUS do entitlement, não do dinheiro. Um
+ * estorno que chega por cima de uma contestação não reescreve o status, mas o
+ * caller AINDA precisa zerar o crédito daquela transação — por isso `userId`
+ * é devolvido nos dois caminhos. Ver a nota no route.ts.
  */
-export async function revokeAccess(input: RevokeInput): Promise<boolean> {
+export async function revokeAccess(input: RevokeInput): Promise<RevokeResult> {
   const admin = getAdmin();
   const { data: existing } = await admin
     .from("entitlements")
-    .select("id, user_id")
+    .select("id, user_id, status")
     .eq("provider", input.provider)
     .eq("external_id", input.externalId)
     .maybeSingle();
 
-  if (!existing) return false; // nenhum entitlement com esse external_id
+  // nenhum entitlement com esse external_id
+  if (!existing) {
+    return { found: false, userId: null, statusFinal: null, terminalPreservado: false };
+  }
+
+  const current = existing.status as EntitlementStatus;
+  const statusFinal = resolveRevokeStatus(current, input.status);
+  if (statusFinal !== input.status) {
+    // Evento mais fraco chegando por cima de um estorno/contestação: NADA é
+    // reescrito (nem access_until, nem raw_event) — a prova fica de pé.
+    return {
+      found: true,
+      userId: existing.user_id ?? null,
+      statusFinal,
+      terminalPreservado: true,
+    };
+  }
 
   const patch: EntitlementUpdate = {
-    status: input.status,
+    status: statusFinal,
     raw_event: (input.rawEvent ?? null) as Json,
     updated_at: new Date().toISOString(),
   };
@@ -117,7 +187,12 @@ export async function revokeAccess(input: RevokeInput): Promise<boolean> {
 
   await admin.from("entitlements").update(patch).eq("id", existing.id);
   if (existing.user_id) await recomputeProfileAccess(existing.user_id);
-  return true;
+  return {
+    found: true,
+    userId: existing.user_id ?? null,
+    statusFinal,
+    terminalPreservado: false,
+  };
 }
 
 /**
