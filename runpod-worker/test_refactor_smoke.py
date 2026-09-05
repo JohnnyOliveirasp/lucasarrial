@@ -658,6 +658,17 @@ class PecasPurasTest(unittest.TestCase):
         w = np.concatenate([np.zeros(500), np.ones(500) * 0.5, np.zeros(500)]).astype(np.float32)
         self.assertEqual(audio_ops.trim_silence(w).size, 500)
 
+    def test_chunk_max_sobrescrivivel_por_job(self):
+        """chamado 47 (25/08): chunk_max via payload pra A/B por job, sem
+        mexer no default de todo mundo."""
+        from jobs.tts_settings import TtsSettings
+        self.assertEqual(TtsSettings.do_job({}).chunk_max, 160)          # default intacto
+        self.assertEqual(TtsSettings.do_job({"chunk_max_chars": 80}).chunk_max, 80)
+        with mock.patch.dict(os.environ, {"TTS_CHUNK_MAX_CHARS": "120"}):
+            self.assertEqual(TtsSettings.do_job({}).chunk_max, 120)      # env vale sem payload
+            self.assertEqual(TtsSettings.do_job({"chunk_max_chars": 40}).chunk_max, 40)  # payload > env
+        self.assertEqual(TtsSettings.do_job({"chunk_max_chars": 0}).chunk_max, 1)  # piso
+
     def test_faxina_roda_e_nunca_derruba_o_job(self):
         lixo = worker_config.JOB_TMP / "sujeira.bin"
         lixo.parent.mkdir(parents=True, exist_ok=True)

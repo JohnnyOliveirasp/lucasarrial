@@ -50,6 +50,10 @@ class TtsSettings:
 
     # ── Chunking e montagem ────────────────────────────────────────────────
     chunk_max: int
+    """Tamanho maximo do chunk em chars. Sobrescrivivel POR JOB via
+    `chunk_max_chars` (chamado 47, 25/08): fronteira de frase DENTRO do chunk
+    nao recebe o silencio entre chunks — pra medir o efeito disso num job de
+    teste sem mexer no default de todo mundo (mais chunks = mais GPU)."""
     silence_ms: int
     crossfade_ms: int
     trim_enabled: bool
@@ -191,7 +195,9 @@ class TtsSettings:
             # que passa disso e' DESCARTADA e refeita. Com 4.0, quem fala devagar
             # bate no teto: so as tomadas rapidas sobrevivem. Fabricante: 6.0.
             retry_ratio=float(os.environ.get("TTS_RETRY_RATIO", "6.0")),
-            chunk_max=int(os.environ.get("TTS_CHUNK_MAX_CHARS", "160")),
+            # min 1: chunk_max=0 no payload viraria "toda frase e' um chunk"
+            # por acidente — quem quer isso pede 1 explicitamente.
+            chunk_max=max(1, _do_job_ou_env(inp, "chunk_max_chars", "TTS_CHUNK_MAX_CHARS", "160")),
             silence_ms=_do_job_ou_env(inp, "chunk_silence_ms", "TTS_CHUNK_SILENCE_MS", "0"),
             crossfade_ms=_do_job_ou_env(inp, "chunk_crossfade_ms", "TTS_CHUNK_CROSSFADE_MS", "60"),
             trim_enabled=_ligado("TTS_CHUNK_TRIM"),
