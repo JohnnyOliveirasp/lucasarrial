@@ -17,6 +17,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { agentProvider } from "@/lib/agent/provider";
 import { wahaLidToPhone } from "@/lib/agent/waha";
 import type { AgentChatRow, ProfileRow } from "@/lib/db/types";
+import { janelaGarantia, type EventoCompra } from "@/lib/agent/garantia";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
 export async function phoneFromJid(jid: string): Promise<string | null> {
@@ -112,9 +113,6 @@ function jobLines(lines: JobLine[]): string {
     .join("\n");
 }
 
-/** Janela de garantia da Hotmart, em dias, contada da aprovação da compra. */
-const GARANTIA_DIAS = 7;
-
 const diaBR = (d: Date) =>
   d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" });
 
@@ -136,7 +134,7 @@ const diaBR = (d: Date) =>
  * sobre dinheiro. Então a CONTA vem pronta daqui, e o manual só obedece.
  *
  * Conservadora de propósito, nas três pontas:
- *  - usa a compra aprovada MAIS ANTIGA (a janela fecha antes → nunca promete
+ *  - usa a janela que FECHA PRIMEIRO entre as compras pagas (nunca promete
  *    reembolso a mais);
  *  - só considera compra PAGA (`price.value > 0`): adesão de R$0 não tem o que
  *    reembolsar. É a mesma regra do `pagou_de_verdade.cjs`, e existe porque a
@@ -149,12 +147,19 @@ const diaBR = (d: Date) =>
  * O e-mail do perfil pode não ser o e-mail da compra (o caso "duas contas" do
  * #195). Nesse caso não achamos a compra e a linha manda escalar, que é o
  * desfecho certo: quem decide reembolso de conta ambígua é gente.
+ *
+ * ── A CONSTANTE DE 7 DIAS SAIU DAQUI (incidente #265, 05/09/2026) ───────────
+ * A janela vinha de `aprovação + 7 dias`. Sete não é a janela deste produto e
+ * nunca foi — a conta certa, o que foi medido e por que não existe constante
+ * de reserva estão em `garantia.ts`, junto da função pura e dos testes dela.
+ * Aqui ficou só a consulta e o texto.
  */
+export const GARANTIA_ESCALAR =
+  `GARANTIA HOTMART: NÃO foi possível confirmar a janela de garantia deste e-mail. ` +
+  `NÃO afirme nada sobre prazo de garantia e escale pro humano.`;
+
 async function linhaGarantiaHotmart(email: string | null): Promise<string> {
-  const ESCALAR =
-    `GARANTIA HOTMART: NÃO foi possível confirmar a data da compra deste e-mail. ` +
-    `NÃO afirme nada sobre a janela de ${GARANTIA_DIAS} dias e escale pro humano.`;
-  if (!email) return ESCALAR;
+  if (!email) return GARANTIA_ESCALAR;
   try {
     const { data, error } = await getAdmin()
       .from("payment_events")
@@ -163,31 +168,24 @@ async function linhaGarantiaHotmart(email: string | null): Promise<string> {
       .eq("event_type", "PURCHASE_APPROVED")
       .ilike("buyer_email", email);
     // erro do banco NÃO pode virar "não tem compra": devolve ESCALAR igual.
-    if (error || !data?.length) return ESCALAR;
+    if (error || !data?.length) return GARANTIA_ESCALAR;
 
-    type Ev = { payload?: { data?: { purchase?: { approved_date?: unknown; order_date?: unknown; price?: { value?: unknown } } } } };
-    const ms = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && /^\d+$/.test(v) ? Number(v) : null);
-
-    const aprovadas = (data as Ev[])
-      .map((e) => e.payload?.data?.purchase)
-      .filter((c) => Number(c?.price?.value ?? 0) > 0)
-      .map((c) => ms(c?.approved_date) ?? ms(c?.order_date))
-      .filter((t): t is number => typeof t === "number" && Number.isFinite(t) && t > 0);
-    if (!aprovadas.length) return ESCALAR;
-
-    const compra = new Date(Math.min(...aprovadas));
-    const fim = new Date(compra.getTime() + GARANTIA_DIAS * 86_400_000);
     const agora = new Date();
+    const j = janelaGarantia(data as EventoCompra[], agora);
+    if (!j) return GARANTIA_ESCALAR;
 
-    return agora.getTime() <= fim.getTime()
-      ? `GARANTIA HOTMART (calculado pelo sistema — obedeça esta linha): primeira compra paga em ${diaBR(compra)} · ` +
-        `a janela de ${GARANTIA_DIAS} dias vai até ${diaBR(fim)} · hoje é ${diaBR(agora)} → DENTRO da janela.`
-      : `GARANTIA HOTMART (calculado pelo sistema — obedeça esta linha): primeira compra paga em ${diaBR(compra)} · ` +
-        `a janela de ${GARANTIA_DIAS} dias terminou em ${diaBR(fim)} · hoje é ${diaBR(agora)} → FORA da janela. ` +
+    const cabeca =
+      `GARANTIA HOTMART (calculado pelo sistema — obedeça esta linha): compra paga em ${diaBR(j.compra)} · `;
+    return j.dentro
+      ? cabeca +
+        `a garantia informada pela Hotmart vai até ${diaBR(j.fim)} · hoje é ${diaBR(agora)} → DENTRO da janela. ` +
+        `Cite a DATA, nunca um número de dias: a janela varia por produto.`
+      : cabeca +
+        `a garantia informada pela Hotmart terminou em ${diaBR(j.fim)} · hoje é ${diaBR(agora)} → FORA da janela. ` +
         `NÃO prometa reembolso; escale pro humano. (Renovação mensal NÃO reabre a garantia. Se a pessoa contesta uma ` +
         `cobrança RECENTE de renovação, isso é cobrança indevida — escale, não trate como garantia.)`;
   } catch {
-    return ESCALAR;
+    return GARANTIA_ESCALAR;
   }
 }
 

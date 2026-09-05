@@ -121,7 +121,11 @@ function mailSystemExtra(accountFound: boolean): string {
     // janela, foi o que produziu o "você está dentro dos 7 primeiros dias"
     // enviado a uma compra de 12 dias atrás. Quem diz DENTRO/FORA agora é a
     // linha GARANTIA HOTMART do bloco da conta, calculada em account.ts.
-    `REEMBOLSO/CANCELAMENTO/COBRANÇA: acolha, lamente e diga que a equipe confirma a solicitação em breve; finalize com [ESCALAR: resumo]. NUNCA confirme reembolso você mesma. Sobre a janela de 7 dias, seja obediente à linha GARANTIA HOTMART do bloco da conta: se ela disser FORA, ou não existir, NÃO afirme que há garantia — só diga que a equipe vai verificar.`,
+    // O "7 dias" saiu TAMBÉM do texto abaixo no #265: a janela real varia por
+    // produto (6, 7, 14, 15 ou 30 dias no que a Hotmart já nos mandou), então
+    // repetir "7" aqui reintroduzia pela instrução o número que a conta parou
+    // de usar.
+    `REEMBOLSO/CANCELAMENTO/COBRANÇA: acolha, lamente e diga que a equipe confirma a solicitação em breve; finalize com [ESCALAR: resumo]. NUNCA confirme reembolso você mesma. Sobre a janela de garantia, seja obediente à linha GARANTIA HOTMART do bloco da conta — ela traz a DATA de fim, e a janela NÃO é sempre de 7 dias, então cite a data e nunca um número de dias: se ela disser FORA, ou não existir, NÃO afirme que há garantia — só diga que a equipe vai verificar.`,
     `Se o e-mail NÃO for um aluno/cliente pedindo ajuda (propaganda, spam, notificação de sistema, corrente), responda APENAS a palavra PULAR.`,
   ].join("\n");
 }
