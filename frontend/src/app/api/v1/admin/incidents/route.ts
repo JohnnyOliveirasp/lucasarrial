@@ -74,7 +74,10 @@ export async function POST(request: NextRequest) {
         kind: "reported",
         cause: "reported",
         status: "open",
-        signature: `reported:${randomUUID()}`,
+        // Prefixo "manual" de proposito: este uuid e SORTEADO no insert e nao
+        // identifica aluno nenhum. Sem ele, o campo tem cara de user id e ja
+        // custou duas rondas de investigacao atras de um id que nunca existiu.
+        signature: `reported:manual:${randomUUID()}`,
         title: title.slice(0, 200),
         description: description.slice(0, 4000) || null,
         affected_emails: email ? [email] : [],
@@ -89,6 +92,9 @@ export async function POST(request: NextRequest) {
       by: g.auth.email,
       incident: (insertedRaw as unknown as { id: string } | null)?.id,
       has_attachment: Boolean(attachmentPath),
+      // Chamado sem e-mail nasce irrespondivel: quem pega a fila nao tem como
+      // chegar no aluno. Fica no audit log para dar para medir a frequencia.
+      has_email: Boolean(email),
     });
     return jsonOk({ incident: insertedRaw });
   } catch (e) {
