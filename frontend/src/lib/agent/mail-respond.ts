@@ -22,6 +22,7 @@ import { buildAccountContext } from "./account";
 import { extractEscalation } from "./escalate";
 import { agentEnabled } from "./respond";
 import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
+import { jaRespondida, reservarResposta, liberarReserva } from "./mail-dedupe";
 import { sendSupportMail } from "./mail-smtp";
 import { tratarSeForBounce } from "./mail-bounce-registro";
 import { winbackContextByEmail, applyWinbackMarkers } from "@/lib/winback/conversation";
@@ -247,13 +248,22 @@ async function responderAnexoGrande(
     "Desculpe o transtorno e obrigada!\n\n" +
     "Fast — FastCloner";
 
-  await sendSupportMail({
-    to: fromEmail,
-    subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
-    text: texto,
-    inReplyTo: messageId,
-    bcc,
-  });
+  // Reserva ANTES de enviar e libera se o envio estourar (#259). Vale também
+  // aqui: reentrega de uma mensagem pesada renderia um segundo aviso de "anexo
+  // grande" pro mesmo aluno.
+  await reservarResposta(messageId);
+  try {
+    await sendSupportMail({
+      to: fromEmail,
+      subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
+      text: texto,
+      inReplyTo: messageId,
+      bcc,
+    });
+  } catch (e) {
+    await liberarReserva(messageId);
+    throw e;
+  }
   // O time precisa saber que existe material esperando — mesmo sem o anexo,
   // o assunto e o remetente bastam pra ir atrás na caixa do suporte@.
   await encaminharParaRevisao({
@@ -290,6 +300,19 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     // como skipped pra métrica não inflar e ninguém achar que 5 alunos
     // ficaram sem resposta quando o servidor só ia tentar de novo.
     return bounce.tipo === "falha" && bounce.alunos.length > 0 ? "bounce" : "skipped";
+  }
+
+  // JÁ RESPONDEMOS ESTA MENSAGEM? (#259) Vem depois do bounce (que não fala com
+  // aluno) e ANTES de qualquer caminho que envie e-mail — inclusive o de anexo
+  // grande. `markSeen` sozinho não protege: UID é da cópia, e a mensagem
+  // reentregue chega com uid novo e não lida. Marca como lida e sai calada:
+  // responder de novo é o defeito, não a solução.
+  if (await jaRespondida(messageId)) {
+    await markSeen(mail.uid);
+    console.log(
+      `[agent/mail] uid=${mail.uid} de=${fromEmail} — mensagem JÁ RESPONDIDA (message-id ${messageId}); não responde de novo`,
+    );
+    return "skipped";
   }
 
   if (mail.oversized) {
@@ -368,13 +391,23 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   }
   const replySubject = /^re:/i.test(subject) ? subject : `Re: ${subject}`;
 
-  await sendSupportMail({
-    to: fromEmail,
-    subject: replySubject,
-    text: visible,
-    inReplyTo: messageId,
-    bcc,
-  });
+  // Reserva ANTES de enviar (#259): se o registro fosse depois, um envio que
+  // desse certo com registro falho deixaria a reentrega responder de novo.
+  // Envio que estoura libera a reserva — o `markSeen` também não acontece, e a
+  // próxima varredura precisa poder tentar de novo.
+  await reservarResposta(messageId);
+  try {
+    await sendSupportMail({
+      to: fromEmail,
+      subject: replySubject,
+      text: visible,
+      inReplyTo: messageId,
+      bcc,
+    });
+  } catch (e) {
+    await liberarReserva(messageId);
+    throw e;
+  }
   // TODA escalação abre incidente — técnica ou não (19/08).
   //
   // Antes era `reason && technical`: quando a Fast escalava algo que ela não
