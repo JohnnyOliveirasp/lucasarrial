@@ -1,0 +1,15 @@
+{
+  "_comentario": "Contrato da entrada FIXA da fumaça do Vídeo Clone. Os bytes moram no R2 (repo é público); aqui fica a chave + o sha256, pra fumaça acusar se o material for trocado. Gerado por --publicar-material.",
+  "bucket": "generations-ai-verse-clone",
+  "foto": {
+    "chave": "_casa/fumaca-video-clone/v1/foto.jpg",
+    "sha256": "d4216d936bdcfe2249c81710df8fc5d5aec3904dced8373a9b15b9e086f74b67",
+    "bytes": 50921
+  },
+  "audio": {
+    "chave": "_casa/fumaca-video-clone/v1/audio.wav",
+    "sha256": "d4a0369d164b012a2fc98714cd645498f92d94444a4d20b9a8856815d154bb33",
+    "bytes": 322244,
+    "duracaoSegundos": 6.71
+  }
+}
