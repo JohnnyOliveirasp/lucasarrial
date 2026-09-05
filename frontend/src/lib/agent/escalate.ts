@@ -15,9 +15,17 @@
  * AGENT_TEAM_WHATSAPP e AGENT_TECH_WHATSAPP NÃO são mais lidas. Técnico e
  * humano vão pro mesmo grupo, com rótulo diferente.
  * Best-effort: aviso falhar nunca derruba a resposta ao aluno.
+ *
+ * ⛔ 04/09 — DECISÃO DO LUCAS: o time passou a analisar os casos DENTRO do
+ * FastCloner (painel), então o aviso automático no grupo virou ruído e SAI.
+ * O zap agora depende de `AGENT_ESCALATION_WHATSAPP` (padrão DESLIGADO, ver
+ * `escalate-canais.ts`) — o código continua aqui pra voltar trocando um valor.
+ * Continuam intocados, e é de propósito: o E-MAIL logo abaixo, o CHAMADO
+ * (`abrirChamadoDaEscalacao`) e o WhatsApp da Fast com o ALUNO.
  */
 import { createHash } from "node:crypto";
 
+import { destinosDoAvisoZap } from "@/lib/agent/escalate-canais";
 import { sendAgentText } from "@/lib/agent/provider";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
@@ -48,9 +56,13 @@ async function teamEmails(): Promise<string[]> {
   return [SUPPORT_EMAIL, "johnny.oliveirasp@gmail.com"];
 }
 
-/** Pra onde vai o zap da escalação: SÓ o grupo do time (Johnny, 24/08). */
+/**
+ * Pra onde vai o zap da escalação: era SÓ o grupo do time (Johnny, 24/08) e
+ * desde 04/09 (Lucas) é NINGUÉM, a menos que `AGENT_ESCALATION_WHATSAPP` ligue.
+ * Lista vazia = o laço de envio simplesmente não roda.
+ */
 function escalationJids(): string[] {
-  return gruposDoTime();
+  return destinosDoAvisoZap(gruposDoTime());
 }
 
 /**
