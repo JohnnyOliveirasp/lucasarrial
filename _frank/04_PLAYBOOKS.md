@@ -1065,3 +1065,53 @@ burburinho normal não a acorda.
 
 Depois disso, o incidente fica `investigating` **com a nota dizendo que foi
 para o grupo e quando**. Ele volta a ser seu quando a resposta chegar.
+
+## U. Estorno órfão (ref_id sem linha em `generations`): use a ferramenta, não refaça a conta
+
+O mesmo não-bug foi investigado TRÊS vezes em três dias (incidentes 902a1c85 e
+88eef8aa, fechados duas vezes como falso alarme). Quando o mesmo detector acusa
+o mesmo não-bug três vezes, o problema é o detector — por isso ele agora é uma
+ferramenta canônica, não uma conta refeita de cabeça a cada ronda:
+
+```
+node _frank/ferramentas/estorno_orfao.cjs --desde 2026-08-01
+```
+
+### Por que órfão é NORMAL
+
+O `DELETE /api/v1/generations` (aluno apagando o áudio da biblioteca) apaga a
+linha em `generations` e o objeto no R2 — mas as transações ficam. O `ref_id`
+do estorno passa a apontar pro nada. **Isso não é achado** enquanto não houver
+soft-delete.
+
+### O que separa o normal do bug
+
+A ferramenta só deixa passar calado o órfão que **reconcilia** nas três provas:
+
+1. **débito casado** — existe tx `ref_type='generation'` com o MESMO `ref_id`
+   e o valor do estorno com sinal trocado (gerou → cobrou → estornou);
+2. **soma == saldo** — a soma de todas as transações do usuário bate com
+   `credits_subscription + credits_extra` do profile;
+3. **cadeia `balance_after` íntegra** — cada tx: anterior + amount == atual.
+
+Falhou qualquer uma → sai como `🔴 ALARME` com o motivo, e exit code 2. Esse é
+o caso que É bug de verdade e NUNCA pode ser silenciado junto.
+
+### Regras que a ferramenta já embute (não as recontorne)
+
+- Estorno se confere por `ref_type='generation_refund'`, **NUNCA por `kind`**
+  (o estorno grava `kind='extra_purchase'`). Conferir por kind já quase pagou
+  13 alunos em dobro.
+- Saída sempre com denominador (quantos estornos examinados, quantos órfãos,
+  quantos padrão-conhecido, quantos alarmes) — zero sem denominador é o medidor
+  morto disfarçado de saúde.
+- `--selftest` valida o classificador; `--injetar-teste` injeta EM MEMÓRIA um
+  caso que não reconcilia e prova que o pipeline inteiro ainda alarma. Rode o
+  `--injetar-teste` se algum dia suspeitar que o detector foi silenciado demais.
+
+### Na ronda
+
+Rode a ferramenta. Exit 0 = registre o denominador no log e siga. Exit 2 = isso
+é achado NOVO de verdade: abra incidente com os motivos impressos. **Não abra
+incidente de "cobrança órfã" nem "débito sem linha" a partir de conta manual —
+esse caminho já produziu 3 rondas desperdiçadas.**
