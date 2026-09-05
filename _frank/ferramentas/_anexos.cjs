@@ -19,7 +19,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 /** Teto por anexo. Deliberadamente separado do MAX_BYTES da listagem. */
-const MAX_ANEXO_BYTES = 10_000_000;
+const MAX_ANEXO_BYTES = parseInt(process.env.TETO_ANEXO_BYTES || "10000000", 10);
 
 // ---------- parser de BODYSTRUCTURE (lista parentetizada do RFC 3501) ----------
 
