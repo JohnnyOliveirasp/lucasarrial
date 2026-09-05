@@ -1235,6 +1235,10 @@ export type Database = {
         Args: { p_grace_days?: number };
         Returns: Json;
       };
+      zero_subscription_credits_on_refund: {
+        Args: { p_user_id: string; p_ref_id: string; p_event_type?: string | null };
+        Returns: Json;
+      };
       claim_alert: { Args: { p_key: string; p_cooldown_seconds: number }; Returns: boolean };
       claim_render_job: { Args: Record<string, never>; Returns: RenderJobRow | null };
     };

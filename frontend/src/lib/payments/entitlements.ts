@@ -58,6 +58,13 @@ export type GrantResult = {
 export type RevokeResult = {
   /** false = nenhum entitlement com esse external_id (o caller decide se é erro) */
   found: boolean;
+  /**
+   * Dono do entitlement (null se órfão ou não encontrado). Vem junto pro caller
+   * agir sobre a MESMA pessoa da compra — é por ele que o estorno acha de quem
+   * zerar o crédito de mensalidade (mig 108), sem depender do e-mail do payload.
+   */
+  userId: string | null;
+  /** status que ficou (ou já estava) gravado no entitlement */
   statusFinal: EntitlementStatus | null;
   /** true = o status pedido era mais fraco que o atual e foi IGNORADO */
   terminalPreservado: boolean;
@@ -130,12 +137,18 @@ export async function grantAccess(input: GrantInput): Promise<GrantResult> {
 
 /**
  * Revoga/suspende acesso. Idempotente.
+ *
  * `found` = o entitlement existe; false quando o externalId não casa com
  * nenhum (revoke antes do grant, OU id extraído errado do payload — o caller
  * decide se isso é erro e registra).
  *
  * Um status mais FRACO que o atual é ignorado: "canceled"/"expired" não
  * sobrescrevem "chargeback"/"refunded" (ver entitlement-status.ts).
+ *
+ * ⚠️ `terminalPreservado` fala do STATUS do entitlement, não do dinheiro. Um
+ * estorno que chega por cima de uma contestação não reescreve o status, mas o
+ * caller AINDA precisa zerar o crédito daquela transação — por isso `userId`
+ * é devolvido nos dois caminhos. Ver a nota no route.ts.
  */
 export async function revokeAccess(input: RevokeInput): Promise<RevokeResult> {
   const admin = getAdmin();
@@ -147,14 +160,21 @@ export async function revokeAccess(input: RevokeInput): Promise<RevokeResult> {
     .maybeSingle();
 
   // nenhum entitlement com esse external_id
-  if (!existing) return { found: false, statusFinal: null, terminalPreservado: false };
+  if (!existing) {
+    return { found: false, userId: null, statusFinal: null, terminalPreservado: false };
+  }
 
   const current = existing.status as EntitlementStatus;
   const statusFinal = resolveRevokeStatus(current, input.status);
   if (statusFinal !== input.status) {
     // Evento mais fraco chegando por cima de um estorno/contestação: NADA é
     // reescrito (nem access_until, nem raw_event) — a prova fica de pé.
-    return { found: true, statusFinal, terminalPreservado: true };
+    return {
+      found: true,
+      userId: existing.user_id ?? null,
+      statusFinal,
+      terminalPreservado: true,
+    };
   }
 
   const patch: EntitlementUpdate = {
@@ -167,7 +187,12 @@ export async function revokeAccess(input: RevokeInput): Promise<RevokeResult> {
 
   await admin.from("entitlements").update(patch).eq("id", existing.id);
   if (existing.user_id) await recomputeProfileAccess(existing.user_id);
-  return { found: true, statusFinal, terminalPreservado: false };
+  return {
+    found: true,
+    userId: existing.user_id ?? null,
+    statusFinal,
+    terminalPreservado: false,
+  };
 }
 
 /**
