@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, CheckCircle2, ChevronDown, Plus } from "lucide-react";
 import { CAUSE_LABELS, KIND_LABELS, type IncidentCause } from "@/lib/incidents/classify";
+import { alunoRespondido, motivoDefeitoVivo, type NotaIncidente } from "@/lib/incidents/baixa";
+import type { IncidentStatus } from "@/lib/incidents/status";
 
-type AgentNote = { at: string; by: string; note: string };
+type AgentNote = NotaIncidente;
 type Incident = {
   id: string;
   /** tecnico = tem ação NOSSA que resolve · atendimento = precisa de pessoa (mig 93). */
@@ -15,7 +17,7 @@ type Incident = {
   numero: number | null;
   kind: string;
   cause: IncidentCause;
-  status: "open" | "investigating" | "fixing" | "aguardando_aluno" | "fixed" | "ignored";
+  status: IncidentStatus;
   title: string;
   occurrences: number;
   affected_emails: string[];
@@ -40,6 +42,10 @@ const STATUS_META: Record<Incident["status"], { label: string; cls: string }> = 
   // mas NÃO vira "corrigido" — não foi resolvido, está em espera. Volta
   // sozinho pra "Aberto" quando o aluno responder (lib/incidents/espera.ts).
   aguardando_aluno: { label: "Aguardando o aluno", cls: "text-sky-400" },
+  // "Depende do time de suporte" (pedido do Lucas, 04/09). CONTINUA em aberto
+  // de propósito: é uma gaveta pro time se organizar, não uma forma de sumir
+  // com o caso — some da tela só o que foi fechado ou está com o aluno.
+  suporte_necessario: { label: "Suporte necessário", cls: "text-violet-400" },
   fixed: { label: "Corrigido", cls: "text-[var(--status-online)]" },
   ignored: { label: "Ignorado", cls: "text-[var(--ash)]" },
 };
@@ -57,6 +63,7 @@ const FILTERS = [
   { key: "tecnicos", label: "Técnicos" },
   { key: "atendimento", label: "Atendimento" },
   { key: "aguardando_aluno", label: "Aguardando o aluno" },
+  { key: "suporte_necessario", label: "Suporte necessário" },
   { key: "fixed", label: "Corrigidos" },
   { key: "all", label: "Todos" },
 ] as const;
@@ -74,11 +81,16 @@ export default function FalhasPage() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("tecnicos");
   const [open, setOpen] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
+  /** Papel de quem está olhando — só o admin pode forçar um fechamento travado. */
+  const [role, setRole] = useState<"admin" | "suporte" | null>(null);
 
   async function load() {
     const res = await fetch("/api/v1/admin/incidents", { cache: "no-store" });
     const json = await res.json().catch(() => ({}));
-    if (res.ok) setIncidents(json.incidents ?? []);
+    if (res.ok) {
+      setIncidents(json.incidents ?? []);
+      setRole(json.role ?? null);
+    }
     setLoading(false);
   }
   useEffect(() => {
@@ -87,24 +99,55 @@ export default function FalhasPage() {
     return () => clearInterval(id);
   }, []);
 
-  async function setStatus(id: string, status: Incident["status"]) {
+  async function setStatus(id: string, status: Incident["status"], force = false) {
     let resolution_note: string | undefined;
     if (status === "fixed") {
       resolution_note = window.prompt("Nota da correção (ex.: fix no commit abc1234):") ?? undefined;
       if (resolution_note === undefined) return;
     }
-    await fetch(`/api/v1/admin/incidents/${id}`, {
+    const res = await fetch(`/api/v1/admin/incidents/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, resolution_note }),
+      body: JSON.stringify({ status, resolution_note, ...(force ? { force: true } : {}) }),
     });
+    // 409 = a trava do defeito vivo. O motivo vem escrito da rota; mostrar ele
+    // é o ponto: silêncio faria a pessoa achar que o painel quebrou.
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      window.alert(json?.error?.message ?? "Não foi possível mudar o status.");
+    }
+    load();
+  }
+
+  /** A parte HUMANA está feita. Não muda status, não fecha, não esconde. */
+  async function marcarAlunoRespondido(id: string) {
+    const nota = window.prompt(
+      "Já falou com o aluno. Quer anotar alguma coisa? (opcional — pode deixar em branco)",
+    );
+    if (nota === null) return;
+    await fetch(`/api/v1/admin/incidents/${id}/aluno-respondido`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nota }),
+    });
+    load();
+  }
+
+  async function desfazerAlunoRespondido(id: string) {
+    if (!window.confirm("Desfazer a baixa? O chamado volta pra fila de atendimento.")) return;
+    await fetch(`/api/v1/admin/incidents/${id}/aluno-respondido`, { method: "DELETE" });
     load();
   }
 
   const shown = useMemo(() => {
     if (filter === "tecnicos") return incidents.filter((i) => emAberto(i) && i.categoria === "tecnico");
-    if (filter === "atendimento") return incidents.filter((i) => emAberto(i) && i.categoria === "atendimento");
+    // A baixa "aluno respondido" tira da fila de ATENDIMENTO — e só dela. Um
+    // caso técnico continua na fila técnica: responder o aluno não conserta o
+    // defeito, e é exatamente essa confusão que o pedido do Lucas separa.
+    if (filter === "atendimento")
+      return incidents.filter((i) => emAberto(i) && i.categoria === "atendimento" && !alunoRespondido(i));
     if (filter === "aguardando_aluno") return incidents.filter((i) => i.status === "aguardando_aluno");
+    if (filter === "suporte_necessario") return incidents.filter((i) => i.status === "suporte_necessario");
     if (filter === "fixed") return incidents.filter((i) => i.status === "fixed");
     return incidents;
   }, [incidents, filter]);
@@ -195,6 +238,11 @@ export default function FalhasPage() {
                       <span className="block truncate font-mono text-[10px] text-[var(--ash)]">
                         {KIND_LABELS[inc.kind] ?? inc.kind} · {CAUSE_LABELS[inc.cause] ?? inc.cause}
                         {inc.affected_emails.length > 0 && ` · ${inc.affected_emails.length} usuário(s)`}
+                        {/* A baixa aparece na LINHA, sem precisar abrir: quem varre a
+                            fila tem que enxergar o que já foi atendido de relance. */}
+                        {alunoRespondido(inc) && (
+                          <span className="text-[var(--status-online)]"> · ✅ aluno respondido</span>
+                        )}
                       </span>
                     </span>
                     <span className={`hidden text-[12px] font-medium md:block ${meta.cls}`}>{meta.label}</span>
@@ -252,17 +300,13 @@ export default function FalhasPage() {
                               {inc.resolved_commit && ` (${inc.resolved_commit})`}
                             </p>
                           )}
-                          <div className="flex flex-wrap gap-2">
-                            {inc.status !== "fixed" && (
-                              <ActionBtn onClick={() => setStatus(inc.id, "fixed")}>✓ Marcar corrigido</ActionBtn>
-                            )}
-                            {inc.status !== "ignored" && inc.status !== "fixed" && (
-                              <ActionBtn onClick={() => setStatus(inc.id, "ignored")}>Ignorar</ActionBtn>
-                            )}
-                            {(inc.status === "fixed" || inc.status === "ignored") && (
-                              <ActionBtn onClick={() => setStatus(inc.id, "open")}>Reabrir</ActionBtn>
-                            )}
-                          </div>
+                          <Baixa
+                            inc={inc}
+                            role={role}
+                            setStatus={setStatus}
+                            marcarAlunoRespondido={marcarAlunoRespondido}
+                            desfazerAlunoRespondido={desfazerAlunoRespondido}
+                          />
                         </div>
                       </motion.div>
                     )}
@@ -279,15 +323,129 @@ export default function FalhasPage() {
   );
 }
 
-function ActionBtn({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+function ActionBtn({
+  children,
+  onClick,
+  disabled,
+  title,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  title?: string;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex h-8 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] px-3 font-mono text-[11px] text-[var(--ink)] transition-colors hover:bg-[var(--surface-elevated)]"
+      disabled={disabled}
+      title={title}
+      className="inline-flex h-8 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] px-3 font-mono text-[11px] text-[var(--ink)] transition-colors hover:bg-[var(--surface-elevated)] disabled:cursor-not-allowed disabled:border-[var(--hairline)] disabled:text-[var(--ash)] disabled:hover:bg-transparent"
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * A BAIXA do chamado — o pedido do Lucas (04/09): o painel tem que funcionar
+ * como CRM, com botão pro time dar baixa, sem que dar baixa vire mentira.
+ *
+ * DUAS COISAS SEPARADAS, que antes eram um botão só:
+ *  · "Aluno respondido" — a parte humana está feita. Qualquer um do time
+ *    marca, não muda status, não fecha nada. Tira da fila de ATENDIMENTO.
+ *  · "Marcar corrigido" — o DEFEITO acabou. Fica DESABILITADO (com o porquê
+ *    escrito ao lado, não escondido) enquanto o defeito estiver vivo: mais de
+ *    50 ocorrências ou mais de 5 alunos. Ver @/lib/incidents/baixa.
+ *
+ * O botão travado continua VISÍVEL de propósito. Time que não entende por que
+ * não pode, contorna — manda e-mail, mexe no banco, marca outra coisa errada.
+ */
+function Baixa({
+  inc,
+  role,
+  setStatus,
+  marcarAlunoRespondido,
+  desfazerAlunoRespondido,
+}: {
+  inc: Incident;
+  role: "admin" | "suporte" | null;
+  setStatus: (id: string, status: Incident["status"], force?: boolean) => void;
+  marcarAlunoRespondido: (id: string) => void;
+  desfazerAlunoRespondido: (id: string) => void;
+}) {
+  const baixa = alunoRespondido(inc);
+  const motivo = motivoDefeitoVivo(inc);
+  const fechado = inc.status === "fixed" || inc.status === "ignored";
+  // O admin não fica preso: ele vê o mesmo aviso, confirma, e a rota aceita o
+  // `force`. Pro suporte o botão simplesmente não clica.
+  const podeForcar = role === "admin";
+
+  function fechar(status: Incident["status"]) {
+    if (motivo && podeForcar) {
+      if (!window.confirm(`${motivo}\n\nTem certeza que quer fechar assim mesmo?`)) return;
+      setStatus(inc.id, status, true);
+      return;
+    }
+    setStatus(inc.id, status);
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {baixa && (
+        <p className="text-[12px] text-[var(--status-online)]">
+          ✅ Aluno já respondido em {dt(baixa.at)} por {baixa.by}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {!fechado &&
+          (baixa ? (
+            <ActionBtn onClick={() => desfazerAlunoRespondido(inc.id)}>
+              Desfazer &quot;aluno respondido&quot;
+            </ActionBtn>
+          ) : (
+            <ActionBtn onClick={() => marcarAlunoRespondido(inc.id)}>✓ Aluno respondido</ActionBtn>
+          ))}
+        {!fechado && inc.status !== "suporte_necessario" && (
+          <ActionBtn onClick={() => setStatus(inc.id, "suporte_necessario")}>
+            Precisa do suporte
+          </ActionBtn>
+        )}
+        {inc.status === "suporte_necessario" && (
+          <ActionBtn onClick={() => setStatus(inc.id, "open")}>Tirar de &quot;suporte&quot;</ActionBtn>
+        )}
+        {inc.status !== "fixed" && (
+          <ActionBtn
+            onClick={() => fechar("fixed")}
+            disabled={Boolean(motivo) && !podeForcar}
+            title={motivo ?? undefined}
+          >
+            ✓ Marcar corrigido
+          </ActionBtn>
+        )}
+        {!fechado && (
+          <ActionBtn
+            onClick={() => fechar("ignored")}
+            disabled={Boolean(motivo) && !podeForcar}
+            title={motivo ?? undefined}
+          >
+            Ignorar
+          </ActionBtn>
+        )}
+        {fechado && <ActionBtn onClick={() => setStatus(inc.id, "open")}>Reabrir</ActionBtn>}
+      </div>
+      {motivo && inc.status !== "fixed" && (
+        <p className="text-[12px] leading-relaxed text-amber-400">
+          ⚠️ {motivo}
+          {podeForcar && (
+            <span className="text-[var(--ash)]">
+              {" "}
+              (você é admin: dá pra forçar, e o painel vai pedir confirmação)
+            </span>
+          )}
+        </p>
+      )}
+    </div>
   );
 }
 

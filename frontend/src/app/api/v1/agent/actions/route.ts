@@ -13,6 +13,7 @@ import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/respons
 import { getAdmin } from "@/lib/db/admin";
 import { agentTokenOk } from "@/lib/incidents/agent-auth";
 import { closureFields } from "@/lib/incidents/closure";
+import { isIncidentStatus } from "@/lib/incidents/status";
 import { sendEmail } from "@/lib/email/resend";
 import { sendAgentText } from "@/lib/agent/provider";
 import { createPresignedGet } from "@/lib/r2/presigned";
@@ -22,7 +23,6 @@ import { logger } from "@/lib/logger/server";
 export const dynamic = "force-dynamic";
 
 const ADMIN_NOTIFY_EMAIL = "johnny.oliveirasp@gmail.com";
-const VALID_STATUS = new Set(["open", "investigating", "fixing", "aguardando_aluno", "fixed", "ignored"]);
 
 /** Grupo interno da equipe (o mesmo do `_frank/ferramentas/avisar_grupo.cjs`). */
 const TEAM_GROUP_JID = process.env.AGENT_TEAM_GROUP_JID || "120363428193217427@g.us";
@@ -101,7 +101,10 @@ export async function POST(request: NextRequest) {
 
     if (body.action === "set_status") {
       const { incident_id: refStatus, status, resolution_note, resolved_commit } = body;
-      if (!refStatus || !VALID_STATUS.has(status)) {
+      // A lista de status mora em @/lib/incidents/status — estava copiada aqui
+      // e na rota do admin, e cópia é como um status novo entra numa e não
+      // entra na outra.
+      if (!refStatus || !isIncidentStatus(status)) {
         return badRequest("set_status requires incident_id and valid status");
       }
       const incident_id = await resolverIncidente(admin, refStatus);
