@@ -375,7 +375,18 @@ const ALVOS = [
   } = await db
     .from("incidents")
     .select("status, title, occurrences, last_seen_at", { count: "exact" })
-    .in("status", ["open", "investigating"])
+    // ⚠️ LISTA NEGRA, não lista branca — e a diferença já custou um número
+    //  errado. Em 04/09 22hZ a varredura imprimiu "INCIDENTES ABERTOS: 11"
+    //  existindo 12: o que sumiu foi um chamado em `suporte_necessario`, um
+    //  status que a tabela usa e que `.in([...])` não listava. Nasceu
+    //  invisível porque ninguém lembrou de acrescentá-lo aqui — a mesma
+    //  família do filtro cego de 19/08, que reportou "0 abertos" existindo 4.
+    //  Perguntando "o que NÃO é aberto" em vez de "o que é aberto", todo
+    //  status novo criado no futuro entra na contagem sozinho, e o pior caso
+    //  passa a ser um chamado a mais no relatório em vez de um aluno a menos.
+    //  `aguardando_aluno` fica de fora porque tem bloco PRÓPRIO logo abaixo
+    //  (não é fechado, mas também não infla o número que eu tenho que atacar).
+    .not("status", "in", "(fixed,ignored,aguardando_aluno)")
     .order("last_seen_at", { ascending: false })
     .limit(50);
   if (errInc) {
