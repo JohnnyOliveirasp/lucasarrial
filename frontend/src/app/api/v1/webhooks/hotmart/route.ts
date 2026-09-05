@@ -350,8 +350,14 @@ async function processEvent(
 }
 
 /**
- * Compra do SGP (curso). O ÚNICO efeito é o e-mail de boas-vindas mandando o
- * aluno preencher o portal /sgp — sem acesso, sem crédito, sem entitlement.
+ * Compra do SGP (curso). Dois efeitos, e SÓ estes dois: CRIA A CONTA do
+ * comprador e manda o e-mail de boas-vindas — que leva o link do portal /sgp e,
+ * quando a conta acabou de nascer, o link pra ele definir a senha.
+ *
+ * Continua SEM acesso, SEM crédito e SEM entitlement: criar a conta não é
+ * liberar a plataforma (regra do Lucas, 31/08). A conta nasce com
+ * `credits_subscription`/`credits_extra` em 0 e `access_until` NULL, porque a
+ * única coisa que roda é o `createUser` + o trigger `on_auth_user_created`.
  *
  * O evento fica gravado em `payment_events` (o insert já rodou no POST): é ele
  * que dá a idempotência do reenvio da Hotmart e, de quebra, devolve à casa a
@@ -390,11 +396,22 @@ async function processarCompraSgp(
     );
     // Enviou mas nenhum canal aceitou = o aluno NÃO recebeu. Vira erro
     // registrado (HTTP segue 200: reenvio da Hotmart não conserta isso).
-    const processError =
+    // A conta que não nasceu é registrada JUNTO, e não no lugar: o e-mail pode
+    // ter saído perfeitamente e a conta ter falhado, e vice-versa — as duas
+    // falhas são independentes e some uma se só reportarmos a outra.
+    const falhas = [
       r.enviou && r.canais.length === 0
         ? `boas-vindas do SGP não saíram: ${buyerEmail} [${externalId}]`
-        : null;
-    return { handled: `sgp:${r.motivo}`, processError };
+        : null,
+      r.contaErro ? `conta do SGP não criada (${r.conta}): ${buyerEmail} — ${r.contaErro}` : null,
+    ].filter((x): x is string => x !== null);
+    // `conta` no handled deixa a decomposição visível direto na listagem de
+    // eventos: sgp:enviado:criada, sgp:enviado:ja_tinha, sgp:enviado:falhou.
+    const sufixoConta = r.conta ? `:${r.conta}` : "";
+    return {
+      handled: `sgp:${r.motivo}${sufixoConta}`,
+      processError: falhas.length ? falhas.join(" · ").slice(0, 500) : null,
+    };
   } catch (e) {
     // Blindagem: o orquestrador já trata o throw do envio, mas um erro
     // inesperado (Supabase fora) não pode transformar compra de curso em 500.

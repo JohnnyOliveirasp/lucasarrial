@@ -24,6 +24,7 @@ import assert from "node:assert/strict";
 import {
   chaveDaBoasVindas,
   deveMandarBoasVindas,
+  ehEmailJaCadastrado,
   mandarBoasVindasSgp,
   montarBoasVindas,
   roteamentoDoProduto,
@@ -90,11 +91,33 @@ function compraDoPayload(p: typeof PAYLOAD_SGP): CompraSgp {
   };
 }
 
-/** Canais falsos que guardam o que foi mandado. */
-function canaisFalsos(opts: { emailFalha?: boolean } = {}) {
+const LINK_SENHA = "https://fastcloner.com/auth/callback?token=abc123&next=%2Freset-password";
+
+/**
+ * Canais falsos que guardam o que foi mandado.
+ *
+ * `contas` registra CADA chamada de `garantirConta` — é isso que prova, nos
+ * testes de idempotência, que a segunda compra não foi só "não criou conta"
+ * mas sim "nem tentou mexer na conta".
+ */
+function canaisFalsos(
+  opts: { emailFalha?: boolean; conta?: "criada" | "ja_tinha" | "falhou" } = {},
+) {
   const enviados: Array<{ to: string; assunto: string; texto: string }> = [];
   const registros: Array<{ email: string; ok: boolean; erro: string | null }> = [];
+  const contas: Array<{ email: string; nome: string | null }> = [];
+  const situacao = opts.conta ?? "criada";
   const canais: CanaisBoasVindas = {
+    garantirConta: async ({ email, nome }) => {
+      contas.push({ email, nome });
+      if (situacao === "ja_tinha") {
+        return { situacao: "ja_tinha", linkDefinirSenha: null, erro: null };
+      }
+      if (situacao === "falhou") {
+        return { situacao: "falhou", linkDefinirSenha: null, erro: "Supabase fora do ar" };
+      }
+      return { situacao: "criada", linkDefinirSenha: LINK_SENHA, erro: null };
+    },
     email: async (to, assunto, texto) => {
       if (opts.emailFalha) throw new Error("SMTP fora do ar");
       enviados.push({ to, assunto, texto });
@@ -104,7 +127,7 @@ function canaisFalsos(opts: { emailFalha?: boolean } = {}) {
       registros.push({ email, ok, erro });
     },
   };
-  return { canais, enviados, registros };
+  return { canais, enviados, registros, contas };
 }
 
 /** Estado em memória, com contador de escrita (o `agent_state` de verdade). */
@@ -326,4 +349,242 @@ test("a chave é a transação; sem transação cai no e-mail", () => {
     "HP1611254312",
   );
   assert.equal(chaveDaBoasVindas({ transaction: null, buyerEmail: "A@B.com" }), "email:a@b.com");
+});
+
+// ── CONTA DO COMPRADOR (weekly do Lucas, 04/09 — item 1 de 6) ──────────────
+//
+// Os três casos que o card exige como prova estão aqui: conta nova + link no
+// e-mail; segunda compra que NÃO cria nem reseta; e a conta nascendo sem
+// assinatura e sem crédito.
+
+test("compra nova CRIA a conta e o e-mail leva o link pra definir a senha", async () => {
+  const { canais, enviados, contas } = canaisFalsos({ conta: "criada" });
+  const { io, ver } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(
+    compraDoPayload(PAYLOAD_SGP),
+    SGP_PRODUCT_ID_PADRAO,
+    io,
+    canais,
+    AGORA,
+  );
+
+  assert.equal(r.enviou, true);
+  assert.equal(r.conta, "criada");
+  assert.equal(r.contaErro, null);
+
+  // tentou criar a conta com o e-mail e o nome do comprador
+  assert.deepEqual(contas, [{ email: "maria.teste@example.com", nome: "Maria de Teste" }]);
+
+  // UM e-mail só, com as DUAS coisas dentro: o portal e o acesso
+  assert.equal(enviados.length, 1, "tem que ser um e-mail só, não dois");
+  const texto = enviados[0].texto;
+  assert.ok(texto.includes(SGP_PORTAL_URL), "o link do portal continua no e-mail");
+  assert.ok(texto.includes(LINK_SENHA), "o link de definir senha tem que estar no e-mail");
+
+  // auditoria barata: o estado guarda que a conta nasceu nesta compra
+  assert.equal(ver()["HP1611254312"].conta, "criada");
+});
+
+test("NUNCA vai senha em texto no e-mail — só o link", async () => {
+  const { canais, enviados } = canaisFalsos({ conta: "criada" });
+  const { io } = estadoFalso();
+
+  await mandarBoasVindasSgp(
+    compraDoPayload(PAYLOAD_SGP),
+    SGP_PRODUCT_ID_PADRAO,
+    io,
+    canais,
+    AGORA,
+  );
+
+  const texto = enviados[0].texto;
+  // A decisão técnica do card: o Lucas pediu "login + senha", e mandamos link.
+  // Senha em claro fica pra sempre na caixa do aluno e no nosso servidor.
+  assert.ok(
+    !/sua senha (é|e|:)/i.test(texto),
+    "o e-mail não pode conter uma senha em texto",
+  );
+  assert.ok(!/senha provis(ó|o)ria|senha tempor(á|a)ria/i.test(texto));
+  assert.ok(texto.includes(LINK_SENHA));
+  // e sempre oferece a saída pra quando o link de 1h vencer
+  assert.match(texto, /Esqueci minha senha/i);
+});
+
+test("comprador que JÁ TEM conta: não cria, não reseta, e o e-mail sai sem bloco de acesso", async () => {
+  const { canais, enviados, contas } = canaisFalsos({ conta: "ja_tinha" });
+  const { io } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(
+    compraDoPayload(PAYLOAD_SGP),
+    SGP_PRODUCT_ID_PADRAO,
+    io,
+    canais,
+    AGORA,
+  );
+
+  assert.equal(r.enviou, true);
+  assert.equal(r.conta, "ja_tinha");
+  assert.equal(r.contaErro, null, "conta que já existia não é erro");
+  assert.equal(contas.length, 1);
+
+  // o e-mail do portal SAI (ele ainda precisa preencher o /sgp)...
+  assert.equal(enviados.length, 1);
+  const texto = enviados[0].texto;
+  assert.ok(texto.includes(SGP_PORTAL_URL));
+  // ...mas SEM nada de senha: quem já usa a plataforma receber "defina a sua
+  // senha" sem ter pedido parece invasão, e é o pior estrago deste card.
+  assert.ok(!texto.includes(LINK_SENHA), "não pode mandar link de senha pra conta existente");
+  assert.ok(
+    !/A SUA CONTA JÁ ESTÁ CRIADA/.test(texto),
+    "não pode dizer que criou conta pra quem já tinha",
+  );
+});
+
+test("SEGUNDA compra do mesmo e-mail não cria conta nem mexe na senha", async () => {
+  // A Hotmart reenvia o MESMO evento até 5×. A trava tem que impedir até a
+  // TENTATIVA de mexer na conta, não só a criação.
+  const { canais, enviados, contas } = canaisFalsos({ conta: "criada" });
+  const { io } = estadoFalso();
+  const compra = compraDoPayload(PAYLOAD_SGP);
+
+  const primeiro = await mandarBoasVindasSgp(compra, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+  const segundo = await mandarBoasVindasSgp(compra, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+  assert.equal(primeiro.conta, "criada");
+  assert.equal(segundo.enviou, false);
+  assert.equal(segundo.motivo, "ja_enviado");
+  assert.equal(segundo.conta, null, "nem chegou a olhar a conta");
+
+  assert.equal(contas.length, 1, "garantirConta só pode ter sido chamada UMA vez");
+  assert.equal(enviados.length, 1, "e um e-mail só");
+});
+
+test("conta que falhou não cancela o e-mail do portal, mas vira erro registrado", async () => {
+  const { canais, enviados } = canaisFalsos({ conta: "falhou" });
+  const { io } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(
+    compraDoPayload(PAYLOAD_SGP),
+    SGP_PRODUCT_ID_PADRAO,
+    io,
+    canais,
+    AGORA,
+  );
+
+  // o aluno continua sendo mandado pro portal — lá a conta nasce no fim do
+  // preenchimento, que é o comportamento que já existia antes deste card
+  assert.equal(r.enviou, true);
+  assert.equal(enviados.length, 1);
+  assert.ok(enviados[0].texto.includes(SGP_PORTAL_URL));
+  assert.ok(!enviados[0].texto.includes(LINK_SENHA));
+
+  // mas a falha não some: o webhook escreve isto em payment_events.error
+  assert.equal(r.conta, "falhou");
+  assert.equal(r.contaErro, "Supabase fora do ar");
+});
+
+test("garantirConta que EXPLODE não derruba o e-mail", async () => {
+  const { io } = estadoFalso();
+  const enviados: Array<{ to: string; texto: string }> = [];
+  const canais: CanaisBoasVindas = {
+    garantirConta: async () => {
+      throw new Error("getaddrinfo ENOTFOUND supabase");
+    },
+    email: async (to, _assunto, texto) => {
+      enviados.push({ to, texto });
+      return true;
+    },
+    registrar: async () => {},
+  };
+
+  const r = await mandarBoasVindasSgp(
+    compraDoPayload(PAYLOAD_SGP),
+    SGP_PRODUCT_ID_PADRAO,
+    io,
+    canais,
+    AGORA,
+  );
+
+  assert.equal(r.enviou, true);
+  assert.equal(r.conta, "falhou");
+  assert.match(r.contaErro ?? "", /ENOTFOUND/);
+  assert.equal(enviados.length, 1);
+});
+
+test("conta criada SEM link de senha sai sem o bloco, e a falha fica registrada", async () => {
+  // caso real possível: createUser deu certo, generateLink não devolveu URL
+  const { io } = estadoFalso();
+  const enviados: string[] = [];
+  const canais: CanaisBoasVindas = {
+    garantirConta: async () => ({
+      situacao: "criada",
+      linkDefinirSenha: null,
+      erro: "generateLink não devolveu action_link",
+    }),
+    email: async (_to, _assunto, texto) => {
+      enviados.push(texto);
+      return true;
+    },
+    registrar: async () => {},
+  };
+
+  const r = await mandarBoasVindasSgp(
+    compraDoPayload(PAYLOAD_SGP),
+    SGP_PRODUCT_ID_PADRAO,
+    io,
+    canais,
+    AGORA,
+  );
+
+  assert.equal(r.enviou, true);
+  // sem link não existe bloco de acesso — e-mail sem link quebrado dentro
+  assert.ok(!/A SUA CONTA JÁ ESTÁ CRIADA/.test(enviados[0]));
+  assert.match(r.contaErro ?? "", /action_link/);
+});
+
+test("a conta nasce SEM assinatura e SEM crédito — por construção", () => {
+  // Este é o teste do 'não existe'. A garantia não é um valor que dá pra ler
+  // no retorno: é o fato de o módulo NÃO TER como creditar nem liberar acesso.
+  // As únicas capacidades que ele recebe são estas três.
+  const canais: CanaisBoasVindas = {
+    garantirConta: async () => ({ situacao: "criada", linkDefinirSenha: LINK_SENHA, erro: null }),
+    email: async () => true,
+    registrar: async () => {},
+  };
+  assert.deepEqual(
+    Object.keys(canais).sort(),
+    ["email", "garantirConta", "registrar"],
+    "se alguém adicionar aqui um canal que credita ou libera acesso, este teste cai",
+  );
+
+  // E o e-mail diz, com todas as letras, que a conta não é a assinatura —
+  // é a regra comercial do Lucas (31/08) escrita pro aluno.
+  const { texto } = montarBoasVindas(compraDoPayload(PAYLOAD_SGP), {
+    situacao: "criada",
+    linkDefinirSenha: LINK_SENHA,
+    erro: null,
+  });
+  assert.match(texto, /NÃO inclui a assinatura da plataforma FastCloner/);
+});
+
+// ── o classificador de "e-mail já cadastrado" ──────────────────────────────
+
+test("ehEmailJaCadastrado reconhece as redações do Supabase e do Postgres", () => {
+  for (const msg of [
+    "A user with this email address has already been registered",
+    "Email address already registered by another user",
+    "User already exists",
+    'duplicate key value violates unique constraint "users_email_key"',
+  ]) {
+    assert.equal(ehEmailJaCadastrado(msg), true, msg);
+  }
+  // e não engole falha de verdade como se fosse conta existente
+  for (const msg of [
+    "Database error creating new user",
+    "getaddrinfo ENOTFOUND supabase",
+    "invalid email",
+  ]) {
+    assert.equal(ehEmailJaCadastrado(msg), false, msg);
+  }
 });
