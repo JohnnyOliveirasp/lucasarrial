@@ -143,12 +143,39 @@ planilha.
 
 ---
 
+## 5.1 O conserto da Tânia já existe e está esperando revisão
+
+Na checagem de fim de ronda (branch que esconde fix) achei o que fecharia o
+buraco que a seção 1 mediu:
+
+- 🟢 **PR #196** — *"Lembrete automático para voz parada em
+  `awaiting_training` (+ conserta a tela do detalhe)"*, aberto **hoje
+  15:14Z**. É exatamente o mecanismo que teria pego a Tânia **sem depender de
+  ninguém da ronda olhar**: hoje a única coisa que tira alguém de
+  `awaiting_training` é um humano notar. Está há ~1h30 na fila — não está
+  perdido, mas é o PR com vítima viva esperando do outro lado.
+  O segundo commit dele (*"a tela do DETALHE ainda dizia 'Pronta para
+  treinar'"*) é o rabo do #137: o PR #57 corrigiu o rótulo na **lista** e a
+  tela de **detalhe** ficou para trás.
+- 🟡 **PR #15** — varredura enxergar `awaiting_training` com recorte de
+  pagante parado. Aberto em **20/08**, **17 dias**.
+
+Não mergeei nenhum dos dois: merge é revisão, não é ronda — e este repositório
+já teve fix de produção derrubado por branch velha (`feat/onedrive-401`,
+`feat/fix-image-upload-retry`). Fica como recomendação, com a ressalva de que
+o #196 precisa ser lido contra o `37d982f` (o #137 já em produção) pra não
+reverter o rótulo da lista.
+
 ## 6. Precisa de DECISÃO do Johnny
 
 Nada novo meu — os itens vermelhos seguem os da ronda das 16hZ (**#226**
 destrava o #234; **migration 82** destrava o #15; **#222** reenquadrar ou
 fechar; **23 PRs abertos**, com o #176 esperando desde 04/09). Acrescento só
-dois relógios:
+dois relógios e um PR:
+
+0. 🟢 **PR #196** (seção 5.1) — barato, aberto hoje, e é o que impede o
+   próximo `awaiting_training` de depender de alguém reparar. Tem vítima viva
+   (Tânia) esperando.
 
 1. 🟡 **acalbamonte** — acesso expira **09/09** (3 dias). Se ele responder
    confirmando o teto, o destrave é dele mesmo e não custa nada. Se o acesso
