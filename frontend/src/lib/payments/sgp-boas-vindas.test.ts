@@ -25,8 +25,10 @@ import {
   chaveDaBoasVindas,
   deveMandarBoasVindas,
   ehEmailJaCadastrado,
+  LOGIN_URL,
   mandarBoasVindasSgp,
   montarBoasVindas,
+  PLATAFORMA_URL,
   roteamentoDoProduto,
   SGP_PORTAL_URL,
   SGP_PRODUCT_ID_PADRAO,
@@ -308,15 +310,129 @@ test("o payload real do 7283229 é roteado como sgp", () => {
 
 // ── o texto ────────────────────────────────────────────────────────────────
 
-test("o e-mail NÃO promete acesso ao FastCloner (regra do Lucas, 31/08)", () => {
-  const { texto } = montarBoasVindas(compraDoPayload(PAYLOAD_SGP));
-  assert.match(
+test("SEM assinatura: o e-mail NÃO promete acesso ao FastCloner (regra do Lucas, 31/08)", () => {
+  // os três jeitos de "não tem assinatura" — ausente, false, e o ramo explícito
+  for (const arg of [undefined, false]) {
+    const { texto } = montarBoasVindas(compraDoPayload(PAYLOAD_SGP), undefined, arg);
+    assert.match(
+      texto,
+      /NÃO inclui a assinatura da plataforma FastCloner/,
+      "sem esta frase o e-mail vira a origem do engano do Celso/Caio/Ranieri",
+    );
+    // e não pode convidar a pessoa a "acessar a plataforma" como se fosse dela
+    assert.doesNotMatch(texto, /seu acesso (à|a) plataforma/i);
+    assert.doesNotMatch(texto, /assinatura da plataforma FastCloner também está/);
+  }
+});
+
+// ── #290: quem PAGOU a assinatura não pode ouvir que não tem ───────────────
+//
+// A assinatura é order bump do MESMO checkout do SGP. Medido em 06/09: 15
+// assinantes ativos receberam o e-mail dizendo que precisam contratar à parte o
+// que já pagaram, e 8 deles nunca logaram.
+
+test("COM assinatura ativa: o e-mail diz que a plataforma também está ativa", () => {
+  const { texto } = montarBoasVindas(compraDoPayload(PAYLOAD_SGP), undefined, true);
+
+  // a frase que causou o #290 NÃO pode sair pra quem paga
+  assert.doesNotMatch(
     texto,
     /NÃO inclui a assinatura da plataforma FastCloner/,
-    "sem esta frase o e-mail vira a origem do engano do Celso/Caio/Ranieri",
+    "é exatamente esta frase que negava ao assinante pagante o que ele comprou",
   );
-  // e não pode convidar a pessoa a "acessar a plataforma" como se fosse dela
-  assert.doesNotMatch(texto, /seu acesso (à|a) plataforma/i);
+  // e o texto oposto sai, com o caminho pra entrar
+  assert.match(texto, /assinatura da plataforma FastCloner também está\n?\s*ATIVA/);
+  assert.ok(texto.includes(PLATAFORMA_URL), "tem que dizer onde entrar");
+  assert.match(texto, /mesmo e-mail/);
+  assert.match(texto, /créditos\s+do seu ciclo/);
+
+  // NÃO promete número de crédito: o valor varia por plano/ciclo
+  assert.doesNotMatch(texto, /\d[\d.,]*\s*cr[ée]ditos/i);
+
+  // e NÃO afirma de qual compra a assinatura veio: a consulta prova que ela
+  // está ativa, não a origem. Dos 15 medidos em 06/09, 8 assinaram dias antes.
+  assert.doesNotMatch(texto, /nesta mesma compra|veio junto/i);
+
+  // o resto do e-mail não muda: o portal do SGP continua sendo o passo dele
+  assert.ok(texto.includes(SGP_PORTAL_URL));
+  assert.match(texto, new RegExp(`De ${SGP_FOTOS_MIN} a ${SGP_FOTOS_MAX} fotos`));
+});
+
+test("assinante que ainda não tem senha recebe o caminho do 'esqueci minha senha'", () => {
+  // é o grupo do #290: assinante ativo, conta que já existia, nunca logou.
+  const { texto } = montarBoasVindas(compraDoPayload(PAYLOAD_SGP), undefined, true);
+  assert.match(texto, /Esqueci minha senha/i);
+  assert.ok(texto.includes(LOGIN_URL));
+});
+
+test("assinante com conta RECÉM-CRIADA não recebe a instrução de senha duas vezes", () => {
+  const { texto } = montarBoasVindas(
+    compraDoPayload(PAYLOAD_SGP),
+    { situacao: "criada", linkDefinirSenha: LINK_SENHA, erro: null },
+    true,
+  );
+  // o bloco de acesso já leva o link e o "esqueci minha senha"
+  assert.ok(texto.includes(LINK_SENHA));
+  assert.equal(
+    (texto.match(/Esqueci minha senha/gi) ?? []).length,
+    1,
+    "uma instrução de senha só, senão o e-mail vira um labirinto",
+  );
+  assert.doesNotMatch(texto, /NÃO inclui a assinatura da plataforma FastCloner/);
+});
+
+test("a consulta de assinatura decide o texto, e FALHA FECHADO", async () => {
+  const casos: Array<{ nome: string; consulta: undefined | (() => Promise<boolean>) ; ativa: boolean }> = [
+    { nome: "sem consulta nenhuma (comportamento de antes do PR)", consulta: undefined, ativa: false },
+    { nome: "consulta diz que tem", consulta: async () => true, ativa: true },
+    { nome: "consulta diz que não tem", consulta: async () => false, ativa: false },
+    {
+      nome: "consulta EXPLODE (Supabase fora) → texto de hoje",
+      consulta: async () => {
+        throw new Error("getaddrinfo ENOTFOUND supabase");
+      },
+      ativa: false,
+    },
+  ];
+
+  for (const caso of casos) {
+    const { canais, enviados } = canaisFalsos({ conta: "ja_tinha" });
+    const { io, ver } = estadoFalso();
+
+    const r = await mandarBoasVindasSgp(
+      compraDoPayload(PAYLOAD_SGP),
+      SGP_PRODUCT_ID_PADRAO,
+      io,
+      canais,
+      AGORA,
+      caso.consulta,
+    );
+
+    // a consulta NUNCA derruba o e-mail
+    assert.equal(r.enviou, true, caso.nome);
+    assert.equal(enviados.length, 1, caso.nome);
+    const nega = /NÃO inclui a assinatura da plataforma FastCloner/.test(enviados[0].texto);
+    assert.equal(nega, !caso.ativa, caso.nome);
+    // e o ramo que saiu fica gravado, pra dar pra conferir em produção
+    assert.equal(ver()["HP1611254312"].assinaturaAtiva, caso.ativa, caso.nome);
+  }
+});
+
+test("a consulta de assinatura recebe o e-mail do comprador e roda UMA vez só", async () => {
+  const { canais } = canaisFalsos();
+  const { io } = estadoFalso();
+  const consultados: string[] = [];
+  const consulta = async (email: string) => {
+    consultados.push(email);
+    return true;
+  };
+  const compra = compraDoPayload(PAYLOAD_SGP);
+
+  await mandarBoasVindasSgp(compra, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA, consulta);
+  // reenvio da Hotmart (até 5×): para na idempotência e nem consulta
+  await mandarBoasVindasSgp(compra, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA, consulta);
+
+  assert.deepEqual(consultados, ["maria.teste@example.com"]);
 });
 
 test("o e-mail diz o material exigido, e os números batem com a régua do /sgp", () => {
@@ -560,12 +676,24 @@ test("a conta nasce SEM assinatura e SEM crédito — por construção", () => {
 
   // E o e-mail diz, com todas as letras, que a conta não é a assinatura —
   // é a regra comercial do Lucas (31/08) escrita pro aluno.
-  const { texto } = montarBoasVindas(compraDoPayload(PAYLOAD_SGP), {
-    situacao: "criada",
+  //
+  // ⚠️ #290: isso vale pra quem NÃO tem a assinatura, que é o caso desta compra
+  // (a conta acabou de nascer vazia). Quem comprou a assinatura no order bump
+  // recebe o texto oposto — o teste do outro ramo está logo acima. A garantia
+  // aqui é a de sempre: nem um ramo nem o outro CRIA acesso, porque o módulo
+  // não tem capacidade pra isso.
+  const contaNova = {
+    situacao: "criada" as const,
     linkDefinirSenha: LINK_SENHA,
     erro: null,
-  });
+  };
+  const { texto } = montarBoasVindas(compraDoPayload(PAYLOAD_SGP), contaNova, false);
   assert.match(texto, /NÃO inclui a assinatura da plataforma FastCloner/);
+
+  // e o ramo do assinante também não ganha capacidade nenhuma: a consulta do
+  // #290 só devolve um booleano e entra FORA de `canais`, de propósito.
+  const comAssinatura = montarBoasVindas(compraDoPayload(PAYLOAD_SGP), contaNova, true).texto;
+  assert.doesNotMatch(comAssinatura, /NÃO inclui a assinatura da plataforma FastCloner/);
 });
 
 // ── o classificador de "e-mail já cadastrado" ──────────────────────────────

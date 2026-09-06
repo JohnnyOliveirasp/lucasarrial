@@ -39,10 +39,21 @@
  *    tivemos 3 alunos em 2 dias (Celso, Caio, Ranieri) criando conta achando
  *    que a compra do curso dava acesso. O texto daqui desfaz isso em vez de
  *    alimentar. Criar a CONTA não é liberar a PLATAFORMA, e o e-mail diz isso
- *    com todas as letras;
+ *    com todas as letras — MAS só pra quem realmente não tem a assinatura, ver
+ *    o incidente #290 logo abaixo;
  *  - não credita nada, não mexe em entitlements, não revoga nada;
  *  - NÃO manda senha em texto no e-mail, e NÃO reseta a senha de quem já tem
  *    conta — ver `GarantirConta` abaixo.
+ *
+ * ⚠️ INCIDENTE #290 (medido em 06/09): a assinatura do FastCloner é vendida como
+ * ORDER BUMP no MESMO checkout do SGP (pares de transação C1/C2 sobre a mesma
+ * base). O parágrafo "não inclui a assinatura da plataforma" estava no corpo
+ * FIXO do texto, sem condição nenhuma — então quem clicou no bump recebia, dias
+ * depois, um e-mail NOSSO afirmando que precisa contratar à parte o que ele já
+ * pagou. No lote de 04/09 isso atingiu 15 assinantes ativos e pagos, dos quais 8
+ * nunca logaram uma vez sequer. Desde este PR o parágrafo é CONDICIONAL: quem
+ * tem assinatura ativa recebe o texto oposto, e quem não tem continua recebendo
+ * exatamente o texto de antes (que está certo e existe por um motivo legítimo).
  *
  * PURO de propósito e SEM NENHUM import: o runner `node --test` não resolve o
  * alias `@/`, e import relativo sem extensão também quebra o type-stripping.
@@ -63,6 +74,9 @@ export const SGP_PORTAL_URL = "https://fastcloner.com/sgp";
 
 /** Tela de login — o caminho de recuperação quando o link de senha vence. */
 export const LOGIN_URL = "https://fastcloner.com/login";
+
+/** A plataforma em si — só aparece pra quem JÁ pagou a assinatura (ver #290). */
+export const PLATAFORMA_URL = "https://fastcloner.com";
 
 /**
  * Validade do link de definição de senha, EM TEXTO pro aluno.
@@ -131,6 +145,14 @@ export type RegistroBoasVindas = {
    * nenhuma. Opcional porque os registros gravados antes de 04/09 não têm.
    */
   conta?: SituacaoConta;
+  /**
+   * Qual dos dois textos do #290 saiu: `true` = "a sua assinatura também está
+   * ativa", `false` = "o SGP não inclui a assinatura". Mesma auditoria barata do
+   * campo acima — é o que permite conferir em produção qual ramo cada aluno
+   * recebeu, sem precisar reler a caixa de enviados (foi assim que o #290 foi
+   * descoberto). Opcional: os registros anteriores a este PR não têm.
+   */
+  assinaturaAtiva?: boolean;
 };
 
 export type EstadoBoasVindas = Record<string, RegistroBoasVindas>;
@@ -184,6 +206,24 @@ export type GarantirConta = (d: {
   email: string;
   nome: string | null;
 }) => Promise<ResultadoConta>;
+
+/**
+ * O comprador JÁ TEM assinatura ativa e paga do FastCloner? (incidente #290)
+ *
+ * ⚠️ POR QUE ISTO NÃO ENTRA EM `CanaisBoasVindas`: aquele objeto é a lista
+ * FECHADA de capacidades de ESCRITA deste módulo, e existe um teste que quebra
+ * se alguém acrescentar um canal ali ("a conta nasce SEM assinatura e SEM
+ * crédito — por construção"). Esta consulta é só LEITURA — a assinatura do
+ * tipo, `(email) => Promise<boolean>`, não tem como creditar, liberar acesso
+ * nem criar entitlement. Ela entra como parâmetro à parte justamente pra aquela
+ * garantia continuar valendo e visível.
+ *
+ * FALHA FECHADO, sempre: ausente, exceção ou qualquer coisa diferente de `true`
+ * viram "não tem assinatura", e o e-mail sai com o texto de hoje. Errar pro
+ * lado do texto antigo é o comportamento atual; errar pro outro lado prometeria
+ * ao aluno um produto que ele não comprou.
+ */
+export type ConsultaAssinaturaAtiva = (email: string) => Promise<boolean>;
 
 export type CanaisBoasVindas = {
   /** manda o e-mail ao aluno; true quando o envio foi aceito */
@@ -324,9 +364,12 @@ const primeiroNome = (nome: string | null): string => {
  *     que precisa de 20 minutos de áudio que ele não gravou, e abandona: é
  *     exatamente o funil medido (0 de 129 começaram, e a única aluna real do
  *     /sgp está parada no passo "foto" há 2,3 dias).
- *  2. NÃO PROMETER O FASTCLONER. Regra do Lucas de 31/08. Celso, Caio e
- *     Ranieri compraram curso e foram criar conta achando que tinham a
- *     plataforma; o e-mail que os traria pra cá não pode ser a origem disso.
+ *  2. NÃO PROMETER O FASTCLONER A QUEM NÃO O COMPROU. Regra do Lucas de 31/08.
+ *     Celso, Caio e Ranieri compraram curso e foram criar conta achando que
+ *     tinham a plataforma; o e-mail que os traria pra cá não pode ser a origem
+ *     disso. O avesso disso é o #290 e é igualmente grave: quem PAGOU a
+ *     assinatura no order bump do mesmo checkout não pode ouvir de nós que não
+ *     tem o que já pagou — por isso o parágrafo tem dois ramos.
  *  3. DÚVIDA DE CURSO VAI PRO CANAL DO LUCAS, não pra nossa caixa. Sem essa
  *     linha o aluno responde este e-mail e cai no bot da Fast, que atende
  *     FastCloner e não tem o que dizer sobre o curso.
@@ -340,8 +383,18 @@ const primeiroNome = (nome: string | null): string => {
  * já tinha conta não recebe nada disso — receber "defina a sua senha" sem ter
  * pedido é assustador e, pra quem já usa a plataforma, parece invasão. O texto
  * do portal, que já funciona, não muda uma vírgula.
+ *
+ * O PARÁGRAFO DA ASSINATURA (06/09, #290) segue o mesmo desenho do bloco de
+ * acesso: parâmetro opcional, decisão explícita aqui dentro, módulo ainda puro.
+ * `temAssinaturaFastCloner` NÃO tem default implícito escondido — só o `true`
+ * troca o texto; qualquer outra coisa (inclusive o parâmetro ausente) mantém
+ * exatamente o texto que já ia hoje.
  */
-export function montarBoasVindas(d: CompraSgp, conta?: ResultadoConta): TextoBoasVindas {
+export function montarBoasVindas(
+  d: CompraSgp,
+  conta?: ResultadoConta,
+  temAssinaturaFastCloner?: boolean,
+): TextoBoasVindas {
   const nome = primeiroNome(d.buyerName);
   const assunto = "Seu Sistema de Geração Pronto: comece por aqui";
 
@@ -363,6 +416,43 @@ export function montarBoasVindas(d: CompraSgp, conta?: ResultadoConta): TextoBoa
           "",
         ]
       : [];
+
+  // ── #290: o parágrafo da assinatura, nos DOIS ramos ──────────────────────
+  //
+  // Quem NÃO tem assinatura ativa recebe o texto de sempre, palavra por palavra
+  // (é a regra comercial do Lucas de 31/08 e continua valendo). Quem TEM recebe
+  // o oposto — e sem número de crédito: o valor varia por plano/ciclo e prometer
+  // um número errado seria trocar uma mentira por outra.
+  const paragrafoAssinatura =
+    temAssinaturaFastCloner === true
+      ? [
+          // ⚠️ NÃO dizer "ela veio junto nesta mesma compra": a consulta prova
+          // que a assinatura está ATIVA, não de qual checkout ela saiu — dos 15
+          // casos medidos em 06/09, 8 assinaram DIAS ANTES do SGP. Afirmar a
+          // origem seria trocar uma frase falsa por outra.
+          "IMPORTANTE: a sua assinatura da plataforma FastCloner também está",
+          "ATIVA. O Sistema de Geração Pronto é a montagem do seu clone pela",
+          "nossa equipe; a plataforma é onde você gera os seus vídeos. Você já",
+          `pode entrar em ${PLATAFORMA_URL} com este mesmo e-mail — os créditos`,
+          "do seu ciclo já estão na sua conta.",
+          // Sem bloco de acesso o e-mail não diz em lugar nenhum como entrar sem
+          // senha — e é justamente este grupo (assinante que nunca logou) que o
+          // #290 encontrou parado.
+          ...(blocoAcesso.length
+            ? []
+            : [
+                "",
+                `Se você ainda não definiu a sua senha, entre em ${LOGIN_URL} e`,
+                'clique em "Esqueci minha senha" — com este mesmo e-mail você define a',
+                "sua senha na hora.",
+              ]),
+        ]
+      : [
+          "IMPORTANTE: o Sistema de Geração Pronto é a montagem do seu clone pela",
+          "nossa equipe. Ele NÃO inclui a assinatura da plataforma FastCloner — se",
+          "você também quiser usar a plataforma para gerar os seus vídeos, ela é",
+          "contratada à parte.",
+        ];
 
   const texto = [
     `Oi${nome ? `, ${nome}` : ""}!`,
@@ -386,10 +476,7 @@ export function montarBoasVindas(d: CompraSgp, conta?: ResultadoConta): TextoBoa
     "e-mail a cada etapa e não precisa fazer mais nada além de enviar tudo.",
     "",
     ...blocoAcesso,
-    "IMPORTANTE: o Sistema de Geração Pronto é a montagem do seu clone pela",
-    "nossa equipe. Ele NÃO inclui a assinatura da plataforma FastCloner — se",
-    "você também quiser usar a plataforma para gerar os seus vídeos, ela é",
-    "contratada à parte.",
+    ...paragrafoAssinatura,
     "",
     `Dúvida sobre o curso ou sobre a sua compra: chame o suporte no WhatsApp ${WHATSAPP_SUPORTE_CURSO}.`,
     "Problema para enviar as fotos ou o áudio no portal: é só responder este e-mail.",
@@ -409,6 +496,10 @@ export function montarBoasVindas(d: CompraSgp, conta?: ResultadoConta): TextoBoa
  * até 5×) viraria uma rajada de tentativas em cima do aluno. Quem denuncia a
  * falha é `canais: []` no retorno, que o chamador escreve em
  * `payment_events.error`, e a linha `ok=false` em `avisos_enviados`.
+ *
+ * `consultarAssinatura` (#290) é OPCIONAL e roda DEPOIS da trava de
+ * idempotência, junto da conta: o reenvio da Hotmart (até 5×) para antes e não
+ * gasta consulta nenhuma. Sem ela, o e-mail é exatamente o de antes deste PR.
  */
 export async function mandarBoasVindasSgp(
   d: CompraSgp,
@@ -416,6 +507,7 @@ export async function mandarBoasVindasSgp(
   estadoIO: EstadoBoasVindasIO,
   canais: CanaisBoasVindas,
   agoraIso: string,
+  consultarAssinatura?: ConsultaAssinaturaAtiva,
 ): Promise<ResultadoBoasVindas> {
   const decisao = deveMandarBoasVindas({
     eventType: d.eventType,
@@ -453,7 +545,18 @@ export async function mandarBoasVindasSgp(
     };
   }
 
-  const { assunto, texto } = montarBoasVindas(d, conta);
+  // ASSINATURA (#290) — leitura pura, e FALHA FECHADO. Sem consulta, consulta
+  // que explode ou retorno que não seja `true` viram `false`, e o e-mail sai
+  // com o texto de sempre. Nunca o contrário: prometer plataforma a quem não
+  // pagou é o engano que o texto antigo existe pra evitar.
+  let temAssinatura = false;
+  try {
+    temAssinatura = consultarAssinatura ? (await consultarAssinatura(d.buyerEmail)) === true : false;
+  } catch {
+    temAssinatura = false;
+  }
+
+  const { assunto, texto } = montarBoasVindas(d, conta, temAssinatura);
   const referencia = `webhook hotmart ${d.eventType} · transação ${d.transaction ?? "—"}`;
 
   let ok = false;
@@ -479,6 +582,7 @@ export async function mandarBoasVindasSgp(
     buyerEmail: d.buyerEmail,
     canais: aceitos,
     conta: conta.situacao,
+    assinaturaAtiva: temAssinatura,
   };
   try {
     await estadoIO.gravar(estado);

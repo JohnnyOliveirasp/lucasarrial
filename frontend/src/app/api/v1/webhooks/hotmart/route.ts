@@ -38,7 +38,11 @@ import {
   SGP_PRODUCT_ID_PADRAO,
   type RotaDoProduto,
 } from "@/lib/payments/sgp-boas-vindas";
-import { canaisDoSgp, estadoDasBoasVindas } from "@/lib/payments/sgp-boas-vindas-canal";
+import {
+  assinaturaFastClonerAtiva,
+  canaisDoSgp,
+  estadoDasBoasVindas,
+} from "@/lib/payments/sgp-boas-vindas-canal";
 import {
   extractBuyerEmail,
   extractBuyerName,
@@ -354,6 +358,11 @@ async function processEvent(
  * comprador e manda o e-mail de boas-vindas — que leva o link do portal /sgp e,
  * quando a conta acabou de nascer, o link pra ele definir a senha.
  *
+ * Desde 06/09 (#290) ele também CONSULTA — só lê — se o comprador já tem
+ * assinatura ativa do FastCloner, porque ela é vendida como order bump no mesmo
+ * checkout. Isso NÃO muda nenhum efeito: muda qual dos dois parágrafos o e-mail
+ * carrega, e nada mais.
+ *
  * Continua SEM acesso, SEM crédito e SEM entitlement: criar a conta não é
  * liberar a plataforma (regra do Lucas, 31/08). A conta nasce com
  * `credits_subscription`/`credits_extra` em 0 e `access_until` NULL, porque a
@@ -393,6 +402,11 @@ async function processarCompraSgp(
       estadoDasBoasVindas(),
       canaisDoSgp(),
       new Date().toISOString(),
+      // #290: a assinatura do FastCloner é order bump do MESMO checkout, então
+      // o comprador do SGP pode já ser assinante pagante. Sem esta consulta o
+      // e-mail afirma a ele que não tem a plataforma que ele acabou de pagar.
+      // Só LÊ entitlements, e falha fechado (ver `assinaturaFastClonerAtiva`).
+      assinaturaFastClonerAtiva(),
     );
     // Enviou mas nenhum canal aceitou = o aluno NÃO recebeu. Vira erro
     // registrado (HTTP segue 200: reenvio da Hotmart não conserta isso).
