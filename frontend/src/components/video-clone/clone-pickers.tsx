@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-import { Check, Loader2, Upload } from "lucide-react";
+import { AlertTriangle, Check, Loader2, RefreshCw, Upload } from "lucide-react";
 
 export type ImageChoice =
   | { kind: "history"; id: string; preview: string }
@@ -17,7 +17,20 @@ export type ImageChoice =
 
 export type AudioChoice =
   | { kind: "history"; id: string; seconds: number; preview: string | null; label: string; text: string | null }
-  | { kind: "upload"; key: string; seconds: number; preview: string; label: string; text: string | null };
+  | {
+      kind: "upload";
+      key: string;
+      seconds: number;
+      preview: string;
+      label: string;
+      text: string | null;
+      /**
+       * Por que a PRÉVIA da transcrição falhou (#251). `text` e `textError`
+       * nulos = ainda transcrevendo. Isso NÃO bloqueia gerar o vídeo: o
+       * servidor transcreve de novo a partir do `key`.
+       */
+      textError?: string | null;
+    };
 
 type HistImage = { id: string; status: string; image_url: string | null; name: string | null };
 type HistAudio = {
@@ -157,12 +170,15 @@ export function AudioPicker({
   onUploadClick,
   uploading,
   maxSeconds,
+  onRetryTranscription,
 }: {
   selected: AudioChoice | null;
   onSelect: (c: AudioChoice) => void;
   onUploadClick: () => void;
   uploading: boolean;
   maxSeconds: number;
+  /** Redispara a prévia da transcrição do áudio enviado (#251). */
+  onRetryTranscription?: () => void;
 }) {
   const t = useTranslations("videoClone.pickers");
   const [tab, setTab] = useState<"history" | "upload">("history");
@@ -251,7 +267,31 @@ export function AudioPicker({
             <div className="flex flex-col gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-3">
               <span className="truncate text-sm text-[var(--ink)]">{selected.label}</span>
               <audio src={selected.preview} controls preload="metadata" className="w-full" />
-              {selected.text ? (
+              {/* Três estados EXPLÍCITOS (#251). Antes eram dois — "tem texto"
+                  ou spinner — então qualquer falha virava um spinner eterno,
+                  porque a ausência de texto era lida como "ainda vem". */}
+              {selected.textError ? (
+                <div className="flex flex-col items-start gap-1.5">
+                  <span className="flex items-start gap-1.5 text-[12px] leading-snug text-[var(--status-error)]">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>{selected.textError}</span>
+                  </span>
+                  {/* A prévia é opcional: dizer isso na tela é o que evita a
+                      pessoa achar que travou e desistir de gerar o vídeo. */}
+                  <span className="text-[12px] leading-snug text-[var(--mute)]">
+                    {t("transcriptionOptional")}
+                  </span>
+                  {onRetryTranscription && (
+                    <button
+                      type="button"
+                      onClick={onRetryTranscription}
+                      className="flex items-center gap-1.5 font-mono text-[10px] tracking-wide text-[var(--silver)] underline hover:text-[var(--ink)]"
+                    >
+                      <RefreshCw className="h-3 w-3" /> {t("retryTranscription")}
+                    </button>
+                  )}
+                </div>
+              ) : selected.text ? (
                 <span className="max-h-28 overflow-y-auto text-[12px] leading-snug text-[var(--mute)]">
                   {t("transcription", { text: selected.text })}
                 </span>
