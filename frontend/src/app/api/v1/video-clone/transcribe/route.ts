@@ -34,7 +34,16 @@ export async function POST(request: NextRequest) {
       );
     }
     return jsonOk({ text: t.text, duration_seconds: t.durationSeconds });
-  } catch {
+  } catch (e) {
+    // Incidente #251: este `catch` era MUDO e DESTRUÍA o erro do Whisper/R2 —
+    // o aluno ficava com a prévia girando pra sempre e não sobrava NADA no log
+    // pra descobrir por quê (2 dias sem causa raiz). O texto devolvido continua
+    // igual; o que muda é que agora a falha deixa rastro.
+    console.error("[video-clone/transcribe] falhou:", {
+      audio_key: audioKey,
+      user_id: auth.user_id,
+      erro: e instanceof Error ? (e.stack ?? e.message) : String(e),
+    });
     return serverError("Não conseguimos processar esse áudio. Tente novamente.");
   }
 }

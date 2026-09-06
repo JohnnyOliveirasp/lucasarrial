@@ -843,7 +843,9 @@
         "generic": "Error",
         "missingImage": "Elige una foto para continuar.",
         "missingAudio": "Elige o sube un audio para continuar. Si todavía no creaste una voz, puedes subir un MP3 desde tu computadora.",
-        "missingBoth": "Elige una foto y un audio para continuar. Si todavía no creaste una voz, puedes subir un MP3 desde tu computadora."
+        "missingBoth": "Elige una foto y un audio para continuar. Si todavía no creaste una voz, puedes subir un MP3 desde tu computadora.",
+        "transcribeFailed": "No pudimos transcribir ese audio ahora.",
+        "transcribeNetwork": "No pudimos comunicarnos con el servidor para transcribir el audio ahora."
       }
     },
     "pickers": {
@@ -865,7 +867,9 @@
       "transcription": "Transcripción: “{text}”",
       "transcribing": "Transcribiendo el audio…",
       "changeAudio": "Cambiar audio",
-      "chooseAudioFile": "Elegir archivo (MP3, WAV · hasta {max}s)"
+      "chooseAudioFile": "Elegir archivo (MP3, WAV · hasta {max}s)",
+      "transcriptionOptional": "La transcripción es solo una vista previa para que compruebes lo que dice el audio. Puedes generar el video normalmente.",
+      "retryTranscription": "Intentar transcribir de nuevo"
     },
     "history": {
       "loading": "Cargando…",
