@@ -180,7 +180,15 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     .filter((e) => e && e !== "suporte@fastcloner.com");
 
   for (const [email, info] of buyers) {
-    if (hasAccount.has(email)) continue; // criou conta — claim do login resolve
+    // Tem conta → não é caso de CONVITE (ela não precisa se cadastrar).
+    // ⚠️ Mas "tem conta" NÃO quer dizer "está resolvido", como este comentário
+    // afirmava até 06/09 ("claim do login resolve"). O claim só roda a pedido
+    // do usuário (login / render de /app); conta criada por CARGA nunca passa
+    // por ele — a de 04/09 criou 349 contas sem chamar o claim e deixou 8
+    // pagantes com acesso NULL e 0 créditos, invisíveis exatamente por causa
+    // deste `continue`. Quem cuida desse recorte agora é o
+    // `sweepVinculosQuebrados` (vinculo-quebrado.ts), no mesmo cron.
+    if (hasAccount.has(email)) continue;
     if (naoAtivo.has(email)) continue; // cancelou/estornou/expirou — não há crédito a convidar (#127)
     if (now - new Date(info.at).getTime() < MIN_AGE_MS) continue;
     summary.orphans += 1;
