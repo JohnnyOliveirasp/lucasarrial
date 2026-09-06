@@ -31,6 +31,7 @@ import { logger } from "@/lib/logger/server";
 import { ehEmailJaCadastrado } from "@/lib/payments/sgp-boas-vindas";
 import type {
   CanaisBoasVindas,
+  ConsultaAssinaturaAtiva,
   EstadoBoasVindas,
   EstadoBoasVindasIO,
   ResultadoConta,
@@ -169,6 +170,68 @@ async function criarContaDoComprador(d: {
     };
   }
   return { situacao: "criada", linkDefinirSenha: link, erro: null };
+}
+
+/**
+ * Código do produto FastCloner (a assinatura) na Hotmart.
+ *
+ * O padrão está aqui — como o `SGP_PRODUCT_ID_PADRAO` do módulo puro — pra que
+ * este PR funcione sem depender de mexer no ambiente do servidor. É o mesmo
+ * número que `lib/admin/churn.ts` já carrega fixo.
+ */
+const FASTCLONER_PRODUCT_ID_PADRAO = "7851642";
+
+/**
+ * O comprador do SGP JÁ TEM assinatura ativa e paga do FastCloner? (#290)
+ *
+ * A assinatura é vendida como order bump no MESMO checkout do SGP, então o
+ * `buyer_email` é o mesmo dos dois lados — é por ele que casamos, e não pelo
+ * `user_id`, que nesses casos costuma estar NULL (a conta às vezes nem existia
+ * quando a compra entrou).
+ *
+ * SÓ LÊ. Não cria, não credita, não vincula, não conserta órfã. Um entitlement
+ * órfão continua órfão depois desta função — quem trata isso é o `claim.ts`.
+ *
+ * TRÊS FILTROS, e cada um erra pro lado seguro:
+ *  - `product_code` = o FastCloner. Curso (SGP/FCI) não conta: entitlement de
+ *    curso não dá plataforma, e dizer que dá seria o engano de 31/08 ao contrário;
+ *  - `status = 'active'`. `canceled`/`past_due`/`refunded` ficam de fora;
+ *  - `access_until > agora`. Vencido não é ativo, e `access_until` NULL também
+ *    NÃO passa: nesta tabela NULL significa "vitalício", mas na prática as
+ *    linhas com NULL medidas em 06/09 eram compra ainda não associada a conta —
+ *    então NULL vira "não sei", e "não sei" manda o texto de hoje.
+ *
+ * Erro de banco = `false` (o chamador já falha fechado; aqui é o cinto do
+ * suspensório) e fica no log, porque assinante recebendo o texto errado foi
+ * exatamente o #290 e a gente quer ver isso acontecendo.
+ */
+export function assinaturaFastClonerAtiva(): ConsultaAssinaturaAtiva {
+  return async (emailBruto: string) => {
+    const email = emailBruto.trim().toLowerCase();
+    if (!email) return false;
+    const produto = process.env.HOTMART_PRODUCT_ID ?? FASTCLONER_PRODUCT_ID_PADRAO;
+
+    // `buyer_email` é gravado normalizado em lowercase pelo `grantAccess`, então
+    // a igualdade exata basta e evita o `_` do e-mail virar curinga de ILIKE.
+    const { data, error } = await getAdmin()
+      .from("entitlements")
+      .select("id")
+      .eq("provider", "hotmart")
+      .eq("buyer_email", email)
+      .eq("product_code", produto)
+      .eq("status", "active")
+      .gt("access_until", new Date().toISOString())
+      .limit(1);
+
+    if (error) {
+      logger.error("api", "sgp.assinatura.consulta_falhou", {
+        target: email,
+        erro: error.message,
+      });
+      return false;
+    }
+    return (data?.length ?? 0) > 0;
+  };
 }
 
 export function canaisDoSgp(): CanaisBoasVindas {
