@@ -137,7 +137,17 @@
       "measuring": "measuring…",
       "measureFailed": "couldn't measure",
       "retryMeasure": "Try measuring again",
-      "uploading": "Uploading…",
+      "envio": {
+        "preparando": "Preparing upload…",
+        "enviando": "Uploading {done} of {total} files",
+        "finalizando": "Files uploaded. Finishing up…",
+        "naoFeche": "Keep this tab open until it finishes. On a slow connection, several files can take a few minutes.",
+        "parado": "The upload hasn't moved in {minutos} min. It's almost always the connection. Keep this tab open: each file retries on its own up to 3 times before giving up.",
+        "botao": {
+          "enviando": "Uploading…",
+          "finalizando": "Finishing…"
+        }
+      },
       "submitting": "Preparing…",
       "train": "Train voice ({duration})",
       "meter": {

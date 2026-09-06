@@ -21,6 +21,7 @@ import {
   type MarcaGravacao,
 } from "@/lib/audio/marca-gravacao";
 import { clientLogger } from "@/lib/logger/client";
+import { painelDeEnvio, type FaseEnvio } from "@/components/voice/progresso-envio";
 
 const MIN_DURATION_SECONDS = 20 * 60; // 20 minutos
 // Teto: treino com áudio demais estoura o tempo máximo de execução do worker
@@ -105,11 +106,26 @@ export function VoiceCreator() {
   // pro R2, reativando o botão "Treinar" — segundo clique criava voz duplicada
   // (2 treinos de 10k cr). `busy` cobre do clique até a navegação final.
   const [busy, setBusy] = useState(false);
+  /**
+   * Fase corrente do envio — só é lida enquanto `busy`. As duas andam juntas:
+   * `busy` liga no clique e desliga em todo caminho de erro, e o painel de
+   * progresso agora é renderizado A PARTIR de `busy`. Com isso "botão apagado"
+   * e "painel na tela" viraram a MESMA condição e não conseguem mais divergir,
+   * que era a raiz do #289.
+   */
+  const [fase, setFase] = useState<FaseEnvio>("preparando");
   const [name, setName] = useState("");
   const [consent, setConsent] = useState(false);
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [overallProgress, setOverallProgress] = useState(0);
+  /**
+   * Há quantos ms o envio não avança. `overallProgress` só se move em evento
+   * de progresso do XHR, então "ele parou de mudar" é medida de banda real, e
+   * não um cronômetro chutado.
+   */
+  const [paradoMs, setParadoMs] = useState(0);
+  const ultimoAvanco = useRef<number>(0);
   const [recorderImport, setRecorderImport] = useState<{ count: number; skipped: number } | null>(null);
   /**
    * #235 (Alana): ler o Gravador podia falhar em silêncio (`catch(() => {})`)
@@ -145,6 +161,24 @@ export function VoiceCreator() {
   const serverClipKeys = useRef<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement | null>(null);
+
+  // ───── relógio do "parece parado" (#289) ─────
+  // Zera a cada avanço real de byte e a cada troca de fase; `busy` entra na
+  // lista porque no clique a fase já costuma ser "preparando" (valor inicial),
+  // e sem ele o relógio começaria contando desde a montagem da tela — a aluna
+  // veria "parado há 40 min" no primeiro segundo do envio.
+  useEffect(() => {
+    ultimoAvanco.current = Date.now();
+    setParadoMs(0);
+  }, [overallProgress, fase, busy]);
+
+  useEffect(() => {
+    if (!busy) return;
+    const id = setInterval(() => {
+      setParadoMs(Date.now() - ultimoAvanco.current);
+    }, 15_000);
+    return () => clearInterval(id);
+  }, [busy]);
 
   // 🎙️ BUGFIX 2026-07-13: as gravações do Gravador (IndexedDB) NUNCA eram
   // carregadas aqui — quem gravava 20min caía num upload vazio e ficava em
@@ -557,6 +591,11 @@ export function VoiceCreator() {
 
     setBusy(true);
     setStep("submitting");
+    setFase("preparando");
+    // Numa segunda tentativa (a primeira falhou no meio) a barra começaria
+    // preenchida com o progresso da anterior, prometendo um avanço que não
+    // existe mais.
+    setOverallProgress(0);
     setError(null);
 
     // 1. Pede backend pra criar voice + presigned URLs
@@ -601,6 +640,9 @@ export function VoiceCreator() {
 
     // 3. Upload browser → R2 (até UPLOAD_CONCURRENCY simultâneos, com retry)
     setStep("upload");
+    // A partir daqui quem corre é a banda do aluno: é a única fase em que
+    // contar arquivo e mostrar porcentagem significa alguma coisa.
+    setFase("enviando");
     const results = await runPool(files, UPLOAD_CONCURRENCY, (f, i) =>
       uploadOne(f, slots[i], setFiles, setOverallProgress, files.length),
     );
@@ -611,6 +653,10 @@ export function VoiceCreator() {
       setError(t("errors.uploadFailed", { count: failed }));
       return;
     }
+
+    // Último byte subiu. Daqui até a navegação quem trabalha é o servidor, e
+    // era EXATAMENTE esta janela que ficava muda no #289.
+    setFase("finalizando");
 
     // 4. Avisa backend que terminou — manda também durações medidas no browser
     const uploadedKeys = slots.map((s) => s.key);
@@ -887,9 +933,23 @@ export function VoiceCreator() {
         </p>
       )}
 
-      {step === "submitting" || (step === "upload" && files.some((f) => f.state === "uploading")) ? (
-        <UploadProgress files={files} overall={overallProgress} t={t} />
-      ) : null}
+      {/*
+        #289: a condição ERA
+          step === "submitting" || (step === "upload" && files.some(uploading))
+        e o `some(uploading)` cai pra falso no instante em que o último arquivo
+        fica "done" — o painel sumia durante o uploads-complete e a navegação.
+        Agora quem manda é o `busy`: enquanto o botão estiver apagado, a tela é
+        OBRIGADA a dizer o que está fazendo. Um não existe sem o outro.
+      */}
+      {painelDeEnvio({ busy, fase, overall: overallProgress, paradoMs }).visivel && (
+        <UploadProgress
+          files={files}
+          overall={overallProgress}
+          fase={fase}
+          paradoMs={paradoMs}
+          t={t}
+        />
+      )}
 
       <div className="flex items-center justify-between gap-3">
         <button
@@ -905,9 +965,21 @@ export function VoiceCreator() {
           disabled={!meetsMinimum || busy || step === "submitting" || files.length === 0}
           className={PILL}
         >
-          {busy || step === "submitting"
-            ? t("submitting")
-            : t("train", { duration: formatDuration(totalDuration) })}
+          {/*
+            O botão apagado dizia "Preparando…" do clique até a navegação — ou
+            seja, durante VÁRIOS MINUTOS de upload ele afirmava que ainda não
+            tinha começado. Agora acompanha a fase. Chaves literais de
+            propósito — nada de montar o caminho por interpolação: o guarda de
+            i18n em src/i18n/chaves.test.ts confere código × JSON por caminho
+            ESCRITO, e um caminho montado em template escapa dele sem avisar.
+          */}
+          {!busy && step !== "submitting"
+            ? t("train", { duration: formatDuration(totalDuration) })
+            : fase === "enviando"
+              ? t("envio.botao.enviando")
+              : fase === "finalizando"
+                ? t("envio.botao.finalizando")
+                : t("submitting")}
         </button>
       </div>
     </div>
@@ -1205,29 +1277,57 @@ function DurationMeter({
 function UploadProgress({
   files,
   overall,
+  fase,
+  paradoMs,
   t,
 }: {
   files: LocalFile[];
   overall: number;
+  fase: FaseEnvio;
+  paradoMs: number;
   t: TFn;
 }) {
   const done = files.filter((f) => f.state === "done").length;
+  // Barra, porcentagem e aviso de "parece parado" saem todos da mesma função
+  // pura testada em progresso-envio.test.ts — a tela só desenha o que ela diz.
+  const painel = painelDeEnvio({ busy: true, fase, overall, paradoMs });
   return (
-    <div className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-4">
-      <div className="mb-2 flex items-center justify-between">
+    <div
+      // A aluna do #289 ficou olhando a tela esperando ela falar. Se o texto
+      // troca sozinho (preparando → enviando → finalizando), leitor de tela
+      // precisa anunciar a troca em vez de deixá-la em silêncio também.
+      role="status"
+      aria-live="polite"
+      className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-4"
+    >
+      <div className="mb-2 flex items-center justify-between gap-3">
         <span className="font-mono text-[11px] tracking-wide text-[var(--silver)]">
-          {t("uploading")}
+          {fase === "preparando"
+            ? t("envio.preparando")
+            : fase === "finalizando"
+              ? t("envio.finalizando")
+              : t("envio.enviando", { done, total: files.length })}
         </span>
-        <span className="font-mono text-[10px] tabular-nums text-[var(--mute)]">
-          {done} / {files.length}
-        </span>
+        {painel.mostraPorcentagem && (
+          <span className="flex-shrink-0 font-mono text-[10px] tabular-nums text-[var(--mute)]">
+            {overall}%
+          </span>
+        )}
       </div>
-      <div className="h-1 overflow-hidden rounded-[var(--radius-full)] bg-[var(--hairline-strong)]">
+      <div className="h-1.5 overflow-hidden rounded-[var(--radius-full)] bg-[var(--hairline-strong)]">
         <div
           className="h-full rounded-[var(--radius-full)] bg-[var(--silver)] transition-all duration-200"
-          style={{ width: `${overall}%` }}
+          style={{ width: `${painel.barra}%` }}
         />
       </div>
+      <p className="mt-2 font-mono text-[10px] leading-relaxed text-[var(--mute)]">
+        {t("envio.naoFeche")}
+      </p>
+      {painel.avisoParadoMin !== null && (
+        <p className="mt-2 font-mono text-[10px] leading-relaxed text-[var(--status-warn)]">
+          {t("envio.parado", { minutos: painel.avisoParadoMin })}
+        </p>
+      )}
     </div>
   );
 }

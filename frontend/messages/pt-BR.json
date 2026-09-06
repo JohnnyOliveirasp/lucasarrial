@@ -141,7 +141,17 @@
       "measuring": "medindo…",
       "measureFailed": "não deu pra medir",
       "retryMeasure": "Tentar medir de novo",
-      "uploading": "Subindo arquivos…",
+      "envio": {
+        "preparando": "Preparando o envio…",
+        "enviando": "Enviando {done} de {total} arquivos",
+        "finalizando": "Arquivos enviados. Finalizando…",
+        "naoFeche": "Mantenha esta aba aberta até terminar. Em conexão lenta, muitos arquivos podem levar alguns minutos.",
+        "parado": "O envio não avança há {minutos} min. Quase sempre é a conexão. Deixe a aba aberta: cada arquivo tenta sozinho até 3 vezes antes de desistir.",
+        "botao": {
+          "enviando": "Enviando…",
+          "finalizando": "Finalizando…"
+        }
+      },
       "submitting": "Preparando…",
       "train": "Treinar voz ({duration})",
       "meter": {
