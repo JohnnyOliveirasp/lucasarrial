@@ -1506,8 +1506,8 @@
     },
     "panel": {
       "startError": "No se pudo iniciar el entrenamiento",
-      "awaitingTitle": "Lista para entrenar",
-      "awaitingBody": "Audios validados y almacenados en R2. Haz clic abajo para iniciar el entrenamiento en RunPod (~15-30 min). Puedes cerrar la pestaña — la interfaz se actualiza sola.",
+      "awaitingTitle": "Falta 1 paso: tienes que hacer clic",
+      "awaitingBody": "Tu audio llegó correctamente y está guardado — pero tu voz AÚN NO empezó a entrenarse. Solo empieza cuando hagas clic en el botón de abajo. El entrenamiento tarda de 15 a 30 minutos y puedes cerrar la página; te avisamos cuando esté lista.",
       "starting": "Iniciando…",
       "start": "Iniciar entrenamiento",
       "paywallAction": "clonar tu voz",

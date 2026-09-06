@@ -19,6 +19,7 @@ import { getRunpodBilling } from "@/lib/admin/runpod";
 import { processCourtesyCampaigns } from "@/lib/courtesy/service";
 import { sweepStuckStudioScenes, type StudioSceneSweep } from "@/lib/studio/sweep-stuck-scenes";
 import { rescueStuckVoiceUploads } from "@/lib/voices/rescue-stuck-uploads";
+import { lembrarVozesParadas, type LembreteSummary } from "@/lib/voices/lembrete-treino-sweep";
 import { expireTrialCredits, type TrialExpirySummary } from "@/lib/credits/trial-expiry";
 import { sweepStuckImageGenerations, type ImageSweepSummary } from "@/lib/images/sweep-stuck";
 
@@ -136,6 +137,20 @@ export async function POST(request: NextRequest) {
     console.error("[sweep-clones] resgate de vozes falhou:", e instanceof Error ? e.message : e);
   }
 
+  // Vozes paradas esperando o CLIQUE do aluno (medido 06/09: 18 vozes em
+  // awaiting_training, todas com áudio enviado, a mais velha há 54 dias). O
+  // resgate acima conserta o que o SERVIDOR perdeu; este avisa a pessoa quando
+  // a bola está com ELA. Best-effort — nunca derruba o sweep de clones.
+  let lembreteTreino: LembreteSummary | null = null;
+  try {
+    lembreteTreino = await lembrarVozesParadas();
+    if (lembreteTreino.enviados > 0 || lembreteTreino.errors > 0) {
+      console.log("[sweep-clones] lembretes de treino", JSON.stringify(lembreteTreino));
+    }
+  } catch (e) {
+    console.error("[sweep-clones] lembretes de treino falhou:", e instanceof Error ? e.message : e);
+  }
+
   // Trial vencido (regra 18/08, mig 80): crédito de mensalidade do trial expira
   // 10 dias após a adesão sem pagamento. A lógica inteira é atômica no banco
   // (expire_trial_credits). Falha NUNCA é engolida: vai pro log E pro corpo da
@@ -185,6 +200,7 @@ export async function POST(request: NextRequest) {
     sweep: summary,
     courtesy,
     voice_rescue: voiceRescue,
+    lembrete_treino: lembreteTreino,
     trial_expiry: trialExpiry,
     image_sweep: imageSweep,
     studio_scenes: studioScenes,

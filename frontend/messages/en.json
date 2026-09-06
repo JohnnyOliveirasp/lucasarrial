@@ -1506,8 +1506,8 @@
     },
     "panel": {
       "startError": "Failed to start training",
-      "awaitingTitle": "Ready to train",
-      "awaitingBody": "Audio validated and stored in R2. Click below to kick off training on RunPod (~15-30 min). You can close this tab — the UI updates on its own.",
+      "awaitingTitle": "One step left: you need to click",
+      "awaitingBody": "Your audio arrived correctly and is safely stored — but your voice has NOT started training yet. It only starts when you click the button below. Training takes 15 to 30 minutes and you can close this page; we'll let you know when it's ready.",
       "starting": "Starting…",
       "start": "Start training",
       "paywallAction": "clone your voice",
