@@ -66,10 +66,10 @@ export async function POST(request: NextRequest) {
     if (bal.total < STUDIO_CLEAN_COST) {
       const { data: prof } = await admin
         .from("profiles")
-        .select("access_until")
+        .select("access_until, access_source")
         .eq("id", auth.user_id)
         .maybeSingle();
-      const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null);
+      const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null, prof?.access_source ?? null);
       return jsonError(
         "insufficient_credits",
         `Créditos insuficientes: preparar o áudio custa ${STUDIO_CLEAN_COST} e você tem ${bal.total}.`,

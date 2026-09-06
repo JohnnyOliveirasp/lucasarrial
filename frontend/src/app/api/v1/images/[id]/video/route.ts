@@ -78,10 +78,10 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     if (total < cost) {
       const { data: prof } = await admin
         .from("profiles")
-        .select("access_until")
+        .select("access_until, access_source")
         .eq("id", auth.user_id)
         .maybeSingle();
-      const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null);
+      const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null, prof?.access_source ?? null);
       return jsonError("insufficient_credits", `Animar a imagem (${tier.label}) custa ${cost} créditos.`, 402, {
         subscribed,
         balance: total,

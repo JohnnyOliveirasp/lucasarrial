@@ -4,22 +4,17 @@
  * - bypassesBilling: equipe/admin não consome créditos nem precisa de assinatura
  *   (allowlist de cortesia). Decidido 2026-06-08: só Johnny, Lucas e Edu.
  * - hasActiveAccess: tem acesso quem está na allowlist OU tem assinatura ativa
- *   (profiles.access_until no futuro). É o gate de "precisa assinar pra entrar".
+ *   OU comprou avulso (acesso vitalício). É o gate de "precisa assinar pra entrar".
+ *
+ * A regra pura vive em `access-window.ts` (sem imports) pra poder ser testada —
+ * este arquivo é só a composição com o bypass.
  */
 import { isAdminEmail } from "@/lib/api/auth";
-
-const ALLOWLIST = (
-  process.env.COMP_ACCESS_EMAILS ??
-  "johnny.oliveirasp@gmail.com,lucas.m.arrial@gmail.com,eduardo@lucasarrial.com"
-)
-  .split(",")
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean);
+import { decidirAcesso, emailNaAllowlist } from "./access-window";
 
 /** E-mail liberado por cortesia (equipe). */
 export function isAllowlisted(email: string | null | undefined): boolean {
-  if (!email) return false;
-  return ALLOWLIST.includes(email.toLowerCase());
+  return emailNaAllowlist(email);
 }
 
 /** Não consome créditos e não precisa de assinatura (equipe + admins). */
@@ -28,14 +23,24 @@ export function bypassesBilling(email: string | null | undefined): boolean {
 }
 
 /**
- * Tem acesso ao app? Allowlist/admin sempre; senão precisa de assinatura ativa.
- * @param accessUntil profiles.access_until (ISO) — NULL/passado = sem acesso.
+ * Tem acesso ao app? Allowlist/admin sempre; senão precisa de acesso pago.
+ *
+ * ⚠️ `accessUntil = NULL` NÃO significa "sem acesso" sozinho — é ambíguo, e a
+ * desambiguação é o `accessSource` (contrato escrito em scripts/12_payments.sql
+ * e no tipo em lib/db/types.ts:58). Compra AVULSA (pagamento único) gera
+ * entitlement vitalício, que `recomputeProfileAccess` grava como
+ * `access_source='hotmart'` + `access_until=NULL`. Sem o 3º argumento, esse
+ * aluno — que pagou — é lido como "sem acesso" e fica trancado com o crédito
+ * parado na mão.
+ *
+ * @param accessUntil  profiles.access_until (ISO). NULL = ver accessSource.
+ * @param accessSource profiles.access_source. OPCIONAL: quem não passa mantém
+ *   exatamente o comportamento antigo (NULL sem origem = sem acesso).
  */
 export function hasActiveAccess(
   email: string | null | undefined,
   accessUntil: string | null | undefined,
+  accessSource?: string | null,
 ): boolean {
-  if (bypassesBilling(email)) return true;
-  if (!accessUntil) return false;
-  return new Date(accessUntil).getTime() > Date.now();
+  return decidirAcesso(bypassesBilling(email), accessUntil, accessSource);
 }

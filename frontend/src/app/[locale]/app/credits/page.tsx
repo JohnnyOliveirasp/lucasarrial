@@ -29,7 +29,7 @@ export default async function CreditsPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("email, credits_subscription, credits_extra, access_until")
+    .select("email, credits_subscription, credits_extra, access_until, access_source")
     .eq("id", user.id)
     .single();
 
@@ -38,7 +38,7 @@ export default async function CreditsPage({
   const email = profile?.email ?? user.email ?? null;
   const unlimited = bypassesBilling(email);
   // Assinatura ativa (equipe/allowlist conta como ativa). Só assinante compra avulso.
-  const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
+  const subscribed = hasActiveAccess(email, profile?.access_until ?? null, profile?.access_source ?? null);
 
   return (
     <div className="flex flex-col gap-12">

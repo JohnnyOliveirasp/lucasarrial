@@ -60,10 +60,10 @@ export async function POST(
     if (total < totalCost) {
       const { data: prof } = await admin
         .from("profiles")
-        .select("access_until")
+        .select("access_until, access_source")
         .eq("id", auth.user_id)
         .maybeSingle();
-      const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null);
+      const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null, prof?.access_source ?? null);
       return jsonError(
         "insufficient_credits",
         `A varinha custa ${VIDEO_PROMPT_WAND_COST} + ${clipCost} (${tier.label}) = ${totalCost} créditos.`,

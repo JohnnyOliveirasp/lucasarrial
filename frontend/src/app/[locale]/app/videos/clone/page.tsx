@@ -34,14 +34,14 @@ export default async function VideoClonePage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("email, credits_subscription, credits_extra, access_until")
+    .select("email, credits_subscription, credits_extra, access_until, access_source")
     .eq("id", user.id)
     .single();
 
   const email = profile?.email ?? user.email ?? null;
   const team = bypassesBilling(email);
   const admin = await isAdmin(email);
-  const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
+  const subscribed = hasActiveAccess(email, profile?.access_until ?? null, profile?.access_source ?? null);
   const creditsTotal =
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
   const canGenerate = team || creditsTotal >= CLONE_MIN_CREDITS;

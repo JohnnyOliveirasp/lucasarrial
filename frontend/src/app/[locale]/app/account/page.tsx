@@ -36,7 +36,7 @@ export default async function AccountPage({
   const email = profile?.email ?? user.email ?? "";
   const displayName = profile?.display_name ?? email.split("@")[0];
   const team = bypassesBilling(email);
-  const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
+  const subscribed = hasActiveAccess(email, profile?.access_until ?? null, profile?.access_source ?? null);
   const accessUntil = profile?.access_until
     ? new Date(profile.access_until).toLocaleDateString("pt-BR")
     : null;

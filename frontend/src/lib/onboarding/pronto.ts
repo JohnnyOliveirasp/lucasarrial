@@ -181,7 +181,7 @@ export async function verificarOnboardingPronto(admin: Admin, userId: string): P
       .update({ onboarding_ready_email_at: new Date().toISOString() })
       .eq("id", userId)
       .is("onboarding_ready_email_at", null)
-      .select("email, access_until");
+      .select("email, access_until, access_source");
     const email = claimed?.[0]?.email as string | undefined;
     if (!email) return; // outro webhook levou
 
@@ -189,7 +189,11 @@ export async function verificarOnboardingPronto(admin: Admin, userId: string): P
     // assinatura vigente → "tudo pronto". Sem assinatura (ou nunca entrou) →
     // "seus arquivos estão ok, assine pra acessar". Nenhuma das duas fala de
     // saldo — decisão dele.
-    const ativo = hasActiveAccess(email, claimed?.[0]?.access_until as string | null);
+    const ativo = hasActiveAccess(
+      email,
+      claimed?.[0]?.access_until as string | null,
+      claimed?.[0]?.access_source as string | null,
+    );
 
     // #189 (29/08): `pronto` fica true com ZERO avatar de propósito (decisão de
     // 22/08 — a voz de pé basta pra fechar a linha, senão quem perdeu as

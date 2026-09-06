@@ -106,10 +106,10 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       // sem assinatura → "assinar" (o avulso exige assinatura ativa).
       const { data: prof } = await admin
         .from("profiles")
-        .select("access_until")
+        .select("access_until, access_source")
         .eq("id", auth.user_id)
         .maybeSingle();
-      const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null);
+      const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null, prof?.access_source ?? null);
       return jsonError(
         "insufficient_credits",
         `Créditos insuficientes: treinar uma voz custa ${TRAINING_CREDIT_COST} e você tem ${bal.total}.`,
