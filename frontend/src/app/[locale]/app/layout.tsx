@@ -9,10 +9,39 @@ import { PurchaseAutoRefresh } from "@/components/app/purchase-auto-refresh";
 import { PendingPaymentBanner } from "@/components/app/pending-payment-banner";
 import { HelpWidget } from "@/components/app/help-widget";
 import { createClient } from "@/lib/supabase/server";
+import { getAdmin } from "@/lib/db/admin";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { adminRole } from "@/lib/admin/guard";
 import { socialPublisherAllowedEmail } from "@/lib/social/access";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
+import { precisaResgatarCompras } from "@/lib/payments/claim-guard";
+
+/**
+ * Este usuário já recebeu alguma recarga de ciclo? É o que separa "nunca
+ * recebeu" (incidente #283) de "recebeu e gastou tudo" — os dois chegam a
+ * saldo 0, e só o primeiro precisa do resgate.
+ *
+ * `head: true` + `count: exact` não traz linha nenhuma, e o filtro
+ * (user_id, kind) é atendido pelo índice `credit_tx_user_idx`
+ * (user_id, created_at desc) — sem migration nova.
+ *
+ * Falha FECHADA: se a consulta der erro, responde "já recebeu", ou seja NÃO
+ * dispara o resgate. Um banco intermitente não pode virar `claim` em toda
+ * renderização.
+ */
+async function jaRecebeuRecargaDoCiclo(userId: string): Promise<boolean> {
+  try {
+    const { count, error } = await getAdmin()
+      .from("credit_transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("kind", "subscription_grant");
+    if (error) return true;
+    return (count ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
 
 export default async function AppLayout({
   children,
@@ -37,10 +66,23 @@ export default async function AppLayout({
   // Compra/cortesia feita ANTES da conta existir só era resgatada no
   // /auth/callback (OAuth) — quem entra por e-mail/senha nunca passava lá e
   // ficava pago sem acesso (caso dreduardosilva 22/07, 6 dias travado). Aqui
-  // cobre TODOS os fluxos; roda só pra quem está sem plano (best-effort,
-  // nunca quebra a página) e recarrega o profile se destravou algo.
+  // cobre TODOS os fluxos (best-effort, nunca quebra a página) e recarrega o
+  // profile se destravou algo.
+  //
+  // A guarda antiga era só `sem plano`, o que enxerga ACESSO faltando e é cega
+  // pra CRÉDITO faltando: `gestao@qooqi.com.br` ficou `plan='pro'` com ZERO
+  // crédito por 47 dias (incidente #283). Agora o plano pago com saldo zerado
+  // também entra — mas SÓ se nunca houve recarga, pra quem gastou tudo
+  // legitimamente não chamar o resgate a cada page load. Ver claim-guard.ts.
   const claimEmail = profile?.email ?? user.email ?? null;
-  if (claimEmail && (!profile || !profile.plan || profile.plan === "free")) {
+  const precisaResgate =
+    !!claimEmail &&
+    (await precisaResgatarCompras({
+      profile,
+      bypassaCobranca: bypassesBilling(claimEmail),
+      jaRecebeuRecarga: () => jaRecebeuRecargaDoCiclo(user.id),
+    }));
+  if (claimEmail && precisaResgate) {
     await claimPurchasesOnLogin(user.id, claimEmail);
     const { data: refreshed } = await supabase
       .from("profiles")
