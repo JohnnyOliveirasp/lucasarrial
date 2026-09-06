@@ -107,6 +107,22 @@ class InferenceJob:
             "tail_interno_checked": 0, "tail_interno_flagged": 0,
             "tail_interno_none": 0, "tail_interno_sombra": 0,
             "tail_interno_word_flagged": 0,
+            # CURA DO FIM (#234, 06/09) — a cura tem SEIS desfechos e ate hoje
+            # so o SUCESSO (`tail_healed`) tinha contador. Medido na ronda de
+            # 06/09: a cura so entrega resultado em 9 de 154 geracoes com a
+            # fronteira final reprovada desde 26/08 (5,8%); nos outros 94% ela
+            # sai por uma das cinco portas abaixo — e nenhuma deixava rastro.
+            # Sem isto e' impossivel distinguir "a cura nem foi chamada" de "o
+            # whisper nao achou a palavra" de "curou e continuou ruim", e cada
+            # um desses e' um conserto DIFERENTE.
+            # Inicializados em 0 pelo mesmo motivo dos irmaos acima: campo
+            # AUSENTE e' indistinguivel de "mediu e deu zero".
+            "tail_cura_tentada": 0,
+            "tail_cura_bail_sem_alvo": 0,
+            "tail_cura_bail_sem_palavra": 0,
+            "tail_cura_bail_sem_fim": 0,
+            "tail_cura_bail_corte_invalido": 0,
+            "tail_cura_bail_ainda_ruim": 0,
         }
         # Instrumentação d3d8d1b2: tentativa POR CHUNK (1 = geração original,
         # 2+ = regen do QA) — sem isso o heartbeat não distingue os dois.
@@ -289,6 +305,17 @@ class InferenceJob:
             palavras_com_tempo(seg, self.sample_rate, self.cfg.echo_qa_model, self.cfg.qa_language)
         ))
 
+    def _contar_cura(self, motivo: str) -> None:
+        """Marca UM desfecho da cura do fim (#234). Telemetria pura: só soma.
+
+        `.get(chave, 0)` de propósito — os campos nascem em zero no `__init__`,
+        mas o acumulador não pode depender disso pra funcionar (os testes
+        constroem o job com `qa_stats` vazio, e um KeyError aqui derrubaria a
+        geração de um aluno por causa de instrumentação).
+        """
+        chave = f"tail_cura_{motivo}"
+        self.qa_stats[chave] = self.qa_stats.get(chave, 0) + 1
+
     def _curar_fim_abrupto(self, seg, idx: int, chunk: str):
         """Cura o fim decepado GERANDO ALÉM e cortando no lugar certo.
 
@@ -303,9 +330,24 @@ class InferenceJob:
 
         Se qualquer etapa não fechar, devolve o áudio original: nunca entrega
         algo pior nem corta no escuro.
+
+        TELEMETRIA (#234, 06/09) — cada saída deixa rastro em `qa_stats`, e a
+        conta FECHA: `tail_cura_tentada` = soma dos cinco `tail_cura_bail_*`
+        mais `tail_healed`. É o primeiro galho da árvore de diagnóstico: sem
+        `tail_cura_tentada` nem dá pra saber se a cura foi chamada.
+        Os contadores são PUROS: ninguém os lê pra decidir nada, nenhum job
+        passa a falhar por causa deles (mesmo contrato de `registrar_faltantes`).
+
+        ⚠️ LIMITE HONESTO da conta: ela fecha para as chamadas que RETORNAM. Se
+        `self._gerar` levantar exceção, `tail_cura_tentada` fica sem desfecho —
+        de propósito, porque engolir a exceção aqui seria mudar comportamento,
+        e esta mudança é só de telemetria. Nesse caso o job inteiro falha e a
+        diferença aparece como `tentada > bails + healed`.
         """
+        self._contar_cura("tentada")
         alvo = chunk.rstrip()
         if not alvo:
+            self._contar_cura("bail_sem_alvo")
             return seg
         bruto = self._aparar(self._gerar(f"{alvo} {self.ISCA}", idx), idx)
         palavras = palavras_com_tempo(
@@ -313,19 +355,23 @@ class InferenceJob:
         )
         n_isca = len([w for w in self.ISCA.split() if w])
         if len(palavras) <= n_isca:
+            self._contar_cura("bail_sem_palavra")
             return seg
         ultima = palavras[-(n_isca + 1)]
         fim_s = getattr(ultima, "end", None)
         if fim_s is None and isinstance(ultima, dict):
             fim_s = ultima.get("end")
         if fim_s is None:
+            self._contar_cura("bail_sem_fim")
             return seg
         # +120 ms: deixa a consoante final respirar antes do corte.
         corte = min(int((float(fim_s) + 0.12) * self.sample_rate), bruto.size)
         if corte <= 0:
+            self._contar_cura("bail_corte_invalido")
             return seg
         candidato = bruto[:corte]
         if self._fim_ainda_ruim(candidato):
+            self._contar_cura("bail_ainda_ruim")
             return seg
         self.qa_stats["tail_healed"] = self.qa_stats.get("tail_healed", 0) + 1
         _log("info", "inference.tail_qa.curado", idx=idx,
