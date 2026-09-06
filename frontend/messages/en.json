@@ -449,7 +449,7 @@
       },
       "refs": {
         "label": "1. Your photos (reference)",
-        "hint": "Upload 1 or more photos of the SAME person — the more angles and expressions, the better the likeness. The result keeps the face from these photos. Use sharp, well-lit photos.",
+        "hint": "The main photo is the face anchor: the result keeps its face. Use sharp, well-lit photos. Under Extra photos you can add more angles of the SAME person (better likeness) or bring in a DIFFERENT photo to compose with — a scene, a setting, an object, an outfit.",
         "dropzone": "Click or drag your photos here — they are saved to Reference Images",
         "bankUploading": "Uploading {done} of {total} to Reference Images…",
         "bankSaved": "{count} photo(s) saved to Reference Images — pick the main one and the extras there.",
@@ -465,9 +465,11 @@
         "fixedLabel": "Reference image",
         "fixedBadge": "Fixed reference",
         "replace": "Change photo",
-        "extrasLabel": "Extra photos (optional)",
+        "extrasLabel": "Extra photos (optional) — combine another photo into this generation",
         "promote": "Use as reference",
-        "historyTip": "Tip: on any image in your history, click “Use as reference” to bring it here."
+        "historyTip": "Tip: on any image in your history, click “Use as reference” to bring it here.",
+        "extrasHelp": "They do two things: add more angles of the SAME person (better likeness), or bring in a DIFFERENT photo to compose the scene — a setting, an environment, an object, an outfit. Say in the prompt what should come from each photo. Extras are picked in Reference Images; uploading into the frame above only saves the photo there.",
+        "extrasPick": "Pick from Reference Images"
       },
       "idea": {
         "label": "2. Your idea (optional)",
@@ -478,7 +480,7 @@
       },
       "prompt": {
         "label": "3. Prompt",
-        "hint": "The text describing the image to generate (English works best). You can type it right here or use the button above. Edit it as much as you like.",
+        "hint": "The text describing the image to generate. You can write in your own language: before generating it is automatically translated to English, which image models understand best — so the result follows the MEANING of your text, not its exact words. Writing directly in English skips that step. Edit freely.",
         "placeholder": "A photorealistic portrait of the person in the reference photo…"
       },
       "aspect": {

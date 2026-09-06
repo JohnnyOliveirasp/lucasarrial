@@ -449,7 +449,7 @@
       },
       "refs": {
         "label": "1. Tus fotos (referencia)",
-        "hint": "Sube 1 o más fotos de la MISMA persona — cuantos más ángulos y expresiones, mejor el parecido. El resultado mantiene el rostro de estas fotos. Usa fotos nítidas y bien iluminadas.",
+        "hint": "La foto principal es el ancla del rostro: el resultado mantiene ese rostro. Usa fotos nítidas y bien iluminadas. En Fotos extra puedes sumar más ángulos de la MISMA persona (más parecido) o traer una foto DIFERENTE para componer — un escenario, un ambiente, un objeto, una prenda.",
         "dropzone": "Haz clic o arrastra tus fotos aquí — se guardan en Imágenes de Referencia",
         "bankUploading": "Subiendo {done} de {total} a Imágenes de Referencia…",
         "bankSaved": "{count} foto(s) guardada(s) en Imágenes de Referencia — elige allí la principal y las extras.",
@@ -465,9 +465,11 @@
         "fixedLabel": "Imagen de referencia",
         "fixedBadge": "Referencia fija",
         "replace": "Cambiar foto",
-        "extrasLabel": "Fotos extra (opcional)",
+        "extrasLabel": "Fotos extra (opcional) — combina otra foto en esta generación",
         "promote": "Usar como referencia",
-        "historyTip": "Consejo: en cualquier imagen de tu historial, haz clic en “Usar como referencia” para traerla aquí."
+        "historyTip": "Consejo: en cualquier imagen de tu historial, haz clic en “Usar como referencia” para traerla aquí.",
+        "extrasHelp": "Sirven para dos cosas: sumar más ángulos de la MISMA persona (más parecido) o traer una foto DIFERENTE para componer la escena — un escenario, un ambiente, un objeto, una prenda. Indica en el prompt qué debe venir de cada foto. Las extras se eligen en Imágenes de Referencia; subir una foto en el cuadro de arriba solo la guarda allí.",
+        "extrasPick": "Elegir en Imágenes de Referencia"
       },
       "idea": {
         "label": "2. Tu idea (opcional)",
@@ -478,7 +480,7 @@
       },
       "prompt": {
         "label": "3. Prompt",
-        "hint": "El texto que describe la imagen a generar (en inglés funciona mejor). Puedes escribirlo aquí mismo o usar el botón de arriba. Edítalo cuanto quieras.",
+        "hint": "El texto que describe la imagen a generar. Puedes escribir en español: antes de generar se traduce automáticamente al inglés, que es el idioma que mejor entienden los modelos de imagen — por eso el resultado sigue el SENTIDO de tu texto, no las palabras exactas. Escribir directamente en inglés evita ese paso. Puedes editarlo libremente.",
         "placeholder": "A photorealistic portrait of the person in the reference photo…"
       },
       "aspect": {
