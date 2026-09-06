@@ -1506,8 +1506,8 @@
     },
     "panel": {
       "startError": "Falha ao iniciar treinamento",
-      "awaitingTitle": "Pronta para treinar",
-      "awaitingBody": "Áudios validados e armazenados no R2. Clique abaixo pra disparar o treinamento no RunPod (~15-30min). Você pode fechar a aba — a UI atualiza sozinha.",
+      "awaitingTitle": "Falta 1 passo: você precisa clicar",
+      "awaitingBody": "O seu áudio chegou certo e está guardado — mas a sua voz AINDA NÃO começou a treinar. Ela só começa quando você clicar no botão abaixo. O treino leva de 15 a 30 minutos e você pode fechar a página; a gente te avisa quando ficar pronta.",
       "starting": "Disparando…",
       "start": "Iniciar treinamento",
       "paywallAction": "clonar a sua voz",
