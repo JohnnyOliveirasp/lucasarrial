@@ -23,6 +23,17 @@
  * ZERO no total (não dá pra inventar duração de arquivo que ninguém leu), mas
  * então a tela é OBRIGADA a dizer que ele não está contando — silêncio aqui é
  * exatamente o defeito que estamos consertando.
+ *
+ * A reincidência (incidentes #253 e #287, medidos em 06/09): o mesmo
+ * compromisso foi quebrado no outro extremo da régua. `atingeMinimo` era
+ * `total >= min && !acimaDoMaximo` — um booleano cujo nome fala do MÍNIMO
+ * sendo usado pra também reprovar quem passou do MÁXIMO. Passando de 60min o
+ * aluno lia "Faltam: 00:00" com a barra cheia e o botão Treinar apagado. O
+ * acalbamonte (pagante) ficou 2 dias assim. A lição, que vale pra toda régua
+ * daqui: um booleano só cabe DOIS desfechos — quando existem três (abaixo, ok,
+ * acima), o terceiro sempre acaba disfarçado de um dos outros e a tela mente.
+ * Por isso `estado` e `podeEnviar` são campos próprios, e `atingeMinimo` hoje
+ * fala só do mínimo.
  */
 import type { MotivoFalhaMedicao } from "./duration";
 
@@ -42,21 +53,49 @@ export function estadoDoItem(item: ItemMedicao): EstadoMedicao {
   return item.duracao == null ? "medindo" : "medido";
 }
 
+/**
+ * Onde o TOTAL caiu na régua. Existe porque um booleano não consegue carregar
+ * três desfechos: quem tenta espremer "abaixo", "ok" e "acima" em `meets`
+ * acaba usando `false` pra dois estados opostos — e a tela então explica o
+ * excesso com a frase da falta. Foi exatamente o defeito do #253/#287.
+ */
+export type EstadoTotal = "abaixo" | "ok" | "acima";
+
 export type ResumoMedicao = {
   /** Soma só do que foi realmente medido. */
   total: number;
   medidos: number;
   medindo: number;
   falhados: number;
+  /**
+   * A verdade sobre o MÍNIMO e só sobre ele: `total >= minSegundos`.
+   *
+   * NÃO use este campo pra ligar o botão — quem passou de 60min atinge o
+   * mínimo e mesmo assim não pode enviar. Pra isso existe `podeEnviar`.
+   */
   atingeMinimo: boolean;
   acimaDoMaximo: boolean;
-  /** Falta pro mínimo, considerando só o que foi medido. */
+  /** Falta pro mínimo, considerando só o que foi medido. 0 se já atingiu. */
   faltam: number;
+  /** Quanto passou do teto. 0 quando não passou. Espelho de `faltam`. */
+  excedente: number;
+  /** Os três desfechos, sem colapsar dois deles no mesmo `false`. */
+  estado: EstadoTotal;
+  /**
+   * O ÚNICO campo que autoriza o envio: o mínimo foi atingido E o teto não foi
+   * estourado. O teto continua bloqueando como sempre (79min estouraram o
+   * executionTimeout do worker em 21/07) — o que muda é a EXPLICAÇÃO, não a
+   * permissão.
+   */
+  podeEnviar: boolean;
   /**
    * A pergunta que importa: o botão está morto POR CAUSA de arquivo que não
    * deu pra medir? Só é verdade quando existe falha E o mínimo não foi
    * atingido. Se o resto do áudio já passa dos 20min, a falha de um arquivo
    * NÃO bloqueia ninguém — ele sobe junto e o total nem precisava dele.
+   *
+   * Acima do teto isto é FALSO de propósito: lá o botão morre pelo excesso, e
+   * culpar o arquivo ilegível mandaria o aluno consertar a coisa errada.
    */
   bloqueadoPorFalha: boolean;
 };
@@ -86,8 +125,14 @@ export function resumirMedicao(
     }
   }
 
+  // Dois fatos INDEPENDENTES, medidos separadamente. Antes `atingeMinimo` era
+  // `total >= min && !acimaDoMaximo`: um booleano que dizia "não atingiu o
+  // mínimo" pra representar "passou do máximo". A tela lia esse `false` e
+  // imprimia "Faltam: 00:00" com a barra cheia e o botão apagado — três coisas
+  // se contradizendo na mesma tela (#253/#287, aluno pagante 2 dias travado).
   const acimaDoMaximo = total > maxSegundos;
-  const atingeMinimo = total >= minSegundos && !acimaDoMaximo;
+  const atingeMinimo = total >= minSegundos;
+  const podeEnviar = atingeMinimo && !acimaDoMaximo;
 
   return {
     total,
@@ -97,6 +142,9 @@ export function resumirMedicao(
     atingeMinimo,
     acimaDoMaximo,
     faltam: Math.max(0, minSegundos - total),
+    excedente: Math.max(0, total - maxSegundos),
+    estado: acimaDoMaximo ? "acima" : atingeMinimo ? "ok" : "abaixo",
+    podeEnviar,
     bloqueadoPorFalha: falhados > 0 && !atingeMinimo,
   };
 }

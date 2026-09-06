@@ -10,6 +10,7 @@ import {
   estadoDoItem,
   resumirMedicao,
   vaiAdiantarTentarDeNovo,
+  type EstadoTotal,
 } from "@/lib/audio/medicao";
 import { filterAudioFiles, gatherAudioFromDataTransfer } from "@/lib/audio/collect";
 import { listClips, deleteClip, type StoredClip } from "@/lib/audio/clip-store";
@@ -359,7 +360,11 @@ export function VoiceCreator() {
   );
   const totalDuration = resumo.total;
   const overMaximum = resumo.acimaDoMaximo;
-  const meetsMinimum = resumo.atingeMinimo;
+  // O portão do botão é `podeEnviar`, NUNCA `atingeMinimo`: acima de 60min o
+  // aluno atinge o mínimo e mesmo assim não pode enviar (o teto existe porque
+  // 79min estouraram o executionTimeout do worker em 21/07). Ler `atingeMinimo`
+  // aqui foi o que fez a tela dizer "Faltam: 00:00" com o botão morto (#253).
+  const podeEnviar = resumo.podeEnviar;
   const missing = resumo.faltam;
 
   // Quantos nomes de arquivo descartado mostramos por extenso na mensagem;
@@ -552,7 +557,7 @@ export function VoiceCreator() {
 
   async function startUpload() {
     if (busy) return;
-    if (!meetsMinimum) return;
+    if (!podeEnviar) return; // cobre mínimo E teto — ver resumirMedicao()
     if (files.length === 0) return;
 
     setBusy(true);
@@ -865,7 +870,8 @@ export function VoiceCreator() {
         min={MIN_DURATION_SECONDS}
         recommended={REC_DURATION_SECONDS}
         missing={missing}
-        meets={meetsMinimum}
+        excess={resumo.excedente}
+        estado={resumo.estado}
         t={t}
       />
 
@@ -902,7 +908,7 @@ export function VoiceCreator() {
         <button
           type="button"
           onClick={startUpload}
-          disabled={!meetsMinimum || busy || step === "submitting" || files.length === 0}
+          disabled={!podeEnviar || busy || step === "submitting" || files.length === 0}
           className={PILL}
         >
           {busy || step === "submitting"
@@ -1150,18 +1156,32 @@ function DurationMeter({
   min,
   recommended,
   missing,
-  meets,
+  excess,
+  estado,
   t,
 }: {
   total: number;
   min: number;
   recommended: number;
   missing: number;
-  meets: boolean;
+  excess: number;
+  /**
+   * Três desfechos, não um booleano. Com `meets: boolean` o "acima do teto"
+   * caía no mesmo `false` do "abaixo do mínimo" e o medidor imprimia
+   * "Faltam: 00:00" (porque `missing` é 0 lá em cima) com a barra cheia e o
+   * botão apagado — o aluno lia que não faltava nada e não conseguia enviar.
+   */
+  estado: EstadoTotal;
   t: TFn;
 }) {
   const tc = useTranslations("voiceCreate");
   const pct = Math.min(100, (total / recommended) * 100);
+  const cor =
+    estado === "ok"
+      ? "text-[var(--status-online)]"
+      : estado === "acima"
+        ? "text-[var(--status-error)]"
+        : "text-[var(--silver)]";
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between">
@@ -1175,7 +1195,11 @@ function DurationMeter({
       <div className="relative h-1.5 overflow-hidden rounded-[var(--radius-full)] bg-[var(--hairline-strong)]">
         <div
           className={`absolute inset-y-0 left-0 rounded-[var(--radius-full)] transition-all duration-300 ${
-            meets ? "bg-[var(--status-online)]" : "bg-[var(--silver)]"
+            estado === "ok"
+              ? "bg-[var(--status-online)]"
+              : estado === "acima"
+                ? "bg-[var(--status-error)]"
+                : "bg-[var(--silver)]"
           }`}
           style={{ width: `${pct}%` }}
         />
@@ -1189,10 +1213,12 @@ function DurationMeter({
         <span>
           {t("meter.min")}: {formatDuration(min)}
         </span>
-        <span className={meets ? "text-[var(--status-online)]" : "text-[var(--silver)]"}>
-          {meets
+        <span className={cor}>
+          {estado === "ok"
             ? `✓ ${t("meter.ok")}`
-            : `${t("meter.missing")}: ${formatDuration(missing)}`}
+            : estado === "acima"
+              ? t("meter.over", { excess: formatDuration(excess) })
+              : `${t("meter.missing")}: ${formatDuration(missing)}`}
         </span>
         <span>
           {t("meter.recommended")}: {formatDuration(recommended)}
