@@ -50,14 +50,30 @@ export const ETAPAS_DIAS = [3, 14] as const;
 /**
  * ⚠️ CORTE DE BACKFILL — a automação NÃO escreve para voz criada antes disto.
  *
- * Em 06/09/2026 as 18 vozes paradas já tinham dono: o Johnny escreveu À MÃO
- * para os 16 alunos afetados explicando o passo que falta. Sem este corte, o
- * primeiro sweep depois do deploy varreria as mesmas 18, veria "parada há 54
- * dias, nunca lembrada" e mandaria TUDO de novo — carta duplicada no mesmo
- * dia, que é exatamente o defeito que a trava existe pra impedir.
+ * Sem este corte, o primeiro sweep depois do deploy varreria as 18 vozes que
+ * já estavam paradas, veria "parada há 54 dias, nunca lembrada" e mandaria
+ * carta pra todas de uma vez — exatamente o defeito que a trava existe pra
+ * impedir.
  *
- * O corte é a data do trabalho manual. Voz anterior a ela = já tratada por
- * humano, a máquina não repete. Voz criada a partir daí = a régua vale.
+ * ⚠️ JUSTIFICATIVA CORRIGIDA (medido na ronda de 06/09 ~23hZ, antes de
+ * mergear). A versão anterior deste comentário dizia que "o Johnny escreveu À
+ * MÃO para os 16 alunos afetados". ISSO NÃO ACONTECEU — não houve envio em
+ * massa, e ninguém deve herdar essa frase. O corte continua CERTO, mas por
+ * outro motivo: as 18 foram triadas UMA A UMA e nenhuma precisa de lembrete
+ * de máquina.
+ *
+ *   - 15 das 18: o dono JÁ TEM outra voz `ready` (medido por
+ *     `count(voices ready)` agrupado por `user_id`). A linha parada é entulho
+ *     de segunda tentativa, não gente esperando — é a leitura do #137, e ela
+ *     se sustenta.
+ *   - 2 das 18 (`superaspen22`, `emanuelfmguerreiro`): upload abandonado de 1
+ *     arquivo, `duration_seconds` nulo, ZERO crédito e sem acesso. Lembrete
+ *     mandaria os dois num botão que devolve 402.
+ *   - 1 das 18 (`tania-araujo`, única pagante viva sem voz pronta): já recebeu
+ *     DOIS e-mails à mão explicando o clique (05/09 uid 1071, 06/09 uid 1158).
+ *
+ * Voz anterior ao corte = triada por humano, a máquina não repete. Voz criada
+ * a partir daí = a régua vale.
  */
 export const SEM_LEMBRETE_ANTES_DE = "2026-09-06T00:00:00.000Z";
 
