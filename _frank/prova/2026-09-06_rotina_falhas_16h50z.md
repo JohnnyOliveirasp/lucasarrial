@@ -200,3 +200,36 @@ número do chamado que a fechou.** O #137 dizia 12 alunos e foi fechado com
 "14 de 16 já têm voz". Hoje são 18, e o recorte que importa (dono **sem
 nenhuma** voz `ready`) devolve **3** — dos quais só 1 é pagante viva. Nem o
 número do chamado nem o do fechamento descreviam a fila real.
+
+---
+
+## 8. Erro meu nesta ronda, e a armadilha nova que ele revela
+
+**O segundo commit deste log foi parar em branch de feature, não na main.**
+Eu rodei `git commit` na pasta do projeto como sempre, mas entre o meu
+primeiro commit e o segundo o **`coder`** (card `1b1b030b`, trabalhando no
+MESMO diretório) fez `checkout` da branch dele
+(`feat/medidor-nao-mente-acima-do-teto`). Meu `git push origin main` respondeu
+**"Everything up-to-date"** — que é a mensagem de sucesso mais enganosa do
+git: nada falhou, e o registro simplesmente não estava onde eu pensava.
+
+É exatamente o defeito que o passo fixo de fim de ronda existe pra pegar
+("em 19/08 um fix de aluno ficou 9h preso assim") — só que com uma causa nova:
+não foi esquecimento meu de trocar de branch, foi **outro agente trocando a
+branch debaixo de mim**, no meio da minha própria ronda.
+
+**Como corrigi sem atropelar o `coder`:** ele estava com
+`voice-creator.tsx` e `medicao.ts` modificados e **não commitados**. Um
+`git checkout main` ali teria arrancado a árvore de trabalho debaixo dele e
+podia destruir o conserto em voo. Usei `git worktree add /tmp/... main`,
+fiz `cherry-pick` do commit do log na main isolada, empurrei e removi a
+worktree. Conferido depois: a branch dele segue como estava e o trabalho
+avançou (os 3 locales entraram). O `origin/main..HEAD` fecha vazio.
+
+**A regra que fica, e vale pra toda ronda daqui pra frente:** desde que os
+operários rodam no mesmo diretório do projeto, `git branch --show-current`
+**antes de cada commit** virou obrigatório — a branch não é mais estável
+dentro de uma ronda só. E `push` que responde "Everything up-to-date" quando
+você acabou de commitar não é sucesso: é sinal de que o commit foi para outro
+lugar. Quando houver operário com trabalho não commitado no diretório, a
+correção é **worktree**, nunca `checkout`.
