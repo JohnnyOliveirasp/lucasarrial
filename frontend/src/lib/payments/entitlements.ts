@@ -150,6 +150,40 @@ async function findUserIdByEmail(email: string): Promise<string | null> {
 }
 
 /**
+ * A regra de "este entitlement dá acesso AGORA?", em UM lugar só.
+ *
+ * ⚠️ "canceled" NAO e o mesmo que "sem acesso" (corrigido 20/08).
+ *
+ * Ate aqui so "active" contava. So que o proprio webhook, ao cancelar uma
+ * assinatura, grava de proposito o access_until do periodo JA PAGO no
+ * entitlement ("cancelamento de assinatura mantem o acesso ate o fim do
+ * periodo") - e o recompute jogava esse valor fora no segundo seguinte,
+ * zerando profiles.access_until. Quem cancelava perdia na hora o que tinha
+ * comprado, que e o oposto da regra "quem pagou fica".
+ *
+ * A regra, por status:
+ *   active    -> access_until NULL (vitalicio) OU futuro
+ *   canceled  -> SO com data futura. NULL aqui e "acabou", nao "vitalicio":
+ *                cancelamento sem periodo pago restante nao da acesso.
+ *   refunded / chargeback / expired -> NUNCA. O dinheiro voltou ou nao entrou.
+ *
+ * POR QUE ISTO SAIU DA CLOSURE (06/09, incidente #290): o e-mail de boas-vindas
+ * do SGP precisa responder "o comprador TEM a plataforma?" pra parar de dizer a
+ * assinante pagante que ele nao tem. Se a resposta viesse de uma copia da regra,
+ * as duas iam divergir no primeiro ajuste e o e-mail voltaria a mentir por outro
+ * caminho. Quem responde ao aluno usa a MESMA regra que abre a porta pra ele.
+ * A regra em si NAO mudou nesta extracao — e byte a byte a de antes.
+ */
+export function entitlementValeAcesso(
+  e: { status: string; access_until: string | null },
+  agoraIso: string,
+): boolean {
+  if (e.status === "active") return e.access_until === null || e.access_until > agoraIso;
+  if (e.status === "canceled") return e.access_until !== null && e.access_until > agoraIso;
+  return false;
+}
+
+/**
  * Recalcula o cache de acesso no profile a partir dos entitlements do usuário.
  * Tem acesso quem possui ≥1 entitlement 'active' não expirado
  * (access_until NULL = vitalício).
@@ -163,25 +197,8 @@ async function recomputeProfileAccess(userId: string): Promise<void> {
     .select("provider, status, access_until")
     .eq("user_id", userId);
 
-  // ⚠️ "canceled" NAO e o mesmo que "sem acesso" (corrigido 20/08).
-  //
-  // Ate aqui so "active" contava. So que o proprio webhook, ao cancelar uma
-  // assinatura, grava de proposito o access_until do periodo JA PAGO no
-  // entitlement ("cancelamento de assinatura mantem o acesso ate o fim do
-  // periodo") - e esta funcao jogava esse valor fora no segundo seguinte,
-  // zerando profiles.access_until. Quem cancelava perdia na hora o que tinha
-  // comprado, que e o oposto da regra "quem pagou fica".
-  //
-  // A regra, por status:
-  //   active    -> access_until NULL (vitalicio) OU futuro
-  //   canceled  -> SO com data futura. NULL aqui e "acabou", nao "vitalicio":
-  //                cancelamento sem periodo pago restante nao da acesso.
-  //   refunded / chargeback / expired -> NUNCA. O dinheiro voltou ou nao entrou.
-  const valeAcesso = (e: { status: string; access_until: string | null }) => {
-    if (e.status === "active") return e.access_until === null || e.access_until > nowIso;
-    if (e.status === "canceled") return e.access_until !== null && e.access_until > nowIso;
-    return false;
-  };
+  const valeAcesso = (e: { status: string; access_until: string | null }) =>
+    entitlementValeAcesso(e, nowIso);
 
   // Entre varios, o melhor: "active" ganha de "canceled"; empatado, a data mais
   // longe (vitalicio = infinito). Sem isto, um entitlement velho poderia

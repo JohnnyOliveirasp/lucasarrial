@@ -29,6 +29,7 @@ import { registrarAviso } from "@/lib/onboarding/registrar-aviso";
 import { resolveUserIdByEmail } from "@/lib/credits/service";
 import { logger } from "@/lib/logger/server";
 import { ehEmailJaCadastrado } from "@/lib/payments/sgp-boas-vindas";
+import { entitlementValeAcesso } from "@/lib/payments/entitlements";
 import type {
   CanaisBoasVindas,
   EstadoBoasVindas,
@@ -171,9 +172,49 @@ async function criarContaDoComprador(d: {
   return { situacao: "criada", linkDefinirSenha: link, erro: null };
 }
 
+/**
+ * O comprador do SGP já paga a assinatura da plataforma? (incidente #290)
+ *
+ * CONSULTA POR `buyer_email`, NÃO POR `profiles.plan` — e isso é o ponto todo.
+ * O pagante que entra pelo lote do SGP fica `plan=free` até alguém reconciliar
+ * (é o #282, ainda aberto), e é EXATAMENTE ele quem não pode receber a frase
+ * errada. Perguntar ao profile responderia "não tem" justamente pra quem tem.
+ *
+ * A régua é a `entitlementValeAcesso` do próprio gate de acesso: o e-mail
+ * responde "você tem a plataforma?" com a MESMA regra que abre a porta. Cópia
+ * da regra aqui divergiria no primeiro ajuste e o e-mail voltaria a mentir por
+ * outro caminho.
+ *
+ * Medido em 07/09 antes de subir: nos 8 afetados do #290 a consulta devolve
+ * `true` nos 8; nos 3 compradores de SGP puro da janela 22:00–00:10Z devolve
+ * `false` nos 3 (eles não têm entitlement da plataforma, e pra eles o texto de
+ * hoje é verdade). `product_code` nulo não é risco: 0 de 1.127 linhas.
+ */
+async function temAssinaturaFastclonerAtiva(buyerEmail: string): Promise<boolean> {
+  const produto = process.env.HOTMART_PRODUCT_ID ?? "7851642";
+  const { data, error } = await getAdmin()
+    .from("entitlements")
+    .select("status, access_until")
+    .ilike("buyer_email", buyerEmail)
+    .eq("product_code", produto);
+
+  // Erro NÃO vira `true`: na dúvida, o texto de hoje. Prometer plataforma a
+  // quem não tem é pior que repetir o aviso pra quem tem.
+  if (error) {
+    logger.warn("api", "sgp.assinatura.consulta_falhou", {
+      target: buyerEmail,
+      erro: error.message,
+    });
+    return false;
+  }
+  const agoraIso = new Date().toISOString();
+  return (data ?? []).some((e) => entitlementValeAcesso(e, agoraIso));
+}
+
 export function canaisDoSgp(): CanaisBoasVindas {
   return {
     garantirConta: criarContaDoComprador,
+    temAssinaturaFastcloner: temAssinaturaFastclonerAtiva,
     email: async (to, assunto, texto) => {
       // `sendSupportMail` LANÇA quando falha; o orquestrador trata o throw e
       // grava a mensagem do erro. Devolver `true` aqui significa "o SMTP

@@ -191,6 +191,13 @@ export type CanaisBoasVindas = {
   /** cria a conta do comprador (ou confirma que já existia) — ver `GarantirConta` */
   garantirConta: GarantirConta;
   /**
+   * O comprador já tem assinatura ATIVA da plataforma FastCloner? (incidente
+   * #290). OPCIONAL de propósito: canal que não implementa cai no default
+   * `false`, que é o texto de hoje — lado seguro. Best-effort no chamador:
+   * falhar aqui não pode derrubar o e-mail de boas-vindas.
+   */
+  temAssinaturaFastcloner?: (buyerEmail: string) => Promise<boolean>;
+  /**
    * registra a TENTATIVA em `avisos_enviados` (best-effort: a migration 104
    * pode não estar aplicada, e nesse caso isto só loga).
    */
@@ -340,8 +347,25 @@ const primeiroNome = (nome: string | null): string => {
  * já tinha conta não recebe nada disso — receber "defina a sua senha" sem ter
  * pedido é assustador e, pra quem já usa a plataforma, parece invasão. O texto
  * do portal, que já funciona, não muda uma vírgula.
+ *
+ * O PARÁGRAFO DA ASSINATURA É CONDICIONAL (06/09, incidente #290). Ele era fixo
+ * no corpo e dizia a TODO comprador do SGP que a assinatura da plataforma "não
+ * está incluída, é contratada à parte". Só que a assinatura é vendida como order
+ * bump no MESMO checkout do SGP (pares de transação C1/C2), então quem clicou no
+ * bump recebia, dias depois, um e-mail nosso mandando contratar o que ele já
+ * tinha pago. Medido: 15 assinantes ativos e pagos receberam a frase, e 8 deles
+ * nunca entraram uma vez sequer — somando 102 dias de assinatura paga sem uso.
+ *
+ * O default é `false` = o texto de hoje, DE PROPÓSITO: chamador que não sabe
+ * responder a pergunta cai no lado seguro (não promete plataforma a quem não
+ * tem). Pra quem NÃO comprou a assinatura o texto continua igual — ele está
+ * correto e existe por um motivo legítimo.
  */
-export function montarBoasVindas(d: CompraSgp, conta?: ResultadoConta): TextoBoasVindas {
+export function montarBoasVindas(
+  d: CompraSgp,
+  conta?: ResultadoConta,
+  temAssinaturaFastcloner = false,
+): TextoBoasVindas {
   const nome = primeiroNome(d.buyerName);
   const assunto = "Seu Sistema de Geração Pronto: comece por aqui";
 
@@ -363,6 +387,27 @@ export function montarBoasVindas(d: CompraSgp, conta?: ResultadoConta): TextoBoa
           "",
         ]
       : [];
+
+  // Quem JÁ paga a assinatura recebe o oposto: a porta está aberta, entre.
+  // Sem isto o nosso e-mail manda o assinante contratar o que ele já pagou.
+  const blocoAssinatura = temAssinaturaFastcloner
+    ? [
+        "A SUA ASSINATURA DA PLATAFORMA FASTCLONER TAMBÉM ESTÁ ATIVA",
+        "",
+        "Além da montagem do seu clone, você já assinou a plataforma — não",
+        "precisa contratar nada à parte. Entre com este mesmo e-mail",
+        `(${d.buyerEmail}) aqui:`,
+        "",
+        LOGIN_URL,
+        "",
+        "Os seus créditos ficam disponíveis assim que você entrar.",
+      ]
+    : [
+        "IMPORTANTE: o Sistema de Geração Pronto é a montagem do seu clone pela",
+        "nossa equipe. Ele NÃO inclui a assinatura da plataforma FastCloner — se",
+        "você também quiser usar a plataforma para gerar os seus vídeos, ela é",
+        "contratada à parte.",
+      ];
 
   const texto = [
     `Oi${nome ? `, ${nome}` : ""}!`,
@@ -386,10 +431,7 @@ export function montarBoasVindas(d: CompraSgp, conta?: ResultadoConta): TextoBoa
     "e-mail a cada etapa e não precisa fazer mais nada além de enviar tudo.",
     "",
     ...blocoAcesso,
-    "IMPORTANTE: o Sistema de Geração Pronto é a montagem do seu clone pela",
-    "nossa equipe. Ele NÃO inclui a assinatura da plataforma FastCloner — se",
-    "você também quiser usar a plataforma para gerar os seus vídeos, ela é",
-    "contratada à parte.",
+    ...blocoAssinatura,
     "",
     `Dúvida sobre o curso ou sobre a sua compra: chame o suporte no WhatsApp ${WHATSAPP_SUPORTE_CURSO}.`,
     "Problema para enviar as fotos ou o áudio no portal: é só responder este e-mail.",
@@ -453,7 +495,18 @@ export async function mandarBoasVindasSgp(
     };
   }
 
-  const { assunto, texto } = montarBoasVindas(d, conta);
+  // ASSINATURA — best-effort e DEPOIS da conta, pelo mesmo motivo dela: saber
+  // se o comprador já paga a plataforma é o que impede o e-mail de mentir pra
+  // ele (#290), mas errar essa consulta não pode custar o e-mail inteiro. Erro
+  // ou canal ausente => `false` => o texto de hoje, que é o lado seguro.
+  let temAssinatura = false;
+  try {
+    temAssinatura = (await canais.temAssinaturaFastcloner?.(d.buyerEmail)) ?? false;
+  } catch {
+    temAssinatura = false;
+  }
+
+  const { assunto, texto } = montarBoasVindas(d, conta, temAssinatura);
   const referencia = `webhook hotmart ${d.eventType} · transação ${d.transaction ?? "—"}`;
 
   let ok = false;
