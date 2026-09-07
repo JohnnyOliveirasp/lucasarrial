@@ -101,7 +101,14 @@ const LINK_SENHA = "https://fastcloner.com/auth/callback?token=abc123&next=%2Fre
  * mas sim "nem tentou mexer na conta".
  */
 function canaisFalsos(
-  opts: { emailFalha?: boolean; conta?: "criada" | "ja_tinha" | "falhou" } = {},
+  opts: {
+    emailFalha?: boolean;
+    conta?: "criada" | "ja_tinha" | "falhou";
+    /** #290: o comprador já paga a assinatura da plataforma? */
+    assina?: boolean;
+    /** #290: a consulta de assinatura explode — não pode custar o e-mail. */
+    assinaFalha?: boolean;
+  } = {},
 ) {
   const enviados: Array<{ to: string; assunto: string; texto: string }> = [];
   const registros: Array<{ email: string; ok: boolean; erro: string | null }> = [];
@@ -126,6 +133,10 @@ function canaisFalsos(
     registrar: async ({ email, ok, erro }) => {
       registros.push({ email, ok, erro });
     },
+    temAssinaturaFastcloner: async () => {
+      if (opts.assinaFalha) throw new Error("Supabase fora do ar");
+      return opts.assina ?? false;
+    },
   };
   return { canais, enviados, registros, contas };
 }
@@ -141,6 +152,51 @@ function estadoFalso(inicial: EstadoBoasVindas = {}) {
   };
   return { io, ver: () => estado };
 }
+
+// ── #290: o orquestrador tem que USAR a resposta, não só recebê-la ─────────
+
+test("#290 fim a fim: assinante pagante NÃO recebe a frase que manda contratar", async () => {
+  // Este é o teste que prova o fix inteiro. Os testes de `montarBoasVindas`
+  // sozinhos passariam mesmo se o orquestrador esquecesse de consultar o canal
+  // — que é exatamente como um fix destes morre em silêncio na produção.
+  const { canais, enviados } = canaisFalsos({ assina: true });
+  const { io } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(
+    compraDoPayload(PAYLOAD_SGP),
+    SGP_PRODUCT_ID_PADRAO,
+    io,
+    canais,
+    AGORA,
+  );
+
+  assert.equal(r.enviou, true);
+  assert.equal(enviados.length, 1);
+  assert.doesNotMatch(
+    enviados[0].texto,
+    /NÃO inclui a assinatura da plataforma FastCloner/,
+    "o e-mail que SAIU ainda carrega o defeito do #290",
+  );
+  assert.match(enviados[0].texto, /A SUA ASSINATURA DA PLATAFORMA FASTCLONER TAMBÉM ESTÁ ATIVA/);
+});
+
+test("#290: consulta de assinatura quebrada não derruba o e-mail (best-effort)", async () => {
+  const { canais, enviados } = canaisFalsos({ assinaFalha: true });
+  const { io } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(
+    compraDoPayload(PAYLOAD_SGP),
+    SGP_PRODUCT_ID_PADRAO,
+    io,
+    canais,
+    AGORA,
+  );
+
+  // O aluno continua recebendo o e-mail, e no lado seguro: o texto de hoje.
+  assert.equal(r.enviou, true);
+  assert.equal(enviados.length, 1);
+  assert.match(enviados[0].texto, /NÃO inclui a assinatura da plataforma FastCloner/);
+});
 
 // ── o caso que o card exige ────────────────────────────────────────────────
 
@@ -308,7 +364,7 @@ test("o payload real do 7283229 é roteado como sgp", () => {
 
 // ── o texto ────────────────────────────────────────────────────────────────
 
-test("o e-mail NÃO promete acesso ao FastCloner (regra do Lucas, 31/08)", () => {
+test("QUEM NÃO ASSINA: o e-mail NÃO promete acesso ao FastCloner (regra do Lucas, 31/08)", () => {
   const { texto } = montarBoasVindas(compraDoPayload(PAYLOAD_SGP));
   assert.match(
     texto,
@@ -317,6 +373,29 @@ test("o e-mail NÃO promete acesso ao FastCloner (regra do Lucas, 31/08)", () =>
   );
   // e não pode convidar a pessoa a "acessar a plataforma" como se fosse dela
   assert.doesNotMatch(texto, /seu acesso (à|a) plataforma/i);
+});
+
+test("QUEM JÁ ASSINA: o e-mail não manda contratar o que a pessoa já pagou (#290)", () => {
+  const { texto } = montarBoasVindas(compraDoPayload(PAYLOAD_SGP), undefined, true);
+  // A frase que fez 15 assinantes pagantes lerem que não tinham a plataforma
+  // NÃO pode sobrar em lugar nenhum do corpo.
+  assert.doesNotMatch(
+    texto,
+    /NÃO inclui a assinatura da plataforma FastCloner/,
+    "é literalmente o defeito do #290: dizer ao assinante pagante que ele não assina",
+  );
+  assert.doesNotMatch(texto, /contratada à parte/);
+  // e o texto oposto precisa estar lá, com a porta de entrada
+  assert.match(texto, /A SUA ASSINATURA DA PLATAFORMA FASTCLONER TAMBÉM ESTÁ ATIVA/);
+  assert.match(texto, /Os seus créditos ficam disponíveis/);
+});
+
+test("o default é o texto de hoje: chamador que não sabe cai no lado seguro (#290)", () => {
+  // Sem o 3º argumento o comportamento é IDÊNTICO ao de antes do fix — é o que
+  // garante que nenhum chamador antigo passou a prometer plataforma sem querer.
+  const semArgumento = montarBoasVindas(compraDoPayload(PAYLOAD_SGP)).texto;
+  const comFalseExplicito = montarBoasVindas(compraDoPayload(PAYLOAD_SGP), undefined, false).texto;
+  assert.equal(semArgumento, comFalseExplicito);
 });
 
 test("o e-mail diz o material exigido, e os números batem com a régua do /sgp", () => {
