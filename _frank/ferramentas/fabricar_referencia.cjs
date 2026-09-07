@@ -19,7 +19,11 @@
  *
  * Uso (de qualquer pasta):
  *   node _frank/ferramentas/fabricar_referencia.cjs <voiceId> [--confirmar] [--top 5] [--escolher 2]
- *                                                            [--sem-prompt]
+ *                                                            [--sem-prompt] [--arquivo 2]
+ *   --arquivo <n|trecho>: de QUAL gravação bruta tirar a referência (índice
+ *          igual ao do listar_arquivos_da_voz.cjs, ou um trecho do nome).
+ *          Sem a flag, segue usando o MAIOR arquivo — ver o bloco do ARQUIVO
+ *          lá embaixo pro motivo (caso Elane, #293/#289).
  *   Cache: a transcrição fica em frontend/_Bugs/chamado_108_referencias/<voz>/
  *          raw.whisper.<prompt|cru>.json — a CHAVE inclui o prompt, então
  *          trocar o prompt não lê a transcrição velha por engano (e a antiga
@@ -38,6 +42,23 @@ const SEM_PROMPT = process.argv.includes("--sem-prompt");
 const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
 const TOP = parseInt(arg("--top") || "5", 10);
 const ESCOLHER = parseInt(arg("--escolher") || "1", 10); // qual candidata aplicar (1 = melhor)
+/** --arquivo <n|trecho>: de QUAL gravação bruta sair a referência.
+ *
+ *  POR QUE EXISTE (Elane, 07/09, incidentes #293/#289). Sem esta flag a fonte
+ *  era sempre o MAIOR arquivo bruto ("mais chance de fala contínua"), escolha
+ *  que NÃO olha ritmo. Quem desacelera ao longo da gravação — cansaço normal
+ *  em 28 min — costuma ter o arquivo mais longo entre os mais LENTOS, e aí a
+ *  ferramenta só oferece candidatas do material devagar. Toda geração herda
+ *  isso, porque o VoxCPM gera em modo "continue este áudio".
+ *  Medido na Elane (voz 2f07e0e1), referência do maior arquivo → referência do
+ *  take 002: articulação 2,067 → 3,073 pal/s, silêncio 26% → 16,1%, maior
+ *  pausa 1,69 → 0,76s. Na saída, MESMO texto: 7,73s → 5,42s. A cura existia
+ *  mas só à mão; esta flag é ela virando ferramenta.
+ *  ⚠️ Continua sendo ESCOLHA DE GENTE. Não pontua ritmo sozinho de propósito:
+ *  mudar o padrão mexeria com toda voz nova, e heurística automática neste
+ *  arquivo já foi reprovada duas vezes (ordem de 20/08). Sem a flag, o
+ *  comportamento é exatamente o de antes. */
+const ARQUIVO = arg("--arquivo");
 const ALVO = -23, MIN_S = 18, MAX_S = 30, PAUSA_MAX = 1.2;
 
 /** PROMPT do whisper — é o que devolve a PONTUAÇÃO, e sem pontuação a
@@ -75,8 +96,9 @@ const RETICENCIAS = /\.\.\.$|…$/;
  *  prompt e sem prompt são saídas DIFERENTES e não podem dividir o mesmo
  *  arquivo (foi o que quase escondeu esta medição). O modo cru continua caindo
  *  no `raw.whisper.json` histórico, então nada do que já foi medido se perde. */
-function cacheTranscricao(dir, prompt) {
-  return path.join(dir, prompt ? "raw.whisper.prompt.json" : "raw.whisper.json");
+function cacheTranscricao(dir, prompt, sufixo) {
+  const s = sufixo ? `.${sufixo}` : "";
+  return path.join(dir, prompt ? `raw${s}.whisper.prompt.json` : `raw${s}.whisper.json`);
 }
 
 async function transcrever(mp3, dest, prompt) {
@@ -176,7 +198,18 @@ function pontuar(cands, raw, dir, total) {
     .map((k) => ({ ...k, base: (k.dur >= 22 && k.dur <= 28 ? 2 : 0) + k.densidade * 3 - (k.start < 60 || total - k.end < 30 ? 2 : 0) - (k.palavras < 35 ? 1 : 0) }))
     .sort((a, b) => b.base - a.base).slice(0, 40);
   for (const k of pre) {
-    const f = path.join(dir, `cand_${k.start.toFixed(1)}.wav`);
+    // ⚠️ O NOME PRECISA DA JANELA INTEIRA (início E fim), medido em 07/09 (#289).
+    // Era `cand_<start>.wav`: candidatas que COMEÇAM na mesma frase e terminam
+    // em frases diferentes caíam todas no MESMO arquivo. Na voz 4d9a645f isso
+    // deu 34 candidatas em 12 nomes — 11 nomes com colisão, uma delas com 3
+    // janelas disputando o mesmo .wav. Como o corte roda com `-y`, quem escreve
+    // por último vence e TODAS as colididas ficam com `k.file` apontando para o
+    // áudio da outra. Estragos: (1) `medir(f)` devolve LUFS/LRA de uma janela e
+    // o score é creditado a outra, então o ranking mente; (2) se a vencedora
+    // colidiu, a referência APLICADA é de um trecho diferente do que a tela
+    // reportou — foi assim que a janela 5,1→28,6s (23,5s) virou um arquivo de
+    // 30,08s. Só o fim no nome já separa, porque `inicios` não repete start.
+    const f = path.join(dir, `cand_${k.start.toFixed(1)}_${k.end.toFixed(1)}.wav`);
     execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-ss", String(Math.max(0, k.start - 0.15)), "-to", String(k.end + 0.25), "-i", raw, "-ac", "1", "-ar", "16000", f]);
     const m = medir(f); k.lufs = m.lufs; k.lra = m.lra; k.file = f;
     k.score = k.base - Math.abs((m.lufs ?? -40) - ALVO) * 0.25 - (m.lra > 12 ? 1.5 : 0);
@@ -193,20 +226,47 @@ async function principal() {
   if (!raws.length) throw new Error("voz sem áudio bruto em /raw/");
   const dir = path.join(c.RAIZ, "frontend", "_Bugs", "chamado_108_referencias", v.id.slice(0, 8));
   fs.mkdirSync(dir, { recursive: true });
-  // usa o MAIOR arquivo bruto (mais chance de fala contínua)
-  const raw = path.join(dir, "raw" + path.extname(raws[0]));
-  if (!fs.existsSync(raw)) {
-    let maior = null, tam = 0;
-    for (const k of raws) { const u = await c.urlAssinada(bucket, k, 600); const b = Buffer.from(await (await fetch(u)).arrayBuffer()); if (b.length > tam) { tam = b.length; maior = b; } }
-    fs.writeFileSync(raw, maior);
+  // Fonte da referência: por padrão o MAIOR arquivo bruto (mais chance de fala
+  // contínua); com --arquivo, o que o operador escolheu. Ver o bloco do ARQUIVO.
+  let escolhido = null; // índice em `raws` quando a escolha é explícita
+  if (ARQUIVO != null) {
+    const n = Number(ARQUIVO);
+    if (Number.isInteger(n) && String(n) === String(ARQUIVO).trim()) {
+      if (n < 0 || n >= raws.length) throw new Error(`--arquivo ${n} fora da faixa: a voz tem ${raws.length} arquivo(s) (0..${raws.length - 1})`);
+      escolhido = n;
+    } else {
+      const achados = raws.map((k, i) => [k, i]).filter(([k]) => path.basename(k).includes(ARQUIVO));
+      if (!achados.length) throw new Error(`--arquivo "${ARQUIVO}" não casou com nenhum arquivo bruto desta voz`);
+      // ambíguo NUNCA vira escolha silenciosa: o operador tem que desempatar.
+      if (achados.length > 1) throw new Error(`--arquivo "${ARQUIVO}" é ambíguo, casou com ${achados.length}: ${achados.map(([k]) => path.basename(k)).join(", ")}`);
+      escolhido = achados[0][1];
+    }
   }
-  const mp3 = path.join(dir, "raw16k.mp3");
+  // ⚠️ O SUFIXO NO CACHE É O QUE IMPEDE O ERRO SILENCIOSO: sem ele, o `raw.*`
+  // e o `raw.whisper.*` do maior arquivo (de uma passada anterior) seriam
+  // reusados e a ferramenta mediria um arquivo enquanto anuncia outro.
+  const suf = escolhido == null ? "" : `a${escolhido}`;
+  const raw = path.join(dir, `raw${suf ? "." + suf : ""}` + path.extname(raws[escolhido ?? 0]));
+  if (!fs.existsSync(raw)) {
+    if (escolhido != null) {
+      const u = await c.urlAssinada(bucket, raws[escolhido], 600);
+      fs.writeFileSync(raw, Buffer.from(await (await fetch(u)).arrayBuffer()));
+    } else {
+      let maior = null, tam = 0;
+      for (const k of raws) { const u = await c.urlAssinada(bucket, k, 600); const b = Buffer.from(await (await fetch(u)).arrayBuffer()); if (b.length > tam) { tam = b.length; maior = b; } }
+      fs.writeFileSync(raw, maior);
+    }
+  }
+  console.log(escolhido == null
+    ? `fonte: MAIOR arquivo bruto (padrão) de ${raws.length}`
+    : `fonte: --arquivo ${escolhido} → ${path.basename(raws[escolhido])} (de ${raws.length})`);
+  const mp3 = path.join(dir, `raw16k${suf ? "." + suf : ""}.mp3`);
   if (!fs.existsSync(mp3)) execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", raw, "-ac", "1", "-ar", "16000", "-b:a", "48k", mp3]);
   const total = parseFloat(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", raw]).toString());
   console.log(`voz "${v.name}" · bruto ${Math.round(total)}s · ref atual: ${v.reference_audio_path}\n  transcript atual: …${(v.reference_transcript || "").slice(-70)}`);
   const prompt = SEM_PROMPT ? null : PROMPT_PT;
-  const j = await transcrever(mp3, cacheTranscricao(dir, prompt), prompt);
-  console.log(`transcrição: ${prompt ? "COM prompt de pontuação" : "crua (--sem-prompt)"} · cache ${path.basename(cacheTranscricao(dir, prompt))}`);
+  const j = await transcrever(mp3, cacheTranscricao(dir, prompt, suf), prompt);
+  console.log(`transcrição: ${prompt ? "COM prompt de pontuação" : "crua (--sem-prompt)"} · cache ${path.basename(cacheTranscricao(dir, prompt, suf))}`);
   const al = marcarFimDeFrase(j.words, j.segments);
   const fins = al.W.filter((w) => w.fim).length;
   const fimDeSegmento = j.segments.filter((g) => TERMINAL.test((g.text || "").trim())).length;
