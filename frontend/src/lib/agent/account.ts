@@ -212,7 +212,7 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       // das 16 cenas" e era o projeto ERRADO (1 cena) — ela apagou esse. Sem o
       // número de cenas o bot não tem como distinguir um projeto do outro.
       recent("video_projects", "name,status,error_message,created_at,scene_count"),
-      admin.from("credit_transactions").select("kind,amount,note,created_at").eq("user_id", profileId).order("created_at", { ascending: false }).limit(6),
+      admin.from("credit_transactions").select("kind,ref_type,amount,note,created_at").eq("user_id", profileId).order("created_at", { ascending: false }).limit(6),
     ]);
 
     type R = { name?: string | null; status?: string | null; error_message?: string | null; created_at?: string | null; scene_count?: number | null };
@@ -233,8 +233,26 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       ...lines("Vídeo História", videos.data),
     ];
 
-    const txLines = ((txs.data ?? []) as { kind: string; amount: number; note: string | null; created_at: string }[])
-      .map((t) => `  - ${dtBR(t.created_at)}: ${t.amount > 0 ? "+" : ""}${t.amount} cr (${t.kind}${t.note ? ` — ${t.note.slice(0, 80)}` : ""})`)
+    // ⚠️ `ref_type` VAI JUNTO, e não é detalhe: `kind` MENTE sobre estorno.
+    //
+    // Todo estorno é gravado com `kind = 'extra_purchase'` — medido em 07/09:
+    // 668 linhas de estorno na base, TODAS com esse kind, em 8 `ref_type`
+    // diferentes (video_clone_refund 216, image_refund 169, image_video_refund
+    // 78, generation_refund 72, voice_train_refund 67, studio_scene_refund 40,
+    // support_refund 14, studio_audio_refund 12). É a mesma armadilha que já
+    // quase pagou 13 alunos em dobro: estorno se confere por `ref_type`, NUNCA
+    // por `kind`.
+    //
+    // Mandando só o `kind`, a Fast via um estorno como "extra_purchase" — ou
+    // seja, não conseguia distinguir estorno de COMPRA de crédito, e o manual
+    // (`manual.ts`, commit 8405eb0) manda ela citar data e valor do estorno
+    // quando a linha existe. Sem este campo aquela instrução era impossível de
+    // cumprir: ela só podia escalar, inclusive quando o estorno estava ali.
+    const txLines = ((txs.data ?? []) as { kind: string; ref_type: string | null; amount: number; note: string | null; created_at: string }[])
+      .map((t) => {
+        const tipo = t.ref_type ? `${t.kind}/${t.ref_type}` : t.kind;
+        return `  - ${dtBR(t.created_at)}: ${t.amount > 0 ? "+" : ""}${t.amount} cr (${tipo}${t.note ? ` — ${t.note.slice(0, 80)}` : ""})`;
+      })
       .join("\n");
 
     const saldo = (profile.credits_subscription ?? 0) + (profile.credits_extra ?? 0);
