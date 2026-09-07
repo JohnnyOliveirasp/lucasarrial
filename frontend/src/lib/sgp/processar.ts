@@ -24,6 +24,7 @@ import { dispararTreinoOnboarding } from "@/lib/onboarding/treino";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { buildRawAudioKey } from "@/lib/r2/presigned";
+import { registrarFalhaDeClaim } from "./reconciliacao";
 import { atualizarSessao } from "./sessao";
 import { SGP_AUDIO_MIN_SEGUNDOS, SGP_FOTOS_MIN, type SgpPedidoRow } from "./types";
 
@@ -91,7 +92,35 @@ export async function enviarPedido(pedido: SgpPedidoRow, senha: string | null): 
       { onConflict: "id" },
     );
   if (perfilErr) throw new Error(perfilErr.message);
-  await claimPurchasesOnLogin(userId, email).catch(() => {});
+
+  /**
+   * RESGATE DA COMPRA — e o registro de quando ele NÃO acontece (#282).
+   *
+   * Isto aqui já era `claimPurchasesOnLogin(...).catch(() => {})`. O lote de
+   * 04/09 criou ~349 contas e, dentro dele, 7 pessoas com assinatura ATIVA e
+   * PAGA ficaram com `user_id` NULL e `plan=free`: pagaram e não receberam
+   * nada. O acesso foi devolvido na mão em 06/09 — e até hoje ninguém sabe POR
+   * QUÊ não casou, porque o catch mudo não deixou rastro nenhum.
+   *
+   * Pior: o catch nem era o lugar certo. `claimPurchasesOnLogin` engole as
+   * próprias exceções (payments/claim.ts), então o modo de falha dos 7 é o
+   * SILENCIOSO — ela volta normal e simplesmente não vincula. Por isso a
+   * verificação é DEPOIS da chamada, olhando o resultado no banco, e não só um
+   * catch mais falante.
+   *
+   * O sucesso continua idêntico ao de antes: se o resgate casar a compra, nada
+   * é registrado e nada muda. É observabilidade, não conserto — nenhuma linha
+   * abaixo vincula compra, dá crédito ou mexe em acesso.
+   */
+  const erroDoClaim = await claimPurchasesOnLogin(userId, email).then(
+    () => null,
+    (e: unknown) => e ?? new Error("claimPurchasesOnLogin rejeitou sem motivo"),
+  );
+  // Awaited de propósito: em background (`void`) o serverless pode encerrar
+  // antes de gravar, e a falha voltaria a se perder — que é o bug daqui.
+  // `registrarFalhaDeClaim` não lança (contrato do arquivo) e, no caso normal,
+  // custa um SELECT por e-mail.
+  await registrarFalhaDeClaim({ userId, email, contaCriada, erro: erroDoClaim });
 
   const agora = new Date().toISOString();
   await atualizarSessao(pedido.sessao, {
