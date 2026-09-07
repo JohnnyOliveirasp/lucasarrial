@@ -24,6 +24,7 @@ import {
   faseTokenValido,
   qaComFase,
   preservaFaseCorrente,
+  metaDaFaseSanitizado,
   type FaseCorrente,
 } from "./fase-telemetria.ts";
 
@@ -202,4 +203,67 @@ test("ASSINATURA: causa e título também ignoram o sufixo", () => {
 test("stripFaseSuffix: sem sufixo devolve o texto como está", () => {
   assert.equal(stripFaseSuffix("CUDA out of memory"), "CUDA out of memory");
   assert.equal(stripFaseSuffix(""), "");
+});
+
+// ── meta da fase (07/09, #15) ────────────────────────────────────────────
+// O heartbeat passou a mandar o meta do phase() junto. Em
+// inference.chunk.generate isso é `chunk` e `attempt` — o par que separa
+// "pendurou num chunk" de "regenerou demais". Os testes acima seguem valendo
+// SEM meta de propósito: worker antigo não manda e nada pode mudar pra ele.
+
+test("metaDaFaseSanitizado: passa escalar, corta chave longa, string longa e teto de 12", () => {
+  assert.deepEqual(metaDaFaseSanitizado({ chunk: 7, attempt: 9, cfg: null, ok: true }), {
+    chunk: 7, attempt: 9, cfg: null, ok: true,
+  });
+  // chave > 32 chars e string > 64 chars caem fora
+  assert.deepEqual(metaDaFaseSanitizado({ ["k".repeat(33)]: 1, texto: "x".repeat(65), chunk: 2 }), { chunk: 2 });
+  // objeto/array aninhado não passa (só escalar)
+  assert.deepEqual(metaDaFaseSanitizado({ chunk: 1, dentro: { a: 1 }, lista: [1, 2] }), { chunk: 1 });
+  // NaN/Infinity não são número válido pro jsonb
+  assert.deepEqual(metaDaFaseSanitizado({ chunk: Number.NaN, attempt: 3 }), { attempt: 3 });
+  // teto de 12 itens
+  const grande = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`k${i}`, i]));
+  assert.equal(Object.keys(metaDaFaseSanitizado(grande) ?? {}).length, 12);
+});
+
+test("metaDaFaseSanitizado: nada aproveitável = null (a rota não grava a chave)", () => {
+  assert.equal(metaDaFaseSanitizado(undefined), null);
+  assert.equal(metaDaFaseSanitizado(null), null);
+  assert.equal(metaDaFaseSanitizado("chunk=7"), null);
+  assert.equal(metaDaFaseSanitizado([1, 2, 3]), null);
+  assert.equal(metaDaFaseSanitizado({}), null);
+  assert.equal(metaDaFaseSanitizado({ dentro: { a: 1 } }), null);
+});
+
+test("errorMessageComFase: chunk e attempt entram no sufixo, NESTA ordem", () => {
+  const qa = { fase_corrente: { ...FASE, meta: { chunk: 7, attempt: 9, chars: 180 } } };
+  assert.equal(
+    errorMessageComFase("executionTimeout exceeded", qa),
+    "executionTimeout exceeded [fase: inference.chunk.generate running_s=312 chunk=7 attempt=9]",
+  );
+});
+
+test("errorMessageComFase: meta sem chunk/attempt não muda o sufixo de hoje", () => {
+  const qa = { fase_corrente: { ...FASE, meta: { chars: 180, cfg: null } } };
+  assert.equal(
+    errorMessageComFase("executionTimeout exceeded", qa),
+    "executionTimeout exceeded [fase: inference.chunk.generate running_s=312]",
+  );
+});
+
+test("ASSINATURA: chunk/attempt no sufixo NÃO estilhaçam o incidente", () => {
+  const cru = "executionTimeout exceeded";
+  const a = errorMessageComFase(cru, { fase_corrente: { ...FASE, meta: { chunk: 1, attempt: 2 } } });
+  const b = errorMessageComFase(cru, { fase_corrente: { ...FASE, meta: { chunk: 9, attempt: 40 } } });
+  assert.notEqual(a, b); // os textos são MESMO diferentes
+  assert.equal(stripFaseSuffix(a), cru);
+  assert.equal(stripFaseSuffix(b), cru);
+  assert.equal(errorSignature("generation", a), errorSignature("generation", cru));
+  assert.equal(errorSignature("generation", b), errorSignature("generation", cru));
+});
+
+test("preservaFaseCorrente mantém o meta quando a falha reescreve o qa", () => {
+  const atual = { fase_corrente: { ...FASE, meta: { chunk: 7, attempt: 9 } } };
+  const salvo = preservaFaseCorrente({}, atual) as { fase_corrente: FaseCorrente };
+  assert.deepEqual(salvo.fase_corrente.meta, { chunk: 7, attempt: 9 });
 });

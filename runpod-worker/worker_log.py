@@ -85,7 +85,11 @@ def _heartbeat_loop() -> None:
             # Leva a fase até o NOSSO banco (o log daqui expira ~30min e o
             # status do job some minutos após o fim — sem isso, um hang morto
             # por executionTimeout perde a fase antes de alguém olhar).
-            _fase_post(name, running_s, _CURRENT_JOB_TYPE)
+            # O `meta` vai JUNTO desde 07/09: sem ele o banco dizia
+            # "inference.chunk.generate" e calava CHUNK e ATTEMPT, que são
+            # justamente o que separa "pendurou num chunk" de "regenerou
+            # demais" — medido no #15 (ver _fase_post).
+            _fase_post(name, running_s, _CURRENT_JOB_TYPE, meta)
         except Exception:
             pass  # heartbeat JAMAIS derruba nada
 
@@ -132,8 +136,39 @@ def _fase_cfg_from_input(inp: dict) -> dict | None:
     return None
 
 
-def _fase_post(fase: str, running_s: float | None, job_type: str | None) -> None:
-    """POST da fase corrente pro app. Best-effort: timeout curto, JAMAIS lança."""
+def _meta_serializavel(meta: dict | None) -> dict:
+    """Sub-conjunto do meta da fase que pode viajar no POST.
+
+    Recorte DE PROPÓSITO (07/09, #15): o meta do `phase()` é livre e um dia
+    pode carregar texto do aluno; aqui só passam ESCALARES pequenos e chaves
+    curtas, com teto de 12 itens. Nunca lança — meta ruim vira `{}` e o
+    heartbeat segue.
+    """
+    out: dict = {}
+    try:
+        for k, v in (meta or {}).items():
+            if len(out) >= 12:
+                break
+            if not isinstance(k, str) or len(k) > 32:
+                continue
+            if v is None or isinstance(v, (bool, int, float)):
+                out[k] = v
+            elif isinstance(v, str) and len(v) <= 64:
+                out[k] = v
+    except Exception:
+        return {}
+    return out
+
+
+def _fase_post(fase: str, running_s: float | None, job_type: str | None,
+               meta: dict | None = None) -> None:
+    """POST da fase corrente pro app. Best-effort: timeout curto, JAMAIS lança.
+
+    O `meta` é o do `phase()` corrente. Em `inference.chunk.generate` ele traz
+    `chunk` e `attempt` — e é a diferença entre saber que o job morreu
+    "gerando um chunk" e saber que morreu no chunk 7, tentativa 9. Até 07/09
+    esse dado era impresso no STDOUT do RunPod (que expira) e jogado fora aqui.
+    """
     try:
         cfg = _FASE_CFG
         if not cfg:
@@ -144,6 +179,7 @@ def _fase_post(fase: str, running_s: float | None, job_type: str | None) -> None
             "fase": fase,
             "running_s": running_s,
             "job_type": job_type,
+            "meta": _meta_serializavel(meta),
         }, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
             cfg["url"],
