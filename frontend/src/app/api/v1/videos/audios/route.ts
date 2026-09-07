@@ -1,10 +1,22 @@
 /**
  * /api/v1/videos/audios
- *   GET → lista os áudios gerados ELEGÍVEIS pro wizard de vídeo:
- *         status=ready, duração <= 90s. Com nome da voz + presigned URL.
+ *   GET → lista os áudios PRONTOS do aluno (status=ready, com duração medida,
+ *         fora a amostra do treino). Com nome da voz + presigned URL.
  *
- * Passo 1 do wizard ("escolher áudio"). A duração já vem persistida na coluna
- * generations.duration_seconds (preenchida pelo worker), então o filtro é SQL.
+ * Passo 1 do wizard ("escolher áudio") e seletor do Vídeo Clone.
+ *
+ * ⚠️ O corte de duração NÃO acontece mais aqui (era `.lte(MAX_AUDIO_SECONDS)`).
+ * Motivo: filtrar no SQL fazia o áudio acima do teto SUMIR da tela sem uma
+ * palavra — o aluno com um áudio de 2min28 lia "você ainda não tem áudios" e
+ * abria chamado (caso #adc3ed99, sidneysantos100). Medido em 07/09: 304 de
+ * 3.532 áudios prontos passam de 90s, atingindo 136 alunos — 22 deles SÓ têm
+ * áudio longo, ou seja, viam o estado vazio com o acervo cheio e íntegro.
+ *
+ * O teto continua valendo, em dois lugares que não mudaram: a TELA marca o
+ * áudio longo como indisponível com o motivo ao lado (quem decide é
+ * lib/video/audio-eligibility, com o MESMO corte estrito que o SQL fazia), e o
+ * POST que cria o vídeo recusa com 400 (videos/route.ts e video-clone/route.ts).
+ * A rota só parou de esconder linha.
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
@@ -12,7 +24,6 @@ import { jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
-import { MAX_AUDIO_SECONDS } from "@/lib/video/config";
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
@@ -32,7 +43,6 @@ export async function GET(request: NextRequest) {
     .eq("status", "ready")
     .not("duration_seconds", "is", null)
     .not("audio_path", "like", "%/sample.wav")
-    .lte("duration_seconds", MAX_AUDIO_SECONDS)
     .order("created_at", { ascending: false });
 
   if (error) return serverError("Failed to list audios");

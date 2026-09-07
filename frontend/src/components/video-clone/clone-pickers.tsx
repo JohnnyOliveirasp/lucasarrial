@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { Check, Loader2, Upload } from "lucide-react";
+import { acimaDoTeto, duracaoLegivel, separarPorTeto } from "@/lib/video/audio-eligibility";
 
 export type ImageChoice =
   | { kind: "history"; id: string; preview: string }
@@ -167,14 +168,30 @@ export function AudioPicker({
   const t = useTranslations("videoClone.pickers");
   const [tab, setTab] = useState<"history" | "upload">("history");
   const [items, setItems] = useState<HistAudio[] | null>(null);
+  // Falha de carga NÃO pode se parecer com "você não tem áudios": eram o mesmo
+  // pixel antes (`r.ok ? … : {audios:[]}` + `.catch(() => setItems([]))`).
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     if (tab !== "history" || items !== null) return;
     fetch("/api/v1/videos/audios", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { audios: [] }))
-      .then((j) => setItems((j.audios ?? []) as HistAudio[]))
-      .catch(() => setItems([]));
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((j) => {
+        setLoadFailed(false);
+        setItems((j.audios ?? []) as HistAudio[]);
+      })
+      .catch(() => {
+        setLoadFailed(true);
+        setItems([]);
+      });
   }, [tab, items]);
+
+  // O teto (90s) continua valendo, mas quem passa dele aparece DESABILITADO com
+  // o motivo — sumir calado é o que gerou o chamado #adc3ed99.
+  const { usaveis, longos, ordenados } = separarPorTeto(items ?? [], maxSeconds);
 
   return (
     <div className="flex flex-col gap-3">
@@ -186,6 +203,9 @@ export function AudioPicker({
           {t("uploadAudio")}
         </button>
       </div>
+      <p className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
+        {t("audioHint", { max: maxSeconds })}
+      </p>
 
       {tab === "history" &&
         (items === null ? (
@@ -193,45 +213,73 @@ export function AudioPicker({
             <Loader2 className="h-4 w-4 animate-spin" />
             <span className="text-sm">{t("loadingAudios")}</span>
           </div>
+        ) : loadFailed ? (
+          <div
+            role="alert"
+            className="rounded-[var(--radius)] border border-dashed border-[var(--status-error)]/40 p-4 text-sm text-[var(--mute)]"
+          >
+            {t("audiosLoadFailed")}
+          </div>
         ) : items.length === 0 ? (
           <div className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] p-4 text-sm text-[var(--mute)]">
-            {t("noAudios", { max: maxSeconds })}{" "}
+            {t("noAudios")}{" "}
             <Link href="/app/voice-cloning/generate" className="text-[var(--silver)] underline hover:text-[var(--ink)]">
               {t("createAudio")}
             </Link>
           </div>
         ) : (
           <>
+            {/* Tem áudio, mas TODOS passam do teto: era este o aluno que lia
+                "você ainda não tem áudios" com o acervo cheio. */}
+            {usaveis.length === 0 && (
+              <div className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] p-4 text-sm text-[var(--mute)]">
+                {t("noAudiosOnlyLong", { n: longos.length, max: maxSeconds })}
+              </div>
+            )}
             <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto pr-1">
-              {items.slice(0, 20).map((a) => {
+              {ordenados.slice(0, 20).map((a) => {
                 const active = selected?.kind === "history" && selected.id === a.id;
+                const tooLong = acimaDoTeto(a.duration_seconds, maxSeconds);
                 const label = a.name?.trim() || `${a.voice_name} · ${new Date(a.created_at).toLocaleDateString("pt-BR")}`;
                 return (
                   <li key={a.id}>
                     <button
                       type="button"
+                      disabled={tooLong}
                       onClick={() =>
                         onSelect({ kind: "history", id: a.id, seconds: a.duration_seconds, preview: a.audio_url, label, text: a.text_raw })
                       }
                       aria-pressed={active}
+                      title={tooLong ? t("tooLongReason", { dur: duracaoLegivel(a.duration_seconds), max: maxSeconds }) : undefined}
                       className={`flex w-full flex-col gap-1.5 rounded-[var(--radius)] border p-3 text-left transition-colors ${
-                        active ? "border-[var(--hairline-bright)] shadow-[0_0_0_1px_var(--hairline-bright)]" : "border-[var(--hairline)] hover:border-[var(--hairline-bright)]"
+                        tooLong
+                          ? "cursor-not-allowed border-dashed border-[var(--hairline)] opacity-60"
+                          : active
+                            ? "border-[var(--hairline-bright)] shadow-[0_0_0_1px_var(--hairline-bright)]"
+                            : "border-[var(--hairline)] hover:border-[var(--hairline-bright)]"
                       }`}
                     >
                       <span className="flex items-center justify-between gap-2">
                         <span className="truncate text-sm text-[var(--ink)]">{label}</span>
                         <span className="flex items-center gap-2">
-                          <span className="font-mono text-[10px] text-[var(--ash)]">{Math.ceil(a.duration_seconds)}s</span>
-                          {active && <Check className="h-4 w-4 text-[var(--silver)]" />}
+                          <span className="font-mono text-[10px] text-[var(--ash)]">{duracaoLegivel(a.duration_seconds)}</span>
+                          {active && !tooLong && <Check className="h-4 w-4 text-[var(--silver)]" />}
                         </span>
                       </span>
+                      {/* Por que este não dá pra usar — dito na cara, no lugar
+                          onde antes não havia nada porque a linha nem vinha. */}
+                      {tooLong && (
+                        <span className="font-mono text-[10px] leading-snug tracking-wide text-[var(--status-error)]">
+                          {t("tooLongReason", { dur: duracaoLegivel(a.duration_seconds), max: maxSeconds })}
+                        </span>
+                      )}
                       {/* O que o áudio FALA — sempre visível (2 linhas; completo ao selecionar) */}
                       {a.text_raw && (
-                        <span className={`text-[12px] leading-snug text-[var(--mute)] ${active ? "max-h-28 overflow-y-auto" : "line-clamp-2"}`}>
+                        <span className={`text-[12px] leading-snug text-[var(--mute)] ${active && !tooLong ? "max-h-28 overflow-y-auto" : "line-clamp-2"}`}>
                           “{a.text_raw}”
                         </span>
                       )}
-                      {active && a.audio_url && (
+                      {active && !tooLong && a.audio_url && (
                         <audio src={a.audio_url} controls preload="none" className="w-full" onClick={(e) => e.stopPropagation()} />
                       )}
                     </button>

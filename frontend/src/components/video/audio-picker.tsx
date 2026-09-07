@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
 import { AudioLines, Loader2, ArrowRight, Check } from "lucide-react";
 import { MAX_AUDIO_SECONDS, sceneCountForDuration } from "@/lib/video/config";
+import { acimaDoTeto, separarPorTeto } from "@/lib/video/audio-eligibility";
 import { AudioUpload } from "@/components/video/audio-upload";
 
 type Audio = {
@@ -83,13 +84,29 @@ export function AudioPicker() {
     );
   }
 
+  // O teto (90s) continua valendo, mas quem passa dele aparece na lista
+  // DESABILITADO com o motivo — antes a rota filtrava no SQL e o áudio longo
+  // sumia calado, deixando o aluno na tela de vazio (chamado #adc3ed99).
+  const { usaveis, longos, ordenados } = separarPorTeto(items, MAX_AUDIO_SECONDS);
+
   if (items.length === 0) {
     return (
       <div className="flex flex-col gap-4">
+        {/* Falha de carga NÃO pode se passar por "você não tem áudios": o
+            `error` só era renderizado no ramo COM itens, então quando a rota
+            caía o aluno lia o texto de acervo vazio e não sabia de nada. */}
+        {error && (
+          <p
+            role="alert"
+            className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--status-error)]"
+          >
+            {error}
+          </p>
+        )}
         <section className="flex flex-col items-center gap-5 rounded-[var(--radius-lg)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] p-12 text-center">
           <AudioLines className="h-10 w-10 text-[var(--ash)]" />
           <p className="max-w-sm text-sm text-[var(--mute)]">
-            {t("empty", { s: MAX_AUDIO_SECONDS })}
+            {error ? t("loadFailedHint") : t("empty", { s: MAX_AUDIO_SECONDS })}
           </p>
           <Link
             href="/app/voice-cloning/generate"
@@ -116,21 +133,36 @@ export function AudioPicker() {
         </p>
       )}
 
+      {/* Tem áudio, mas TODOS passam do teto: era este o aluno que lia
+          "você ainda não tem áudios" com o acervo cheio e íntegro. */}
+      {usaveis.length === 0 && (
+        <p className="rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 py-2 text-sm text-[var(--mute)]">
+          {t("onlyLong", { n: longos.length, s: MAX_AUDIO_SECONDS })}
+        </p>
+      )}
+
       <ul className="flex flex-col gap-3">
-        {items.map((a) => {
-          const isSel = selected === a.id;
+        {ordenados.map((a) => {
+          const tooLong = acimaDoTeto(a.duration_seconds, MAX_AUDIO_SECONDS);
+          const isSel = selected === a.id && !tooLong;
           return (
             <li
               key={a.id}
               className={`flex flex-col gap-3 rounded-[var(--radius-lg)] border bg-[var(--surface-card)] p-4 transition-colors ${
-                isSel ? "border-[var(--hairline-bright)]" : "border-[var(--hairline-strong)]"
+                tooLong
+                  ? "border-dashed border-[var(--hairline)] opacity-60"
+                  : isSel
+                    ? "border-[var(--hairline-bright)]"
+                    : "border-[var(--hairline-strong)]"
               }`}
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <button
                   type="button"
+                  disabled={tooLong}
                   onClick={() => setSelected(isSel ? null : a.id)}
-                  className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                  title={tooLong ? t("tooLong", { s: MAX_AUDIO_SECONDS }) : undefined}
+                  className="flex min-w-0 flex-1 items-start gap-3 text-left disabled:cursor-not-allowed"
                 >
                   <span
                     className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
@@ -148,8 +180,17 @@ export function AudioPicker() {
                     <span className="flex flex-wrap items-center gap-2 font-mono text-[10px] tracking-wide text-[var(--ash)]">
                       <span>{a.voice_name}</span>
                       <span>· {fmtDuration(a.duration_seconds)}</span>
-                      <span>· {t("sceneCount", { n: sceneCountForDuration(a.duration_seconds ?? 0) })}</span>
+                      {!tooLong && (
+                        <span>· {t("sceneCount", { n: sceneCountForDuration(a.duration_seconds ?? 0) })}</span>
+                      )}
                     </span>
+                    {/* Por que este não dá pra usar — dito na cara, no lugar
+                        onde antes não havia nada porque a linha nem vinha. */}
+                    {tooLong && (
+                      <span className="font-mono text-[10px] leading-snug tracking-wide text-[var(--status-error)]">
+                        {t("tooLong", { s: MAX_AUDIO_SECONDS })}
+                      </span>
+                    )}
                     <span className="line-clamp-2 max-w-xl text-[13px] text-[var(--mute)]">
                       {a.text_raw}
                     </span>
