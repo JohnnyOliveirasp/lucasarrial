@@ -217,7 +217,7 @@ async function processEvent(
     }
 
     // Assinatura: libera o acesso + credita o bolsão do ciclo (acumula).
-    await grantAccess({
+    const grant = await grantAccess({
       provider: PROVIDER,
       buyerEmail,
       externalId,
@@ -225,6 +225,10 @@ async function processEvent(
       offerCode: extractOfferCode(data),
       accessUntil: extractNextChargeIso(data), // recorrente: acesso até a próxima cobrança; NULL se único
       rawEvent: data,
+      // Só o APPROVED é dinheiro NOVO. O COMPLETE é o eco da MESMA cobrança
+      // ~7,8 dias depois e não pode ressuscitar um entitlement estornado /
+      // contestado (caso Marlon, 28/08 — ver entitlement-status.ts).
+      newPayment: eventType === "PURCHASE_APPROVED",
     });
 
     // #161 (27/08): a ASSINATURA pode já estar morta dentro de um evento de
@@ -239,15 +243,21 @@ async function processEvent(
     // STATUS deixa de mentir. Crédito não muda: o pagamento aconteceu.
     const subscriptionStatus = extractSubscriptionStatus(data);
     let handledSuffix = "";
-    if (subscriptionIsDead(subscriptionStatus)) {
-      await revokeAccess({
+    if (grant.terminalPreservado) {
+      // Já havia estorno/contestação: o grant não escreveu nada e o revoke
+      // abaixo seria ignorado do mesmo jeito — pulamos a query.
+      handledSuffix = `:mantido_${grant.statusFinal}`;
+    } else if (subscriptionIsDead(subscriptionStatus)) {
+      const rev = await revokeAccess({
         provider: PROVIDER,
         externalId,
         status: subscriptionStatus === "EXPIRED" ? "expired" : "canceled",
         accessUntil: extractNextChargeIso(data),
         rawEvent: data,
       });
-      handledSuffix = `:subscription_${subscriptionStatus.toLowerCase()}`;
+      handledSuffix = rev.terminalPreservado
+        ? `:mantido_${rev.statusFinal}`
+        : `:subscription_${subscriptionStatus.toLowerCase()}`;
     }
     const userId = await resolveUserIdByEmail(buyerEmail);
     if (userId) {
@@ -323,14 +333,14 @@ async function processEvent(
       eventType === "SUBSCRIPTION_CANCELLATION"
         ? extractNextChargeIso(data)
         : null;
-    const found = await revokeAccess({
+    const rev = await revokeAccess({
       provider: PROVIDER,
       externalId,
       status: revokeStatus,
       accessUntil: keepUntil,
       rawEvent: data,
     });
-    if (!found) {
+    if (!rev.found) {
       // Uma revogação que não encontrou dono é ERRO, não no-op (bug de 18/08:
       // 185 cancelamentos viraram "revoked:canceled" limpos sem tocar em nada).
       // HTTP continua 200 (reenvio da Hotmart não resolveria), mas o erro fica
@@ -342,6 +352,11 @@ async function processEvent(
         handled: `revoke_unmatched:${revokeStatus}`,
         processError: `${why}: ${externalId} [buyer: ${buyerEmail ?? "?"}]`,
       };
+    }
+    // Cancelamento/expiração chegando por cima de um estorno/contestação já
+    // registrado: ignorado de propósito, a marca mais forte fica.
+    if (rev.terminalPreservado) {
+      return ok(`revoke_ignored:${revokeStatus}_mantido_${rev.statusFinal}`);
     }
     return ok(`revoked:${revokeStatus}`);
   }
