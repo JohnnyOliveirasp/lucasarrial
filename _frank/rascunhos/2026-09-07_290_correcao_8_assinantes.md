@@ -56,9 +56,11 @@ fluxo de redefinição é o caminho certo — não precisam se cadastrar de novo
 >
 > O que é verdade sobre a sua conta hoje:
 >
-> - A sua assinatura da plataforma está **ativa até {DATA}**.
+> - A sua assinatura da plataforma está **ativa**, e ela **renova
+>   automaticamente em {DATA}**. Essa data não é um prazo para você usar: é o dia
+>   em que a Hotmart cobra o próximo mês.
 > - Você tem **100.000 créditos** disponíveis, parados, esperando você.
-> - **Não há nada a mais para contratar nem para pagar.**
+> - **Não há nada a mais para contratar nem para pagar agora.**
 >
 > Como entrar (a sua conta já existe, não precisa se cadastrar):
 >
@@ -87,9 +89,38 @@ Troca os passos 1-3 por:
 
 > Você já acessou a plataforma em 4 de setembro, então a porta está aberta: é só
 > entrar em https://fastcloner.com/app com este mesmo e-mail. A sua assinatura
-> está ativa até 13/09 e os 100.000 créditos estão na conta.
+> está ativa, renova em 13/09, e os 100.000 créditos estão na conta.
 
 ## Como enviar, se o "pode" vier
 
 Um a um, `enviar_email.cjs`, **sem `--bcc`** (8 é lote; o resumo vai num aviso só
 no grupo, conforme o README das ferramentas).
+
+---
+
+## ⚠️ CORREÇÃO DE 08/09 ~11hZ — o rascunho carregava o defeito do `a0bc1f7e`
+
+**O texto acima, como estava escrito em 07/09, cometeria em lote o erro que a
+casa abriu como incidente no mesmo dia.** Corrigido acima antes de qualquer
+envio; registro aqui porque o raciocínio importa mais que a linha trocada.
+
+A frase original era *"a sua assinatura da plataforma está **ativa até {DATA}**"*,
+com {DATA} preenchida a partir de `entitlements.access_until`. Medido hoje na
+fonte, nos **8**: `access_until` é **exatamente igual** a
+`raw_event->purchase->date_next_charge`, e `raw_event->subscription->status` é
+**ACTIVE** nos 8 (`LTY61KB0`, `E1239TIK`, `CL0KLOQ8`, `WEVYYE64`, `JJ54Q2L2`,
+`AQA0PSFE`, `3847B6V3`, `E1BGOQEH`).
+
+Para assinatura ACTIVE essa data é a **próxima cobrança**, não um vencimento.
+"Ativa até 13/09" lido por quem paga significa "acaba em 13/09" — é a mesma
+confusão que o `a0bc1f7e` (aberto 08/09 00:16Z) mediu ter custado **27.436
+créditos queimados em 8h** por uma aluna que recebeu prazo falso da casa. Enviar
+o rascunho como estava repetiria isso em **8 pessoas de uma vez**, e ainda por
+cima em gente que nunca entrou e portanto tem os 100.000 intactos para queimar.
+
+**A inversão que isso provoca na leitura do card:** ninguém dos 8 está "perdendo
+a janela". Os 8 **renovam e são cobrados de novo** (13/09 Max e Cristiane, 19/09,
+20/09 x2, 29/09, 30/09, 02/10). O relógio não é "corra antes que expire", é
+**"em 13/09 duas pessoas pagam o segundo mês de uma plataforma que a nossa
+própria carta disse que elas não tinham"**. É argumento de dinheiro, não de
+prazo, e é mais forte.
