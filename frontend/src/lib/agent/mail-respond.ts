@@ -18,7 +18,7 @@ import { entregarAoTime } from "@/lib/incidents/entregar";
 import { guardarPrints } from "./mail-anexos";
 import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
-import { buildAccountContext } from "./account";
+import { buildAccountContext, linhaComprasHotmart } from "./account";
 import { extractEscalation } from "./escalate";
 import { agentEnabled } from "./respond";
 import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
@@ -108,11 +108,28 @@ function shouldSkip(raw: string, fromEmail: string): string | null {
 
 // ---------- contexto de canal pro cérebro ----------
 
-function mailSystemExtra(accountFound: boolean): string {
+/**
+ * `linhaCompras` só vem preenchida quando NÃO há conta: havendo conta, a mesma
+ * linha já sai de dentro do bloco CONTA DO ALUNO (`buildAccountContext`), e
+ * repetir dá ao modelo duas cópias pra conciliar. Sem conta ela é a ÚNICA
+ * fonte do produto — e é exatamente esse o caso do defeito que este arquivo
+ * conserta: quem comprou curso e nunca assinou a plataforma normalmente não
+ * tem conta nenhuma. Ver `compras.ts` pro incidente (Hugo, 08/09).
+ */
+function mailSystemExtra(accountFound: boolean, linhaCompras: string | null): string {
   return [
+    linhaCompras,
     `CANAL: você está respondendo um E-MAIL enviado pro suporte@fastcloner.com. Formato: e-mail curto em texto puro (sem markdown, sem asteriscos), começando com "Oi, [nome]!" quando souber o nome, terminando com "Abraço,\nFast — suporte FastCloner".`,
     `TOM: muitos desses e-mails são de alunos chateados com falhas. Se o problema relatado tem cara de falha NOSSA (erro, crédito que não entrou, geração ruim), comece pedindo desculpas sinceras, sem se defender. Seja concreta no próximo passo.`,
-    `CRÉDITOS/ACESSO NÃO LIBERADO após compra: explique que a liberação é automática quando a Hotmart aprova; peça pra pessoa entrar em fastcloner.com/app com o MESMO e-mail da compra (criar conta com ele, se ainda não tem) — os créditos aparecem no primeiro login. Se ela já fez isso e nada, diga que a equipe vai verificar [ESCALAR-TECNICO: créditos não liberados após compra].`,
+    // ⚠️ ESTA INSTRUÇÃO ERA INCONDICIONAL, e foi ela que escreveu a mentira.
+    // Em 08/09 a Fast respondeu a um comprador do Sistema de Geração Pronto
+    // (R$ 597, produto 7283229) que "os créditos devem aparecer no primeiro
+    // login". SGP não dá crédito nem acesso por REGRA COMERCIAL: ele ia entrar,
+    // ver saldo zero e confirmar que tinha sido enganado. Crédito é a resposta
+    // CERTA pro caso comum (7851642) e ERRADA pra este — sem o produto no
+    // contexto o modelo só podia adivinhar, e adivinhou o mais provável.
+    // Quem diz de qual produto se trata agora é a linha COMPRAS NA HOTMART.
+    `CRÉDITOS/ACESSO NÃO LIBERADO após compra: a resposta DEPENDE do produto, então obedeça primeiro a linha COMPRAS NA HOTMART. SÓ se ela disser que a pessoa TEM compra da plataforma FastCloner: explique que a liberação é automática quando a Hotmart aprova; peça pra pessoa entrar em fastcloner.com/app com o MESMO e-mail da compra (criar conta com ele, se ainda não tem) — os créditos aparecem no primeiro login; se ela já fez isso e nada, diga que a equipe vai verificar [ESCALAR-TECNICO: créditos não liberados após compra]. Se a linha disser SÓ CURSO, ou se ela não existir ou não confirmar o produto, NÃO prometa crédito nem acesso em NENHUMA formulação, nem como expectativa ou possibilidade — obedeça ao que aquela linha mandar.`,
     accountFound
       ? `A CONTA DO ALUNO FOI IDENTIFICADA pelo e-mail do remetente — use os dados reais abaixo.`
       : `NÃO existe conta na plataforma com o e-mail do remetente. Se a dúvida depender de conta, oriente a informar o e-mail cadastrado (ou criar conta com o e-mail da compra).`,
@@ -127,7 +144,11 @@ function mailSystemExtra(accountFound: boolean): string {
     // de usar.
     `REEMBOLSO/CANCELAMENTO/COBRANÇA: acolha, lamente e diga que a equipe confirma a solicitação em breve; finalize com [ESCALAR: resumo]. NUNCA confirme reembolso você mesma. Sobre a janela de garantia, seja obediente à linha GARANTIA HOTMART do bloco da conta — ela traz a DATA de fim, e a janela NÃO é sempre de 7 dias, então cite a data e nunca um número de dias: se ela disser FORA, ou não existir, NÃO afirme que há garantia — só diga que a equipe vai verificar.`,
     `Se o e-mail NÃO for um aluno/cliente pedindo ajuda (propaganda, spam, notificação de sistema, corrente), responda APENAS a palavra PULAR.`,
-  ].join("\n");
+    // `filter` obrigatório: `linhaCompras` é null quando há conta (a linha já
+    // vem no bloco dela) e um join cru mandaria a string "null" pro modelo.
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // ---------- varredura ----------
@@ -340,6 +361,10 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     .ilike("email", fromEmail)
     .maybeSingle();
   const account = profile ? await buildAccountContext(profile.id) : null;
+  // COMPRAS: com conta, a linha já vem dentro de `account`. SEM conta ela é a
+  // única forma de a Fast saber o produto — e o comprador de curso sem conta é
+  // precisamente quem recebeu a promessa falsa de crédito em 08/09.
+  const compras = account ? null : await linhaComprasHotmart(fromEmail);
 
   const history = [
     { content: `Assunto: ${subject}\n\n${text}`, from_me: false, sender_name: fromHeader.split("<")[0].trim() || null },
@@ -352,7 +377,7 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
 
   const replyRaw = await buildAgentReply(history, {
     account,
-    systemExtra: [mailSystemExtra(Boolean(account)), winback?.systemExtra].filter(Boolean).join("\n\n"),
+    systemExtra: [mailSystemExtra(Boolean(account), compras), winback?.systemExtra].filter(Boolean).join("\n\n"),
   });
   if (replyRaw.trim().toUpperCase() === "PULAR") {
     await markSeen(mail.uid);

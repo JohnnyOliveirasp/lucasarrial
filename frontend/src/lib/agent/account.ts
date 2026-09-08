@@ -18,6 +18,15 @@ import { agentProvider } from "@/lib/agent/provider";
 import { wahaLidToPhone } from "@/lib/agent/waha";
 import type { AgentChatRow, ProfileRow } from "@/lib/db/types";
 import { janelaGarantia, type EventoCompra } from "@/lib/agent/garantia";
+import { linhaDasCompras, COMPRAS_ESCALAR, type CatalogoHotmart, type EventoProduto } from "@/lib/agent/compras";
+// As constantes vêm da cópia CANÔNICA do SGP — não se reescreve link nem
+// telefone aqui. Se o portal ou o WhatsApp do curso mudarem lá, esta linha
+// muda junto; uma segunda cópia é como uma delas envelhece calada.
+import {
+  SGP_PORTAL_URL,
+  SGP_PRODUCT_ID_PADRAO,
+  WHATSAPP_SUPORTE_CURSO,
+} from "@/lib/payments/sgp-boas-vindas";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
 export async function phoneFromJid(jid: string): Promise<string | null> {
@@ -190,6 +199,48 @@ async function linhaGarantiaHotmart(email: string | null): Promise<string> {
 }
 
 /**
+ * O catálogo, resolvido do ambiente com as constantes canônicas de reserva.
+ * Mesma resolução do webhook (`HOTMART_SGP_PRODUCT_ID ?? SGP_PRODUCT_ID_PADRAO`)
+ * — se as duas divergirem, a Fast fala de um produto que o webhook não roteia.
+ */
+function catalogoHotmart(): CatalogoHotmart {
+  return {
+    // Sem env, fica `null` e a classificação vira "não sei" (ESCALAR) em vez de
+    // chamar todo mundo de comprador de curso. Ver `compras.ts`.
+    plataforma: process.env.HOTMART_PRODUCT_ID ?? null,
+    sgp: process.env.HOTMART_SGP_PRODUCT_ID ?? SGP_PRODUCT_ID_PADRAO,
+    portalSgp: SGP_PORTAL_URL,
+    whatsappCurso: WHATSAPP_SUPORTE_CURSO,
+  };
+}
+
+/**
+ * A linha do PRODUTO comprado, pronta. Exportada porque o canal de e-mail
+ * precisa dela SEM perfil: o comprador de curso que nunca assinou a plataforma
+ * frequentemente não tem conta nenhuma — e é exatamente ele o caso do defeito
+ * (Hugo, 08/09). Ver `compras.ts` pro incidente inteiro.
+ *
+ * Sem `.limit()` de propósito: um teto aqui faria a consulta ler só parte das
+ * compras do aluno e a classificação mudaria conforme a ordem das linhas.
+ */
+export async function linhaComprasHotmart(email: string | null): Promise<string> {
+  if (!email) return COMPRAS_ESCALAR;
+  try {
+    const { data, error } = await getAdmin()
+      .from("payment_events")
+      .select("event_type, payload")
+      .eq("provider", "hotmart")
+      .eq("event_type", "PURCHASE_APPROVED")
+      .ilike("buyer_email", email);
+    // erro do banco NÃO pode virar "não comprou": devolve ESCALAR igual.
+    if (error || !data?.length) return COMPRAS_ESCALAR;
+    return linhaDasCompras(data as EventoProduto[], catalogoHotmart());
+  } catch {
+    return COMPRAS_ESCALAR;
+  }
+}
+
+/**
  * Snapshot compacto da conta pro system prompt da Fast (SÓ leitura).
  * Últimos jobs de cada produto + saldo + transações recentes de crédito.
  */
@@ -265,6 +316,10 @@ export async function buildAccountContext(profileId: string): Promise<string | n
     // Nunca deixa de sair: a função já devolve a linha de ESCALAR em qualquer
     // falha. É a ausência desta linha que produziu o #198.
     const garantia = await linhaGarantiaHotmart(profile.email);
+    // Mesmo desenho, mesmo motivo, defeito diferente: sem esta linha o bloco
+    // acima é CEGO pra compra de curso (ele lê a NOSSA base) e a Fast promete
+    // crédito a quem comprou SGP. Ver `compras.ts`.
+    const compras = await linhaComprasHotmart(profile.email);
 
     return [
       `Nome: ${profile.display_name ?? "?"} · E-mail: ${profile.email}`,
@@ -272,6 +327,7 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       `Saldo: ${saldo.toLocaleString("pt-BR")} créditos (${(profile.credits_subscription ?? 0).toLocaleString("pt-BR")} do plano + ${(profile.credits_extra ?? 0).toLocaleString("pt-BR")} avulsos)`,
       `Cadastro em: ${dtBR(profile.created_at)}`,
       garantia,
+      compras,
       jobs.length ? `Últimos trabalhos (3 por produto):\n${jobLines(jobs)}` : "Nenhum trabalho ainda (conta sem uso).",
       txLines ? `Últimas movimentações de crédito:\n${txLines}` : "",
     ]
