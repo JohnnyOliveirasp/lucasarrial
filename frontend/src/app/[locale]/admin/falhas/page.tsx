@@ -237,7 +237,9 @@ export default function FalhasPage() {
                       </span>
                       <span className="block truncate font-mono text-[10px] text-[var(--ash)]">
                         {KIND_LABELS[inc.kind] ?? inc.kind} · {CAUSE_LABELS[inc.cause] ?? inc.cause}
-                        {inc.affected_emails.length > 0 && ` · ${inc.affected_emails.length} usuário(s)`}
+                        {inc.affected_emails.length > 0
+                          ? ` · ${inc.affected_emails.length} usuário(s)`
+                          : inc.kind === "reported" && " · sem e-mail do aluno"}
                         {/* A baixa aparece na LINHA, sem precisar abrir: quem varre a
                             fila tem que enxergar o que já foi atendido de relance. */}
                         {alunoRespondido(inc) && (
@@ -496,7 +498,7 @@ function ReportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-        <input className={input} placeholder="E-mail do usuário afetado (opcional)" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className={input} placeholder="E-mail do usuário afetado (sem ele o chamado fica irrespondível)" value={email} onChange={(e) => setEmail(e.target.value)} />
         <label className="flex flex-col gap-1.5">
           <span className="font-mono text-[11px] text-[var(--ash)]">Anexo (print ou áudio, até 8MB — opcional)</span>
           <input type="file" accept="image/*,audio/*,.txt,.log" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[12px] text-[var(--mute)]" />
