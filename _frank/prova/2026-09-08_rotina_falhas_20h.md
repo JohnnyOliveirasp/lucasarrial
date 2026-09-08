@@ -148,3 +148,38 @@ prometer qualquer coisa a ele.** Registrado na nota do `#312`.
   (nem individual, nem em massa).
 - Script de uso único fora do git em `_Bugs/`:
   `2026-09-08_novo_incidente_vitalicio.sql`.
+
+## 11. QUASE ACONTECEU DE NOVO: o log foi parar em branch `feat/`
+
+O passo fixo de fim de ronda **pegou um caso ao vivo** e vale escrever, porque a
+causa é diferente da de 19/08 e o ritual atual não a cobre.
+
+Abri a ronda com `git checkout main` (respondeu *"Switched to branch 'main'"*).
+Na hora de commitar, o commit `8a26423` foi parar em
+**`feat/fast-nao-promete-credito-sgp`**, e o `git push origin main` respondeu
+**`Everything up-to-date` com exit 0** — porque o ref `main` de fato não tinha
+mudado. Sucesso aparente, log invisível.
+
+**A causa não fui eu trocar de branch: outro processo trocou o branch do repo
+por baixo de mim, no meio da ronda.** A prova é o próprio working tree, que
+estava **limpo** no começo e no fim tinha `M frontend/src/lib/agent/account.ts`
+e o arquivo novo `frontend/src/lib/agent/compras.ts`, que não são meus e eu não
+toquei. O `HEAD` é estado do repositório, não do meu shell, então `checkout` no
+início da ronda **não garante nada** na hora do commit.
+
+**O que salvou:** `git log --oneline origin/main..HEAD` não sair vazio, e eu ter
+conferido `git ls-remote` em vez de acreditar no `PUSH OK`. `Everything
+up-to-date` com exit 0 é exatamente o tipo de silêncio que a ordem manda
+desconfiar — o mesmo padrão do UPDATE que afeta 0 linhas.
+
+**Conserto aplicado, sem atropelar o outro processo:** `git branch -f main
+8a26423` (fast-forward de verdade, conferido com `git merge-base
+--is-ancestor`), depois `git push origin main`, e **não** dei `reset --hard` no
+branch de feature — as alterações não commitadas do outro processo continuam
+intactas. Confirmado no fim: `origin/main = 8a26423` e o arquivo existe em
+`origin/main` (`git cat-file -e`).
+
+**Para a próxima ronda:** conferir `git branch --show-current` **imediatamente
+antes do commit**, não só no início; e nunca aceitar `PUSH OK`/`Everything
+up-to-date` como prova — a prova é `git ls-remote` mais o arquivo existindo em
+`origin/main`.
