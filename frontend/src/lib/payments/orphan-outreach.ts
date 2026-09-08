@@ -11,6 +11,7 @@
 import { getAdmin } from "@/lib/db/admin";
 import { sendEmail } from "@/lib/email/resend";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
+import { compradorMereceConvite, eventoEhPagamento } from "@/lib/payments/acesso-regra";
 
 const PRODUCT_ID = "7851642";
 const STATE_KEY = "orphan_invites";
@@ -31,7 +32,13 @@ type InviteState = Record<string, { first: string; reminder: string | null }>;
 type ApprovedRow = {
   buyer_email: string | null;
   received_at: string;
-  payload: { data?: { product?: { id?: number | string }; purchase?: { price?: { value?: number } }; buyer?: { name?: string } } };
+  payload: {
+    data?: {
+      product?: { id?: number | string };
+      purchase?: { price?: { value?: number }; status?: string };
+      buyer?: { name?: string };
+    };
+  };
 };
 
 async function loadState(): Promise<InviteState> {
@@ -107,14 +114,28 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
   }
 
   // Última compra aprovada por comprador (produto da plataforma, sem testes).
-  const buyers = new Map<string, { at: string; name: string }>();
+  // `pagou` acumula pelo caminho: basta UM evento com dinheiro que entrou de
+  // verdade (valor > 0 E status de pagamento). Trial de R$ 0 e boleto impresso
+  // que nunca foi pago passam por aqui como PURCHASE_APPROVED e NÃO contam —
+  // ver `eventoEhPagamento` e a condição (2) de `compradorMereceConvite`.
+  const buyers = new Map<string, { at: string; name: string; pagou: boolean }>();
   for (const row of approved) {
     const email = (row.buyer_email ?? "").toLowerCase();
     const d = row.payload?.data;
     if (isTestEmail(email) || String(d?.product?.id ?? "") !== PRODUCT_ID) continue;
+    const pagouNesta = eventoEhPagamento({
+      valor: d?.purchase?.price?.value,
+      status: d?.purchase?.status,
+    });
     const cur = buyers.get(email);
-    if (!cur || row.received_at > cur.at) {
-      buyers.set(email, { at: row.received_at, name: (d?.buyer?.name ?? "").split(" ")[0] });
+    if (!cur) {
+      buyers.set(email, { at: row.received_at, name: (d?.buyer?.name ?? "").split(" ")[0], pagou: pagouNesta });
+    } else {
+      if (pagouNesta) cur.pagou = true;
+      if (row.received_at > cur.at) {
+        cur.at = row.received_at;
+        cur.name = (d?.buyer?.name ?? "").split(" ")[0];
+      }
     }
   }
 
@@ -141,32 +162,33 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
   }
 
   // #127 (Cassio, 24/08): compra aprovada UMA VEZ entrava na lista pra sempre.
-  // Quem cancelou/estornou/chargeback/expirou recebia "seus créditos continuam
-  // reservados" — e o lembrete de 3 dias também. A verdade do acesso é
-  // entitlements.status (vale a linha mais recente por comprador): só 'active'
-  // ganha convite. Consulta em blocos, e se falhar ABORTA (mesma regra da guarda
-  // hasAccount: lista incompleta é o que manda e-mail errado).
-  const naoAtivo = new Set<string>();
-  {
-    const ultimo = new Map<string, { status: string; at: string }>();
-    for (let i = 0; i < buyerEmails.length; i += CHUNK) {
-      const chunk = buyerEmails.slice(i, i + CHUNK);
-      const { data, error } = await admin
-        .from("entitlements")
-        .select("buyer_email, status, updated_at, created_at")
-        .in("buyer_email", chunk);
-      if (error) throw new Error(`[orphan-outreach] guarda entitlements falhou: ${error.message}`);
-      for (const e of (data ?? []) as {
-        buyer_email: string | null; status: string | null; updated_at: string | null; created_at: string | null;
-      }[]) {
-        const em = (e.buyer_email ?? "").toLowerCase();
-        if (!em) continue;
-        const at = e.updated_at ?? e.created_at ?? "";
-        const cur = ultimo.get(em);
-        if (!cur || at > cur.at) ultimo.set(em, { status: e.status ?? "", at });
+  // Quem estornou/deu chargeback recebia "seus créditos continuam reservados" —
+  // e o lembrete de 3 dias também. A verdade do acesso é o entitlement mais
+  // recente por comprador, lido pela regra ÚNICA (`entitlementValeAcesso`), não
+  // por `status === "active"`: ver `compradorMereceConvite` acima. Consulta em
+  // blocos, e se falhar ABORTA (mesma regra da guarda hasAccount: lista
+  // incompleta é o que manda e-mail errado).
+  const nowIso = new Date().toISOString();
+  const ultimoEnt = new Map<string, { status: string; access_until: string | null; at: string }>();
+  for (let i = 0; i < buyerEmails.length; i += CHUNK) {
+    const chunk = buyerEmails.slice(i, i + CHUNK);
+    const { data, error } = await admin
+      .from("entitlements")
+      .select("buyer_email, status, access_until, updated_at, created_at")
+      .in("buyer_email", chunk);
+    if (error) throw new Error(`[orphan-outreach] guarda entitlements falhou: ${error.message}`);
+    for (const e of (data ?? []) as {
+      buyer_email: string | null; status: string | null; access_until: string | null;
+      updated_at: string | null; created_at: string | null;
+    }[]) {
+      const em = (e.buyer_email ?? "").toLowerCase();
+      if (!em) continue;
+      const at = e.updated_at ?? e.created_at ?? "";
+      const cur = ultimoEnt.get(em);
+      if (!cur || at > cur.at) {
+        ultimoEnt.set(em, { status: e.status ?? "", access_until: e.access_until ?? null, at });
       }
     }
-    for (const [em, u] of ultimo) if (u.status !== "active") naoAtivo.add(em);
   }
 
   const state = await loadState();
@@ -181,7 +203,13 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
 
   for (const [email, info] of buyers) {
     if (hasAccount.has(email)) continue; // criou conta — claim do login resolve
-    if (naoAtivo.has(email)) continue; // cancelou/estornou/expirou — não há crédito a convidar (#127)
+    // Só convida quem PAGOU a assinatura E ainda está dentro da janela paga.
+    // Sem as duas: #127 (convite pra quem estornou) ou #138 (trial de R$ 0 lido
+    // como "acesso vivo"). A regra mora em acesso-regra.ts, testada.
+    const ent = ultimoEnt.get(email);
+    if (!compradorMereceConvite(ent ? { status: ent.status, access_until: ent.access_until } : null, info.pagou, nowIso)) {
+      continue;
+    }
     if (now - new Date(info.at).getTime() < MIN_AGE_MS) continue;
     summary.orphans += 1;
 
