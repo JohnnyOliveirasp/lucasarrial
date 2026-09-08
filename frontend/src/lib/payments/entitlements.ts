@@ -15,6 +15,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { donoDoEntitlement } from "@/lib/payments/vinculo";
+import { entitlementValeAcesso } from "@/lib/payments/acesso-regra";
 import type {
   EntitlementStatus,
   EntitlementUpdate,
@@ -150,38 +151,18 @@ async function findUserIdByEmail(email: string): Promise<string | null> {
 }
 
 /**
- * A regra de "este entitlement dá acesso AGORA?", em UM lugar só.
+ * A regra de "este entitlement dá acesso AGORA?" mora agora em `acesso-regra.ts`
+ * — módulo PURO, zero import — e é re-exportada daqui pra ninguém precisar
+ * trocar o import (08/09).
  *
- * ⚠️ "canceled" NAO e o mesmo que "sem acesso" (corrigido 20/08).
- *
- * Ate aqui so "active" contava. So que o proprio webhook, ao cancelar uma
- * assinatura, grava de proposito o access_until do periodo JA PAGO no
- * entitlement ("cancelamento de assinatura mantem o acesso ate o fim do
- * periodo") - e o recompute jogava esse valor fora no segundo seguinte,
- * zerando profiles.access_until. Quem cancelava perdia na hora o que tinha
- * comprado, que e o oposto da regra "quem pagou fica".
- *
- * A regra, por status:
- *   active    -> access_until NULL (vitalicio) OU futuro
- *   canceled  -> SO com data futura. NULL aqui e "acabou", nao "vitalicio":
- *                cancelamento sem periodo pago restante nao da acesso.
- *   refunded / chargeback / expired -> NUNCA. O dinheiro voltou ou nao entrou.
- *
- * POR QUE ISTO SAIU DA CLOSURE (06/09, incidente #290): o e-mail de boas-vindas
- * do SGP precisa responder "o comprador TEM a plataforma?" pra parar de dizer a
- * assinante pagante que ele nao tem. Se a resposta viesse de uma copia da regra,
- * as duas iam divergir no primeiro ajuste e o e-mail voltaria a mentir por outro
- * caminho. Quem responde ao aluno usa a MESMA regra que abre a porta pra ele.
- * A regra em si NAO mudou nesta extracao — e byte a byte a de antes.
+ * Motivo da mudança de casa: ESTE arquivo importa `@/lib/db/admin`, o que
+ * impedia `node --test` de tocar na regra. A frase mais cara da casa (quem
+ * entra, quem tem crédito, quem recebe qual e-mail) era a única sem teste
+ * próprio — e ela já foi lida errado duas vezes: em 20/08 (`canceled` perdia o
+ * período já pago) e em 08/09 (o convite de compra órfã pulava `canceled`
+ * dentro da janela paga). A regra em si NAO mudou: é byte a byte a de antes.
  */
-export function entitlementValeAcesso(
-  e: { status: string; access_until: string | null },
-  agoraIso: string,
-): boolean {
-  if (e.status === "active") return e.access_until === null || e.access_until > agoraIso;
-  if (e.status === "canceled") return e.access_until !== null && e.access_until > agoraIso;
-  return false;
-}
+export { entitlementValeAcesso } from "@/lib/payments/acesso-regra";
 
 /**
  * Recalcula o cache de acesso no profile a partir dos entitlements do usuário.
