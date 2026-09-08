@@ -7,11 +7,22 @@
  * idade, pra dar tempo do fluxo normal), manda e-mail convite PELO suporte@
  * (se a pessoa responder, a Fast atende) e 1 lembrete único após 3 dias.
  * Dedupe persistente em agent_state key "orphan_invites" (sem migration).
+ *
+ * ⚠️ O dedupe é POR COBRANÇA, não por e-mail para sempre (08/09/2026, ver
+ * `orphan-ciclo.ts`): assinatura mensal cobra de novo todo mês, e calar o
+ * comprador depois do primeiro par convite+lembrete deixava pagante sem conta
+ * sendo cobrado em silêncio por meses. Cinco casos medidos, quatro escritos à
+ * mão naquele dia porque o sweeper não podia falar.
  */
 import { getAdmin } from "@/lib/db/admin";
 import { sendEmail } from "@/lib/email/resend";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
 import { compradorMereceConvite, eventoEhPagamento } from "@/lib/payments/acesso-regra";
+import {
+  decidirAcaoConvite,
+  registroDoConvite,
+  type RegistroConvite,
+} from "@/lib/payments/orphan-ciclo";
 
 const PRODUCT_ID = "7851642";
 const STATE_KEY = "orphan_invites";
@@ -28,7 +39,7 @@ const TEST_EMAILS = new Set([
 const isTestEmail = (e: string) =>
   !e || e.includes("@example.com") || e.endsWith("@fastcloner.com") || TEST_EMAILS.has(e);
 
-type InviteState = Record<string, { first: string; reminder: string | null }>;
+type InviteState = Record<string, RegistroConvite>;
 type ApprovedRow = {
   buyer_email: string | null;
   received_at: string;
@@ -118,7 +129,13 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
   // verdade (valor > 0 E status de pagamento). Trial de R$ 0 e boleto impresso
   // que nunca foi pago passam por aqui como PURCHASE_APPROVED e NÃO contam —
   // ver `eventoEhPagamento` e a condição (2) de `compradorMereceConvite`.
-  const buyers = new Map<string, { at: string; name: string; pagou: boolean }>();
+  //
+  // `pagoEm` é o instante da ÚLTIMA cobrança que entrou de verdade, e é o que
+  // define o ciclo do convite (`orphan-ciclo.ts`). Não dá pra reaproveitar o
+  // `at`: ele é o último evento aprovado de QUALQUER tipo, e trial de R$ 0 e
+  // boleto impresso também chegam como PURCHASE_APPROVED — ancorar o ciclo
+  // nele reabriria convite por evento que não é dinheiro.
+  const buyers = new Map<string, { at: string; name: string; pagou: boolean; pagoEm: string | null }>();
   for (const row of approved) {
     const email = (row.buyer_email ?? "").toLowerCase();
     const d = row.payload?.data;
@@ -129,9 +146,21 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     });
     const cur = buyers.get(email);
     if (!cur) {
-      buyers.set(email, { at: row.received_at, name: (d?.buyer?.name ?? "").split(" ")[0], pagou: pagouNesta });
+      buyers.set(email, {
+        at: row.received_at,
+        name: (d?.buyer?.name ?? "").split(" ")[0],
+        pagou: pagouNesta,
+        pagoEm: pagouNesta ? row.received_at : null,
+      });
     } else {
-      if (pagouNesta) cur.pagou = true;
+      if (pagouNesta) {
+        cur.pagou = true;
+        // Comparação em ms: os dois lados vêm do mesmo campo, mas o resto do
+        // fluxo compara com o estado (outro formato) — ver orphan-ciclo.ts.
+        if (!cur.pagoEm || Date.parse(row.received_at) > Date.parse(cur.pagoEm)) {
+          cur.pagoEm = row.received_at;
+        }
+      }
       if (row.received_at > cur.at) {
         cur.at = row.received_at;
         cur.name = (d?.buyer?.name ?? "").split(" ")[0];
@@ -168,21 +197,33 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
   // por `status === "active"`: ver `compradorMereceConvite` acima. Consulta em
   // blocos, e se falhar ABORTA (mesma regra da guarda hasAccount: lista
   // incompleta é o que manda e-mail errado).
+  //
+  // ⚠️ `jaTemDono`: a compra deste e-mail JÁ está ligada a uma conta. A guarda
+  // `hasAccount` procura perfil com o e-mail DA COMPRA e por isso é cega pra
+  // quem comprou com um endereço e usa a plataforma por outro — exatamente a
+  // classe do #20/#27/#36/#195/#218. Medido em 08/09: `nassarab@hotmail.com`
+  // (conta `nassaramesquita@gmail.com`, plan pro, 95.590 créditos) e
+  // `qooqi.criacoes@gmail.com` (conta `gestao@qooqi.com.br`, 100.000 créditos)
+  // passavam nas duas guardas antigas e só não recebiam "crie sua conta"
+  // porque o dedupe eterno os calava. Ao tornar o dedupe cíclico, sem esta
+  // guarda eu criaria o incidente 72a4c9db de novo: convite pra cliente ATIVO.
   const nowIso = new Date().toISOString();
   const ultimoEnt = new Map<string, { status: string; access_until: string | null; at: string }>();
+  const jaTemDono = new Set<string>();
   for (let i = 0; i < buyerEmails.length; i += CHUNK) {
     const chunk = buyerEmails.slice(i, i + CHUNK);
     const { data, error } = await admin
       .from("entitlements")
-      .select("buyer_email, status, access_until, updated_at, created_at")
+      .select("buyer_email, status, access_until, updated_at, created_at, user_id")
       .in("buyer_email", chunk);
     if (error) throw new Error(`[orphan-outreach] guarda entitlements falhou: ${error.message}`);
     for (const e of (data ?? []) as {
       buyer_email: string | null; status: string | null; access_until: string | null;
-      updated_at: string | null; created_at: string | null;
+      updated_at: string | null; created_at: string | null; user_id: string | null;
     }[]) {
       const em = (e.buyer_email ?? "").toLowerCase();
       if (!em) continue;
+      if (e.user_id) jaTemDono.add(em);
       const at = e.updated_at ?? e.created_at ?? "";
       const cur = ultimoEnt.get(em);
       if (!cur || at > cur.at) {
@@ -203,6 +244,7 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
 
   for (const [email, info] of buyers) {
     if (hasAccount.has(email)) continue; // criou conta — claim do login resolve
+    if (jaTemDono.has(email)) continue; // compra já ligada a uma conta (outro e-mail)
     // Só convida quem PAGOU a assinatura E ainda está dentro da janela paga.
     // Sem as duas: #127 (convite pra quem estornou) ou #138 (trial de R$ 0 lido
     // como "acesso vivo"). A regra mora em acesso-regra.ts, testada.
@@ -214,14 +256,23 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     summary.orphans += 1;
 
     const record = state[email];
+    // O ciclo é da COBRANÇA (orphan-ciclo.ts): pagamento novo depois do ciclo
+    // já atendido reabre convite + lembrete; sem pagamento novo, silêncio.
+    const acao = decidirAcaoConvite({
+      registro: record,
+      ultimoPagamentoIso: info.pagoEm,
+      agoraMs: now,
+      lembreteAposMs: REMINDER_AFTER_MS,
+    });
+    if (acao === "nada") continue;
     try {
-      if (!record) {
+      if (acao === "convite") {
         const { subject, text } = inviteText(info.name, email, false);
         await sendSupportMail({ to: email, subject, text, bcc });
-        state[email] = { first: new Date().toISOString(), reminder: null };
+        state[email] = registroDoConvite(new Date().toISOString(), info.pagoEm, record);
         summary.invited += 1;
         sent.push(`convite → ${email}`);
-      } else if (!record.reminder && now - new Date(record.first).getTime() > REMINDER_AFTER_MS) {
+      } else {
         const { subject, text } = inviteText(info.name, email, true);
         await sendSupportMail({ to: email, subject, text, bcc });
         record.reminder = new Date().toISOString();
