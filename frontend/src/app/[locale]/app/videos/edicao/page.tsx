@@ -32,13 +32,13 @@ export default async function VideoEdicaoPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("email, credits_subscription, credits_extra, access_until")
+    .select("email, credits_subscription, credits_extra, access_until, access_source")
     .eq("id", user.id)
     .single();
   const email = profile?.email ?? user.email ?? null;
   // `subscribed` continua existindo SÓ pra escolher o texto do aviso e o
   // destino do CTA — não tranca mais nada (ordem do Johnny 18/08).
-  const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
+  const subscribed = hasActiveAccess(email, profile?.access_until ?? null, profile?.access_source ?? null);
   const creditsTotal =
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
   const unlocked = bypassesBilling(email) || creditsTotal > 0;

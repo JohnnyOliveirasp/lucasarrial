@@ -48,10 +48,10 @@ export async function POST(request: NextRequest) {
   // Gate: só quem tem assinatura ativa (ou é equipe) compra créditos avulsos.
   const { data: profile } = await getAdmin()
     .from("profiles")
-    .select("access_until")
+    .select("access_until, access_source")
     .eq("id", auth.user_id)
     .maybeSingle();
-  if (!hasActiveAccess(auth.email, profile?.access_until ?? null)) {
+  if (!hasActiveAccess(auth.email, profile?.access_until ?? null, profile?.access_source ?? null)) {
     return forbidden("Assine o plano antes de comprar créditos avulsos.");
   }
 

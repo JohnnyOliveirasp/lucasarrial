@@ -31,10 +31,11 @@ export async function gateStudioCredits(args: {
 
   const { data: prof } = await getAdmin()
     .from("profiles")
-    .select("access_until")
+    .select("access_until, access_source")
     .eq("id", args.userId)
     .maybeSingle();
-  const subscribed = hasActiveAccess(args.email, (prof as { access_until?: string | null } | null)?.access_until ?? null);
+  const acesso = prof as { access_until?: string | null; access_source?: string | null } | null;
+  const subscribed = hasActiveAccess(args.email, acesso?.access_until ?? null, acesso?.access_source ?? null);
   return {
     ok: false,
     deny: jsonError(

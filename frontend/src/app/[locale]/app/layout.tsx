@@ -59,7 +59,7 @@ export default async function AppLayout({
 
   let { data: profile } = await supabase
     .from("profiles")
-    .select("id, email, display_name, avatar_url, plan, access_until, credits_subscription, credits_extra, pending_payment_at")
+    .select("id, email, display_name, avatar_url, plan, access_until, access_source, credits_subscription, credits_extra, pending_payment_at")
     .eq("id", user.id)
     .single();
 
@@ -86,7 +86,7 @@ export default async function AppLayout({
     await claimPurchasesOnLogin(user.id, claimEmail);
     const { data: refreshed } = await supabase
       .from("profiles")
-      .select("id, email, display_name, avatar_url, plan, access_until, credits_subscription, credits_extra, pending_payment_at")
+      .select("id, email, display_name, avatar_url, plan, access_until, access_source, credits_subscription, credits_extra, pending_payment_at")
       .eq("id", user.id)
       .single();
     if (refreshed) profile = refreshed;
@@ -98,7 +98,7 @@ export default async function AppLayout({
   // rotas generate/start-training.
   const email = profile?.email ?? user.email ?? null;
   const unlimited = bypassesBilling(email);
-  const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
+  const subscribed = hasActiveAccess(email, profile?.access_until ?? null, profile?.access_source ?? null);
   const creditsTotal =
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
   // Papel (mig 95): `admin` abre a pré-produção e os recursos que gastam

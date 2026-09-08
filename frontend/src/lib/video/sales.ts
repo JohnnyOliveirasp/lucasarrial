@@ -54,10 +54,10 @@ export async function gateSalesAI(auth: {
 
   const { data: prof } = await getAdmin()
     .from("profiles")
-    .select("access_until")
+    .select("access_until, access_source")
     .eq("id", auth.user_id)
     .maybeSingle();
-  const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null);
+  const subscribed = hasActiveAccess(auth.email, prof?.access_until ?? null, prof?.access_source ?? null);
   return {
     billed,
     deny: jsonError(

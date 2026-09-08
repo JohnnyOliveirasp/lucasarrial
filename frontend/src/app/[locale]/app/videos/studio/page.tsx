@@ -32,7 +32,7 @@ export default async function VideoStudioPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("email, credits_subscription, credits_extra, access_until")
+    .select("email, credits_subscription, credits_extra, access_until, access_source")
     .eq("id", user.id)
     .single();
 
@@ -42,7 +42,7 @@ export default async function VideoStudioPage({
   // este guard + mover o item do menu pro grupo Vídeos (sidebar.tsx).
   if (!(await isAdmin(email))) redirect({ href: "/app/dashboard", locale });
   const team = bypassesBilling(email);
-  const subscribed = hasActiveAccess(email, profile?.access_until ?? null);
+  const subscribed = hasActiveAccess(email, profile?.access_until ?? null, profile?.access_source ?? null);
   const creditsTotal =
     (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
   const canUse = team || creditsTotal >= STUDIO_CLEAN_COST;

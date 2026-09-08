@@ -38,10 +38,10 @@ export async function POST(
     if (total < IMPROVE_PROMPT_COST) {
       const { data: profile } = await admin
         .from("profiles")
-        .select("access_until")
+        .select("access_until, access_source")
         .eq("id", auth.user_id)
         .maybeSingle();
-      const subscribed = hasActiveAccess(auth.email, profile?.access_until ?? null);
+      const subscribed = hasActiveAccess(auth.email, profile?.access_until ?? null, profile?.access_source ?? null);
       return jsonError(
         "insufficient_credits",
         `Melhorar o prompt custa ${IMPROVE_PROMPT_COST} crédito.`,
