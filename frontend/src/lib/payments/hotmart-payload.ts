@@ -108,6 +108,23 @@ export function extractBuyerName(data: Record<string, unknown>): string | null {
   return typeof name === "string" && name.trim() ? name.trim() : null;
 }
 
+/**
+ * Telefone do comprador (data.buyer.checkout_phone) — o que a pessoa digitou no
+ * checkout da Hotmart. É a ÚNICA forma de contato de quem comprou o SGP e nunca
+ * abriu o portal (90 das 103 compras medidas em 08/09), então o painel
+ * /admin/sgp depende dele pra equipe conseguir ligar.
+ *
+ * ⚠️ VEM SEM DDI: os payloads reais trazem "11984263680" (11 dígitos, sem o 55).
+ * E nem sempre é brasileiro — há "393498533692" (Itália) com country_iso "BR".
+ * Quem decide o DDI é `normalizarWhatsapp` (lib/sgp/types.ts), não este leitor:
+ * aqui só se extrai o que a Hotmart mandou, cru.
+ */
+export function extractBuyerPhone(data: Record<string, unknown>): string | null {
+  const phone = asRecord(data.buyer).checkout_phone;
+  if (typeof phone === "string" && phone.trim()) return phone.trim();
+  return typeof phone === "number" ? String(phone) : null;
+}
+
 export function extractOfferCode(data: Record<string, unknown>): string | null {
   const code = asRecord(asRecord(data.purchase).offer).code;
   return typeof code === "string" ? code : null;

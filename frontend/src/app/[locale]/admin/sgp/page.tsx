@@ -13,16 +13,26 @@
  * aluno continua parado, então ele continua na tabela, só que sem o vermelho e
  * com quem cobrou e quando. Passada a janela, ele volta a gritar sozinho.
  *
+ * Pedido do Lucas (08/09): a tela mostrava só quem ABRIU o portal — 27 pedidos.
+ * Só que são 103 compradores pagos, e 90 deles nunca começaram: não têm linha em
+ * `sgp_pedidos` e não apareciam em tela nenhuma. Daí a segunda aba, "Todos os
+ * compradores", em formato de planilha pro time entrar em contato. A primeira
+ * aba (a fila de trabalho) NÃO mudou: ela continua sendo o que se olha no dia a
+ * dia, e a nova é a lista de prospecção.
+ *
  * A régua (tradução do status, frase de ação, contadores, ordem, silêncio da
- * cobrança) mora em lib/sgp/painel.ts e é calculada no servidor — aqui é só
- * desenho.
+ * cobrança) mora em lib/sgp/painel.ts e lib/sgp/compradores.ts e é calculada no
+ * servidor — aqui é só desenho.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock, Undo2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, MessageCircle, Undo2 } from "lucide-react";
 import { SGP_PARADO_HORAS, type LinhaPainel, type ResumoPainel } from "@/lib/sgp/painel";
+import { telefoneLegivel, type LinhaComprador, type ResumoCompradores } from "@/lib/sgp/compradores";
 
 type EstadoCobranca = { disponivel: boolean; silencioHoras: number };
+
+type Aba = "fila" | "todos";
 
 const dt = (iso: string | null) =>
   iso
@@ -34,11 +44,11 @@ const dt = (iso: string | null) =>
       })
     : "—";
 
-/** WhatsApp vem como dígitos com DDI ("5561993107338") — ilegível pro atendente. */
-function whatsLegivel(d: string): string {
-  const m = /^55(\d{2})(\d{4,5})(\d{4})$/.exec(d);
-  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : d;
-}
+/** Só o dia, que é o que a planilha pede: "05/09/2026". */
+const dia = (iso: string | null) =>
+  iso
+    ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })
+    : "—";
 
 export default function SgpPage() {
   const [pedidos, setPedidos] = useState<LinhaPainel[]>([]);
@@ -48,6 +58,12 @@ export default function SgpPage() {
   const [erro, setErro] = useState<string | null>(null);
   /** Id da linha com clique em voo — desabilita o botão e evita clique duplo. */
   const [salvando, setSalvando] = useState<string | null>(null);
+
+  const [aba, setAba] = useState<Aba>("fila");
+  const [compradores, setCompradores] = useState<LinhaComprador[] | null>(null);
+  const [resumoTodos, setResumoTodos] = useState<ResumoCompradores | null>(null);
+  const [carregandoTodos, setCarregandoTodos] = useState(false);
+  const [erroTodos, setErroTodos] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +96,38 @@ export default function SgpPage() {
       clearInterval(id);
     };
   }, [load]);
+
+  /**
+   * A planilha de TODOS os compradores.
+   *
+   * ⚠️ FORA DO POLLING DE 30s, de propósito: a consulta dela varre os 1.917
+   * PURCHASE_APPROVED do banco (o id do produto vive dentro do JSON, então o
+   * filtro é em código). Pendurar isso num intervalo de 30s com a aba aberta
+   * seria martelar o banco pra uma lista que muda algumas vezes por dia. Carrega
+   * ao abrir a aba, e recarrega no botão.
+   */
+  const carregarTodos = useCallback(async () => {
+    setCarregandoTodos(true);
+    try {
+      const res = await fetch("/api/v1/admin/sgp/compradores", { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setCompradores(json.compradores ?? []);
+        setResumoTodos(json.resumo ?? null);
+        setErroTodos(null);
+      } else {
+        setErroTodos(json?.error?.message || "Não consegui carregar a lista de compradores.");
+      }
+    } catch {
+      setErroTodos("Não consegui carregar a lista de compradores.");
+    } finally {
+      setCarregandoTodos(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (aba === "todos" && compradores === null && !carregandoTodos) void carregarTodos();
+  }, [aba, compradores, carregandoTodos, carregarTodos]);
 
   /** Marca ou desfaz a cobrança e recarrega — a régua toda é recalculada no servidor. */
   const marcarCobranca = useCallback(
@@ -114,10 +162,32 @@ export default function SgpPage() {
           Sistema de Geração Pronto
         </h1>
         <p className="mt-1 text-[14px] text-[var(--mute)]">
-          Quem pediu, em que pé está e o que o time precisa fazer · atualiza a cada 30s
+          {aba === "fila"
+            ? "Quem pediu, em que pé está e o que o time precisa fazer · atualiza a cada 30s"
+            : "Todo mundo que comprou o SGP, tenha começado o portal ou não · lista para entrar em contato"}
         </p>
       </div>
 
+      {/* As duas leituras da mesma operação: o que fazer HOJE × com quem falar. */}
+      <div className="flex gap-1 border-b border-[var(--hairline-strong)]">
+        <BotaoAba ativa={aba === "fila"} onClick={() => setAba("fila")}>
+          Fila de trabalho{resumo ? ` (${resumo.total})` : ""}
+        </BotaoAba>
+        <BotaoAba ativa={aba === "todos"} onClick={() => setAba("todos")}>
+          Todos os compradores{resumoTodos ? ` (${resumoTodos.total})` : ""}
+        </BotaoAba>
+      </div>
+
+      {aba === "todos" ? (
+        <AbaCompradores
+          linhas={compradores}
+          resumo={resumoTodos}
+          carregando={carregandoTodos}
+          erro={erroTodos}
+          onRecarregar={carregarTodos}
+        />
+      ) : (
+        <>
       {/* Banner: a única pergunta que importa de longe. */}
       <div
         className={`flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3.5 ${
@@ -207,7 +277,7 @@ export default function SgpPage() {
                   </Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{p.email}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">
-                    {p.whatsapp === "—" ? "—" : whatsLegivel(p.whatsapp)}
+                    {p.whatsapp === "—" ? "—" : telefoneLegivel(p.whatsapp)}
                   </Td>
                   <Td>{p.etapa}</Td>
                   <Td
@@ -254,7 +324,33 @@ export default function SgpPage() {
           <>O botão de marcar cobrança ainda não está liberado — falta uma atualização do sistema.</>
         )}
       </p>
+        </>
+      )}
     </div>
+  );
+}
+
+function BotaoAba({
+  ativa,
+  onClick,
+  children,
+}: {
+  ativa: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`-mb-px border-b-2 px-4 py-2.5 text-[14px] transition-colors ${
+        ativa
+          ? "border-[var(--ink)] font-medium text-[var(--ink)]"
+          : "border-transparent text-[var(--mute)] hover:text-[var(--ink)]"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -318,6 +414,179 @@ function CelulaCobranca({
     >
       {salvando ? "marcando…" : "Já cobrei"}
     </button>
+  );
+}
+
+/**
+ * A planilha de TODOS os compradores (pedido do Lucas, 08/09).
+ *
+ * As colunas são as que ele pediu, nesta ordem: Nome, Status, Data de
+ * Aquisição, Celular, E-mail, Data de envio. Nada além disso — a fila de
+ * trabalho continua sendo o lugar do detalhe operacional.
+ *
+ * O celular é LINK de WhatsApp porque é o uso real do time: a lista existe pra
+ * eles saírem chamando essa gente, e copiar número na mão a cada linha é o tipo
+ * de atrito que faz a planilha ser abandonada.
+ */
+function AbaCompradores({
+  linhas,
+  resumo,
+  carregando,
+  erro,
+  onRecarregar,
+}: {
+  linhas: LinhaComprador[] | null;
+  resumo: ResumoCompradores | null;
+  carregando: boolean;
+  erro: string | null;
+  onRecarregar: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-6">
+      {/* O número que motivou a tela: quanta gente pagou e nunca apareceu. */}
+      {resumo && (
+        <div
+          className={`flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3.5 ${
+            resumo.naoComecaram
+              ? "border-[var(--status-warn)]/40 bg-[var(--status-warn)]/5"
+              : "border-[var(--status-online)]/30 bg-[var(--status-online)]/5"
+          }`}
+        >
+          {resumo.naoComecaram ? (
+            <AlertTriangle className="size-5 shrink-0 text-[var(--status-warn)]" />
+          ) : (
+            <CheckCircle2 className="size-5 shrink-0 text-[var(--status-online)]" />
+          )}
+          <span className="text-[14px] text-[var(--ink)]">
+            {resumo.naoComecaram
+              ? `${resumo.naoComecaram} pessoa(s) compraram e ainda NÃO começaram o portal — é com elas que o time precisa falar`
+              : "Todo mundo que comprou já começou o portal ✅"}
+          </span>
+        </div>
+      )}
+
+      {resumo && (
+        <div className="flex flex-wrap gap-2">
+          <Contador rotulo="Total" n={resumo.total} />
+          <Contador rotulo="Não começaram" n={resumo.naoComecaram} />
+          <Contador rotulo="Começaram" n={resumo.comecaram} />
+          <Contador rotulo="Entregues" n={resumo.entregues} />
+          <Contador rotulo="Esperando +48h" n={resumo.parados} />
+          {resumo.semTelefone > 0 && <Contador rotulo="Sem telefone" n={resumo.semTelefone} />}
+        </div>
+      )}
+
+      {erro && (
+        <p className="rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--status-error)]/5 px-4 py-3 text-[13px] text-[var(--status-error)]">
+          {erro}
+        </p>
+      )}
+
+      <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
+        {carregando && linhas === null ? (
+          <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">carregando…</div>
+        ) : !linhas || linhas.length === 0 ? (
+          <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">
+            nenhum comprador de SGP encontrado
+          </div>
+        ) : (
+          <table className="w-full min-w-[1000px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
+                <Th>Nome</Th>
+                <Th>Status</Th>
+                <Th>Data Aquisição</Th>
+                <Th>Celular</Th>
+                <Th>E-mail</Th>
+                <Th>Data de envio</Th>
+                <Th>Esperando há</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((c) => (
+                <tr
+                  key={c.chave}
+                  className={`border-t border-[var(--hairline)] align-top ${
+                    c.concluido
+                      ? "bg-[var(--surface-card)]"
+                      : c.parado
+                        ? "bg-[var(--status-warn)]/[0.07]"
+                        : "bg-[var(--surface-card)]"
+                  }`}
+                >
+                  <Td className="font-medium text-[var(--ink)]">{c.nome}</Td>
+                  <Td>
+                    {c.status}
+                    {/* Quem nunca abriu o portal é o alvo da lista: fica dito. */}
+                    {c.statusPedido === null && (
+                      <span className="ml-1.5 rounded-[var(--radius-full)] border border-[var(--hairline-strong)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--ash)]">
+                        contatar
+                      </span>
+                    )}
+                  </Td>
+                  <Td className="font-mono text-[11px] text-[var(--mute)]">
+                    {c.semCompraRegistrada ? (
+                      // NUNCA uma data inventada: quem entrou no portal antes de
+                      // o webhook do SGP existir não tem compra registrada, e a
+                      // tela diz isso em vez de chutar um dia.
+                      <span
+                        className="text-[var(--ash)]"
+                        title="Está no portal, mas não temos a compra registrada — provavelmente entrou antes de o registro de compras do SGP existir."
+                      >
+                        — sem registro
+                      </span>
+                    ) : (
+                      dia(c.dataAquisicao)
+                    )}
+                  </Td>
+                  <Td className="font-mono text-[11px]">
+                    {c.celularDigitos ? (
+                      <a
+                        href={`https://wa.me/${c.celularDigitos}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[var(--ink)] underline underline-offset-2 hover:text-[var(--status-online)]"
+                      >
+                        <MessageCircle className="size-3.5 shrink-0" />
+                        {c.celular}
+                      </a>
+                    ) : (
+                      <span className="text-[var(--ash)]">—</span>
+                    )}
+                  </Td>
+                  <Td className="font-mono text-[11px] text-[var(--mute)]">{c.email}</Td>
+                  <Td className="font-mono text-[11px] text-[var(--mute)]">{dt(c.enviadoEm)}</Td>
+                  <Td
+                    className={`font-mono text-[11px] tabular-nums ${
+                      c.parado ? "font-semibold text-[var(--status-warn)]" : "text-[var(--mute)]"
+                    }`}
+                  >
+                    {c.concluido ? "—" : c.esperandoTexto}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-[12px] text-[var(--ash)]">
+          Lista completa: quem comprou o SGP na Hotmart <strong>mais</strong> quem está no portal. Quem
+          aparece nos dois lugares vem numa linha só. &ldquo;Esperando há&rdquo; conta desde a compra
+          para quem nunca começou, e desde a última movimentação para quem já está no portal — destacado
+          acima de {SGP_PARADO_HORAS}h. Esta aba <strong>não</strong> atualiza sozinha.
+        </p>
+        <button
+          type="button"
+          onClick={onRecarregar}
+          disabled={carregando}
+          className="shrink-0 rounded-[var(--radius)] border border-[var(--hairline-strong)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--surface-deep)] disabled:opacity-50"
+        >
+          {carregando ? "atualizando…" : "Atualizar"}
+        </button>
+      </div>
+    </div>
   );
 }
 
