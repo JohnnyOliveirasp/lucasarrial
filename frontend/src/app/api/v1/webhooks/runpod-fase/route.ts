@@ -3,7 +3,13 @@
  *
  * Heartbeat de FASE do worker de voz (incidente d3d8d1b2, chamado #15).
  * A cada ~30s de job a thread de heartbeat do worker POSTa:
- *   { generation_id, token, fase, running_s, job_type }
+ *   { generation_id, token, fase, running_s, job_type, meta }
+ *
+ * `meta` entrou em 07/09 e é o que faltava pra pergunta abaixo ter resposta:
+ * até então a row dizia "inference.chunk.generate" e calava CHUNK e ATTEMPT,
+ * que são justamente o que separa "pendurou num chunk" (attempt baixo,
+ * running_s alto) de "regenerou demais" (attempt alto, running_s baixo). O
+ * dado existia no STDOUT do RunPod e era descartado uma linha antes do POST.
  * e a fase corrente é gravada em generations.qa.fase_corrente (jsonb que já
  * existe — sem migration). Num estouro de executionTimeout, a row da geração
  * passa a dizer QUAL fase pendurou (download da ref? whisper do QA?
@@ -22,6 +28,7 @@ import { jsonOk, jsonError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import {
   faseTokenValido,
+  metaDaFaseSanitizado,
   qaComFase,
   type FaseCorrente,
 } from "@/lib/generations/fase-telemetria";
@@ -33,6 +40,10 @@ type FasePayload = {
   fase?: unknown;
   running_s?: unknown;
   job_type?: unknown;
+  /** meta da fase (07/09, #15): em inference.chunk.generate vem
+   *  { chunk, attempt, chars, cfg }. Worker antigo não manda — campo
+   *  opcional de propósito. */
+  meta?: unknown;
 };
 
 export async function POST(request: NextRequest) {
@@ -60,6 +71,10 @@ export async function POST(request: NextRequest) {
     job_type: typeof payload.job_type === "string" ? payload.job_type.slice(0, 40) : null,
     visto_em: new Date().toISOString(),
   };
+  // Só ENTRA a chave se houver meta de fato: worker antigo continua gravando
+  // exatamente o jsonb de hoje, sem `meta: null` novo aparecendo na row.
+  const meta = metaDaFaseSanitizado(payload.meta);
+  if (meta) fase.meta = meta;
 
   try {
     const admin = getAdmin();

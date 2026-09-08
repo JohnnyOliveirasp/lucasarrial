@@ -71,7 +71,34 @@ export type FaseCorrente = {
   running_s: number | null;
   job_type: string | null;
   visto_em: string; // ISO — quando o app RECEBEU o heartbeat
+  /** meta da fase corrente do worker: em `inference.chunk.generate` traz
+   *  `chunk` e `attempt`. OPCIONAL de propósito — worker antigo não manda e
+   *  continua funcionando igual. */
+  meta?: Record<string, string | number | boolean | null>;
 };
+
+/** Chaves do meta que entram no sufixo `[fase: ...]`, NESTA ordem.
+ *  Só estas: o sufixo vai pro error_message que humano lê na row; despejar o
+ *  meta inteiro viraria ruído e poderia carregar conteúdo do aluno. */
+const META_NO_SUFIXO = ["chunk", "attempt"] as const;
+
+/** Sanitiza o meta que veio do worker: só escalares, chave curta, teto de 12.
+ *  Mesmo recorte do `_meta_serializavel` do worker — repetido aqui porque a
+ *  rota é o portão e não pode confiar no que chega. `null` = nada a gravar. */
+export function metaDaFaseSanitizado(
+  bruto: unknown,
+): Record<string, string | number | boolean | null> | null {
+  if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) return null;
+  const out: Record<string, string | number | boolean | null> = {};
+  for (const [k, v] of Object.entries(bruto as Record<string, unknown>)) {
+    if (Object.keys(out).length >= 12) break;
+    if (!k || k.length > 32) continue;
+    if (v === null || typeof v === "boolean") out[k] = v;
+    else if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+    else if (typeof v === "string" && v.length <= 64) out[k] = v;
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 /** Merge puro: qa com fase_corrente atualizada, sem perder as outras chaves. */
 export function qaComFase(
@@ -132,7 +159,14 @@ export function errorMessageComFase(rawError: string, qaAtual: unknown): string 
       typeof fase.running_s === "number" && Number.isFinite(fase.running_s)
         ? ` running_s=${Math.round(fase.running_s)}`
         : "";
-    return `${base} [fase: ${nome}${running}]`;
+    // chunk/attempt do meta: é o que separa "pendurou num chunk" (attempt
+    // baixo, running_s alto) de "regenerou demais" (attempt alto, running_s
+    // baixo) — a pergunta aberta do #15 desde 30/07. Sem "[" nem "]".
+    const extra = META_NO_SUFIXO.map((k) => {
+      const v = fase.meta?.[k];
+      return typeof v === "number" && Number.isFinite(v) ? ` ${k}=${v}` : "";
+    }).join("");
+    return `${base} [fase: ${nome}${running}${extra}]`;
   } catch {
     return base; // telemetria nunca derruba o caminho de falha/estorno
   }
