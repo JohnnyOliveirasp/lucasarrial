@@ -93,12 +93,18 @@ class FasePostTest(unittest.TestCase):
         self.assertEqual(req.get_header("User-agent"), worker_log.WORKER_USER_AGENT)
         self.assertNotIn("urllib", req.get_header("User-agent").lower())
         body = json.loads(req.data.decode("utf-8"))
+        # `meta` entrou no corpo em 07/09 (#15, PR #209) e este teste ficou
+        # DEFASADO — falhava na main desde então, ou seja o instrumento que o
+        # #15 depende ficou 1 dia sem guarda. Chamada sem meta manda `{}`
+        # (nunca ausente: chave que some não distingue "sem meta" de "campo
+        # não viajou", que é justamente o modo de falha que o #15 investiga).
         self.assertEqual(body, {
             "generation_id": CFG_INPUT["fase_ref"],
             "token": CFG_INPUT["fase_token"],
             "fase": "inference.chunk.generate",
             "running_s": 312.4,
             "job_type": "inference",
+            "meta": {},
         })
         # timeout curto SEMPRE presente: POST pendurado não pode segurar nada
         self.assertEqual(urlopen.call_args[1].get("timeout"), worker_log.FASE_POST_TIMEOUT_S)
@@ -144,10 +150,16 @@ class HeartbeatTickTest(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 worker_log._heartbeat_loop()
         post.assert_called_once()
-        fase, running_s, job_type = post.call_args[0]
+        # 4 posicionais desde 07/09 (#15, PR #209): o `meta` da fase do topo
+        # viaja JUNTO. Este teste desempacotava 3 e quebrava com ValueError.
+        fase, running_s, job_type, meta = post.call_args[0]
         self.assertEqual(fase, "inference.chunk.generate")
         self.assertIsInstance(running_s, float)
         self.assertEqual(job_type, "inference")
+        # A GUARDA QUE FALTAVA, e é o ponto do #15: sem o `chunk` chegando ao
+        # banco não dá pra separar "pendurado num chunk" de "tempestade de
+        # regen" — que é a única pergunta aberta do chamado.
+        self.assertEqual(meta, {"chunk": 3})
 
     def test_tick_idle_nao_posta(self):
         worker_log._CURRENT_JOB_TYPE = None  # entre jobs
