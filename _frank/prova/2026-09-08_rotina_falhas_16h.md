@@ -215,11 +215,53 @@ com material da **mesma sessão de gravação**.
 
 ---
 
-## 6. Higiene de fim de ronda
+## 6. ACHADO DE PROCESSO: a conferência de fim de ronda não protege ninguém
+
+A ordem manda, todo fim de ronda, rodar `git branch` + `git rev-list main..<branch>`
+"pra conferir que não ficou fix preso em branch", porque **em 19/08 um fix de
+aluno ficou 9h preso assim**. Rodei. Saída real:
+
+| conferência | branches acusadas |
+|---|---|
+| `git rev-list main..<branch>` | **70** |
+| `git cherry main <branch>` | **43** |
+
+**As duas acusam a `feat/290-sgp-boas-vindas-nao-nega-assinatura`** — cujo fix
+está **provadamente em produção**:
+
+```
+git merge-base --is-ancestor 0b672b2 origin/main  ->  SIM
+```
+
+O motivo é que o merge do PR reescreve o commit (a branch guarda `5d51714`, a
+main tem `0b672b2`), então nenhuma comparação por **commit** ou por **patch-id**
+consegue casar os dois. Conferi também por conteúdo: `git diff main <branch>`
+dá 12.245 deleções, mas isso é a **main ter andado** desde o ponto de branch,
+não fix preso.
+
+**Consequência:** a conferência que a ordem exige devolve 43–70 linhas toda
+ronda, com falso positivo em branch já entregue. Uma checagem que grita sempre
+é uma checagem que ninguém lê — que é exatamente como um fix fica 9h preso sem
+ninguém ver. Ela não está protegendo o que foi criada pra proteger.
+
+**O que funciona, e eu usei nesta ronda:** conferir por fix, não por branch —
+pegar o SHA de merge que está gravado no incidente e testar
+`git merge-base --is-ancestor <sha> origin/main`. Responde sim/não sem
+ambiguidade.
+
+**Não fui além disso de propósito.** Triar as 43 branches é outro trabalho, e
+esta ronda tem dono (`#234`). Fica registrado aqui, não virou incidente, porque
+é processo nosso e não defeito que atinge aluno — mas merece decisão do Johnny
+sobre trocar o texto da ordem.
+
+---
+
+## 7. Higiene de fim de ronda
 
 - Nenhum código mudou nesta ronda — só leitura e medição. Nada a mandar por PR.
 - Este log vai direto na `main`, como manda a ordem.
 - `git log --oneline origin/main..HEAD` conferido **vazio** depois do push.
+- Conferência de branch rodada — e o que ela vale está no item 6.
 - Nada de crédito, GPU, whisper, migration, assinatura cancelada, e-mail
   individual ou em massa.
 - Scripts de uso único ficaram fora do git, em `_Bugs/`:
