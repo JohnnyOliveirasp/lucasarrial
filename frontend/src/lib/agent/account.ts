@@ -327,8 +327,19 @@ export async function buildAccountContext(profileId: string): Promise<string | n
     // pode fazer nada com um código morto, e calar é a gentileza. AQUI o
     // vencido é DITO como vencido: a Fast é ATENDENTE, e a cobrança morta é
     // justamente o que EXPLICA a falta de acesso; calar devolveria a agente ao
-    // escuro que gerou o #198. Esse é o ponto certo do PR #218, incorporado
-    // aqui. Ver "POR QUE SÃO TRÊS ESTADOS" em `pendente-pure.ts`.
+    // escuro que gerou o #198. Ver "POR QUE SÃO TRÊS ESTADOS" em
+    // `pendente-pure.ts`.
+    //
+    // ⚠️ ISTO SUBSTITUI O BLOCO DO PR #218 (mergeado na main em 09/09 11:44Z,
+    // commit 0c47455), que resolvia o MESMO incidente nesta MESMA linha. O
+    // comportamento dele — dizer "vencido" em vez de calar — está preservado
+    // aqui; o que sai é a IMPLEMENTAÇÃO: ele refazia a condição inline (a
+    // duplicação que o #319 mandou eliminar) e montava `temAcesso` na mão, sem
+    // `bypassesBilling`, então o sócio seguia vendo cobrança. O merge do #218
+    // com esta branch é textualmente limpo e semanticamente quebrado: deixa
+    // DOIS `const linhaPendente`. Se este bloco reaparecer duplicado num merge
+    // futuro, é este o motivo — fique com a versão que importa de
+    // `pendente-pure.ts`.
     //
     // O texto é NEUTRO de meio de pagamento nos DOIS estados, de propósito:
     // quem diz se Pix/boleto valem pra esta pessoa é a linha COBRANÇA abaixo,
