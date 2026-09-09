@@ -664,8 +664,17 @@ export function ImageStudio({
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         // Erros ACIONÁVEIS pelo usuário (moderação, proporção indisponível no
-        // provedor) mostram a mensagem real no form — não o "Ops" genérico.
-        if (j?.error?.code === "content_blocked" || j?.error?.code === "aspect_unavailable") {
+        // provedor, referências pesadas demais) mostram a mensagem real no form
+        // — não o "Ops" genérico. references_too_large (incidente #199) fica
+        // AQUI e não na tela de erro de propósito: o conserto é trocar/remover
+        // foto, e é no form que ele consegue fazer isso; mandar pra tela de erro
+        // empurra pro "tentar de novo", que é justamente o que fez o aluno
+        // repetir 3 vezes uma falha que ia falhar sempre.
+        if (
+          j?.error?.code === "content_blocked" ||
+          j?.error?.code === "aspect_unavailable" ||
+          j?.error?.code === "references_too_large"
+        ) {
           setBlocked(j.error.message || t("errors.blockedFallback"));
           setStep("form");
           return;
