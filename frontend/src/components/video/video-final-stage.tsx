@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Clapperboard, Loader2, Download, AlertTriangle, RefreshCw, Type, AlignVerticalSpaceAround, CaseSensitive } from "lucide-react";
+import { downloadFromUrl } from "@/components/image/download-file";
 import {
   SUBTITLE_PRESETS,
   getSubtitlePreset,
@@ -205,6 +206,7 @@ export function VideoFinalStage({
   const [style, setStyle] = useState("karaoke");
   const [position, setPosition] = useState<SubtitlePosition | null>(null);
   const [size, setSize] = useState<SubtitleSize | null>(null);
+  const [baixando, setBaixando] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -223,6 +225,24 @@ export function VideoFinalStage({
   useEffect(() => {
     load();
   }, [load]);
+
+  /** Link novo pro mesmo mp4. A URL do vídeo final é PRESIGNADA com 1 hora
+   *  (`videos/[id]/render/route.ts:47`) e esta tela não a renova sozinha depois
+   *  que o poll para — quem deixa a aba aberta e volta depois clica em cima de
+   *  um link vencido. É o `refresh` do `downloadFromUrl` (incidente 166: link
+   *  vencido é o caso comum, não a exceção). */
+  const renovarUrl = useCallback(async (): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/v1/videos/${projectId}/render`, { cache: "no-store" });
+      if (!res.ok) return null;
+      const j = (await res.json()) as RenderState;
+      const nova = j.final_video_url ?? null;
+      if (nova) setState((prev) => (prev ? { ...prev, final_video_url: nova } : prev));
+      return nova;
+    } catch {
+      return null;
+    }
+  }, [projectId]);
 
   const rendering = state?.status === "rendering" || state?.job?.status === "processing" || state?.job?.status === "pending";
   useEffect(() => {
@@ -270,9 +290,31 @@ export function VideoFinalStage({
           disabled={busy}
         />
         <div className="flex flex-wrap items-center gap-2">
-          <a href={state.final_video_url} download="video-final.mp4" className={PILL}>
-            <Download className="h-4 w-4" /> {t("download")}
-          </a>
+          {/* Baixa como BLOB, não com `<a download>`: o atributo `download` é
+              IGNORADO pelo navegador quando o href é cross-origin, e a URL do
+              vídeo aponta pro R2 — o clique virava "abre em outra aba e toca o
+              vídeo", sem nunca salvar arquivo nenhum (#267). É o mesmo caminho
+              que a Edição, o Vídeo Clone e o Estúdio já usam. */}
+          <button
+            type="button"
+            disabled={baixando}
+            onClick={() => {
+              const url = state.final_video_url;
+              if (!url) return;
+              setBaixando(true);
+              void downloadFromUrl(url, "video-final", "mp4", renovarUrl).finally(() =>
+                setBaixando(false),
+              );
+            }}
+            className={PILL}
+          >
+            {baixando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}{" "}
+            {t("download")}
+          </button>
           <button type="button" onClick={approve} disabled={busy} className="inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-6 font-sans text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)] disabled:opacity-50">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {t("reassemble")}{" "}
             <span className="font-mono text-[11px] text-[var(--ash)]">{t("reassembleHint")}</span>
