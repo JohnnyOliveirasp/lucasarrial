@@ -24,7 +24,9 @@ import {
   resumirCompradores,
   telefoneLegivel,
   STATUS_NAO_COMECOU,
+  type CobrancaFastClonerBruta,
   type CompraSgpBruta,
+  type EntitlementFastClonerBruto,
 } from "./compradores.ts";
 import { ETAPA_HUMANA, SGP_PARADO_HORAS } from "./painel.ts";
 import type { SgpPedidoRow, SgpStatus } from "./types.ts";
@@ -346,4 +348,204 @@ test("o resumo bate com a forma real do funil (90 sem começar de 103)", () => {
   assert.equal(resumo.naoComecaram, 90);
   assert.equal(resumo.comecaram, 25);
   assert.equal(resumo.semCompraRegistrada, 12);
+});
+
+// ─────────────── a coluna FastCloner (pedido do Lucas, 09/09) ───────────────
+/**
+ * O que estes testes protegem:
+ *  1. PAGANTE e TRIAL não podem virar a mesma coisa. Medido em 09/09: dos 112
+ *     compradores de SGP, 11 têm assinatura viva e só DOIS pagam — um sim/não
+ *     faria o time ler 11 clientes onde há 2;
+ *  2. acesso VENCIDO é "não assina", nunca "assina" (o `entitlements.status`
+ *     fica `active` como rótulo velho, é o `access_until` que decide);
+ *  3. valor > 0 NÃO basta pra chamar alguém de pagante — a Hotmart emite os
+ *     R$97 em OVERDUE pra quem nunca pagou (18/08: 1.356.554 créditos dados a
+ *     14 pessoas que não pagaram, exatamente por ler valor sem status);
+ *  4. moeda estrangeira sai com a moeda certa (a base tem GBP, EUR, USD, PYG);
+ *  5. e a garantia que vale por todas: a coluna é INFORMATIVA — a contagem de
+ *     linhas do painel não muda por causa dela, em nenhum sentido.
+ */
+function ent(over: Partial<EntitlementFastClonerBruto> = {}): EntitlementFastClonerBruto {
+  return {
+    buyer_email: "f@x.com",
+    status: "active",
+    access_until: iso(AGORA + 30 * 24 * H),
+    ...over,
+  };
+}
+
+function cobranca(over: Partial<CobrancaFastClonerBruta> = {}): CobrancaFastClonerBruta {
+  return {
+    email: "f@x.com",
+    valor: 97,
+    moeda: "BRL",
+    statusCompra: "APPROVED",
+    recebidoEm: iso(AGORA - 2 * 24 * H),
+    ...over,
+  };
+}
+
+/** Atalho: monta UMA pessoa com a fonte FastCloner ligada. */
+function linhaCom(
+  entitlements: EntitlementFastClonerBruto[],
+  cobrancas: CobrancaFastClonerBruta[],
+  email = "f@x.com",
+) {
+  const linhas = montarCompradores({
+    compras: [compra({ email })],
+    pedidos: [],
+    agora: AGORA,
+    fastcloner: { entitlements, cobrancas },
+  });
+  assert.equal(linhas.length, 1);
+  return linhas[0]!;
+}
+
+// (a)
+test("FastCloner: quem paga aparece como PAGA, com valor e até quando", () => {
+  const ate = iso(AGORA + 29 * 24 * H);
+  const l = linhaCom([ent({ access_until: ate })], [cobranca({ valor: 97, moeda: "BRL" })]);
+  assert.equal(l.fastcloner?.estado, "paga");
+  assert.equal(l.fastcloner?.valor, 97);
+  assert.equal(l.fastcloner?.valorTexto, "R$97");
+  assert.equal(l.fastcloner?.ate, ate);
+  assert.equal(l.fastcloner?.vitalicio, false);
+  assert.equal(l.fastcloner?.cobrancaNaoConfirmada, false);
+});
+
+// (b)
+test("FastCloner: trial de R$0 vivo é TRIAL, nunca 'paga'", () => {
+  const l = linhaCom([ent()], [cobranca({ valor: 0 })]);
+  assert.equal(l.fastcloner?.estado, "trial");
+  assert.equal(l.fastcloner?.valorTexto, "R$0");
+  assert.notEqual(l.fastcloner?.estado, "paga");
+});
+
+// (c)
+test("FastCloner: sem entitlement nenhum é NÃO ASSINA, e não inventa valor", () => {
+  const l = linhaCom([], []);
+  assert.equal(l.fastcloner?.estado, "nao_assina");
+  assert.equal(l.fastcloner?.valor, null);
+  assert.equal(l.fastcloner?.ate, null);
+  assert.equal(l.fastcloner?.valorTexto, "—");
+});
+
+// (d)
+test("FastCloner: assinatura VENCIDA é não assina, mesmo com status 'active'", () => {
+  // O rótulo `active` nunca vira `expired` no vencimento natural — é o
+  // access_until que decide, e é por isso que a régua vem de acesso-regra.ts.
+  const l = linhaCom([ent({ status: "active", access_until: iso(AGORA - 1 * H) })], [cobranca()]);
+  assert.equal(l.fastcloner?.estado, "nao_assina");
+  assert.equal(l.fastcloner?.valor, null, "vencido não pode carregar valor: parece que paga");
+});
+
+// (e)
+test("FastCloner: moeda estrangeira aparece com a moeda certa, nunca R$", () => {
+  const gbp = linhaCom([ent()], [cobranca({ valor: 0, moeda: "GBP" })]);
+  assert.equal(gbp.fastcloner?.valorTexto, "£0");
+  const usd = linhaCom([ent()], [cobranca({ valor: 20, moeda: "USD" })]);
+  assert.equal(usd.fastcloner?.valorTexto, "US$20");
+  assert.equal(usd.fastcloner?.estado, "paga");
+  // Moeda fora do mapa não vira R$ chutado: sai com o código na frente.
+  const pyg = linhaCom([ent()], [cobranca({ valor: 50000, moeda: "PYG" })]);
+  assert.equal(pyg.fastcloner?.valorTexto, "PYG 50000");
+  for (const l of [gbp, usd, pyg]) assert.ok(!l.fastcloner?.valorTexto.includes("R$"));
+});
+
+// (f)
+test("FastCloner: a coluna não muda a contagem de linhas do painel", () => {
+  const compras = Array.from({ length: 103 }, (_, i) => compra({ email: `c${i}@x.com` }));
+  const pedidos = [
+    ...Array.from({ length: 13 }, (_, i) => pedido({ id: `a${i}`, email: `c${i}@x.com`, status: "foto" })),
+    ...Array.from({ length: 12 }, (_, i) => pedido({ id: `b${i}`, email: `orfao${i}@x.com`, status: "pronto" })),
+  ];
+  const sem = montarCompradores({ compras, pedidos, agora: AGORA });
+  const com = montarCompradores({
+    compras,
+    pedidos,
+    agora: AGORA,
+    fastcloner: {
+      // Entitlement de gente que NÃO está na lista não pode adicionar linha…
+      entitlements: [ent({ buyer_email: "c0@x.com" }), ent({ buyer_email: "ninguem-daqui@x.com" })],
+      // …e cobrança de fora também não.
+      cobrancas: [cobranca({ email: "c0@x.com" }), cobranca({ email: "ninguem-daqui@x.com" })],
+    },
+  });
+  assert.equal(com.length, sem.length);
+  assert.equal(com.length, 115);
+  assert.deepEqual(com.map((l) => l.chave).sort(), sem.map((l) => l.chave).sort());
+  const resumo = resumirCompradores(com);
+  assert.equal(resumo.total, 115);
+  assert.equal(resumo.naoComecaram, 90);
+  assert.equal(resumo.fastclonerConsultados, 115);
+  assert.equal(resumo.fastclonerPagantes, 1);
+  assert.equal(resumo.fastclonerNaoAssina, 114);
+});
+
+test("FastCloner: valor > 0 sem pagamento confirmado NÃO é pagante", () => {
+  // Boleto impresso e nunca pago carrega os R$97 igualzinho a quem pagou.
+  for (const status of ["BILLET_PRINTED", "OVERDUE", "DELAYED"]) {
+    const l = linhaCom([ent()], [cobranca({ valor: 97, statusCompra: status })]);
+    assert.equal(l.fastcloner?.estado, "trial", `${status} não pode virar pagante`);
+    assert.equal(l.fastcloner?.cobrancaNaoConfirmada, true, `${status} tem que ficar marcado na tela`);
+  }
+});
+
+test("FastCloner: vale a cobrança MAIS RECENTE — o trial que virou assinatura", () => {
+  const l = linhaCom(
+    [ent()],
+    [
+      cobranca({ valor: 0, recebidoEm: iso(AGORA - 40 * 24 * H) }),
+      cobranca({ valor: 97, recebidoEm: iso(AGORA - 2 * 24 * H) }),
+    ],
+  );
+  assert.equal(l.fastcloner?.estado, "paga");
+  assert.equal(l.fastcloner?.valor, 97);
+});
+
+test("FastCloner: acesso vivo sem cobrança registrada não vira pagante nem mente valor", () => {
+  const l = linhaCom([ent()], []);
+  assert.equal(l.fastcloner?.estado, "trial");
+  assert.equal(l.fastcloner?.valor, null);
+  assert.equal(l.fastcloner?.valorTexto, "sem cobrança registrada");
+  assert.equal(l.fastcloner?.cobrancaNaoConfirmada, false);
+});
+
+test("FastCloner: 'canceled' com período pago no futuro ainda tem acesso", () => {
+  // Regra única do acesso-regra.ts: quem cancelou mas pagou até o dia X fica
+  // até o dia X. Copiar a regra aqui como "só active" apagaria essa pessoa.
+  const l = linhaCom([ent({ status: "canceled", access_until: iso(AGORA + 5 * 24 * H) })], [cobranca()]);
+  assert.equal(l.fastcloner?.estado, "paga");
+  const morto = linhaCom([ent({ status: "canceled", access_until: null })], [cobranca()]);
+  assert.equal(morto.fastcloner?.estado, "nao_assina");
+});
+
+test("FastCloner: casa pelo MESMO e-mail normalizado do resto do módulo (ponto do Gmail)", () => {
+  // Caso REAL de 09/09: assina como `luciano.rezende.filho@gmail.com` e comprou
+  // o SGP como `lucianorezendefilho@gmail.com`. Uma segunda normalização (ou
+  // nenhuma) diria "não assina" pra quem assina.
+  const l = linhaCom(
+    [ent({ buyer_email: "luciano.rezende.filho@gmail.com" })],
+    [cobranca({ email: "Luciano.Rezende.Filho@Gmail.com", valor: 0 })],
+    "lucianorezendefilho@gmail.com",
+  );
+  assert.equal(l.chave, "lucianorezendefilho@gmail.com");
+  assert.equal(l.fastcloner?.estado, "trial");
+  assert.equal(l.fastcloner?.valorTexto, "R$0");
+});
+
+test("FastCloner: sem a fonte, a linha diz 'não consultado' (null) e NÃO 'não assina'", () => {
+  const linhas = montarCompradores({ compras: [compra()], pedidos: [], agora: AGORA });
+  assert.equal(linhas[0]?.fastcloner, null);
+  const resumo = resumirCompradores(linhas);
+  assert.equal(resumo.fastclonerConsultados, 0);
+  assert.equal(resumo.fastclonerPagantes, 0);
+  assert.equal(resumo.fastclonerNaoAssina, 0, "sem consulta, ninguém pode ser contado como 'não assina'");
+});
+
+test("FastCloner: acesso vitalício (sem data) não vira vencido", () => {
+  const l = linhaCom([ent({ access_until: null })], [cobranca()]);
+  assert.equal(l.fastcloner?.estado, "paga");
+  assert.equal(l.fastcloner?.vitalicio, true);
+  assert.equal(l.fastcloner?.ate, null);
 });

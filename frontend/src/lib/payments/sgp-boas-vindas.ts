@@ -58,6 +58,20 @@
  */
 export const SGP_PRODUCT_ID_PADRAO = "7283229";
 
+/**
+ * Código do produto da PLATAFORMA (FastCloner) na Hotmart — o "nosso produto"
+ * do `roteamentoDoProduto` mais abaixo. Sobrescrevível por `HOTMART_PRODUCT_ID`,
+ * que é a variável que o webhook já lê.
+ *
+ * ⚠️ HONESTIDADE SOBRE O ESCOPO: este literal também aparece cru em
+ * `lib/admin/churn.ts`, `lib/payments/orphan-outreach.ts` e
+ * `lib/payments/sgp-boas-vindas-canal.ts`. Unificar os quatro é mudança própria
+ * e NÃO entra de carona neste PR — a constante nasce aqui porque o painel
+ * /admin/sgp precisava dela, não porque os outros três já a usem. Quem for
+ * unificar: são só esses quatro pontos, conferido com grep em 09/09.
+ */
+export const FASTCLONER_PRODUCT_ID_PADRAO = "7851642";
+
 /** Link do portal onde o aluno preenche tudo. */
 export const SGP_PORTAL_URL = "https://fastcloner.com/sgp";
 

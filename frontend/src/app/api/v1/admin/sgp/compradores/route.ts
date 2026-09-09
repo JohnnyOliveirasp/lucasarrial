@@ -24,6 +24,14 @@
  * por `classificarCompras`: puxa PURCHASE_APPROVED e decide em código, com o
  * `extractProductCode` canônico.
  *
+ * ⚠️ A TERCEIRA FONTE (09/09, pedido do Lucas): `entitlements` do produto da
+ * PLATAFORMA, pra dizer o que cada comprador de SGP paga no FastCloner HOJE.
+ * Ela é ESTRITAMENTE INFORMATIVA — entra depois da união e não pode adicionar
+ * nem remover uma linha sequer da lista (ver o comentário em
+ * `montarCompradores`). O valor sai do PURCHASE_APPROVED do próprio produto,
+ * aproveitando a varredura de eventos que já acontecia aqui: nenhuma consulta
+ * a mais por causa dela, fora o select de entitlements.
+ *
  * Colunas escolhidas a dedo: `codigo_hash`, `codigo_expira_em` e `sessao` são
  * segredo de sessão (dão pra assumir o pedido de outra pessoa) e NÃO saem daqui.
  * E-mail e telefone saem porque o trabalho do time é justamente entrar em
@@ -40,9 +48,17 @@ import {
   extractBuyerName,
   extractBuyerPhone,
   extractProductCode,
+  extractPurchaseStatus,
 } from "@/lib/payments/hotmart-payload";
-import { SGP_PRODUCT_ID_PADRAO } from "@/lib/payments/sgp-boas-vindas";
-import { montarCompradores, ordenarCompradores, resumirCompradores, type CompraSgpBruta } from "@/lib/sgp/compradores";
+import { FASTCLONER_PRODUCT_ID_PADRAO, SGP_PRODUCT_ID_PADRAO } from "@/lib/payments/sgp-boas-vindas";
+import {
+  montarCompradores,
+  ordenarCompradores,
+  resumirCompradores,
+  type CobrancaFastClonerBruta,
+  type CompraSgpBruta,
+  type EntitlementFastClonerBruto,
+} from "@/lib/sgp/compradores";
 import type { SgpPedidoRow } from "@/lib/sgp/types";
 
 export const dynamic = "force-dynamic";
@@ -59,10 +75,14 @@ export async function GET(request: NextRequest) {
   // Mesma resolução do webhook (`HOTMART_SGP_PRODUCT_ID ?? SGP_PRODUCT_ID_PADRAO`):
   // se o ambiente apontar pra outro produto, o painel acompanha em vez de mentir.
   const produtoSgp = process.env.HOTMART_SGP_PRODUCT_ID ?? SGP_PRODUCT_ID_PADRAO;
+  // Mesma resolução que `sgp-boas-vindas-canal.ts` usa pra perguntar "este
+  // comprador tem a plataforma?" — a coluna FastCloner responde a MESMA
+  // pergunta, então lê o MESMO produto.
+  const produtoFastCloner = process.env.HOTMART_PRODUCT_ID ?? FASTCLONER_PRODUCT_ID_PADRAO;
   const admin = getAdmin();
 
   try {
-    const [eventos, pedidos] = await Promise.all([
+    const [eventos, pedidos, entitlements] = await Promise.all([
       fetchAllPages<EventoLinha>("payment_events PURCHASE_APPROVED (sgp)", (from, to) =>
         admin
           .from("payment_events")
@@ -85,13 +105,45 @@ export async function GET(request: NextRequest) {
           error: { message: string } | null;
         }>,
       ),
+      // A assinatura da plataforma HOJE (pedido do Lucas, 09/09). Paginado pelo
+      // mesmo motivo dos outros: são 1.160 linhas do produto (medido 09/09),
+      // acima do teto silencioso de 1000 do PostgREST — um select cru veria
+      // 1000 e diria "não assina" pra quem assina, calado.
+      fetchAllPages<EntitlementFastClonerBruto>("entitlements (fastcloner)", (from, to) =>
+        admin
+          .from("entitlements")
+          .select("buyer_email, status, access_until")
+          .eq("product_code", produtoFastCloner)
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
     ]);
 
     const compras: CompraSgpBruta[] = [];
+    // As cobranças da PLATAFORMA saem da MESMA varredura de eventos: o laço já
+    // percorre todo PURCHASE_APPROVED, então a coluna nova não custa uma
+    // segunda consulta ao banco.
+    const cobrancasFastCloner: CobrancaFastClonerBruta[] = [];
     for (const e of eventos) {
       const data = asRecord(asRecord(e.payload).data);
-      if (extractProductCode(data) !== produtoSgp) continue;
+      const produto = extractProductCode(data);
       const email = extractBuyerEmail(data);
+
+      if (produto === produtoFastCloner && email) {
+        const preco = asRecord(asRecord(data.purchase).price);
+        const valor = typeof preco.value === "number" ? preco.value : Number(preco.value);
+        cobrancasFastCloner.push({
+          email,
+          valor: Number.isFinite(valor) ? valor : null,
+          moeda: typeof preco.currency_value === "string" ? preco.currency_value : null,
+          // Valor NUNCA decide sozinho: OVERDUE/DELAYED/BILLET_PRINTED também
+          // carregam os R$97 de quem não pagou (incidente de 18/08).
+          statusCompra: extractPurchaseStatus(data) || null,
+          recebidoEm: e.received_at,
+        });
+      }
+
+      if (produto !== produtoSgp) continue;
       // Sem e-mail não há como contatar nem como casar com o pedido. Não é
       // descarte silencioso: o resumo devolve a contagem (`comprasSemEmail`).
       if (!email) continue;
@@ -104,7 +156,12 @@ export async function GET(request: NextRequest) {
     }
 
     const linhas = ordenarCompradores(
-      montarCompradores({ compras, pedidos: pedidos ?? [], agora: Date.now() }),
+      montarCompradores({
+        compras,
+        pedidos: pedidos ?? [],
+        agora: Date.now(),
+        fastcloner: { entitlements: entitlements ?? [], cobrancas: cobrancasFastCloner },
+      }),
     );
 
     return jsonOk({

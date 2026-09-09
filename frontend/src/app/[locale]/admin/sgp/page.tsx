@@ -28,7 +28,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock, MessageCircle, Undo2 } from "lucide-react";
 import { SGP_PARADO_HORAS, type LinhaPainel, type ResumoPainel } from "@/lib/sgp/painel";
-import { telefoneLegivel, type LinhaComprador, type ResumoCompradores } from "@/lib/sgp/compradores";
+import {
+  telefoneLegivel,
+  type AssinaturaFastCloner,
+  type LinhaComprador,
+  type ResumoCompradores,
+} from "@/lib/sgp/compradores";
 
 type EstadoCobranca = { disponivel: boolean; silencioHoras: number };
 
@@ -473,6 +478,14 @@ function AbaCompradores({
           <Contador rotulo="Entregues" n={resumo.entregues} />
           <Contador rotulo="Esperando +48h" n={resumo.parados} />
           {resumo.semTelefone > 0 && <Contador rotulo="Sem telefone" n={resumo.semTelefone} />}
+          {/* Só quando a assinatura foi de fato consultada: contador zerado por
+              ignorância mentiria "ninguém paga". */}
+          {resumo.fastclonerConsultados > 0 && (
+            <>
+              <Contador rotulo="Pagam o FastCloner" n={resumo.fastclonerPagantes} />
+              <Contador rotulo="Trial (não pagam)" n={resumo.fastclonerTrial} />
+            </>
+          )}
         </div>
       )}
 
@@ -495,6 +508,7 @@ function AbaCompradores({
               <tr className="border-b border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
                 <Th>Nome</Th>
                 <Th>Status</Th>
+                <Th>FastCloner</Th>
                 <Th>Data Aquisição</Th>
                 <Th>Celular</Th>
                 <Th>E-mail</Th>
@@ -523,6 +537,9 @@ function AbaCompradores({
                         contatar
                       </span>
                     )}
+                  </Td>
+                  <Td>
+                    <CelulaFastCloner a={c.fastcloner} />
                   </Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">
                     {c.semCompraRegistrada ? (
@@ -575,7 +592,10 @@ function AbaCompradores({
           Lista completa: quem comprou o SGP na Hotmart <strong>mais</strong> quem está no portal. Quem
           aparece nos dois lugares vem numa linha só. &ldquo;Esperando há&rdquo; conta desde a compra
           para quem nunca começou, e desde a última movimentação para quem já está no portal — destacado
-          acima de {SGP_PARADO_HORAS}h. Esta aba <strong>não</strong> atualiza sozinha.
+          acima de {SGP_PARADO_HORAS}h. A coluna <strong>FastCloner</strong> é o que a pessoa paga na
+          plataforma <strong>hoje</strong>: &ldquo;Paga&rdquo; é assinatura com cobrança confirmada,
+          &ldquo;Trial&rdquo; é acesso vivo sem pagamento (adesão de valor zero). Ela é só informativa e{" "}
+          <strong>não</strong> tira ninguém da lista. Esta aba <strong>não</strong> atualiza sozinha.
         </p>
         <button
           type="button"
@@ -587,6 +607,55 @@ function AbaCompradores({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * O que a pessoa paga no FastCloner HOJE (pedido do Lucas, 09/09).
+ *
+ * ⚠️ POR QUE NÃO É "TEM ASSINATURA: SIM/NÃO": medido em 09/09, dos 112
+ * compradores de SGP 11 têm assinatura viva — e só DOIS pagam. Os outros 9 são
+ * trial de R$0. Um sim/não faria o time ler "11 clientes" onde há 2, e é
+ * exatamente esse número que decide contato comercial.
+ *
+ * `null` é "não consultado", NÃO é "não assina" — mostra "—" e cala a boca em
+ * vez de carimbar um estado que ninguém mediu.
+ */
+function CelulaFastCloner({ a }: { a: AssinaturaFastCloner | null }) {
+  if (!a) return <span className="font-mono text-[11px] text-[var(--ash)]">—</span>;
+
+  if (a.estado === "nao_assina") {
+    return (
+      <span className="font-mono text-[11px] text-[var(--ash)]" title="Sem assinatura viva da plataforma.">
+        não assina
+      </span>
+    );
+  }
+
+  const paga = a.estado === "paga";
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span
+        className={`inline-flex w-fit items-center gap-1.5 rounded-[var(--radius-full)] border px-2 py-0.5 font-mono text-[11px] ${
+          paga
+            ? "border-[var(--status-online)]/40 bg-[var(--status-online)]/10 text-[var(--status-online)]"
+            : "border-[var(--hairline-strong)] text-[var(--mute)]"
+        }`}
+        title={
+          paga
+            ? "Assinatura paga do FastCloner (valor da cobrança mais recente confirmada)."
+            : a.cobrancaNaoConfirmada
+              ? "Tem acesso, mas a cobrança mais recente NÃO foi confirmada como paga pela Hotmart (boleto/atraso)."
+              : "Tem acesso, mas não paga: adesão de valor zero (trial)."
+        }
+      >
+        {paga ? "Paga" : "Trial"} {a.valorTexto}
+      </span>
+      <span className="font-mono text-[10px] text-[var(--ash)]">
+        {a.vitalicio ? "vitalício" : `até ${dia(a.ate)}`}
+        {a.cobrancaNaoConfirmada && !paga ? " · cobrança não confirmada" : ""}
+      </span>
+    </span>
   );
 }
 
