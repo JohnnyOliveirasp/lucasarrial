@@ -155,7 +155,8 @@
         "min": "Mínimo",
         "recommended": "Recomendado",
         "missing": "Faltan",
-        "ok": "Mínimo alcanzado"
+        "ok": "Mínimo alcanzado",
+        "over": "Sobran {excess} — quita archivos"
       },
       "errors": {
         "tooMany": "Máximo {max} archivos por voz",
