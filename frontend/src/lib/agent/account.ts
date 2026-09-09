@@ -19,7 +19,7 @@ import { wahaLidToPhone } from "@/lib/agent/waha";
 import type { AgentChatRow, ProfileRow } from "@/lib/db/types";
 import { janelaGarantia, type EventoCompra } from "@/lib/agent/garantia";
 import { linhaMoeda, moedaDaCompra, MOEDA_ESCALAR, type EventoMoeda } from "@/lib/agent/moeda";
-import { avisoPagamentoPendenteAtivo } from "@/lib/payments/pendente-pure";
+import { diasDesde, estadoAvisoPendente } from "@/lib/payments/pendente-pure";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
@@ -315,25 +315,46 @@ export async function buildAccountContext(profileId: string): Promise<string | n
 
     // Pagamento pendente: a MESMA regra do banner do /app, importada — não
     // reescrita (incidente #319). O null check cru que morava nesta linha
-    // ignorava a janela de 3 dias e o acesso, então TODOS os 130 perfis com
-    // `pending_payment_at` recebiam a afirmação — inclusive 101 cujo código
-    // já tinha vencido e 5 que JÁ estavam com acesso ativo (esses tinham
-    // pagado: mandá-los pagar de novo é o pior caso). Com a regra certa
-    // sobram 23, que são os que de fato têm cobrança viva.
+    // ignorava a janela de 3 dias e o acesso, então TODOS os 129 perfis com
+    // `pending_payment_at` recebiam a afirmação de cobrança VIVA — inclusive
+    // 100 cujo código já tinha vencido e 5 que JÁ estavam com acesso ativo
+    // (esses tinham pagado: mandá-los pagar de novo é o pior caso). Medido no
+    // banco em 09/09: sobram 23 com cobrança viva, 100 viram "vencido" e 6
+    // ficam em silêncio (5 pagaram, 1 é da equipe).
     //
-    // O TEXTO ficou neutro de propósito: quem diz se Pix/boleto valem pra
-    // esta pessoa é a linha COBRANÇA abaixo, que sabe a moeda. Escrever
-    // "Pix/boleto" aqui é afirmar meio de pagamento sem olhar o país — a
-    // segunda metade exata do #319.
-    const pendente = avisoPagamentoPendenteAtivo({
+    // ⚠️ A REGRA é a mesma do banner; o TEXTO não é, e isso é deliberado.
+    // O banner SOME quando a cobrança vence — ele fala com o ALUNO, que não
+    // pode fazer nada com um código morto, e calar é a gentileza. AQUI o
+    // vencido é DITO como vencido: a Fast é ATENDENTE, e a cobrança morta é
+    // justamente o que EXPLICA a falta de acesso; calar devolveria a agente ao
+    // escuro que gerou o #198. Esse é o ponto certo do PR #218, incorporado
+    // aqui. Ver "POR QUE SÃO TRÊS ESTADOS" em `pendente-pure.ts`.
+    //
+    // O texto é NEUTRO de meio de pagamento nos DOIS estados, de propósito:
+    // quem diz se Pix/boleto valem pra esta pessoa é a linha COBRANÇA abaixo,
+    // que sabe a moeda. Escrever "Pix/boleto" aqui — ou mandar "gerar uma
+    // cobrança nova", que pra quem paga em EUR nós não emitimos — é afirmar
+    // meio de pagamento sem olhar o país, a segunda metade exata do #319.
+    // Por isso o vencido informa o FATO e delega o próximo passo à linha
+    // COBRANÇA, em vez de prescrever por conta própria.
+    const agoraMs = Date.now();
+    const estadoPendente = estadoAvisoPendente({
       pendingPaymentAt: profile.pending_payment_at,
       temAcesso: hasActiveAccess(profile.email, profile.access_until, profile.access_source),
       bypassaCobranca: bypassesBilling(profile.email),
+      agora: agoraMs,
     });
+    const diasPendente = diasDesde(profile.pending_payment_at, agoraMs);
+    const linhaPendente =
+      estadoPendente === "ativo"
+        ? " · ⚠️ pagamento PENDENTE aguardando confirmação (gerado nas últimas 72h)"
+        : estadoPendente === "vencido"
+          ? ` · ⚠️ houve uma cobrança em ${dtBR(profile.pending_payment_at)}${diasPendente == null ? "" : ` (há ${diasPendente} dias)`} que JÁ VENCEU e NÃO é mais pagável — é o que explica a falta de acesso. NÃO peça pra pagar esse código; pro próximo passo obedeça a linha COBRANÇA abaixo.`
+          : "";
 
     return [
       `Nome: ${profile.display_name ?? "?"} · E-mail: ${profile.email}`,
-      `Plano: ${profile.plan} · Acesso: ${acesso}${pendente ? " · ⚠️ pagamento PENDENTE aguardando confirmação (gerado nas últimas 72h)" : ""}`,
+      `Plano: ${profile.plan} · Acesso: ${acesso}${linhaPendente}`,
       `Saldo: ${saldo.toLocaleString("pt-BR")} créditos (${(profile.credits_subscription ?? 0).toLocaleString("pt-BR")} do plano + ${(profile.credits_extra ?? 0).toLocaleString("pt-BR")} avulsos)`,
       `Cadastro em: ${dtBR(profile.created_at)}`,
       garantia,

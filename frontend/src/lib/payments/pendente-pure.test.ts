@@ -16,16 +16,27 @@
  * (o caso que abriu o chamado) estão na lista.
  *
  * ⚠️ 12 é um PISO, não o alcance. Rodando esta função contra o banco inteiro,
- * o null check cru afirmava a pendência pros 130 perfis que têm a flag, e a
- * regra certa silencia 107 (101 com o código já vencido, 5 que já tinham
- * acesso ativo, 1 da equipe). A diferença é o critério de acesso: a varredura
- * do chamado só via `access_until` NULO, e `hasActiveAccess` também lê
- * `access_until` VENCIDO como sem acesso. Os 12 continuam aqui porque são
- * datas reais e conferidas — não porque sejam o total.
+ * o null check cru afirmava "PENDENTE aguardando pagamento" pros 129 perfis
+ * que têm a flag; com a regra certa sobram 23 ativos, 100 viram "vencido" e 6
+ * ficam em silêncio (5 já tinham acesso, 1 é da equipe). A diferença pro
+ * número do chamado é o critério de acesso: a varredura do chamado só via
+ * `access_until` NULO, e `hasActiveAccess` também lê `access_until` VENCIDO
+ * como sem acesso. Os 12 continuam aqui porque são datas reais e conferidas —
+ * não porque sejam o total.
+ *
+ * ⚠️ AS DATAS SÃO LITERAIS DE PROPÓSITO, não leitura do banco. O perfil do
+ * Duarte, por exemplo, teve o `pending_payment_at` zerado depois da abertura
+ * do card. Um teste que lesse o banco viraria verde sozinho quando o dado
+ * mudasse, justamente escondendo a regressão que ele existe pra travar.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { avisoPagamentoPendenteAtivo, JANELA_AVISO_PENDENTE_MS } from "./pendente-pure.ts";
+import {
+  avisoPagamentoPendenteAtivo,
+  diasDesde,
+  estadoAvisoPendente,
+  JANELA_AVISO_PENDENTE_MS,
+} from "./pendente-pure.ts";
 
 /** Relógio fixo: prazo testado com relógio real vira teste que quebra sozinho. */
 const AGORA = new Date("2026-09-09T18:00:00Z").getTime();
@@ -145,4 +156,112 @@ test("a regra ANTIGA do account.ts avisaria os 12 — é a regressão que este a
   const regraAntiga = (pendingPaymentAt: string) => !!pendingPaymentAt;
   const avisados = PENDENCIAS_VENCIDAS_09_09.filter(([, at]) => regraAntiga(at));
   assert.equal(avisados.length, 12, "confirma que o null check cru pegava todos os 12");
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * O TERCEIRO ESTADO ("vencido") — reconciliação com o PR #218.
+ *
+ * A primeira versão desta regra devolvia só `boolean`, e por isso a linha de
+ * pendência SUMIA quando o código vencia. O #218, aberto no mesmo incidente,
+ * apontou o custo disso: a Fast é atendente e a cobrança morta é o que EXPLICA
+ * a falta de acesso — apagá-la devolve a agente ao escuro que gerou o #198.
+ *
+ * Os testes abaixo travam a distinção que resolve os dois lados: "não existe
+ * cobrança" e "existe uma cobrança, morta" NÃO podem colapsar no mesmo estado.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test("vencido ≠ nenhum: o Duarte tem cobrança MORTA, não ausência de cobrança", () => {
+  // O caso que abriu o #319. O boolean dizia só "não avisa" e a Fast ficava sem
+  // saber que existiu cobrança; o estado diz POR QUE ele está sem acesso.
+  assert.equal(
+    estadoAvisoPendente({
+      pendingPaymentAt: "2026-08-31T13:13:51.213+00:00", // perfil b1006494
+      ...semAcesso,
+    }),
+    "vencido",
+  );
+  assert.equal(
+    estadoAvisoPendente({ pendingPaymentAt: null, ...semAcesso }),
+    "nenhum",
+    "sem cobrança nenhuma é um fato DIFERENTE de cobrança vencida",
+  );
+});
+
+test("os 3 estados na régua da janela de 3 dias", () => {
+  const quaseFora = new Date(AGORA - JANELA_AVISO_PENDENTE_MS + 1).toISOString();
+  const naBorda = new Date(AGORA - JANELA_AVISO_PENDENTE_MS).toISOString();
+  assert.equal(estadoAvisoPendente({ pendingPaymentAt: haDias(1), ...semAcesso }), "ativo");
+  assert.equal(estadoAvisoPendente({ pendingPaymentAt: quaseFora, ...semAcesso }), "ativo");
+  assert.equal(estadoAvisoPendente({ pendingPaymentAt: naBorda, ...semAcesso }), "vencido");
+  assert.equal(estadoAvisoPendente({ pendingPaymentAt: haDias(57), ...semAcesso }), "vencido");
+});
+
+test("quem PAGOU (ou é da equipe) não recebe nem 'vencido' — não há falta de acesso a explicar", () => {
+  // Este é o limite do argumento do #218: a cobrança morta só é contexto útil
+  // enquanto existe falta de acesso pra explicar. Com acesso ativo, mencionar
+  // cobrança é o pior caso — foi o que atingiu 5 perfis medidos em 09/09.
+  assert.equal(
+    estadoAvisoPendente({
+      pendingPaymentAt: haDias(57),
+      temAcesso: true,
+      bypassaCobranca: false,
+      agora: AGORA,
+    }),
+    "nenhum",
+  );
+  assert.equal(
+    estadoAvisoPendente({
+      pendingPaymentAt: haDias(57),
+      temAcesso: false,
+      bypassaCobranca: true, // lucas.m.arrial@gmail.com, o sócio
+      agora: AGORA,
+    }),
+    "nenhum",
+  );
+});
+
+test("data ilegível vira 'nenhum', NUNCA 'vencido' (não se afirma vencimento a partir de lixo)", () => {
+  for (const lixo of ["ontem", "0000-13-45", "não é data", "", "   "]) {
+    assert.equal(
+      estadoAvisoPendente({ pendingPaymentAt: lixo, ...semAcesso }),
+      "nenhum",
+      `${JSON.stringify(lixo)} não pode virar afirmação de cobrança vencida`,
+    );
+  }
+});
+
+test("o banner do /app continua desenhando SÓ o 'ativo' (comportamento intacto)", () => {
+  // A regra passou a ter 3 estados, mas o //app não mudou de comportamento:
+  // quem vence some da tela do aluno, exatamente como antes do #319.
+  for (const at of [haDias(1), haDias(57), null, "lixo"]) {
+    assert.equal(
+      avisoPagamentoPendenteAtivo({ pendingPaymentAt: at, ...semAcesso }),
+      estadoAvisoPendente({ pendingPaymentAt: at, ...semAcesso }) === "ativo",
+      `o wrapper do banner tem que ser exatamente estado === "ativo" (at=${at})`,
+    );
+  }
+});
+
+test("os 12 perfis reais: NENHUM é 'ativo' e TODOS os 12 são 'vencido'", () => {
+  // O mesmo conjunto do teste acima, agora provando o outro lado: além de não
+  // mandar ninguém pagar, a Fast passa a SABER que os 12 têm cobrança morta.
+  const estados = PENDENCIAS_VENCIDAS_09_09.map(([, at]) =>
+    estadoAvisoPendente({ pendingPaymentAt: at, ...semAcesso }),
+  );
+  assert.deepEqual(
+    estados.filter((e) => e !== "vencido"),
+    [],
+    "os 12 têm cobrança morta — nem paga, nem inexistente",
+  );
+  assert.equal(estados.length, 12);
+});
+
+test("diasDesde mede a idade da cobrança (é o que dá tamanho ao problema)", () => {
+  assert.equal(diasDesde(haDias(57), AGORA), 57);
+  assert.equal(diasDesde(haDias(0.5), AGORA), 0);
+  // O pior caso vivo medido em 09/09: Pix de 14/07 ainda anunciado como pagável.
+  assert.equal(diasDesde("2026-07-14T18:32:50.366+00:00", AGORA), 56);
+  for (const vazio of [null, undefined, "", "lixo"]) {
+    assert.equal(diasDesde(vazio, AGORA), null, `${JSON.stringify(vazio)} não vira idade`);
+  }
 });
