@@ -29,8 +29,8 @@ import {
 } from "@/lib/credits/service";
 import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
-import { avisarCompraOrfa } from "@/lib/payments/aviso-orfao";
-import { canaisDaCasa, estadoDosAvisos } from "@/lib/payments/aviso-orfao-canal";
+import { observarCompraOrfa } from "@/lib/payments/aviso-orfao";
+import { estadoDasObservacoes, registrarDuravel } from "@/lib/payments/aviso-orfao-canal";
 import { hottokValido, tokensEsperados } from "@/lib/payments/hottok";
 import {
   mandarBoasVindasSgp,
@@ -275,13 +275,20 @@ async function processEvent(
       // não houver campanha; idempotente (não dá bônus 2x na renovação).
       await applyPurchaseCampaignBonus(userId, externalId);
     }
-    let avisoError: string | null = null;
     if (!userId) {
       // Compra aprovada SEM conta correspondente: o entitlement fica órfão e o
       // login resgata sozinho quando a conta nascer com ESTE e-mail (claim.ts).
       // Se a pessoa criar a conta com OUTRO e-mail (caso Juliano 13/07, caso
-      // Tiago #239 em 02/09), só um humano resolve — então avisamos na hora.
-      const aviso = await avisarCompraOrfa(
+      // Tiago #239 em 02/09), só um humano resolve.
+      //
+      // ⚠️ AQUI SÓ SE ANOTA. Não se avisa ninguém, e não é economia de código:
+      // neste ponto do fluxo a conta AINDA NÃO TEVE TEMPO DE NASCER (a pessoa
+      // paga na Hotmart antes de se cadastrar; quando dá certo, o perfil
+      // aparece ~3s depois). Alertar daqui produziu 7 falsos positivos em 3
+      // dias, um deles 30s após a compra e outro com a aluna já vinculada e com
+      // 100.000 créditos. Quem enxerga idade real e re-verifica a conta é o
+      // sweeper diário (orphan-outreach) — ver `aviso-orfao.ts`.
+      await observarCompraOrfa(
         {
           eventType,
           buyerEmail,
@@ -292,21 +299,13 @@ async function processEvent(
           externalId,
         },
         process.env.HOTMART_PRODUCT_ID ?? null,
-        estadoDosAvisos(),
-        canaisDaCasa(),
+        estadoDasObservacoes(),
+        registrarDuravel,
         new Date().toISOString(),
       );
-      // #239: o aviso antigo descartava o resultado do envio, então "não avisou
-      // ninguém" e "avisou" eram a MESMA coisa vista de fora — 46 aprovações
-      // órfãs em 29 dias e zero e-mails, sem uma linha em lugar nenhum. Agora,
-      // aviso novo que não entrou em NENHUM canal vira erro registrado em
-      // `payment_events.error` (HTTP segue 200: reenvio da Hotmart não resolve).
-      if (aviso.avisou && aviso.canais.length === 0) {
-        avisoError = `compra órfã sem canal de aviso: ${buyerEmail} [${externalId}]`;
-      }
     }
     await setPendingPayment(buyerEmail, null); // pagou → limpa o pendente
-    return { handled: "granted" + handledSuffix, processError: avisoError };
+    return { handled: "granted" + handledSuffix, processError: null };
   }
 
   // aguardando pagamento: Pix/boleto GERADO mas ainda não pago → banner no app.
@@ -426,6 +425,10 @@ async function processarCompraSgp(
 // (puro, testado em aviso-orfao.test.ts), canais em aviso-orfao-canal.ts. A versão
 // antiga era só e-mail, descartava o resultado do envio e engolia exceção — por
 // isso nunca chegou em ninguém e ninguém percebeu (incidente #239).
+//
+// E desde 09/09 o webhook não avisa NADA sobre compra órfã, só registra: aqui a
+// compra tem idade zero e a conta ainda não nasceu, então toda decisão tomada
+// neste ponto é chute. Quem avisa é o sweeper diário, com idade real.
 
 function mapRevokeStatus(eventType: string): Exclude<EntitlementStatus, "active"> | null {
   if (eventType === "SUBSCRIPTION_CANCELLATION") return "canceled";

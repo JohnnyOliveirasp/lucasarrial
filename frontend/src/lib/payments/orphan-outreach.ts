@@ -3,10 +3,21 @@
  * mas NUNCA criou conta — os créditos ficam esperando e a pessoa acha que
  * "não entraram" (principal reclamação do suporte@; 5 pagantes nessa situação).
  *
- * Sweeper diário: acha compras aprovadas sem perfil correspondente (>1h de
- * idade, pra dar tempo do fluxo normal), manda e-mail convite PELO suporte@
- * (se a pessoa responder, a Fast atende) e 1 lembrete único após 3 dias.
- * Dedupe persistente em agent_state key "orphan_invites" (sem migration).
+ * Sweeper diário: acha compras aprovadas sem perfil correspondente, manda
+ * e-mail convite PELO suporte@ (se a pessoa responder, a Fast atende) e 1
+ * lembrete único após 3 dias. Dedupe persistente em agent_state key
+ * "orphan_invites" (sem migration).
+ *
+ * ⚠️ ESTE ARQUIVO É A REDE DE SEGURANÇA, e desde 09/09/2026 é o ÚNICO que fala
+ * sobre compra órfã. O webhook da Hotmart parou de alertar porque lá a compra
+ * tem idade zero e a conta ainda não nasceu — 7 falsos positivos em 3 dias, um
+ * deles 30 segundos depois da compra (ver o topo de `aviso-orfao.ts`). Duas
+ * consequências para quem mexer aqui:
+ *   - a carência subiu de 1h para `CARENCIA_ORFAO_MS` (6h), porque agora é ela
+ *     que segura o gatilho, e não mais um alerta imediato em paralelo;
+ *   - antes de falar, o caso é RELIDO do banco (`conferirOrfao`). Os Sets do
+ *     começo da varredura são uma foto: a pessoa pode ter criado a conta no
+ *     meio dela, e escrever pra quem já entrou é o incidente 72a4c9db.
  *
  * ⚠️ O dedupe é POR COBRANÇA, não por e-mail para sempre (08/09/2026, ver
  * `orphan-ciclo.ts`): assinatura mensal cobra de novo todo mês, e calar o
@@ -18,6 +29,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { sendEmail } from "@/lib/email/resend";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
 import { compradorMereceConvite, eventoEhPagamento } from "@/lib/payments/acesso-regra";
+import { CARENCIA_ORFAO_MS, podeNotificarOrfao } from "@/lib/payments/aviso-orfao";
 import {
   decidirAcaoConvite,
   registroDoConvite,
@@ -26,7 +38,6 @@ import {
 
 const PRODUCT_ID = "7851642";
 const STATE_KEY = "orphan_invites";
-const MIN_AGE_MS = 60 * 60 * 1000; // 1h: deixa o fluxo normal acontecer primeiro
 const REMINDER_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
 
 const TEST_EMAILS = new Set([
@@ -95,15 +106,43 @@ function inviteText(firstName: string, email: string, reminder: boolean): { subj
 }
 
 export type OrphanSweepSummary = {
+  /** órfãos CONFIRMADOS na releitura — não candidatos. */
   orphans: number;
   invited: number;
   reminded: number;
+  /**
+   * candidatos que a releitura derrubou (conta criada ou vínculo feito depois
+   * da foto do começo da varredura). Contado de propósito: cada um destes é um
+   * e-mail errado que NÃO saiu, e some silenciosamente se ninguém contar.
+   */
+  revalidados: number;
   errors: number;
 };
 
+/**
+ * Relê o estado DESTE comprador agora, direto do banco. Duas perguntas, as
+ * mesmas das guardas em bloco lá de cima — a diferença é o instante.
+ *
+ * Erro aqui não vira "órfão": propaga, e quem chama trata como falha e não
+ * escreve pra ninguém (falha fechada, mesma escolha do resto do arquivo).
+ */
+async function conferirOrfao(email: string): Promise<{ temConta: boolean; vinculado: boolean }> {
+  const admin = getAdmin();
+  const [perfil, vinculo] = await Promise.all([
+    admin.from("profiles").select("email").eq("email", email).limit(1),
+    admin.from("entitlements").select("user_id").eq("buyer_email", email).not("user_id", "is", null).limit(1),
+  ]);
+  if (perfil.error) throw new Error(`releitura profiles falhou: ${perfil.error.message}`);
+  if (vinculo.error) throw new Error(`releitura entitlements falhou: ${vinculo.error.message}`);
+  return {
+    temConta: (perfil.data ?? []).length > 0,
+    vinculado: (vinculo.data ?? []).length > 0,
+  };
+}
+
 /** Uma varredura (cron diário). Convite 1x + lembrete único após 3 dias. */
 export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
-  const summary: OrphanSweepSummary = { orphans: 0, invited: 0, reminded: 0, errors: 0 };
+  const summary: OrphanSweepSummary = { orphans: 0, invited: 0, reminded: 0, revalidados: 0, errors: 0 };
   const admin = getAdmin();
 
   // ⚠️ Teto silencioso do PostgREST: .select() sem .range() devolve NO MÁXIMO
@@ -243,8 +282,21 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     .filter((e) => e && e !== "suporte@fastcloner.com");
 
   for (const [email, info] of buyers) {
-    if (hasAccount.has(email)) continue; // criou conta — claim do login resolve
-    if (jaTemDono.has(email)) continue; // compra já ligada a uma conta (outro e-mail)
+    // Três descartes numa pergunta só (`podeNotificarOrfao`, testada):
+    //   temConta   → criou conta com o e-mail da compra; o claim do login resolve
+    //   vinculado  → a compra já está ligada a uma conta (outro e-mail)
+    //   carência   → a compra é nova demais pra virar assunto (CARENCIA_ORFAO_MS)
+    if (
+      !podeNotificarOrfao({
+        compradoEm: info.at,
+        temConta: hasAccount.has(email),
+        vinculado: jaTemDono.has(email),
+        agoraMs: now,
+        carenciaMs: CARENCIA_ORFAO_MS,
+      }).ok
+    ) {
+      continue;
+    }
     // Só convida quem PAGOU a assinatura E ainda está dentro da janela paga.
     // Sem as duas: #127 (convite pra quem estornou) ou #138 (trial de R$ 0 lido
     // como "acesso vivo"). A regra mora em acesso-regra.ts, testada.
@@ -252,7 +304,31 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     if (!compradorMereceConvite(ent ? { status: ent.status, access_until: ent.access_until } : null, info.pagou, nowIso)) {
       continue;
     }
-    if (now - new Date(info.at).getTime() < MIN_AGE_MS) continue;
+
+    // RE-VERIFICAÇÃO, imediatamente antes de falar. Os Sets acima são a foto do
+    // começo da varredura; entre eles e este ponto pode ter passado tempo real,
+    // e o caso que mais dói é justamente o que se resolve sozinho no meio do
+    // caminho. Duas consultas pontuais num punhado de candidatos.
+    let confirmado: { temConta: boolean; vinculado: boolean };
+    try {
+      confirmado = await conferirOrfao(email);
+    } catch (e) {
+      summary.errors += 1;
+      console.error(`[orphan-outreach] releitura de ${email} falhou:`, e instanceof Error ? e.message : e);
+      continue; // falha fechada: sem confirmar, não escreve
+    }
+    if (
+      !podeNotificarOrfao({
+        compradoEm: info.at,
+        temConta: confirmado.temConta,
+        vinculado: confirmado.vinculado,
+        agoraMs: Date.now(),
+        carenciaMs: CARENCIA_ORFAO_MS,
+      }).ok
+    ) {
+      summary.revalidados += 1;
+      continue;
+    }
     summary.orphans += 1;
 
     const record = state[email];
@@ -297,7 +373,11 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
         html:
           `<p>Compradores sem conta na plataforma receberam convite pra ativar (créditos já reservados):</p>` +
           `<ul>${sent.map((s) => `<li>${s}</li>`).join("")}</ul>` +
-          `<p>Órfãos no total agora: ${summary.orphans}. Quem responder cai no suporte@ (a Fast atende).</p>`,
+          `<p>Órfãos confirmados na releitura: ${summary.orphans}` +
+          (summary.revalidados > 0
+            ? ` — e ${summary.revalidados} candidato(s) foram descartados na releitura porque a conta ou o vínculo apareceram no meio da varredura (e-mail que NÃO saiu por bem).`
+            : ".") +
+          ` Quem responder cai no suporte@ (a Fast atende).</p>`,
       });
     }
   }

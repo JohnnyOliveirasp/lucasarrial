@@ -24,14 +24,25 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   avisarCompraOrfa,
+  CARENCIA_ORFAO_MS,
   chaveDoAviso,
   deveAvisar,
   montarAviso,
+  montarObservacao,
+  observarCompraOrfa,
+  podeNotificarOrfao,
   type CanaisAviso,
   type CompraOrfa,
   type EstadoAvisos,
   type EstadoAvisosIO,
+  type EstadoObservacoes,
+  type ObservacoesIO,
 } from "./aviso-orfao.ts";
+import {
+  decidirAcaoConvite,
+  registroDoConvite,
+  type RegistroConvite,
+} from "./orphan-ciclo.ts";
 import {
   extractBuyerName,
   extractProductName,
@@ -239,4 +250,278 @@ test("extratores leem o payload real do Tiago", () => {
   assert.equal(extractTransactionId(PAYLOAD_TIAGO), "HP2742616487");
   assert.equal(extractBuyerName({}), null);
   assert.equal(extractProductName({ product: { name: "   " } }), null);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 6. O WEBHOOK PAROU DE AVISAR (09/09/2026)
+//
+// Sete falsos positivos em 3 dias, o último 30 segundos depois da compra, e no
+// caso `mariliarossini` a aluna já tinha conta, vínculo e 100.000 créditos no
+// instante em que o alerta gritou "PAGANDO E SEM ACESSO". A causa não é guarda
+// faltando: no webhook a compra tem idade ZERO e a conta ainda não nasceu (no
+// caminho feliz o perfil aparece ~3s depois), então nenhuma guarda de idade é
+// possível ali. O webhook passa a só registrar; quem decide é o sweeper.
+// ════════════════════════════════════════════════════════════════════════════
+
+const T0 = "2026-09-08T12:00:00.000Z"; // instante da compra
+const T0_MS = Date.parse(T0);
+const HORA = 60 * 60 * 1000;
+const TRES_DIAS = 3 * 24 * HORA;
+
+function observacoesNaMemoria(inicial: EstadoObservacoes = {}) {
+  let atual: EstadoObservacoes = { ...inicial };
+  const io: ObservacoesIO = {
+    ler: async () => ({ ...atual }),
+    gravar: async (e) => {
+      atual = { ...e };
+    },
+  };
+  return { io, ver: () => atual };
+}
+
+test("webhook: REGISTRA a compra órfã e NÃO toca em nenhum canal volátil", async () => {
+  const { canais, visto } = canaisFalsos({ telegram: true, email: true });
+  const { io, ver } = observacoesNaMemoria();
+
+  const r = await observarCompraOrfa(TIAGO, NOSSO_PRODUTO, io, canais.registrar, T0);
+
+  assert.equal(r.registrou, true);
+  assert.equal(r.motivo, "registrado");
+  // o durável (a prova auditável) aconteceu...
+  assert.equal(visto.duraveis.length, 1);
+  assert.equal(visto.duraveis[0].chave, "PMB7RT7F");
+  assert.deepEqual(ver()["PMB7RT7F"], {
+    at: T0,
+    buyerEmail: "cachico3@hotmail.com",
+    externalId: "PMB7RT7F",
+  });
+  // ...e ninguém foi acordado. É o conserto inteiro numa linha.
+  assert.equal(visto.telegram.length, 0);
+  assert.equal(visto.email.length, 0);
+});
+
+test("webhook: o MESMO entitlement não é registrado duas vezes", async () => {
+  const { canais, visto } = canaisFalsos({ telegram: true, email: true });
+  const { io } = observacoesNaMemoria();
+
+  await observarCompraOrfa(TIAGO, NOSSO_PRODUTO, io, canais.registrar, T0);
+  const segundo = await observarCompraOrfa(TIAGO, NOSSO_PRODUTO, io, canais.registrar, T0);
+
+  assert.equal(segundo.registrou, false);
+  assert.equal(segundo.motivo, "ja_registrado");
+  assert.equal(visto.duraveis.length, 1);
+});
+
+test("webhook: curso e evento que não libera continuam fora do registro", async () => {
+  const { canais, visto } = canaisFalsos({ telegram: true, email: true });
+  const { io } = observacoesNaMemoria();
+
+  const curso = await observarCompraOrfa(
+    { ...TIAGO, productCode: "1234567" },
+    NOSSO_PRODUTO,
+    io,
+    canais.registrar,
+    T0,
+  );
+  const cancelamento = await observarCompraOrfa(
+    { ...TIAGO, eventType: "SUBSCRIPTION_CANCELLATION" },
+    NOSSO_PRODUTO,
+    io,
+    canais.registrar,
+    T0,
+  );
+
+  assert.equal(curso.motivo, "produto_de_fora");
+  assert.equal(cancelamento.motivo, "evento_nao_libera");
+  assert.equal(visto.duraveis.length, 0);
+});
+
+test("o texto do REGISTRO não finge urgência que ainda não existe", () => {
+  const { texto } = montarObservacao(TIAGO);
+  assert.ok(texto.includes("ISTO NÃO É UM ALERTA"));
+  assert.ok(!texto.includes("urgente"));
+  assert.ok(!texto.includes("PAGANDO E SEM ACESSO"));
+  // mas continua entregando os dados: registro sem dado é registro inútil
+  for (const dado of ["cachico3@hotmail.com", "HP2742616487", "PMB7RT7F"]) {
+    assert.ok(texto.includes(dado), `faltou "${dado}" no registro`);
+  }
+  // e o texto do AVISO (o do sweeper, depois da carência) segue urgente, certo
+  assert.ok(montarAviso(TIAGO).texto.includes("urgente"));
+});
+
+test("A ARMADILHA: o registro do webhook NÃO cala quem notifica depois", async () => {
+  // Se as duas coisas dividissem estado, o sweeper leria "já avisado" em todo
+  // mundo e nunca falaria — trocaríamos ruído por silêncio total, que é pior.
+  const { canais, visto } = canaisFalsos({ telegram: true, email: true });
+  const observacoes = observacoesNaMemoria();
+  const avisos = estadoNaMemoria();
+
+  await observarCompraOrfa(TIAGO, NOSSO_PRODUTO, observacoes.io, canais.registrar, T0);
+  const aviso = await avisarCompraOrfa(TIAGO, NOSSO_PRODUTO, avisos.io, canais, T0);
+
+  assert.equal(aviso.avisou, true, "o registro do webhook silenciou o aviso — é o bug que a gente evitou");
+  assert.equal(aviso.motivo, "enviado");
+  assert.equal(visto.telegram.length, 1);
+  // e os dois estados são mesmo separados
+  assert.ok(observacoes.ver()["PMB7RT7F"]);
+  assert.ok(avisos.ver()["PMB7RT7F"]);
+  assert.equal("canais" in observacoes.ver()["PMB7RT7F"], false);
+});
+
+// ── 7. a carência, que é onde a decisão passou a morar ──────────────────────
+
+test("a carência é de 6 horas, em constante nomeada", () => {
+  assert.equal(CARENCIA_ORFAO_MS, 6 * HORA);
+});
+
+test("(c) conta que nunca aparece: NOTIFICA depois da carência", () => {
+  const d = podeNotificarOrfao({
+    compradoEm: T0,
+    temConta: false,
+    vinculado: false,
+    agoraMs: T0_MS + 7 * HORA,
+  });
+  assert.equal(d.ok, true);
+});
+
+test("dentro da carência, sem conta ainda: espera, não notifica", () => {
+  // o caso `mateusnodesence`: 30 segundos depois da compra
+  const trintaSegundos = podeNotificarOrfao({
+    compradoEm: T0,
+    temConta: false,
+    vinculado: false,
+    agoraMs: T0_MS + 30 * 1000,
+  });
+  assert.deepEqual(trintaSegundos, { ok: false, motivo: "dentro_da_carencia" });
+
+  // e a borda: 1ms antes das 6h ainda espera; 6h cravadas já é hora de falar
+  assert.equal(podeNotificarOrfao({ compradoEm: T0, temConta: false, vinculado: false, agoraMs: T0_MS + CARENCIA_ORFAO_MS - 1 }).ok, false);
+  assert.equal(podeNotificarOrfao({ compradoEm: T0, temConta: false, vinculado: false, agoraMs: T0_MS + CARENCIA_ORFAO_MS }).ok, true);
+});
+
+test("(b) conta criada DEPOIS da compra, dentro da carência: NÃO notifica", () => {
+  // é o caso `mariliarossini`: no instante do alerta antigo ela já tinha conta
+  const dentro = podeNotificarOrfao({
+    compradoEm: T0,
+    temConta: true,
+    vinculado: false,
+    agoraMs: T0_MS + 2 * HORA,
+  });
+  assert.deepEqual(dentro, { ok: false, motivo: "conta_criada" });
+  // e continua não notificando MUITO depois: conta criada é definitivo
+  assert.equal(
+    podeNotificarOrfao({ compradoEm: T0, temConta: true, vinculado: false, agoraMs: T0_MS + 30 * 24 * HORA }).ok,
+    false,
+  );
+});
+
+test("(d) vínculo (user_id) que chega atrasado: NÃO notifica", () => {
+  const d = podeNotificarOrfao({
+    compradoEm: T0,
+    temConta: false, // comprou com um e-mail, usa a conta com outro
+    vinculado: true, // mas alguém já ligou a compra à conta
+    agoraMs: T0_MS + 5 * 24 * HORA,
+  });
+  assert.deepEqual(d, { ok: false, motivo: "vinculo_feito" });
+});
+
+test("(a) trial de R$ 0 NÃO é silenciado: a decisão não olha valor nenhum", () => {
+  // 5 dos 7 falsos positivos eram trial, e a tentação é filtrar por valor.
+  // Errado: o trial vira cobrança depois, e aí seria um pagante travado
+  // invisível pra sempre. O que separa os casos é TEMPO e CONTA, não dinheiro.
+  const trial = podeNotificarOrfao({
+    compradoEm: T0,
+    temConta: false,
+    vinculado: false,
+    agoraMs: T0_MS + 7 * HORA,
+  });
+  assert.equal(trial.ok, true);
+});
+
+test("data de compra ilegível não notifica (falha fechada)", () => {
+  for (const ruim of [null, "", "ontem de manhã"]) {
+    assert.deepEqual(
+      podeNotificarOrfao({ compradoEm: ruim, temConta: false, vinculado: false, agoraMs: T0_MS + 99 * HORA }),
+      { ok: false, motivo: "sem_data_de_compra" },
+    );
+  }
+});
+
+// ── 8. o sweeper inteiro: carência + releitura + dedupe ─────────────────────
+
+/**
+ * Mini-sweeper com as MESMAS duas peças que o `orphan-outreach.ts` usa em
+ * produção (`podeNotificarOrfao` e `decidirAcaoConvite`) e um banco falso que
+ * pode mudar de resposta entre as rodadas — que é exatamente o que a
+ * re-verificação existe pra pegar.
+ */
+function sweeperFalso(banco: { compradoEm: string; temConta: boolean; vinculado: boolean }) {
+  const EMAIL = "cachico3@hotmail.com";
+  const estado: Record<string, RegistroConvite> = {};
+  const enviados: string[] = [];
+  return {
+    banco,
+    enviados,
+    rodar(agoraMs: number) {
+      // releitura do banco AGORA, não da foto do começo da varredura
+      if (
+        !podeNotificarOrfao({
+          compradoEm: banco.compradoEm,
+          temConta: banco.temConta,
+          vinculado: banco.vinculado,
+          agoraMs,
+        }).ok
+      ) {
+        return;
+      }
+      const acao = decidirAcaoConvite({
+        registro: estado[EMAIL],
+        ultimoPagamentoIso: banco.compradoEm,
+        agoraMs,
+        lembreteAposMs: TRES_DIAS,
+      });
+      if (acao === "nada") return;
+      enviados.push(acao);
+      if (acao === "convite") {
+        estado[EMAIL] = registroDoConvite(new Date(agoraMs).toISOString(), banco.compradoEm, estado[EMAIL]);
+      } else {
+        estado[EMAIL].reminder = new Date(agoraMs).toISOString();
+      }
+    },
+  };
+}
+
+test("(e) idempotência: rodar o sweeper duas vezes não manda dois avisos", () => {
+  const s = sweeperFalso({ compradoEm: T0, temConta: false, vinculado: false });
+  s.rodar(T0_MS + 7 * HORA);
+  s.rodar(T0_MS + 8 * HORA);
+  s.rodar(T0_MS + 20 * HORA);
+  assert.deepEqual(s.enviados, ["convite"]);
+});
+
+test("(f) órfão real: convite depois da carência, lembrete depois de 3 dias, e para", () => {
+  const s = sweeperFalso({ compradoEm: T0, temConta: false, vinculado: false });
+  s.rodar(T0_MS + 1 * HORA); // dentro da carência: cala
+  assert.deepEqual(s.enviados, []);
+  s.rodar(T0_MS + 7 * HORA); // convite
+  s.rodar(T0_MS + 4 * 24 * HORA); // lembrete único
+  s.rodar(T0_MS + 9 * 24 * HORA); // nada mais
+  assert.deepEqual(s.enviados, ["convite", "lembrete"]);
+});
+
+test("(b, no sweeper) a conta nasce entre as varreduras: o convite morre na releitura", () => {
+  const s = sweeperFalso({ compradoEm: T0, temConta: false, vinculado: false });
+  s.rodar(T0_MS + 2 * HORA); // ainda na carência
+  s.banco.temConta = true; // a pessoa se cadastrou às 3h
+  s.rodar(T0_MS + 7 * HORA); // passou a carência, mas não é mais órfão
+  assert.deepEqual(s.enviados, [], "escreveu pra quem já tinha entrado");
+});
+
+test("(d, no sweeper) o vínculo chega DEPOIS do convite: o lembrete não sai", () => {
+  const s = sweeperFalso({ compradoEm: T0, temConta: false, vinculado: false });
+  s.rodar(T0_MS + 7 * HORA);
+  assert.deepEqual(s.enviados, ["convite"]);
+  s.banco.vinculado = true; // um humano vinculou a compra à conta
+  s.rodar(T0_MS + 4 * 24 * HORA);
+  assert.deepEqual(s.enviados, ["convite"], "mandou lembrete pra quem já foi resolvido");
 });
