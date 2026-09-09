@@ -26,72 +26,19 @@ import { sendSupportMail } from "./mail-smtp";
 import { tratarSeForBounce } from "./mail-bounce-registro";
 import { winbackContextByEmail, applyWinbackMarkers } from "@/lib/winback/conversation";
 
-const BODY_MAX = 4000; // o que vai pro modelo (e-mails têm assinatura/quote longos)
 const BATCH = 8; // por varredura (cron 5min) — o resto fica pra próxima
 
-// ---------- parse MIME mínimo (texto legível de um e-mail cru) ----------
-
-function decodeWord(s: string): string {
-  return s.replace(/=\?([^?]+)\?([BQ])\?([^?]*)\?=/gi, (m, _cs, enc, data) => {
-    try {
-      if (String(enc).toUpperCase() === "B") return Buffer.from(data, "base64").toString("utf8");
-      const bytes = String(data)
-        .replace(/_/g, " ")
-        .replace(/=([0-9A-F]{2})/gi, (_x, h) => String.fromCharCode(parseInt(h, 16)));
-      return Buffer.from(bytes, "latin1").toString("utf8");
-    } catch {
-      return m;
-    }
-  });
-}
-
-function header(raw: string, name: string): string {
-  const m = raw.match(new RegExp(`^${name}: (.*(?:\\r?\\n[ \\t].*)*)`, "mi"));
-  return m ? decodeWord(m[1].replace(/\r?\n[ \t]+/g, " ").trim()) : "";
-}
-
-function stripHtml(s: string): string {
-  return s
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** Extrai o texto do e-mail: parte text/plain (ou html sem tags). */
-export function mailText(raw: string): string {
-  const plainIdx = raw.search(/Content-Type:\s*text\/plain/i);
-  const htmlIdx = raw.search(/Content-Type:\s*text\/html/i);
-  const idx = plainIdx >= 0 ? plainIdx : htmlIdx;
-  let seg = idx >= 0 ? raw.slice(idx) : raw;
-  const headBlock = seg.slice(0, 400);
-  const start = seg.search(/\r?\n\r?\n/);
-  seg = start >= 0 ? seg.slice(start) : seg;
-  const boundary = seg.search(/\r?\n--[-=_a-zA-Z0-9]{6,}/);
-  if (boundary > 0) seg = seg.slice(0, boundary);
-  if (/quoted-printable/i.test(headBlock)) {
-    seg = seg.replace(/=\r?\n/g, "").replace(/=([0-9A-F]{2})/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)));
-  } else if (/base64/i.test(headBlock)) {
-    try {
-      seg = Buffer.from(seg.replace(/\s+/g, ""), "base64").toString("utf8");
-    } catch {
-      /* fica como está */
-    }
-  }
-  let text = idx === htmlIdx && idx >= 0 ? stripHtml(seg) : seg.replace(/\s+/g, " ").trim();
-  // Bytes UTF-8 lidos como latin1 → reconverte se sair limpo.
-  try {
-    const round = Buffer.from(text, "latin1").toString("utf8");
-    if (!/�/.test(round)) text = round;
-  } catch {
-    /* mantém */
-  }
-  return text.slice(0, BODY_MAX);
-}
+// ---------- parse MIME mínimo ----------
+// Mora em `mail-charset.ts`: são funções PURAS (bytes/MIME → texto), sem
+// nenhuma dependência de `@/`, o que as deixa testáveis com `node --test`
+// direto. Reexportadas aqui porque `mailText` é importada por fora
+// (_frank/ferramentas/2026-09-09_medir_mojibake_na_caixa.cjs mede a função DE
+// PRODUÇÃO por este caminho — mover sem reexportar quebraria a medição).
+// `import` + `export` separados de propósito: `export ... from` reexporta mas
+// NÃO traz o nome pro escopo local, e este arquivo chama `header`/`mailText`
+// aqui dentro (o tsc pegou isso).
+import { mailText, header } from "./mail-charset";
+export { mailText, header };
 
 // ---------- filtros: em quem a Fast NUNCA mexe ----------
 
