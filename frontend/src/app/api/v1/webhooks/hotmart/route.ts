@@ -402,7 +402,13 @@ async function processarCompraSgp(
     // falhas são independentes e some uma se só reportarmos a outra.
     const falhas = [
       r.enviou && r.canais.length === 0
-        ? `boas-vindas do SGP não saíram: ${buyerEmail} [${externalId}]`
+        ? // A CAUSA VAI JUNTO. Sem ela esta linha diz que o aluno não recebeu e
+          // não diz POR QUÊ — foi exatamente o que aconteceu no #324 (09/09):
+          // dois pagantes ficaram 7h travados e a investigação começou do zero,
+          // porque o motivo do SMTP era calculado e descartado.
+          `boas-vindas do SGP não saíram: ${buyerEmail} [${externalId}]${
+            r.envioErro ? ` — ${r.envioErro}` : ""
+          }`
         : null,
       // #324: o teto de tentativas estourou e o aluno NUNCA recebeu. É o estado
       // que mais precisa de mão humana, e não pode sair calado só porque

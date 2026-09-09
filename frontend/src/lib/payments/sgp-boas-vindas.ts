@@ -120,6 +120,18 @@ export type ResultadoBoasVindas = {
   conta: SituacaoConta | null;
   /** erro da criação da conta, pra virar `payment_events.error` no chamador */
   contaErro: string | null;
+  /**
+   * POR QUE o envio falhou — `null` quando saiu (ou quando nem tentamos.
+   * O #324 é a prova de que este campo precisava existir: em 09/09 dois
+   * compradores do SGP pagaram (R$ 997 e R$ 915,74), o SMTP recusou os dois e
+   * `payment_events.error` guardou só "boas-vindas do SGP não saíram", SEM A
+   * CAUSA. A causa existia — a variável `erro` logo abaixo — mas ia só para
+   * `canais.registrar`, ou seja, para `avisos_enviados`, que é a tabela da
+   * migration 104 que NUNCA FOI APLICADA. Na prática o motivo era calculado e
+   * jogado fora, e quem investigou 7h depois não tinha como saber se foi
+   * timeout, recusa do servidor ou caixa inexistente.
+   */
+  envioErro: string | null;
 };
 
 /** Registro por transação já avisada (mora em `agent_state`, sem migration). */
@@ -147,8 +159,6 @@ export type RegistroBoasVindas = {
    * velho com `canais: []` é falha do mesmo jeito, sem precisar de backfill.
    */
   falhou?: boolean;
-  /** Última mensagem de erro do envio. Só existe quando `falhou`. */
-  erro?: string | null;
   /**
    * Quantas vezes já tentamos ESTA transação. É o que transforma "retry
    * infinito" em "retry limitado": o comentário de 03/09 queria evitar rajada
@@ -157,6 +167,20 @@ export type RegistroBoasVindas = {
    * lido como 1 tentativa já gasta (ver `tentativasDe`).
    */
   tentativas?: number;
+  /**
+   * POR QUE nenhum canal entregou. Só existe quando `canais` está vazio.
+   *
+   * `canais: []` responde "o aluno não recebeu"; este campo responde "por quê",
+   * que é o que decide se dá pra reenviar na hora ou se o endereço é inválido.
+   * Ausente nos registros gravados antes do #324 (09/09) — inclusive nos dois
+   * daquele incidente, reparados à mão e carimbados com `reparo_nota`.
+   *
+   * É o nome CANÔNICO da causa e substitui o `erro` que a primeira versão deste
+   * conserto tinha: quem consome é o webhook (`route.ts`, vira
+   * `payment_events.error`) e a ferramenta `boas_vindas_sgp_nao_saiu.cjs`.
+   * Dois campos com o mesmo significado viram dois lugares pra mentir.
+   */
+  envioErro?: string;
 };
 
 /** Teto de tentativas por transação (#324). Abaixo do reenvio da Hotmart (5×). */
@@ -524,7 +548,14 @@ export async function mandarBoasVindasSgp(
     buyerEmail: d.buyerEmail,
   });
   if (!decisao.ok) {
-    return { enviou: false, motivo: decisao.motivo, canais: [], conta: null, contaErro: null };
+    return {
+      enviou: false,
+      motivo: decisao.motivo,
+      canais: [],
+      conta: null,
+      contaErro: null,
+      envioErro: null,
+    };
   }
 
   const chave = chaveDaBoasVindas(d);
@@ -534,17 +565,27 @@ export async function mandarBoasVindasSgp(
   // #324 — a trava agora pergunta "o aluno RECEBEU?", não "existe registro?".
   // Só a entrega trava pra sempre; falha trava até o teto e depois desiste.
   if (boasVindasEntregues(registro)) {
-    return { enviou: false, motivo: "ja_enviado", canais: [], conta: null, contaErro: null };
+    return {
+      enviou: false,
+      motivo: "ja_enviado",
+      canais: [],
+      conta: null,
+      contaErro: null,
+      envioErro: null,
+    };
   }
   if (tentativasDe(registro) >= TETO_TENTATIVAS_BOAS_VINDAS) {
     // Desistimos de tentar sozinhos, mas NÃO em silêncio: o motivo sobe pro
     // webhook e vira `payment_events.error`, que a varredura do #324 lê.
+    // A causa da ÚLTIMA tentativa vai junto: quem for reparar à mão precisa
+    // saber se foi timeout, recusa do servidor ou caixa inexistente.
     return {
       enviou: false,
       motivo: "esgotou_tentativas",
       canais: [],
       conta: null,
       contaErro: null,
+      envioErro: registro?.envioErro ?? null,
     };
   }
 
@@ -608,7 +649,12 @@ export async function mandarBoasVindasSgp(
     canais: aceitos,
     conta: conta.situacao,
     tentativas: tentativasDe(registro) + 1,
-    ...(ok ? {} : { falhou: true, erro }),
+    ...(ok ? {} : { falhou: true }),
+    // A CAUSA VAI JUNTO DA TRAVA, não só no `payment_events`. Quem descobre
+    // esta classe de falha é justamente quem lê o estado procurando
+    // `canais: []` (foi assim que o #324 foi medido); ter que cruzar com outra
+    // tabela pra saber o motivo é o que fez a investigação custar horas.
+    ...(erro ? { envioErro: erro.slice(0, 300) } : {}),
   };
   try {
     await estadoIO.gravar(estado);
@@ -624,5 +670,6 @@ export async function mandarBoasVindasSgp(
     canais: aceitos,
     conta: conta.situacao,
     contaErro: conta.erro,
+    envioErro: erro,
   };
 }
