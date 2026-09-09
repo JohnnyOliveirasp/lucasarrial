@@ -61,6 +61,7 @@
  * sem Next e sem Supabase. Os canais entram por parâmetro, então o fluxo
  * inteiro — inclusive a idempotência — é testável em `aviso-orfao.test.ts`.
  */
+import { entitlementValeAcesso } from "./acesso-regra.ts";
 
 /** Tudo que a pessoa precisa pra agir, extraído do payload da Hotmart. */
 export type CompraOrfa = {
@@ -387,7 +388,12 @@ export type MotivoNaoNotificar =
   | "sem_data_de_compra"
   | "conta_criada"
   | "vinculo_feito"
-  | "dentro_da_carencia";
+  | "dentro_da_carencia"
+  | "sem_entitlement"
+  | "acesso_encerrado";
+
+/** O entitlement MAIS RECENTE do comprador, relido no instante de notificar. */
+export type EstadoEntitlement = { status: string; access_until: string | null };
 
 /**
  * "Ainda é órfão, DE VERDADE, agora?" — a guarda que o webhook não tinha como
@@ -395,16 +401,50 @@ export type MotivoNaoNotificar =
  * banco (não contra o que era verdade no começo da varredura).
  *
  * A ordem das checagens é escolhida pelo MOTIVO que ela devolve, porque o
- * motivo é o que vai aparecer no log de quem for investigar: conta e vínculo
- * vêm antes da carência porque são decisivos e definitivos ("não é órfão"),
- * enquanto a carência é só "ainda não é hora".
+ * motivo é o que vai aparecer no log de quem for investigar: conta, vínculo e
+ * estado do acesso vêm antes da carência porque são decisivos e definitivos
+ * ("não é órfão" / "não há o que ativar"), enquanto a carência é só "ainda não
+ * é hora".
  *
- * ⚠️ Repare no que esta função NÃO recebe: o VALOR da compra. Silenciar trial
- * de R$ 0 é tentador (5 dos 7 falsos positivos eram trial) e está errado: o
- * trial vira cobrança depois, e aí seria um pagante travado invisível pra
- * sempre. Valor pode ser sinal secundário em outro lugar — aqui não entra.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * A GUARDA DE ESTADO (09/09/2026) — por que a carência sozinha não bastava
  *
- * Falha fechada: data ilegível não notifica (mesma escolha do `orphan-ciclo`).
+ * A carência de 6h resolve o alerta que dispara em SEGUNDOS (PURCHASE_APPROVED,
+ * no webhook). Ela é cega pro `PURCHASE_COMPLETE`, que a Hotmart manda DIAS
+ * depois e passa folgado por qualquer carência. Dois casos reais medidos no
+ * mesmo dia, e a diferença entre eles não é o tempo nem o valor, é o ESTADO:
+ *
+ *   FALSO POSITIVO (`gestao10.jessica`, external_id L61J1KMG): trial de R$ 0 em
+ *   01/09, PURCHASE_COMPLETE em 09/09 → o alerta gritou "ele está PAGANDO e SEM
+ *   ACESSO, tratar como urgente" 8 dias depois. O entitlement dela estava
+ *   `canceled` com `access_until` em 08/09, JÁ VENCIDO: ela nunca pagou e o
+ *   acesso dela já tinha acabado. As duas afirmações do alerta eram falsas.
+ *
+ *   VERDADEIRO (`ezwaymotors`, external_id 7D9WG7J8): trial em 25/08, pagou
+ *   US$ 20 em 01/09, PURCHASE_COMPLETE em 09/09 → entitlement `active` com
+ *   `access_until` em 25/09 (futuro) e `user_id` NULL. Pagante sem acesso de
+ *   verdade, 8 dias parado. Esse TEM que continuar sendo notificado.
+ *
+ * Como a releitura acontece no instante de notificar, ela cobre o evento tardio
+ * naturalmente: o que manda é o estado de AGORA, não o do dia da compra.
+ *
+ * ⚠️ O critério é o ESTADO do entitlement, NUNCA o valor da compra. Silenciar
+ * trial de R$ 0 é tentador (5 dos 7 falsos positivos eram trial) e está errado:
+ * o trial vira cobrança depois, e aí seria um pagante travado invisível pra
+ * sempre. Por isso esta função continua sem receber valor nenhum — o que separa
+ * a Jessica do EZ MOTORS é o entitlement, e os dois eram trial na origem.
+ *
+ * ⚠️ E a regra de acesso é IMPORTADA (`entitlementValeAcesso`), não reescrita.
+ * Uma cópia local de "está ativo?" divergiria da regra que abre a porta pro
+ * aluno no primeiro ajuste. Consequência que vem de graça e é proposital:
+ * `canceled` com `access_until` FUTURO CONTINUA notificando — quem cancela sem
+ * nunca ter conseguido entrar cancela justamente por não conseguir entrar, e
+ * calar essa pessoa foi o excesso do #127 que a casa já corrigiu em 20/08.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Falha fechada em tudo: data ilegível não notifica, e comprador sem
+ * entitlement nenhum também não (não há o que ativar — mesma escolha do
+ * `compradorMereceConvite`).
  */
 export function podeNotificarOrfao(args: {
   /** ISO da compra que ancora a carência. */
@@ -413,11 +453,18 @@ export function podeNotificarOrfao(args: {
   temConta: boolean;
   /** o entitlement deste comprador já tem `user_id`? */
   vinculado: boolean;
+  /** o entitlement MAIS RECENTE deste comprador, relido agora; null = nenhum */
+  entitlement: EstadoEntitlement | null;
   agoraMs: number;
   carenciaMs?: number;
 }): { ok: true } | { ok: false; motivo: MotivoNaoNotificar } {
   if (args.temConta) return { ok: false, motivo: "conta_criada" };
   if (args.vinculado) return { ok: false, motivo: "vinculo_feito" };
+
+  if (!args.entitlement) return { ok: false, motivo: "sem_entitlement" };
+  if (!entitlementValeAcesso(args.entitlement, new Date(args.agoraMs).toISOString())) {
+    return { ok: false, motivo: "acesso_encerrado" };
+  }
 
   const compra = args.compradoEm ? Date.parse(args.compradoEm) : NaN;
   if (!Number.isFinite(compra)) return { ok: false, motivo: "sem_data_de_compra" };

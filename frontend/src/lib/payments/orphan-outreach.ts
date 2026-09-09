@@ -29,7 +29,11 @@ import { getAdmin } from "@/lib/db/admin";
 import { sendEmail } from "@/lib/email/resend";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
 import { compradorMereceConvite, eventoEhPagamento } from "@/lib/payments/acesso-regra";
-import { CARENCIA_ORFAO_MS, podeNotificarOrfao } from "@/lib/payments/aviso-orfao";
+import {
+  CARENCIA_ORFAO_MS,
+  podeNotificarOrfao,
+  type EstadoEntitlement,
+} from "@/lib/payments/aviso-orfao";
 import {
   decidirAcaoConvite,
   registroDoConvite,
@@ -111,8 +115,9 @@ export type OrphanSweepSummary = {
   invited: number;
   reminded: number;
   /**
-   * candidatos que a releitura derrubou (conta criada ou vínculo feito depois
-   * da foto do começo da varredura). Contado de propósito: cada um destes é um
+   * candidatos que a releitura derrubou: conta criada, vínculo feito, ou o
+   * acesso do entitlement encerrado (cancelado/vencido) — tudo relido depois da
+   * foto do começo da varredura. Contado de propósito: cada um destes é um
    * e-mail errado que NÃO saiu, e some silenciosamente se ninguém contar.
    */
   revalidados: number;
@@ -120,23 +125,59 @@ export type OrphanSweepSummary = {
 };
 
 /**
- * Relê o estado DESTE comprador agora, direto do banco. Duas perguntas, as
+ * Relê o estado DESTE comprador agora, direto do banco. TRÊS perguntas, as
  * mesmas das guardas em bloco lá de cima — a diferença é o instante.
+ *
+ * A terceira (o ESTADO do entitlement) entrou em 09/09/2026 e é a que fecha o
+ * buraco do `PURCHASE_COMPLETE` tardio: a Hotmart manda esse evento DIAS depois
+ * da compra, então ele passa folgado por qualquer carência. O caso
+ * `gestao10.jessica` (trial de R$ 0 em 01/09, COMPLETE em 09/09, entitlement
+ * `canceled` com acesso vencido em 08/09) só se distingue do `ezwaymotors`
+ * (pagou US$ 20, `active` até 25/09, sem vínculo) pelo estado de AGORA — que é
+ * exatamente o que esta releitura enxerga e a foto do começo da varredura não.
+ *
+ * A consulta de entitlements deixou de filtrar `user_id not null`: agora traz
+ * as linhas do comprador e deriva as duas coisas de uma vez (vínculo + estado
+ * mais recente), na MESMA ordenação do bloco `ultimoEnt` (`updated_at` com
+ * fallback pra `created_at`). Um comprador tem um punhado de entitlements, não
+ * mil — não há teto do PostgREST em jogo aqui.
  *
  * Erro aqui não vira "órfão": propaga, e quem chama trata como falha e não
  * escreve pra ninguém (falha fechada, mesma escolha do resto do arquivo).
  */
-async function conferirOrfao(email: string): Promise<{ temConta: boolean; vinculado: boolean }> {
+async function conferirOrfao(email: string): Promise<{
+  temConta: boolean;
+  vinculado: boolean;
+  entitlement: EstadoEntitlement | null;
+}> {
   const admin = getAdmin();
-  const [perfil, vinculo] = await Promise.all([
+  const [perfil, ents] = await Promise.all([
     admin.from("profiles").select("email").eq("email", email).limit(1),
-    admin.from("entitlements").select("user_id").eq("buyer_email", email).not("user_id", "is", null).limit(1),
+    admin
+      .from("entitlements")
+      .select("status, access_until, user_id, updated_at, created_at")
+      .eq("buyer_email", email),
   ]);
   if (perfil.error) throw new Error(`releitura profiles falhou: ${perfil.error.message}`);
-  if (vinculo.error) throw new Error(`releitura entitlements falhou: ${vinculo.error.message}`);
+  if (ents.error) throw new Error(`releitura entitlements falhou: ${ents.error.message}`);
+
+  const linhas = (ents.data ?? []) as {
+    status: string | null; access_until: string | null;
+    user_id: string | null; updated_at: string | null; created_at: string | null;
+  }[];
+  let entitlement: EstadoEntitlement | null = null;
+  let maisRecente = "";
+  for (const e of linhas) {
+    const at = e.updated_at ?? e.created_at ?? "";
+    if (!entitlement || at > maisRecente) {
+      entitlement = { status: e.status ?? "", access_until: e.access_until ?? null };
+      maisRecente = at;
+    }
+  }
   return {
     temConta: (perfil.data ?? []).length > 0,
-    vinculado: (vinculo.data ?? []).length > 0,
+    vinculado: linhas.some((e) => e.user_id),
+    entitlement,
   };
 }
 
@@ -282,15 +323,21 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     .filter((e) => e && e !== "suporte@fastcloner.com");
 
   for (const [email, info] of buyers) {
-    // Três descartes numa pergunta só (`podeNotificarOrfao`, testada):
-    //   temConta   → criou conta com o e-mail da compra; o claim do login resolve
-    //   vinculado  → a compra já está ligada a uma conta (outro e-mail)
-    //   carência   → a compra é nova demais pra virar assunto (CARENCIA_ORFAO_MS)
+    const ent = ultimoEnt.get(email);
+    const estadoDaFoto: EstadoEntitlement | null = ent
+      ? { status: ent.status, access_until: ent.access_until }
+      : null;
+    // Quatro descartes numa pergunta só (`podeNotificarOrfao`, testada):
+    //   temConta     → criou conta com o e-mail da compra; o claim do login resolve
+    //   vinculado    → a compra já está ligada a uma conta (outro e-mail)
+    //   estado do ent→ sem entitlement, ou acesso já encerrado: não há o que ativar
+    //   carência     → a compra é nova demais pra virar assunto (CARENCIA_ORFAO_MS)
     if (
       !podeNotificarOrfao({
         compradoEm: info.at,
         temConta: hasAccount.has(email),
         vinculado: jaTemDono.has(email),
+        entitlement: estadoDaFoto,
         agoraMs: now,
         carenciaMs: CARENCIA_ORFAO_MS,
       }).ok
@@ -300,8 +347,12 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     // Só convida quem PAGOU a assinatura E ainda está dentro da janela paga.
     // Sem as duas: #127 (convite pra quem estornou) ou #138 (trial de R$ 0 lido
     // como "acesso vivo"). A regra mora em acesso-regra.ts, testada.
-    const ent = ultimoEnt.get(email);
-    if (!compradorMereceConvite(ent ? { status: ent.status, access_until: ent.access_until } : null, info.pagou, nowIso)) {
+    //
+    // A parte do acesso vivo agora também está na guarda acima (mesma função
+    // `entitlementValeAcesso`, importada nos dois lugares); esta linha continua
+    // porque é ela que exige `pagou` — a condição que `podeNotificarOrfao` não
+    // tem e não pode ter (ela não olha dinheiro, de propósito).
+    if (!compradorMereceConvite(estadoDaFoto, info.pagou, nowIso)) {
       continue;
     }
 
@@ -309,7 +360,12 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     // começo da varredura; entre eles e este ponto pode ter passado tempo real,
     // e o caso que mais dói é justamente o que se resolve sozinho no meio do
     // caminho. Duas consultas pontuais num punhado de candidatos.
-    let confirmado: { temConta: boolean; vinculado: boolean };
+    //
+    // O ESTADO do entitlement é relido junto, e não reaproveitado da foto: uma
+    // assinatura pode vencer ou ser cancelada no meio da varredura, e o valor
+    // que decide tem que ser o de AGORA (é o que separa Jessica de EZ MOTORS —
+    // ver `podeNotificarOrfao`).
+    let confirmado: { temConta: boolean; vinculado: boolean; entitlement: EstadoEntitlement | null };
     try {
       confirmado = await conferirOrfao(email);
     } catch (e) {
@@ -322,6 +378,7 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
         compradoEm: info.at,
         temConta: confirmado.temConta,
         vinculado: confirmado.vinculado,
+        entitlement: confirmado.entitlement,
         agoraMs: Date.now(),
         carenciaMs: CARENCIA_ORFAO_MS,
       }).ok
@@ -375,7 +432,7 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
           `<ul>${sent.map((s) => `<li>${s}</li>`).join("")}</ul>` +
           `<p>Órfãos confirmados na releitura: ${summary.orphans}` +
           (summary.revalidados > 0
-            ? ` — e ${summary.revalidados} candidato(s) foram descartados na releitura porque a conta ou o vínculo apareceram no meio da varredura (e-mail que NÃO saiu por bem).`
+            ? ` — e ${summary.revalidados} candidato(s) foram descartados na releitura porque a conta apareceu, o vínculo foi feito ou o acesso já tinha acabado (e-mail que NÃO saiu por bem).`
             : ".") +
           ` Quem responder cai no suporte@ (a Fast atende).</p>`,
       });

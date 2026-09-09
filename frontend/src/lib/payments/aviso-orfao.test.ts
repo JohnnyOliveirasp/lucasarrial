@@ -35,6 +35,7 @@ import {
   type CompraOrfa,
   type EstadoAvisos,
   type EstadoAvisosIO,
+  type EstadoEntitlement,
   type EstadoObservacoes,
   type ObservacoesIO,
 } from "./aviso-orfao.ts";
@@ -268,6 +269,13 @@ const T0_MS = Date.parse(T0);
 const HORA = 60 * 60 * 1000;
 const TRES_DIAS = 3 * 24 * HORA;
 
+/**
+ * Entitlement que DÁ acesso: assinatura ativa com a janela paga no futuro
+ * (depois de qualquer `agoraMs` usado nestes testes). É o estado do órfão de
+ * verdade — o `ezwaymotors` da seção 9.
+ */
+const ATIVO: EstadoEntitlement = { status: "active", access_until: "2026-12-31T00:00:00.000Z" };
+
 function observacoesNaMemoria(inicial: EstadoObservacoes = {}) {
   let atual: EstadoObservacoes = { ...inicial };
   const io: ObservacoesIO = {
@@ -379,6 +387,7 @@ test("(c) conta que nunca aparece: NOTIFICA depois da carência", () => {
     compradoEm: T0,
     temConta: false,
     vinculado: false,
+    entitlement: ATIVO,
     agoraMs: T0_MS + 7 * HORA,
   });
   assert.equal(d.ok, true);
@@ -390,13 +399,14 @@ test("dentro da carência, sem conta ainda: espera, não notifica", () => {
     compradoEm: T0,
     temConta: false,
     vinculado: false,
+    entitlement: ATIVO,
     agoraMs: T0_MS + 30 * 1000,
   });
   assert.deepEqual(trintaSegundos, { ok: false, motivo: "dentro_da_carencia" });
 
   // e a borda: 1ms antes das 6h ainda espera; 6h cravadas já é hora de falar
-  assert.equal(podeNotificarOrfao({ compradoEm: T0, temConta: false, vinculado: false, agoraMs: T0_MS + CARENCIA_ORFAO_MS - 1 }).ok, false);
-  assert.equal(podeNotificarOrfao({ compradoEm: T0, temConta: false, vinculado: false, agoraMs: T0_MS + CARENCIA_ORFAO_MS }).ok, true);
+  assert.equal(podeNotificarOrfao({ compradoEm: T0, temConta: false, vinculado: false, entitlement: ATIVO, agoraMs: T0_MS + CARENCIA_ORFAO_MS - 1 }).ok, false);
+  assert.equal(podeNotificarOrfao({ compradoEm: T0, temConta: false, vinculado: false, entitlement: ATIVO, agoraMs: T0_MS + CARENCIA_ORFAO_MS }).ok, true);
 });
 
 test("(b) conta criada DEPOIS da compra, dentro da carência: NÃO notifica", () => {
@@ -405,12 +415,13 @@ test("(b) conta criada DEPOIS da compra, dentro da carência: NÃO notifica", ()
     compradoEm: T0,
     temConta: true,
     vinculado: false,
+    entitlement: ATIVO,
     agoraMs: T0_MS + 2 * HORA,
   });
   assert.deepEqual(dentro, { ok: false, motivo: "conta_criada" });
   // e continua não notificando MUITO depois: conta criada é definitivo
   assert.equal(
-    podeNotificarOrfao({ compradoEm: T0, temConta: true, vinculado: false, agoraMs: T0_MS + 30 * 24 * HORA }).ok,
+    podeNotificarOrfao({ compradoEm: T0, temConta: true, vinculado: false, entitlement: ATIVO, agoraMs: T0_MS + 30 * 24 * HORA }).ok,
     false,
   );
 });
@@ -420,6 +431,7 @@ test("(d) vínculo (user_id) que chega atrasado: NÃO notifica", () => {
     compradoEm: T0,
     temConta: false, // comprou com um e-mail, usa a conta com outro
     vinculado: true, // mas alguém já ligou a compra à conta
+    entitlement: ATIVO,
     agoraMs: T0_MS + 5 * 24 * HORA,
   });
   assert.deepEqual(d, { ok: false, motivo: "vinculo_feito" });
@@ -428,11 +440,12 @@ test("(d) vínculo (user_id) que chega atrasado: NÃO notifica", () => {
 test("(a) trial de R$ 0 NÃO é silenciado: a decisão não olha valor nenhum", () => {
   // 5 dos 7 falsos positivos eram trial, e a tentação é filtrar por valor.
   // Errado: o trial vira cobrança depois, e aí seria um pagante travado
-  // invisível pra sempre. O que separa os casos é TEMPO e CONTA, não dinheiro.
+  // invisível pra sempre. O que separa os casos é TEMPO e ESTADO, não dinheiro.
   const trial = podeNotificarOrfao({
     compradoEm: T0,
     temConta: false,
     vinculado: false,
+    entitlement: ATIVO,
     agoraMs: T0_MS + 7 * HORA,
   });
   assert.equal(trial.ok, true);
@@ -441,7 +454,7 @@ test("(a) trial de R$ 0 NÃO é silenciado: a decisão não olha valor nenhum", 
 test("data de compra ilegível não notifica (falha fechada)", () => {
   for (const ruim of [null, "", "ontem de manhã"]) {
     assert.deepEqual(
-      podeNotificarOrfao({ compradoEm: ruim, temConta: false, vinculado: false, agoraMs: T0_MS + 99 * HORA }),
+      podeNotificarOrfao({ compradoEm: ruim, temConta: false, vinculado: false, entitlement: ATIVO, agoraMs: T0_MS + 99 * HORA }),
       { ok: false, motivo: "sem_data_de_compra" },
     );
   }
@@ -455,10 +468,16 @@ test("data de compra ilegível não notifica (falha fechada)", () => {
  * pode mudar de resposta entre as rodadas — que é exatamente o que a
  * re-verificação existe pra pegar.
  */
-function sweeperFalso(banco: { compradoEm: string; temConta: boolean; vinculado: boolean }) {
+function sweeperFalso(banco: {
+  compradoEm: string;
+  temConta: boolean;
+  vinculado: boolean;
+  entitlement?: EstadoEntitlement | null;
+}) {
   const EMAIL = "cachico3@hotmail.com";
   const estado: Record<string, RegistroConvite> = {};
   const enviados: string[] = [];
+  if (banco.entitlement === undefined) banco.entitlement = ATIVO;
   return {
     banco,
     enviados,
@@ -469,6 +488,7 @@ function sweeperFalso(banco: { compradoEm: string; temConta: boolean; vinculado:
           compradoEm: banco.compradoEm,
           temConta: banco.temConta,
           vinculado: banco.vinculado,
+          entitlement: banco.entitlement ?? null,
           agoraMs,
         }).ok
       ) {
@@ -524,4 +544,195 @@ test("(d, no sweeper) o vínculo chega DEPOIS do convite: o lembrete não sai", 
   s.banco.vinculado = true; // um humano vinculou a compra à conta
   s.rodar(T0_MS + 4 * 24 * HORA);
   assert.deepEqual(s.enviados, ["convite"], "mandou lembrete pra quem já foi resolvido");
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 9. A GUARDA DE ESTADO — o buraco que a carência não fecha (09/09/2026)
+//
+// A carência de 6h resolve o alerta que dispara em SEGUNDOS. Ela é CEGA pro
+// `PURCHASE_COMPLETE`, que a Hotmart manda DIAS depois da compra e passa
+// folgado por qualquer carência. Dois casos reais do mesmo dia, ambos com
+// COMPLETE 8 dias depois, ambos trial de R$ 0 na origem — o que os separa não
+// é tempo nem dinheiro, é o ESTADO do entitlement AGORA.
+// ════════════════════════════════════════════════════════════════════════════
+
+const AGORA_09 = Date.parse("2026-09-09T15:00:00.000Z");
+
+/** `gestao10.jessica@gmail.com` (L61J1KMG): trial 01/09, COMPLETE 09/09. */
+const JESSICA = {
+  compradoEm: "2026-09-01T13:00:00.000Z",
+  temConta: false,
+  vinculado: false,
+  // status 'canceled' e a janela paga já venceu em 08/09: nunca pagou, e o
+  // pouco que tinha acabou ontem
+  entitlement: { status: "canceled", access_until: "2026-09-08T00:00:00.000Z" } as EstadoEntitlement,
+};
+
+/** `ezwaymotors@gmail.com` (7D9WG7J8): trial 25/08, pagou US$ 20 em 01/09. */
+const EZ_MOTORS = {
+  compradoEm: "2026-08-25T13:00:00.000Z",
+  temConta: false,
+  vinculado: false,
+  entitlement: { status: "active", access_until: "2026-09-25T00:00:00.000Z" } as EstadoEntitlement,
+};
+
+test("(1) Jessica: PURCHASE_COMPLETE 8 dias depois, cancelada e com acesso vencido: NÃO notifica", () => {
+  // O alerta antigo disse "ele está PAGANDO e SEM ACESSO, tratar como urgente".
+  // As DUAS afirmações eram falsas: ela nunca pagou (trial de R$ 0) e o acesso
+  // dela já tinha acabado. A carência de 6h não pegou isso — 8 dias passam
+  // folgado por ela.
+  const d = podeNotificarOrfao({ ...JESSICA, agoraMs: AGORA_09 });
+  assert.deepEqual(d, { ok: false, motivo: "acesso_encerrado" });
+  // e a carência de fato NÃO era quem estava segurando: já tinha passado há dias
+  assert.ok(AGORA_09 - Date.parse(JESSICA.compradoEm) > CARENCIA_ORFAO_MS);
+});
+
+test("(2) EZ MOTORS: pagante, entitlement ativo com janela futura e sem vínculo: NOTIFICA", () => {
+  // Esse é o órfão de verdade: 8 dias parado, dinheiro entrou, acesso vivo e
+  // ninguém do outro lado. Silenciá-lo seria trocar ruído por prejuízo.
+  const d = podeNotificarOrfao({ ...EZ_MOTORS, agoraMs: AGORA_09 });
+  assert.equal(d.ok, true);
+});
+
+test("(3) entitlement ativo mas com access_until já vencido: NÃO notifica", () => {
+  const d = podeNotificarOrfao({
+    compradoEm: T0,
+    temConta: false,
+    vinculado: false,
+    entitlement: { status: "active", access_until: "2026-09-08T00:00:00.000Z" },
+    agoraMs: AGORA_09,
+  });
+  assert.deepEqual(d, { ok: false, motivo: "acesso_encerrado" });
+});
+
+test("(4) trial de R$ 0 que DEPOIS virou pago e segue ativo: NOTIFICA (valor não é a trava)", () => {
+  // A tentação continua sendo filtrar por valor, e continua errada: a compra
+  // que ancora este caso é a MESMA de R$ 0 do começo (o trial), e mesmo assim
+  // ele tem que ser notificado, porque o estado de agora diz que há acesso vivo
+  // e sem dono. Quem decide é o entitlement, nunca o preço.
+  const d = podeNotificarOrfao({
+    compradoEm: "2026-08-25T13:00:00.000Z", // o trial de R$ 0
+    temConta: false,
+    vinculado: false,
+    entitlement: { status: "active", access_until: "2026-10-25T00:00:00.000Z" },
+    agoraMs: AGORA_09,
+  });
+  assert.equal(d.ok, true);
+});
+
+test("(5) PURCHASE_COMPLETE 8 dias depois num entitlement válido: a carência NÃO vira cegueira", () => {
+  // O medo ao endurecer a guarda é calar o evento tardio junto com o falso
+  // positivo. Não cala: como a releitura roda no instante de notificar, o
+  // COMPLETE de 8 dias depois é julgado pelo estado de AGORA — e aqui o estado
+  // diz "pagante sem acesso", então fala.
+  const oitoDias = 8 * 24 * HORA;
+  const compradoEm = new Date(AGORA_09 - oitoDias).toISOString();
+  const d = podeNotificarOrfao({
+    compradoEm,
+    temConta: false,
+    vinculado: false,
+    entitlement: EZ_MOTORS.entitlement,
+    agoraMs: AGORA_09,
+  });
+  assert.equal(d.ok, true, "o evento tardio foi silenciado junto com o falso positivo");
+});
+
+test("comprador sem entitlement nenhum: NÃO notifica (falha fechada, não há o que ativar)", () => {
+  assert.deepEqual(
+    podeNotificarOrfao({ compradoEm: T0, temConta: false, vinculado: false, entitlement: null, agoraMs: AGORA_09 }),
+    { ok: false, motivo: "sem_entitlement" },
+  );
+});
+
+test("refunded/chargeback/expired nunca notificam, mesmo com data futura", () => {
+  for (const status of ["refunded", "chargeback", "expired"]) {
+    assert.deepEqual(
+      podeNotificarOrfao({
+        compradoEm: T0,
+        temConta: false,
+        vinculado: false,
+        entitlement: { status, access_until: "2026-12-31T00:00:00.000Z" },
+        agoraMs: AGORA_09,
+      }),
+      { ok: false, motivo: "acesso_encerrado" },
+      `${status} não podia notificar`,
+    );
+  }
+});
+
+test("cancelado DENTRO da janela paga: NOTIFICA — a regra é a mesma que abre a porta", () => {
+  // Consequência proposital de importar `entitlementValeAcesso` em vez de
+  // reescrever "está ativo?" aqui: `canceled` com janela FUTURA tem acesso
+  // ("quem pagou fica até o fim do período", corrigido em 20/08). Quem cancela
+  // sem nunca ter conseguido entrar cancela JUSTAMENTE por não conseguir
+  // entrar — foi essa pessoa que o #127 calou de mais.
+  const d = podeNotificarOrfao({
+    compradoEm: T0,
+    temConta: false,
+    vinculado: false,
+    entitlement: { status: "canceled", access_until: "2026-10-25T00:00:00.000Z" },
+    agoraMs: AGORA_09,
+  });
+  assert.equal(d.ok, true);
+});
+
+test("vitalício (access_until NULL) com status ativo: NOTIFICA", () => {
+  const d = podeNotificarOrfao({
+    compradoEm: T0,
+    temConta: false,
+    vinculado: false,
+    entitlement: { status: "active", access_until: null },
+    agoraMs: AGORA_09,
+  });
+  assert.equal(d.ok, true);
+});
+
+test("conta e vínculo continuam vindo ANTES do estado no motivo (log de quem investiga)", () => {
+  const acessoMorto: EstadoEntitlement = { status: "canceled", access_until: "2026-09-08T00:00:00.000Z" };
+  assert.deepEqual(
+    podeNotificarOrfao({ compradoEm: T0, temConta: true, vinculado: false, entitlement: acessoMorto, agoraMs: AGORA_09 }),
+    { ok: false, motivo: "conta_criada" },
+  );
+  assert.deepEqual(
+    podeNotificarOrfao({ compradoEm: T0, temConta: false, vinculado: true, entitlement: acessoMorto, agoraMs: AGORA_09 }),
+    { ok: false, motivo: "vinculo_feito" },
+  );
+  // e o estado vem ANTES da carência: compra de agora mesmo com acesso morto dá
+  // o motivo definitivo ("acabou"), não o provisório ("espere mais um pouco")
+  assert.deepEqual(
+    podeNotificarOrfao({
+      compradoEm: new Date(AGORA_09).toISOString(),
+      temConta: false,
+      vinculado: false,
+      entitlement: acessoMorto,
+      agoraMs: AGORA_09,
+    }),
+    { ok: false, motivo: "acesso_encerrado" },
+  );
+});
+
+test("(no sweeper) o acesso vence entre as varreduras: o lembrete não sai", () => {
+  // O convite saiu com a assinatura viva; três dias depois a janela venceu.
+  // Mandar "seus créditos continuam reservados" pra quem não tem mais acesso é
+  // o #127 com outra fantasia.
+  const s = sweeperFalso({ compradoEm: T0, temConta: false, vinculado: false });
+  s.rodar(T0_MS + 7 * HORA);
+  assert.deepEqual(s.enviados, ["convite"]);
+  s.banco.entitlement = { status: "canceled", access_until: "2026-09-09T00:00:00.000Z" };
+  s.rodar(T0_MS + 4 * 24 * HORA); // 12/09: a janela venceu em 09/09
+  assert.deepEqual(s.enviados, ["convite"], "mandou lembrete pra quem já perdeu o acesso");
+});
+
+test("(no sweeper) Jessica não recebe nem o primeiro convite", () => {
+  const s = sweeperFalso(JESSICA);
+  s.rodar(AGORA_09);
+  s.rodar(AGORA_09 + 5 * 24 * HORA);
+  assert.deepEqual(s.enviados, []);
+});
+
+test("(no sweeper) EZ MOTORS recebe convite e depois o lembrete", () => {
+  const s = sweeperFalso(EZ_MOTORS);
+  s.rodar(AGORA_09);
+  s.rodar(AGORA_09 + 4 * 24 * HORA);
+  assert.deepEqual(s.enviados, ["convite", "lembrete"]);
 });
