@@ -30,6 +30,9 @@ import {
   roteamentoDoProduto,
   SGP_PORTAL_URL,
   SGP_PRODUCT_ID_PADRAO,
+  TETO_TENTATIVAS_BOAS_VINDAS,
+  boasVindasEntregues,
+  tentativasDe,
   type CanaisBoasVindas,
   type CompraSgp,
   type EstadoBoasVindas,
@@ -716,4 +719,102 @@ test("ehEmailJaCadastrado reconhece as redações do Supabase e do Postgres", ()
   ]) {
     assert.equal(ehEmailJaCadastrado(msg), false, msg);
   }
+});
+
+// ── #324: falha de envio NÃO pode virar "já enviado" pra sempre ────────────
+
+test("#324 REGRESSÃO: SMTP fora do ar não condena a transação — a próxima tentativa manda", async () => {
+  // ESTE é o teste que prova o bug de 09/09. Contra o código antigo ele FALHA:
+  // o primeiro envio gravava `canais: []`, a trava lia só a presença da chave e
+  // o segundo evento voltava "ja_enviado" — para sempre. Foi assim que
+  // jcesaram e patricia.bp170 ficaram 7h pagando e sem conseguir entrar.
+  const compra = compraDoPayload(PAYLOAD_SGP);
+  const { io, ver } = estadoFalso();
+
+  // 1ª tentativa: o e-mail explode.
+  const ruim = canaisFalsos({ emailFalha: true });
+  const primeiro = await mandarBoasVindasSgp(compra, SGP_PRODUCT_ID_PADRAO, io, ruim.canais, AGORA);
+  assert.equal(primeiro.enviou, true, "houve tentativa de envio");
+  assert.deepEqual(primeiro.canais, [], "e nenhum canal aceitou");
+  assert.equal(ruim.enviados.length, 0, "nada saiu de verdade");
+
+  // o registro tem que CONFESSAR a falha, não se disfarçar de entrega
+  const reg = ver()[chaveDaBoasVindas(compra)];
+  assert.deepEqual(reg.canais, [], "canais vazio = ninguém recebeu");
+  assert.equal(reg.falhou, true, "e a flag de falha tem que estar lá");
+  assert.equal(reg.tentativas, 1);
+  assert.equal(boasVindasEntregues(reg), false);
+
+  // 2ª tentativa (reenvio da Hotmart), agora com SMTP de pé: TEM que sair.
+  const bom = canaisFalsos();
+  const segundo = await mandarBoasVindasSgp(compra, SGP_PRODUCT_ID_PADRAO, io, bom.canais, AGORA);
+  assert.notEqual(segundo.motivo, "ja_enviado", "a falha não pode ter virado trava permanente");
+  assert.equal(segundo.motivo, "enviado");
+  assert.deepEqual(segundo.canais, ["email"]);
+  assert.equal(bom.enviados.length, 1, "o aluno finalmente recebeu");
+
+  // e agora sim vira trava definitiva
+  const regOk = ver()[chaveDaBoasVindas(compra)];
+  assert.deepEqual(regOk.canais, ["email"]);
+  assert.equal(regOk.falhou, undefined, "sucesso não carrega flag de falha");
+  assert.equal(regOk.tentativas, 2, "o contador acumula, não reinicia");
+  const terceiro = await mandarBoasVindasSgp(compra, SGP_PRODUCT_ID_PADRAO, io, bom.canais, AGORA);
+  assert.equal(terceiro.motivo, "ja_enviado");
+  assert.equal(bom.enviados.length, 1, "e não manda em dobro depois de entregue");
+});
+
+test("#324 os 2 registros VELHOS (canais:[] sem flag) são lidos como falha e destravam", async () => {
+  // O caso real medido em 09/09 no agent_state: 2 de 113 registros gravados
+  // como "enviado" com canais vazio. Sem migration nenhuma — a fonte de verdade
+  // é `canais`, então o registro velho já é lido como falha.
+  const compra = compraDoPayload(PAYLOAD_SGP);
+  const chave = chaveDaBoasVindas(compra);
+  const velho: EstadoBoasVindas = {
+    [chave]: {
+      at: "2026-09-09T11:13:36.875Z",
+      buyerEmail: compra.buyerEmail,
+      canais: [], // ← como estava no banco: sem `falhou`, sem `tentativas`
+      conta: "criada",
+    },
+  };
+  const { io } = estadoFalso(velho);
+  const { canais, enviados } = canaisFalsos();
+
+  const r = await mandarBoasVindasSgp(compra, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+  assert.equal(r.motivo, "enviado", "registro velho travado tem que destravar");
+  assert.equal(enviados.length, 1);
+});
+
+test("#324 o retry é LIMITADO: estourou o teto, desiste com motivo próprio", async () => {
+  // O medo original (03/09) era rajada em cima do aluno. O teto entrega isso
+  // sem precisar mentir que o e-mail saiu.
+  const compra = compraDoPayload(PAYLOAD_SGP);
+  const { io } = estadoFalso();
+  const { canais, enviados } = canaisFalsos({ emailFalha: true });
+
+  for (let i = 1; i <= TETO_TENTATIVAS_BOAS_VINDAS; i++) {
+    const r = await mandarBoasVindasSgp(compra, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+    assert.equal(r.enviou, true, `tentativa ${i} ainda tenta`);
+  }
+  assert.equal(enviados.length, 0, "todas falharam");
+
+  // a de depois do teto não tenta mais
+  const depois = await mandarBoasVindasSgp(compra, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+  assert.equal(depois.enviou, false);
+  assert.equal(depois.motivo, "esgotou_tentativas");
+});
+
+test("#324 helpers: entrega é medida por `canais`, e registro pré-#324 conta 1 tentativa", () => {
+  assert.equal(boasVindasEntregues(undefined), false);
+  assert.equal(tentativasDe(undefined), 0, "nunca tentado");
+
+  const entregue = { at: AGORA, buyerEmail: "a@b.com", canais: ["email"] };
+  assert.equal(boasVindasEntregues(entregue), true);
+
+  const falho = { at: AGORA, buyerEmail: "a@b.com", canais: [] };
+  assert.equal(boasVindasEntregues(falho), false);
+  // pré-#324 não tem contador: conta como 1 já gasta, senão o teto reiniciaria
+  assert.equal(tentativasDe(falho), 1);
+  assert.equal(tentativasDe({ ...falho, tentativas: 2 }), 2);
 });

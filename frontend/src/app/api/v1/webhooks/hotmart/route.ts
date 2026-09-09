@@ -36,6 +36,7 @@ import {
   mandarBoasVindasSgp,
   roteamentoDoProduto,
   SGP_PRODUCT_ID_PADRAO,
+  TETO_TENTATIVAS_BOAS_VINDAS,
   type RotaDoProduto,
 } from "@/lib/payments/sgp-boas-vindas";
 import { canaisDoSgp, estadoDasBoasVindas } from "@/lib/payments/sgp-boas-vindas-canal";
@@ -408,6 +409,12 @@ async function processarCompraSgp(
           `boas-vindas do SGP não saíram: ${buyerEmail} [${externalId}]${
             r.envioErro ? ` — ${r.envioErro}` : ""
           }`
+        : null,
+      // #324: o teto de tentativas estourou e o aluno NUNCA recebeu. É o estado
+      // que mais precisa de mão humana, e não pode sair calado só porque
+      // `enviou` é false — não houve envio NOVO, mas há um comprador travado.
+      r.motivo === "esgotou_tentativas"
+        ? `boas-vindas do SGP desistiram após ${TETO_TENTATIVAS_BOAS_VINDAS} tentativas: ${buyerEmail} [${externalId}]`
         : null,
       r.contaErro ? `conta do SGP não criada (${r.conta}): ${buyerEmail} — ${r.contaErro}` : null,
     ].filter((x): x is string => x !== null);

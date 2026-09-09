@@ -103,6 +103,8 @@ export type CompraSgp = {
 export type MotivoBoasVindas =
   | "enviado"
   | "ja_enviado"
+  /** #324: falhou e o teto de tentativas acabou. Precisa de mão humana. */
+  | "esgotou_tentativas"
   | "evento_nao_e_compra"
   | "pagamento_nao_confirmado"
   | "produto_nao_e_sgp"
@@ -144,15 +146,62 @@ export type RegistroBoasVindas = {
    */
   conta?: SituacaoConta;
   /**
+   * #324: o envio FALHOU (nenhum canal aceitou). Existe pra que uma falha nunca
+   * mais se disfarce de sucesso: até 09/09 gravávamos o registro com
+   * `canais: []` e sem flag nenhuma, e a trava de idempotência lia só a
+   * PRESENÇA da chave — então um SMTP fora do ar por 30 segundos virava
+   * "já enviado" PARA SEMPRE. Dois compradores do SGP ficaram 7h sem conseguir
+   * entrar por causa disso (jcesaram/HP0150302636 e patricia.bp170/HP1390733090,
+   * 09/09 11:13Z e 11:20Z).
+   *
+   * Opcional porque os registros gravados antes de #324 não têm — e é de
+   * propósito que a fonte de verdade seja `canais`, não esta flag: registro
+   * velho com `canais: []` é falha do mesmo jeito, sem precisar de backfill.
+   */
+  falhou?: boolean;
+  /**
+   * Quantas vezes já tentamos ESTA transação. É o que transforma "retry
+   * infinito" em "retry limitado": o comentário de 03/09 queria evitar rajada
+   * em cima do aluno (a Hotmart reenvia até 5×), e um teto entrega isso sem
+   * precisar mentir que o e-mail saiu. Ausente = registro anterior a #324,
+   * lido como 1 tentativa já gasta (ver `tentativasDe`).
+   */
+  tentativas?: number;
+  /**
    * POR QUE nenhum canal entregou. Só existe quando `canais` está vazio.
    *
    * `canais: []` responde "o aluno não recebeu"; este campo responde "por quê",
    * que é o que decide se dá pra reenviar na hora ou se o endereço é inválido.
    * Ausente nos registros gravados antes do #324 (09/09) — inclusive nos dois
    * daquele incidente, reparados à mão e carimbados com `reparo_nota`.
+   *
+   * É o nome CANÔNICO da causa e substitui o `erro` que a primeira versão deste
+   * conserto tinha: quem consome é o webhook (`route.ts`, vira
+   * `payment_events.error`) e a ferramenta `boas_vindas_sgp_nao_saiu.cjs`.
+   * Dois campos com o mesmo significado viram dois lugares pra mentir.
    */
   envioErro?: string;
 };
+
+/** Teto de tentativas por transação (#324). Abaixo do reenvio da Hotmart (5×). */
+export const TETO_TENTATIVAS_BOAS_VINDAS = 3;
+
+/**
+ * O aluno RECEBEU? É a única pergunta que a trava de idempotência pode fazer.
+ *
+ * `canais` é a fonte de verdade (e não a flag `falhou`) porque assim os
+ * registros gravados ANTES de #324 — que têm `canais: []` e flag nenhuma —
+ * já são lidos como falha, sem migration e sem backfill.
+ */
+export function boasVindasEntregues(r: RegistroBoasVindas | undefined): boolean {
+  return !!r && (r.canais?.length ?? 0) > 0;
+}
+
+/** Tentativas já gastas. Registro pré-#324 conta como 1 (ele JÁ tentou uma vez). */
+export function tentativasDe(r: RegistroBoasVindas | undefined): number {
+  if (!r) return 0;
+  return typeof r.tentativas === "number" ? r.tentativas : 1;
+}
 
 export type EstadoBoasVindas = Record<string, RegistroBoasVindas>;
 
@@ -467,11 +516,22 @@ export function montarBoasVindas(
  * Manda o e-mail de boas-vindas UMA vez por transação.
  *
  * Ordem proposital, copiada do `aviso-orfao.ts`: decide → checa idempotência →
- * dispara o canal → GRAVA o estado com o resultado. E marca como enviado mesmo
- * quando o envio falha, senão a Hotmart reenviando o mesmo evento (ela reenvia
- * até 5×) viraria uma rajada de tentativas em cima do aluno. Quem denuncia a
- * falha é `canais: []` no retorno, que o chamador escreve em
- * `payment_events.error`, e a linha `ok=false` em `avisos_enviados`.
+ * dispara o canal → GRAVA o estado com o resultado.
+ *
+ * #324 (09/09) — ANTES marcávamos como enviado MESMO QUANDO o envio falhava,
+ * pra não virar rajada em cima do aluno no reenvio da Hotmart (até 5×). O
+ * efeito colateral foi pior que o problema: a trava lia só a presença da chave,
+ * então 30 segundos de SMTP fora do ar condenavam a transação PARA SEMPRE — e
+ * como o e-mail de boas-vindas é o ÚNICO que carrega o link de definir senha, o
+ * comprador ficava pagando e sem conseguir entrar. Aconteceu com 2 pessoas em
+ * 09/09 (7h travadas cada uma).
+ *
+ * Agora: entrega trava pra sempre, falha trava até `TETO_TENTATIVAS_BOAS_VINDAS`
+ * e só então desiste (motivo `esgotou_tentativas`). O objetivo original — não
+ * criar rajada — continua valendo, agora com teto em vez de mentira.
+ *
+ * Quem denuncia a falha continua sendo `canais: []` no retorno, que o chamador
+ * escreve em `payment_events.error`, e a linha `ok=false` em `avisos_enviados`.
  */
 export async function mandarBoasVindasSgp(
   d: CompraSgp,
@@ -500,7 +560,11 @@ export async function mandarBoasVindasSgp(
 
   const chave = chaveDaBoasVindas(d);
   const estado = await estadoIO.ler();
-  if (estado[chave]) {
+  const registro = estado[chave];
+
+  // #324 — a trava agora pergunta "o aluno RECEBEU?", não "existe registro?".
+  // Só a entrega trava pra sempre; falha trava até o teto e depois desiste.
+  if (boasVindasEntregues(registro)) {
     return {
       enviou: false,
       motivo: "ja_enviado",
@@ -508,6 +572,20 @@ export async function mandarBoasVindasSgp(
       conta: null,
       contaErro: null,
       envioErro: null,
+    };
+  }
+  if (tentativasDe(registro) >= TETO_TENTATIVAS_BOAS_VINDAS) {
+    // Desistimos de tentar sozinhos, mas NÃO em silêncio: o motivo sobe pro
+    // webhook e vira `payment_events.error`, que a varredura do #324 lê.
+    // A causa da ÚLTIMA tentativa vai junto: quem for reparar à mão precisa
+    // saber se foi timeout, recusa do servidor ou caixa inexistente.
+    return {
+      enviou: false,
+      motivo: "esgotou_tentativas",
+      canais: [],
+      conta: null,
+      contaErro: null,
+      envioErro: registro?.envioErro ?? null,
     };
   }
 
@@ -562,11 +640,16 @@ export async function mandarBoasVindasSgp(
   }
 
   const aceitos = ok ? ["email"] : [];
+  // #324 — o registro passa a dizer a VERDADE sobre o envio. Antes gravávamos
+  // `canais: []` sem mais nada e a trava lia isso como "já enviado": a falha
+  // virava permanente e nem o reenvio da Hotmart reparava.
   estado[chave] = {
     at: agoraIso,
     buyerEmail: d.buyerEmail,
     canais: aceitos,
     conta: conta.situacao,
+    tentativas: tentativasDe(registro) + 1,
+    ...(ok ? {} : { falhou: true }),
     // A CAUSA VAI JUNTO DA TRAVA, não só no `payment_events`. Quem descobre
     // esta classe de falha é justamente quem lê o estado procurando
     // `canais: []` (foi assim que o #324 foi medido); ter que cruzar com outra
