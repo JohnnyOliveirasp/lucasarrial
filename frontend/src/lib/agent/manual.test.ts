@@ -155,3 +155,30 @@ test("a seção vai inteira pro system prompt da Fast", () => {
     "buildAgentSystem parou de embutir o PLATFORM_MANUAL",
   );
 });
+
+test("a data de hoje vai no TOPO do system prompt da Fast", () => {
+  // O comportamento da data é testado de verdade (relógio fixo, função
+  // chamada) em data-hoje.test.ts. O que se mede AQUI é só a fiação: se a
+  // manual.ts parar de interpolar a linha, o conserto não chega na Fast e
+  // volta o caso da alana (Fast reprometendo o dia 07 no dia 09).
+  // É leitura de fonte porque manual.ts importa por alias e o runner nativo
+  // não resolve — mesmo motivo do teste acima.
+  assert.match(
+    FONTE,
+    /import \{ linhaDataHoje \} from "@\/lib\/agent\/data-hoje"/,
+    "manual.ts parou de importar a linha da data de hoje",
+  );
+
+  const corpo = FONTE.slice(FONTE.indexOf("export function buildAgentSystem"));
+  assert.match(
+    corpo,
+    /return `\$\{linhaDataHoje\(hoje\)\}/,
+    "a data saiu do TOPO do prompt (ou parou de ser interpolada)",
+  );
+  // O default é o que mantém os 6 call sites chamando sem argumento.
+  assert.match(
+    corpo,
+    /buildAgentSystem\(hoje: Date = new Date\(\)\)/,
+    "buildAgentSystem perdeu o default de hoje — os 6 call sites quebram",
+  );
+});
