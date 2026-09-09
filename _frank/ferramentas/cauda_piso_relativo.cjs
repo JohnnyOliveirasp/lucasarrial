@@ -330,7 +330,17 @@ function idsPosicionais(argv) {
   return out;
 }
 
-(async () => {
+/**
+ * Exporta o miolo para que OUTRA ferramenta meça o frame de um arquivo sem
+ * reimplementar `pcm`/`envelope`. Isto não é conveniência: uma segunda cópia do
+ * envelope que derivasse desta produziria dois números com o MESMO nome e
+ * ninguém perceberia — a classe de erro que este card já pagou três vezes
+ * (`.like()` em uuid, `null<=35`, `_Bugs/` gitignored).
+ */
+module.exports = { pcm, envelope, analisar, suspeitaRel, baixar, porPrefixo,
+  QUEDA_PLATO, MARGEM_PISO, SR };
+
+if (require.main === module) (async () => {
   const resto = idsPosicionais(process.argv.slice(2));
   if (tem("--ancora")) return ancora();
   if (tem("--voz")) return medirVozes(resto);

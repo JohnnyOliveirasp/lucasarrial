@@ -135,8 +135,11 @@ function tabela() {
   }
 }
 
+module.exports = { polos, ranquear, carregar, internasNota27, internasEhFim,
+  MIN_FRONTEIRAS, N_ALTO };
+
 const tem = (n) => process.argv.includes(n);
-try {
+if (require.main === module) try {
   if (tem("--conferir")) conferir();
   else if (tem("--alto")) polos().alto.forEach((v) => console.log(v.id));
   else if (tem("--zero")) polos().zero.forEach((v) => console.log(v.id));
