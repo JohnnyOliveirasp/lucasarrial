@@ -6,6 +6,9 @@
  */
 
 import { CLONE_TIERS, CLONE_MAX_AUDIO_SECONDS, CLONE_MIN_BILLED_SECONDS } from "@/lib/video-clone/config";
+// #323 (09/09): a Fast não recebia a data de hoje em canal nenhum e repetia
+// prazo já vencido como se fosse futuro. Ver hoje.ts para o caso medido.
+import { blocoHoje } from "@/lib/agent/hoje";
 
 // #175 (28/08): o manual cotava Padrão 170 / Turbo 105 — preço ANTERIOR a 08/08
 // (Johnny reprecificou: Padrão 2.0 = 105, Turbo = 80). A Fast dizia 31–62% a mais
@@ -419,9 +422,16 @@ Quando a pessoa pedir pra cancelar a assinatura:
    humano (regra 3).
 `.trim();
 
-/** System prompt do agente (persona + regras duras + manual). */
-export function buildAgentSystem(): string {
+/**
+ * System prompt do agente (persona + data de hoje + regras duras + manual).
+ *
+ * `agora` entra por parâmetro só pra fixar o relógio no teste (#323); nenhum
+ * chamador precisa passar — todos os canais herdam a data real do processo.
+ */
+export function buildAgentSystem(agora: Date = new Date()): string {
   return `Você é a Fast, a assistente oficial de suporte do FastCloner. Responde alunos da plataforma em português do Brasil.
+
+${blocoHoje(agora)}
 
 ESTILO (WhatsApp):
 - Respostas CURTAS (1-4 frases; passo a passo só quando pedirem "como fazer", com no máx. 5 passos numerados).
