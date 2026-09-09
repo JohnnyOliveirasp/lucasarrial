@@ -27,6 +27,7 @@ import {
   grantSubscriptionCredits,
   resolveUserIdByEmail,
 } from "@/lib/credits/service";
+import { zeroSubscriptionCreditsOnRefund } from "@/lib/credits/refund";
 import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
 import { avisarCompraOrfa } from "@/lib/payments/aviso-orfao";
@@ -50,10 +51,12 @@ import {
   extractPurchaseStatus,
   extractSubscriptionStatus,
   extractTransactionId,
+  isMoneyReturnedStatus,
   isUnknownExternalId,
+  mapRevokeStatus,
   subscriptionIsDead,
 } from "@/lib/payments/hotmart-payload";
-import type { EntitlementStatus, Json } from "@/lib/db/types";
+import type { Json } from "@/lib/db/types";
 
 const PROVIDER = "hotmart" as const;
 
@@ -323,14 +326,16 @@ async function processEvent(
       eventType === "SUBSCRIPTION_CANCELLATION"
         ? extractNextChargeIso(data)
         : null;
-    const found = await revokeAccess({
+    const revoke = await revokeAccess({
       provider: PROVIDER,
       externalId,
       status: revokeStatus,
       accessUntil: keepUntil,
       rawEvent: data,
     });
-    if (!found) {
+
+    const errors: string[] = [];
+    if (!revoke.found) {
       // Uma revogação que não encontrou dono é ERRO, não no-op (bug de 18/08:
       // 185 cancelamentos viraram "revoked:canceled" limpos sem tocar em nada).
       // HTTP continua 200 (reenvio da Hotmart não resolveria), mas o erro fica
@@ -338,12 +343,40 @@ async function processEvent(
       const why = isUnknownExternalId(externalId, eventType)
         ? "externalId não extraído do payload (caiu no fallback unknown)"
         : "externalId não casa com nenhum entitlement";
-      return {
-        handled: `revoke_unmatched:${revokeStatus}`,
-        processError: `${why}: ${externalId} [buyer: ${buyerEmail ?? "?"}]`,
-      };
+      errors.push(`${why}: ${externalId} [buyer: ${buyerEmail ?? "?"}]`);
     }
-    return ok(`revoked:${revokeStatus}`);
+
+    // ESTORNO/CHARGEBACK/PROTESTO: o dinheiro voltou → o crédito de mensalidade
+    // vai junto (regra do Johnny 18/08; mig 108). SÓ nesses três — cancelamento
+    // de quem pagou ('canceled') e expiração ('expired') MANTÊM o saldo.
+    // credits_extra nunca é tocado (dívida nossa com o aluno). A função no
+    // banco é idempotente por transação: reentrega não lança 2x, e recompra
+    // depois do estorno não é apagada por reprocessamento do evento antigo.
+    if (isMoneyReturnedStatus(revokeStatus)) {
+      // preferimos o dono do ENTITLEMENT (mesma pessoa da compra estornada);
+      // sem match (órfão/unmatched), caímos pro e-mail do comprador.
+      const userId =
+        revoke.userId ?? (buyerEmail ? await resolveUserIdByEmail(buyerEmail) : null);
+      if (!userId) {
+        errors.push(
+          `estorno sem usuário identificável — crédito NÃO zerado [buyer: ${buyerEmail ?? "?"}]`,
+        );
+      } else {
+        // chave de idempotência = a transação estornada (o externalId da
+        // assinatura é o código do assinante, igual em toda renovação).
+        const refId = extractTransactionId(data) ?? externalId;
+        // falha de RPC LANÇA → 500 → Hotmart reenvia (seguro: idempotente)
+        const zeroed = await zeroSubscriptionCreditsOnRefund({ userId, refId, eventType });
+        if (!zeroed.ok) {
+          errors.push(`crédito NÃO zerado (${zeroed.reason}) [user: ${userId}]`);
+        }
+      }
+    }
+
+    return {
+      handled: revoke.found ? `revoked:${revokeStatus}` : `revoke_unmatched:${revokeStatus}`,
+      processError: errors.length > 0 ? errors.join("; ") : null,
+    };
   }
 
   return ok("ignored");
@@ -427,15 +460,8 @@ async function processarCompraSgp(
 // antiga era só e-mail, descartava o resultado do envio e engolia exceção — por
 // isso nunca chegou em ninguém e ninguém percebeu (incidente #239).
 
-function mapRevokeStatus(eventType: string): Exclude<EntitlementStatus, "active"> | null {
-  if (eventType === "SUBSCRIPTION_CANCELLATION") return "canceled";
-  if (eventType === "PURCHASE_REFUNDED") return "refunded";
-  if (eventType.includes("CHARGEBACK") || eventType === "PURCHASE_PROTEST") return "chargeback";
-  if (eventType === "PURCHASE_EXPIRED" || eventType === "PURCHASE_CANCELED") return "expired";
-  return null;
-}
-
-// ── extração defensiva do payload 2.0: ver @/lib/payments/hotmart-payload ───
+// ── extração defensiva do payload 2.0 + mapRevokeStatus/isMoneyReturnedStatus:
+//    ver @/lib/payments/hotmart-payload (módulo puro, testável com node --test)
 
 // A comparação em si mora em @/lib/payments/hottok (pura e testada em
 // hottok.test.ts). Aqui fica só a leitura do ambiente, que não é testável.
