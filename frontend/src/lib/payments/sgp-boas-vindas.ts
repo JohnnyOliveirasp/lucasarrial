@@ -118,6 +118,18 @@ export type ResultadoBoasVindas = {
   conta: SituacaoConta | null;
   /** erro da criação da conta, pra virar `payment_events.error` no chamador */
   contaErro: string | null;
+  /**
+   * POR QUE o envio falhou — `null` quando saiu (ou quando nem tentamos.
+   * O #324 é a prova de que este campo precisava existir: em 09/09 dois
+   * compradores do SGP pagaram (R$ 997 e R$ 915,74), o SMTP recusou os dois e
+   * `payment_events.error` guardou só "boas-vindas do SGP não saíram", SEM A
+   * CAUSA. A causa existia — a variável `erro` logo abaixo — mas ia só para
+   * `canais.registrar`, ou seja, para `avisos_enviados`, que é a tabela da
+   * migration 104 que NUNCA FOI APLICADA. Na prática o motivo era calculado e
+   * jogado fora, e quem investigou 7h depois não tinha como saber se foi
+   * timeout, recusa do servidor ou caixa inexistente.
+   */
+  envioErro: string | null;
 };
 
 /** Registro por transação já avisada (mora em `agent_state`, sem migration). */
@@ -131,6 +143,15 @@ export type RegistroBoasVindas = {
    * nenhuma. Opcional porque os registros gravados antes de 04/09 não têm.
    */
   conta?: SituacaoConta;
+  /**
+   * POR QUE nenhum canal entregou. Só existe quando `canais` está vazio.
+   *
+   * `canais: []` responde "o aluno não recebeu"; este campo responde "por quê",
+   * que é o que decide se dá pra reenviar na hora ou se o endereço é inválido.
+   * Ausente nos registros gravados antes do #324 (09/09) — inclusive nos dois
+   * daquele incidente, reparados à mão e carimbados com `reparo_nota`.
+   */
+  envioErro?: string;
 };
 
 export type EstadoBoasVindas = Record<string, RegistroBoasVindas>;
@@ -467,13 +488,27 @@ export async function mandarBoasVindasSgp(
     buyerEmail: d.buyerEmail,
   });
   if (!decisao.ok) {
-    return { enviou: false, motivo: decisao.motivo, canais: [], conta: null, contaErro: null };
+    return {
+      enviou: false,
+      motivo: decisao.motivo,
+      canais: [],
+      conta: null,
+      contaErro: null,
+      envioErro: null,
+    };
   }
 
   const chave = chaveDaBoasVindas(d);
   const estado = await estadoIO.ler();
   if (estado[chave]) {
-    return { enviou: false, motivo: "ja_enviado", canais: [], conta: null, contaErro: null };
+    return {
+      enviou: false,
+      motivo: "ja_enviado",
+      canais: [],
+      conta: null,
+      contaErro: null,
+      envioErro: null,
+    };
   }
 
   // CONTA — depois da trava de idempotência, de propósito: o reenvio da Hotmart
@@ -532,6 +567,11 @@ export async function mandarBoasVindasSgp(
     buyerEmail: d.buyerEmail,
     canais: aceitos,
     conta: conta.situacao,
+    // A CAUSA VAI JUNTO DA TRAVA, não só no `payment_events`. Quem descobre
+    // esta classe de falha é justamente quem lê o estado procurando
+    // `canais: []` (foi assim que o #324 foi medido); ter que cruzar com outra
+    // tabela pra saber o motivo é o que fez a investigação custar horas.
+    ...(erro ? { envioErro: erro.slice(0, 300) } : {}),
   };
   try {
     await estadoIO.gravar(estado);
@@ -547,5 +587,6 @@ export async function mandarBoasVindasSgp(
     canais: aceitos,
     conta: conta.situacao,
     contaErro: conta.erro,
+    envioErro: erro,
   };
 }

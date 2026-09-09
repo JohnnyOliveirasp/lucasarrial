@@ -328,6 +328,56 @@ test("falha de SMTP é registrada e não repete o envio", async () => {
   assert.equal(registros.length, 1);
   assert.equal(registros[0].ok, false);
   assert.equal(registros[0].erro, "SMTP fora do ar");
+  // #324: a causa também volta pro chamador. Antes ela só ia pro `registrar`,
+  // ou seja, pra `avisos_enviados` — a tabela da migration 104, que NUNCA foi
+  // aplicada. Na prática o motivo era calculado e jogado no lixo.
+  assert.equal(r.envioErro, "SMTP fora do ar");
+});
+
+test("#324: a causa do envio que falhou sobrevive no resultado E no estado", async () => {
+  const { canais } = canaisFalsos({ emailFalha: true });
+  const { io, ver } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(
+    compraDoPayload(PAYLOAD_SGP),
+    SGP_PRODUCT_ID_PADRAO,
+    io,
+    canais,
+    AGORA,
+  );
+
+  // 1. O chamador consegue montar um `payment_events.error` que diz POR QUÊ.
+  //    Em 09/09 ele dizia só "boas-vindas do SGP não saíram", e quem investigou
+  //    7h depois não sabia se tinha sido timeout, recusa do servidor ou caixa
+  //    inexistente — três causas com três reparos diferentes.
+  assert.equal(r.envioErro, "SMTP fora do ar");
+
+  // 2. E a causa fica gravada JUNTO da trava de idempotência. É o estado que
+  //    denuncia esta classe (procura-se por `canais: []`), então o motivo tem
+  //    que morar no mesmo lugar — senão descobrir exige cruzar outra tabela.
+  const chave = chaveDaBoasVindas(compraDoPayload(PAYLOAD_SGP));
+  assert.deepEqual(ver()[chave].canais, [], "ninguém recebeu");
+  assert.equal(ver()[chave].envioErro, "SMTP fora do ar");
+});
+
+test("#324: envio que DEU CERTO não carrega causa de erro nenhuma", async () => {
+  const { canais } = canaisFalsos();
+  const { io, ver } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(
+    compraDoPayload(PAYLOAD_SGP),
+    SGP_PRODUCT_ID_PADRAO,
+    io,
+    canais,
+    AGORA,
+  );
+
+  // O campo é o SINAL de falha: sujá-lo no caminho feliz faria o detector de
+  // vítimas acusar justamente quem recebeu o e-mail normalmente.
+  assert.equal(r.envioErro, null);
+  assert.deepEqual(r.canais, ["email"]);
+  const chave = chaveDaBoasVindas(compraDoPayload(PAYLOAD_SGP));
+  assert.equal(ver()[chave].envioErro, undefined);
 });
 
 // ── o roteamento por produto (a linha que cegou a casa em 09/06) ───────────
