@@ -53,6 +53,11 @@
  *   node _frank/ferramentas/cauda_piso_relativo.cjs --geracao <id> [<id>...]
  *   node _frank/ferramentas/cauda_piso_relativo.cjs --voz <id> [<id>...]
  *       mede a referência (reference_audio_path) das vozes dadas.
+ *
+ *   --queda <dB>  (padrão 25) afrouxa/aperta o frame. O frame de um arquivo só
+ *       fecha quando `faixa > --queda + 6`, então baixar isto é o que traz
+ *       arquivo de faixa estreita para dentro da classificação. SEMPRE rode
+ *       `--ancora --queda <mesmo valor>` antes de acreditar no resultado.
  */
 const path = require("node:path");
 const fs = require("node:fs");
@@ -65,14 +70,29 @@ require(path.join(c.RAIZ, "frontend", "node_modules", "dotenv")).config({
 });
 
 const tem = (n) => process.argv.includes(n);
+const arg = (n, d) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };
 
 const SR = 48000;
 const JAN = 0.020;          // 20ms — mesma resolução do detector absoluto
 const PASSO = 0.005;        // grade de 5ms para o envelope
 const MARGEM_PISO = 6;      // dB acima do p05 ainda conta como silêncio
-const QUEDA_PLATO = 25;     // dB abaixo do p95: "ainda estava falando"
 const MIN_SIL = 0.120;      // mesma corrida mínima do detector absoluto
 const JANELA_REL = 0.400;   // mesma janela de busca do release
+
+/**
+ * dB abaixo do p95 que ainda conta como "estava falando".
+ *
+ * ⚠️ É AJUSTÁVEL DE PROPÓSITO, e a nota 31 explicou por quê: 25dB saiu de
+ * calibrar o frame relativo contra o absoluto NA ENTREGA (fala de TTS com p95
+ * ~-15dB contra o platô absoluto de -40dB). Isso é uma escolha de calibração,
+ * não lei da natureza — e ela decide QUAIS arquivos são classificáveis, porque
+ * o frame só fecha quando `faixa > QUEDA_PLATO + MARGEM_PISO`.
+ *
+ * ⚠️ NUNCA mude isto sem rodar `--ancora` no MESMO valor. Um limiar que deixa
+ * de reproduzir 81d4f3f4 @34,494 não é um limiar mais sensível, é um detector
+ * quebrado — e todo número medido com ele nasce inválido (nota 30).
+ */
+const QUEDA_PLATO = parseFloat(arg("--queda", "25"));
 
 // Âncoras: as MESMAS 3 classificadas à mão pelo Johnny em 02/09. A de corte
 // tem o ponto exato fixado pela nota 29 — não basta marcar o arquivo, tem que
@@ -225,7 +245,7 @@ function imprimir(nome, a, marcar) {
 }
 
 async function ancora() {
-  console.log("TRAVA DA ÂNCORA — o detector tem que reproduzir o que gente ouviu\n");
+  console.log(`TRAVA DA ÂNCORA (--queda ${QUEDA_PLATO}dB) — o detector tem que reproduzir o que gente ouviu\n`);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pisorel_"));
   let ok = true;
   try {
@@ -257,6 +277,8 @@ async function ancora() {
 }
 
 async function medirVozes(refs) {
+  console.log(`# medindo ${refs.length} voz(es) com --queda ${QUEDA_PLATO}dB ` +
+    `(frame só fecha com faixa > ${QUEDA_PLATO + MARGEM_PISO}dB)`);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pisorel_"));
   try {
     for (const ref of refs) {
@@ -288,8 +310,28 @@ async function medirGeracoes(refs) {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
+/**
+ * Ids posicionais, DESCONTANDO o valor consumido por cada flag que leva valor.
+ *
+ * ⚠️ Nasceu de um tiro no pé real (09/09): com `--queda 23`, um filtro ingênuo
+ * de `!a.startsWith("--")` deixava o "23" passar como se fosse prefixo de voz,
+ * e a ferramenta tentava medir a voz "23". Aqui ela só gritou "prefixo ambíguo"
+ * porque 5 vozes começam com 23 — mas se o valor casasse com UM id só, ela
+ * mediria uma voz sorteada pelo limiar e reportaria como se fosse do recorte.
+ * Erro que não faz barulho é o caro; este quase não fez.
+ */
+const FLAGS_COM_VALOR = new Set(["--queda"]);
+function idsPosicionais(argv) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (FLAGS_COM_VALOR.has(argv[i])) { i++; continue; }   // pula a flag E o valor
+    if (!argv[i].startsWith("--")) out.push(argv[i]);
+  }
+  return out;
+}
+
 (async () => {
-  const resto = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const resto = idsPosicionais(process.argv.slice(2));
   if (tem("--ancora")) return ancora();
   if (tem("--voz")) return medirVozes(resto);
   if (tem("--geracao")) return medirGeracoes(resto);
