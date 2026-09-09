@@ -266,9 +266,39 @@ export async function buildAccountContext(profileId: string): Promise<string | n
     // falha. É a ausência desta linha que produziu o #198.
     const garantia = await linhaGarantiaHotmart(profile.email);
 
+    // Pix/boleto pendente: MESMA janela de 3 dias que o /app já aplica em
+    // `app/layout.tsx` (`pendingRecent`). Aqui a checagem era um null check CRU
+    // sobre `pending_payment_at`, sem recência e sem "ainda sem acesso" — então
+    // a tela do aluno escondia o aviso quando o código vencia e a Fast seguia
+    // anunciando o MESMO Pix como pendente para sempre (incidente #319).
+    // Medido em produção em 09/09: 131 perfis com a flag, 106 dela mais velhos
+    // que a própria janela do /app, e 12 sem acesso — o pior com um Pix de
+    // 14/07, 57 dias. Um código de Pix vive dias, não meses: mandar pagá-lo é
+    // mandar o aluno a uma parede. Caso vivo que abriu o card: comprador em
+    // Portugal, que paga em EUR por multibanco, orientado a pagar por Pix.
+    //
+    // Por que aqui NÃO some, ao contrário do banner: o /app fala com o aluno e
+    // calar é a gentileza certa; a Fast é ATENDENTE e a existência de uma
+    // cobrança morta é contexto que ela precisa para explicar a falta de acesso.
+    // Então o vencido é dito como VENCIDO, com instrução explícita de não
+    // mandar pagar — silêncio aqui devolveria a agente ao escuro que gerou #198.
+    const pendingAt = profile.pending_payment_at;
+    const temAcesso = profile.access_until
+      ? new Date(profile.access_until).getTime() > Date.now()
+      : !!profile.access_source;
+    const pendingRecente = pendingAt
+      ? Date.now() - new Date(pendingAt).getTime() < 3 * 24 * 60 * 60 * 1000
+      : false;
+    const linhaPendente =
+      !pendingAt || temAcesso
+        ? ""
+        : pendingRecente
+          ? " · ⚠️ Pix/boleto PENDENTE aguardando pagamento"
+          : ` · ⚠️ havia um Pix/boleto de ${dtBR(pendingAt)} que JÁ VENCEU — NÃO peça para pagar este código; oriente a gerar uma cobrança nova`;
+
     return [
       `Nome: ${profile.display_name ?? "?"} · E-mail: ${profile.email}`,
-      `Plano: ${profile.plan} · Acesso: ${acesso}${profile.pending_payment_at ? " · ⚠️ Pix/boleto PENDENTE aguardando pagamento" : ""}`,
+      `Plano: ${profile.plan} · Acesso: ${acesso}${linhaPendente}`,
       `Saldo: ${saldo.toLocaleString("pt-BR")} créditos (${(profile.credits_subscription ?? 0).toLocaleString("pt-BR")} do plano + ${(profile.credits_extra ?? 0).toLocaleString("pt-BR")} avulsos)`,
       `Cadastro em: ${dtBR(profile.created_at)}`,
       garantia,
