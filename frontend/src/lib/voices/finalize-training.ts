@@ -59,6 +59,8 @@ export type TrainOutput = {
    * e é a verdade — nunca um palpite. Responde "esse treino saiu de que build?".
    */
   worker_image?: string | null;
+  /** 25/08 (caso Ellen): velocidade da REFERÊNCIA escolhida, pal/s — comparar com speech_rate_wps. */
+  reference_rate_wps?: number | null;
   lora_alpha?: number;
   elapsed_seconds?: number;
   steps?: number;
@@ -418,6 +420,17 @@ export async function finalizeTraining(args: {
     out.speech_rate_wps <= 5
   ) {
     (update as Record<string, unknown>).speech_rate_wps = out.speech_rate_wps;
+  }
+  // Ritmo da referência escolhida (mig 96, caso Ellen): auditar "clone
+  // acelerado" sem ouvir — ref muito acima de speech_rate_wps é o caso Ellen.
+  if (
+    success &&
+    typeof out.reference_rate_wps === "number" &&
+    Number.isFinite(out.reference_rate_wps) &&
+    out.reference_rate_wps >= 0.5 &&
+    out.reference_rate_wps <= 8
+  ) {
+    (update as Record<string, unknown>).reference_rate_wps = out.reference_rate_wps;
   }
   if (success && typeof out.language === "string" && out.language) {
     // Idioma detectado no treino — a geração/QA passam a rodar no idioma certo.
