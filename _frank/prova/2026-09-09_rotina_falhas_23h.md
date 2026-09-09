@@ -136,3 +136,28 @@ resolver, todas com gente esperando:
 4. `#76e68853` — welrisson, R$ 894 pagos em 29/08, travado na tela 1 do SGP, e o
    plano previsto não existe pra ele (o Vigia mediu: não há pedido SGP a
    reassumir).
+
+---
+
+## §9 — O erro que eu cometi nesta ronda
+
+**Dupliquei trabalho.** Existia o **PR #224**, aberto às 18:34Z de hoje pelo
+Executor, corrigindo exatamente este defeito. Eu peguei o `#267` às 22h40Z e
+escrevi o fix **sem procurar PR aberto pro chamado** — li a nota do incidente,
+li o código, medi, codei. A nota do Executor descrevia o PLANO e eu li como
+plano; ele já tinha virado PR.
+
+As duas implementações convergiram no mesmo desenho (`downloadFromUrl`, estado
+`baixando`, `renovarUrl` como `refresh` pela mesma lição do `#166`), então não
+descartei trabalho melhor — conferi o diff antes de fechar. Custo real: trabalho
+repetido. Custo ao aluno: nenhum.
+
+Fechei o **#224** com a explicação e **deletei a branch**. Branch morta mexendo
+no mesmo arquivo de um fix que está no ar já derrubou produção neste repo três
+vezes (`feat/fix-image-upload-retry`, `feat/onedrive-401`,
+`fix/referencia-fronteira-de-frase-por-palavra`). Não deixo a quarta.
+
+**A lição, pra virar passo fixo:** antes de escrever uma linha de código pra um
+chamado, rodar `gh pr list --search "<numero do chamado>"` e `git branch -r`
+procurando o assunto. O checklist de FIM de ronda pega branch presa; o de
+INÍCIO não pegava PR aberto. Agora pega.
