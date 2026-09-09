@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Clapperboard, Loader2, Download, AlertTriangle, RefreshCw, Type, AlignVerticalSpaceAround, CaseSensitive } from "lucide-react";
+import { downloadFromUrl } from "@/components/image/download-file";
 import {
   SUBTITLE_PRESETS,
   getSubtitlePreset,
@@ -201,6 +202,7 @@ export function VideoFinalStage({
   const tc = useTranslations("videoWizard.common");
   const [state, setState] = useState<RenderState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [baixando, setBaixando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [style, setStyle] = useState("karaoke");
   const [position, setPosition] = useState<SubtitlePosition | null>(null);
@@ -223,6 +225,24 @@ export function VideoFinalStage({
   useEffect(() => {
     load();
   }, [load]);
+
+  /** Busca uma URL presignada NOVA pro vídeo final. O GET /render assina por 1h
+   *  (`createPresignedGet(..., 60 * 60)`) e a tela não renova sozinha: quem
+   *  deixa o wizard aberto e volta depois clica num link já vencido. É o
+   *  `refresh` que o `downloadFromUrl` espera — o mesmo remédio do incidente
+   *  166, aqui usando o endpoint que a tela já consome. */
+  const renovarUrl = useCallback(async (): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/v1/videos/${projectId}/render`, { cache: "no-store" });
+      if (!res.ok) return null;
+      const j = (await res.json()) as RenderState;
+      const nova = j.final_video_url;
+      if (nova) setState((prev) => (prev ? { ...prev, final_video_url: nova } : prev));
+      return nova;
+    } catch {
+      return null;
+    }
+  }, [projectId]);
 
   const rendering = state?.status === "rendering" || state?.job?.status === "processing" || state?.job?.status === "pending";
   useEffect(() => {
@@ -252,6 +272,7 @@ export function VideoFinalStage({
 
   // Vídeo final pronto.
   if (state?.status === "done" && state.final_video_url) {
+    const finalUrl = state.final_video_url;
     return (
       <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
         <h2 className="flex items-center gap-2 font-sans text-lg font-semibold tracking-[-0.01em] text-[var(--ink)]">
@@ -270,9 +291,26 @@ export function VideoFinalStage({
           disabled={busy}
         />
         <div className="flex flex-wrap items-center gap-2">
-          <a href={state.final_video_url} download="video-final.mp4" className={PILL}>
-            <Download className="h-4 w-4" /> {t("download")}
-          </a>
+          {/* NÃO voltar pro `<a download>`: o mp4 final mora no R2 (URL
+              presignada, outro domínio) e o atributo `download` é IGNORADO pelo
+              browser quando o href é cross-origin — em vez de salvar, o vídeo
+              abre numa aba e toca. Era o chamado da aluna rafaluanravi29 (05/09,
+              cobrou 5 vezes). O `downloadFromUrl` baixa como blob, que funciona
+              cross-origin, e é o mesmo caminho que o resto do app já usa. */}
+          <button
+            type="button"
+            disabled={baixando}
+            onClick={() => {
+              setBaixando(true);
+              void downloadFromUrl(finalUrl, "video-final", "mp4", renovarUrl).finally(() =>
+                setBaixando(false),
+              );
+            }}
+            className={PILL}
+          >
+            {baixando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}{" "}
+            {t("download")}
+          </button>
           <button type="button" onClick={approve} disabled={busy} className="inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-6 font-sans text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)] disabled:opacity-50">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {t("reassemble")}{" "}
             <span className="font-mono text-[11px] text-[var(--ash)]">{t("reassembleHint")}</span>
