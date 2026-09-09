@@ -18,6 +18,9 @@ import { agentProvider } from "@/lib/agent/provider";
 import { wahaLidToPhone } from "@/lib/agent/waha";
 import type { AgentChatRow, ProfileRow } from "@/lib/db/types";
 import { janelaGarantia, type EventoCompra } from "@/lib/agent/garantia";
+import { linhaMoeda, moedaDaCompra, MOEDA_ESCALAR, type EventoMoeda } from "@/lib/agent/moeda";
+import { avisoPagamentoPendenteAtivo } from "@/lib/payments/pendente-pure";
+import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
 export async function phoneFromJid(jid: string): Promise<string | null> {
@@ -190,6 +193,47 @@ async function linhaGarantiaHotmart(email: string | null): Promise<string> {
 }
 
 /**
+ * Em que moeda/país esta pessoa é cobrada (incidente #319, 09/09/2026).
+ *
+ * Sem esta linha o contexto não tinha moeda nem país, e a única receita que
+ * sobrava pra Fast era o roteiro de Pix do `manual.ts` — Brasil-only. Foi
+ * assim que o Duarte, em Portugal, pagando 19 EUR, recebeu instrução de Pix.
+ *
+ * ⚠️ REPARE NO QUE ESTA CONSULTA **NÃO** TEM: o filtro
+ * `.eq("event_type", "PURCHASE_APPROVED")` que a consulta da garantia usa
+ * logo acima. NÃO é esquecimento. Quem tem cobrança PENDENTE em geral nunca
+ * teve compra aprovada — medido em 09/09, dos 4 perfis EUR/Portugal com
+ * pendência vencida, 2 têm ZERO evento `PURCHASE_APPROVED`:
+ *     duartesoaresconsultor@gmail.com  APPROVED=1
+ *     aneto2@gmail.com                 APPROVED=1
+ *     carlamsmpro@gmail.com            APPROVED=0  (só BILLET_PRINTED)
+ *     info.claudiamonteiro@gmail.com   APPROVED=0  (só BILLET_PRINTED)
+ * Copiar aquele filtro pra cá acertaria 2 de 4 e calaria justamente sobre
+ * metade de quem o conserto existe pra proteger.
+ *
+ * A ordem importa: mais recente primeiro, porque `moedaDaCompra` fica com o
+ * primeiro evento que tiver moeda legível — a cobrança que está valendo.
+ * Erro de banco NÃO vira "não tem moeda" com cara de fato: devolve a mesma
+ * linha de NÃO AFIRMAR, igual à garantia.
+ */
+async function linhaMoedaCobranca(email: string | null): Promise<string> {
+  if (!email) return MOEDA_ESCALAR;
+  try {
+    const { data, error } = await getAdmin()
+      .from("payment_events")
+      .select("payload")
+      .eq("provider", "hotmart")
+      .ilike("buyer_email", email)
+      .order("received_at", { ascending: false })
+      .limit(20);
+    if (error || !data?.length) return MOEDA_ESCALAR;
+    return linhaMoeda(moedaDaCompra(data as EventoMoeda[]));
+  } catch {
+    return MOEDA_ESCALAR;
+  }
+}
+
+/**
  * Snapshot compacto da conta pro system prompt da Fast (SÓ leitura).
  * Últimos jobs de cada produto + saldo + transações recentes de crédito.
  */
@@ -262,16 +306,38 @@ export async function buildAccountContext(profileId: string): Promise<string | n
         ? "ativo"
         : "SEM assinatura ativa";
 
-    // Nunca deixa de sair: a função já devolve a linha de ESCALAR em qualquer
-    // falha. É a ausência desta linha que produziu o #198.
-    const garantia = await linhaGarantiaHotmart(profile.email);
+    // Nenhuma das duas deixa de sair: as funções já devolvem a linha de
+    // ESCALAR em qualquer falha. É a ausência da linha que produziu o #198.
+    const [garantia, moeda] = await Promise.all([
+      linhaGarantiaHotmart(profile.email),
+      linhaMoedaCobranca(profile.email),
+    ]);
+
+    // Pagamento pendente: a MESMA regra do banner do /app, importada — não
+    // reescrita (incidente #319). O null check cru que morava nesta linha
+    // ignorava a janela de 3 dias e o acesso, então TODOS os 130 perfis com
+    // `pending_payment_at` recebiam a afirmação — inclusive 101 cujo código
+    // já tinha vencido e 5 que JÁ estavam com acesso ativo (esses tinham
+    // pagado: mandá-los pagar de novo é o pior caso). Com a regra certa
+    // sobram 23, que são os que de fato têm cobrança viva.
+    //
+    // O TEXTO ficou neutro de propósito: quem diz se Pix/boleto valem pra
+    // esta pessoa é a linha COBRANÇA abaixo, que sabe a moeda. Escrever
+    // "Pix/boleto" aqui é afirmar meio de pagamento sem olhar o país — a
+    // segunda metade exata do #319.
+    const pendente = avisoPagamentoPendenteAtivo({
+      pendingPaymentAt: profile.pending_payment_at,
+      temAcesso: hasActiveAccess(profile.email, profile.access_until, profile.access_source),
+      bypassaCobranca: bypassesBilling(profile.email),
+    });
 
     return [
       `Nome: ${profile.display_name ?? "?"} · E-mail: ${profile.email}`,
-      `Plano: ${profile.plan} · Acesso: ${acesso}${profile.pending_payment_at ? " · ⚠️ Pix/boleto PENDENTE aguardando pagamento" : ""}`,
+      `Plano: ${profile.plan} · Acesso: ${acesso}${pendente ? " · ⚠️ pagamento PENDENTE aguardando confirmação (gerado nas últimas 72h)" : ""}`,
       `Saldo: ${saldo.toLocaleString("pt-BR")} créditos (${(profile.credits_subscription ?? 0).toLocaleString("pt-BR")} do plano + ${(profile.credits_extra ?? 0).toLocaleString("pt-BR")} avulsos)`,
       `Cadastro em: ${dtBR(profile.created_at)}`,
       garantia,
+      moeda,
       jobs.length ? `Últimos trabalhos (3 por produto):\n${jobLines(jobs)}` : "Nenhum trabalho ainda (conta sem uso).",
       txLines ? `Últimas movimentações de crédito:\n${txLines}` : "",
     ]
