@@ -155,3 +155,17 @@ test("a seção vai inteira pro system prompt da Fast", () => {
     "buildAgentSystem parou de embutir o PLATFORM_MANUAL",
   );
 });
+
+test("a data de hoje vai junto no system prompt (#323)", () => {
+  // A Fast repetiu a uma aluna "no dia 07 eu te mando o update" NO DIA 09,
+  // porque o system prompt inteiro não dizia em lugar nenhum que dia era hoje.
+  // As asserções do CONTEÚDO do bloco estão em hoje.test.ts (que chama a função
+  // com relógio fixo); aqui se guarda só o que aquele teste não alcança — que o
+  // bloco continua sendo INTERPOLADO no prompt que a brain.ts manda pro modelo.
+  const corpo = FONTE.slice(FONTE.indexOf("export function buildAgentSystem"));
+  assert.match(
+    corpo,
+    /\$\{blocoHoje\(agora\)\}/,
+    "buildAgentSystem parou de embutir a data de hoje — a Fast volta a ficar cega pro calendário",
+  );
+});
