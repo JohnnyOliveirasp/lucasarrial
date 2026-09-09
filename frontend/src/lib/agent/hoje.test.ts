@@ -56,6 +56,28 @@ test("o bloco traz a data E a regra de conferir prazo do histórico", () => {
   );
 });
 
+test("a data NÃO abre porta pra Fast voltar a contar garantia na mão (#198/#265)", () => {
+  // Guarda de REGRESSÃO que este próprio conserto criou. Ideia veio do PR #221
+  // (feat/fast-sabe-a-data-de-hoje), uma tentativa paralela do mesmo defeito.
+  //
+  // Dar a data de hoje e mandar "compare com hoje" convida a Fast a calcular
+  // janela de garantia sozinha — exatamente o que o #198 proibiu e o #265
+  // mostrou custar caro (a janela varia por produto: a Hotmart já mandou 6, 7,
+  // 14, 15 e 30 dias). A conta tem que continuar vindo PRONTA da
+  // account.ts:181/184. Sem esta carve-out o conserto do #323 reabriria aquele.
+  const b = blocoHoje(new Date("2026-09-09T15:00:00Z"));
+  assert.match(
+    b,
+    /N[ÃA]O a use para calcular garantia/i,
+    "sumiu a proibição de usar a data de hoje pra calcular garantia",
+  );
+  assert.match(
+    b,
+    /proibida de contar dias/i,
+    "sumiu o reforço de que a Fast não conta dias — o #198 volta por esta porta",
+  );
+});
+
 test("O TESTE NÃO É DECORATIVO: sem a data de hoje, a asserção cai", () => {
   // Guarda contra "o bloco virou string vazia / o campo parou de viajar".
   // Um bloco que não cite a data não pode passar por este arquivo.
