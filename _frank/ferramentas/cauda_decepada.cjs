@@ -57,6 +57,9 @@ const fs = require("node:fs");
 const os = require("node:os");
 const { spawnSync } = require("node:child_process");
 const c = require(path.join(__dirname, "_comum.cjs"));
+// A régua (limiares + o que conta como suspeita) mora em _cauda.cjs, junto com
+// a normalização do release_ms NULL. Ver lá por que `null <= 35` é a mina.
+const cd = require(path.join(__dirname, "_cauda.cjs"));
 require(path.join(c.RAIZ, "frontend", "node_modules", "dotenv")).config({
   path: path.join(c.RAIZ, "frontend", ".env.local"),
 });
@@ -70,8 +73,8 @@ const PISO = 3e-5;         // -90dB = silêncio digital. Medido: os mp3 entregue
                            // têm zeros EXATOS e o histograma tem um vale vazio
                            // entre -190dB e -80dB, então o piso é folgado.
 const MIN_SIL = 0.120;     // corrida de silêncio mínima pra contar como fronteira
-const REL_MAX_MS = 35;     // release <= isto = suspeito  (quebrado 10, limpo >=55)
-const PLATO_DB = -40;      // e ainda estava falando 60ms antes
+const REL_MAX_MS = cd.REL_MAX_MS;   // release <= isto = suspeito (quebrado 10, limpo >=55)
+const PLATO_DB = cd.PLATO_DB;       // e ainda estava falando 60ms antes
 const SAIDA = path.join(__dirname, "..", "prova", "cauda_decepada.jsonl");
 
 // Os 3 arquivos classificados à mão pelo Johnny em 02/09 — a régua tem que
@@ -136,7 +139,7 @@ function medir(x, pos) {
   };
 }
 
-const suspeita = (f) => f.release_ms !== null && f.release_ms <= REL_MAX_MS && f.plato_db > PLATO_DB;
+const suspeita = (f) => cd.suspeita(f);
 
 function analisar(arquivo) {
   const x = pcm(arquivo);
@@ -220,7 +223,7 @@ async function ensaio() {
     console.log(`${bate ? "OK  " : "FALHA"} ${ref}  esperado=${esperado} medido=${veredicto}  (${fs_.length} fronteiras)`);
     for (const f of fs_) {
       console.log(`        t=${String(f.t).padStart(7)}s sil=${String(f.sil_s).padStart(6)}s ` +
-        `release=${String(f.release_ms === null ? ">400" : f.release_ms).padStart(4)}ms ` +
+        `release=${cd.mostrarRelease(f.release_ms).padStart(4)}ms ` +
         `plato=${String(f.plato_db).padStart(6)}dB ultimo=${String(f.ultimo_db).padStart(6)}dB` +
         (suspeita(f) ? "   <<< DECAPITADA" : ""));
     }
@@ -277,8 +280,7 @@ async function varrer() {
 
 function relatorio() {
   if (!fs.existsSync(SAIDA)) { console.log("sem JSONL — rode --varrer antes"); return; }
-  const regs = fs.readFileSync(SAIDA, "utf8").split("\n").filter((l) => l.trim())
-    .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  const regs = cd.lerJsonl(SAIDA);   // normaliza o release_ms já na entrada
   const medidos = regs.filter((r) => r.fronteiras);
   const erros = regs.filter((r) => r.erro);
   const flag = medidos.map((r) => ({ ...r, ruins: r.fronteiras.filter(suspeita) })).filter((r) => r.ruins.length);
@@ -300,8 +302,7 @@ function relatorio() {
   // sensibilidade: o limiar veio de UM positivo, então mostra o efeito de mexer
   console.log(`\nsensibilidade ao limiar (release_ms <=, com plato > ${PLATO_DB}dB):`);
   for (const lim of [15, 25, 35, 45, 55]) {
-    const n = medidos.filter((r) => r.fronteiras.some((f) =>
-      f.release_ms !== null && f.release_ms <= lim && f.plato_db > PLATO_DB)).length;
+    const n = medidos.filter((r) => r.fronteiras.some((f) => cd.suspeita(f, lim, PLATO_DB))).length;
     console.log(`   <=${String(lim).padStart(3)}ms: ${n} gerações`);
   }
   console.log(`\ntop 15 gerações (pior fronteira):`);
@@ -326,7 +327,7 @@ function relatorio() {
     console.log(`\n${g.id} voz=${g.voice_id} ${g.created_at} — ${fr.length} fronteiras`);
     for (const f of fr) {
       console.log(`   t=${String(f.t).padStart(7)}s sil=${String(f.sil_s).padStart(6)}s ` +
-        `release=${String(f.release_ms === null ? ">400" : f.release_ms).padStart(4)}ms ` +
+        `release=${cd.mostrarRelease(f.release_ms).padStart(4)}ms ` +
         `plato=${String(f.plato_db).padStart(6)}dB ultimo=${String(f.ultimo_db).padStart(6)}dB` +
         (suspeita(f) ? "   <<< DECAPITADA" : ""));
     }

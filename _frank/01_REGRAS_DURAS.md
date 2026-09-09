@@ -319,6 +319,33 @@ Cada regra aqui nasceu de um prejuízo real. Não são preferências.
 24. Componente de UI: procure padrão pronto (shadcn/21st) antes de inventar.
 25. Script operacional, dump, print e investigação vão pra **`_Bugs/`**
     (na raiz ou em `frontend/_Bugs/`), nunca soltos na árvore.
+
+25-B. ⚠️ **`_Bugs/` é gitignored (`.gitignore:87`). Ferramenta que SUSTENTA UM
+    NÚMERO não pode morar lá — vai pra `_frank/ferramentas/`, que é rastreado.**
+    A 25 continua certa pro que ela cobre (dump, print, sobra, smoke de uma vez
+    só). O que ela não cobre é o instrumento cujo resultado vira nota de
+    incidente ou linha de relatório: esse é PROVA, e prova em pasta ignorada
+    evapora.
+
+    Medido em 09/09 no #234, e é REINCIDÊNCIA: a descrição do card já avisava
+    em caixa alta que `cauda_decepada.cjs`/`cauda_alcance.cjs` estavam untracked
+    e que "a varredura de 20min/2GB evapora". Aqueles três foram resgatados pra
+    `_frank/ferramentas/`. Mas os DOIS instrumentos escritos depois nasceram em
+    `_Bugs/` e sumiram sem deixar uma linha:
+    `_Bugs/2026-09-08_envelope_fronteira.cjs` (citado na nota 29) e
+    `_Bugs/2026-09-09_referencia_decepada.cjs` (citado na nota 30). Procurados
+    em `origin/main`, no histórico inteiro (`git log --all --diff-filter=A`) e
+    no disco: **não existem em lugar nenhum**. As duas notas citam os arquivos
+    pelo caminho como se fossem consultáveis. Não são.
+
+    O custo não é o arquivo, é o RACIOCÍNIO: a nota 30 conclui "a hipótese da
+    referência segue NÃO TESTADA, quem retomar precisa de um detector de piso
+    relativo" — e quem retomasse reescreveria do zero, sem saber o que já tinha
+    sido tentado e por que falhou.
+
+    Teste antes de salvar: *se este script sumir, alguma nota minha vira
+    afirmação que ninguém pode reconferir?* Se sim, `_frank/ferramentas/` e
+    commit na MESMA ronda que produziu o número.
 26. Mensagem de commit em português, no formato `tipo(escopo): o que mudou` +
     o **porquê** no corpo, terminando com:
     `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`

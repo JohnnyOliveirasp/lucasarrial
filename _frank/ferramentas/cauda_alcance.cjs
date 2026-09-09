@@ -31,23 +31,25 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const c = require(path.join(__dirname, "_comum.cjs"));
+// A régua e a normalização do release_ms moram em _cauda.cjs. NÃO reescreva a
+// comparação aqui: `null <= 35` é true em JS, e com o --plato afrouxado isso
+// publica dezenas de alunos que não existem (a mina, medida em 09/09).
+const cd = require(path.join(__dirname, "_cauda.cjs"));
 require(path.join(c.RAIZ, "frontend", "node_modules", "dotenv")).config({
   path: path.join(c.RAIZ, "frontend", ".env.local"),
 });
 
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };
-const REL = parseInt(arg("--rel", "35"), 10);
-const PLATO = parseFloat(arg("--plato", "-40"));
+const REL = parseInt(arg("--rel", String(cd.REL_MAX_MS)), 10);
+const PLATO = parseFloat(arg("--plato", String(cd.PLATO_DB)));
 const JSONL = path.join(__dirname, "..", "prova", "cauda_decepada.jsonl");
 
-const suspeita = (f) => f.release_ms !== null && f.release_ms <= REL && f.plato_db > PLATO;
-/** fim do arquivo = fronteira sem silêncio depois, ou colada na duração. */
-const ehFim = (f, dur) => f.sil_s === 0 || (dur && Math.abs(f.t - dur) < 0.6);
+const suspeita = (f) => cd.suspeita(f, REL, PLATO);
+const ehFim = cd.ehFim;
 
 (async () => {
   if (!fs.existsSync(JSONL)) { console.log("sem JSONL — rode --varrer antes"); return; }
-  const regs = fs.readFileSync(JSONL, "utf8").split("\n").filter((l) => l.trim())
-    .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  const regs = cd.lerJsonl(JSONL);   // normaliza o release_ms já na entrada
   const medidos = regs.filter((r) => r.fronteiras);
   const erros = regs.filter((r) => r.erro);
 
@@ -106,11 +108,21 @@ const ehFim = (f, dur) => f.sil_s === 0 || (dur && Math.abs(f.t - dur) < 0.6);
 
   console.log(`\n── sensibilidade do limiar (só INTERNAS) ──────────────────`);
   console.log(`o limiar foi calibrado em UM positivo conhecido; isto mostra o quanto ele aguenta`);
+  const varre = (rel, plato) => medidos
+    .filter((r) => r.fronteiras.some((f) => cd.suspeita(f, rel, plato) && !ehFim(f, r.dur)))
+    .filter((r) => !ehAmostra(r)).length;
   for (const lim of [15, 25, 35, 45, 55]) {
-    const n = medidos.filter((r) => r.fronteiras.some((f) =>
-      f.release_ms !== null && f.release_ms <= lim && f.plato_db > PLATO && !ehFim(f, r.dur)))
-      .filter((r) => !ehAmostra(r)).length;
+    const n = varre(lim, PLATO);
     console.log(`   release <=${String(lim).padStart(3)}ms: ${String(n).padStart(4)} gerações  ${pc(n, medidos.length)}`);
+  }
+  // O --plato nunca era varrido, e é ELE que arma a mina do release_ms NULL:
+  // null só escapa do 2º termo da régua quando o platô afrouxa. Com a
+  // normalização de _cauda.cjs esta coluna é segura; antes dela, um -50 aqui
+  // publicaria +71 gerações / +20 alunos inexistentes.
+  console.log(`\n── sensibilidade do PLATÔ (a alavanca que ninguém varria) ─`);
+  for (const p of [-40, -45, -50, -55]) {
+    const n = varre(REL, p);
+    console.log(`   plato > ${String(p).padStart(4)}dB: ${String(n).padStart(4)} gerações  ${pc(n, medidos.length)}`);
   }
 
   console.log(`\n── piores casos internos (pra conferir de ouvido) ─────────`);
