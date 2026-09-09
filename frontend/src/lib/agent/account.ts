@@ -18,6 +18,9 @@ import { agentProvider } from "@/lib/agent/provider";
 import { wahaLidToPhone } from "@/lib/agent/waha";
 import type { AgentChatRow, ProfileRow } from "@/lib/db/types";
 import { janelaGarantia, type EventoCompra } from "@/lib/agent/garantia";
+import { linhaMoeda, moedaDaCompra, MOEDA_ESCALAR, type EventoMoeda } from "@/lib/agent/moeda";
+import { diasDesde, estadoAvisoPendente } from "@/lib/payments/pendente-pure";
+import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
 export async function phoneFromJid(jid: string): Promise<string | null> {
@@ -190,6 +193,47 @@ async function linhaGarantiaHotmart(email: string | null): Promise<string> {
 }
 
 /**
+ * Em que moeda/país esta pessoa é cobrada (incidente #319, 09/09/2026).
+ *
+ * Sem esta linha o contexto não tinha moeda nem país, e a única receita que
+ * sobrava pra Fast era o roteiro de Pix do `manual.ts` — Brasil-only. Foi
+ * assim que o Duarte, em Portugal, pagando 19 EUR, recebeu instrução de Pix.
+ *
+ * ⚠️ REPARE NO QUE ESTA CONSULTA **NÃO** TEM: o filtro
+ * `.eq("event_type", "PURCHASE_APPROVED")` que a consulta da garantia usa
+ * logo acima. NÃO é esquecimento. Quem tem cobrança PENDENTE em geral nunca
+ * teve compra aprovada — medido em 09/09, dos 4 perfis EUR/Portugal com
+ * pendência vencida, 2 têm ZERO evento `PURCHASE_APPROVED`:
+ *     duartesoaresconsultor@gmail.com  APPROVED=1
+ *     aneto2@gmail.com                 APPROVED=1
+ *     carlamsmpro@gmail.com            APPROVED=0  (só BILLET_PRINTED)
+ *     info.claudiamonteiro@gmail.com   APPROVED=0  (só BILLET_PRINTED)
+ * Copiar aquele filtro pra cá acertaria 2 de 4 e calaria justamente sobre
+ * metade de quem o conserto existe pra proteger.
+ *
+ * A ordem importa: mais recente primeiro, porque `moedaDaCompra` fica com o
+ * primeiro evento que tiver moeda legível — a cobrança que está valendo.
+ * Erro de banco NÃO vira "não tem moeda" com cara de fato: devolve a mesma
+ * linha de NÃO AFIRMAR, igual à garantia.
+ */
+async function linhaMoedaCobranca(email: string | null): Promise<string> {
+  if (!email) return MOEDA_ESCALAR;
+  try {
+    const { data, error } = await getAdmin()
+      .from("payment_events")
+      .select("payload")
+      .eq("provider", "hotmart")
+      .ilike("buyer_email", email)
+      .order("received_at", { ascending: false })
+      .limit(20);
+    if (error || !data?.length) return MOEDA_ESCALAR;
+    return linhaMoeda(moedaDaCompra(data as EventoMoeda[]));
+  } catch {
+    return MOEDA_ESCALAR;
+  }
+}
+
+/**
  * Snapshot compacto da conta pro system prompt da Fast (SÓ leitura).
  * Últimos jobs de cada produto + saldo + transações recentes de crédito.
  */
@@ -262,39 +306,62 @@ export async function buildAccountContext(profileId: string): Promise<string | n
         ? "ativo"
         : "SEM assinatura ativa";
 
-    // Nunca deixa de sair: a função já devolve a linha de ESCALAR em qualquer
-    // falha. É a ausência desta linha que produziu o #198.
-    const garantia = await linhaGarantiaHotmart(profile.email);
+    // Nenhuma das duas deixa de sair: as funções já devolvem a linha de
+    // ESCALAR em qualquer falha. É a ausência da linha que produziu o #198.
+    const [garantia, moeda] = await Promise.all([
+      linhaGarantiaHotmart(profile.email),
+      linhaMoedaCobranca(profile.email),
+    ]);
 
-    // Pix/boleto pendente: MESMA janela de 3 dias que o /app já aplica em
-    // `app/layout.tsx` (`pendingRecent`). Aqui a checagem era um null check CRU
-    // sobre `pending_payment_at`, sem recência e sem "ainda sem acesso" — então
-    // a tela do aluno escondia o aviso quando o código vencia e a Fast seguia
-    // anunciando o MESMO Pix como pendente para sempre (incidente #319).
-    // Medido em produção em 09/09: 131 perfis com a flag, 106 dela mais velhos
-    // que a própria janela do /app, e 12 sem acesso — o pior com um Pix de
-    // 14/07, 57 dias. Um código de Pix vive dias, não meses: mandar pagá-lo é
-    // mandar o aluno a uma parede. Caso vivo que abriu o card: comprador em
-    // Portugal, que paga em EUR por multibanco, orientado a pagar por Pix.
+    // Pagamento pendente: a MESMA regra do banner do /app, importada — não
+    // reescrita (incidente #319). O null check cru que morava nesta linha
+    // ignorava a janela de 3 dias e o acesso, então TODOS os 129 perfis com
+    // `pending_payment_at` recebiam a afirmação de cobrança VIVA — inclusive
+    // 100 cujo código já tinha vencido e 5 que JÁ estavam com acesso ativo
+    // (esses tinham pagado: mandá-los pagar de novo é o pior caso). Medido no
+    // banco em 09/09: sobram 23 com cobrança viva, 100 viram "vencido" e 6
+    // ficam em silêncio (5 pagaram, 1 é da equipe).
     //
-    // Por que aqui NÃO some, ao contrário do banner: o /app fala com o aluno e
-    // calar é a gentileza certa; a Fast é ATENDENTE e a existência de uma
-    // cobrança morta é contexto que ela precisa para explicar a falta de acesso.
-    // Então o vencido é dito como VENCIDO, com instrução explícita de não
-    // mandar pagar — silêncio aqui devolveria a agente ao escuro que gerou #198.
-    const pendingAt = profile.pending_payment_at;
-    const temAcesso = profile.access_until
-      ? new Date(profile.access_until).getTime() > Date.now()
-      : !!profile.access_source;
-    const pendingRecente = pendingAt
-      ? Date.now() - new Date(pendingAt).getTime() < 3 * 24 * 60 * 60 * 1000
-      : false;
+    // ⚠️ A REGRA é a mesma do banner; o TEXTO não é, e isso é deliberado.
+    // O banner SOME quando a cobrança vence — ele fala com o ALUNO, que não
+    // pode fazer nada com um código morto, e calar é a gentileza. AQUI o
+    // vencido é DITO como vencido: a Fast é ATENDENTE, e a cobrança morta é
+    // justamente o que EXPLICA a falta de acesso; calar devolveria a agente ao
+    // escuro que gerou o #198. Ver "POR QUE SÃO TRÊS ESTADOS" em
+    // `pendente-pure.ts`.
+    //
+    // ⚠️ ISTO SUBSTITUI O BLOCO DO PR #218 (mergeado na main em 09/09 11:44Z,
+    // commit 0c47455), que resolvia o MESMO incidente nesta MESMA linha. O
+    // comportamento dele — dizer "vencido" em vez de calar — está preservado
+    // aqui; o que sai é a IMPLEMENTAÇÃO: ele refazia a condição inline (a
+    // duplicação que o #319 mandou eliminar) e montava `temAcesso` na mão, sem
+    // `bypassesBilling`, então o sócio seguia vendo cobrança. O merge do #218
+    // com esta branch é textualmente limpo e semanticamente quebrado: deixa
+    // DOIS `const linhaPendente`. Se este bloco reaparecer duplicado num merge
+    // futuro, é este o motivo — fique com a versão que importa de
+    // `pendente-pure.ts`.
+    //
+    // O texto é NEUTRO de meio de pagamento nos DOIS estados, de propósito:
+    // quem diz se Pix/boleto valem pra esta pessoa é a linha COBRANÇA abaixo,
+    // que sabe a moeda. Escrever "Pix/boleto" aqui — ou mandar "gerar uma
+    // cobrança nova", que pra quem paga em EUR nós não emitimos — é afirmar
+    // meio de pagamento sem olhar o país, a segunda metade exata do #319.
+    // Por isso o vencido informa o FATO e delega o próximo passo à linha
+    // COBRANÇA, em vez de prescrever por conta própria.
+    const agoraMs = Date.now();
+    const estadoPendente = estadoAvisoPendente({
+      pendingPaymentAt: profile.pending_payment_at,
+      temAcesso: hasActiveAccess(profile.email, profile.access_until, profile.access_source),
+      bypassaCobranca: bypassesBilling(profile.email),
+      agora: agoraMs,
+    });
+    const diasPendente = diasDesde(profile.pending_payment_at, agoraMs);
     const linhaPendente =
-      !pendingAt || temAcesso
-        ? ""
-        : pendingRecente
-          ? " · ⚠️ Pix/boleto PENDENTE aguardando pagamento"
-          : ` · ⚠️ havia um Pix/boleto de ${dtBR(pendingAt)} que JÁ VENCEU — NÃO peça para pagar este código; oriente a gerar uma cobrança nova`;
+      estadoPendente === "ativo"
+        ? " · ⚠️ pagamento PENDENTE aguardando confirmação (gerado nas últimas 72h)"
+        : estadoPendente === "vencido"
+          ? ` · ⚠️ houve uma cobrança em ${dtBR(profile.pending_payment_at)}${diasPendente == null ? "" : ` (há ${diasPendente} dias)`} que JÁ VENCEU e NÃO é mais pagável — é o que explica a falta de acesso. NÃO peça pra pagar esse código; pro próximo passo obedeça a linha COBRANÇA abaixo.`
+          : "";
 
     return [
       `Nome: ${profile.display_name ?? "?"} · E-mail: ${profile.email}`,
@@ -302,6 +369,7 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       `Saldo: ${saldo.toLocaleString("pt-BR")} créditos (${(profile.credits_subscription ?? 0).toLocaleString("pt-BR")} do plano + ${(profile.credits_extra ?? 0).toLocaleString("pt-BR")} avulsos)`,
       `Cadastro em: ${dtBR(profile.created_at)}`,
       garantia,
+      moeda,
       jobs.length ? `Últimos trabalhos (3 por produto):\n${jobLines(jobs)}` : "Nenhum trabalho ainda (conta sem uso).",
       txLines ? `Últimas movimentações de crédito:\n${txLines}` : "",
     ]

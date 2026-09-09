@@ -15,6 +15,7 @@ import { adminRole } from "@/lib/admin/guard";
 import { socialPublisherAllowedEmail } from "@/lib/social/access";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 import { precisaResgatarCompras } from "@/lib/payments/claim-guard";
+import { avisoPagamentoPendenteAtivo } from "@/lib/payments/pendente-pure";
 
 /**
  * Este usuário já recebeu alguma recarga de ciclo? É o que separa "nunca
@@ -110,11 +111,17 @@ export default async function AppLayout({
 
   // Pix/boleto aguardando pagamento: mostra o banner só se ainda SEM acesso e o
   // aviso for recente (< 3 dias — janela típica do Pix). Some quando liberar/expirar.
-  const pendingAt = profile?.pending_payment_at ?? null;
-  const pendingRecent = pendingAt
-    ? Date.now() - new Date(pendingAt).getTime() < 3 * 24 * 60 * 60 * 1000
-    : false;
-  const showPendingBanner = !!pendingAt && pendingRecent && !subscribed && !unlimited;
+  //
+  // A REGRA MORA EM `pendente-pure.ts` e é IMPORTADA, não reescrita. Ela vivia
+  // solta aqui e uma segunda cópia (pior) tinha nascido no contexto da Fast
+  // (`lib/agent/account.ts:271`), com null check cru: sem janela e sem checar
+  // acesso. As duas divergiram e a Fast passou a mandar 12 pessoas pagarem um
+  // Pix vencido — incidente #319. Se a janela mudar, muda lá, uma vez só.
+  const showPendingBanner = avisoPagamentoPendenteAtivo({
+    pendingPaymentAt: profile?.pending_payment_at ?? null,
+    temAcesso: subscribed,
+    bypassaCobranca: unlimited,
+  });
 
   // Tem voz pronta? Libera o item "Gerar Áudio" do submenu Vozes.
   const { count: readyVoices } = await supabase
