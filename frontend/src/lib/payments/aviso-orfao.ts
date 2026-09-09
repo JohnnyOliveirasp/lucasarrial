@@ -282,16 +282,15 @@ export function escapar(s: string): string {
 /**
  * Avisa a equipe UMA vez por entitlement.
  *
- * ⚠️ NENHUM caminho de produção chama esta função hoje (09/09/2026), e isso é
- * de propósito, não esquecimento. Ela era chamada pelo webhook, que é
- * exatamente onde ela não podia estar (bloco "SEGUNDA CORREÇÃO" no topo). O
- * webhook agora usa `observarCompraOrfa`; quem fala com o comprador é o
- * sweeper. O aviso PRA EQUIPE ("vá vincular à mão") ficou sem emissor, e
- * religá-lo no sweeper é uma decisão que precisa de gente: no dia em que este
- * card foi escrito havia 42 entitlements órfãos ativos acumulados (37 com mais
- * de 7 dias), então o primeiro sweep depois de religar mandaria uma rajada de
- * dezenas de mensagens de uma vez. Fica aqui, testada e pronta, com o problema
- * escrito em vez de escondido.
+ * QUEM CHAMA (09/09/2026): o sweeper diário, e SÓ ele, através de
+ * `avisarLoteCompraOrfa` — nunca o webhook, que é exatamente onde esta função
+ * não podia estar (bloco "SEGUNDA CORREÇÃO" no topo). Enquanto o emissor não
+ * existia, o motivo escrito aqui era a RAJADA: religar direto no sweeper
+ * mandaria dezenas de mensagens numa tacada só, porque existe um estoque de
+ * órfãos acumulado (medidos 18 compradores pagos sem conta nenhuma em
+ * 09/09/2026, 8 deles já com a janela de acesso vencida). A trava de rajada
+ * está logo abaixo (`TETO_AVISOS_POR_VARREDURA`) e é ela que autoriza este
+ * religamento.
  *
  * Ordem proposital: decide → checa idempotência → GRAVA o durável → dispara os
  * canais → grava o estado com o resultado de cada canal. O durável primeiro
@@ -473,4 +472,197 @@ export function podeNotificarOrfao(args: {
   if (args.agoraMs - compra < carencia) return { ok: false, motivo: "dentro_da_carencia" };
 
   return { ok: true };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * TRAVA DE RAJADA (09/09/2026) — o que faltava pra religar o aviso à equipe
+ *
+ * A carência e a guarda de estado resolvem "o aviso está ERRADO". Sobrou "o
+ * aviso vem TODO DE UMA VEZ": o emissor ficou desligado porque existe um
+ * ESTOQUE de órfãos acumulado, e a primeira varredura depois de religar
+ * despejaria a pilha inteira no Telegram da equipe. Alerta que chega às
+ * dezenas não é lido — é o #239 de novo, agora por excesso em vez de silêncio.
+ *
+ * O desenho é um teto POR VARREDURA, e a parte que importa não é o teto: é o
+ * que acontece com o resto. Quem passa do teto NÃO é avisado, NÃO é marcado
+ * como avisado e NÃO é descartado — fica idêntico na fila e é a primeira coisa
+ * que a próxima varredura pega, porque a ordem é do MAIS ANTIGO pro mais novo.
+ * Com 18 órfãos e teto 5, o estoque drena em 4 varreduras sem nunca perder
+ * ninguém e sem nenhuma rajada.
+ *
+ * ⚠️ CAP SILENCIOSO É PROIBIDO. Um teto que não conta o que ficou de fora
+ * transforma "só avisei 5" em "só existem 5 casos" — mentira por omissão, e
+ * pior que a rajada, porque a rajada pelo menos é visível. Por isso o resumo
+ * carrega `emFila` e `fraseDaFila` existe: toda saída deste lote diz quantos
+ * eram, quantos foram e quantos ficaram esperando.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Quantos avisos à equipe uma varredura pode disparar. Cinco.
+ *
+ * De onde vem o número: é quanta coisa uma pessoa lê e AGE no mesmo dia. Cada
+ * aviso destes é trabalho manual (falar com o comprador, descobrir o e-mail da
+ * conta, vincular à mão); mandar 18 de uma vez não faz o time resolver 18, faz
+ * ele parar de ler. Cinco por dia drena o estoque medido em 09/09/2026 (18
+ * órfãos) em quatro varreduras, que é rápido o bastante pra quem espera e
+ * devagar o bastante pra ser lido.
+ *
+ * É teto de RAJADA, não de casos: o que não coube continua na fila, inteiro.
+ */
+export const TETO_AVISOS_POR_VARREDURA = 5;
+
+/** Um órfão confirmado, pronto pra virar aviso. */
+export type CandidatoAviso = {
+  /**
+   * ISO que ancora a ANTIGUIDADE (a compra que deixou a pessoa esperando).
+   * É por este campo que a fila se ordena — quem espera há mais tempo passa
+   * na frente.
+   */
+  compradoEm: string;
+  compra: CompraOrfa;
+};
+
+export type ResumoLoteAvisos = {
+  /** órfãos confirmados que chegaram no lote (antes de qualquer corte) */
+  candidatos: number;
+  /** já tinham aviso registrado; não contam pro teto nem pra fila */
+  jaAvisados: number;
+  /** avisos que ESTA varredura disparou */
+  avisados: number;
+  /** cortados pelo teto: continuam elegíveis, intactos, pra próxima varredura */
+  emFila: number;
+  /** avisados cujos canais voláteis TODOS falharam (só o durável guardou) */
+  semCanal: number;
+  /** o lote recusou (produto de fora, evento que não libera, sem e-mail) */
+  recusados: number;
+  /** exceção no meio do aviso: NÃO foi marcado, volta na próxima varredura */
+  erros: number;
+};
+
+/**
+ * Mais antigo primeiro. Data ilegível vai pro FIM (não dá pra provar que é
+ * velha, e furar a fila com lixo é como o mais urgente perde a vez), e o
+ * desempate é pela chave, pra ordem ser determinística — varredura que embaralha
+ * a fila a cada rodada nunca drena estoque nenhum.
+ */
+function porAntiguidade(a: CandidatoAviso, b: CandidatoAviso): number {
+  const ta = Date.parse(a.compradoEm);
+  const tb = Date.parse(b.compradoEm);
+  const va = Number.isFinite(ta);
+  const vb = Number.isFinite(tb);
+  if (va && vb && ta !== tb) return ta - tb;
+  if (va !== vb) return va ? -1 : 1;
+  return chaveDoAviso(a.compra).localeCompare(chaveDoAviso(b.compra));
+}
+
+/**
+ * Reparte o lote em TRÊS, sem perder ninguém: `avisar` (até o teto, os mais
+ * antigos), `fila` (o resto, que a próxima varredura pega) e `jaAvisados`
+ * (dedupe — esses não ocupam vaga do teto, senão um estoque de já-avisados
+ * travaria a fila pra sempre).
+ *
+ * Puro de propósito: é aqui que mora a decisão da rajada, e ela é testável sem
+ * banco, sem Telegram e sem relógio.
+ */
+export function selecionarParaAvisar(
+  candidatos: CandidatoAviso[],
+  estado: EstadoAvisos,
+  teto: number = TETO_AVISOS_POR_VARREDURA,
+): { avisar: CandidatoAviso[]; fila: CandidatoAviso[]; jaAvisados: CandidatoAviso[] } {
+  const jaAvisados: CandidatoAviso[] = [];
+  const pendentes: CandidatoAviso[] = [];
+  for (const c of candidatos) {
+    if (estado[chaveDoAviso(c.compra)]) jaAvisados.push(c);
+    else pendentes.push(c);
+  }
+  pendentes.sort(porAntiguidade);
+  const corte = Math.max(0, teto);
+  return { avisar: pendentes.slice(0, corte), fila: pendentes.slice(corte), jaAvisados };
+}
+
+/**
+ * A frase que denuncia a fila. Existe como função pura (e não como um
+ * `console.log` solto) pra ser testável: "o teto contou o que ficou de fora" é
+ * um requisito, e requisito que ninguém testa é requisito que some no primeiro
+ * refactor.
+ */
+export function fraseDaFila(r: ResumoLoteAvisos, teto: number = TETO_AVISOS_POR_VARREDURA): string {
+  const partes = [
+    `${r.candidatos} órfão(s) confirmado(s)`,
+    `${r.avisados} avisado(s) agora`,
+    r.emFila > 0
+      ? `${r.emFila} NA FILA pra próxima varredura (teto de ${teto} por varredura — não sumiram)`
+      : "fila vazia",
+  ];
+  if (r.jaAvisados > 0) partes.push(`${r.jaAvisados} já tinham sido avisados antes`);
+  if (r.semCanal > 0) partes.push(`${r.semCanal} sem canal volátil (só o registro durável guardou)`);
+  if (r.recusados > 0) partes.push(`${r.recusados} recusado(s) pela regra do aviso`);
+  if (r.erros > 0) partes.push(`${r.erros} falharam e voltam na próxima (não foram marcados)`);
+  return partes.join(" · ");
+}
+
+/**
+ * Dispara os avisos de UMA varredura, respeitando o teto.
+ *
+ * Duas escolhas que parecem detalhe e são o coração da coisa:
+ *
+ * 1. QUEM NÃO COUBE NÃO É TOCADO. O estado só recebe quem `avisarCompraOrfa`
+ *    efetivamente processou; a fila não é lida, não é marcada, não é gravada.
+ *    Um teto que marcasse o excedente "pra não repetir" seria descarte
+ *    silencioso com outro nome, e o pagante travado nunca mais seria assunto.
+ *
+ * 2. O ESTADO É GRAVADO A CADA AVISO, não uma vez no fim. É `avisarCompraOrfa`
+ *    quem grava, e deixar assim é proposital: se a varredura morrer no terceiro
+ *    de cinco, os dois primeiros continuam marcados e não viram aviso repetido
+ *    amanhã. Um punhado de upserts por dia é barato; alerta duplicado gasta a
+ *    paciência de quem lê, que é o recurso que este arquivo inteiro protege.
+ *
+ * Exceção num candidato NÃO derruba o lote e NÃO marca ninguém: conta em
+ * `erros` e o caso volta na próxima varredura (falha fechada em direção a
+ * tentar de novo, igual ao resto do fluxo).
+ */
+export async function avisarLoteCompraOrfa(
+  candidatos: CandidatoAviso[],
+  nossoProduto: string | null | undefined,
+  io: EstadoAvisosIO,
+  canais: CanaisAviso,
+  agoraIso: string,
+  teto: number = TETO_AVISOS_POR_VARREDURA,
+  log: (msg: string) => void = (m) => console.log(m),
+): Promise<ResumoLoteAvisos> {
+  const estado = await io.ler();
+  const { avisar, fila, jaAvisados } = selecionarParaAvisar(candidatos, estado, teto);
+
+  const resumo: ResumoLoteAvisos = {
+    candidatos: candidatos.length,
+    jaAvisados: jaAvisados.length,
+    avisados: 0,
+    emFila: fila.length,
+    semCanal: 0,
+    recusados: 0,
+    erros: 0,
+  };
+
+  for (const c of avisar) {
+    try {
+      const r = await avisarCompraOrfa(c.compra, nossoProduto, io, canais, agoraIso);
+      if (r.avisou) {
+        resumo.avisados += 1;
+        if (r.canais.length === 0) resumo.semCanal += 1;
+      } else if (r.motivo === "ja_avisado") {
+        // corrida com outra varredura: o dedupe pegou. Não é erro.
+        resumo.jaAvisados += 1;
+      } else {
+        resumo.recusados += 1;
+      }
+    } catch (e) {
+      resumo.erros += 1;
+      log(`[aviso-orfao] aviso de ${c.compra.buyerEmail} falhou (volta na próxima): ${
+        e instanceof Error ? e.message : String(e)
+      }`);
+    }
+  }
+
+  log(`[aviso-orfao] ${fraseDaFila(resumo, teto)}`);
+  return resumo;
 }

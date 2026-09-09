@@ -19,6 +19,14 @@
  *     começo da varredura são uma foto: a pessoa pode ter criado a conta no
  *     meio dela, e escrever pra quem já entrou é o incidente 72a4c9db.
  *
+ * ⚠️ DOIS DESTINATÁRIOS, não confundir. Este arquivo manda (1) o CONVITE pro
+ * COMPRADOR ("crie sua conta com este e-mail") e (2) o AVISO PRA EQUIPE ("vá
+ * vincular à mão"), religado em 09/09/2026 e protegido pelo teto de rajada
+ * `TETO_AVISOS_POR_VARREDURA` — sem o teto, a primeira varredura despejaria o
+ * estoque acumulado (18 órfãos medidos naquele dia) numa tacada só. Quem passa
+ * do teto NÃO some: fica na fila, mais antigo primeiro, e o resumo conta
+ * quantos ficaram.
+ *
  * ⚠️ O dedupe é POR COBRANÇA, não por e-mail para sempre (08/09/2026, ver
  * `orphan-ciclo.ts`): assinatura mensal cobra de novo todo mês, e calar o
  * comprador depois do primeiro par convite+lembrete deixava pagante sem conta
@@ -30,10 +38,22 @@ import { sendEmail } from "@/lib/email/resend";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
 import { compradorMereceConvite, eventoEhPagamento } from "@/lib/payments/acesso-regra";
 import {
+  avisarLoteCompraOrfa,
   CARENCIA_ORFAO_MS,
   podeNotificarOrfao,
+  TETO_AVISOS_POR_VARREDURA,
+  type CandidatoAviso,
   type EstadoEntitlement,
 } from "@/lib/payments/aviso-orfao";
+import { canaisDaCasa, estadoDosAvisos } from "@/lib/payments/aviso-orfao-canal";
+import {
+  asRecord,
+  extractBuyerName,
+  extractExternalId,
+  extractProductCode,
+  extractProductName,
+  extractTransactionId,
+} from "@/lib/payments/hotmart-payload";
 import {
   decidirAcaoConvite,
   registroDoConvite,
@@ -43,6 +63,8 @@ import {
 const PRODUCT_ID = "7851642";
 const STATE_KEY = "orphan_invites";
 const REMINDER_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+/** A varredura só lê este evento — o aviso à equipe carrega o mesmo rótulo. */
+const EVENTO_DA_VARREDURA = "PURCHASE_APPROVED";
 
 const TEST_EMAILS = new Set([
   "test@hotmart.com",
@@ -122,6 +144,14 @@ export type OrphanSweepSummary = {
    */
   revalidados: number;
   errors: number;
+  /** avisos à EQUIPE ("vá vincular à mão") disparados nesta varredura */
+  avisosEquipe: number;
+  /**
+   * órfãos que o teto de rajada deixou pra próxima varredura. NÃO são casos
+   * perdidos nem descartados — é o estoque ainda esperando, e ele aparece aqui
+   * justamente pra que "avisei 5" nunca se leia como "só existem 5".
+   */
+  avisosNaFila: number;
 };
 
 /**
@@ -183,7 +213,10 @@ async function conferirOrfao(email: string): Promise<{
 
 /** Uma varredura (cron diário). Convite 1x + lembrete único após 3 dias. */
 export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
-  const summary: OrphanSweepSummary = { orphans: 0, invited: 0, reminded: 0, revalidados: 0, errors: 0 };
+  const summary: OrphanSweepSummary = {
+    orphans: 0, invited: 0, reminded: 0, revalidados: 0, errors: 0,
+    avisosEquipe: 0, avisosNaFila: 0,
+  };
   const admin = getAdmin();
 
   // ⚠️ Teto silencioso do PostgREST: .select() sem .range() devolve NO MÁXIMO
@@ -215,7 +248,15 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
   // `at`: ele é o último evento aprovado de QUALQUER tipo, e trial de R$ 0 e
   // boleto impresso também chegam como PURCHASE_APPROVED — ancorar o ciclo
   // nele reabriria convite por evento que não é dinheiro.
-  const buyers = new Map<string, { at: string; name: string; pagou: boolean; pagoEm: string | null }>();
+  //
+  // `dados` guarda o payload BRUTO do evento mais recente, e só serve pro texto
+  // do aviso à equipe (nome do comprador, transação, código do assinante) —
+  // nunca pra decidir nada. Segue exatamente a mesma regra do `name`: acompanha
+  // o evento mais novo, pra o aviso citar a cobrança que a pessoa está vendo.
+  const buyers = new Map<
+    string,
+    { at: string; name: string; pagou: boolean; pagoEm: string | null; dados: Record<string, unknown> }
+  >();
   for (const row of approved) {
     const email = (row.buyer_email ?? "").toLowerCase();
     const d = row.payload?.data;
@@ -231,6 +272,7 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
         name: (d?.buyer?.name ?? "").split(" ")[0],
         pagou: pagouNesta,
         pagoEm: pagouNesta ? row.received_at : null,
+        dados: asRecord(d),
       });
     } else {
       if (pagouNesta) {
@@ -244,6 +286,7 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
       if (row.received_at > cur.at) {
         cur.at = row.received_at;
         cur.name = (d?.buyer?.name ?? "").split(" ")[0];
+        cur.dados = asRecord(d);
       }
     }
   }
@@ -315,6 +358,13 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
   const state = await loadState();
   const now = Date.now();
   const sent: string[] = [];
+  /**
+   * Órfãos confirmados que merecem AVISO À EQUIPE. Só se enche aqui; quem
+   * dispara é `avisarLoteCompraOrfa`, DEPOIS do laço, porque o teto de rajada é
+   * uma decisão sobre o conjunto (os 5 mais antigos de todos) e não sobre cada
+   * comprador isolado — dentro do laço não dá pra saber quem é o mais antigo.
+   */
+  const candidatosAviso: CandidatoAviso[] = [];
 
   // Pedido Johnny 03/08: admins recebem CÓPIA OCULTA de cada convite.
   const { data: adminRows } = await admin.from("admin_emails").select("email");
@@ -388,6 +438,25 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     }
     summary.orphans += 1;
 
+    // AVISO À EQUIPE — só chega aqui quem passou por TUDO: as guardas em bloco,
+    // o `compradorMereceConvite` (que exige `pagou`) e a releitura do banco.
+    // A ordem importa e é o que separa este aviso dos 7 falsos positivos de
+    // 06–09/09: o texto do `montarAviso` afirma "ele está PAGANDO e SEM ACESSO,
+    // tratar como urgente", e gritar isso por um trial de R$ 0 (5 dos 7 casos)
+    // é mentira. Coletar depois do `pagou` é o que torna a frase verdadeira.
+    candidatosAviso.push({
+      compradoEm: info.at,
+      compra: {
+        eventType: EVENTO_DA_VARREDURA,
+        buyerEmail: email,
+        buyerName: extractBuyerName(info.dados),
+        productCode: extractProductCode(info.dados),
+        productName: extractProductName(info.dados),
+        transaction: extractTransactionId(info.dados),
+        externalId: extractExternalId(info.dados, EVENTO_DA_VARREDURA),
+      },
+    });
+
     const record = state[email];
     // O ciclo é da COBRANÇA (orphan-ciclo.ts): pagamento novo depois do ciclo
     // já atendido reabre convite + lembrete; sem pagamento novo, silêncio.
@@ -420,16 +489,54 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
 
   if (summary.invited + summary.reminded > 0) {
     await saveState(state);
-    // Resumo único pros admins (não um BCC por aluno).
+  }
+
+  // AVISO À EQUIPE, com a trava de rajada. Fora do laço de propósito: o teto
+  // escolhe os N mais ANTIGOS do conjunto todo, e quem sobra fica intacto na
+  // fila (não é marcado, não é descartado) pra próxima varredura.
+  if (candidatosAviso.length > 0) {
+    const lote = await avisarLoteCompraOrfa(
+      candidatosAviso,
+      PRODUCT_ID,
+      estadoDosAvisos(),
+      canaisDaCasa(),
+      new Date().toISOString(),
+      TETO_AVISOS_POR_VARREDURA,
+    );
+    summary.avisosEquipe = lote.avisados;
+    summary.avisosNaFila = lote.emFila;
+    summary.errors += lote.erros;
+  }
+
+  // Resumo único pros admins (não um BCC por aluno). A FILA entra na condição
+  // de disparo: uma varredura que não mandou convite nenhum mas deixou 13
+  // pessoas na fila é exatamente a que não pode passar em branco — é aí que
+  // "avisei 5" viraria "só existem 5 casos".
+  if (summary.invited + summary.reminded + summary.avisosEquipe + summary.avisosNaFila > 0) {
     const { data: admins } = await admin.from("admin_emails").select("email");
     const to = ((admins ?? []) as { email: string }[]).map((r) => r.email).filter(Boolean);
     if (to.length > 0) {
+      const convites =
+        summary.invited + summary.reminded > 0
+          ? `<p>Compradores sem conta na plataforma receberam convite pra ativar (créditos já reservados):</p>` +
+            `<ul>${sent.map((s) => `<li>${s}</li>`).join("")}</ul>`
+          : `<p>Nenhum convite novo saiu nesta varredura.</p>`;
+      const fila =
+        summary.avisosNaFila > 0
+          ? `<p><strong>⏳ ${summary.avisosNaFila} caso(s) ficaram NA FILA</strong> — o teto é de ` +
+            `${TETO_AVISOS_POR_VARREDURA} avisos por varredura, pra não despejar a pilha inteira de uma vez. ` +
+            `Eles NÃO foram descartados nem marcados como avisados: a próxima varredura pega os mais antigos primeiro.</p>`
+          : "";
       await sendEmail({
         to,
-        subject: `📨 Convites de compra órfã enviados: ${summary.invited + summary.reminded}`,
+        subject:
+          summary.invited + summary.reminded > 0
+            ? `📨 Convites de compra órfã enviados: ${summary.invited + summary.reminded}`
+            : `📨 Compra órfã: ${summary.avisosEquipe} aviso(s) à equipe, ${summary.avisosNaFila} na fila`,
         html:
-          `<p>Compradores sem conta na plataforma receberam convite pra ativar (créditos já reservados):</p>` +
-          `<ul>${sent.map((s) => `<li>${s}</li>`).join("")}</ul>` +
+          convites +
+          `<p>Avisos à equipe (vincular à mão) nesta varredura: ${summary.avisosEquipe}.</p>` +
+          fila +
           `<p>Órfãos confirmados na releitura: ${summary.orphans}` +
           (summary.revalidados > 0
             ? ` — e ${summary.revalidados} candidato(s) foram descartados na releitura porque a conta apareceu, o vínculo foi feito ou o acesso já tinha acabado (e-mail que NÃO saiu por bem).`

@@ -24,13 +24,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   avisarCompraOrfa,
+  avisarLoteCompraOrfa,
   CARENCIA_ORFAO_MS,
   chaveDoAviso,
   deveAvisar,
+  fraseDaFila,
   montarAviso,
   montarObservacao,
   observarCompraOrfa,
   podeNotificarOrfao,
+  selecionarParaAvisar,
+  TETO_AVISOS_POR_VARREDURA,
+  type CandidatoAviso,
   type CanaisAviso,
   type CompraOrfa,
   type EstadoAvisos,
@@ -735,4 +740,211 @@ test("(no sweeper) EZ MOTORS recebe convite e depois o lembrete", () => {
   s.rodar(AGORA_09);
   s.rodar(AGORA_09 + 4 * 24 * HORA);
   assert.deepEqual(s.enviados, ["convite", "lembrete"]);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 10. TRAVA DE RAJADA — o teto que autoriza religar o aviso à equipe
+//
+// O emissor ficou desligado por um motivo só: existe ESTOQUE. Medidos em
+// 09/09/2026, 18 compradores do FastCloner pagaram e não têm conta nenhuma (8
+// já com a janela de acesso vencida). Religar sem teto despejaria os 18 no
+// Telegram da equipe de uma vez, e alerta às dezenas não é lido.
+//
+// O teto é a parte fácil. A parte que estes testes protegem é a OUTRA: o que
+// não coube não pode sumir, não pode ser marcado como avisado, e tem que ser
+// VISÍVEL — senão "avisei 5" vira "só existem 5 casos", que é mentira por
+// omissão e pior que a rajada.
+// ════════════════════════════════════════════════════════════════════════════
+
+const T_BASE = Date.parse("2026-08-20T00:00:00.000Z");
+
+/** N órfãos, cada um comprado um dia DEPOIS do anterior (0 = o mais antigo). */
+function lote(n: number): CandidatoAviso[] {
+  return Array.from({ length: n }, (_, i) => ({
+    compradoEm: new Date(T_BASE + i * 24 * HORA).toISOString(),
+    compra: {
+      ...TIAGO,
+      buyerEmail: `orfao${String(i).padStart(2, "0")}@exemplo.com`,
+      externalId: `SUB${String(i).padStart(2, "0")}`,
+    } as CompraOrfa,
+  }));
+}
+
+const avisados = (visto: { telegram: string[] }) =>
+  visto.telegram.map((t) => t.match(/orfao\d\d@exemplo\.com/)?.[0] ?? "?");
+
+test("(a) 20 candidatos com teto 5: avisa 5 e os outros 15 continuam elegíveis na próxima", async () => {
+  const { canais, visto } = canaisFalsos({ telegram: true, email: true });
+  const { io, ver } = estadoNaMemoria();
+
+  const r = await avisarLoteCompraOrfa(lote(20), NOSSO_PRODUTO, io, canais, AGORA, 5, () => {});
+
+  assert.equal(r.candidatos, 20);
+  assert.equal(r.avisados, 5, "o teto não segurou a rajada");
+  assert.equal(r.emFila, 15, "os 15 que sobraram têm que aparecer na fila");
+  assert.equal(r.erros, 0);
+  assert.equal(visto.telegram.length, 5, "saiu mais mensagem do que o teto permite");
+
+  // e o estado só conhece os 5 avisados — os 15 estão intactos
+  assert.equal(Object.keys(ver()).length, 5);
+
+  // a próxima varredura, com os MESMOS 20 candidatos, pega os 5 seguintes
+  const seg = canaisFalsos({ telegram: true, email: true });
+  const r2 = await avisarLoteCompraOrfa(lote(20), NOSSO_PRODUTO, io, seg.canais, AGORA, 5, () => {});
+  assert.equal(r2.avisados, 5);
+  assert.equal(r2.jaAvisados, 5, "os já avisados não podem ocupar vaga do teto");
+  assert.equal(r2.emFila, 10);
+  assert.deepEqual(avisados(seg.visto), [
+    "orfao05@exemplo.com", "orfao06@exemplo.com", "orfao07@exemplo.com",
+    "orfao08@exemplo.com", "orfao09@exemplo.com",
+  ]);
+
+  // 4 varreduras drenam os 20 sem perder ninguém (é o estoque real de 18)
+  for (let i = 0; i < 2; i++) {
+    await avisarLoteCompraOrfa(lote(20), NOSSO_PRODUTO, io, canais, AGORA, 5, () => {});
+  }
+  assert.equal(Object.keys(ver()).length, 20, "alguém sumiu no caminho");
+});
+
+test("(b) quem ficou na fila NÃO é marcado como avisado", async () => {
+  const { canais } = canaisFalsos({ telegram: true, email: true });
+  const { io, ver } = estadoNaMemoria();
+
+  await avisarLoteCompraOrfa(lote(20), NOSSO_PRODUTO, io, canais, AGORA, 5, () => {});
+
+  const marcados = Object.keys(ver()).sort();
+  assert.deepEqual(marcados, ["SUB00", "SUB01", "SUB02", "SUB03", "SUB04"]);
+  for (let i = 5; i < 20; i++) {
+    assert.equal(ver()[`SUB${String(i).padStart(2, "0")}`], undefined, `SUB${i} foi marcado sem ter sido avisado`);
+  }
+});
+
+test("(b) marcado como avisado ⇔ o durável recebeu o aviso (nunca um sem o outro)", async () => {
+  const { canais, visto } = canaisFalsos({ telegram: true, email: true });
+  const { io, ver } = estadoNaMemoria();
+
+  await avisarLoteCompraOrfa(lote(20), NOSSO_PRODUTO, io, canais, AGORA, 5, () => {});
+
+  assert.deepEqual(visto.duraveis.map((d) => d.chave).sort(), Object.keys(ver()).sort());
+});
+
+test("(b) canal volátil todo fora não some: marca (o durável guardou) e DENUNCIA em semCanal", async () => {
+  // Telegram e e-mail fora. O aviso não se perde — `registrar` gravou — mas o
+  // resumo tem que dizer que ninguém foi acordado, senão é o #239 de novo.
+  const { canais, visto } = canaisFalsos({ telegram: false, email: false });
+  const { io, ver } = estadoNaMemoria();
+
+  const r = await avisarLoteCompraOrfa(lote(3), NOSSO_PRODUTO, io, canais, AGORA, 5, () => {});
+
+  assert.equal(r.avisados, 3);
+  assert.equal(r.semCanal, 3, "falha total de canal passou em branco");
+  assert.equal(visto.duraveis.length, 3);
+  for (const k of Object.keys(ver())) assert.deepEqual(ver()[k].canais, []);
+});
+
+test("(c) o log diz quantos eram, quantos foram e quantos ficaram na fila", async () => {
+  const { canais } = canaisFalsos({ telegram: true, email: true });
+  const { io } = estadoNaMemoria();
+  const linhas: string[] = [];
+
+  const r = await avisarLoteCompraOrfa(lote(18), NOSSO_PRODUTO, io, canais, AGORA, 5, (m) => linhas.push(m));
+
+  assert.equal(linhas.length, 1);
+  const log = linhas[0];
+  assert.match(log, /18 órfão\(s\) confirmado\(s\)/);
+  assert.match(log, /5 avisado\(s\) agora/);
+  assert.match(log, /13 NA FILA/);
+  // a fila tem que estar escrita como fila, não sumir num número solto
+  assert.match(log, /não sumiram/);
+  assert.deepEqual({ candidatos: r.candidatos, avisados: r.avisados, emFila: r.emFila }, {
+    candidatos: 18, avisados: 5, emFila: 13,
+  });
+});
+
+test("(c) cap silencioso é proibido: mesmo sem fila o resumo se declara", () => {
+  const vazio = { candidatos: 3, jaAvisados: 0, avisados: 3, emFila: 0, semCanal: 0, recusados: 0, erros: 0 };
+  assert.match(fraseDaFila(vazio, 5), /3 órfão\(s\) confirmado\(s\)/);
+  assert.match(fraseDaFila(vazio, 5), /fila vazia/);
+});
+
+test("(d) a fila é do MAIS ANTIGO pro mais novo, não a ordem que chegou", async () => {
+  const { canais, visto } = canaisFalsos({ telegram: true, email: true });
+  const { io } = estadoNaMemoria();
+
+  // embaralhado de propósito: o mais novo primeiro
+  const embaralhado = [...lote(9)].reverse();
+  await avisarLoteCompraOrfa(embaralhado, NOSSO_PRODUTO, io, canais, AGORA, 4, () => {});
+
+  assert.deepEqual(avisados(visto), [
+    "orfao00@exemplo.com", "orfao01@exemplo.com", "orfao02@exemplo.com", "orfao03@exemplo.com",
+  ], "quem espera há mais tempo tem que passar na frente");
+});
+
+test("(d) data ilegível não fura a fila (vai pro fim) e o desempate é determinístico", () => {
+  const bons = lote(3);
+  const quebrado: CandidatoAviso = {
+    compradoEm: "data-que-não-existe",
+    compra: { ...TIAGO, buyerEmail: "zz@exemplo.com", externalId: "SUBZZ" },
+  };
+  const { avisar, fila } = selecionarParaAvisar([quebrado, ...bons], {}, 3);
+  assert.deepEqual(avisar.map((c) => c.compra.externalId), ["SUB00", "SUB01", "SUB02"]);
+  assert.deepEqual(fila.map((c) => c.compra.externalId), ["SUBZZ"]);
+
+  // empate de data resolve pela chave, sempre igual (fila que embaralha não drena)
+  const empatados: CandidatoAviso[] = ["SUBC", "SUBA", "SUBB"].map((id) => ({
+    compradoEm: new Date(T_BASE).toISOString(),
+    compra: { ...TIAGO, buyerEmail: `${id}@exemplo.com`, externalId: id },
+  }));
+  assert.deepEqual(
+    selecionarParaAvisar(empatados, {}, 2).avisar.map((c) => c.compra.externalId),
+    ["SUBA", "SUBB"],
+  );
+});
+
+test("(e) duas varreduras seguidas não repetem quem já foi avisado", async () => {
+  const { canais } = canaisFalsos({ telegram: true, email: true });
+  const { io, ver } = estadoNaMemoria();
+  const candidatos = lote(3); // cabem todos no teto
+
+  const r1 = await avisarLoteCompraOrfa(candidatos, NOSSO_PRODUTO, io, canais, AGORA, 5, () => {});
+  const seg = canaisFalsos({ telegram: true, email: true });
+  const r2 = await avisarLoteCompraOrfa(candidatos, NOSSO_PRODUTO, io, seg.canais, AGORA, 5, () => {});
+
+  assert.equal(r1.avisados, 3);
+  assert.equal(r2.avisados, 0, "avisou de novo quem já tinha sido avisado");
+  assert.equal(r2.jaAvisados, 3);
+  assert.equal(r2.emFila, 0);
+  assert.equal(seg.visto.telegram.length, 0);
+  assert.equal(Object.keys(ver()).length, 3);
+});
+
+test("exceção num candidato não derruba o lote nem marca ele como avisado", async () => {
+  const { canais } = canaisFalsos({ telegram: true, email: true });
+  const original = canais.registrar;
+  canais.registrar = async (chave, aviso, dados) => {
+    if (chave === "SUB01") throw new Error("agent_state fora do ar");
+    return original(chave, aviso, dados);
+  };
+  const { io, ver } = estadoNaMemoria();
+  const linhas: string[] = [];
+
+  const r = await avisarLoteCompraOrfa(lote(4), NOSSO_PRODUTO, io, canais, AGORA, 5, (m) => linhas.push(m));
+
+  assert.equal(r.avisados, 3);
+  assert.equal(r.erros, 1);
+  assert.equal(ver()["SUB01"], undefined, "marcou como avisado um caso que falhou");
+  assert.ok(linhas.some((l) => l.includes("volta na próxima")), "a falha não apareceu no log");
+});
+
+test("teto 0 não avisa ninguém e não perde ninguém (a fila fica com todos)", () => {
+  const { avisar, fila } = selecionarParaAvisar(lote(6), {}, 0);
+  assert.equal(avisar.length, 0);
+  assert.equal(fila.length, 6);
+});
+
+test("o teto padrão da casa é 5", () => {
+  assert.equal(TETO_AVISOS_POR_VARREDURA, 5);
+  const { avisar, fila } = selecionarParaAvisar(lote(18), {});
+  assert.equal(avisar.length, 5);
+  assert.equal(fila.length, 13);
 });
