@@ -22,7 +22,19 @@ export async function POST(request: NextRequest) {
     console.error("[orphan-invites] varredura abortada:", msg);
     return jsonError("sweep_failed", msg, 500);
   }
-  if (summary.invited + summary.reminded + summary.errors > 0) {
+  // `revalidados` entra na condição de propósito: a rodada que SÓ descartou
+  // candidatos na releitura (a conta apareceu no meio da varredura) é
+  // exatamente a que a gente quer ver no log — é o falso positivo que não
+  // virou e-mail. Sem ele aqui, esse acerto sumiria em silêncio.
+  //
+  // `avisosNaFila` entra pelo mesmo motivo, na direção oposta: a rodada que só
+  // deixou gente esperando (teto de rajada) é a que MAIS precisa aparecer, ou
+  // "avisei 5" se lê como "só existem 5 casos".
+  if (
+    summary.invited + summary.reminded + summary.errors + summary.revalidados +
+      summary.avisosEquipe + summary.avisosNaFila >
+    0
+  ) {
     console.log("[orphan-invites]", JSON.stringify(summary));
   }
   return jsonOk({ sweep: summary });

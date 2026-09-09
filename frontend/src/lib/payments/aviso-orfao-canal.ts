@@ -23,11 +23,24 @@ import type {
   CompraOrfa,
   EstadoAvisos,
   EstadoAvisosIO,
+  EstadoObservacoes,
+  ObservacoesIO,
   TextoAviso,
 } from "@/lib/payments/aviso-orfao";
 
 /** Chave do dedupe (um registro por entitlement já avisado). */
 const CHAVE_ESTADO = "orphan_alerts";
+
+/**
+ * Chave da OBSERVAÇÃO do webhook — deliberadamente OUTRA.
+ *
+ * Ela existe pra ser diferente do `orphan_alerts` e, principalmente, do
+ * `orphan_invites` do sweeper. O webhook anota aqui; quem decide se fala lê o
+ * dedupe DELE, e nunca este. Juntar as duas coisas numa chave só é o caminho
+ * curto pra trocar ruído por silêncio total — está escrito por extenso no topo
+ * de `aviso-orfao.ts`.
+ */
+const CHAVE_OBSERVACOES = "orphan_observacoes";
 
 /** agent_state fica fora do Database tipado (padrão das rotas do Vigia). */
 export function estadoDosAvisos(): EstadoAvisosIO {
@@ -48,8 +61,31 @@ export function estadoDosAvisos(): EstadoAvisosIO {
   };
 }
 
-/** Recado durável: entra na ronda do Frank mesmo com Telegram e Resend fora. */
-async function registrarDuravel(chave: string, aviso: TextoAviso, dados: CompraOrfa): Promise<void> {
+/** Idempotência da observação do webhook. Mesmo padrão, outra chave. */
+export function estadoDasObservacoes(): ObservacoesIO {
+  return {
+    ler: async () => {
+      const { data } = await getAdmin()
+        .from("agent_state" as never)
+        .select("value")
+        .eq("key", CHAVE_OBSERVACOES)
+        .maybeSingle();
+      return (((data as { value?: EstadoObservacoes } | null)?.value ?? {}) as EstadoObservacoes) || {};
+    },
+    gravar: async (estado) => {
+      await getAdmin()
+        .from("agent_state" as never)
+        .upsert({ key: CHAVE_OBSERVACOES, value: estado, updated_at: new Date().toISOString() } as never);
+    },
+  };
+}
+
+/**
+ * Recado durável: entra na ronda do Frank mesmo com Telegram e Resend fora.
+ * Exportado porque o webhook agora usa SÓ ele (`observarCompraOrfa`), sem os
+ * canais voláteis.
+ */
+export async function registrarDuravel(chave: string, aviso: TextoAviso, dados: CompraOrfa): Promise<void> {
   await getAdmin()
     .from("agent_state" as never)
     .upsert({
