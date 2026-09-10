@@ -21,7 +21,9 @@ import { buildAgentReply } from "./brain";
 import { buildAccountContext } from "./account";
 import { extractEscalation } from "./escalate";
 import { agentEnabled } from "./respond";
-import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
+import { fetchUnseen, markSeen, supportMailConfigured, MAIL_MAX_BYTES, type RawMail } from "./mail-imap";
+import { decidirAnexoGrande } from "./mail-anexo-grande";
+import { recusasAnteriores, registrarRecusa } from "./mail-anexo-grande-canal";
 import { sendSupportMail } from "./mail-smtp";
 import { tratarSeForBounce } from "./mail-bounce-registro";
 import { winbackContextByEmail, applyWinbackMarkers } from "@/lib/winback/conversation";
@@ -73,6 +75,13 @@ function mailSystemExtra(accountFound: boolean): string {
     // repetir "7" aqui reintroduzia pela instrução o número que a conta parou
     // de usar.
     `REEMBOLSO/CANCELAMENTO/COBRANÇA: acolha, lamente e diga que a equipe confirma a solicitação em breve; finalize com [ESCALAR: resumo]. NUNCA confirme reembolso você mesma. Sobre a janela de garantia, seja obediente à linha GARANTIA HOTMART do bloco da conta — ela traz a DATA de fim, e a janela NÃO é sempre de 7 dias, então cite a data e nunca um número de dias: se ela disser FORA, ou não existir, NÃO afirme que há garantia — só diga que a equipe vai verificar.`,
+    // Esta linha nasceu do caso de 09/09: depois de recusar um e-mail por
+    // tamanho, o cliente respondeu "o arquivo não tem 2mb" — e o modelo, sem
+    // saber que existe um teto de caixa, pediu desculpa e prometeu "pode
+    // reenviar o arquivo, vou conseguir abrir agora". O reenvio bateu no MESMO
+    // teto e levou a recusa idêntica. A promessa é que quebrou o atendimento,
+    // não o limite.
+    `ANEXO QUE NÃO ABRIU: o limite é da nossa CAIXA (a mensagem inteira, não o arquivo), e reenviar o mesmo anexo dá exatamente no mesmo. NUNCA prometa que vai conseguir abrir, nem peça pra reenviar o arquivo como anexo — isso é promessa que você não pode cumprir. Ofereça só o que funciona: descrever em texto, ou mandar link (Drive/WeTransfer). Se a pessoa disser que o arquivo dela é menor que o número que citamos, ela provavelmente está CERTA: o anexo engorda ~30% dentro do e-mail, então o arquivo pode ter 1,7 MB e a mensagem 2,3 MB. Dê razão a ela e explique a diferença, sem discutir número. Se já falhou duas vezes, finalize com [ESCALAR: e-mail que a caixa não consegue abrir].`,
     `Se o e-mail NÃO for um aluno/cliente pedindo ajuda (propaganda, spam, notificação de sistema, corrente), responda APENAS a palavra PULAR.`,
   ].join("\n");
 }
@@ -173,9 +182,14 @@ export async function encaminharParaRevisao(args: {
 
 /**
  * Mensagem grande demais (anexo pesado): a gente NÃO baixa o conteúdo — só os
- * cabeçalhos. Responde explicando que a caixa não recebe anexo e marca como
+ * cabeçalhos. Responde explicando que a caixa não abre a mensagem e marca como
  * lida, senão ela trava a fila pra sempre (foi o que aconteceu em 08/08: um
  * e-mail de 33MB deixou a Fast 2 dias sem responder ninguém).
+ *
+ * A CONTA e o TEXTO moram em `mail-anexo-grande.ts` (funções puras, testadas).
+ * Aqui ficou só o encanamento: contar quantas vezes esta pessoa já levou a
+ * recusa, mandar o e-mail, e — na segunda — entregar pra um humano em vez de
+ * repetir a mesma receita. Ver o caso de 09/09 no cabeçalho daquele arquivo.
  */
 async function responderAnexoGrande(
   mail: RawMail,
@@ -183,39 +197,58 @@ async function responderAnexoGrande(
   subject: string,
   messageId: string | null,
   bcc: string[],
-): Promise<"replied"> {
-  const mb = Math.round((mail.sizeBytes ?? 0) / 1_000_000);
-  const texto =
-    "Oi! Tudo bem?\n\n" +
-    `Recebi seu e-mail, mas ele veio com um anexo grande demais (${mb} MB) e o nosso ` +
-    "suporte por e-mail não consegue abrir arquivos desse tamanho — por isso não consegui " +
-    "ler o que você mandou.\n\n" +
-    "Me reenvia só o texto, por favor, explicando o que aconteceu? Se for um áudio, uma " +
-    "gravação ou um vídeo, o melhor caminho é fazer o upload direto na plataforma, ou me " +
-    "mandar um link (Google Drive, WeTransfer, YouTube não listado).\n\n" +
-    "Se for um print de erro, pode colar a imagem no corpo do e-mail mesmo, que costuma " +
-    "vir bem menor.\n\n" +
-    "Desculpe o transtorno e obrigada!\n\n" +
-    "Fast — FastCloner";
+): Promise<"replied" | "escalated"> {
+  const sizeBytes = mail.sizeBytes ?? 0;
+  const decisao = decidirAnexoGrande({
+    sizeBytes,
+    limitBytes: MAIL_MAX_BYTES,
+    recusasAnteriores: await recusasAnteriores(fromEmail),
+  });
 
   await sendSupportMail({
     to: fromEmail,
     subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
-    text: texto,
+    text: decisao.texto,
     inReplyTo: messageId,
     bcc,
   });
+
+  // Só conta DEPOIS de ter mandado: se o SMTP falhou, o cliente não levou
+  // recusa nenhuma e não pode ser tratado como reincidente na próxima.
+  await registrarRecusa(fromEmail);
+
   // O time precisa saber que existe material esperando — mesmo sem o anexo,
   // o assunto e o remetente bastam pra ir atrás na caixa do suporte@.
   await encaminharParaRevisao({
     fromEmail,
     subject,
-    corpo: `(anexo de ${mb} MB — grande demais pra Fast abrir; a mensagem original está na caixa do suporte@)`,
-    motivo: `anexo de ${mb} MB`,
+    corpo:
+      `(${decisao.motivo} — a Fast não abriu a mensagem; ` +
+      `o e-mail original está na caixa do suporte@, uid ${mail.uid})`,
+    motivo: decisao.motivo,
   });
+
+  if (decisao.escalar) {
+    // Segunda recusa: a Fast JÁ prometeu resolver e não resolveu. Vira
+    // incidente pra cair na aba Falhas, que é a fila que o time trabalha —
+    // encaminhar por e-mail sozinho já se provou insuficiente (o caso de
+    // 09/09 tinha encaminhamento nas DUAS recusas e ninguém abriu).
+    await openIncidentForSentinela(
+      fromEmail,
+      decisao.motivo,
+      `Mensagem de ${sizeBytes} bytes (uid ${mail.uid}) — acima do teto de ${MAIL_MAX_BYTES}. ` +
+        `Segunda vez com este remetente: alguém precisa abrir o e-mail dele na caixa do suporte@ e responder na mão.`,
+      [],
+      false, // atendimento: quem resolve é uma pessoa lendo o e-mail, não código
+    );
+  }
+
   await markSeen(mail.uid);
-  console.log(`[agent/mail] anexo grande (${mb}MB) uid=${mail.uid} de=${fromEmail} — respondido e liberado`);
-  return "replied";
+  console.log(
+    `[agent/mail] ${decisao.motivo} uid=${mail.uid} de=${fromEmail}` +
+      `${decisao.escalar ? " — ESCALADO pra humano" : " — respondido e liberado"}`,
+  );
+  return decisao.escalar ? "escalated" : "replied";
 }
 
 async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "skipped" | "escalated" | "bounce"> {
