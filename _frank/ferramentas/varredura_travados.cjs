@@ -6,7 +6,7 @@
  *   node _frank/ferramentas/varredura_travados.cjs --horas 2
  */
 const { supa, listar, BUCKETS, minutos, idadeHoras } = require("./_comum.cjs");
-const { conferirListaCompleta, REF_TYPES_ESTORNO } = require("./_estornos.cjs");
+const { conferirListaCompleta, REF_TYPES_ESTORNO, NAO_SAO_DEVOLUCAO } = require("./_estornos.cjs");
 
 const arg = (nome, padrao) => {
   const i = process.argv.indexOf(`--${nome}`);
@@ -541,17 +541,24 @@ const ALVOS = [
     );
   } else if (!guarda.ok) {
     console.log(
-      `\n🚨 ref_type DE ESTORNO QUE A LISTA NAO CONHECE: ${guarda.novos.join(", ")}` +
-        `\n   (varridas ${guarda.varridas} linhas com amount>0 · lista tem ${REF_TYPES_ESTORNO.length} entradas)` +
-        `\n   ⚠️  DINHEIRO: enquanto o tipo estiver fora de REF_TYPES_ESTORNO` +
-        ` (_frank/ferramentas/_estornos.cjs:27), quem conferir estorno por ela vai` +
-        ` ler aluno JA ESTORNADO como NAO estornado — e estornar de novo.` +
-        `\n   Some o tipo na lista ANTES de decidir qualquer devolucao.`,
+      `\n🚨 ref_type QUE NENHUMA DAS DUAS LISTAS CLASSIFICA: ${guarda.novos.join(", ")}` +
+        `\n   (varridas ${guarda.varridas} linhas com amount>0 · ${REF_TYPES_ESTORNO.length} devolucao` +
+        ` + ${NAO_SAO_DEVOLUCAO.length} nao-devolucao cadastrados)` +
+        `\n   ⚠️  DINHEIRO, e ERRA PROS DOIS LADOS — decida pelo ref_id, nao pelo nome:` +
+        `\n      · se E devolucao e ficar de fora, aluno JA ressarcido le como NAO` +
+        ` ressarcido e a casa paga em dobro (#185, #342).` +
+        `\n      · se NAO e devolucao e voce jogar em REF_TYPES_ESTORNO por via das` +
+        ` duvidas, aluno que a casa DEVE le como ja pago e fica sem receber.` +
+        `\n   A PROVA: case o ref_id com o debito e some o sinal (debito -N + credito +N` +
+        ` = 0 -> e devolucao). Foi assim que 'compensation' foi classificado em 10/09.` +
+        `\n   Cadastre em UMA das duas listas (_frank/ferramentas/_estornos.cjs)` +
+        ` ANTES de decidir qualquer devolucao.`,
     );
   } else {
     console.log(
-      `\n💸 Lista de estorno em dia: ${REF_TYPES_ESTORNO.length} tipos,` +
-        ` ${guarda.varridas} linhas varridas, nenhum tipo desconhecido.`,
+      `\n💸 Lista de estorno em dia: ${REF_TYPES_ESTORNO.length} devolucao +` +
+        ` ${NAO_SAO_DEVOLUCAO.length} nao-devolucao cadastrados,` +
+        ` ${guarda.varridas} linhas varridas, nenhum tipo por classificar.`,
     );
   }
 
