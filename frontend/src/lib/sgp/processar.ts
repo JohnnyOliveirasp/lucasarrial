@@ -218,16 +218,29 @@ async function processarMaterial(pedido: SgpPedidoRow, userId: string, email: st
   // `processando`/`pronto`), e NÃO está no caminho do polling — que é onde o
   // risco de repetir a cada 8s existiria. Mesma garantia do `avisoComecamos`
   // logo abaixo, sem coluna nova (e portanto sem migration).
+  // ⚠️ `origem: "sgp"` NÃO É DETALHE — é quem paga a conta (medido 09/09/2026).
+  //
+  // Estas duas chamadas debitavam da carteira do COMPRADOR o material que a
+  // casa entrega: 10.000 (treino) + 525 (avatar) = 10.525. Mas comprar o SGP
+  // (produto 7283229) não concede crédito nenhum — regra comercial da casa —
+  // então o débito caía numa carteira vazia e o saldo ia a -10.525. Medidos
+  // 12 perfis exatamente assim, -126.300 no total, todos sem assinatura.
+  //
+  // O negativo do onboarding é autorizado (mig 88) SOB A PREMISSA de que os
+  // 100k da assinatura chegam depois e absorvem a dívida. Na planilha vale;
+  // aqui não: o comprador do SGP pode nunca assinar. Ele já pagou o produto —
+  // o custo do clone que a gente monta é nosso. Regra em
+  // `lib/credits/onboarding-cobranca.ts`.
   await avisoComecamos(email, pedido.nome).catch(() => {});
   if (refs.length) {
     await avisoProcessandoImagens(email).catch(() => {});
-    const foto = await gerarAvatares(admin, userId, refs, [AVATAR_SOCIAL]);
+    const foto = await gerarAvatares(admin, userId, refs, [AVATAR_SOCIAL], "sgp");
     for (const f of foto.failed) erros.push(`clone de foto: ${f.error}`);
   }
   if (voiceId) {
     await avisoProcessandoAudio(email).catch(() => {});
     try {
-      const t = await dispararTreinoOnboarding(admin, userId, voiceId);
+      const t = await dispararTreinoOnboarding(admin, userId, voiceId, "sgp");
       if (!t.ok) erros.push(`treino da voz: ${t.reason}`);
     } catch (e) {
       erros.push(`treino da voz: ${e instanceof Error ? e.message : String(e)}`);

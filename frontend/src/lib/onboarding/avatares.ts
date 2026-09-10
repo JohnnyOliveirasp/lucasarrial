@@ -22,6 +22,10 @@ import { pickImageRoute } from "@/lib/kie/failover";
 import { imageCreditCost } from "@/lib/kie/config";
 import { bypassesBilling } from "@/lib/credits/access";
 import { debitCreditsOnboarding } from "@/lib/credits/service";
+import {
+  deveCobrarOnboarding,
+  type OrigemOnboarding,
+} from "@/lib/credits/onboarding-cobranca";
 
 type Admin = SupabaseClient<Database>;
 
@@ -78,6 +82,12 @@ export async function gerarAvatares(
   userId: string,
   refKeys: string[],
   cenarios: readonly Cenario[] = AVATARES,
+  /**
+   * De onde veio o onboarding. Decide QUEM PAGA o avatar — ver
+   * `lib/credits/onboarding-cobranca.ts`. Default `"planilha"` de propósito:
+   * mantém o comportamento de 17/08 para quem já chamava sem o argumento.
+   */
+  origem: OrigemOnboarding = "planilha",
 ): Promise<AvataresResult> {
   const result: AvataresResult = { created: 0, skipped: 0, failed: [] };
   if (refKeys.length === 0) return result;
@@ -110,13 +120,20 @@ export async function gerarAvatares(
     .select("email")
     .eq("id", userId)
     .maybeSingle();
-  const billed = !bypassesBilling((prof as { email?: string } | null)?.email ?? null);
+  const billed = deveCobrarOnboarding({
+    origem,
+    bypass: bypassesBilling((prof as { email?: string } | null)?.email ?? null),
+  });
   const creditCost = imageCreditCost("1K");
 
   // Sem trava de saldo de propósito (decisão Johnny 21/08): no onboarding o
   // avatar é gerado mesmo com o aluno a zero e ele fica negativo até assinar
   // (`debitCreditsOnboarding`, migration 88). Só aqui; o /images/generate
   // normal continua recusando sem saldo.
+  //
+  // ⚠️ NO SGP (`origem: "sgp"`) não há débito NENHUM, então também não há
+  // negativo: o avatar é entrega do produto que o comprador já pagou. Ver
+  // `lib/credits/onboarding-cobranca.ts` para o defeito medido em 09/09.
   for (const avatar of cenarios) {
     try {
       const { taskId } = await kieCreateImageTask(
