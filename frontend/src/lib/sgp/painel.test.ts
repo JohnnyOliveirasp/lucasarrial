@@ -12,10 +12,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ERRO_TEXTO_MAX,
   ETAPA_HUMANA,
+  estadoDoTime,
+  formatarMarcaErro,
   lerCobranca,
+  lerMarcaErro,
+  limparTextoErro,
   montarLinha,
   ordenar,
+  relogioDoPedido,
   resumir,
   tempoHumano,
   SGP_PARADO_HORAS,
@@ -503,4 +509,191 @@ test("reproduz o caso real da Wallana (travada em 'foto' desde 31/08)", () => {
   assert.equal(l.paradoTexto, "2 dias e 3h");
   assert.equal(l.foto, "1 de 4");
   assert.match(l.oQueFazer, /Cobrar o aluno.*WhatsApp.*fotos/);
+});
+
+/* ==========================================================================
+ * PRONTO × AGUARDANDO × ERRO + o erro marcado pelo time (Lucas, 10/09)
+ *
+ * O que estes testes protegem:
+ *  1. o time consegue separar a fila em três grupos, com os números certos;
+ *  2. a marca do time NUNCA é confundida com o erro do SISTEMA (e vice-versa);
+ *  3. marcar erro NÃO esconde o aluno nem apaga o relógio do "parado há" —
+ *     que é o defeito que a migration 108 conserta e que, sem ela, o carimbo
+ *     `desde ...` compensa.
+ * ========================================================================== */
+
+const MARCA_EXEMPLO = formatarMarcaErro({
+  texto: "Aluno mandou foto de outra pessoa",
+  por: "victor@fastcloner.com",
+  em: new Date(AGORA - 2 * H).toISOString(),
+  paradoDesde: new Date(AGORA - 70 * H).toISOString(),
+});
+
+test("os três estados do time saem certos (a régua medida no banco em 10/09)", () => {
+  assert.equal(estadoDoTime(pedido({ status: "pronto" })), "pronto");
+  assert.equal(estadoDoTime(pedido({ status: "foto" })), "aguardando");
+  assert.equal(estadoDoTime(pedido({ status: "dados" })), "aguardando");
+  assert.equal(estadoDoTime(pedido({ status: "processando" })), "aguardando");
+  // erro do sistema
+  assert.equal(estadoDoTime(pedido({ status: "foto", erro: "treino da voz: timeout" })), "erro");
+  // status falhou, mesmo sem texto de erro
+  assert.equal(estadoDoTime(pedido({ status: "falhou" })), "erro");
+  // ERRO ganha de PRONTO: marca do time num pedido já entregue não some da vista
+  assert.equal(estadoDoTime(pedido({ status: "pronto", erro: MARCA_EXEMPLO })), "erro");
+  // string vazia/só espaço não é erro
+  assert.equal(estadoDoTime(pedido({ status: "foto", erro: "   " })), "aguardando");
+});
+
+test("resumir devolve os três estados SEMPRE, inclusive zerados", () => {
+  const linhas = [
+    montarLinha(pedido({ id: "a", status: "pronto" }), AGORA),
+    montarLinha(pedido({ id: "b", status: "foto" }), AGORA),
+    montarLinha(pedido({ id: "c", status: "dados" }), AGORA),
+  ];
+  const r = resumir(linhas);
+  assert.deepEqual(
+    r.porEstadoTime.map((e) => [e.estado, e.n]),
+    [
+      ["erro", 0],
+      ["aguardando", 2],
+      ["pronto", 1],
+    ],
+    "Erro 0 é uma resposta, não um motivo pra sumir com o filtro",
+  );
+  assert.equal(r.porEstadoTime[0].rotulo, "Erro");
+});
+
+test("carimbo do time: vai e volta sem perder nada", () => {
+  const m = lerMarcaErro(MARCA_EXEMPLO);
+  assert.ok(m, "o carimbo tem que ser lido de volta");
+  assert.equal(m.texto, "Aluno mandou foto de outra pessoa");
+  assert.equal(m.por, "victor@fastcloner.com");
+  assert.equal(m.em, new Date(AGORA - 2 * H).toISOString());
+  assert.equal(m.paradoDesde, new Date(AGORA - 70 * H).toISOString());
+});
+
+test("erro do SISTEMA não é lido como marca do time — é o que protege o diagnóstico", () => {
+  assert.equal(lerMarcaErro("clone de foto: rosto não encontrado"), null);
+  assert.equal(lerMarcaErro(null), null);
+  assert.equal(lerMarcaErro(""), null);
+  // parecido, mas não é o carimbo: continua sendo do sistema
+  assert.equal(lerMarcaErro("[erro do time] sem os campos"), null);
+});
+
+test("texto do atendente é saneado: uma linha, sem controle, com teto", () => {
+  assert.equal(limparTextoErro("  aluno   pediu\n\nreembolso  "), "aluno pediu reembolso");
+  assert.equal(limparTextoErro(""), "");
+  assert.equal(limparTextoErro("   "), "");
+  // `[` no começo não pode virar carimbo falso de autoria
+  assert.equal(limparTextoErro("[erro do time · fulano · x] fingindo"), "erro do time · fulano · x] fingindo");
+  assert.equal(limparTextoErro("a".repeat(ERRO_TEXTO_MAX + 50)).length, ERRO_TEXTO_MAX);
+});
+
+test("texto com colchete/ponto-médio no MEIO não quebra a leitura do carimbo", () => {
+  const v = formatarMarcaErro({
+    texto: "áudio ruim [ver print] · pedir de novo",
+    por: "luany@fastcloner.com",
+    em: new Date(AGORA).toISOString(),
+    paradoDesde: new Date(AGORA - 5 * H).toISOString(),
+  });
+  const m = lerMarcaErro(v);
+  assert.ok(m);
+  assert.equal(m.por, "luany@fastcloner.com");
+  assert.equal(m.texto, "áudio ruim [ver print] · pedir de novo");
+});
+
+test("a linha separa erro do TIME de erro do SISTEMA, com autoria", () => {
+  const doTime = montarLinha(pedido({ status: "foto", erro: MARCA_EXEMPLO }), AGORA);
+  assert.equal(doTime.estadoTime, "erro");
+  assert.equal(doTime.erroOrigem, "time");
+  assert.equal(doTime.erro, "Aluno mandou foto de outra pessoa", "o carimbo NÃO vai pra tela");
+  assert.equal(doTime.erroPor, "victor@fastcloner.com");
+  assert.equal(doTime.erroEm, new Date(AGORA - 2 * H).toISOString());
+  assert.match(doTime.oQueFazer, /Erro marcado pelo time \(victor@fastcloner\.com\)/);
+  assert.match(doTime.oQueFazer, /desmarcar/);
+
+  const doSistema = montarLinha(pedido({ status: "processando", erro: "treino da voz: timeout" }), AGORA);
+  assert.equal(doSistema.estadoTime, "erro");
+  assert.equal(doSistema.erroOrigem, "sistema");
+  assert.equal(doSistema.erro, "treino da voz: timeout");
+  assert.equal(doSistema.erroPor, null);
+  assert.match(doSistema.oQueFazer, /O sistema registrou um erro/);
+  assert.match(doSistema.oQueFazer, /NÃO prometa prazo/);
+
+  const semErro = montarLinha(pedido({ status: "foto" }), AGORA);
+  assert.equal(semErro.erroOrigem, null);
+  assert.equal(semErro.erro, null);
+});
+
+test("marcar erro NÃO tira o aluno da vista: vai pro topo, não pro fim", () => {
+  const comErro = montarLinha(
+    pedido({ id: "erro", status: "pronto", erro: MARCA_EXEMPLO }),
+    AGORA,
+  );
+  assert.equal(comErro.precisaAcao, true, "caso aberto não pode virar linha comum");
+
+  const tranquilo = montarLinha(
+    pedido({ id: "ok", status: "foto", atualizado_em: new Date(AGORA - 1 * H).toISOString() }),
+    AGORA,
+  );
+  assert.deepEqual(
+    ordenar([tranquilo, comErro]).map((l) => l.id),
+    ["erro", "ok"],
+  );
+});
+
+/**
+ * O TESTE QUE MAIS IMPORTA aqui. Sem a migration 108 o gatilho da 100 carimba
+ * `atualizado_em = now()` em todo update, então marcar um erro zeraria o
+ * "parado há" do aluno. O relógio viaja dentro do carimbo pra isso não
+ * acontecer — se este teste cair, marcar erro voltou a esconder aluno.
+ */
+test("marcar erro não zera o 'parado há' (o relógio viaja no carimbo)", () => {
+  const marca = formatarMarcaErro({
+    texto: "aluno sumiu depois de mandar 1 foto",
+    por: "victor@fastcloner.com",
+    em: new Date(AGORA).toISOString(),
+    paradoDesde: new Date(AGORA - 5 * 24 * H).toISOString(),
+  });
+  // o gatilho JÁ zerou atualizado_em — é este o cenário real de hoje
+  const l = montarLinha(
+    pedido({ status: "foto", atualizado_em: new Date(AGORA).toISOString(), erro: marca }),
+    AGORA,
+  );
+  assert.equal(l.paradoTexto, "5 dias", "o relógio real, não o do clique");
+  assert.equal(relogioDoPedido(pedido({ status: "foto", erro: marca })), new Date(AGORA - 5 * 24 * H).toISOString());
+});
+
+test("sem carimbo, o relógio continua sendo atualizado_em (nada muda pro resto)", () => {
+  const quando = new Date(AGORA - 3 * H).toISOString();
+  assert.equal(relogioDoPedido(pedido({ atualizado_em: quando })), quando);
+  // erro do SISTEMA não tem carimbo: o relógio continua vindo da coluna
+  assert.equal(
+    relogioDoPedido(pedido({ atualizado_em: quando, erro: "treino da voz: timeout" })),
+    quando,
+  );
+});
+
+test("marcar erro não invalida um 'já cobrei' que ainda estava valendo", () => {
+  const cobradoEm = new Date(AGORA - 3 * H).toISOString();
+  const marca = formatarMarcaErro({
+    texto: "aluno pediu pra esperar",
+    por: "luany@fastcloner.com",
+    em: new Date(AGORA - 1 * H).toISOString(),
+    // o relógio de antes da marca — anterior à cobrança
+    paradoDesde: new Date(AGORA - 60 * H).toISOString(),
+  });
+  const c = lerCobranca(
+    pedido({
+      status: "foto",
+      // o gatilho carimbou o agora quando o erro foi marcado
+      atualizado_em: new Date(AGORA - 1 * H).toISOString(),
+      erro: marca,
+      cobrado_em: cobradoEm,
+      cobrado_por: "luany@fastcloner.com",
+    }),
+    AGORA,
+  );
+  assert.ok(c, "o aluno não mexeu — quem anotou foi o time");
+  assert.equal(c.silenciado, true);
 });

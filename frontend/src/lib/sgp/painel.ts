@@ -99,7 +99,25 @@ export type LinhaPainel = {
   foto: string;
   voz: string;
   enviadoEm: string | null;
+  /**
+   * Texto do erro JÁ SEM o carimbo de autoria (ver `lerMarcaErro`). O que a
+   * tela mostra. `null` = sem erro nenhum.
+   */
   erro: string | null;
+  /** Quem registrou o erro: o TIME (na mão, nesta tela) ou o SISTEMA. */
+  erroOrigem: OrigemErro | null;
+  /** Só para `erroOrigem === "time"`: quem marcou. */
+  erroPor: string | null;
+  /**
+   * Só para `erroOrigem === "time"`: quando marcou, em ISO.
+   * ISO de propósito — quem formata é a TELA, no fuso de quem está lendo. Se
+   * fosse formatado aqui (no servidor) o time no Brasil leria a hora do servidor.
+   */
+  erroEm: string | null;
+  /** PRONTO | AGUARDANDO | ERRO — a leitura do TIME (pedido do Lucas, 10/09). */
+  estadoTime: EstadoTime;
+  /** O mesmo, já com o rótulo de tela. */
+  estadoTimeRotulo: string;
   /** A coluna mais importante da tela. Uma frase, sem jargão. */
   oQueFazer: string;
 };
@@ -115,6 +133,176 @@ export function tempoHumano(ms: number): string {
   const resto = h % 24;
   const dias = d === 1 ? "1 dia" : `${d} dias`;
   return resto ? `${dias} e ${resto}h` : dias;
+}
+
+/* ==========================================================================
+ * O ERRO MARCADO PELO TIME (pedido do Lucas, 10/09)
+ * ==========================================================================
+ *
+ * PEDIDO: *"mostrar em que pé está cada aluno do ponto de vista do TIME —
+ * pronto, aguardando ou erro — igual como era feito na planilha"*. Na planilha
+ * antiga isso era uma coluna preenchida na mão, mais a coluna Responsável. O
+ * sistema novo mostra onde o ALUNO está (etapa do wizard) e perdeu o gesto de
+ * o TIME dizer *"esse aqui deu problema, e o problema é este"*.
+ *
+ * ONDE ISSO É GRAVADO: na coluna `erro`, que JÁ EXISTE e hoje está vazia nos 63
+ * pedidos — sem migration, como pedido.
+ *
+ * ⚠️ MAS A COLUNA `erro` TEM DOIS DONOS. O SISTEMA também escreve nela
+ * (`lib/sgp/processar.ts`, quando o clone de foto ou o treino de voz falha).
+ * Confundir os dois seria ruim nos dois sentidos: o time apagaria o diagnóstico
+ * técnico sem saber, e o técnico leria "aluno mandou foto de outra pessoa" como
+ * se fosse defeito do sistema.
+ *
+ * A separação é um CARIMBO no começo do texto, e é ele que resolve, de uma vez:
+ *   - a autoria (requisito 4: QUEM marcou e QUANDO) sem coluna nova;
+ *   - a distinção time × sistema (só o do time tem carimbo);
+ *   - o "desmarcar" seguro (só se apaga o que TEM carimbo — ver a rota).
+ *
+ * Formato gravado:
+ *   [erro do time · victor@x.com · 2026-09-10T14:32:11.000Z · desde 2026-09-05T09:10:00.000Z] texto livre
+ *
+ * É legível pra quem abrir o banco na mão (não é base64 nem JSON escondido) e
+ * é ancorado em `^`, então texto livre com colchete no meio não confunde nada.
+ */
+
+/** Quem escreveu o que está na coluna `erro`. */
+export type OrigemErro = "time" | "sistema";
+
+/** O que o carimbo guarda. */
+export type MarcaErro = {
+  /** O texto que o atendente escreveu, já sem o carimbo. */
+  texto: string;
+  /** E-mail (ou user_id) de quem marcou. Nunca vazio. */
+  por: string;
+  /** Quando marcou, ISO. `null` quando o carimbo veio ilegível. */
+  em: string | null;
+  /**
+   * O `atualizado_em` que o pedido tinha ANTES da marca — o relógio do
+   * "parado há". Ver `relogioDoPedido` para o motivo de isto existir.
+   */
+  paradoDesde: string | null;
+};
+
+/** Teto do texto livre. Uma frase pro próximo atendente, não um relatório. */
+export const ERRO_TEXTO_MAX = 300;
+
+const MARCA_ABERTURA = "[erro do time · ";
+const MARCA_RE = /^\[erro do time · ([^·\]]+) · ([^·\]]+?)(?: · desde ([^·\]]+?))?\]\s?/;
+
+/** Campo do carimbo: nada que possa quebrar a leitura dele depois. */
+function limparCampo(v: string): string {
+  return v.replace(/[·[\]\r\n]/g, "").trim();
+}
+
+/**
+ * O texto livre do atendente, saneado.
+ *
+ * Uma linha só (quebra de linha vira espaço), sem caracteres de controle, com
+ * teto de tamanho, e sem `[` no começo — só pra que um texto não consiga
+ * *parecer* um carimbo de autoria de outra pessoa.
+ */
+export function limparTextoErro(bruto: string): string {
+  const limpo = bruto
+    // `\p{Cc}` = categoria "control" do Unicode. Escrito assim (e nao como
+    // \x00-\x1f literal) pra nao plantar byte de controle no fonte.
+    .replace(/\p{Cc}/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\[+/, "")
+    .trim();
+  return limpo.slice(0, ERRO_TEXTO_MAX).trim();
+}
+
+/** Monta o valor que vai pra coluna `erro`. Usado pela rota de escrita. */
+export function formatarMarcaErro(m: {
+  texto: string;
+  por: string;
+  em: string;
+  paradoDesde?: string | null;
+}): string {
+  const por = limparCampo(m.por) || "alguém do time";
+  const desde = m.paradoDesde ? ` · desde ${limparCampo(m.paradoDesde)}` : "";
+  return `${MARCA_ABERTURA}${por} · ${limparCampo(m.em)}${desde}] ${limparTextoErro(m.texto)}`;
+}
+
+/** Data do carimbo só vale se for lida como data. Lixo vira `null`, não vira mentira. */
+function isoValido(v: string | undefined): string | null {
+  if (!v) return null;
+  return Number.isFinite(new Date(v).getTime()) ? v : null;
+}
+
+/**
+ * Lê o carimbo. `null` = não é marca do time (ou está vazio) — ou seja, é erro
+ * do SISTEMA, e ninguém apaga erro do sistema por esta tela.
+ */
+export function lerMarcaErro(erro: string | null | undefined): MarcaErro | null {
+  if (!erro) return null;
+  const m = MARCA_RE.exec(erro);
+  if (!m) return null;
+  return {
+    texto: erro.slice(m[0].length).trim(),
+    por: m[1].trim() || "alguém do time",
+    em: isoValido(m[2]?.trim()),
+    paradoDesde: isoValido(m[3]?.trim()),
+  };
+}
+
+/**
+ * De quando conta o "parado há".
+ *
+ * ⚠️ O PORQUÊ, que não é óbvio: o gatilho `sgp_pedidos_touch` (migration 100,
+ * que É a que está aplicada) faz `new.atualizado_em = now()` em TODO update.
+ * Então marcar um erro por esta tela ZERA o relógio do aluno: quem estava
+ * parado há 5 dias vira "parado há 0min", sai do vermelho e some do contador —
+ * exatamente o "botão que some com a linha" que o pedido de 04/09 proíbe. É o
+ * mesmo estrago que a migration 106 conserta para a cobrança (e que a 108,
+ * escrita neste PR e ainda NÃO aplicada, conserta para o `erro`).
+ *
+ * Enquanto a 108 não entra, o relógio original viaja DENTRO do carimbo
+ * (`desde ...`) e é ele que manda aqui. Com a 108 aplicada o gatilho preserva
+ * `atualizado_em` e os dois valores passam a ser o mesmo — o resultado não muda.
+ *
+ * Resíduo honesto: marcar e depois DESMARCAR (sem a 108) perde o relógio de vez,
+ * porque o desmarcar leva o carimbo junto. Está dito na tela e no PR.
+ */
+export function relogioDoPedido(p: SgpPedidoRow): string {
+  return lerMarcaErro(p.erro)?.paradoDesde ?? p.atualizado_em;
+}
+
+/* ==========================================================================
+ * PRONTO × AGUARDANDO × ERRO — a leitura do TIME
+ * ========================================================================== */
+
+/** Os três estados da planilha antiga, que o time pede de volta. */
+export const ESTADOS_TIME = ["erro", "aguardando", "pronto"] as const;
+export type EstadoTime = (typeof ESTADOS_TIME)[number];
+
+export const ESTADO_TIME_ROTULO: Record<EstadoTime, string> = {
+  erro: "Erro",
+  aguardando: "Aguardando",
+  pronto: "Pronto",
+};
+
+/**
+ * A régua, medida no banco em 10/09 (63 pedidos: dados 8, foto 19, audio 7,
+ * pronto 29, e `erro` vazio nos 63):
+ *
+ *   ERRO       = tem erro registrado (do time OU do sistema), ou status `falhou`
+ *   PRONTO     = status `pronto`
+ *   AGUARDANDO = todo o resto
+ *
+ * ERRO GANHA DE PRONTO de propósito: se o time marcou problema num pedido já
+ * entregue (clone errado, aluno reclamou), o que importa é o problema aberto —
+ * senão a marca que ele acabou de fazer sumiria da vista.
+ *
+ * `falhou` entra em ERRO por definição ("Deu erro"), e não muda os números
+ * medidos: hoje não há nenhum `falhou`.
+ */
+export function estadoDoTime(p: SgpPedidoRow): EstadoTime {
+  if (p.erro?.trim() || p.status === "falhou") return "erro";
+  if (p.status === "pronto") return "pronto";
+  return "aguardando";
 }
 
 /**
@@ -169,7 +357,10 @@ export function lerCobranca(
   if (!p.cobrado_em) return null;
   const em = new Date(p.cobrado_em).getTime();
   if (!Number.isFinite(em)) return null;
-  if (new Date(p.atualizado_em).getTime() > em) return null;
+  // `relogioDoPedido` e não `p.atualizado_em` cru: sem a migration 108, marcar
+  // um erro carimba `atualizado_em = now()` e invalidaria, de graça, um "já
+  // cobrei" que ainda estava valendo — o ALUNO não mexeu, o time é que anotou.
+  if (new Date(relogioDoPedido(p)).getTime() > em) return null;
 
   // Relógio adiantado do banco não pode virar tempo negativo na tela.
   const desdeMs = Math.max(0, agora - em);
@@ -191,8 +382,30 @@ export function oQueFazer(
   paradoMs: number,
   cobranca: Cobranca | null = null,
 ): string {
+  // O time marcou um problema NA MÃO. Isso ganha de tudo: é a única informação
+  // da linha que veio de uma pessoa que falou com o aluno, e é o que a planilha
+  // antiga tinha e o sistema tinha perdido.
+  const marca = lerMarcaErro(p.erro);
+  if (marca) {
+    return (
+      `Erro marcado pelo time (${marca.por}): ${marca.texto} ` +
+      `— trate este caso primeiro. Quando estiver resolvido, clique em "desmarcar" nesta linha ` +
+      `pra ele voltar pro fluxo normal.`
+    );
+  }
   if (p.status === "falhou") {
     return "Deu erro no sistema. O time técnico já é acionado automaticamente — avise o aluno que estamos resolvendo e NÃO prometa prazo.";
+  }
+  // Erro gravado pelo SISTEMA sem o pedido ter ido pra `falhou`: é o que
+  // `lib/sgp/processar.ts` faz quando o clone de foto ou o treino de voz falha
+  // e o status fica onde estava. Sem isto a linha mostraria um erro na coluna e
+  // "Nada a fazer" ao lado — foi o tipo de caso que a planilha antiga marcava
+  // como Erro e o sistema deixou invisível.
+  if (p.erro?.trim()) {
+    return (
+      `O sistema registrou um erro neste pedido: ${p.erro.trim()}. ` +
+      `Avise o time técnico e NÃO prometa prazo ao aluno.`
+    );
   }
   if (p.status === "pronto") return "Nada a fazer. Já foi entregue.";
   if (p.status === "processando") {
@@ -241,8 +454,13 @@ export function montarLinha(
   agora: number,
   silencioMs: number = SGP_COBRANCA_SILENCIO_MS,
 ): LinhaPainel {
-  const paradoMs = agora - new Date(p.atualizado_em).getTime();
+  // `relogioDoPedido` e não `atualizado_em` cru — ver o comentário lá: enquanto
+  // a migration 108 não entra, marcar um erro zeraria este relógio.
+  const paradoMs = agora - new Date(relogioDoPedido(p)).getTime();
   const cobranca = lerCobranca(p, agora, silencioMs);
+  const marca = lerMarcaErro(p.erro);
+  const temErro = !!p.erro?.trim();
+  const estadoTime = estadoDoTime(p);
 
   // Travado no wizard há +48h. Isto NÃO depende da cobrança: o aluno está
   // parado do mesmo jeito, e é o que a linha continua mostrando na tela.
@@ -250,7 +468,10 @@ export function montarLinha(
   // O que GRITA. Um "já cobrei" recente tira o vermelho e o contador — e só.
   const silenciado = travado && !!cobranca?.silenciado;
   const parado = travado && !silenciado;
-  const precisaAcao = parado || p.status === "falhou";
+  // Erro (do time OU do sistema) é caso ABERTO: sobe pro topo junto com quem
+  // precisa ser cobrado. Se ficasse no meio da lista, marcar o erro seria o
+  // mesmo que esconder o aluno — o defeito que este pedido veio consertar.
+  const precisaAcao = parado || p.status === "falhou" || temErro;
 
   return {
     id: p.id,
@@ -270,7 +491,14 @@ export function montarLinha(
     foto: colunaFoto(p),
     voz: colunaVoz(p),
     enviadoEm: p.enviado_em,
-    erro: p.erro,
+    // O texto do erro vai pra tela SEM o carimbo (requisito 3: quem for atender
+    // precisa ler o que houve, não o cabeçalho de autoria).
+    erro: marca ? marca.texto : (p.erro?.trim() || null),
+    erroOrigem: temErro ? (marca ? "time" : "sistema") : null,
+    erroPor: marca?.por ?? null,
+    erroEm: marca?.em ?? null,
+    estadoTime,
+    estadoTimeRotulo: ESTADO_TIME_ROTULO[estadoTime],
     oQueFazer: oQueFazer(p, paradoMs, cobranca),
   };
 }
@@ -304,6 +532,14 @@ export type ResumoPainel = {
    */
   cobrados: number;
   porEtapa: Array<{ status: SgpStatus; etapa: string; n: number }>;
+  /**
+   * PRONTO / AGUARDANDO / ERRO — a leitura do TIME (pedido do Lucas, 10/09).
+   *
+   * Vem SEMPRE com os três, inclusive zerados. Diferente de `porEtapa`, aqui
+   * o zero informa: "Erro 0" é a resposta certa pra *"tem algum caso com
+   * problema?"*, e some-se o filtro se a pilha some quando está vazia.
+   */
+  porEstadoTime: Array<{ estado: EstadoTime; rotulo: string; n: number }>;
 };
 
 /** Contadores do topo: quantos em cada etapa e quantos parados há +48h. */
@@ -317,5 +553,10 @@ export function resumir(linhas: LinhaPainel[]): ResumoPainel {
     porEtapa: (Object.keys(ETAPA_HUMANA) as SgpStatus[])
       .filter((s) => contagem.has(s))
       .map((s) => ({ status: s, etapa: ETAPA_HUMANA[s], n: contagem.get(s) ?? 0 })),
+    porEstadoTime: ESTADOS_TIME.map((estado) => ({
+      estado,
+      rotulo: ESTADO_TIME_ROTULO[estado],
+      n: linhas.filter((l) => l.estadoTime === estado).length,
+    })),
   };
 }
