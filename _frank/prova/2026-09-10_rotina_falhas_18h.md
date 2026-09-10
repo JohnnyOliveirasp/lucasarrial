@@ -157,3 +157,12 @@ e eu não testei.
 - Nenhuma migration, nenhum DDL, nada que gaste crédito de aluno. O único custo
   foi whisper de conferência (~R$ 0,04 em dois passes).
 - Grupo avisado dos fatos consumados (regra 7): cartão fechado + e-mail ao aluno.
+
+### 6.1 Conferência das branches (passo fixo), com o resultado cru
+
+`git rev-list main..<branch>` em todas as locais: **19 branches à frente da
+main**, a maior com 5 commits (`fix/estorno-zera-e-nao-ressuscita`). Nada
+**meu** está preso — esta ronda não produziu código. Não abri nenhuma: parte já
+está catalogada como STALE/não-mergear no índice de ordens, e varrer as 19 é
+tarefa própria, não rabo desta. Fica o número escrito para a próxima ronda não
+precisar redescobrir.
