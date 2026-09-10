@@ -29,6 +29,7 @@ import {
   decodificarBytes,
   utf8Valido,
   mailText,
+  fronteirasDeclaradas,
 } from "./mail-charset.ts";
 
 
@@ -241,4 +242,97 @@ test("decodificarBytes cobre o encoded-word ISO-8859-1 que o Assunto usava errad
   // =?ISO-8859-1?Q?Refer=EAncia?= — antes virava U+FFFD por assumir UTF-8.
   const bytes = bytesDeQuotedPrintable("Refer=EAncia");
   assert.equal(decodificarBytes(bytes, "iso-8859-1"), "Referência");
+});
+
+// ================= FRONTEIRA MIME DECLARADA (caso Marcelo, 10/09) =================
+//
+// A guarda existe porque a fronteira era ADIVINHADA por formato de linha
+// (`--` + 6 caracteres) e o separador de encaminhamento do Gmail
+// (`--------- Mensagem encaminhada ---------`) casava nele: o corpo inteiro era
+// decepado no caractere 1, `mailText` devolvia "" e `mail-respond.ts:256`
+// marcava a mensagem como lida e descartava. Foi assim que o pedido de saída de
+// um aluno pagante ("Eu não quero mais seguir no programa.") chegou mudo na
+// Fast, a 2 dias do fim da janela de reembolso dele.
+
+test("fronteirasDeclaradas lê boundary com e sem aspas, e não repete", () => {
+  const raw = [
+    'Content-Type: multipart/mixed; boundary="AAA111bbb"',
+    "Content-Type: multipart/alternative; boundary=CCC222ddd",
+    'Content-Type: multipart/mixed; boundary="AAA111bbb"',
+  ].join("\r\n");
+  assert.deepEqual(fronteirasDeclaradas(raw), ["AAA111bbb", "CCC222ddd"]);
+});
+
+test("fronteirasDeclaradas: mensagem de uma parte só não declara fronteira nenhuma", () => {
+  assert.deepEqual(fronteirasDeclaradas(mimePlain("oi")), []);
+});
+
+test("REGRESSÃO Marcelo: separador de encaminhamento do Gmail NÃO é fronteira MIME", () => {
+  const corpo = [
+    "--------- Mensagem encaminhada ---------",
+    "De: Fast - FastCloner <suporte@fastcloner.com>",
+    "Assunto: o prazo vai ate 11/09",
+    "",
+    "(o nosso proprio aviso, citado inteiro pelo aluno)",
+    "",
+    "Eu nao quero mais seguir no programa.",
+  ].join("\r\n");
+
+  const raw = [
+    "From: aluno@exemplo.com",
+    'Content-Type: multipart/alternative; boundary="00000000000062bc80065b11fd4c"',
+    "",
+    "--00000000000062bc80065b11fd4c",
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: quoted-printable",
+    "",
+    paraQuotedPrintable(corpo),
+    "--00000000000062bc80065b11fd4c--",
+  ].join("\r\n");
+
+  const texto = mailText(raw);
+  assert.ok(
+    texto.includes("Eu nao quero mais seguir no programa."),
+    `a frase do aluno vem DEPOIS da citação e tinha que sobreviver, saiu: ${JSON.stringify(texto.slice(0, 120))}`,
+  );
+  assert.ok(texto.length > 5, "corpo < 5 chars vira markSeen+skipped em mail-respond.ts:256");
+});
+
+test("a fronteira REAL continua cortando: a parte html não vaza pro texto", () => {
+  const raw = [
+    "From: aluno@exemplo.com",
+    'Content-Type: multipart/alternative; boundary="LIMITE-2026"',
+    "",
+    "--LIMITE-2026",
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: quoted-printable",
+    "",
+    paraQuotedPrintable("quero cancelar"),
+    "--LIMITE-2026",
+    'Content-Type: text/html; charset="UTF-8"',
+    "",
+    "<p>quero cancelar</p>",
+    "--LIMITE-2026--",
+  ].join("\r\n");
+
+  const texto = mailText(raw);
+  assert.equal(texto, "quero cancelar");
+  assert.ok(!texto.includes("<p>"), "a parte html não pode vazar pra dentro do text/plain");
+});
+
+test("fronteira com caractere especial de regex é tratada como literal", () => {
+  // RFC 2046 permite ( ) + / ? = _ , - . : na fronteira — todos especiais em regex.
+  const b = "a+b(c)/d?e.f";
+  const raw = [
+    "From: aluno@exemplo.com",
+    `Content-Type: multipart/alternative; boundary="${b}"`,
+    "",
+    `--${b}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: quoted-printable",
+    "",
+    paraQuotedPrintable("quero sair"),
+    `--${b}--`,
+  ].join("\r\n");
+  assert.equal(mailText(raw), "quero sair");
 });
