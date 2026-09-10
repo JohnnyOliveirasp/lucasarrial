@@ -256,16 +256,74 @@ export function stripHtml(s: string): string {
  * mandar, e a decisão sobre byte ruim virou por fração, nunca tudo-ou-nada.
  * Ver `mail-charset.ts`.
  */
+/**
+ * As fronteiras MIME REALMENTE declaradas nos cabeçalhos da mensagem.
+ *
+ * ⚠️ POR QUE ISTO EXISTE (medido em 10/09/2026, incidente do Marcelo).
+ * A versão anterior não lia `boundary=` nenhum: ADIVINHAVA a fronteira com
+ * `/\r?\n--[-=_a-zA-Z0-9]{6,}/`, isto é, "linha que começa com `--` e mais 6
+ * caracteres". Só que o Gmail abre todo encaminhamento com a linha
+ *
+ *     --------- Mensagem encaminhada ---------
+ *
+ * que casa nesse padrão (`--` + 7 hifens). O corpo inteiro era decepado no
+ * caractere 1 e `mailText` devolvia STRING VAZIA — e em `mail-respond.ts:256`
+ * corpo com menos de 5 chars é `markSeen` + `skipped`, ou seja a mensagem do
+ * aluno era marcada como lida e descartada em silêncio.
+ *
+ * Custo real medido: `marcelopersonalthe32@gmail.com`, pagante, escreveu em
+ * 09/09 19:37Z encaminhando o nosso próprio aviso de prazo com a frase dele no
+ * fim — *"Eu não quero mais seguir no programa."* — que é exatamente o pedido
+ * de saída que a casa tinha pedido por escrito ("me responda dizendo isso até
+ * 11/09"). O texto estava no MIME cru (3.513 bytes de `text/plain`); a Fast
+ * recebeu `""`. A janela de reembolso dele fechava em 11/09.
+ *
+ * A correção não é alargar o palpite: é PARAR DE ADIVINHAR. Fronteira MIME não
+ * se deduz do formato da linha, ela vem declarada em `boundary=` no
+ * `Content-Type` — e mensagem de uma parte só não tem fronteira nenhuma, então
+ * qualquer `-----` no corpo dela é CONTEÚDO e não separador.
+ */
+export function fronteirasDeclaradas(raw: string): string[] {
+  const achadas: string[] = [];
+  // `boundary="com espaço"` ou `boundary=semaspas`; RFC 2046 permite
+  // ' ( ) + _ , - . / : = ? além de alfanumérico, daí não dá pra restringir.
+  const re = /boundary\s*=\s*(?:"([^"\r\n]+)"|([^\s;"\r\n]+))/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    const b = (m[1] ?? m[2] ?? "").trim();
+    if (b && !achadas.includes(b)) achadas.push(b);
+  }
+  return achadas;
+}
+
+/** Escapa a fronteira pra ela entrar num RegExp como texto literal. */
+function comoLiteral(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Corta `seg` na PRIMEIRA fronteira declarada que aparecer nele.
+ * Sem fronteira declarada (mensagem de uma parte só), não corta nada.
+ */
+function cortarNaFronteira(seg: string, fronteiras: string[]): string {
+  let corte = -1;
+  for (const b of fronteiras) {
+    const i = seg.search(new RegExp(`\\r?\\n--${comoLiteral(b)}`));
+    if (i > 0 && (corte < 0 || i < corte)) corte = i;
+  }
+  return corte > 0 ? seg.slice(0, corte) : seg;
+}
+
 export function mailText(raw: string): string {
   const plainIdx = raw.search(/Content-Type:\s*text\/plain/i);
   const htmlIdx = raw.search(/Content-Type:\s*text\/html/i);
   const idx = plainIdx >= 0 ? plainIdx : htmlIdx;
+  const fronteiras = fronteirasDeclaradas(raw);
   let seg = idx >= 0 ? raw.slice(idx) : raw;
   const headBlock = seg.slice(0, 400);
   const start = seg.search(/\r?\n\r?\n/);
   seg = start >= 0 ? seg.slice(start) : seg;
-  const boundary = seg.search(/\r?\n--[-=_a-zA-Z0-9]{6,}/);
-  if (boundary > 0) seg = seg.slice(0, boundary);
+  seg = cortarNaFronteira(seg, fronteiras);
 
   // BYTES → TEXTO. Depois desta linha não existe mais byte cru no fluxo: `seg`
   // era string onde 1 char = 1 byte, `texto` é texto de verdade.
