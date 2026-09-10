@@ -23,12 +23,51 @@
  * prontas com `qa.setup_s` (instrumentado em 2bd3c3f), p50 **73,5s**, p95
  * **94,2s**, máx **116,8s** — ~85s que a calibração antiga não enxergava.
  *
- * RE-MEDIDO em 08/09 somando os dois relógios (setup_s + elapsed_s) contra o
- * teto desta função, n=161 desde 05/09: pior uso **62,9%**, p95 **52,6%**,
- * ZERO gerações acima de 80%. Ou seja: a régua tem folga e NÃO é a causa dos
- * estouros que sobraram no #15 — mas a folga é 1,6×, não os 2,5× que o texto
- * antigo prometia. Quem cortar o piso achando que sobra 2,5× come a margem
- * inteira e passa a matar geração saudável.
+ * ⛔ A CONCLUSÃO DE 08/09 ("pior uso 62,9%, p95 52,6%, ZERO acima de 80%: a
+ * régua tem folga e NÃO é a causa dos estouros") FOI FALSIFICADA EM 10/09. Ela
+ * não estava mal medida — estava medida numa janela em que o setup se comportou.
+ * No dia seguinte ele não se comportou e o número virou outro. Fica registrado
+ * porque aquele texto dizia, a quem abrisse este arquivo, que aqui não havia
+ * nada pra consertar.
+ *
+ * RE-MEDIDO em 10/09 (n=279 prontas desde 05/09, `setup_s + elapsed_s` contra
+ * este teto, consulta PAGINADA):
+ *   - pior uso **90,6%**, não 62,9%. É a `873fcee4` (09/09 16:11, 1.591 chars,
+ *     10 chunks, teto 600s): setup **242,2s** + elapsed 301,1s = 543,3s. Ficou
+ *     a **57 segundos** de virar mais uma ocorrência deste chamado.
+ *   - setup máximo **260,7s**, não 116,8s: o máximo MAIS QUE DOBROU em um dia.
+ *   - os 3 setups acima de 150s de toda a telemetria (197,2s / 242,2s / 260,7s)
+ *     caem numa janela de 90 min em 09/09 (14:43 → 16:11). Nos 4 dias
+ *     anteriores, o máximo foi ≤116,8s.
+ *
+ * A CAUSA, ENFIM NOMEADA: não é "chunk pendurado" — é o **pico de setup comendo
+ * a base fixa do teto**. A base existe pra absorver o setup e estava
+ * dimensionada pela MEDIANA (~73s), não pela cauda. Com a régua antiga (300s de
+ * base) o que sobra por chunk é `(300 − setup)/chunks + 30`:
+ *   - setup típico (73s), 10 chunks → 22,7 + 30 = **52,7s/chunk**: folgado;
+ *   - setup de pico (260s), 10 chunks →  4,0 + 30 = **34,0s/chunk**.
+ * E o p95 medido de segundos-por-chunk na faixa 9–12 é **34,4s**. No pico de
+ * setup, texto longo virava cara ou coroa contra o próprio p95 da frota. E
+ * texto longo falha primeiro porque é quem precisa de mais chunks — que é
+ * exatamente o padrão das ocorrências que sobraram no #15.
+ *
+ * ⚠️ O PICO NÃO É NOSSO PRA PREVENIR. Conferido em 10/09: NÃO houve deploy do
+ * worker em 09/09 (`runpod-worker.yml`, último em 08/09 14:47Z) — não é cold
+ * start que a casa causou, é variação do lado do RunPod (escala, disputa de GPU,
+ * rede pro download do LoRA/modelo). Como não dá pra evitar, a régua tem que
+ * TOLERAR. Por isso a base virou reserva nomeada, e não um "5 min" solto.
+ *
+ * ⚠️ LIMITE DO QUE ESTA MUDANÇA PROVA: ela tira a estreiteza estrutural que o
+ * quase-acidente de 90,6% expôs. Ela NÃO prova que teria salvado a `a07e9278`
+ * (04/09, 9 chunks), que estourou 570s nas DUAS tentativas — o dado não diz de
+ * quanto ela precisava, só que precisava de mais. Não escreva em lugar nenhum
+ * que o #15 está curado por causa disto.
+ *
+ * ⚠️ A AMOSTRA TEM UM QUARTO CEGO, E ELE PUXA PRO LADO INSEGURO: `qa.setup_s` só
+ * existe em **71–78%** das gerações prontas, TODO DIA desde 05/09 — não é começo
+ * de telemetria, é buraco permanente. Então "máximo 260,7s" é o máximo entre os
+ * que REPORTAM; o real pode ser maior. Por isso a reserva fica acima do pior
+ * caso observado, e não colada nele.
  *
  * ⚠️ ARMADILHA DE MEDIÇÃO: `generations.elapsed_seconds` significa DUAS COISAS.
  * No SUCESSO é o `elapsed_s` do worker (SEM setup); na FALHA é o
@@ -38,9 +77,28 @@
  * comparar, e confira que a linha TEM a chave: sem ela é geração de imagem
  * anterior a 05/09, não "setup zero".
  */
+/**
+ * Orçamento de SETUP: baixar o LoRA, preparar a referência, carregar o modelo —
+ * tudo que corre ANTES do `self.t0` do worker e que mesmo assim conta no
+ * executionTimeout do RunPod. Medido em 10/09: p50 73,1s / p95 94,4s / máx
+ * **260,7s** (n=279, 05→10/09). 360s cobre o pior caso observado com ~100s de
+ * margem — a margem é justamente pro quarto da amostra que não reporta setup.
+ * ⚠️ Isto NÃO é meta de tempo, é rede de segurança. Não aperte contra o p50.
+ */
+const RESERVA_SETUP_S = 360;
+
+/**
+ * Orçamento de INFERÊNCIA por pedaço de 160 chars (espelha TTS_CHUNK_MAX_CHARS
+ * do worker). Medido em 10/09 nas faixas longas, que são onde o teto aperta:
+ * p50 15,4–21,9s, **p95 34,4s**. Os 30s antigos ficavam ABAIXO do p95: só
+ * funcionavam enquanto a base sobrava, e pararam de funcionar no dia em que a
+ * base não sobrou. 40s fica acima do p95 medido.
+ */
+const SEGUNDOS_POR_CHUNK = 40;
+
 export function inferenceExecutionTimeoutMs(textLen: number): number {
   const chunks = Math.max(1, Math.ceil(textLen / 160));
-  return Math.max(8 * 60, 5 * 60 + chunks * 30) * 1000;
+  return Math.max(8 * 60, RESERVA_SETUP_S + chunks * SEGUNDOS_POR_CHUNK) * 1000;
 }
 
 /**

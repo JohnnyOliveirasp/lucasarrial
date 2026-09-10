@@ -19,9 +19,59 @@ test("teto: piso de 8 min vale pra texto curto", () => {
   assert.equal(inferenceExecutionTimeoutMs(206), 8 * 60 * 1000); // caso 28/08
 });
 
-test("teto: 5 min + 30s por pedaço de 160 chars quando passa do piso", () => {
-  // 2.567 chars = 17 pedaços → 5min + 8,5min = 13,5 min
-  assert.equal(inferenceExecutionTimeoutMs(2567), (5 * 60 + 17 * 30) * 1000);
+test("teto: reserva de setup + 40s por pedaço de 160 chars quando passa do piso", () => {
+  // 2.567 chars = 17 pedaços → 360s + 680s = 1.040s
+  assert.equal(inferenceExecutionTimeoutMs(2567), (360 + 17 * 40) * 1000);
+});
+
+/**
+ * A GUARDA DO #15, e o motivo dela — não é teste de aritmética.
+ *
+ * O estouro que sobrou no #15 não é chunk pendurado: é pico de setup comendo a
+ * base fixa do teto. O que mata a geração é o que sobra POR CHUNK depois que o
+ * setup cobra a parte dele:
+ *
+ *     sobra_por_chunk = (reserva_setup − setup_real) / chunks + segundos_por_chunk
+ *
+ * Medido em 10/09 (n=279 desde 05/09): setup máx 260,7s, e o p95 de
+ * segundos-por-chunk na faixa longa (9–12 chunks) é 34,4s. A régua antiga
+ * (300s + 30s/chunk) dava 34,0s/chunk no pico de setup — ABAIXO do p95 da
+ * própria frota, ou seja cara ou coroa. Este teste trava a propriedade: mesmo
+ * no pior setup já visto, um texto longo tem que ter folga contra o p95.
+ *
+ * Se alguém apertar a régua e este teste cair, o número não é o problema — a
+ * conta acima é. Re-meça setup e s/chunk ANTES de mexer nas constantes.
+ */
+test("#15: no pior setup já medido, texto longo ainda tem folga contra o p95 de s/chunk", () => {
+  const SETUP_PIOR_MEDIDO_S = 260.7; // 09/09 16:11, geração 873fcee4
+  const P95_SEGUNDOS_POR_CHUNK = 34.4; // faixa 9–12 chunks, n=279
+
+  for (const chunks of [9, 10, 13, 17]) {
+    const textLen = chunks * 160; // exatamente `chunks` pedaços
+    const tetoS = inferenceExecutionTimeoutMs(textLen) / 1000;
+    const sobraPorChunk = (tetoS - SETUP_PIOR_MEDIDO_S) / chunks;
+
+    assert.ok(
+      sobraPorChunk > P95_SEGUNDOS_POR_CHUNK,
+      `${chunks} chunks: sobra ${sobraPorChunk.toFixed(1)}s/chunk contra p95 de ` +
+        `${P95_SEGUNDOS_POR_CHUNK}s — a régua voltou a ser cara ou coroa no pico de setup`,
+    );
+  }
+});
+
+test("#15: a régua antiga (300s + 30s/chunk) FALHA essa mesma guarda", () => {
+  // Controle negativo: sem isto, o teste acima passaria por acidente e ninguém
+  // saberia que ele tem poder de reprovar. A régua velha é o caso conhecido-ruim.
+  const antiga = (textLen: number) => {
+    const chunks = Math.max(1, Math.ceil(textLen / 160));
+    return Math.max(8 * 60, 5 * 60 + chunks * 30);
+  };
+  const chunks = 10;
+  const sobraPorChunk = (antiga(chunks * 160) - 260.7) / chunks;
+  assert.ok(
+    sobraPorChunk < 34.4,
+    "a régua antiga deveria reprovar aqui — se ela passa, a conta da guarda mudou",
+  );
 });
 
 test("reenvio dispara nas duas formas do erro de teto", () => {
