@@ -104,8 +104,64 @@ export async function debitCreditsOnboarding(args: {
   if (error) return { ok: false, reason: "error", balance: 0 };
 
   const r = (data ?? {}) as RpcResult & { went_negative?: boolean };
-  if (r.ok) return { ok: true, balance: r.balance ?? 0, wentNegative: r.went_negative === true };
+  if (r.ok) {
+    // O negativo é AUTORIZADO aqui (mig 88) — mas nunca deveria ser SILENCIOSO.
+    // Ele só é sadio sob a premissa de que os 100k da assinatura chegam depois
+    // e absorvem a dívida. Quando a premissa falha, o aluno fica impedido e
+    // ninguém fica sabendo: foi assim que 14 perfis do SGP chegaram a -10.525
+    // sem disparar nada (medido 09/09). Este log é o sensor que faltava.
+    //
+    // ⚠️ NÃO é uma trava: travar aqui reverteria a decisão do Johnny de 21/08
+    // para o fluxo da PLANILHA, onde o negativo é adiantamento legítimo. A
+    // trava de verdade seria no `debit_credits_onboarding` (SQL) e exige
+    // migration + decisão de negócio.
+    if (r.went_negative === true) {
+      console.error(
+        `[credits] onboarding deixou saldo NEGATIVO: user=${args.userId} ` +
+          `saldo=${r.balance ?? 0} amount=-${args.amount} kind=${args.kind} ` +
+          `ref=${args.refType ?? "-"}:${args.refId ?? "-"} — ` +
+          `só é sadio se a assinatura vier depois e absorver a dívida.`,
+      );
+    }
+    return { ok: true, balance: r.balance ?? 0, wentNegative: r.went_negative === true };
+  }
   return { ok: false, reason: r.reason === "no_profile" ? "no_profile" : "error", balance: r.balance ?? 0 };
+}
+
+/**
+ * ESTE TREINO FOI COBRADO? Olha o extrato, não o perfil do aluno.
+ *
+ * A linha procurada é a que `start-training` e `onboarding/treino.ts` gravam
+ * com o MESMO shape (`kind='training'`, `ref_type='voice'`, `ref_id=<voiceId>`,
+ * `amount` negativo) — é justamente essa igualdade de shape que os dois
+ * arquivos documentam como contrato para o estorno casar.
+ *
+ * Existe porque `bypassesBilling` deixou de ser um proxy confiável de "houve
+ * cobrança": o onboarding do SGP entrega treino SEM debitar. Inferir cobrança
+ * a partir de quem é o aluno passaria a CONCEDER crédito em vez de devolver.
+ *
+ * Conservador no erro: se a consulta falhar, responde `false` (não estorna).
+ * Deixar de devolver é reclamação que o suporte resolve; conceder crédito que
+ * nunca saiu é dinheiro criado do nada e ninguém percebe.
+ */
+export async function houveDebitoDeTreino(
+  userId: string,
+  voiceId: string,
+): Promise<boolean> {
+  const { data, error } = await getAdmin()
+    .from("credit_transactions")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("kind", "training")
+    .eq("ref_type", "voice")
+    .eq("ref_id", voiceId)
+    .lt("amount", 0)
+    .limit(1);
+  if (error) {
+    console.error("[credits] houveDebitoDeTreino falhou:", error.message);
+    return false;
+  }
+  return (data?.length ?? 0) > 0;
 }
 
 /** Recarrega os créditos da assinatura (reset, não acumula). Chamar no ciclo aprovado. */

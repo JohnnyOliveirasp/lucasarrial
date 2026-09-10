@@ -32,6 +32,10 @@ import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 import { bypassesBilling } from "@/lib/credits/access";
 import { debitCreditsOnboarding } from "@/lib/credits/service";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
+import {
+  deveCobrarOnboarding,
+  type OrigemOnboarding,
+} from "@/lib/credits/onboarding-cobranca";
 
 type Admin = SupabaseClient<Database>;
 
@@ -52,6 +56,12 @@ export async function dispararTreinoOnboarding(
   admin: Admin,
   userId: string,
   voiceId: string,
+  /**
+   * De onde veio o onboarding. Decide QUEM PAGA o treino — ver
+   * `lib/credits/onboarding-cobranca.ts`. Default `"planilha"` de propósito:
+   * mantém o comportamento de 17/08 para quem já chamava sem o argumento.
+   */
+  origem: OrigemOnboarding = "planilha",
 ): Promise<TreinoResult> {
   const { data: voice } = await admin
     .from("voices")
@@ -70,12 +80,19 @@ export async function dispararTreinoOnboarding(
   // saldo. Decisão do Johnny (21/08): no onboarding o treino roda mesmo com o
   // aluno a zero, e ele fica negativo até assinar (migration 88). Era a trava
   // que deixava a linha presa em awaiting_training com "sem créditos" na nota.
+  //
+  // ⚠️ NO SGP (`origem: "sgp"`) não há débito NENHUM, e portanto também não há
+  // negativo: o treino é entrega do produto que o comprador já pagou. Ver
+  // `lib/credits/onboarding-cobranca.ts` para o defeito medido em 09/09.
   const { data: prof } = await admin
     .from("profiles")
     .select("email")
     .eq("id", userId)
     .maybeSingle();
-  const billed = !bypassesBilling((prof as { email?: string } | null)?.email ?? null);
+  const billed = deveCobrarOnboarding({
+    origem,
+    bypass: bypassesBilling((prof as { email?: string } | null)?.email ?? null),
+  });
 
   const loraKey = buildLoraKey(userId, voice.id);
   const referenceKey = buildAutoReferenceKey(userId, voice.id);

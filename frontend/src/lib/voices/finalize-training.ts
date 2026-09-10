@@ -9,8 +9,9 @@
 import { logger } from "@/lib/logger/server";
 import { getAdmin } from "@/lib/db/admin";
 import { buildAutoReferenceKey } from "@/lib/r2/presigned";
-import { addExtraCredits } from "@/lib/credits/service";
+import { addExtraCredits, houveDebitoDeTreino } from "@/lib/credits/service";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
+import { deveEstornarTreino } from "@/lib/credits/onboarding-cobranca";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { bypassesBilling } from "@/lib/credits/access";
 import { escalateStuckUser } from "@/lib/support/failure-alert";
@@ -426,8 +427,16 @@ export async function finalizeTraining(args: {
   await admin.from("voices").update(update).eq("id", voiceId);
 
   // ── Estorno em QUALQUER falha (dataset OU técnica): usuário não recebeu ──
-  // nada, não paga nada. Só quem foi COBRADO (equipe/admin não paga o treino).
+  // nada, não paga nada. Só quem foi COBRADO de verdade.
   // Idempotente via gate acima (só um caminho chega aqui por job).
+  //
+  // ⚠️ A pergunta certa é "SAIU dinheiro?", não "esse aluno costuma pagar?".
+  // Antes isto era `!bypassesBilling(email)` — uma INFERÊNCIA. Ela valia
+  // enquanto todo treino não-equipe debitava. Com o onboarding do SGP parando
+  // de debitar (`lib/credits/onboarding-cobranca.ts`), a inferência passaria a
+  // devolver 10.000 créditos REAIS a quem nunca foi cobrado — exatamente o bug
+  // que o Johnny corrigiu em 17/08, voltando pela porta nova. Agora olhamos o
+  // extrato: sem linha de débito para esta voz, não há o que estornar.
   if (!success) {
     const { data: profile } = await admin
       .from("profiles")
@@ -435,7 +444,11 @@ export async function finalizeTraining(args: {
       .eq("id", userId)
       .maybeSingle();
     const userEmail = (profile as { email?: string } | null)?.email ?? null;
-    const billed = !bypassesBilling(userEmail);
+    const temDebito = await houveDebitoDeTreino(userId, voiceId);
+    const billed = deveEstornarTreino({
+      bypass: bypassesBilling(userEmail),
+      temDebito,
+    });
 
     let refunded = !billed; // não cobrado = nada a devolver
     if (billed) {
