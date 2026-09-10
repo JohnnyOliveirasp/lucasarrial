@@ -135,6 +135,26 @@ dá. Não escrevi para os outros 73: e-mail em massa depende do "pode" do Johnny
   acesso alterado. Custo desta ronda: zero.
 - Grupo avisado (regra 7): e-mail à aluna (fato consumado) + as duas decisões
   que dependem de gente.
+### 7.1 Conferência das branches (passo fixo) — e uma correção do número da ronda anterior
+
+A ronda das 18h publicou *"19 branches à frente da main, a maior com 5 commits"*.
+**O 19 está errado.** Medido agora, contando toda `refs/heads/` com
+`git rev-list --count main..<branch>`:
+
+- **194** branches locais no total;
+- **91** já totalmente na main (0 commits à frente) — essas são lixo seguro;
+- **103** à frente da main: 84 com 1 commit, 14 com 2, 4 com 3, 1 com 5.
+
+O "maior com 5 commits" bate com o meu dado, então a divergência é de
+**contagem**, não de repositório — a ronda anterior contou um subconjunto e
+publicou como se fosse o total. Registro a correção porque a próxima ronda ia
+herdar "19" e dimensionar a varredura como tarefa pequena; ela é **5x maior**, e
+metade do bolo (as 91 já mergeadas) é descarte trivial que ninguém precisa ler.
+
+**Nada meu está preso:** esta ronda não produziu código. Não abri as 103 — parte
+já está catalogada como STALE/não-mergear no índice de ordens, e varrer isso é
+tarefa própria, não rabo desta.
+
 - **Árvore suja que continua não sendo minha:** o trabalho do SGP solto
   (`sessao.ts`, `page.tsx`, rotas `sgp/*`, os 3 `messages/*.json`, mais arquivos
   novos fora de branch) segue lá, apontado desde a ronda das 16h. Não commitei:
