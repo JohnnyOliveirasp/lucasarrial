@@ -27,7 +27,22 @@
  * PURO de propósito: sem `@/` (o runner `node --test` não resolve o alias),
  * sem Next e sem Supabase. Os canais entram por parâmetro, então o fluxo
  * inteiro — inclusive a idempotência — é testável em `aviso-orfao.test.ts`.
+ *
+ * ⚠️ SÓ AVISA QUANDO ENTROU DINHEIRO (medição de 09/09/2026). Até aqui a
+ * decisão olhava evento, e-mail e produto — nunca o PAGAMENTO. Na fila de
+ * recados de 09/09, de 16 alertas `para_frank_orfa_*`, DEZ tinham valor
+ * máximo de compra R$ 0: trial que nunca pagou nada. 62,5% da fila era
+ * alarme urgente falso, e o texto mandava tratar cada um deles como PAGANTE
+ * ("Até vincular, ele está PAGANDO e SEM ACESSO. Tratar como urgente").
+ *
+ * Quem obedecesse esse aviso ao pé da letra repetiria o #127 e o #138: sair
+ * convidando quem não pagou a "ativar seus créditos reservados". A regra de
+ * pagamento não é nova nem é reescrita aqui — é a `eventoEhPagamento` de
+ * `acesso-regra.ts` (valor > 0 **E** status COMPLETE/COMPLETED/APPROVED), a
+ * mesma que o sweeper `orphan-outreach` já usa. Os dois módulos irmãos
+ * discordavam sobre o que é "pago"; agora respondem pela MESMA função.
  */
+import { eventoEhPagamento } from "./acesso-regra.ts";
 
 /** Tudo que a pessoa precisa pra agir, extraído do payload da Hotmart. */
 export type CompraOrfa = {
@@ -40,6 +55,10 @@ export type CompraOrfa = {
   transaction: string | null;
   /** chave do entitlement: código do assinante na assinatura */
   externalId: string;
+  /** valor da compra (data.purchase.price.value) — R$ 0 = trial, não é pagante */
+  valorCompra: number | string | null;
+  /** status da transação (data.purchase.status) — só COMPLETE/APPROVED é dinheiro */
+  statusCompra: string | null;
 };
 
 export type RegistroAviso = {
@@ -57,6 +76,7 @@ export type MotivoAviso =
   | "ja_avisado"
   | "evento_nao_libera"
   | "produto_de_fora"
+  | "sem_pagamento"
   | "sem_email_do_comprador";
 
 export type ResultadoAviso = {
@@ -110,12 +130,20 @@ export function chaveDoAviso(d: Pick<CompraOrfa, "externalId" | "buyerEmail">): 
  * `productCode` nulo com `nossoProduto` configurado NÃO avisa: sem saber o
  * produto, o silêncio é mais barato que o ruído — o sweeper diário
  * (orphan-outreach) ainda cobre esse caso.
+ *
+ * A trava de PAGAMENTO vem por último, depois do produto, e é a mais nova
+ * (09/09): `PURCHASE_APPROVED` de trial R$ 0 é um evento perfeitamente
+ * válido, do produto certo, com e-mail certo — e não é pagante nenhum.
+ * `valorCompra`/`statusCompra` são OBRIGATÓRIOS de propósito: opcional com
+ * padrão "assume que pagou" só adiaria o bug pro próximo chamador.
  */
 export function deveAvisar(args: {
   eventType: string;
   productCode: string | null;
   nossoProduto: string | null | undefined;
   buyerEmail: string | null;
+  valorCompra: number | string | null;
+  statusCompra: string | null;
 }): { ok: true } | { ok: false; motivo: MotivoAviso } {
   if (!EVENTOS_QUE_LIBERAM.has(args.eventType.toUpperCase())) {
     return { ok: false, motivo: "evento_nao_libera" };
@@ -125,6 +153,9 @@ export function deveAvisar(args: {
   }
   if (args.nossoProduto && args.productCode !== args.nossoProduto) {
     return { ok: false, motivo: "produto_de_fora" };
+  }
+  if (!eventoEhPagamento({ valor: args.valorCompra, status: args.statusCompra })) {
+    return { ok: false, motivo: "sem_pagamento" };
   }
   return { ok: true };
 }
@@ -208,6 +239,8 @@ export async function avisarCompraOrfa(
     productCode: d.productCode,
     nossoProduto,
     buyerEmail: d.buyerEmail,
+    valorCompra: d.valorCompra,
+    statusCompra: d.statusCompra,
   });
   if (!decisao.ok) return { avisou: false, motivo: decisao.motivo, canais: [] };
 

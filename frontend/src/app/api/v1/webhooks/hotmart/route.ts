@@ -49,6 +49,7 @@ import {
   extractProductCode,
   extractProductName,
   extractPurchaseStatus,
+  extractPurchaseValue,
   extractSubscriptionStatus,
   extractTransactionId,
   isUnknownExternalId,
@@ -291,6 +292,10 @@ async function processEvent(
           productName: extractProductName(data),
           transaction: extractTransactionId(data),
           externalId,
+          // 09/09: 10 dos 16 alertas da fila eram trial de R$ 0. Sem estes
+          // dois campos o aviso chamava de PAGANTE quem nunca pagou nada.
+          valorCompra: extractPurchaseValue(data),
+          statusCompra: purchaseStatus || null, // "" (ausente) vira null
         },
         process.env.HOTMART_PRODUCT_ID ?? null,
         estadoDosAvisos(),

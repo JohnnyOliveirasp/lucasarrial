@@ -35,6 +35,7 @@ import {
 import {
   extractBuyerName,
   extractProductName,
+  extractPurchaseValue,
   extractTransactionId,
 } from "./hotmart-payload.ts";
 
@@ -45,7 +46,7 @@ const AGORA = "2026-09-02T22:37:30.000Z";
 const PAYLOAD_TIAGO = {
   product: { id: 7851642, name: "FastCloner" },
   buyer: { email: "cachico3@hotmail.com", name: "Tiago Chico" },
-  purchase: { transaction: "HP2742616487", status: "APPROVED" },
+  purchase: { transaction: "HP2742616487", status: "APPROVED", price: { value: 97 } },
   subscription: { subscriber: { code: "PMB7RT7F" } },
 } as Record<string, unknown>;
 
@@ -57,7 +58,14 @@ const TIAGO: CompraOrfa = {
   productName: "FastCloner",
   transaction: "HP2742616487",
   externalId: "PMB7RT7F",
+  // o Tiago PAGOU: R$ 97 aprovados. É isso que o separa dos 10 trials de
+  // R$ 0 que entupiam a fila de 09/09 (ver cabeçalho de `aviso-orfao.ts`).
+  valorCompra: 97,
+  statusCompra: "APPROVED",
 };
+
+/** Argumentos de `deveAvisar` com pagamento REAL — o que varia é o resto. */
+const PAGO = { valorCompra: 97, statusCompra: "APPROVED" };
 
 /** Canais falsos: guardam o que receberam e dizem se aceitaram. */
 function canaisFalsos(aceita: { telegram: boolean; email: boolean }) {
@@ -185,18 +193,106 @@ test("compra de CURSO não avisa (FCI/SGP não dão acesso ao FastCloner)", asyn
 
 test("evento que não libera acesso não avisa", () => {
   for (const evento of ["SUBSCRIPTION_CANCELLATION", "PURCHASE_REFUNDED", "PURCHASE_BILLET_PRINTED"]) {
-    const d = deveAvisar({ eventType: evento, productCode: NOSSO_PRODUTO, nossoProduto: NOSSO_PRODUTO, buyerEmail: "a@b.com" });
+    const d = deveAvisar({ eventType: evento, productCode: NOSSO_PRODUTO, nossoProduto: NOSSO_PRODUTO, buyerEmail: "a@b.com", ...PAGO });
     assert.equal(d.ok, false, `${evento} não deveria avisar`);
   }
   assert.equal(
-    deveAvisar({ eventType: "PURCHASE_COMPLETE", productCode: NOSSO_PRODUTO, nossoProduto: NOSSO_PRODUTO, buyerEmail: "a@b.com" }).ok,
+    deveAvisar({ eventType: "PURCHASE_COMPLETE", productCode: NOSSO_PRODUTO, nossoProduto: NOSSO_PRODUTO, buyerEmail: "a@b.com", ...PAGO }).ok,
     true,
   );
 });
 
 test("produto ausente no payload não avisa quando sabemos qual é o nosso", () => {
-  const d = deveAvisar({ eventType: "PURCHASE_APPROVED", productCode: null, nossoProduto: NOSSO_PRODUTO, buyerEmail: "a@b.com" });
+  const d = deveAvisar({ eventType: "PURCHASE_APPROVED", productCode: null, nossoProduto: NOSSO_PRODUTO, buyerEmail: "a@b.com", ...PAGO });
   assert.equal(d.ok, false);
+});
+
+// ── 3b. NÃO ENTROU DINHEIRO: o que 62,5% da fila de 09/09 era de verdade ────
+
+test("trial de R$ 0 APROVADO não avisa — motivo 'sem_pagamento' (10 dos 16 da fila de 09/09)", async () => {
+  const { canais, visto } = canaisFalsos({ telegram: true, email: true });
+  const { io, ver } = estadoNaMemoria();
+  const trial: CompraOrfa = { ...TIAGO, valorCompra: 0, statusCompra: "APPROVED" };
+
+  const r = await avisarCompraOrfa(trial, NOSSO_PRODUTO, io, canais, AGORA);
+
+  assert.equal(r.avisou, false);
+  assert.equal(r.motivo, "sem_pagamento");
+  // nem canal volátil nem DURÁVEL: trial de R$ 0 não entra na fila de recados
+  assert.equal(visto.telegram.length, 0);
+  assert.equal(visto.email.length, 0);
+  assert.equal(visto.duraveis.length, 0);
+  assert.deepEqual(ver(), {});
+  // e a decisão pura diz a mesma coisa
+  assert.deepEqual(
+    deveAvisar({
+      eventType: "PURCHASE_APPROVED",
+      productCode: NOSSO_PRODUTO,
+      nossoProduto: NOSSO_PRODUTO,
+      buyerEmail: "a@b.com",
+      valorCompra: 0,
+      statusCompra: "APPROVED",
+    }),
+    { ok: false, motivo: "sem_pagamento" },
+  );
+});
+
+test("R$ 97 em OVERDUE não avisa: a Hotmart emite a mensalidade de quem NUNCA pagou", () => {
+  const d = deveAvisar({
+    eventType: "PURCHASE_APPROVED",
+    productCode: NOSSO_PRODUTO,
+    nossoProduto: NOSSO_PRODUTO,
+    buyerEmail: "a@b.com",
+    valorCompra: 97,
+    statusCompra: "OVERDUE",
+  });
+  assert.deepEqual(d, { ok: false, motivo: "sem_pagamento" });
+  // valor sozinho NÃO é pagamento (18/08: 1.356.554 créditos devolvidos assim)
+  assert.equal(
+    deveAvisar({
+      eventType: "PURCHASE_APPROVED",
+      productCode: NOSSO_PRODUTO,
+      nossoProduto: NOSSO_PRODUTO,
+      buyerEmail: "a@b.com",
+      valorCompra: 97,
+      statusCompra: null,
+    }).ok,
+    false,
+  );
+});
+
+test("R$ 97 APROVADO avisa normalmente — a trava nova não cala o pagante", () => {
+  const d = deveAvisar({
+    eventType: "PURCHASE_APPROVED",
+    productCode: NOSSO_PRODUTO,
+    nossoProduto: NOSSO_PRODUTO,
+    buyerEmail: "a@b.com",
+    valorCompra: 97,
+    statusCompra: "APPROVED",
+  });
+  assert.equal(d.ok, true);
+  // e valor que chega como STRING no payload (a Hotmart mistura) também vale
+  assert.equal(
+    deveAvisar({
+      eventType: "PURCHASE_COMPLETE",
+      productCode: NOSSO_PRODUTO,
+      nossoProduto: NOSSO_PRODUTO,
+      buyerEmail: "a@b.com",
+      valorCompra: "97.00",
+      statusCompra: "complete",
+    }).ok,
+    true,
+  );
+});
+
+test("extractPurchaseValue lê o preço do payload real e não inventa zero", () => {
+  assert.equal(extractPurchaseValue(PAYLOAD_TIAGO), 97);
+  assert.equal(extractPurchaseValue({ purchase: { price: { value: 0 } } }), 0);
+  assert.equal(extractPurchaseValue({ purchase: { price: { value: "97.00" } } }), 97);
+  // ausência é null (desconhecido), NUNCA 0 — quem decide é eventoEhPagamento
+  assert.equal(extractPurchaseValue({}), null);
+  assert.equal(extractPurchaseValue({ purchase: {} }), null);
+  assert.equal(extractPurchaseValue({ purchase: { price: { value: "grátis" } } }), null);
 });
 
 // ── 4. o silêncio deixa de ser invisível ────────────────────────────────────
