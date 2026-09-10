@@ -136,8 +136,21 @@ export type RawMail = {
  * anexo a cada 5 minutos e nunca chegava nos e-mails seguintes da fila.
  * Acima deste teto a gente lê só os cabeçalhos, responde explicando que a
  * caixa não recebe anexo, e segue a vida.
+ *
+ * ⚠️ O teto é comparado com `RFC822.SIZE`, que é a MENSAGEM INTEIRA — anexo
+ * já em base64, cabeçalhos e tudo. NÃO é o tamanho do arquivo que o cliente
+ * anexou: base64 incha ~33%, então um print de 1,7 MB no computador dele
+ * chega aqui como 2,3 MB e estoura um teto de 2 MB. Quem escrever mensagem
+ * pro cliente com este número precisa dizer "seu e-mail", nunca "seu anexo"
+ * (foi assim que a gente afirmou "seu anexo tem 2 MB" pra um arquivo de
+ * 1,7 MB e o cliente provou que a gente estava errado — ver
+ * `mail-anexo-grande.ts`).
+ *
+ * EXPORTADO desde 10/09: o texto que vai pro cliente TEM que citar este mesmo
+ * número. Enquanto o teto morava só aqui e o e-mail trazia o valor escrito na
+ * mão, os dois podiam discordar em silêncio.
  */
-const MAIL_MAX_BYTES = Number(process.env.AGENT_MAIL_MAX_BYTES ?? 2_000_000);
+export const MAIL_MAX_BYTES = Number(process.env.AGENT_MAIL_MAX_BYTES ?? 2_000_000);
 
 /**
  * Busca os e-mails NÃO LIDOS do INBOX (até `limit`), SEM marcar como lidos
