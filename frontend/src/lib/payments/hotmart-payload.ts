@@ -29,6 +29,25 @@ export function extractPurchaseStatus(data: Record<string, unknown>): string {
 }
 
 /**
+ * Valor da compra (data.purchase.price.value). `null` quando o payload não
+ * traz — ausência NÃO é zero, e quem decide o que fazer com a ausência é a
+ * regra de pagamento (`eventoEhPagamento`), não este extrator.
+ *
+ * Só faz sentido junto do STATUS: a Hotmart emite a mensalidade de R$ 97 em
+ * OVERDUE pra quem nunca pagou, então valor sozinho não prova pagamento
+ * (foi assim que a casa devolveu 1.356.554 créditos em 18/08).
+ */
+export function extractPurchaseValue(data: Record<string, unknown>): number | null {
+  const v = asRecord(asRecord(data.purchase).price).value;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" && v.trim()) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/**
  * Status da ASSINATURA no payload de compra (data.subscription.status —
  * "ACTIVE", "CANCELED", "PAST_DUE"…). Vazio quando não vem.
  *
