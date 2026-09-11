@@ -102,11 +102,14 @@ export function inferenceExecutionTimeoutMs(textLen: number): number {
 }
 
 /**
- * O erro é o estouro do teto acima? Só esse caso ganha reenvio automático
- * (#15) — erro de worker (OOM, modelo, áudio curto) repetiria o mesmo defeito
- * e só faria o aluno esperar em dobro. O RunPod manda "executionTimeout
+ * O erro é o estouro do teto acima? O RunPod manda "executionTimeout
  * exceeded"; o caminho do poll prefixa "RunPod FAILED: " e a telemetria de
  * fase pode acrescentar o sufixo "[fase: ...]".
+ *
+ * ⚠️ NÃO é mais "o único caso que ganha reenvio", e já não era desde 29/08.
+ * Quem decide o reenvio é `ehFalhaTransitoria` logo abaixo; este predicado é
+ * só UM dos membros daquela classe. Quem for mexer no reenvio automático lê a
+ * lista TRANSITORIAS, não este comentário.
  */
 export function ehTimeoutDeExecucao(rawError: string): boolean {
   return rawError.toLowerCase().includes("executiontimeout");
@@ -121,8 +124,28 @@ export function ehTimeoutDeExecucao(rawError: string): boolean {
  * ou um 5xx do R2 caía direto em "falhou". Nada disso repete defeito de
  * entrada: refazer resolve.
  *
- * ⚠️ Continua FORA: OOM/CUDA, erro de modelo e áudio inválido — repetir só
- * faria o aluno esperar em dobro pelo mesmo erro.
+ * 11/09 (#52, 37bacb68 — 23 dias aberto, 19 alunos): entrou a EXAUSTÃO DA QA
+ * DE COBERTURA, e ela merece parágrafo próprio porque à primeira vista parece
+ * o oposto de uma transitória — o áudio saiu incompleto, então "é defeito do
+ * material", certo? Errado, e o banco diz: das 8 falhas em que o aluno
+ * reenviou o texto IDENTICAMENTE igual, 7 saíram ready (9 sucessos contra 3
+ * falhas). O caso que abriu esta mudança é a geração 67f28d0f (355 chars):
+ * falhou 20:53Z e o MESMÍSSIMO texto saiu ready em 109s às 20:58Z. Ou seja o
+ * chunk alucinado é SORTEIO DO MODELO, não propriedade do texto — que é
+ * exatamente o critério desta lista. Sem isto, a geração morria e o aluno
+ * tinha que refazer na mão (depois de esperar).
+ *
+ * A string tem 2 variantes no banco, as duas contendo "qa_coverage":
+ *   "qa_coverage: audio gerado nao contem o texto completo apos esgotar regeneracoes"
+ *   "RunPod FAILED: qa_coverage: ..." (caminho do poll)
+ * Casar pelo prefixo é seguro: não existe outro erro que o use.
+ *
+ * ⚠️ Continua FORA: OOM/CUDA, erro de modelo e áudio inválido/corrompido —
+ * repetir só faria o aluno esperar em dobro pelo mesmo erro. A fronteira é
+ * fina de propósito: "áudio que não cobre o texto porque o modelo sorteou
+ * mal" (qa_coverage, MEDIDO como refazível) entra; "áudio que não presta"
+ * continua fora. Não alargue isto pra outros erros de áudio sem repetir a
+ * medição acima.
  */
 const TRANSITORIAS = [
   "failed to download",
@@ -134,6 +157,7 @@ const TRANSITORIAS = [
   "503 service",
   "504 gateway",
   "internalerror",
+  "qa_coverage",
 ];
 
 export function ehFalhaTransitoria(rawError: string): boolean {

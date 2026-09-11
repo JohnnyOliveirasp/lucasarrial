@@ -234,8 +234,12 @@ async function handleGenerationWebhook(
   // em classify.ts) — num timeout, a row passa a NOMEAR a fase pendurada.
   // #15: worker travado devolve executionTimeout num texto que roda em 90s se
   // for refeito. Antes de falhar, tenta UMA vez sozinho — sem estorno e sem
-  // novo débito, porque é a mesma geração. Só o timeout entra aqui; qualquer
-  // outro erro segue direto pro caminho de falha de sempre.
+  // novo débito, porque é a mesma geração.
+  // ⚠️ NÃO é "só o timeout". Quem decide é `ehFalhaTransitoria` (execucao.ts),
+  // e a classe já cresceu duas vezes: 29/08 (tropeço de rede / 5xx) e 11/09
+  // (#52, exaustão da QA de cobertura — medido, 7 de 8 reenvios do texto
+  // idêntico saíram ready). A lista viva é TRANSITORIAS; não confie neste
+  // comentário pra saber o que entra, leia lá.
   const reenvio = await tentarReenviar(generationId, rawError);
   if (reenvio !== "nao_aplica") return;
 

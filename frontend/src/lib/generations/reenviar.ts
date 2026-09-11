@@ -1,5 +1,6 @@
 /**
- * Reenvio automático da geração que estourou o teto de execução (#15).
+ * Reenvio automático da geração que falhou por motivo que não é do aluno —
+ * nasceu no estouro do teto de execução (#15) e hoje cobre a classe inteira.
  *
  * POR QUE existe, com a prova de 28/08: o aluno viktoraraujo mandou 208 chars,
  * o job pendurou e morreu no teto (491s). Nove minutos depois ele refez o
@@ -9,17 +10,24 @@
  * régua: é worker travado. Refazer resolve, e até aqui quem refazia era o
  * aluno — depois de esperar 8 minutos e ver "falhou".
  *
- * O QUE FAZ: no caminho de falha (webhook e poll), quando o erro é
- * executionTimeout e a geração ainda está na 1ª tentativa, manda o MESMO input
- * pro RunPod num job novo e mantém a row como está. O aluno vê a geração
- * continuar; não há estorno nem novo débito, porque a geração é a mesma.
+ * O QUE FAZ: no caminho de falha (webhook e poll), quando o erro é de uma
+ * classe que NÃO vem do material do aluno (`ehFalhaTransitoria`) e a geração
+ * ainda está na 1ª tentativa, manda o MESMO input pro RunPod num job novo e
+ * mantém a row como está. O aluno vê a geração continuar; não há estorno nem
+ * novo débito, porque a geração é a mesma.
  *
  * LIMITES (de propósito):
  *  - UMA tentativa extra. `request_attempts` é o claim atômico: webhook e poll
  *    correm juntos e só um leva o reenvio. Se o reenvio também estourar, o
  *    caminho normal assume — falha, estorno e e-mail pro suporte, como hoje.
- *  - SÓ executionTimeout. Erro de worker (OOM, modelo, áudio) repetiria o
- *    mesmo defeito e só faria o aluno esperar em dobro.
+ *  - NÃO é mais "só executionTimeout", e o comentário que dizia isso ficou
+ *    obsoleto duas vezes: desde 29/08 entram tropeços de rede/5xx, e desde
+ *    11/09 (#52) entra a EXAUSTÃO DA QA DE COBERTURA — medido no banco, 7 das
+ *    8 falhas em que o aluno reenviou o texto IDÊNTICO saíram ready, logo o
+ *    chunk alucinado é sorteio do modelo e não defeito da entrada. A lista
+ *    viva e o critério de quem entra moram em `TRANSITORIAS` (execucao.ts).
+ *    Erro de worker (OOM, modelo, áudio inválido) continua FORA: aí sim
+ *    repetir só faria o aluno esperar em dobro pelo mesmo defeito.
  *  - Geração anterior à migration 99 não tem `request_params`: sem o input
  *    exato, não reenvia (reconstruir por default perderia o ritmo escolhido
  *    na tela). Cai no caminho de hoje.
