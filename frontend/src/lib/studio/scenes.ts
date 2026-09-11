@@ -16,6 +16,7 @@ import { createPresignedGet } from "@/lib/r2/presigned";
 import { getAdmin } from "@/lib/db/admin";
 import { kieCreateImageTask, kieCreateVideoTask, kieGetTask, friendlyKieError } from "@/lib/kie/client";
 import { stillTextLooksBroken } from "@/lib/studio/scene-qa";
+import { deveAdiarPorThrottle } from "@/lib/studio/throttle-cena";
 import { moderateImagePrompt } from "@/lib/llm/moderate-image-prompt";
 import { getVideoFallback } from "@/lib/video/tiers";
 import { handleTechFailure } from "@/lib/support/failure-alert";
@@ -300,6 +301,26 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
         .update({ status: "animating", kie_task_id: taskId, image_path: stillKey } as never)
         .eq("id", scene.id);
     } catch (e) {
+      // #358: fila cheia do Kie NÃO destrói a cena. Se o 429 sobreviveu às 3
+      // retentativas do `postCreateTask` (#240) e a cena ainda é nova, a cena
+      // FICA em `generating_still` e o próximo tick (poll da tela ou o cron
+      // `sweep-stuck-scenes`) redespacha a animação. Sem isto, régua de retry
+      // esgotada = `failScene` = cena `failed` + estorno, ou seja o aluno
+      // perdia a cena por causa de um engarrafamento momentâneo.
+      if (deveAdiarPorThrottle(e, scene.created_at, Date.now())) {
+        // Guarda o still que acabamos de subir pro R2. Sem esta linha, cada
+        // tick dentro da janela de 30 min baixaria e regravaria o MESMO
+        // arquivo (o bloco acima só pula o download quando `image_path` já
+        // está no banco) — com 48 cenas isso seria uma enxurrada de PUT no R2
+        // enquanto a gente espera. Só grava quando há algo novo a gravar.
+        if (stillKey && stillKey !== scene.image_path) {
+          await admin
+            .from("studio_scenes")
+            .update({ image_path: stillKey } as never)
+            .eq("id", scene.id);
+        }
+        return;
+      }
       await failScene(scene, e instanceof Error ? e.message : "animação não iniciou");
     }
     return;
@@ -335,7 +356,23 @@ export async function syncStudioScene(scene: StudioSceneRow): Promise<void> {
             .update({ kie_task_id: taskId } as never)
             .eq("id", scene.id);
           return;
-        } catch {
+        } catch (e) {
+          // #358: mesma regra do despacho principal — throttle não reprova a
+          // cena enquanto ela for nova.
+          if (deveAdiarPorThrottle(e, scene.created_at, Date.now())) {
+            // DEVOLVE O CLAIM. O `anim_retried` foi marcado lá em cima pra
+            // impedir despacho em dobro (poll × webhook); como o despacho
+            // FALHOU — nenhuma task criada, `kie_task_id` intacto —, soltar a
+            // trava restaura exatamente o estado de antes da tentativa. Sem
+            // isto o adiamento seria inútil: o próximo tick veria
+            // `anim_retried = true`, pularia o reserva e cairia no
+            // `failScene` do mesmo jeito, só um tick depois.
+            await admin
+              .from("studio_scenes")
+              .update({ anim_retried: false } as never)
+              .eq("id", scene.id);
+            return;
+          }
           /* reserva também não subiu — cai na reprova com estorno abaixo */
         }
       }
