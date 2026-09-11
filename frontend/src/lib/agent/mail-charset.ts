@@ -304,6 +304,14 @@ function comoLiteral(s: string): string {
 /**
  * Corta `seg` na PRIMEIRA fronteira declarada que aparecer nele.
  * Sem fronteira declarada (mensagem de uma parte só), não corta nada.
+ *
+ * Segue PRIVADA de propósito. O `_frank/ferramentas/ler_caixa.cjs` consome
+ * esta regra pelo `mailText` — uma porta só, em vez de remontar o pipeline por
+ * fora. O #351 nasceu exatamente de remontar: a correção do #337 entrou em
+ * produção e o porte da ferramenta ficou com o palpite antigo, então o Vigia
+ * lia como VAZIO justamente os encaminhamentos do Gmail, que é o formato em
+ * que o aluno contesta cobrança. Duas implementações da mesma regra sempre
+ * voltam a divergir; uma só, não.
  */
 function cortarNaFronteira(seg: string, fronteiras: string[]): string {
   let corte = -1;
@@ -314,7 +322,13 @@ function cortarNaFronteira(seg: string, fronteiras: string[]): string {
   return corte > 0 ? seg.slice(0, corte) : seg;
 }
 
-export function mailText(raw: string): string {
+/**
+ * `maxChars` é opcional e o default é o teto de produção (`BODY_MAX`), então
+ * toda chamada existente (`mailText(raw)`) segue idêntica. O parâmetro existe
+ * pro `ler_caixa.cjs` honrar o `--corpo N` SEM precisar de um segundo
+ * `mailText` — foi a segunda cópia que criou o #351.
+ */
+export function mailText(raw: string, maxChars: number = BODY_MAX): string {
   const plainIdx = raw.search(/Content-Type:\s*text\/plain/i);
   const htmlIdx = raw.search(/Content-Type:\s*text\/html/i);
   const idx = plainIdx >= 0 ? plainIdx : htmlIdx;
@@ -341,5 +355,5 @@ export function mailText(raw: string): string {
 
   // Só agora, com TEXTO na mão, as operações de texto.
   const limpo = idx === htmlIdx && idx >= 0 ? stripHtml(texto) : texto.replace(/\s+/g, " ").trim();
-  return limpo.slice(0, BODY_MAX);
+  return limpo.slice(0, maxChars);
 }
