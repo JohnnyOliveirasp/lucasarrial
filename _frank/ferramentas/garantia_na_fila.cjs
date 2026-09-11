@@ -129,7 +129,7 @@ function renovacaoMaisRecente(linhas) {
       const renov = renovacaoMaisRecente(linhas);
 
       let classe;
-      if (!jAgora) classe = "SEM_COMPRA_PAGA";
+      if (!jAgora) classe = "SEM_LINHA_NO_NOSSO_BANCO";
       else if (jPediu?.dentro && !jAgora.dentro) classe = "PERDEU_NA_FILA";
       else if (jAgora.dentro) classe = jAgora.fim - agora < 48 * 3600000 ? "VENCE_EM_48H" : "DENTRO";
       else if (renov && renov > agora) classe = "RENOVACAO_EM_ABERTO";
@@ -149,14 +149,19 @@ function renovacaoMaisRecente(linhas) {
     process.exit(1);
   }
 
-  const ordem = ["PERDEU_NA_FILA", "VENCE_EM_48H", "DENTRO", "RENOVACAO_EM_ABERTO", "FORA_DESDE_ANTES", "SEM_COMPRA_PAGA"];
+  const ordem = ["PERDEU_NA_FILA", "VENCE_EM_48H", "DENTRO", "RENOVACAO_EM_ABERTO", "FORA_DESDE_ANTES", "SEM_LINHA_NO_NOSSO_BANCO"];
   const rotulo = {
     PERDEU_NA_FILA: "🩸 PERDEU A JANELA ENQUANTO ESPERAVA NA NOSSA FILA — pediu dentro, hoje está fora",
     VENCE_EM_48H: "🔴 VENCE EM ATÉ 48H — decida HOJE, com a data na mão",
     DENTRO: "🟢 DENTRO da janela — há prazo, mas o relógio corre",
     RENOVACAO_EM_ABERTO: "🟡 RENOVAÇÃO EM ABERTO — produção diz FORA (âncora na 1ª compra), mas a cobrança MAIS RECENTE tem warranty_date no futuro. É POLÍTICA, parada com o Johnny (#265). Rotular ≠ decidir.",
     FORA_DESDE_ANTES: "⚪ Fora da janela já quando pediu — não é dívida da fila",
-    SEM_COMPRA_PAGA: "⚪ Sem compra PAGA (adesão R$0 / e-mail da compra diferente) — nada a reembolsar; se contesta, escale",
+    SEM_LINHA_NO_NOSSO_BANCO:
+      "⚪ SEM LINHA NO NOSSO BANCO para este e-mail — NÃO É O MESMO QUE 'não pagou'. " +
+      "Tudo que a ferramenta sabe é que não há PURCHASE_APPROVED em payment_events " +
+      "casando por buyer_email. Pode ser adesão R$0, mas pode ser a classe do #222 " +
+      "(pagou com um e-mail e pediu/criou conta com outro), que já voltou 7 vezes. " +
+      "CONFIRA no detector_preso_fora_da_conta.cjs / pagou_de_verdade.cjs antes de responder.",
   };
 
   console.log(`\n${"=".repeat(78)}`);
@@ -171,7 +176,7 @@ function renovacaoMaisRecente(linhas) {
     console.log(`\n${rotulo[cl]}  [${bloco.length}]`);
     for (const a of bloco) {
       console.log(`   #${a.inc.numero} ${a.email}`);
-      console.log(`      pediu em ${dia(a.pediuEm)} · janela ${a.jAgora ? `${dia(a.jAgora.compra)} → ${a.jAgora.fim.toISOString()}` : "(sem compra paga)"}`);
+      console.log(`      pediu em ${dia(a.pediuEm)} · janela ${a.jAgora ? `${dia(a.jAgora.compra)} → ${a.jAgora.fim.toISOString()}` : "(SEM LINHA NO NOSSO BANCO p/ este e-mail — não é 'não pagou')"}`);
       if (cl === "PERDEU_NA_FILA") {
         console.log(`      ⏱️  virou há ${horas(agora - a.jAgora.fim)}h · esperou ${horas(a.jAgora.fim - a.pediuEm)}h de prazo dentro da fila`);
       }
