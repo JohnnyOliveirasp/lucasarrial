@@ -336,3 +336,18 @@ test("fronteira com caractere especial de regex é tratada como literal", () => 
   ].join("\r\n");
   assert.equal(mailText(raw), "quero sair");
 });
+
+// ---------- maxChars: o parâmetro que existe para NÃO haver uma segunda cópia (#351) ----------
+//
+// `ler_caixa.cjs` mantinha um `mailText` próprio só porque precisava de um teto
+// configurável (`--corpo N`). Essa cópia envelheceu e ficou com o palpite de
+// fronteira que o #337 removeu daqui, e passou a ler encaminhamento como corpo
+// vazio — o pedido de saída de um aluno pagante (uid 517) sumiu por um dia.
+// Quem apagar este parâmetro obriga a ferramenta a ter cópia de novo, que é
+// exatamente como o vão nasceu. O default continua BODY_MAX: produção não muda.
+test("mailText: maxChars sobrepõe o teto, e o default continua BODY_MAX", () => {
+  const raw = mimePlain(paraQuotedPrintable("a".repeat(9000)));
+  assert.equal(mailText(raw).length, 4000, "sem argumento, o teto de produção (BODY_MAX) vale");
+  assert.equal(mailText(raw, 120).length, 120, "com argumento, quem chama decide o teto");
+  assert.equal(mailText(raw, 9000).length, 9000, "acima de BODY_MAX não pode cortar em silêncio");
+});

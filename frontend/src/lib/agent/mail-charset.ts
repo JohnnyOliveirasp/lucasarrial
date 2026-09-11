@@ -314,7 +314,14 @@ function cortarNaFronteira(seg: string, fronteiras: string[]): string {
   return corte > 0 ? seg.slice(0, corte) : seg;
 }
 
-export function mailText(raw: string): string {
+/**
+ * `maxChars` existe para a ferramenta de leitura da caixa (`ler_caixa.cjs`,
+ * opção `--corpo N`) poder usar ESTA função em vez de manter uma cópia própria.
+ * Foi a cópia que criou o vão do #351: o `ler_caixa.cjs` ficou com a regex que
+ * o #337 tirou daqui (a90e9b0) e passou a ler encaminhamento como corpo vazio.
+ * O default é `BODY_MAX`, então todo chamador de produção segue idêntico.
+ */
+export function mailText(raw: string, maxChars: number = BODY_MAX): string {
   const plainIdx = raw.search(/Content-Type:\s*text\/plain/i);
   const htmlIdx = raw.search(/Content-Type:\s*text\/html/i);
   const idx = plainIdx >= 0 ? plainIdx : htmlIdx;
@@ -341,5 +348,5 @@ export function mailText(raw: string): string {
 
   // Só agora, com TEXTO na mão, as operações de texto.
   const limpo = idx === htmlIdx && idx >= 0 ? stripHtml(texto) : texto.replace(/\s+/g, " ").trim();
-  return limpo.slice(0, BODY_MAX);
+  return limpo.slice(0, maxChars);
 }
