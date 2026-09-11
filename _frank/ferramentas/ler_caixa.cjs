@@ -159,12 +159,19 @@ const jiti = (createJiti.default || createJiti)(path.join(RAIZ, "frontend", "noo
   alias: { "@": path.join(RAIZ, "frontend", "src") },
   interopDefault: true,
 });
-const { mailText, header, decodeWord, stripHtml } = jiti(
+const { mailText, header, decodeWord, stripHtml, fronteirasDeclaradas, cortarNaFronteira } = jiti(
   path.join(RAIZ, "frontend", "src", "lib", "agent", "mail-charset.ts"),
 );
 // Sem isto, um rename lá vira `undefined is not a function` no meio da ronda —
 // ou, pior, corpo vazio outra vez. Falhar aqui é barato; ler errado não é.
-for (const [nome, fn] of Object.entries({ mailText, header, decodeWord, stripHtml })) {
+for (const [nome, fn] of Object.entries({
+  mailText,
+  header,
+  decodeWord,
+  stripHtml,
+  fronteirasDeclaradas,
+  cortarNaFronteira,
+})) {
   if (typeof fn !== "function") throw new Error(`mail-charset.ts não exporta ${nome}() — ferramenta abortada`);
 }
 
@@ -172,18 +179,26 @@ for (const [nome, fn] of Object.entries({ mailText, header, decodeWord, stripHtm
 function anexosDoRaw(raw) {
   const out = [];
   const re = /Content-(?:Disposition|Type):[^\r\n]*(?:\r?\n[ \t][^\r\n]*)*?(?:file)?name="?([^";\r\n]+)"?/gi;
+  // Mesma regra do corpo (#351): fronteira é DECLARADA, não deduzida do formato
+  // da linha. O palpite antigo media o bloco até a primeira linha PARECIDA com
+  // fronteira, então anexo cujo conteúdo contivesse essa sequência era reportado
+  // MENOR do que é. O caso realista não é base64 (cujo alfabeto não tem `-`), é
+  // anexo de texto/`.eml` encaminhado, que carrega tanto `--fronteira` aninhada
+  // quanto a linha de encaminhamento do Gmail.
+  // ⚠️ Este número é INFORMATIVO: quem decide o teto de 2MB é `tam`
+  // (RFC822.SIZE, linha 596), não esta conta. O que ele estraga é a decisão
+  // humana de baixar ou não o anexo com `--anexos <uid>`.
+  const fronteiras = fronteirasDeclaradas(raw);
   let m;
   while ((m = re.exec(raw))) {
     const nome = decodeWord(m[1].trim());
     if (!nome || out.some((a) => a.nome === nome)) continue;
-    // tamanho ~ do bloco base64 entre o fim deste header e o próximo boundary
+    // tamanho ~ do bloco base64 entre o fim deste header e a próxima fronteira
     const depois = raw.slice(m.index);
     const corpo = depois.search(/\r?\n\r?\n/);
     let bytes = 0;
     if (corpo >= 0) {
-      const resto = depois.slice(corpo);
-      const fim = resto.search(/\r?\n--[-=_a-zA-Z0-9]{6,}/);
-      const bloco = fim > 0 ? resto.slice(0, fim) : resto;
+      const bloco = cortarNaFronteira(depois.slice(corpo), fronteiras);
       bytes = Math.round(bloco.replace(/\s+/g, "").length * 0.75); // base64 → bytes
     }
     out.push({ nome, bytes });
