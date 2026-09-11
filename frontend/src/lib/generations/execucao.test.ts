@@ -7,12 +7,19 @@
  * O que está coberto:
  *   1. a régua do teto não mudou ao sair da rota pro módulo compartilhado —
  *      é a mesma que o reenvio usa, senão as duas saem do ar uma da outra;
- *   2. o reenvio dispara SÓ no estouro do teto, nas duas formas em que o erro
- *      chega (webhook cru e poll prefixado), e NUNCA em erro de worker.
+ *   2. o estouro do teto é reconhecido nas duas formas em que o erro chega
+ *      (webhook cru e poll prefixado), e NUNCA num erro de worker;
+ *   3. a CLASSE que ganha reenvio (`ehFalhaTransitoria`) inclui a exaustão da
+ *      QA de cobertura (#52, 11/09) nas duas variantes da string, e continua
+ *      excluindo OOM/CUDA, erro de modelo e áudio inválido.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ehTimeoutDeExecucao, inferenceExecutionTimeoutMs } from "./execucao.ts";
+import {
+  ehFalhaTransitoria,
+  ehTimeoutDeExecucao,
+  inferenceExecutionTimeoutMs,
+} from "./execucao.ts";
 
 test("teto: piso de 8 min vale pra texto curto", () => {
   assert.equal(inferenceExecutionTimeoutMs(1), 8 * 60 * 1000);
@@ -88,4 +95,73 @@ test("reenvio NÃO dispara em erro de worker — repetiria o mesmo defeito", () 
     ehTimeoutDeExecucao("O áudio saiu incompleto (mais curto que o texto)."),
     false,
   );
+});
+
+/**
+ * #52 (37bacb68, 23 dias aberto, 19 alunos): quando a QA de cobertura esgota as
+ * regenerações, a geração inteira morria e o aluno refazia NA MÃO.
+ *
+ * A justificativa está medida, não suposta: das 8 falhas em que o aluno
+ * reenviou o texto IDÊNTICO, 7 saíram ready (9 sucessos contra 3 falhas). A
+ * geração 67f28d0f (355 chars) falhou 20:53Z e o MESMO texto saiu ready em
+ * 109s às 20:58Z. Chunk alucinado é sorteio do modelo, não propriedade do
+ * texto — logo cabe na classe "não é material do aluno, vale refazer".
+ *
+ * As DUAS variantes abaixo são as únicas que existem no banco. Se alguém
+ * trocar o casamento por algo mais estreito (a mensagem inteira, por exemplo),
+ * a variante prefixada do poll para de casar e metade dos casos volta a
+ * morrer sem reenvio — por isso as duas estão travadas aqui.
+ */
+test("#52: exaustão da QA de cobertura ganha reenvio nas DUAS variantes da string", () => {
+  assert.ok(
+    ehFalhaTransitoria(
+      "qa_coverage: audio gerado nao contem o texto completo apos esgotar regeneracoes",
+    ),
+    "variante crua (webhook) deveria ser transitória",
+  );
+  assert.ok(
+    ehFalhaTransitoria(
+      "RunPod FAILED: qa_coverage: audio gerado nao contem o texto completo apos esgotar regeneracoes",
+    ),
+    "variante prefixada (poll) deveria ser transitória",
+  );
+  // com o sufixo de fase que errorMessageComFase acrescenta
+  assert.ok(
+    ehFalhaTransitoria(
+      "qa_coverage: audio gerado nao contem o texto completo apos esgotar regeneracoes [fase: tts_chunk 2/3]",
+    ),
+  );
+});
+
+/**
+ * CONTROLE — a fronteira é fina e tem que continuar existindo.
+ *
+ * "Áudio que não cobre o texto porque o modelo sorteou mal" (qa_coverage)
+ * entra; "áudio que não presta" e erro de worker continuam FORA, porque aí
+ * repetir só faz o aluno esperar em dobro pelo mesmo defeito. Sem este teste,
+ * alargar o casamento pra "audio"/"incompleto" passaria despercebido.
+ */
+test("#52: OOM/CUDA, erro de modelo e áudio inválido continuam FORA do reenvio", () => {
+  for (const erro of [
+    "CUDA out of memory",
+    "RunPod FAILED: CUDA out of memory",
+    "torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00 GiB",
+    "RunPod FAILED",
+    "O áudio saiu incompleto (mais curto que o texto).",
+    "invalid audio file",
+    "Error loading model checkpoint",
+  ]) {
+    assert.equal(
+      ehFalhaTransitoria(erro),
+      false,
+      `"${erro}" NÃO pode ganhar reenvio automático`,
+    );
+  }
+});
+
+test("#52: a classe transitória de 29/08 segue intacta (nada foi trocado por qa_coverage)", () => {
+  assert.ok(ehFalhaTransitoria("RunPod FAILED: executionTimeout exceeded"));
+  assert.ok(ehFalhaTransitoria("failed to download lora"));
+  assert.ok(ehFalhaTransitoria("Connection reset by peer"));
+  assert.ok(ehFalhaTransitoria("503 Service Unavailable"));
 });
