@@ -558,6 +558,32 @@ export type ViralUserVideoInsert = Omit<ViralUserVideoRow, "id" | "criado_em"> &
 };
 export type ViralUserVideoUpdate = Partial<Omit<ViralUserVideoRow, "id" | "criado_em">>;
 
+// ───────── retiradas_socios (mig 108 — retirada de sócio NÃO é despesa) ─────────
+/** Uma retirada de lucro por um sócio. Só o /admin (service_role) lê e escreve. */
+export type RetiradaSocioRow = {
+  id: string;
+  /** R$ — numeric(12,2). Sempre > 0. */
+  valor: number;
+  socio: string;
+  /** Quando o dinheiro saiu (é por esta coluna que o /admin filtra o período). */
+  retirada_em: Timestamp;
+  /** Hoje sempre 'hotmart'. */
+  origem: string;
+  /** E-mail do admin que registrou a linha (auditoria). */
+  registrado_por: string | null;
+  criado_em: Timestamp;
+};
+export type RetiradaSocioInsert = {
+  id?: string;
+  valor: number;
+  socio: string;
+  retirada_em?: Timestamp;
+  origem?: string;
+  registrado_por?: string | null;
+  criado_em?: Timestamp;
+};
+export type RetiradaSocioUpdate = Partial<Omit<RetiradaSocioRow, "id" | "criado_em">>;
+
 // ───────── react_jobs (mig 76 — fila do Video React) ─────────
 /** fila → baixando → clonando → montando → pronto | erro */
 export type ReactJobRow = {
@@ -1181,6 +1207,7 @@ export type Database = {
       viral_videos: { Row: ViralVideoRow; Insert: ViralVideoInsert; Update: ViralVideoUpdate; Relationships: Rel };
       viral_user_videos: { Row: ViralUserVideoRow; Insert: ViralUserVideoInsert; Update: ViralUserVideoUpdate; Relationships: Rel };
       react_jobs: { Row: ReactJobRow; Insert: ReactJobInsert; Update: ReactJobUpdate; Relationships: Rel };
+      retiradas_socios: { Row: RetiradaSocioRow; Insert: RetiradaSocioInsert; Update: RetiradaSocioUpdate; Relationships: Rel };
     };
     Views: Record<string, never>;
     Functions: {
