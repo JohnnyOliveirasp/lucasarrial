@@ -138,66 +138,34 @@ class Sessao {
   }
 }
 
-// ---------- parse (portado de mail-respond.ts, comportamento idêntico) ----------
-
-function decodeWord(s) {
-  return s.replace(/=\?([^?]+)\?([BQ])\?([^?]*)\?=/gi, (m, _cs, enc, data) => {
-    try {
-      if (String(enc).toUpperCase() === "B") return Buffer.from(data, "base64").toString("utf8");
-      const bytes = String(data)
-        .replace(/_/g, " ")
-        .replace(/=([0-9A-F]{2})/gi, (_x, h) => String.fromCharCode(parseInt(h, 16)));
-      return Buffer.from(bytes, "latin1").toString("utf8");
-    } catch {
-      return m;
-    }
-  });
-}
-
-function header(raw, name) {
-  const m = raw.match(new RegExp(`^${name}: (.*(?:\\r?\\n[ \\t].*)*)`, "mi"));
-  return m ? decodeWord(m[1].replace(/\r?\n[ \t]+/g, " ").trim()) : "";
-}
-
-function stripHtml(s) {
-  return s
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function mailText(raw, maxChars) {
-  const plainIdx = raw.search(/Content-Type:\s*text\/plain/i);
-  const htmlIdx = raw.search(/Content-Type:\s*text\/html/i);
-  const idx = plainIdx >= 0 ? plainIdx : htmlIdx;
-  let seg = idx >= 0 ? raw.slice(idx) : raw;
-  const headBlock = seg.slice(0, 400);
-  const start = seg.search(/\r?\n\r?\n/);
-  seg = start >= 0 ? seg.slice(start) : seg;
-  const boundary = seg.search(/\r?\n--[-=_a-zA-Z0-9]{6,}/);
-  if (boundary > 0) seg = seg.slice(0, boundary);
-  if (/quoted-printable/i.test(headBlock)) {
-    seg = seg.replace(/=\r?\n/g, "").replace(/=([0-9A-F]{2})/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)));
-  } else if (/base64/i.test(headBlock)) {
-    try {
-      seg = Buffer.from(seg.replace(/\s+/g, ""), "base64").toString("utf8");
-    } catch {
-      /* fica como está */
-    }
-  }
-  let text = idx === htmlIdx && idx >= 0 ? stripHtml(seg) : seg.replace(/\s+/g, " ").trim();
-  try {
-    const round = Buffer.from(text, "latin1").toString("utf8");
-    if (!/�/.test(round)) text = round;
-  } catch {
-    /* mantém */
-  }
-  return text.slice(0, maxChars);
+// ---------- parse: as funções REAIS de produção, não um porte ----------
+//
+// Até 11/09 este bloco era uma CÓPIA de mail-respond.ts que se dizia "portado,
+// comportamento idêntico". Ela deixou de ser idêntica e ninguém viu: o #337
+// tirou de produção (a90e9b0, PR #232) o palpite de fronteira MIME
+// `/\r?\n--[-=_a-zA-Z0-9]{6,}/`, e aqui ele ficou. A linha que o Gmail põe em
+// todo encaminhamento ("--------- Mensagem encaminhada ---------") casa nesse
+// palpite, então o corpo era cortado no caractere 0 e a mensagem saía como
+// "(sem corpo em texto)" — justo em encaminhamento, que é como o aluno contesta
+// cobrança. Medido no uid 517 (Marcelo, pedido de saída): a ferramenta lia
+// vazio enquanto a produção extraía 2.905 chars do MESMO arquivo. O sensor
+// reportava silêncio do aluno onde houve pedido. Incidente #351 / c3aab2fd.
+//
+// Por isso não existe mais cópia: carrega-se o .ts de produção com jiti (mesmo
+// caminho já usado por 2026-09-09_medir_mojibake_na_caixa.cjs). Se um dia a
+// produção mudar de novo, esta ferramenta muda junto — de graça.
+const createJiti = require(path.join(RAIZ, "frontend", "node_modules", "jiti"));
+const jiti = (createJiti.default || createJiti)(path.join(RAIZ, "frontend", "noop.js"), {
+  alias: { "@": path.join(RAIZ, "frontend", "src") },
+  interopDefault: true,
+});
+const { mailText, header, decodeWord, stripHtml } = jiti(
+  path.join(RAIZ, "frontend", "src", "lib", "agent", "mail-charset.ts"),
+);
+// Sem isto, um rename lá vira `undefined is not a function` no meio da ronda —
+// ou, pior, corpo vazio outra vez. Falhar aqui é barato; ler errado não é.
+for (const [nome, fn] of Object.entries({ mailText, header, decodeWord, stripHtml })) {
+  if (typeof fn !== "function") throw new Error(`mail-charset.ts não exporta ${nome}() — ferramenta abortada`);
 }
 
 /** Anexos pelo MIME cru: só NOME e tamanho estimado — o conteúdo nunca é usado. */
