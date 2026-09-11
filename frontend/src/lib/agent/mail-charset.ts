@@ -304,8 +304,14 @@ function comoLiteral(s: string): string {
 /**
  * Corta `seg` na PRIMEIRA fronteira declarada que aparecer nele.
  * Sem fronteira declarada (mensagem de uma parte só), não corta nada.
+ *
+ * Exportada para o `ler_caixa.cjs` estimar tamanho de anexo pela fronteira
+ * DECLARADA. Ele tinha um segundo palpite, além do que o #351 matou: media o
+ * bloco base64 até `/\r?\n--[-=_a-zA-Z0-9]{6,}/`, então um anexo cujo conteúdo
+ * contivesse essa sequência era medido a menos. Mesma regra do corpo: não se
+ * deduz fronteira do formato da linha.
  */
-function cortarNaFronteira(seg: string, fronteiras: string[]): string {
+export function cortarNaFronteira(seg: string, fronteiras: string[]): string {
   let corte = -1;
   for (const b of fronteiras) {
     const i = seg.search(new RegExp(`\\r?\\n--${comoLiteral(b)}`));
