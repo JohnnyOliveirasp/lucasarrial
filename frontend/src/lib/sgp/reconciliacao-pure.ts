@@ -35,6 +35,13 @@ export type EntitlementOrfa = {
   buyer_email: string | null;
   /** Payload da Hotmart (o `data` do webhook): `raw_event.purchase.price.value`. */
   raw_event: unknown;
+  /**
+   * Produto da compra. Opcional porque só o leitor de I/O o traz; a decisão
+   * pura não usa (a régua de produto é aplicada na leitura, junto com a de
+   * acesso, pra o detector enxergar o MESMO conjunto que o reconcile — ver
+   * `reconciliacao.ts`).
+   */
+  product_code?: string | null;
 };
 
 export type EntradaDiagnostico = {

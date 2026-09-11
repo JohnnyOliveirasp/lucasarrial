@@ -14,6 +14,7 @@
 import { getAdmin } from "@/lib/db/admin";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { entitlementValeAcesso } from "@/lib/payments/entitlements";
+import { entitlementDaPlataforma, produtosDeCurso } from "@/lib/payments/acesso-regra";
 import { diagnosticarClaim, type EntitlementOrfa } from "./reconciliacao-pure";
 
 export type EntradaRegistro = {
@@ -36,18 +37,30 @@ export type EntradaRegistro = {
 async function orfasQueSobraram(email: string): Promise<EntitlementOrfa[]> {
   const { data, error } = await getAdmin()
     .from("entitlements")
-    .select("external_id, status, access_until, buyer_email, raw_event")
+    .select("external_id, status, access_until, buyer_email, raw_event, product_code")
     .is("user_id", null)
     .ilike("buyer_email", email);
   if (error) throw error;
 
   const agoraIso = new Date().toISOString();
-  return ((data ?? []) as EntitlementOrfa[]).filter((o) =>
-    // Régua compartilhada (payments/entitlements.ts): refunded/chargeback/
-    // expired e cancelamento sem período restante NÃO são vítima — o dinheiro
-    // voltou ou o acesso acabou. Copiar essa regra aqui seria criar a segunda
-    // versão dela, que é como ela volta a divergir.
-    entitlementValeAcesso({ status: o.status ?? "", access_until: o.access_until }, agoraIso),
+  // A lista de produto vem do MESMO `produtosDeCurso()` do reconcile (que lê o
+  // `HOTMART_SGP_PRODUCT_ID`), não do padrão: com o padrão, um SGP novo em
+  // ambiente faria este detector contar como plataforma a órfã que o reconcile
+  // pula por ser curso — e abriria chamado falso exatamente nela.
+  const cursos = produtosDeCurso();
+  return ((data ?? []) as EntitlementOrfa[]).filter(
+    (o) =>
+      // Régua compartilhada (payments/entitlements.ts): refunded/chargeback/
+      // expired e cancelamento sem período restante NÃO são vítima — o dinheiro
+      // voltou ou o acesso acabou. Copiar essa regra aqui seria criar a segunda
+      // versão dela, que é como ela volta a divergir.
+      entitlementValeAcesso({ status: o.status ?? "", access_until: o.access_until }, agoraIso) &&
+      // ...e a MESMA régua de produto do reconcile (#2d0509b4). Órfã de CURSO
+      // deixou de ser adotada de propósito; sem este filtro o detector passaria
+      // a acusar "sobrou compra paga sem dono" justamente nas linhas que o
+      // conserto decidiu NÃO ligar — o "casa mais que o reconcile" que o
+      // comentário acima existe para impedir.
+      entitlementDaPlataforma(o.product_code, cursos),
   );
 }
 
