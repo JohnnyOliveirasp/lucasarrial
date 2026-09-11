@@ -63,26 +63,72 @@
  * quanto ela precisava, só que precisava de mais. Não escreva em lugar nenhum
  * que o #15 está curado por causa disto.
  *
- * ⚠️ A AMOSTRA TEM UM QUARTO CEGO, E ELE PUXA PRO LADO INSEGURO: `qa.setup_s` só
- * existe em **71–78%** das gerações prontas, TODO DIA desde 05/09 — não é começo
- * de telemetria, é buraco permanente. Então "máximo 260,7s" é o máximo entre os
- * que REPORTAM; o real pode ser maior. Por isso a reserva fica acima do pior
- * caso observado, e não colada nele.
+ * ⛔ O "QUARTO CEGO" DE 10/09 ESTÁ REFUTADO — NÃO EXISTE BURACO DE TELEMETRIA.
+ * Aqui se afirmava que `qa.setup_s` só existia em 71–78% das gerações prontas,
+ * "buraco permanente" cujo viés "puxa pro lado inseguro". Medido em 11/09 sobre
+ * TODAS as prontas desde 05/09 (n=556, paginado): o quarto que falta são
+ * **137 linhas `name = "Amostra automática"`**, gravadas direto por
+ * `voices/finalize-training.ts:519-531` quando o treino termina. Elas têm
+ * **`runpod_job_id` NULL nas 137** — nunca passaram pela inferência, logo não
+ * têm `qa` nem setup POR CONSTRUÇÃO. Não são gerações.
+ * Cortando a população certa (`status='ready' AND runpod_job_id IS NOT NULL`):
+ * cobertura de `setup_s` = **416/419 = 99,3%**, e **100% todo dia desde 06/09**
+ * (as 3 exceções são 05/09 00:07–00:36, a própria hora da instrumentação).
+ * Ou seja: o máximo de setup NÃO é "o máximo entre os que reportam" — é o máximo
+ * da população inteira que importa. Quem medir régua tem que filtrar
+ * `runpod_job_id IS NOT NULL`, senão infla o denominador em ~25% com amostras de
+ * 103 chars e `elapsed_seconds` nulo. Ferramenta pronta:
+ * `_frank/ferramentas/medir_regua_15.cjs`.
+ *
+ * ⛔ E A RESERVA DE 360s JÁ FOI ESTOURADA PELA OBSERVAÇÃO — 3ª vez que a cauda
+ * do setup anda depois de alguém fechar o número nesta régua. Medido em 11/09:
+ * **setup máximo 376,3s** (`f7a0420c`, 10/09 14:42Z), contra os 260,7s de 10/09.
+ * Isto é ~14h DEPOIS do merge de #229, que escolheu 360s justamente por ficar
+ * "acima do pior caso observado". Não fica mais.
+ *   - pior uso do teto NOVO: **93,0%** (n=416), não os 71,5% publicados em 10/09;
+ *     acima de 80%: **1**, não 0. p50 32,0% / p95 45,9% seguem folgados.
+ *   - ⚠️ INVERTE QUEM CORRE RISCO: a `f7a0420c` tem só **568 chars / 4 chunks**.
+ *     Com setup de pico o refém não é mais o texto LONGO (que ganha teto por
+ *     chunk) e sim o CURTO, preso ao piso de 8 min: setup 376,3s de um teto de
+ *     520s deixou 143,7s pra inferência inteira. O modelo de 10/09 ("texto longo
+ *     falha primeiro") vale pra régua apertada na base, não pra pico de setup.
+ *
+ * ✅ O QUE #229 JÁ PROVOU, E QUE EM 10/09 AINDA NÃO DAVA PRA PROVAR: a
+ * `f7a0420c` somou setup 376,3s + elapsed 107,3s = **483,6s**. Teto NOVO 520s →
+ * passou com 36,4s de folga. Teto VELHO (300 + 4×30 = piso 480s) → **100,7%: ela
+ * teria FALHADO por 3,6s** e virado a 20ª ocorrência do #15. A mudança não é mais
+ * só estrutural — ela tem um caso real salvo, medido.
+ *   ⚠️ Continua NÃO provando que salvaria a `a07e9278` (04/09, 9 chunks, estourou
+ *   570s nas duas tentativas). Não escreva que o #15 está curado.
+ *
+ * ⚠️ ANTES DE ALARGAR DE NOVO, LEIA: a tentação é subir a reserva pra ~480s e
+ * repetir o ciclo. n=1 acima de 360s (p95 do setup segue 94,2s) não sustenta
+ * isso, e a régua também protege o aluno de worker pendurado — o piso de 30 min
+ * da era antiga segurava gente 1.812s por um texto de 78 chars. Se a cauda andar
+ * de novo, a resposta provavelmente não é régua maior, é limitar/observar o setup
+ * do lado do RunPod ou falhar rápido e reenviar. Decida com dado, não com susto.
  *
  * ⚠️ ARMADILHA DE MEDIÇÃO: `generations.elapsed_seconds` significa DUAS COISAS.
  * No SUCESSO é o `elapsed_s` do worker (SEM setup); na FALHA é o
  * `executionTime` que o RunPod manda (COM setup) — webhooks/runpod/route.ts:258.
  * Comparar os 578s de uma falha com os 357s de um sucesso é somar peras com
  * maçãs e faz a régua parecer curta. Some `qa.setup_s` no sucesso antes de
- * comparar, e confira que a linha TEM a chave: sem ela é geração de imagem
- * anterior a 05/09, não "setup zero".
+ * comparar. Linha SEM a chave não é "setup zero": ou é `Amostra automática`
+ * (`runpod_job_id` NULL, filtre fora), ou é anterior a 05/09.
  */
 /**
  * Orçamento de SETUP: baixar o LoRA, preparar a referência, carregar o modelo —
  * tudo que corre ANTES do `self.t0` do worker e que mesmo assim conta no
- * executionTimeout do RunPod. Medido em 10/09: p50 73,1s / p95 94,4s / máx
- * **260,7s** (n=279, 05→10/09). 360s cobre o pior caso observado com ~100s de
- * margem — a margem é justamente pro quarto da amostra que não reporta setup.
+ * executionTimeout do RunPod. Re-medido em 11/09 sobre a população certa
+ * (`ready` + `runpod_job_id IS NOT NULL`, n=416, 05→11/09, paginado):
+ * p50 **73,7s** / p95 **94,2s** / máx **376,3s**.
+ *
+ * ⛔ ESTES 360s NÃO COBREM MAIS O PIOR CASO OBSERVADO. Quando #229 os escolheu
+ * (10/09), o máximo era 260,7s e sobrava ~100s de margem; o máximo de hoje
+ * (376,3s, `f7a0420c` em 10/09 14:42Z) passa POR CIMA da reserva. O número
+ * segue aqui de propósito: a cauda é n=1 contra um p95 de 94,2s, e alargar a
+ * régua também é deixar worker pendurado segurar o aluno por mais tempo.
+ * Quem for mexer lê o bloco "ANTES DE ALARGAR DE NOVO" no topo do arquivo.
  * ⚠️ Isto NÃO é meta de tempo, é rede de segurança. Não aperte contra o p50.
  */
 const RESERVA_SETUP_S = 360;
