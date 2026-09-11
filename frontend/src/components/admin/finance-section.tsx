@@ -7,12 +7,18 @@
  *  1) Onde está o dinheiro — barra dividida Compra × Promoção
  *  2) Pra onde foi o bruto — barra empilhada Taxa × Ferramentas × Lucro
  *  3) Gasto por ferramenta — donut (paleta categórica validada p/ dark + CVD)
+ *
+ * Retiradas dos sócios (11/09) entram LOGO ABAIXO do Lucro (caixa), em bloco
+ * PRÓPRIO: retirada não é despesa, então ela não encosta no `totalOut` nem no
+ * `money.profitPeriod` — só produz o "Em caixa" (lucro − retiradas).
  */
 import { Wallet, Gift, BadgeDollarSign, TrendingUp } from "lucide-react";
 import type { Finance, Money } from "@/lib/admin/queries";
 import { PLAN_PRICE_BRL, INFRA_USD_MONTH } from "@/lib/admin/cost";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { TrialPanel } from "@/components/admin/trial-panel";
+import { RetiradasPanel } from "@/components/admin/retiradas-panel";
+import type { Gran } from "@/components/admin/period-filter";
 import { Donut, type DonutSlice } from "@/components/admin/donut";
 
 // Pedido Johnny 01/08: sem "R$" — só "$" (menos ruído visual nos cards).
@@ -81,7 +87,20 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
-export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin: Finance; periodLabel: string }) {
+export function FinanceSection({
+  money,
+  fin,
+  periodLabel,
+  gran,
+  periodKey,
+}: {
+  money: Money;
+  fin: Finance;
+  periodLabel: string;
+  /** Período do filtro — o bloco de Retiradas recorta a MESMA janela dos KPIs. */
+  gran: Gran;
+  periodKey: string;
+}) {
   // Promoção valorizada: o que seria cobrado em valor de tabela.
   const promoValue = fin.offerValuePeriod;
   const tableValue = money.revenuePeriod + promoValue; // valor de tabela do período
@@ -153,6 +172,16 @@ export function FinanceSection({ money, fin, periodLabel }: { money: Money; fin:
           }
         />
       </div>
+
+      {/* Retiradas dos sócios (pedido Johnny 11/09) — logo abaixo do Lucro
+          (caixa). NÃO é despesa: nenhum KPI acima muda por causa dela; o bloco
+          só mostra o que já foi distribuído e fecha com "Em caixa". */}
+      <RetiradasPanel
+        gran={gran}
+        periodKey={periodKey}
+        periodLabel={periodLabel}
+        lucro={money.profitPeriod}
+      />
 
       {/* Trial 7 dias (pedido Lucas 06/08): painel destacado com gráfico de
           coortes semanais. Números globais (não dependem do filtro). */}
