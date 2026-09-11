@@ -61,6 +61,37 @@ test("(B3) recusa do passo atômico vira mensagem, nunca descarte silencioso", (
   }
 });
 
+/**
+ * O limite REAL da produção, lido do fonte. Não dá pra `import` daqui: o
+ * impressao-foto.ts puxa "@/lib/r2/client" e o alias não resolve em
+ * `node --test`. Ler o fonte é o mesmo padrão dos outros tripwires — e impede
+ * que o teste siga afirmando "5" depois que a produção mudou.
+ */
+const LIMITE = (() => {
+  const fonte = readFileSync(join(AQUI, "impressao-foto.ts"), "utf8");
+  const m = fonte.match(/export const DHASH_LIMITE = (\d+)/);
+  if (!m) throw new Error("não achei DHASH_LIMITE em impressao-foto.ts");
+  return Number(m[1]);
+})();
+
+test("(B4) DHASH_LIMITE fica abaixo da sentinela de 64 (incidente 3dbd2bf0)", () => {
+  // `distancia()` e `sgp_dhash_distancia()` devolvem 64 pra "comprimento
+  // diferente" (hash velho de 16 chars × novo de 64). Com o limite abaixo de
+  // 64 isso lê "não é repetida" e falha ABERTO. Em 64+ inverteria: passaria a
+  // marcar como repetida toda foto cujo hash tem outro tamanho — que é
+  // exatamente o jeito de trancar aluno fora de novo.
+  assert.ok(LIMITE < 64, `DHASH_LIMITE=${LIMITE} encosta na sentinela de 64`);
+});
+
+test("(B5) o dHash é 16x16 — em 64 bits nenhum limiar separa", () => {
+  // Medido em 11/09 com 214 fotos de produção: em 8x8 as faixas de "mesma
+  // imagem re-salva" e "fotos diferentes da mesma pessoa" se sobrepõem, e o
+  // limite 5 que estava no ar recusava 1,7% dos pares de fotos DIFERENTES.
+  const fonte = readFileSync(join(AQUI, "impressao-foto.ts"), "utf8");
+  assert.match(fonte, /const LADO = 16/, "voltou pra um dHash menor que 16x16");
+  assert.doesNotMatch(fonte, /scale=9:8/, "voltou o dHash 8x8 do incidente 3dbd2bf0");
+});
+
 // ------------------------------------------------------------- (A) corrida
 
 const N = 8; // fotos escolhidas juntas, como o aluno faz
@@ -153,7 +184,7 @@ test("(A2) O CONSERTO: as N chegam todas com o passo atômico", semBanco, async 
         p_sessao: sessao,
         p_foto: fotoFalsa(i),
         p_max: 50,
-        p_dhash_limite: 5,
+        p_dhash_limite: LIMITE,
       } as never);
       if (error) throw new Error(error.message);
       return data as { ok: boolean };
@@ -178,7 +209,7 @@ test("(A3) o teto não fura na corrida, e quem sobra ouve o motivo", semBanco, a
         p_sessao: sessao,
         p_foto: fotoFalsa(i),
         p_max: MAX,
-        p_dhash_limite: 5,
+        p_dhash_limite: LIMITE,
       } as never);
       if (error) throw new Error(error.message);
       return data as { ok: boolean; reason?: string };
@@ -206,7 +237,7 @@ test("(A4) foto repetida não passa nem quando as duas chegam juntas", semBanco,
         // keys diferentes de propósito: o que barra é a IMPRESSÃO, não a key.
         p_foto: { ...fotoFalsa(i, "sha-igual", "a".repeat(16)), key: `sgp/teste/fotos/r${i}.jpg` },
         p_max: 50,
-        p_dhash_limite: 5,
+        p_dhash_limite: LIMITE,
       } as never);
       if (error) throw new Error(error.message);
       return data as { ok: boolean; reason?: string };
@@ -229,7 +260,7 @@ test("(A5) mesma key SUBSTITUI (não duplica) — a semântica antiga continua",
       p_sessao: sessao,
       p_foto: { key: "sgp/teste/fotos/mesma.jpg", status, sha256: "s1", dhash: "b".repeat(16) },
       p_max: 6,
-      p_dhash_limite: 5,
+      p_dhash_limite: LIMITE,
     } as never);
     if (error) throw new Error(error.message);
   }
@@ -271,7 +302,7 @@ test("(A7) remover não apaga o que um anexo concorrente acabou de gravar", semB
     p_sessao: sessao,
     p_foto: fotoFalsa(1),
     p_max: 6,
-    p_dhash_limite: 5,
+    p_dhash_limite: LIMITE,
   } as never);
 
   await Promise.all([
@@ -280,7 +311,7 @@ test("(A7) remover não apaga o que um anexo concorrente acabou de gravar", semB
       p_sessao: sessao,
       p_foto: fotoFalsa(2),
       p_max: 6,
-      p_dhash_limite: 5,
+      p_dhash_limite: LIMITE,
     } as never),
   ]);
 
