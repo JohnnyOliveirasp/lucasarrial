@@ -18,35 +18,18 @@ import {
   seedreamQuality,
 } from "./config";
 
-const BASE = "https://api.kie.ai/api/v1/jobs";
-
 /**
- * Converte um erro cru do Kie numa mensagem amigável em pt-BR pro usuário final
- * (sem vazar detalhe técnico). Distingue "provedor sem saldo/limite" (problema
- * operacional nosso, NÃO do usuário) de erro temporário.
+ * Transporte + política de throttle moram em `./http` (módulo sem imports, pra
+ * ser testável no `node --test`). Reexportado aqui pra não quebrar os ~12
+ * arquivos que importam de `@/lib/kie/client`.
  */
-export function friendlyKieError(raw: string): string {
-  const low = raw.toLowerCase();
-  if (
-    low.includes("402") ||
-    low.includes("insufficient") ||
-    low.includes("credit") ||
-    low.includes("balance") ||
-    low.includes("quota")
-  ) {
-    return "Serviço de vídeo indisponível no momento (limite do provedor). Tente novamente mais tarde.";
-  }
-  if (low.includes("internal error") || low.includes("500") || low.includes("timeout") || low.includes("temporar")) {
-    return "O provedor de vídeo teve um erro temporário. Tente novamente em instantes.";
-  }
-  return "Não foi possível gerar o vídeo agora. Tente novamente.";
-}
-
-function key(): string {
-  const k = process.env.KIE_API_KEY;
-  if (!k) throw new Error("Missing KIE_API_KEY");
-  return k;
-}
+export {
+  friendlyKieError,
+  KieRateLimitError,
+  ehThrottleKie,
+  type KieRetryHooks,
+} from "./http";
+import { BASE, key, postCreateTask, type KieRetryHooks } from "./http";
 
 /** URL pública que o Kie chama quando a task termina (igual ao webhook RunPod). */
 export function kieCallbackUrl(): string | undefined {
@@ -84,7 +67,7 @@ function buildImageInput(model: KieImageModel, v: KieCreateInput): Record<string
 /** Cria uma task de geração e retorna o taskId. */
 export async function kieCreateImageTask(
   input: KieCreateInput,
-  opts: { callBackUrl?: string; model?: KieImageModel } = {},
+  opts: { callBackUrl?: string; model?: KieImageModel; hooks?: KieRetryHooks } = {},
 ): Promise<{ taskId: string }> {
   const model = opts.model ?? KIE_IMAGE_MODEL;
   const body: Record<string, unknown> = {
@@ -93,24 +76,11 @@ export async function kieCreateImageTask(
   };
   if (opts.callBackUrl) body.callBackUrl = opts.callBackUrl;
 
-  const res = await fetch(`${BASE}/createTask`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Kie ${res.status}: ${text.slice(0, 400)}`);
-  }
-  const json = (await res.json()) as { code?: number; msg?: string; data?: { taskId?: string } };
-  const taskId = json.data?.taskId;
-  if (!taskId) {
-    throw new Error(`Kie createTask sem taskId (code=${json.code}, msg=${json.msg ?? ""})`);
-  }
-  return { taskId };
+  return postCreateTask(
+    body,
+    (code, msg) => `Kie createTask sem taskId (code=${code}, msg=${msg})`,
+    opts.hooks,
+  );
 }
 
 export type KieVideoInput = {
@@ -169,7 +139,7 @@ function buildVideoInput(v: KieVideoInput): Record<string, unknown> {
 /** Cria uma task de image-to-video e retorna o taskId. */
 export async function kieCreateVideoTask(
   input: KieVideoInput,
-  opts: { callBackUrl?: string } = {},
+  opts: { callBackUrl?: string; hooks?: KieRetryHooks } = {},
 ): Promise<{ taskId: string }> {
   const body: Record<string, unknown> = {
     model: input.model,
@@ -177,24 +147,11 @@ export async function kieCreateVideoTask(
   };
   if (opts.callBackUrl) body.callBackUrl = opts.callBackUrl;
 
-  const res = await fetch(`${BASE}/createTask`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Kie ${res.status}: ${text.slice(0, 400)}`);
-  }
-  const json = (await res.json()) as { code?: number; msg?: string; data?: { taskId?: string } };
-  const taskId = json.data?.taskId;
-  if (!taskId) {
-    throw new Error(`Kie createTask (vídeo) sem taskId (code=${json.code}, msg=${json.msg ?? ""})`);
-  }
-  return { taskId };
+  return postCreateTask(
+    body,
+    (code, msg) => `Kie createTask (vídeo) sem taskId (code=${code}, msg=${msg})`,
+    opts.hooks,
+  );
 }
 
 export type KieState = "waiting" | "queuing" | "generating" | "success" | "fail";
