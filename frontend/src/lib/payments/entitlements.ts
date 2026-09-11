@@ -15,7 +15,11 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { donoDoEntitlement } from "@/lib/payments/vinculo";
-import { entitlementValeAcesso } from "@/lib/payments/acesso-regra";
+import {
+  entitlementDaPlataforma,
+  entitlementValeAcesso,
+  produtosDeCurso,
+} from "@/lib/payments/acesso-regra";
 import type {
   EntitlementStatus,
   EntitlementUpdate,
@@ -124,6 +128,21 @@ export async function revokeAccess(input: RevokeInput): Promise<boolean> {
 /**
  * Vincula entitlements órfãos (user_id NULL) ao usuário pelo e-mail e
  * recalcula o acesso. Chamar no login/callback ou no fluxo de "reivindicar".
+ *
+ * ⚠️ NÃO adota linha de produto de CURSO (#2d0509b4). O update era cego a
+ * `product_code`: casava TODA órfã do e-mail, e o `recomputeProfileAccess`
+ * logo abaixo transformava entitlement de curso em `plan=pro` + `access_until`
+ * + crédito. Como os eventos de curso de 09/06 passaram pelo `grantAccess`
+ * antes de existir o roteamento por produto, eles nasceram `active` com
+ * `access_until` NULL — vitalício —, então quem comprou SÓ o curso ganhava a
+ * plataforma PARA SEMPRE no primeiro login. Medido em 08/09: 15 linhas, 12
+ * pessoas, 11 delas a um login de distância.
+ *
+ * A órfã de curso continua órfã de propósito: adotá-la sem contá-la no acesso
+ * exigiria mexer no `recomputeProfileAccess`, e aí a próxima recomputação
+ * RETIRARIA o vitalício de quem já está usando — que é decisão comercial
+ * (honrar ou revogar os 15), não minha. Este conserto só fecha a torneira;
+ * ele não mexe em ninguém que já tem acesso hoje.
  */
 export async function reconcileUserEntitlements(
   userId: string,
@@ -131,11 +150,25 @@ export async function reconcileUserEntitlements(
 ): Promise<void> {
   const admin = getAdmin();
   const e = email.trim().toLowerCase();
-  await admin
+
+  const { data: orfas } = await admin
     .from("entitlements")
-    .update({ user_id: userId, updated_at: new Date().toISOString() })
+    .select("id, product_code")
     .is("user_id", null)
     .ilike("buyer_email", e);
+
+  const cursos = produtosDeCurso();
+  const adotaveis = (orfas ?? [])
+    .filter((o) => entitlementDaPlataforma(o.product_code, cursos))
+    .map((o) => o.id);
+
+  if (adotaveis.length > 0) {
+    await admin
+      .from("entitlements")
+      .update({ user_id: userId, updated_at: new Date().toISOString() })
+      .in("id", adotaveis);
+  }
+
   await recomputeProfileAccess(userId);
 }
 

@@ -99,3 +99,71 @@ export function eventoEhPagamento(
   if (!Number.isFinite(v as number) || (v as number) <= 0) return false;
   return STATUS_PAGO.has(String(ev.status ?? "").toUpperCase());
 }
+
+/**
+ * Produtos de CURSO na Hotmart — comprar NÃO dá a plataforma.
+ *
+ * Regra do Lucas (31/08), a mesma que o webhook já obedece em
+ * `route.ts` ("SGP: CURSO, não assinatura. Desvia ANTES de tudo"):
+ *   7283229 — Sistema de Geração Pronto
+ *   7283335 — Fábrica de Conteúdo Invisível
+ *
+ * Sobrescrevíveis por ambiente em quem chama (`HOTMART_SGP_PRODUCT_ID`); o
+ * padrão mora aqui pra a regra valer sem depender do servidor.
+ */
+export const PRODUTOS_DE_CURSO_PADRAO = ["7283229", "7283335"] as const;
+
+/**
+ * A lista de curso VIGENTE: o padrão acima mais o SGP do ambiente
+ * (`HOTMART_SGP_PRODUCT_ID`), que é o mesmo que o roteamento do webhook usa.
+ *
+ * ⚠️ Mora aqui, no módulo puro, e não em `entitlements.ts`, porque ela tem DOIS
+ * consumidores que precisam enxergar exatamente o mesmo conjunto: o conserto
+ * (`reconcileUserEntitlements`) e o detector
+ * (`sgp/reconciliacao.ts::orfasQueSobraram`). Na primeira versão deste fix a
+ * lista era privada do `entitlements.ts` e o detector chamava
+ * `entitlementDaPlataforma` com o PADRÃO — as duas coincidem hoje
+ * (`SGP_PRODUCT_ID_PADRAO` = 7283229 já está no padrão), mas um SGP novo em
+ * ambiente faria o conserto pular a órfã por ser curso enquanto o detector a
+ * contava como plataforma, abrindo "sobrou compra paga sem dono" justamente na
+ * linha que o conserto decidiu NÃO ligar. Uma régua, um lugar, com teste.
+ *
+ * ⚠️ O padrão do SGP está repetido aqui como literal, em vez de importado de
+ * `sgp-boas-vindas.ts`, para este módulo continuar com ZERO import — é o que
+ * permite rodá-lo em `node --test` sem arrastar Supabase atrás, e é a razão de
+ * ele existir. A cópia não fica solta: `acesso-regra.test.ts` importa a
+ * constante de lá e ASSERTA que as duas são iguais, então divergir quebra o
+ * teste em vez de virar defeito silencioso.
+ */
+const SGP_PADRAO = "7283229";
+
+export function produtosDeCurso(
+  env: Record<string, string | undefined> = process.env,
+): string[] {
+  const sgp = env.HOTMART_SGP_PRODUCT_ID?.trim() || SGP_PADRAO;
+  return Array.from(new Set([sgp, ...PRODUTOS_DE_CURSO_PADRAO]));
+}
+
+/**
+ * "Esta linha de entitlement é da PLATAFORMA?" — incidente
+ * #2d0509b4 (08/09): 15 entitlements `active` com `access_until` NULL
+ * (vitalício) em produto de CURSO, criados em 09/06, quando o webhook ainda
+ * não tinha o roteamento por produto e mandava a compra do curso pro
+ * `grantAccess` como se fosse assinatura.
+ *
+ * ⚠️ NULL/vazio devolve TRUE de propósito. Linha sem `product_code` é ausência
+ * de informação, não a informação "é curso" — e tratar ausência como curso
+ * tiraria acesso de pagante antigo cuja linha nasceu sem produto. Mesmo
+ * princípio da guarda do #222 em `vinculo.ts`: na dúvida, NÃO se retira nada.
+ *
+ * Ela só responde "dá a plataforma?"; ela NÃO decide o que fazer com as 15
+ * linhas que já existem — isso é decisão comercial, de gente.
+ */
+export function entitlementDaPlataforma(
+  productCode: string | null | undefined,
+  produtosDeCurso: readonly string[] = PRODUTOS_DE_CURSO_PADRAO,
+): boolean {
+  const p = String(productCode ?? "").trim();
+  if (!p) return true;
+  return !produtosDeCurso.includes(p);
+}
