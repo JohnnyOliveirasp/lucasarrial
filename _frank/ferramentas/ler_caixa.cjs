@@ -138,67 +138,49 @@ class Sessao {
   }
 }
 
-// ---------- parse (portado de mail-respond.ts, comportamento idêntico) ----------
+// ---------- parse: A MESMA implementação da produção, nunca um porte ----------
 
-function decodeWord(s) {
-  return s.replace(/=\?([^?]+)\?([BQ])\?([^?]*)\?=/gi, (m, _cs, enc, data) => {
-    try {
-      if (String(enc).toUpperCase() === "B") return Buffer.from(data, "base64").toString("utf8");
-      const bytes = String(data)
-        .replace(/_/g, " ")
-        .replace(/=([0-9A-F]{2})/gi, (_x, h) => String.fromCharCode(parseInt(h, 16)));
-      return Buffer.from(bytes, "latin1").toString("utf8");
-    } catch {
-      return m;
-    }
-  });
+/**
+ * ⚠️ NÃO PORTE ESTAS FUNÇÕES PRA CÁ. Elas vêm de `mail-charset.ts`.
+ *
+ * Aqui morava um PORTE do `mailText` de produção, e o porte foi o defeito
+ * (#351). Em 10/09 o #337 tirou de produção o palpite de fronteira MIME
+ * (`/\r?\n--[-=_a-zA-Z0-9]{6,}/`, "linha que começa com `--` e mais 6 chars")
+ * e trocou pela fronteira DECLARADA em `boundary=`. A cópia daqui não foi
+ * junto, e ficou 1 dia divergente da produção.
+ *
+ * O custo não foi teórico. O Gmail abre TODO encaminhamento com a linha
+ *
+ *     --------- Mensagem encaminhada ---------
+ *
+ * que casa no palpite (`--` + 7 hifens). Medido no uid 517: o palpite casa no
+ * offset 2, o corpo real tem 3.517 bytes até a fronteira declarada
+ * (`multipart/alternative`), e a ferramenta imprimia "(sem corpo em texto)".
+ * Encaminhar o nosso aviso de cobrança é justamente o que o aluno faz quando
+ * está contestando dinheiro — então o defeito disparava no pior caso possível,
+ * e o Vigia, que lê a caixa com esta ferramenta em toda ronda, reportava
+ * SILÊNCIO onde havia pedido. O do uid 517 ("Eu não quero mais seguir no
+ * programa") ficou invisível por 2 dias, com a janela de reembolso fechando.
+ *
+ * Duas implementações da mesma regra sempre voltam a divergir; uma só, não.
+ * Node ≥ 22.18 remove os tipos do `.ts` em tempo de require, então a
+ * ferramenta consome o módulo de produção DIRETO — sem build, sem terceira
+ * cópia, e qualquer conserto futuro no MIME vale nos dois lados de uma vez.
+ */
+const CAMINHO_CHARSET = path.join(RAIZ, "frontend", "src", "lib", "agent", "mail-charset.ts");
+let charsetMod;
+try {
+  charsetMod = require(CAMINHO_CHARSET);
+} catch (e) {
+  // Falhar ALTO. Um fallback silencioso pra cópia local seria reinventar o
+  // #351: a ferramenta voltaria a ler diferente da Fast, e sem avisar ninguém.
+  throw new Error(
+    `não consegui carregar ${path.relative(RAIZ, CAMINHO_CHARSET)} ` +
+      `(node ${process.version}; é preciso ≥ 22.18 pra remoção de tipos no require): ` +
+      (e instanceof Error ? e.message : String(e)),
+  );
 }
-
-function header(raw, name) {
-  const m = raw.match(new RegExp(`^${name}: (.*(?:\\r?\\n[ \\t].*)*)`, "mi"));
-  return m ? decodeWord(m[1].replace(/\r?\n[ \t]+/g, " ").trim()) : "";
-}
-
-function stripHtml(s) {
-  return s
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function mailText(raw, maxChars) {
-  const plainIdx = raw.search(/Content-Type:\s*text\/plain/i);
-  const htmlIdx = raw.search(/Content-Type:\s*text\/html/i);
-  const idx = plainIdx >= 0 ? plainIdx : htmlIdx;
-  let seg = idx >= 0 ? raw.slice(idx) : raw;
-  const headBlock = seg.slice(0, 400);
-  const start = seg.search(/\r?\n\r?\n/);
-  seg = start >= 0 ? seg.slice(start) : seg;
-  const boundary = seg.search(/\r?\n--[-=_a-zA-Z0-9]{6,}/);
-  if (boundary > 0) seg = seg.slice(0, boundary);
-  if (/quoted-printable/i.test(headBlock)) {
-    seg = seg.replace(/=\r?\n/g, "").replace(/=([0-9A-F]{2})/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)));
-  } else if (/base64/i.test(headBlock)) {
-    try {
-      seg = Buffer.from(seg.replace(/\s+/g, ""), "base64").toString("utf8");
-    } catch {
-      /* fica como está */
-    }
-  }
-  let text = idx === htmlIdx && idx >= 0 ? stripHtml(seg) : seg.replace(/\s+/g, " ").trim();
-  try {
-    const round = Buffer.from(text, "latin1").toString("utf8");
-    if (!/�/.test(round)) text = round;
-  } catch {
-    /* mantém */
-  }
-  return text.slice(0, maxChars);
-}
+const { decodeWord, header, stripHtml, mailText, parteParaTexto } = charsetMod;
 
 /** Anexos pelo MIME cru: só NOME e tamanho estimado — o conteúdo nunca é usado. */
 function anexosDoRaw(raw) {
@@ -350,6 +332,10 @@ function coletarPartes(no, prefixo) {
       tipo: String(tipo || "").toUpperCase(),
       subtipo: String(subtipo || "").toUpperCase(),
       encoding: String(encoding || "").toUpperCase(),
+      // O CHARSET vem no BODYSTRUCTURE e era jogado fora aqui — mesma raiz do
+      // #320 (charset declarado, ignorado). Quem decide bytes→texto é o
+      // `parteParaTexto`, e ele precisa deste valor pra não adivinhar.
+      charset: typeof paramsObj.CHARSET === "string" ? paramsObj.CHARSET.toLowerCase() : null,
       bytes: Number(tamanho) || 0,
       nome,
       disposition: dispTipo,
@@ -362,15 +348,19 @@ function ehAnexo(p) {
   return p.disposition === "ATTACHMENT" || !!p.nome;
 }
 
-/** Decodifica o bloco baixado conforme o encoding declarado no BODYSTRUCTURE. */
-function decodificarParte(textoLatin1, encoding) {
-  if (encoding === "BASE64") return Buffer.from(textoLatin1.replace(/\s+/g, ""), "base64");
-  if (encoding === "QUOTED-PRINTABLE") {
-    const s = textoLatin1.replace(/=\r?\n/g, "").replace(/=([0-9A-F]{2})/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)));
-    return Buffer.from(s, "latin1");
-  }
-  // 7BIT / 8BIT / BINARY: latin1 preserva byte a byte
-  return Buffer.from(textoLatin1, "latin1");
+/**
+ * Parte MIME baixada sozinha (mensagem grande) → TEXTO, pelo charset declarado.
+ *
+ * Isto também era um porte — `decodificarParte` + `textoDoBuffer` repetiam, na
+ * ferramenta, exatamente o tudo-ou-nada que o #320 tirou de produção: o
+ * `textoDoBuffer` fazia `utf8` e, ao ver UM U+FFFD em qualquer lugar (inclusive
+ * na citação do e-mail anterior, que nem é do aluno), jogava o texto INTEIRO
+ * pra latin1. Quem decide bytes→texto é o `parteParaTexto` da produção, que
+ * respeita o charset declarado e isola o byte ruim em vez de condenar a frase.
+ */
+function textoDaParte(textoLatin1, pt) {
+  const enc = String(pt.encoding || "").toLowerCase();
+  return parteParaTexto(textoLatin1, enc, pt.charset ?? null);
 }
 
 /** Folhas do BODYSTRUCTURE de uma resposta de UID FETCH (lança se não parsear). */
@@ -389,12 +379,6 @@ function parteDeTexto(partes) {
     partes.find((p) => corpoDeTexto(p) && p.subtipo === "HTML") ||
     null
   );
-}
-
-/** Buffer → string: tenta utf8 e cai pra latin1 se vier caractere de troca. */
-function textoDoBuffer(buf) {
-  const utf8 = buf.toString("utf8");
-  return /�/.test(utf8) ? buf.toString("latin1") : utf8;
 }
 
 const fmtBytes = (b) =>
@@ -647,9 +631,11 @@ async function main() {
             const bufT = await sessao.commandRaw(`UID FETCH ${uid} BODY.PEEK[${pt.numero}]`);
             const bruto = extrairLiteral(bufT);
             if (bruto) {
-              const cru = textoDoBuffer(decodificarParte(bruto, pt.encoding));
-              // Mesmo tratamento do caminho normal (mailText): html vira texto,
-              // plain só colapsa espaço em branco.
+              // BYTES → TEXTO primeiro (charset declarado), operação de texto
+              // depois. Nunca o contrário: `\s` casa U+00A0, que é byte de
+              // continuação de UTF-8, então colapsar espaço em cima de bytes
+              // come acento e FABRICA o U+FFFD (#320).
+              const cru = textoDaParte(bruto, pt);
               const texto = pt.subtipo === "HTML" ? stripHtml(cru) : cru.replace(/\s+/g, " ").trim();
               if (texto) {
                 corpo = [
@@ -693,7 +679,22 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error("ler_caixa falhou:", e instanceof Error ? e.message : e);
-  process.exit(1);
-});
+// Só roda quando chamada na linha de comando. O guard existe pra que o teste
+// possa `require` este arquivo e exercitar o parse SEM abrir socket com a caixa
+// viva da Fast — regressão do #351 precisa de teste, e teste não fala com IMAP.
+if (require.main === module) {
+  main().catch((e) => {
+    console.error("ler_caixa falhou:", e instanceof Error ? e.message : e);
+    process.exit(1);
+  });
+}
+
+// Superfície exposta só pro teste (`ler_caixa.test.cjs`). Nada aqui abre rede.
+module.exports = {
+  mailText,
+  header,
+  textoDaParte,
+  partesDoBodystructure,
+  parteDeTexto,
+  anexosDoRaw,
+};

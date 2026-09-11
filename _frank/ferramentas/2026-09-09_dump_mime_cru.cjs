@@ -2,14 +2,21 @@
  * Dump do MIME CRU de um uid do INBOX — leitura pura.
  *
  * POR QUE ISTO EXISTE
- * O `ler_caixa.cjs` renderiza o corpo com um PORTE do `mailText` de produção.
  * Quando a pergunta da ronda é "a Fast leu esta mensagem do mesmo jeito que eu
- * li?", o porte não serve de prova: ele pode acertar onde a produção erra, e
- * foi exatamente essa lacuna que o incidente #261 (`ab485826`) deixou escrita
- * na própria ressalva — *"NÃO li o MIME cru do uid 436 ... quem pegar o card
- * deve começar dumpando o BODYSTRUCTURE antes de mexer no mailText"*. O #261
- * acabou REFUTADO justamente na fonte. Este script é essa fonte, disponível
- * antes de abrir chamado em vez de depois de fechá-lo.
+ * li?", nenhuma renderização serve de prova — só o MIME cru. Foi exatamente
+ * essa lacuna que o incidente #261 (`ab485826`) deixou escrita na própria
+ * ressalva — *"NÃO li o MIME cru do uid 436 ... quem pegar o card deve começar
+ * dumpando o BODYSTRUCTURE antes de mexer no mailText"*. O #261 acabou
+ * REFUTADO justamente na fonte. Este script é essa fonte, disponível antes de
+ * abrir chamado em vez de depois de fechá-lo.
+ *
+ * ATUALIZAÇÃO (#351, 11/09): o `ler_caixa.cjs` NÃO renderiza mais o corpo com
+ * um PORTE do `mailText` — ele importa o módulo de produção direto, então hoje
+ * lê igual à Fast por construção. O porte é que era o defeito: ficou com o
+ * palpite de fronteira MIME que o #337 já tinha tirado de produção e lia todo
+ * encaminhamento do Gmail como corpo VAZIO. Este dump segue sendo a fonte da
+ * verdade — só que uma divergência agora seria bug da produção, não da
+ * ferramenta, e é aqui que ela apareceria.
  *
  * GARANTIAS (as mesmas do ler_caixa.cjs — ordem de 19/08)
  *   - `EXAMINE` (read-only no protocolo) e `BODY.PEEK[]`, nunca `BODY[]`:
