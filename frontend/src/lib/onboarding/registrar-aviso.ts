@@ -44,6 +44,8 @@ export type ChaveAviso =
   | "onboarding_ok_mas_assine_sem_imagem"
   | "sgp_foto_pronta"
   | "sgp_voz_pronta"
+  /** #364: o pedido do SGP morreu e o aluno foi avisado (uma vez só). */
+  | "sgp_falhou"
   /** boas-vindas da COMPRA do SGP na Hotmart, mandando preencher o /sgp */
   | "sgp_compra_boas_vindas";
 
