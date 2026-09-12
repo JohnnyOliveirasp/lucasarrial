@@ -24,10 +24,11 @@ import { recordRunpodTiming } from "@/lib/generations/runpod-timing";
 import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { GenerationStatus } from "@/lib/db/types";
 import { tentarReenviar } from "@/lib/generations/reenviar";
+import { reivindicarFalha, STATUS_EM_ANDAMENTO } from "@/lib/generations/falha-claim";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const POLLING_STATUSES: GenerationStatus[] = ["pending", "generating"];
+const POLLING_STATUSES: GenerationStatus[] = [...STATUS_EM_ANDAMENTO];
 
 /**
  * Marca a geração como failed com gate idempotente (corrida poll×webhook) e,
@@ -85,13 +86,12 @@ async function failGeneration(
   if (typeof executionTimeMs === "number") {
     failUpdate.elapsed_seconds = executionTimeMs / 1000; // RunPod manda em ms
   }
-  const { data: claimed } = await getAdmin()
-    .from("generations")
-    .update(failUpdate)
-    .eq("id", generationId)
-    .in("status", POLLING_STATUSES)
-    .select("id");
-  if (claimed && claimed.length > 0) {
+  // O `jobId` daqui é o `runpod_job_id` lido no TOPO do GET — justamente o que
+  // pode estar VELHO quando o reenvio trocou o job no meio do poll. Por isso
+  // ele entra no gate: falha de job velho não marca failed nem estorna por cima
+  // de um job que ainda está rodando (caso 12/09, geração b744e6da).
+  const claimed = await reivindicarFalha(getAdmin(), generationId, jobId, failUpdate);
+  if (claimed) {
     // Telemetria fila×execução (migration 82) em UPDATE separado: se a coluna
     // ainda não existir no banco, só a instrumentação falha — o estorno segue.
     await recordRunpodTiming(generationId, { delayTimeMs, executionTimeMs });
