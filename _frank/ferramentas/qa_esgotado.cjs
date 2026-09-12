@@ -47,6 +47,48 @@ const JSON_OUT = tem("--json");
 const dt = (iso) =>
   iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "?";
 
+// Teto REAL do PostgREST deste projeto, medido: pedir `.limit(5000)` numa
+// janela de 3650 dias devolve exatamente 1000 linhas, calado. É o mesmo
+// rebaixamento silencioso já documentado em `_estornos.cjs` (que enxergava 40%
+// da tabela e dava verde) e em `raio_honesto.cjs` (1000 eventos onde havia
+// 1373). Um `--dias 7` não bate no teto hoje, mas uma auditoria de 30/90 dias
+// bate — e truncar em silêncio numa lista cujo PROPÓSITO é achar TODOS os
+// alunos afetados é o pior modo de falha possível aqui. Por isso: pagina de
+// verdade por `.range()` até a página vir curta.
+const PASSO_PAGINA = 1000;
+const TETO_VARREDURA = 500000;
+
+/**
+ * Lê a janela inteira, paginando. Erro sobe CRU e aborta: uma lista parcial
+ * lida como completa é o defeito que esta função existe pra não ter.
+ *
+ * Ordem CRESCENTE de propósito: geração nova entra no fim da janela e não
+ * empurra página já lida. Com `created_at desc` um insert no meio da varredura
+ * desloca tudo e faz repetir/pular linha. O `id` é desempate — sem ele,
+ * `created_at` repetido entre duas páginas tem ordem indefinida.
+ */
+async function lerJanela(s, desde) {
+  const tudo = [];
+  let de = 0;
+  for (;;) {
+    let q = s
+      .from("generations")
+      .select("id,user_id,name,status,created_at,qa")
+      .gte("created_at", desde)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true });
+    if (!TODOS) q = q.eq("status", "ready");
+
+    const { data, error } = await q.range(de, de + PASSO_PAGINA - 1);
+    if (error) throw new Error(`consulta falhou (a partir da linha ${de}): ${error.message}`);
+    const pagina = data ?? [];
+    tudo.push(...pagina);
+    if (pagina.length < PASSO_PAGINA) return tudo;
+    de += PASSO_PAGINA;
+    if (de > TETO_VARREDURA) throw new Error(`paginação sem fim em generations (passou de ${TETO_VARREDURA} linhas)`);
+  }
+}
+
 (async () => {
   if (!Number.isFinite(DIAS) || DIAS <= 0) throw new Error("--dias tem que ser um número > 0");
   if (!Number.isFinite(LIMITE) || LIMITE <= 0) throw new Error("--limite tem que ser um número > 0");
@@ -73,26 +115,21 @@ const dt = (iso) =>
   const s = c.supa();
   const desde = new Date(Date.now() - DIAS * 86400000).toISOString();
 
-  let q = s
-    .from("generations")
-    .select("id,user_id,name,status,created_at,qa")
-    .gte("created_at", desde)
-    .order("created_at", { ascending: false });
-  if (!TODOS) q = q.eq("status", "ready");
-
-  // O filtro de `exhausted > 0` é feito AQUI, no veredito, e não no PostgREST:
+  // O filtro de `exhausted > 0` é feito no veredito, em JS, e não no PostgREST:
   // `qa->>'exhausted'` volta texto e a comparação numérica no filtro silencia
   // linha com jsonb fora do formato em vez de reclamar. Ler e decidir em JS usa
   // exatamente a mesma régua que a Fast usa.
-  const { data, error } = await q.limit(2000);
-  if (error) throw new Error(`consulta falhou: ${error.message}`);
+  const data = await lerJanela(s, desde);
 
   const linhas = [];
-  for (const g of data ?? []) {
+  for (const g of data) {
     const v = qaVeredito(g.qa);
     if (!v) continue;
     linhas.push({ ...g, veredito: v });
   }
+  // A varredura sobe em ordem crescente (ver `lerJanela`); o relatório é lido
+  // do mais recente pro mais antigo.
+  linhas.reverse();
 
   // E-mail do aluno: uma consulta só pros ids que sobraram, não uma por linha.
   const ids = [...new Set(linhas.map((l) => l.user_id).filter(Boolean))];
@@ -129,7 +166,7 @@ const dt = (iso) =>
 
   const escopo = TODOS ? "todas as gerações" : "gerações ENTREGUES (status=ready)";
   console.log(`\nQA esgotado — ${escopo}, últimos ${DIAS} dia(s)${EMAIL ? ` · aluno ${EMAIL}` : ""}`);
-  console.log(`Lidas ${(data ?? []).length} gerações na janela · ${linhas.length} com ressalva de QA\n`);
+  console.log(`Lidas ${data.length} gerações na janela (janela inteira, paginada) · ${linhas.length} com ressalva de QA\n`);
 
   if (!saida.length) {
     console.log("  nenhuma geração com QA esgotado na janela.");
@@ -148,8 +185,8 @@ const dt = (iso) =>
 
   // Corte SEMPRE anunciado: uma lista truncada em silêncio lê-se como "é só
   // isso" e vira decisão em cima de meia medida.
+  // (Não existe mais aviso de "teto da consulta": a janela é lida inteira por
+  // paginação. O único corte possível é este `--limite`, que é do usuário e é
+  // anunciado acima.)
   if (cortadas > 0) console.log(`  [+${cortadas} linha(s) além do --limite ${LIMITE}. Rode com --limite maior pra ver o resto.]\n`);
-  if ((data ?? []).length >= 2000) {
-    console.log("  [⚠️ a janela bateu no teto de 2000 gerações lidas: pode haver mais. Reduza o --dias.]\n");
-  }
 })().catch((e) => { console.error("FALHOU:", e.message); process.exit(1); });
