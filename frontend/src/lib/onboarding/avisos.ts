@@ -160,6 +160,24 @@ export async function avisoFotoPronta(email: string, ref?: string | null): Promi
   );
 }
 
+/**
+ * SGP — o pedido MORREU (#364). O texto vem pronto de `lib/sgp/fracasso.ts`,
+ * que é quem sabe de quem é a culpa (e por isso é testável); aqui só sai o
+ * e-mail e fica o registro em `avisos_enviados`.
+ *
+ * ⚠️ NÃO chamar direto: quem chama é `processarTransicao`, que só deixa passar
+ * a PRIMEIRA vez. A tela /sgp/acompanhar re-renderiza a cada F5 — sem o cadeado
+ * de lá, isto vira um e-mail por carregamento.
+ */
+export async function avisoSgpFalhou(
+  email: string,
+  assunto: string,
+  texto: string,
+  ref?: string | null,
+): Promise<void> {
+  await mandar(email, assunto, texto, "sgp_falhou", { referencia: ref });
+}
+
 export async function avisoVozPronta(email: string, ref?: string | null): Promise<void> {
   await mandar(
     email,

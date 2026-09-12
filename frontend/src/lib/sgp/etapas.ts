@@ -12,7 +12,8 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { statusOnboarding } from "@/lib/onboarding/pronto";
-import { avisoFotoPronta, avisoVozPronta } from "@/lib/onboarding/avisos";
+import { avisoFotoPronta, avisoVozPronta, avisoSgpFalhou, escalarNoGrupo } from "@/lib/onboarding/avisos";
+import { processarTransicao } from "./fracasso";
 import type { SgpPedidoRow, SgpStatus } from "./types";
 
 export type EstadoEtapa = "feito" | "andamento" | "espera" | "falhou";
@@ -95,12 +96,41 @@ export async function estadoDasEtapas(pedido: SgpPedidoRow): Promise<EtapasSgp> 
   // junto com o status, uma vez só (`is erro null` é o cadeado — nunca
   // sobrescreve um erro que já foi escrito por outro caminho).
   const erroCarimbado = status === "falhou" && !pedido.erro ? (s.motivo ?? null) : null;
-  if (status !== pedido.status) {
-    await admin
-      .from("sgp_pedidos" as never)
-      .update((erroCarimbado ? { status, erro: erroCarimbado } : { status }) as never)
-      .eq("id", pedido.id);
-  }
+  // 12/09, a segunda metade do #364: carimbar o estado terminal não avisava
+  // NINGUÉM — o pedido fe00d4e2 (R$ 894) ficou 19h em silêncio. Agora a MESMA
+  // transição manda o e-mail ao aluno e chama o grupo. A decisão e o cadeado
+  // moram em `fracasso.ts`, que tem teste; aqui ficam só os fios.
+  await processarTransicao(
+    {
+      id: pedido.id,
+      nome: pedido.nome,
+      email: pedido.email,
+      erro: pedido.erro,
+      status: pedido.status,
+    },
+    status,
+    erroCarimbado ?? s.motivo ?? null,
+    {
+      // O cadeado: só a chamada que REALMENTE virou o pedido recebe a linha.
+      carimbarFracasso: async (patch) => {
+        const { data } = await admin
+          .from("sgp_pedidos" as never)
+          .update(patch as never)
+          .eq("id", pedido.id)
+          .neq("status", "falhou")
+          .select("email, nome");
+        return (data?.[0] as { email: string | null; nome: string | null } | undefined) ?? null;
+      },
+      carimbarStatus: async (novo) => {
+        await admin
+          .from("sgp_pedidos" as never)
+          .update({ status: novo } as never)
+          .eq("id", pedido.id);
+      },
+      avisarAluno: avisoSgpFalhou,
+      escalar: escalarNoGrupo,
+    },
+  );
 
   return {
     status,
