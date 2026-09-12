@@ -26,10 +26,13 @@ export function StepDadosForm({
   nomeInicial = "",
   emailInicial = "",
   whatsappInicial = "",
+  avisoInicial = null,
 }: {
   nomeInicial?: string;
   emailInicial?: string;
   whatsappInicial?: string;
+  /** Por que o link de retomada não abriu (`/sgp?retomada=…`). Não é erro do aluno. */
+  avisoInicial?: string | null;
 }) {
   const t = useTranslations("sgp.dados");
   const router = useRouter();
@@ -39,6 +42,8 @@ export function StepDadosForm({
   const [whatsapp, setWhatsapp] = useState(whatsappInicial);
   const [email, setEmail] = useState(emailInicial);
   const [contaExistente, setContaExistente] = useState(false);
+  const [retomado, setRetomado] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(avisoInicial);
   const [codigo, setCodigo] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -73,10 +78,12 @@ export function StepDadosForm({
         body: JSON.stringify({ nome: nome.trim(), whatsapp, email: email.trim() }),
       });
       const j = (await r.json().catch(() => null)) as
-        | { error?: { message?: string }; conta_existente?: boolean }
+        | { error?: { message?: string }; conta_existente?: boolean; retomado?: boolean }
         | null;
       if (!r.ok) throw new Error(j?.error?.message ?? t("erroGenerico"));
       setContaExistente(j?.conta_existente === true);
+      setRetomado(j?.retomado === true);
+      setAviso(null);
       setEtapa("codigo");
       setEspera(REENVIO_S);
     } catch (e2) {
@@ -96,9 +103,13 @@ export function StepDadosForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ codigo }),
       });
-      const j = (await r.json().catch(() => null)) as { error?: { message?: string } } | null;
+      const j = (await r.json().catch(() => null)) as
+        | { error?: { message?: string }; destino?: string }
+        | null;
       if (!r.ok) throw new Error(j?.error?.message ?? t("codigoInvalido"));
-      router.push("/sgp/foto");
+      // O destino vem do servidor: quem retomou um pedido que já estava no
+      // áudio ia parar na tela de fotos e achava que tinha voltado ao começo.
+      router.push(j?.destino ?? "/sgp/foto");
       router.refresh();
     } catch (e2) {
       setErro(e2 instanceof Error ? e2.message : t("erroGenerico"));
@@ -111,7 +122,11 @@ export function StepDadosForm({
       <form onSubmit={confirmar} className="flex flex-col gap-4">
         <div className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-4 py-4">
           <p className="mb-1 text-[13px] font-medium text-[var(--silver)]">
-            {contaExistente ? t("codigoEnviadoContaExistente") : t("codigoEnviado")}
+            {retomado
+              ? t("codigoEnviadoRetomado")
+              : contaExistente
+                ? t("codigoEnviadoContaExistente")
+                : t("codigoEnviado")}
           </p>
           <p className="text-[14px] text-[var(--ink)]">{email.trim()}</p>
         </div>
@@ -155,6 +170,12 @@ export function StepDadosForm({
 
   return (
     <form onSubmit={pedirCodigo} className="flex flex-col gap-5">
+      {aviso ? (
+        <p className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-4 py-3 text-[13px] text-[var(--silver)]">
+          {aviso}
+        </p>
+      ) : null}
+
       <div className="flex flex-col gap-1.5">
         <label htmlFor="sgp-nome" className={SGP_LABEL_CLASS}>{t("nome")}</label>
         <input

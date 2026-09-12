@@ -2244,7 +2244,14 @@
       "erroGenerico": "Algo salió mal. Intenta de nuevo.",
       "nomeCurto": "Ingresa tu nombre completo.",
       "whatsappInvalido": "Ingresa un WhatsApp válido con código de área.",
-      "mudarEmail": "Cambiar e-mail"
+      "mudarEmail": "Cambiar e-mail",
+      "codigoEnviadoRetomado": "Encontramos tu pedido en curso. Enviamos un código a tu correo para confirmar que eres tú — no se perdió nada de lo que ya subiste.",
+      "retomada": {
+        "vencido": "Ese enlace para retomar venció. Escribe tu correo abajo y te devolvemos a tu pedido.",
+        "invalido": "No pudimos abrir ese enlace. Escribe tu correo abajo y te devolvemos a tu pedido.",
+        "confirme": "Encontramos tu pedido. Solo falta confirmar tu correo: escríbelo abajo para recibir el código.",
+        "falhou": "Tuvimos un problema al abrir tu pedido ahora. Escribe tu correo abajo para continuar."
+      }
     },
     "foto": {
       "titulo": "Foto base para el Clon",

@@ -2244,7 +2244,14 @@
       "erroGenerico": "Algo deu errado. Tente novamente.",
       "nomeCurto": "Informe o nome completo.",
       "whatsappInvalido": "Informe um WhatsApp válido com DDD.",
-      "mudarEmail": "Trocar e-mail"
+      "mudarEmail": "Trocar e-mail",
+      "codigoEnviadoRetomado": "Encontramos o seu pedido em andamento. Enviamos um código para o seu e-mail para confirmar que é você — nada do que você já enviou foi perdido.",
+      "retomada": {
+        "vencido": "Esse link de retomada venceu. Informe o seu e-mail abaixo que a gente te devolve para o seu pedido.",
+        "invalido": "Não conseguimos abrir esse link. Informe o seu e-mail abaixo que a gente te devolve para o seu pedido.",
+        "confirme": "Achamos o seu pedido. Só falta confirmar o seu e-mail: informe ele abaixo para receber o código.",
+        "falhou": "Tivemos um problema ao abrir o seu pedido agora. Informe o seu e-mail abaixo para continuar."
+      }
     },
     "foto": {
       "titulo": "Foto base para o Clone",

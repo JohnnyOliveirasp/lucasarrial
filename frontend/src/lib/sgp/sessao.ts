@@ -7,6 +7,7 @@
  */
 import { cookies } from "next/headers";
 import { getAdmin } from "@/lib/db/admin";
+import { noWizardAberto } from "./destino";
 import type { SgpPedidoRow } from "./types";
 
 export const SGP_COOKIE = "sgp_sessao";
@@ -17,6 +18,54 @@ export async function sessaoAtual(): Promise<string | null> {
   const c = await cookies();
   const v = c.get(SGP_COOKIE)?.value?.trim();
   return v && /^[0-9a-f-]{36}$/i.test(v) ? v : null;
+}
+
+/**
+ * Grava o cookie da sessão. Só pode ser chamado de Route Handler ou Server
+ * Action — Server Component em render não escreve cookie (Next.js).
+ */
+export async function plantarSessao(sessao: string): Promise<void> {
+  const c = await cookies();
+  c.set(SGP_COOKIE, sessao, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: MAX_IDADE,
+  });
+}
+
+/**
+ * O pedido EM ABERTO deste e-mail, pra quem chegou sem cookie.
+ *
+ * É o conserto do beco sem saída da tela 1: sem isto, um navegador sem cookie
+ * abre uma linha NOVA e o material que o aluno já tinha subido some da frente
+ * dele (e a gente fica com duas linhas pro mesmo e-mail no /admin/sgp).
+ *
+ * DE PROPÓSITO só devolve pedido ainda no wizard e SEM `user_id`: pedido já
+ * enviado pertence a uma conta, e conta se retoma com login — não digitando um
+ * e-mail numa tela pública. Quem adota ainda precisa provar o e-mail com o
+ * código de 6 dígitos (ver `POST /api/v1/sgp/inicio`); só o cookie não abre
+ * nada.
+ */
+export async function pedidoAbertoPorEmail(email: string): Promise<SgpPedidoRow | null> {
+  const alvo = email.trim().toLowerCase();
+  if (!alvo) return null;
+  const { data, error } = await getAdmin()
+    .from("sgp_pedidos" as never)
+    .select("*")
+    .ilike("email", alvo)
+    .is("user_id", null)
+    .order("atualizado_em", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  const linha = (data as SgpPedidoRow[] | null)?.[0] ?? null;
+  return linha && noWizardAberto(linha.status) ? linha : null;
+}
+
+/** O pedido de uma sessão específica (usado pela retomada por link). */
+export async function pedidoPorSessao(sessao: string): Promise<SgpPedidoRow | null> {
+  return lerPorSessao(sessao);
 }
 
 /** Abre o pedido desta sessão, criando sessão + linha se for a primeira vez. */
@@ -34,14 +83,7 @@ export async function pedidoDaSessao(): Promise<SgpPedidoRow> {
     .single();
   if (error || !data) throw new Error(error?.message ?? "não consegui abrir o pedido");
   const novo = data as SgpPedidoRow;
-  const c = await cookies();
-  c.set(SGP_COOKIE, novo.sessao, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: MAX_IDADE,
-  });
+  await plantarSessao(novo.sessao);
   return novo;
 }
 

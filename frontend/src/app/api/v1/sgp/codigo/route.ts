@@ -6,6 +6,7 @@
 import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { CODIGO_MAX_TENTATIVAS, hashCodigo } from "@/lib/sgp/codigo";
+import { destinoDoWizard } from "@/lib/sgp/destino";
 import { atualizarSessao, pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 
 export async function POST(request: NextRequest) {
@@ -32,14 +33,18 @@ export async function POST(request: NextRequest) {
       return badRequest("Código inválido. Confira e tente de novo.");
     }
 
+    const status = pedido.status === "dados" ? "foto" : pedido.status;
     await atualizarSessao(pedido.sessao, {
       email_verificado_at: new Date().toISOString(),
       codigo_hash: null,
       codigo_expira_em: null,
       codigo_tentativas: 0,
-      status: pedido.status === "dados" ? "foto" : pedido.status,
+      status,
     });
-    return jsonOk({ ok: true, proximo: "foto" });
+    // O destino sai do STATUS, não é fixo em "foto": quem retomou um pedido que
+    // já estava no áudio ia parar na tela de fotos e achava que tinha voltado
+    // ao começo. `proximo` continua no corpo por compatibilidade.
+    return jsonOk({ ok: true, proximo: "foto", destino: destinoDoWizard(status) });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao confirmar o código");
   }

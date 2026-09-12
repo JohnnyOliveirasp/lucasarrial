@@ -2244,7 +2244,14 @@
       "erroGenerico": "Something went wrong. Try again.",
       "nomeCurto": "Enter your full name.",
       "whatsappInvalido": "Enter a valid WhatsApp number with area code.",
-      "mudarEmail": "Change email"
+      "mudarEmail": "Change email",
+      "codigoEnviadoRetomado": "We found your order in progress. We sent a code to your e-mail to confirm it is you — nothing you already uploaded was lost.",
+      "retomada": {
+        "vencido": "That resume link has expired. Enter your e-mail below and we will take you back to your order.",
+        "invalido": "We could not open that link. Enter your e-mail below and we will take you back to your order.",
+        "confirme": "We found your order. You just need to confirm your e-mail: enter it below to get the code.",
+        "falhou": "We had a problem opening your order just now. Enter your e-mail below to continue."
+      }
     },
     "foto": {
       "titulo": "Base photo for the Clone",
