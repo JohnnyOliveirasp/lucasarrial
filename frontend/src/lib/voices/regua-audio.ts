@@ -414,3 +414,38 @@ export function mensagemEnvioIncompleto(
     saida
   );
 }
+
+/**
+ * A DECISÃO de abrir chamado quando a voz foi recusada por ENVIO PERDIDO.
+ *
+ * Mora aqui, e não no `rescue-stuck-uploads.ts`, por um motivo prático: aquele
+ * arquivo é impuro (R2, Supabase, presigned) e por isso nunca teve teste — foi
+ * exatamente o que o Vigia registrou ao entregar o patch do #362 ("não rodo o
+ * cron contra R2/Supabase reais, então NÃO vi chamado nascer"). A régua é pura
+ * e já roda no `node --test`. Trazendo só a decisão pra cá, as três condições
+ * que importam ficam travadas por teste em vez de por leitura de código.
+ *
+ * As três, e por que cada uma existe:
+ *
+ *  1. `status === "rejected_too_short"` — chamado é pra RECUSA. Voz resgatada
+ *     pro treino (`awaiting_training`) não tem ninguém esperando socorro.
+ *  2. `faltando > 0` — é o que separa "o envio se perdeu no caminho" (falha
+ *     NOSSA, alguém tem que falar com o aluno) de "gravou pouco mesmo" (a
+ *     mensagem na tela já resolve; abrir chamado aqui entope a fila com caso
+ *     que não tem ação nossa).
+ *  3. `linhasAplicadas > 0` — a escrita tem que ter sido NOSSA. O update do
+ *     resgate filtra por `.eq("status","uploading")`, que é a corrida com o
+ *     browser: se ele chegar primeiro, o update casa ZERO linhas e devolve
+ *     `error` NULO do mesmo jeito. Sem esta condição abriríamos chamado em
+ *     cima de voz que o próprio aluno já fechou pelo caminho normal — o mesmo
+ *     buraco do update silencioso que já cravou causa errada antes.
+ */
+export function deveAbrirChamadoEnvioPerdido(e: {
+  status: string;
+  faltando: number;
+  linhasAplicadas: number;
+}): boolean {
+  return (
+    e.status === "rejected_too_short" && e.faltando > 0 && e.linhasAplicadas > 0
+  );
+}
