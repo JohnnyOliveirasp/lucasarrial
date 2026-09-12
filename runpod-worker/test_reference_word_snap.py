@@ -301,8 +301,8 @@ class TestSelectReferenceCandidatesIntegration(unittest.TestCase):
         ranked, _ = self._run(transcribe_words_fn=lambda p: words, transcribe_fn=never)
         self.assertTrue(ranked)
         self.assertEqual(fallback_called, [])  # transcribe_fn não rodou
-        for _clip, transcript in ranked:
-            self.assertTrue(transcript.startswith("p0"))
+        for cand in ranked:
+            self.assertTrue(cand.transcript.startswith("p0"))
 
     def test_words_indisponiveis_cai_no_corte_por_tempo(self):
         ranked, calls = self._run(transcribe_words_fn=lambda p: None)
@@ -317,10 +317,10 @@ class TestSelectReferenceCandidatesIntegration(unittest.TestCase):
         ranked, _ = self._run(transcribe_words_fn=lambda p: words)
         self.assertTrue(ranked)          # nunca lista vazia
         self.assertEqual(len(ranked), 2)  # as 2 candidatas por tempo
-        for clip, transcript in ranked:
-            self.assertEqual(transcript, "fallback por tempo.")
-            self.assertIn("_time", clip.name)
-            self.assertNotIn("ref_fallback", clip.name)
+        for cand in ranked:
+            self.assertEqual(cand.transcript, "fallback por tempo.")
+            self.assertIn("_time", cand.clip.name)
+            self.assertNotIn("ref_fallback", cand.clip.name)
 
     def test_todas_descartadas_transcreve_de_verdade_no_retry(self):
         # No retry por tempo o transcript vem do transcribe_fn REAL (2ª
@@ -360,6 +360,190 @@ class TestSelectReferenceCandidatesIntegration(unittest.TestCase):
             )
         self.assertIsNotNone(got)
         self.assertEqual(got[1], "texto antigo.")
+
+
+class TestCutMode(unittest.TestCase):
+    """POR QUAL CAMINHO a referência foi cortada (incidente 89473013).
+
+    Três caminhos de reference.py cortam por TEMPO seco em vez de fronteira de
+    palavra e, até aqui, nenhum deixava rastro: depois do treino era impossível
+    dizer qual deles a voz tinha tomado. Estes testes provam que os QUATRO
+    caminhos se reportam, cada um com o seu nome:
+
+        snap_ok           · recortado em fronteira de palavra (o caminho bom)
+        snap_unavailable  · nível 1: whisper de palavras falhou/veio vazio
+                            NESTA candidata → corte por tempo
+        time_retry        · nível 2: TODAS morreram no snap → o laço inteiro
+                            refez por tempo
+        fallback          · nível 3: ref_fallback.wav, primeiros ref_seconds do
+                            1º arquivo a partir de 0.0
+
+    ⚠️ O campo é TELEMETRIA CAUSAL, não detector de voz quebrada: na amostra de
+    50 vozes medida em 12/09, corte seco → diverge 18 / ok 18. Nenhum destes
+    testes afirma que um modo é "ruim" — só que ele é REPORTADO.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.norm = self.dir / "norm_mono16k.wav"
+        self.norm.write_bytes(b"RIFFfake")
+        self.work = self.dir / "work"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    # Palavras inteiras e bem-comportadas: o snap acha fronteira e dá certo.
+    def _words_boas(self):
+        return [W(1.6 + i, 2.2 + i, f" p{i}") for i in range(0, 30)] + [W(31.3, 31.9, " Fim.")]
+
+    def _run(self, transcribe_words_fn=None, slice_window=None, max_candidates=2):
+        calls = []
+        with mock.patch.object(reference, "_slice_window",
+                               slice_window or _fake_slice(calls)), \
+             mock.patch.object(reference, "_audio_duration_seconds", lambda p: 120.0):
+            ranked = reference.select_reference_candidates(
+                [self.norm], self.work, 30,
+                lambda p: "texto do corte por tempo.",
+                language="pt", max_candidates=max_candidates,
+                transcribe_words_fn=transcribe_words_fn,
+            )
+        return ranked, calls
+
+    def test_snap_ok_quando_corta_em_palavra(self):
+        ranked, _ = self._run(transcribe_words_fn=lambda p: self._words_boas())
+        self.assertTrue(ranked)
+        for cand in ranked:
+            self.assertEqual(cand.cut_mode, reference.CUT_SNAP_OK)
+
+    def test_snap_unavailable_quando_whisper_de_palavras_volta_vazio(self):
+        # Nível 1: words_fn devolve None (o `if not words` de
+        # _cut_snapped_candidate) → _SNAP_UNAVAILABLE → corte por tempo.
+        ranked, _ = self._run(transcribe_words_fn=lambda p: None)
+        self.assertTrue(ranked)
+        for cand in ranked:
+            self.assertEqual(cand.cut_mode, reference.CUT_SNAP_UNAVAILABLE)
+            self.assertEqual(cand.transcript, "texto do corte por tempo.")
+
+    def test_snap_unavailable_quando_whisper_de_palavras_explode(self):
+        # Nível 1, o outro jeito de chegar nele: a exceção é engolida dentro de
+        # _cut_snapped_candidate (whisper nunca derruba o treino) e o resultado
+        # é o mesmo corte seco — tem que se reportar como tal, não como snap_ok.
+        def boom(_p):
+            raise RuntimeError("whisper morreu")
+
+        ranked, _ = self._run(transcribe_words_fn=boom)
+        self.assertTrue(ranked)
+        for cand in ranked:
+            self.assertEqual(cand.cut_mode, reference.CUT_SNAP_UNAVAILABLE)
+
+    def test_time_retry_quando_todas_as_candidatas_morrem_no_snap(self):
+        # Nível 2: uma palavra só, atravessando a região inteira → nenhuma
+        # palavra INTEIRA cabe em candidata nenhuma → todas _SNAP_DISCARD →
+        # o laço refaz por tempo. Esse retry global é um modo DIFERENTE do
+        # nível 1, e é essa distinção que o campo existe pra guardar.
+        ranked, _ = self._run(transcribe_words_fn=lambda p: [W(0.0, 40.0, " zumbido")])
+        self.assertTrue(ranked)
+        for cand in ranked:
+            self.assertEqual(cand.cut_mode, reference.CUT_TIME_RETRY)
+            self.assertIn("_time", cand.clip.name)
+
+    def test_fallback_quando_nao_sobra_nenhuma_candidata(self):
+        # Nível 3: ref_fallback.wav. Pra chegar aqui o corte das candidatas tem
+        # que falhar e o do fallback funcionar — o _slice_window abaixo recusa
+        # todo clipe `ref_cand_*` e aceita só o `ref_fallback`.
+        def so_fallback(src, dst, offset, seconds):
+            if "ref_fallback" not in dst.name:
+                return False
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(b"RIFFfake")
+            return True
+
+        ranked, _ = self._run(transcribe_words_fn=lambda p: self._words_boas(),
+                              slice_window=so_fallback)
+        self.assertEqual(len(ranked), 1)
+        self.assertEqual(ranked[0].cut_mode, reference.CUT_FALLBACK)
+        self.assertIn("ref_fallback", ranked[0].clip.name)
+
+    def test_sem_transcribe_words_fn_e_snap_unavailable(self):
+        # Chamador que não passa words_fn (select_reference_clip): as words
+        # estão indisponíveis por AUSÊNCIA, que é o mesmo fato — corte seco.
+        # O que não pode é sair `snap_ok`, que seria mentira.
+        ranked, _ = self._run(transcribe_words_fn=None)
+        self.assertTrue(ranked)
+        self.assertEqual(ranked[0].cut_mode, reference.CUT_SNAP_UNAVAILABLE)
+
+    def test_os_quatro_modos_sao_valores_distintos(self):
+        modos = [reference.CUT_SNAP_OK, reference.CUT_SNAP_UNAVAILABLE,
+                 reference.CUT_TIME_RETRY, reference.CUT_FALLBACK]
+        self.assertEqual(len(set(modos)), 4)
+        self.assertEqual(modos, ["snap_ok", "snap_unavailable", "time_retry", "fallback"])
+
+    def test_candidata_continua_indexavel_como_antes(self):
+        # RefCandidate é NamedTuple: [0]/[1] seguem valendo pra quem indexa.
+        ranked, _ = self._run(transcribe_words_fn=lambda p: self._words_boas())
+        self.assertEqual(ranked[0][0], ranked[0].clip)
+        self.assertEqual(ranked[0][1], ranked[0].transcript)
+        self.assertEqual(ranked[0][2], ranked[0].cut_mode)
+
+
+class TestCutModeChegaNoResultado(unittest.TestCase):
+    """O modo tem que sobreviver até o payload — senão não vira telemetria.
+
+    Estes testes batem no train_reference.py (o job que grava), não no seletor:
+    o que interessa é que o modo ACOMPANHE o clipe que ficou de pé, inclusive
+    quando o QA da amostra promove outra candidata.
+    """
+
+    def test_desempacotar_le_o_modo_da_candidata_nova(self):
+        cand = reference.RefCandidate(Path("/tmp/a.wav"), "texto.", reference.CUT_TIME_RETRY)
+        clip, texto, modo = _tref()._desempacotar_candidata(cand)
+        self.assertEqual(clip, Path("/tmp/a.wav"))
+        self.assertEqual(texto, "texto.")
+        self.assertEqual(modo, reference.CUT_TIME_RETRY)
+
+    def test_desempacotar_tolera_a_forma_antiga_de_2_itens(self):
+        # Stub de teste e chamador não atualizado ainda devolvem (clip, texto).
+        # Modo ausente vira None — "não dá pra saber" — nunca um palpite.
+        clip, texto, modo = _tref()._desempacotar_candidata((Path("/tmp/b.wav"), "texto."))
+        self.assertEqual(clip, Path("/tmp/b.wav"))
+        self.assertEqual(texto, "texto.")
+        self.assertIsNone(modo)
+
+
+def _tref():
+    """Importa jobs/train_reference.py sem arrastar o pacote do worker.
+
+    Só as duas funções puras deste arquivo são exercidas aqui; o resto do job
+    (whisper, upload, R2) não roda em teste.
+    """
+    import importlib.util
+
+    for nome, mod in (("whisper_qa", None), ("worker_config", None), ("worker_log", None)):
+        if nome not in sys.modules:
+            m = types.ModuleType(nome)
+            if nome == "whisper_qa":
+                m.sample_qa_similarity = lambda *a, **k: None
+                m.transcribe_with_retry = lambda *a, **k: ""
+            elif nome == "worker_config":
+                m.REFERENCE_SECONDS = 30
+                m.SAMPLE_QA_MAX_ATTEMPTS = 3
+                m.SAMPLE_QA_MIN_SIMILARITY = 0.8
+            else:
+                m.log = lambda *a, **k: None
+            sys.modules[nome] = m
+    if "jobs_train_reference" in sys.modules:
+        return sys.modules["jobs_train_reference"]
+    spec = importlib.util.spec_from_file_location(
+        "jobs_train_reference",
+        Path(__file__).resolve().parent / "jobs" / "train_reference.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    # @dataclass resolve anotações via sys.modules[cls.__module__]: o módulo
+    # precisa estar registrado ANTES do exec, senão o decorador explode.
+    sys.modules["jobs_train_reference"] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 
 if __name__ == "__main__":

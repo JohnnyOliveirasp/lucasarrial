@@ -25,6 +25,11 @@ from .training import (
     run_training,
 )
 from .reference import (
+    CUT_FALLBACK,
+    CUT_SNAP_OK,
+    CUT_SNAP_UNAVAILABLE,
+    CUT_TIME_RETRY,
+    RefCandidate,
     select_reference_clip,
     select_reference_candidates,
     score_reference_transcript,
@@ -50,4 +55,9 @@ __all__ = [
     "select_reference_clip",
     "select_reference_candidates",
     "score_reference_transcript",
+    "RefCandidate",
+    "CUT_SNAP_OK",
+    "CUT_SNAP_UNAVAILABLE",
+    "CUT_TIME_RETRY",
+    "CUT_FALLBACK",
 ]

@@ -55,6 +55,21 @@ export type TrainOutput = {
   /** Mensagem da exceção quando o whisper da cura explodiu. */
   reference_cura_erro?: string | null;
   /**
+   * Por qual CAMINHO a referência vigente foi cortada — incidente 89473013.
+   * Três caminhos de `voice_pipeline/reference.py` cortam por TEMPO seco em vez
+   * de fronteira de palavra, e nenhum deixava rastro:
+   *   snap_ok          · recortado em fronteira de palavra (o caminho bom)
+   *   snap_unavailable · nível 1: whisper de palavras falhou/veio vazio
+   *   time_retry       · nível 2: todas as candidatas morreram no snap
+   *   fallback         · nível 3: ref_fallback.wav, primeiros N s a partir de 0
+   *
+   * ⚠️ TELEMETRIA CAUSAL, NÃO detector de voz quebrada: na amostra de 50 vozes
+   * medida em 12/09, corte seco → diverge 18 / ok 18 — metade das cortadas a
+   * seco está BOA. Não virar alerta, bloqueio, marca de "suspeita" nem gatilho
+   * de cura; responde só "por qual caminho essa voz passou".
+   */
+  reference_cut_mode?: string | null;
+  /**
    * Identidade do build do worker que rodou este job ("<branch>@<sha> pod=..."),
    * carimbada na imagem pelo CI. "desconhecida" = build sem o carimbo (local),
    * e é a verdade — nunca um palpite. Responde "esse treino saiu de que build?".
@@ -228,6 +243,57 @@ async function registrarCuraEBuild(
     // Esperado até a DDL de scripts/96 ser aplicada. O log acima já guardou o
     // dado; falhar aqui não pode afetar o treino.
     logger.warn("api", "voice.train.transcript_cura_nao_persistida", {
+      voiceId,
+      runpodJobId,
+      motivo: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+/**
+ * Registra POR QUAL CAMINHO a referência da voz foi cortada (incidente 89473013).
+ *
+ * Três caminhos de `voice_pipeline/reference.py` cortam por TEMPO seco em vez de
+ * fronteira de palavra e, até aqui, nenhum deixava rastro: depois do treino era
+ * impossível dizer qual deles a voz tinha tomado.
+ *
+ * ⚠️ TELEMETRIA CAUSAL, NÃO detector de defeito. Amostra de 50 vozes medida em
+ * 12/09: corte seco → diverge 18 / ok 18. Metade das cortadas a seco está BOA,
+ * então este campo NÃO prediz voz ruim — não pendurar alerta, bloqueio, marca de
+ * "suspeita" nem cura automática nele.
+ *
+ * Mesmas duas decisões da `registrarCuraEBuild` (mig 96), pelos mesmos motivos:
+ *  1. UPDATE SEPARADO, depois do gate idempotente e FORA do update da voz — a
+ *     DDL (scripts/108) pode ainda não estar aplicada, e coluna inexistente
+ *     dentro do update principal derrubaria a finalização INTEIRA do treino (a
+ *     voz nunca ficaria `ready`). Observabilidade não pode quebrar o produto.
+ *  2. O `logger.info` roda SEMPRE, antes e independente do banco: enquanto a DDL
+ *     não sobe, o dado já existe no log.
+ *
+ * Escreve o modo mesmo quando ele vem nulo NO TREINO NOVO: o campo descreve a
+ * referência VIGENTE, e a referência acabou de ser substituída no R2 — deixar o
+ * valor do treino anterior faria a coluna descrever um áudio que não existe
+ * mais. Nulo aqui é "este worker não soube dizer", que é a verdade.
+ */
+async function registrarModoDeCorte(
+  runpodJobId: string,
+  voiceId: string,
+  out: TrainOutput,
+): Promise<void> {
+  const cutMode = out.reference_cut_mode ?? null;
+
+  logger.info("api", "voice.train.cut_mode", { voiceId, runpodJobId, cutMode });
+
+  try {
+    const { error } = await getAdmin()
+      .from("voices")
+      .update({ reference_cut_mode: cutMode } as never)
+      .eq("id", voiceId);
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    // Esperado até a DDL de scripts/108 ser aplicada. O log acima já guardou o
+    // dado; falhar aqui não pode afetar o treino.
+    logger.warn("api", "voice.train.cut_mode_nao_persistido", {
       voiceId,
       runpodJobId,
       motivo: e instanceof Error ? e.message : String(e),
@@ -425,6 +491,14 @@ export async function finalizeTraining(args: {
     (update as Record<string, unknown>).language = out.language;
   }
   await admin.from("voices").update(update).eq("id", voiceId);
+
+  // ── Por qual caminho a referência foi cortada (incidente 89473013) ────────
+  // DEPOIS do update da voz, e SÓ quando a referência foi de fato substituída:
+  // o campo descreve a referência VIGENTE, então tocá-lo num treino que não
+  // mexeu na referência apagaria o modo do clipe que continua no ar.
+  if (success && out.reference_uploaded) {
+    await registrarModoDeCorte(runpodJobId, voiceId, out);
+  }
 
   // ── Estorno em QUALQUER falha (dataset OU técnica): usuário não recebeu ──
   // nada, não paga nada. Só quem foi COBRADO de verdade.

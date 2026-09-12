@@ -232,6 +232,10 @@ class TrainJob:
             "reference_cura_ramo": cura.ramo if cura else None,
             "reference_cura_texto_antes": cura.texto_antes if cura else None,
             "reference_cura_erro": cura.erro if cura else None,
+            # Por qual caminho a referencia foi CORTADA (incidente 89473013):
+            # snap_ok | snap_unavailable | time_retry | fallback. Responde "essa
+            # voz passou por onde?" e NADA MAIS — corte seco nao prediz defeito.
+            "reference_cut_mode": getattr(ref, "cut_mode", None),
             "reference_pause_ms": self.reference_pause_ms,
             "speech_rate_wps": getattr(self, "speech_rate_wps", None),
             "language": self.language,
