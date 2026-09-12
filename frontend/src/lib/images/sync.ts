@@ -1,8 +1,9 @@
 /**
  * Sincroniza o estado de uma geração de imagem com o Kie (consulta recordInfo)
  * e atualiza a row: success → baixa+salva no R2 e marca ready; fail transiente
- * → 1 RETRY automático com task nova e links frescos (caso 28/07: Kie
- * sobrecarregado); fail definitivo → failed + estorno automático (finalize);
+ * OU recusa por moderação → 1 RETRY automático com task nova e links frescos
+ * (caso 28/07: Kie sobrecarregado; caso 12/09: falso positivo de moderação no
+ * titular); fail definitivo → failed + estorno automático (finalize);
  * generating → atualiza o status; waiting/queuing → mantém pending.
  *
  * Usado pelo poll (GET /images/[id]) e pelo callback (webhook do Kie).
@@ -19,32 +20,23 @@ import {
 import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { finalizeImageSuccess, failImageGeneration } from "@/lib/images/finalize";
+// Retry CRUZADO (spec Seedream 29/07): com o fallback ligado, a retentativa vai
+// pro OUTRO modelo — GPT falhou → Seedream (o aluno do probe nem vê a falha, e a
+// row seedream+retry_count=1 reabre o disjuntor); Seedream falhou → GPT (probe
+// de volta). Fallback desligado = retentativa no titular. A decisão é PURA e
+// mora em retry-politica.ts, com teste.
+import { decidirAposFalhaImagem } from "@/lib/images/retry-politica";
 
 // Mesmo TTL do generate: cobre fila lenta do Kie (a de 1h expirava — 28/07).
 const RETRY_PRESIGN_EXPIRES = 24 * 60 * 60;
 
-/** Erros do Kie que valem UMA nova tentativa antes de falhar de vez. */
-function isTransientKieError(raw: string): boolean {
-  return /internal error|try again|timeout|temporar|fetch failed/i.test(raw);
-}
-
 /**
- * Retry CRUZADO (spec Seedream 29/07): com o fallback ligado, a retentativa
- * vai pro OUTRO modelo — GPT falhou → Seedream (o aluno do probe nem vê a
- * falha, e a row seedream+retry_count=1 reabre o disjuntor); Seedream falhou →
- * GPT (funciona como probe de volta). Fallback desligado = mesmo modelo.
+ * Tenta o retry automático NO MODELO JÁ DECIDIDO: trava o claim (retry_count
+ * 0→1, à prova de corrida webhook×poll), recria os presigned das referências e
+ * submete task NOVA no Kie. true = nova task no ar (poll/webhook seguem
+ * acompanhando).
  */
-function retryModelFor(current: string): KieImageModel {
-  if (!kieFallbackEnabled()) return KIE_IMAGE_MODEL;
-  return current === KIE_IMAGE_MODEL ? KIE_FALLBACK_IMAGE_MODEL : KIE_IMAGE_MODEL;
-}
-
-/**
- * Tenta o retry automático: trava o claim (retry_count 0→1, à prova de corrida
- * webhook×poll), recria os presigned das referências e submete task NOVA no
- * Kie. true = nova task no ar (poll/webhook seguem acompanhando).
- */
-async function tryImageRetry(id: string): Promise<boolean> {
+async function tryImageRetry(id: string, model: KieImageModel): Promise<boolean> {
   const admin = getAdmin();
   const { data: claimed } = await admin
     .from("image_generations")
@@ -53,7 +45,7 @@ async function tryImageRetry(id: string): Promise<boolean> {
     .eq("retry_count", 0)
     .in("status", ["pending", "generating"])
     .select(
-      "id, prompt, prompt_en, input_image_path, input_image_paths, aspect_ratio, resolution, kie_model",
+      "id, prompt, prompt_en, input_image_path, input_image_paths, aspect_ratio, resolution",
     );
   const row = (claimed ?? [])[0] as
     | {
@@ -64,7 +56,6 @@ async function tryImageRetry(id: string): Promise<boolean> {
         input_image_paths: string[] | null;
         aspect_ratio: string;
         resolution: string;
-        kie_model: string;
       }
     | undefined;
   if (!row) return false; // já tentou 1x ou já finalizou
@@ -77,7 +68,6 @@ async function tryImageRetry(id: string): Promise<boolean> {
     const inputUrls = await Promise.all(
       keys.map((k) => createPresignedGet(imagesBucket(), k, RETRY_PRESIGN_EXPIRES)),
     );
-    const model = retryModelFor(row.kie_model);
     const { taskId } = await kieCreateImageTask(
       {
         // prompt_en (mig 56) é o que o modelo entende; rows antigas (null) já
@@ -133,17 +123,26 @@ export async function syncImageTask(
 
   if (info.state === "fail") {
     const raw = info.failMsg || info.failCode || "geração falhou";
-    // Retry cruzado vale pra: erro transiente (qualquer modelo) OU QUALQUER erro
-    // no fallback — o titular pode aceitar o que o Seedream recusou (caso 05/08:
-    // 4 alunos morreram no Seedream sem 2ª chance com o GPT saudável).
+    // Retry cruzado vale pra: erro transiente (qualquer modelo), recusa por
+    // MODERAÇÃO no titular (incidente 12/09 — o Seedream tem outra moderação e
+    // pode aceitar o que o GPT recusou) OU QUALQUER erro no fallback (o titular
+    // pode aceitar o que o Seedream recusou — caso 05/08: 4 alunos morreram no
+    // Seedream sem 2ª chance com o GPT saudável).
     const { data: cur } = await getAdmin()
       .from("image_generations")
-      .select("kie_model")
+      .select("kie_model, retry_count")
       .eq("id", id)
       .maybeSingle();
-    const onFallback =
-      (cur as { kie_model?: string } | null)?.kie_model === KIE_FALLBACK_IMAGE_MODEL;
-    if ((isTransientKieError(raw) || onFallback) && (await tryImageRetry(id))) return;
+    const atual = cur as { kie_model?: string; retry_count?: number } | null;
+    const decisao = decidirAposFalhaImagem({
+      raw,
+      modeloAtual: atual?.kie_model ?? KIE_IMAGE_MODEL,
+      modeloTitular: KIE_IMAGE_MODEL,
+      modeloFallback: KIE_FALLBACK_IMAGE_MODEL,
+      fallbackLigado: kieFallbackEnabled(),
+      retryCount: atual?.retry_count ?? 0,
+    });
+    if (decisao.acao === "retry" && (await tryImageRetry(id, decisao.modelo))) return;
     await failImageGeneration(id, raw);
     return;
   }
