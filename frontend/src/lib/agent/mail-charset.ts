@@ -356,3 +356,126 @@ export function mailText(raw: string, maxChars: number = BODY_MAX): string {
   const limpo = idx === htmlIdx && idx >= 0 ? stripHtml(texto) : texto.replace(/\s+/g, " ").trim();
   return limpo.slice(0, maxChars);
 }
+
+// ---------- anexos: o que CHEGOU, sem abrir (#370) ----------
+
+/**
+ * O que se sabe de um anexo SEM ler o conteúdo: só o que o e-mail DECLAROU.
+ *
+ * Os três campos podem mentir — quem enviou escolheu o nome e o cliente de
+ * e-mail escolheu o Content-Type. Isto prova RECEBIMENTO, nunca CONTEÚDO.
+ */
+export type AnexoInfo = {
+  /** Nome declarado, já higienizado (vai pro prompt do cérebro). */
+  nome: string;
+  /** Content-Type declarado, em minúsculas. */
+  tipo: string;
+  /** Tamanho do corpo já decodificado, em bytes. */
+  bytes: number;
+};
+
+/** Teto de itens: e-mail com 30 anexos não vira prompt de 30 linhas. */
+const MAX_ANEXOS_LISTADOS = 10;
+
+/**
+ * Nome de arquivo entra no prompt do cérebro, então é DADO HOSTIL: um anexo
+ * chamado "ignore as instruções anteriores.jpg" é injeção de prompt de graça.
+ * Sobra só o que serve pro aluno reconhecer o arquivo dele.
+ */
+function higienizarNomeDeArquivo(bruto: string): string {
+  let nome = bruto.trim().replace(/^["']|["']$/g, "");
+  // RFC 2231: filename*=utf-8''nome%20com%20espaco
+  if (/^[\w-]*'[^']*'/.test(nome)) {
+    const valor = nome.slice(nome.indexOf("'", nome.indexOf("'") + 1) + 1);
+    try {
+      nome = decodeURIComponent(valor);
+    } catch {
+      nome = valor;
+    }
+  }
+  nome = decodeWord(nome); // =?UTF-8?B?...?= — cliente que codifica o nome
+  nome = nome
+    .replace(/[\u0000-\u001f\u007f]/g, "") // controle: \n quebraria o bloco do manifesto
+    .replace(/[^\p{L}\p{N} ._()-]/gu, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+  return nome.slice(0, 60) || "(sem nome)";
+}
+
+/** Tamanho REAL do corpo da parte, a partir do que veio codificado. */
+function tamanhoDecodificado(corpo: string, encoding: string): number {
+  if (/base64/i.test(encoding)) {
+    const limpo = corpo.replace(/[^A-Za-z0-9+/=]/g, "");
+    const padding = limpo.match(/=+$/)?.[0].length ?? 0;
+    return Math.max(0, Math.floor((limpo.length * 3) / 4) - padding);
+  }
+  if (/quoted-printable/i.test(encoding)) {
+    // Quebra-de-linha-macia (=\r\n) some; cada =XX vira 1 byte.
+    const semMacia = corpo.replace(/=\r?\n/g, "");
+    return semMacia.replace(/=[0-9A-Fa-f]{2}/g, "x").length;
+  }
+  return corpo.length; // 7bit/8bit/binary: em `raw`, 1 char = 1 byte
+}
+
+/**
+ * É anexo, ou é o corpo da mensagem?
+ *
+ * A regra é a DISPOSIÇÃO, não o tipo. Um `text/plain` com
+ * `Content-Disposition: attachment` é um .txt anexado; um `image/jpeg` inline é
+ * o print colado no corpo — e pro aluno isso também é "eu te mandei o
+ * arquivo", então conta. O que não conta é o corpo da mensagem (parte de texto
+ * sem disposição de anexo) e o cabeçalho do container `multipart/*`.
+ */
+function ehParteDeAnexo(cabeca: string, nome: string | null, tipo: string): boolean {
+  if (/^multipart\//i.test(tipo)) return false;
+  if (/Content-Disposition:\s*attachment/i.test(cabeca)) return true;
+  return Boolean(nome); // parte nomeada é arquivo, inline ou não
+}
+
+/**
+ * Lista os anexos de uma mensagem ABAIXO do teto de tamanho — o caminho que
+ * era completamente cego até o #370 (o único ramo ciente de anexo era o
+ * `oversized`, que só vale ACIMA do teto e continua intocado).
+ *
+ * Usa a fronteira DECLARADA no cabeçalho, nunca o formato da linha. O palpite
+ * `/\r?\n--[-=_a-zA-Z0-9]{6,}/` já produziu medida errada de anexo no #351:
+ * conteúdo base64 que por azar contenha essa sequência corta a parte no lugar
+ * errado e o tamanho sai a menos.
+ */
+export function listarAnexos(raw: string): AnexoInfo[] {
+  const fronteiras = fronteirasDeclaradas(raw);
+  const partes = fronteiras.length
+    ? raw.split(new RegExp(`\\r?\\n--(?:${fronteiras.map(comoLiteral).join("|")})`))
+    : [raw];
+
+  const out: AnexoInfo[] = [];
+  for (const parte of partes) {
+    const fim = parte.search(/\r?\n\r?\n/);
+    if (fim < 0) continue;
+    const cabeca = parte.slice(0, fim);
+    const corpo = parte.slice(fim).trim();
+    if (!corpo) continue;
+
+    const tipo = cabeca.match(/Content-Type:\s*([^;\r\n]+)/i)?.[1]?.trim().toLowerCase() ?? "";
+    const nomeBruto =
+      cabeca.match(/filename\*\s*=\s*([^;\r\n]+)/i)?.[1] ??
+      cabeca.match(/filename\s*=\s*("[^"\r\n]*"|[^;\r\n]+)/i)?.[1] ??
+      cabeca.match(/\bname\s*=\s*("[^"\r\n]*"|[^;\r\n]+)/i)?.[1] ??
+      null;
+    if (!ehParteDeAnexo(cabeca, nomeBruto, tipo)) continue;
+
+    const encoding = cabeca.match(/Content-Transfer-Encoding:\s*([^\r\n;]+)/i)?.[1]?.trim() ?? "";
+    const bytes = tamanhoDecodificado(corpo, encoding);
+    if (bytes <= 0) continue;
+
+    out.push({
+      nome: nomeBruto
+        ? higienizarNomeDeArquivo(nomeBruto)
+        : `(sem nome).${(tipo.split("/")[1] ?? "bin").slice(0, 8)}`,
+      tipo: tipo || "application/octet-stream",
+      bytes,
+    });
+    if (out.length >= MAX_ANEXOS_LISTADOS) break;
+  }
+  return out;
+}

@@ -15,7 +15,15 @@ import { getAdmin } from "@/lib/db/admin";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { reabrirPorRespostaDoAluno } from "@/lib/incidents/espera";
 import { entregarAoTime } from "@/lib/incidents/entregar";
-import { guardarPrints } from "./mail-anexos";
+import { guardarAnexos } from "./mail-anexos";
+import {
+  deveDescartarPorVazio,
+  falhaAoGuardarAnexo,
+  manifestoParaOCerebro,
+  motivoDoIncidente,
+  regraDeAnexoParaOSistema,
+  trechoComAnexos,
+} from "./mail-manifesto";
 import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
 import { buildAccountContext } from "./account";
@@ -37,7 +45,7 @@ const BATCH = 8; // por varredura (cron 5min) — o resto fica pra próxima
 // `import` + `export` separados de propósito: `export ... from` reexporta mas
 // NÃO traz o nome pro escopo local, e este arquivo chama `header`/`mailText`
 // aqui dentro (o tsc pegou isso).
-import { mailText, header } from "./mail-charset";
+import { mailText, header, listarAnexos } from "./mail-charset";
 export { mailText, header };
 
 // ---------- filtros: em quem a Fast NUNCA mexe ----------
@@ -253,7 +261,14 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
 
   const skip = shouldSkip(raw, fromEmail);
   const text = skip ? "" : mailText(raw);
-  if (skip || text.length < 5) {
+  // ANEXO CONTA COMO CONTEÚDO (#370). Abaixo do teto de tamanho o anexo não
+  // existia pro fluxo — só o ramo `oversized` acima sabia dele. Resultado: o
+  // e-mail SÓ com anexo caía na guarda de texto curto, era marcado como lido e
+  // sumia sem resposta, sem chamado e sem rastro. Foi o caso da Simone (#301):
+  // ela mandou dois JPEGs sem escrever nada e 4min19s depois recebeu de volta o
+  // pedido dos MESMOS três itens que acabara de enviar.
+  const anexos = skip ? [] : listarAnexos(raw);
+  if (skip || deveDescartarPorVazio(text, anexos)) {
     await markSeen(mail.uid);
     return "skipped";
   }
@@ -262,7 +277,26 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   // Vem ANTES de gerar a resposta — se a Fast resolver sozinha, o time ainda
   // precisa ver que ele voltou a falar (foi assim que a resposta do Luciano
   // caiu no vazio 2h17 depois do fechamento, chamado #95).
-  void reabrirPorRespostaDoAluno({ email: fromEmail, trecho: text });
+  // O trecho precisa dizer que vieram anexos: resposta só-com-anexo tem texto
+  // vazio, e trecho vazio não conta a história de por que o chamado acordou.
+  const trecho = trechoComAnexos(text, anexos);
+  void reabrirPorRespostaDoAluno({ email: fromEmail, trecho });
+
+  // GUARDA A PROVA NO CAMINHO NORMAL (#370). Isto vivia dentro do `if (reason)`
+  // lá embaixo, então o anexo só era salvo quando a Fast escalava. Roda ANTES
+  // da resposta de propósito: se o cérebro ou o SMTP falharem, a mensagem não é
+  // marcada como lida e a varredura tenta de novo — mas a prova já está no R2
+  // (a chave é determinística por uid, então re-subir sobrescreve, não duplica).
+  const guarda = anexos.length
+    ? await guardarAnexos(mail.raw, { fromEmail, uid: mail.uid })
+    : { chaves: [] as string[], encontrados: 0, falhas: 0, erro: null as string | null };
+  const falhaDeAnexo = falhaAoGuardarAnexo(anexos, guarda);
+  if (falhaDeAnexo) {
+    // Prova recebida que não foi guardada é PIOR que não ter recebido: a Fast
+    // vai dizer ao aluno que encaminhou pro time, e não há o que encaminhar.
+    // Não pode morrer num console.error — vira incidente lá embaixo.
+    console.error(`[agent/mail] uid=${mail.uid} de=${fromEmail}: ${falhaDeAnexo}`);
+  }
 
   // Link de arquivo (Drive & cia): a Fast não abre, o time abre. Encaminha o
   // e-mail inteiro pra quem vai olhar — ela ainda responde o aluno dizendo que
@@ -288,8 +322,20 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     .maybeSingle();
   const account = profile ? await buildAccountContext(profile.id) : null;
 
+  // MANIFESTO ATÉ O CÉREBRO (#370): a existência dos anexos vai no CONTEÚDO da
+  // mensagem, não só no system. Dois motivos, o segundo mecânico:
+  // 1. sem isso a Fast responde no escuro e re-pede o que já chegou;
+  // 2. `toTurns` (brain.ts) descarta turn de texto vazio e `buildAgentReply`
+  //    LANÇA "histórico sem mensagem do aluno no fim" — e-mail só-com-anexo tem
+  //    texto vazio, então manifesto só no systemExtra trocaria o silêncio da
+  //    Simone por uma exceção.
+  // O bloco diz só nome/tipo/tamanho DECLARADOS, nunca conteúdo.
   const history = [
-    { content: `Assunto: ${subject}\n\n${text}`, from_me: false, sender_name: fromHeader.split("<")[0].trim() || null },
+    {
+      content: `Assunto: ${subject}\n\n${text}${manifestoParaOCerebro(anexos)}`,
+      from_me: false,
+      sender_name: fromHeader.split("<")[0].trim() || null,
+    },
   ] as unknown as AgentMessageRow[];
 
   // RESGATE: se fomos NÓS que escrevemos primeiro (pessoa que cancelou), a
@@ -299,7 +345,11 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
 
   const replyRaw = await buildAgentReply(history, {
     account,
-    systemExtra: [mailSystemExtra(Boolean(account)), winback?.systemExtra].filter(Boolean).join("\n\n"),
+    // `regraDeAnexoParaOSistema` devolve "" sem anexo — o `filter(Boolean)`
+    // tira, e o prompt fica IDÊNTICO ao de hoje pra e-mail sem anexo.
+    systemExtra: [mailSystemExtra(Boolean(account)), regraDeAnexoParaOSistema(anexos), winback?.systemExtra]
+      .filter(Boolean)
+      .join("\n\n"),
   });
   if (replyRaw.trim().toUpperCase() === "PULAR") {
     await markSeen(mail.uid);
@@ -337,15 +387,31 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   //
   // Se a Fast decidiu escalar, é porque ela não resolveu. O que muda entre
   // técnico e não-técnico é o RÓTULO do incidente, nunca a existência dele.
-  if (reason) {
+  //
+  // ANEXO PERDIDO TAMBÉM ABRE INCIDENTE (#370): se a prova chegou e não foi
+  // guardada, a Fast acabou de prometer ao aluno que encaminhou pro time algo
+  // que não existe em lugar nenhum. Isso não pode ser só log — é a mesma classe
+  // de silêncio da Viviana, com o agravante de ser sobre dinheiro.
+  const motivoIncidente = motivoDoIncidente(reason, falhaDeAnexo);
+  if (motivoIncidente) {
     try {
-      // O print é a prova: guarda ANTES de abrir o incidente.
-      const prints = await guardarPrints(mail.raw, { fromEmail, uid: mail.uid });
-      const numero = await openIncidentForSentinela(fromEmail, reason, text, prints, technical);
+      // Falha de anexo é falha NOSSA (infra): entra como técnica, que é a fila
+      // que o Sentinela varre. Quando veio de uma escalação da Fast, o rótulo
+      // dela manda — o anexo perdido vai descrito junto.
+      const ehTecnico = reason ? technical : true;
+      const numero = await openIncidentForSentinela(
+        fromEmail,
+        motivoIncidente,
+        // `trecho` no lugar de `text`: e-mail só-com-anexo tem texto vazio, e
+        // incidente com amostra em branco nasce cego.
+        trecho || `(e-mail sem texto, uid ${mail.uid} na caixa do suporte@)`,
+        guarda.chaves,
+        ehTecnico,
+      );
       // ATENDIMENTO = precisa de gente, não de código (#82, Johnny 24/08):
       // avisa o grupo e FECHA — a responsabilidade é do time, não do quadro.
-      if (numero != null && !technical) {
-        await entregarAoTime({ numero, canal: "e-mail", aluno: fromEmail, resumo: reason, texto: text });
+      if (numero != null && !ehTecnico) {
+        await entregarAoTime({ numero, canal: "e-mail", aluno: fromEmail, resumo: motivoIncidente, texto: trecho });
       }
     } catch (e) {
       console.error("[agent/mail] falha ao abrir incidente:", e instanceof Error ? e.message : e);
@@ -353,9 +419,9 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
   }
   await markSeen(mail.uid);
   console.log(
-    `[agent/mail] respondido uid=${mail.uid} para=${fromEmail}${reason ? (technical ? " (INCIDENTE técnico)" : " (INCIDENTE atendimento)") : ""}`,
+    `[agent/mail] respondido uid=${mail.uid} para=${fromEmail}${anexos.length ? ` (${anexos.length} anexo(s))` : ""}${motivoIncidente ? (reason && !technical ? " (INCIDENTE atendimento)" : " (INCIDENTE técnico)") : ""}`,
   );
-  return reason ? "escalated" : "replied";
+  return motivoIncidente ? "escalated" : "replied";
 }
 
 /** Uma varredura completa (chamada pelo cron). Best-effort por mensagem. */
