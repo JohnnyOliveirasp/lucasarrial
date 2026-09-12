@@ -18,6 +18,7 @@ import { agentProvider } from "@/lib/agent/provider";
 import { wahaLidToPhone } from "@/lib/agent/waha";
 import type { AgentChatRow, ProfileRow } from "@/lib/db/types";
 import { janelaGarantia, type EventoCompra } from "@/lib/agent/garantia";
+import { qaVeredito, AVISO_QA_NAO_PROVA } from "@/lib/generations/qa-veredito";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
 export async function phoneFromJid(jid: string): Promise<string | null> {
@@ -102,13 +103,29 @@ export async function ensureChatIdentity(chat: AgentChatRow): Promise<string | n
 const dtBR = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "?";
 
-type JobLine = { label: string; name: string | null; status: string | null; error: string | null; at: string | null };
+type JobLine = {
+  label: string;
+  name: string | null;
+  status: string | null;
+  error: string | null;
+  at: string | null;
+  /**
+   * Ressalva do QA (incidente 702cc916), SÓ nas gerações que têm uma. Existe
+   * porque uma geração com chunk reprovado sai daqui como `ready` com
+   * `error_message = null` — ou seja, indistinguível de uma geração perfeita
+   * para quem atende. Ver `lib/generations/qa-veredito.ts`.
+   */
+  ressalva?: string | null;
+};
 
 function jobLines(lines: JobLine[]): string {
   return lines
     .map((j) => {
       const err = j.status === "failed" && j.error ? ` — erro: ${j.error.slice(0, 120)}` : "";
-      return `  - ${j.label}${j.name ? ` "${j.name}"` : ""}: ${j.status ?? "?"} (${dtBR(j.at)})${err}`;
+      // Linha própria e indentada: o `status: ready` continua verdadeiro (o
+      // arquivo existe e foi entregue), a ressalva é o que o status não conta.
+      const qa = j.ressalva ? `\n      ${j.ressalva}` : "";
+      return `  - ${j.label}${j.name ? ` "${j.name}"` : ""}: ${j.status ?? "?"} (${dtBR(j.at)})${err}${qa}`;
     })
     .join("\n");
 }
@@ -205,7 +222,12 @@ export async function buildAccountContext(profileId: string): Promise<string | n
 
     const [voices, gens, clones, images, videos, txs] = await Promise.all([
       recent("voices", "name,status,error_message,created_at"),
-      recent("generations", "name,status,error_message,created_at"),
+      // `qa` entra SÓ aqui (incidente 702cc916): é a única tabela com a
+      // telemetria do laço de QA do worker. Uma geração cujo QA esgotou as
+      // tentativas é gravada como `ready` / `error_message = null` — sem ler
+      // este jsonb, a Fast vê "geração perfeita" enquanto o aluno reclama da
+      // voz, e o atendimento cai em culpar o aluno.
+      recent("generations", "name,status,error_message,created_at,qa"),
       recent("video_clones", "name,status,error_message,created_at"),
       recent("image_generations", "name,status,error_message,created_at"),
       // scene_count entra no nome: em 27/08 a Fast apontou pra aluna "o projeto
@@ -215,7 +237,7 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       admin.from("credit_transactions").select("kind,ref_type,amount,note,created_at").eq("user_id", profileId).order("created_at", { ascending: false }).limit(6),
     ]);
 
-    type R = { name?: string | null; status?: string | null; error_message?: string | null; created_at?: string | null; scene_count?: number | null };
+    type R = { name?: string | null; status?: string | null; error_message?: string | null; created_at?: string | null; scene_count?: number | null; qa?: unknown };
     const lines = (label: string, rows: unknown): JobLine[] =>
       ((rows ?? []) as R[]).map((r) => ({
         label,
@@ -223,6 +245,9 @@ export async function buildAccountContext(profileId: string): Promise<string | n
         status: r.status ?? null,
         error: r.error_message ?? null,
         at: r.created_at ?? null,
+        // Só `generations` pede a coluna; nas outras `r.qa` vem undefined e o
+        // veredito devolve null — nenhuma linha extra, nenhum prompt inflado.
+        ressalva: qaVeredito(r.qa)?.linha ?? null,
       }));
 
     const jobs = [
@@ -303,6 +328,12 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       `Cadastro em: ${dtBR(profile.created_at)}`,
       garantia,
       jobs.length ? `Últimos trabalhos (3 por produto):\n${jobLines(jobs)}` : "Nenhum trabalho ainda (conta sem uso).",
+      // O aviso só sai quando há ressalva na lista — sem ele, "esta tem
+      // ressalva" escorrega para "as outras estão conferidas", que é
+      // exatamente o que a medição NÃO prova (cobertura é cega a substituição
+      // de palavra: geração 1425ca2f, 10/09). Gastar estas linhas de prompt em
+      // contas sem ressalva nenhuma seria inflar o contexto à toa.
+      jobs.some((j) => j.ressalva) ? AVISO_QA_NAO_PROVA : "",
       txLines ? `Últimas movimentações de crédito:\n${txLines}` : "",
     ]
       .filter(Boolean)
