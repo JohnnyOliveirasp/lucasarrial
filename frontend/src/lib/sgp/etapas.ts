@@ -90,8 +90,16 @@ export async function estadoDasEtapas(pedido: SgpPedidoRow): Promise<EtapasSgp> 
   }
 
   const status: SgpStatus = s.pronto ? "pronto" : s.falhou ? "falhou" : "processando";
+  // 12/09 (#364): `erro` ficava NULO mesmo em pedido que morreu, então a tela
+  // dizia "falhou" sem dizer POR QUÊ e ninguém era avisado. Carimba o motivo
+  // junto com o status, uma vez só (`is erro null` é o cadeado — nunca
+  // sobrescreve um erro que já foi escrito por outro caminho).
+  const erroCarimbado = status === "falhou" && !pedido.erro ? (s.motivo ?? null) : null;
   if (status !== pedido.status) {
-    await admin.from("sgp_pedidos" as never).update({ status } as never).eq("id", pedido.id);
+    await admin
+      .from("sgp_pedidos" as never)
+      .update((erroCarimbado ? { status, erro: erroCarimbado } : { status }) as never)
+      .eq("id", pedido.id);
   }
 
   return {
@@ -115,6 +123,6 @@ export async function estadoDasEtapas(pedido: SgpPedidoRow): Promise<EtapasSgp> 
       { chave: "pronto", estado: s.pronto ? "feito" : s.falhou ? "falhou" : "espera" },
     ],
     pronto: s.pronto,
-    erro: pedido.erro,
+    erro: pedido.erro ?? erroCarimbado,
   };
 }
