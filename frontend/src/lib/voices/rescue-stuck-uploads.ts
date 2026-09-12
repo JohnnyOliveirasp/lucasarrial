@@ -16,6 +16,7 @@
  */
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getAdmin } from "@/lib/db/admin";
+import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
@@ -24,6 +25,7 @@ import {
   MIN_TOTAL_SECONDS,
   RX_EXT_AUDIO,
   contarSlotsDoEnvio,
+  deveAbrirChamadoEnvioPerdido,
   mensagemCurtoDemais,
   mensagemEnvioIncompleto,
 } from "@/lib/voices/regua-audio";
@@ -85,6 +87,80 @@ async function audiosNoR2(
       .sort(),
     todas: contents.map((o) => o.Key as string).sort(),
   };
+}
+
+/**
+ * 🐛 POR QUE EXISTE (12/09, caso Hellen — 5 dias calada): a recusa por ENVIO
+ * PERDIDO é falha NOSSA e, até aqui, morria na tela do aluno. O `console.warn`
+ * lá em cima era o único registro, e ninguém lê log. A Hellen, pagante de
+ * 05/09 (GBP 47,94 + R$ 597,00), perdeu 5 dos 7 arquivos em 06/09, leu a
+ * recusa, nunca mais voltou ao app — e ficou 5 dias sem UMA linha nossa: zero
+ * chamado, zero e-mail. O sintoma ("acesso vivo, com crédito e sem nenhuma voz
+ * pronta") só aparecia pra quem cruzasse a lista de travados na mão.
+ *
+ * O conserto de 21/08 (#72) arrumou a MENSAGEM — o aluno deixou de levar a
+ * culpa de "áudio curto". Arrumar a mensagem não põe ninguém na fila. Agora a
+ * recusa abre chamado TÉCNICO, porque existe ação nossa que resolve
+ * (reprocessar o material, falar com ele). Mesmo raciocínio do convite de
+ * compra órfã: quem desiste em silêncio precisa ficar visível.
+ *
+ * ⚠️ NÃO manda e-mail pro aluno de propósito. O contato continua sendo decisão
+ * de gente; disparar texto automático em cima de quem acabou de levar uma
+ * recusa é o tipo de coisa que se faz uma vez e se lamenta depois. Isto
+ * entrega a metade segura — a VISIBILIDADE.
+ *
+ * Idempotente pela assinatura (uma por voz): se o cron reencostar na mesma
+ * linha, `abrirChamadoReportado` soma ocorrência em vez de abrir outro.
+ */
+async function abrirChamadoEnvioPerdido(
+  admin: ReturnType<typeof getAdmin>,
+  voz: { id: string; user_id: string },
+  envio: { chegaram: number; esperados: number; faltando: number; ignorados: number },
+  totalSegundos: number,
+  mensagemAoAluno: string | null,
+): Promise<void> {
+  try {
+    const { data: prof } = await admin
+      .from("profiles")
+      .select("email")
+      .eq("id", voz.user_id)
+      .maybeSingle();
+    const email = prof?.email ?? null;
+    const minutos = Math.round(totalSegundos / 60);
+    await abrirChamadoReportado({
+      signature: `voz:envio-incompleto:${voz.id}`,
+      title:
+        `Voz recusada por envio perdido (falha nossa): chegaram ${envio.chegaram} de ` +
+        `${envio.esperados} arquivos${email ? ` — ${email}` : ""}`,
+      description:
+        `O aluno enviou ${envio.esperados} arquivos de áudio e só ${envio.chegaram} ` +
+        `chegaram até nós (${envio.faltando} perdido(s) no caminho; ${envio.ignorados} ` +
+        `slot(s) não-áudio ignorados). O que chegou soma ~${minutos}min, abaixo do ` +
+        `mínimo, então a voz caiu em "rejected_too_short".\n\n` +
+        `A perda foi NOSSA (envio browser → R2 interrompido no meio), não gravação ` +
+        `curta dele. Nada foi cobrado: este caminho não dispara treino.\n\n` +
+        `voice_id: ${voz.id}\n` +
+        `user_id: ${voz.user_id}\n` +
+        `e-mail: ${email ?? "(não encontrado em profiles)"}\n\n` +
+        `O QUE O ALUNO LEU NA TELA:\n${mensagemAoAluno ?? "(sem mensagem)"}\n\n` +
+        `AÇÃO: falar com ele antes que desista em silêncio — foi exatamente isso ` +
+        `que aconteceu no caso que originou este conserto. NENHUM e-mail ` +
+        `automático foi disparado por aqui.`,
+      reportedBy: "rescue-uploads",
+      affectedEmails: email ? [email] : [],
+      sampleError: mensagemAoAluno,
+      categoria: "tecnico",
+    });
+  } catch (e) {
+    // O chamado é REGISTRO, não o resgate. O resgate já foi gravado antes
+    // desta chamada; falhar aqui não pode virar `errors` nem derrubar a
+    // rodada do cron pras vozes seguintes.
+    console.error(
+      "[rescue-uploads] abrir chamado de envio perdido falhou:",
+      voz.id,
+      e instanceof Error ? e.message : e,
+    );
+  }
 }
 
 export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
@@ -167,7 +243,7 @@ export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
         );
       }
 
-      const { error } = await admin
+      const { data: aplicadas, error } = await admin
         .from("voices")
         .update({
           raw_audio_paths: chaves,
@@ -176,7 +252,8 @@ export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
           error_message: erro,
         })
         .eq("id", voz.id)
-        .eq("status", "uploading"); // corrida com o browser: quem chegar primeiro
+        .eq("status", "uploading") // corrida com o browser: quem chegar primeiro
+        .select("id");
       if (error) throw new Error(error.message);
 
       if (status === "awaiting_training") resumo.rescued += 1;
@@ -184,6 +261,19 @@ export async function rescueStuckVoiceUploads(): Promise<RescueSummary> {
       console.log(
         `[rescue-uploads] voz ${voz.id} (${chaves.length} áudios, ${Math.round(total / 60)}min) → ${status}`,
       );
+
+      // A decisão mora na régua (`deveAbrirChamadoEnvioPerdido`), que é pura e
+      // tem teste. As três condições e o porquê de cada uma estão lá; aqui
+      // ficou só a chamada, pra não existirem duas versões da mesma regra.
+      if (
+        deveAbrirChamadoEnvioPerdido({
+          status,
+          faltando: envio.faltando,
+          linhasAplicadas: aplicadas?.length ?? 0,
+        })
+      ) {
+        await abrirChamadoEnvioPerdido(admin, voz, envio, total, erro);
+      }
     } catch (e) {
       resumo.errors += 1;
       console.error("[rescue-uploads]", voz.id, e instanceof Error ? e.message : e);

@@ -18,6 +18,7 @@ import {
   RX_EXT_AUDIO,
   RX_EXT_AUDIO_NUA,
   contarSlotsDoEnvio,
+  deveAbrirChamadoEnvioPerdido,
   mensagemCurtoDemais,
   mensagemEnvioIncompleto,
   mensagemFalaLimpaInsuficiente,
@@ -363,4 +364,63 @@ test("um .mov perdido no envio conta como buraco, não como slot ignorado", () =
     ["u/v/raw/000_a.mov", "u/v/raw/002_c.mov"],
   );
   assert.deepEqual(c, { esperados: 3, chegaram: 2, faltando: 1, ignorados: 0 });
+});
+
+/* ── quando a recusa por envio perdido vira CHAMADO (#362) ─────────────────
+ *
+ * O caso real: Hellen (pagante de 05/09), voz 9bb9fccf de 06/09 20:26Z, 2 dos
+ * 7 arquivos chegaram, `rejected_too_short`. Ficou 6 dias sem UMA linha nossa
+ * porque a recusa só existia na tela dela e num `console.warn` que ninguém lê.
+ * Estes testes travam a decisão de abrir chamado — que antes só existia como
+ * uma linha de `if` dentro de um arquivo sem teste nenhum.
+ */
+
+test("recusa por envio PERDIDO com escrita nossa abre chamado", () => {
+  assert.equal(
+    deveAbrirChamadoEnvioPerdido({
+      status: "rejected_too_short",
+      faltando: 5,
+      linhasAplicadas: 1,
+    }),
+    true,
+  );
+});
+
+test("browser venceu a corrida (0 linhas casadas) NÃO abre chamado", () => {
+  // O update filtra por status "uploading". Quando o browser chega primeiro,
+  // ele casa ZERO linhas e devolve `error` NULO — silêncio que já cravou causa
+  // errada antes. Chamado aqui seria em cima de voz que o aluno já fechou.
+  assert.equal(
+    deveAbrirChamadoEnvioPerdido({
+      status: "rejected_too_short",
+      faltando: 5,
+      linhasAplicadas: 0,
+    }),
+    false,
+  );
+});
+
+test("gravou pouco MESMO (nada perdido) não vira chamado", () => {
+  // Não há ação nossa: a mensagem na tela já diz a verdade. Abrir chamado aqui
+  // entope a fila técnica com caso que ninguém tem o que resolver.
+  assert.equal(
+    deveAbrirChamadoEnvioPerdido({
+      status: "rejected_too_short",
+      faltando: 0,
+      linhasAplicadas: 1,
+    }),
+    false,
+  );
+});
+
+test("voz RESGATADA pro treino não vira chamado, mesmo com arquivo perdido", () => {
+  // Sobrou material pra passar na porta: ninguém está esperando socorro.
+  assert.equal(
+    deveAbrirChamadoEnvioPerdido({
+      status: "awaiting_training",
+      faltando: 3,
+      linhasAplicadas: 1,
+    }),
+    false,
+  );
 });
