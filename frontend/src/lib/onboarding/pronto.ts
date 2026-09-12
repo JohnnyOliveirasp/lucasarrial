@@ -11,6 +11,7 @@ import type { Database } from "@/lib/db/types";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
 import { hasActiveAccess } from "@/lib/credits/access";
 import { ONBOARDING_VOICE_NAME } from "./import";
+import { desfechoOnboarding } from "./desfecho-pure";
 import { avisoOkMasAssine } from "./avisos";
 import { registrarAviso } from "./registrar-aviso";
 
@@ -56,6 +57,10 @@ export type ProntoStatus = {
    * fila até bater o prazo de 45min (caso 47, csitya100: voz `failed` às
    * 15:08, linha presa até ~15:53). O prazo existe pra travamento, não pra
    * caso já resolvido.
+   *
+   * 12/09 (#364): vale para as DUAS pernas. Até aqui só a voz tinha desfecho
+   * terminal; avatar `failed` com voz `ready` não era nem pronto nem falhou e
+   * ficava "em andamento" pra sempre (pedido fe00d4e2, 18h em silêncio).
    */
   falhou: boolean;
   /** Por que falhou de vez — vai direto pra nota da planilha. */
@@ -123,36 +128,20 @@ export async function statusOnboarding(admin: Admin, userId: string): Promise<Pr
   // Agora: se houve avatar, ele precisa ficar pronto; se nunca houve, a voz
   // pronta basta pra fechar a linha.
   const houveAvatar = lista.length > 0;
-  const pronto =
-    onboarding &&
-    pendentes === 0 &&
-    (houveAvatar ? prontos >= 1 : true) &&
-    vozOnboarding?.status === "ready";
-
-  // ── Acabou de vez? Voz que falhou NÃO se recupera sozinha: continuar
-  // esperando é só desperdiçar o prazo da fila. Só vale quando nada está em
-  // andamento (nenhum avatar pendente e nenhuma voz ainda treinando), senão a
-  // gente derruba uma linha que ia dar certo.
-  // Os status da voz são: validating | awaiting_training | ready | failed |
-  // rejected_too_short. "validating" é a única em movimento de verdade.
-  // `awaiting_training` fica de fora de propósito: ela NÃO conta como morta
-  // (o treino ainda pode disparar), mas também não segura a fila pra sempre —
-  // quem cuida desse caso é o prazo de 45min.
-  const vozTreinando = lista_vozes.some((v) => v.status === "validating");
-  const vozMorta =
-    vozOnboarding?.status === "failed" || vozOnboarding?.status === "rejected_too_short";
-
-  const falhou =
-    onboarding && !pronto && pendentes === 0 && !vozTreinando && vozMorta;
-
-  const motivo = !falhou
-    ? null
-    : vozOnboarding?.status === "rejected_too_short"
-      ? "o áudio enviado não chegou aos 20 minutos necessários para treinar a voz"
-      : "o treino da voz falhou" +
-        (vozOnboarding && "error_message" in vozOnboarding && vozOnboarding.error_message
-          ? ": " + String(vozOnboarding.error_message).slice(0, 160)
-          : "");
+  // A régua (22/08 + a perna da foto de 12/09) mora em `desfecho-pure.ts`,
+  // sem banco, pra poder ser testada por `node --test`. Aqui fica só a busca.
+  const { pronto, falhou, motivo } = desfechoOnboarding({
+    onboarding,
+    houveAvatar,
+    prontos,
+    pendentes,
+    vozStatus: (vozOnboarding?.status as string | null) ?? null,
+    vozTreinando: lista_vozes.some((v) => v.status === "validating"),
+    vozErro:
+      vozOnboarding && "error_message" in vozOnboarding
+        ? ((vozOnboarding.error_message as string | null) ?? null)
+        : null,
+  });
 
   return {
     onboarding,
