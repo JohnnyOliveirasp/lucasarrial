@@ -36,6 +36,7 @@ import { handleTechFailure } from "@/lib/support/failure-alert";
 import { verificarOnboardingPronto } from "@/lib/onboarding/pronto";
 import { avancarEtapasDoUsuario } from "@/lib/sgp/etapas";
 import { tentarReenviar } from "@/lib/generations/reenviar";
+import { reivindicarFalha } from "@/lib/generations/falha-claim";
 
 type RunpodWebhookPayload = {
   id: string;
@@ -262,14 +263,12 @@ async function handleGenerationWebhook(
     failUpdate.elapsed_seconds = payload.executionTime / 1000; // RunPod manda em ms
   }
   // Gate idempotente (corrida webhook×poll): só quem transiciona pra failed
-  // dispara a contingência (estorno + e-mail pro suporte).
-  const { data: claimed } = await getAdmin()
-    .from("generations")
-    .update(failUpdate)
-    .eq("id", generationId)
-    .in("status", ["pending", "generating"])
-    .select("id");
-  if (claimed && claimed.length > 0) {
+  // dispara a contingência (estorno + e-mail pro suporte). O JOB faz parte do
+  // gate: se a row já foi reenviada (job novo), a falha atrasada DESTE job não
+  // reivindica nada — sem failed e sem estorno. Ver lib/generations/falha-claim.ts
+  // (caso medido em 12/09, geração b744e6da).
+  const claimed = await reivindicarFalha(getAdmin(), generationId, payload.id, failUpdate);
+  if (claimed) {
     // Telemetria fila×execução (migration 82, incidente d3d8d1b2): delayTime
     // separa "esperou na fila" de "rodou demais". Se o webhook não trouxer,
     // busca o status AGORA — ele expira ~30min depois do job, sweep posterior

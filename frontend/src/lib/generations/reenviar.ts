@@ -150,8 +150,16 @@ export async function tentarReenviar(
       executionTimeoutMs: inferenceExecutionTimeoutMs((gen.text_normalized ?? "").length),
     });
 
-    // Só agora o job velho deixa de valer: o webhook atrasado dele chega com
-    // outro id e o gate de status já terá mudado de mãos.
+    // Só agora o job velho deixa de valer, e é ESTE update que o neutraliza:
+    // o caminho de falha reivindica por `runpod_job_id` (lib/generations/
+    // falha-claim.ts), então a falha atrasada do job velho afeta 0 linhas.
+    //
+    // O comentário antigo dizia que quem neutralizava era a mudança de status —
+    // ERA FALSO, e custou caro em 12/09 (geração b744e6da): o reenvio deixa a
+    // row em `pending`, que é exatamente o que o gate de status aceita, então a
+    // falha do job velho marcava failed + estornava POR CIMA do job novo que
+    // ainda rodava (e terminou bem). Quem protege o reenvio é o gate por job,
+    // não o status.
     await admin
       .from("generations")
       .update({ runpod_job_id: job.id } as never)
