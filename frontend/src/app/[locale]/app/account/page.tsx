@@ -134,6 +134,25 @@ export default async function AccountPage({
         )}
       </section>
 
+      {/* Ponte pra API (aluno alfredo.sabocinski, 06/09): ele procurou a chave
+          de API AQUI, em "Minha conta", que é onde a intuição manda olhar. Ela
+          mora em /app/settings, e o rótulo daquele item no menu lateral
+          ("Configurações") não diz "API" em nenhum dos 3 idiomas — por isso
+          ninguém acha. Ponteiro, e não mudança de lugar: a API é liberada por
+          CRÉDITO (settings/page.tsx) e esta tela abre pra qualquer logado, então
+          trazer a seção pra cá arrastaria o gate junto e plantaria um segundo
+          "Assine agora" encostado no da assinatura. */}
+      <p className="text-[13px] text-[var(--mute)]">
+        Procurando a API?{" "}
+        <Link
+          href={`/${locale}/app/settings`}
+          className="text-[var(--silver)] underline-offset-4 transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] hover:text-[var(--ink)] hover:underline"
+        >
+          Sua chave e a documentação ficam em Configurações
+        </Link>
+        .
+      </p>
+
       {/* Zona perigosa — exclusão definitiva da conta. */}
       <DeleteAccount email={email} />
     </div>
