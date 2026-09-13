@@ -196,7 +196,7 @@ class TestCutSnappedCandidate(unittest.TestCase):
         )
         calls = []
         with mock.patch.object(reference, "_slice_window", _fake_slice(calls)):
-            status, transcript = reference._cut_snapped_candidate(
+            status, transcript, _wps = reference._cut_snapped_candidate(
                 self.primary, self.clip, 10.0, 30, 120.0,
                 lambda p: words, self.log,
             )
@@ -215,7 +215,7 @@ class TestCutSnappedCandidate(unittest.TestCase):
     def test_whisper_sem_words_vira_fallback(self):
         calls = []
         with mock.patch.object(reference, "_slice_window", _fake_slice(calls)):
-            status, transcript = reference._cut_snapped_candidate(
+            status, transcript, _wps = reference._cut_snapped_candidate(
                 self.primary, self.clip, 10.0, 30, 120.0,
                 lambda p: [], self.log,
             )
@@ -227,7 +227,7 @@ class TestCutSnappedCandidate(unittest.TestCase):
             raise RuntimeError("cuda out of memory")
         calls = []
         with mock.patch.object(reference, "_slice_window", _fake_slice(calls)):
-            status, _ = reference._cut_snapped_candidate(
+            status, _, _wps = reference._cut_snapped_candidate(
                 self.primary, self.clip, 10.0, 30, 120.0, boom, self.log,
             )
         self.assertEqual(status, reference._SNAP_UNAVAILABLE)
@@ -238,7 +238,7 @@ class TestCutSnappedCandidate(unittest.TestCase):
         words = [W(1.6, 2.0, " oi"), W(2.1, 2.7, " gente.")]
         calls = []
         with mock.patch.object(reference, "_slice_window", _fake_slice(calls)):
-            status, _ = reference._cut_snapped_candidate(
+            status, _, _wps = reference._cut_snapped_candidate(
                 self.primary, self.clip, 10.0, 30, 120.0,
                 lambda p: words, self.log,
             )
@@ -248,7 +248,7 @@ class TestCutSnappedCandidate(unittest.TestCase):
         words = [W(0.0, 40.0, " zumbido")]  # atravessa a região inteira
         calls = []
         with mock.patch.object(reference, "_slice_window", _fake_slice(calls)):
-            status, _ = reference._cut_snapped_candidate(
+            status, _, _wps = reference._cut_snapped_candidate(
                 self.primary, self.clip, 10.0, 30, 120.0,
                 lambda p: words, self.log,
             )

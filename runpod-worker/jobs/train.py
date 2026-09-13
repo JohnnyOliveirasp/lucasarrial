@@ -88,13 +88,20 @@ class TrainJob:
         # tinham o campo NULO. Medir aqui faz a voz NASCER com o ritmo de quem
         # gravou; None = nao deu pra medir -> o backend nao grava nada.
         self.reference_pause_ms = self._medir_pausa_natural()
-        ref = escolher_e_subir(self.inp, self.dirs, self.dirs.norm,
-                               self.whisper_model, self.language)
 
+        # 28/08: transcrever e medir a velocidade ANTES de escolher a referencia.
+        # O VoxCPM copia o ritmo da ref (nao tem parametro de velocidade); a
+        # regua do #165 (palavras/s no dataset INTEIRO) e' a velocidade real da
+        # pessoa, e agora e' o alvo da escolha — a candidata que foge dela perde
+        # pontos (caso Ellen: ref a 3,7 pal/s numa pessoa que fala a 1,4).
+        # Mesma transcricao, mesmo custo: so mudou a ordem.
         self._transcrever_dataset()
         # Regua do QA de ritmo (#165): sai do dataset ja transcrito, sem
         # whisper extra. None = a geracao segue no fallback (articulacao da ref).
         self.speech_rate_wps = self._medir_velocidade()
+        ref = escolher_e_subir(self.inp, self.dirs, self.dirs.norm,
+                               self.whisper_model, self.language,
+                               target_wps=self.speech_rate_wps)
         resultado = self._treinar()
         if resultado["returncode"] != 0:
             return {"voice_id": self.voice_id, "error": "trainer failed",
@@ -234,6 +241,7 @@ class TrainJob:
             "reference_cura_erro": cura.erro if cura else None,
             "reference_pause_ms": self.reference_pause_ms,
             "speech_rate_wps": getattr(self, "speech_rate_wps", None),
+            "reference_rate_wps": getattr(ref, "reference_rate_wps", None),
             "language": self.language,
             "lora_alpha": TRAIN_LORA_ALPHA,
             "lora_rank": LORA_RANK,
