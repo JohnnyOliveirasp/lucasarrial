@@ -255,6 +255,51 @@ test("classificação por diagnóstico, uma classe por causa", () => {
   assert.equal(classificarDiagnostico("", "4.0.0"), "temporaria");
 });
 
+// ------------------------------------------- as 3 lacunas medidas em 13/09
+// Todas saíram da varredura da caixa do suporte@ nesta data. As três caíam em
+// `desconhecida`, que é a classe que NÃO ensina nada a ninguém: o chamado
+// reabre, mas sem dizer se o culpado é a casa, o endereço ou o destino.
+
+test("MESMA frase do Gmail, com e sem o código, tem que dar a MESMA classe", () => {
+  // O defeito de 13/09 em uma linha: uid 607 trazia "550-5.1.1" na frente e
+  // virava `inexistente`; uid 588/589/590/591/606 traziam a MESMA frase sem o
+  // código e viravam `desconhecida`. Mesma causa, dois destinos.
+  const COM_CODIGO =
+    "smtp; 550-5.1.1 The email account that you tried to reach does not exist. Please try double-checking the recipient's email address for typos or unnecessary spaces. For more information, go to https://support.google.com/mail/?p=NoSuchUser 5a478bee46e88-33ba502862dsi25833762eec.41 - gsmtp";
+  const SEM_CODIGO =
+    "smtp; The email account that you tried to reach does not exist. Please try double-checking the recipient's email address for typos or unnecessary spaces. For more information, go to https://support.google.com/mail/?p=NoSuchUser";
+  assert.equal(classificarDiagnostico(COM_CODIGO), "inexistente");
+  assert.equal(classificarDiagnostico(SEM_CODIGO), "inexistente");
+  assert.equal(classificarDiagnostico(COM_CODIGO), classificarDiagnostico(SEM_CODIGO));
+});
+
+test("spam de SAÍDA sem o código JFE ainda é nosso — uid 608, luctec@ (13/09)", () => {
+  // O Namecheap nem sempre carimba o JFE. Sem a frase solta valendo, este
+  // bounce virava `desconhecida` e a casa não ficava sabendo que quem recusou
+  // foi o relay DELA. Prova de que é saída: o mesmo relatório derrubou o aluno
+  // e a nossa própria cópia interna.
+  assert.equal(classificarDiagnostico("smtp; 550 Rejected due to high probability of spam"), "spam-saida");
+});
+
+test("domínio com MX nulo é permanente, não 'desconhecida' — uid 605, Sheila (13/09)", () => {
+  // "gmail.com.br" publica MX nulo (`0 .`, RFC 7505): declara que não aceita
+  // e-mail. Ela pagou R$ 649,45 e a carta de acesso quicou 11s depois da
+  // compra. Reenviar nunca vai funcionar — a orientação certa é confirmar o
+  // endereço real no cadastro/Hotmart, que é a de `inexistente`.
+  assert.equal(
+    classificarDiagnostico(
+      'smtp; DNS Error: Failed to resolve any IP addresses for the Mail Exchange (MX) server associated with "gmail.com.br"',
+    ),
+    "inexistente",
+  );
+});
+
+test("queda transitória de DNS NÃO vira 'endereço não existe'", () => {
+  // O padrão do MX é estreito de propósito. Carimbar qualquer erro de DNS como
+  // permanente faria a casa parar de escrever pra um aluno alcançável.
+  assert.equal(classificarDiagnostico("smtp; 451 4.4.0 DNS query timed out, try again later"), "temporaria");
+});
+
 test("JFE ganha de 'spam' genérico: precisamos saber que o barramento foi NOSSO", () => {
   // As duas frases aparecem juntas no bounce real. Se 'blocked/policy' vencesse,
   // a gente culparia o destino por um filtro que é da nossa própria saída.
