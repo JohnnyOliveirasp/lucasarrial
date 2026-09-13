@@ -7,8 +7,10 @@ Executor (14-A): eu investigo, decido, conserto e fecho. Repo em `main`,
 reprocessado.**
 
 **Item serial: `#280` / `0da2c019`** — o aluno mais antigo da fila que nunca
-recebeu resposta (7,8 dias). **Fechei 2 incidentes**, **escrevi para 3 alunos**
-e **impedi que 2 deles gastassem crédito à toa**. Fila: **82 → 80**.
+recebeu resposta (7,8 dias). **Fechei 2 incidentes**, **escrevi para 3 alunos**,
+**impedi que 2 deles gastassem crédito à toa** e **subi pra produção o conserto
+que estava parado há 7,8 dias** (PR #194, merge `67e005c`, deploy success).
+Fila: **82 → 80**.
 
 O que esta ronda tem de diferente: nos três casos o texto que estava pronto pra
 mandar (ou a resposta óbvia) **estava errado**, e só apareceu porque eu medi a
@@ -232,7 +234,10 @@ próprio relay volta **rápido** — no caso do `luctec` veio ~1 min depois. Pas
   afirmei "não foi falada" onde o dado só diz "não aparece"). O segundo virou
   e-mail de correção à aluna, não nota de rodapé.
 - **Escalado, não decidido: 1** (os 1.700 créditos dela).
-- Crédito tocado: **0**. GPU: **0**. Migration: **0**. Código em produção: **0**.
+- **Código em produção: 1** — PR **#194** (merge `67e005c`, deploy run
+  34785446764 **success**), o conserto do vão que este mesmo card expôs, parado
+  desde 06/09. Achado no passo fixo, não na fila.
+- Crédito tocado: **0**. GPU: **0**. Migration: **0**.
 - **Nenhum chamado novo aberto**: os 2 defeitos que achei (tela do Gravador muda;
   API ausente de `/app/account`) são **produto/UX**, não erro de sistema —
   ordem de 27/08. Ficam registrados nos cards.
@@ -249,6 +254,56 @@ toquei em crédito/acesso/assinatura, não gastei GPU, não apliquei migration, 
 fechei incidente sem resolver, não abri chamado pra vão de produto, não li a
 caixa do `suporte@` pra triagem, não toquei nos branches STALE e não afirmei que
 os e-mails chegaram.
+
+---
+
+## 6-B. O passo fixo achou um conserto parado há 7,8 dias — e ele subiu
+
+Varrendo branch que não foi pra `main`, apareceu `feat/atalho-api-em-account`.
+Era o **PR #194**, aberto em **06/09 02:32Z** — **oito minutos depois** do recado
+que diagnosticou o `#280`.
+
+**Em 06/09, às 2h30 da manhã, a casa tinha ao mesmo tempo a resposta pro aluno
+(o recado) e o conserto do defeito (o PR). Nenhum dos dois saiu.** O aluno
+esperou 7,8 dias e o conserto esperou os mesmos 7,8 dias. Não é falta de
+trabalho: é falta de alguém fechar o laço. **Corrigi minha própria nota do §2**,
+que dizia *"vale card próprio"* como se não existisse nada escrito.
+
+**A conferência do branch STALE, que já mordeu esta casa 3× (`onedrive-401`,
+`fix-image-upload-retry`, `referencia-fronteira`):** o branch estava 7,8 dias
+**atrás** da main, então `git diff main..branch` sai gigante e assusta — mas isso
+é o branch estar velho, não o commit ser grande. O commit é **um**. A pergunta
+que importa era outra: `git log --since=2026-09-06 -- account/page.tsx` saiu
+**VAZIO** — o arquivo **não mudou na main** desde que o branch nasceu, logo o
+merge **não reverte trabalho de ninguém**. Foi exatamente essa conferência que
+faltou nos 3 casos que deram errado.
+
+Diff real: **1 arquivo, +19 linhas** (9 de comentário), um `<p>` com `<Link>`.
+Compila: `Link` já importado na linha 1, `locale` em escopo na 21, e as linhas
+**126–127 do mesmo arquivo já usam o padrão idêntico**.
+
+**Por que eu pude mergear aqui e a ronda das 21h não pôde no `#380`:** aquele era
+push em `runpod-worker/**`, que reconstrói a imagem e **recicla a frota** do
+RunPod, com geração de pagante em voo. Este é **Deploy Frontend, que não reinicia
+GPU** (medido no próprio `#15`: os 7 deploys de 09/09 eram todos Frontend e não
+tocaram na frota). Risco pra job de aluno: **zero**. A distinção é essa, e não
+"agora deu vontade".
+
+**Em produção, por RUN CONCLUÍDO e não por PR verde:** merge **`67e005c`**,
+workflow *Deploy Frontend (production)* run **34785446764**, `conclusion=success`,
+`headSha` **bate**. Fumaça pós-deploy: `/` → 200, `/api/docs` → 200,
+`/app/account` → 307 pro login com `redirectTo` (gate intacto), `/app/settings`
+→ 307 idem.
+
+**O que eu NÃO provei:** não vi a linha **renderizada**. `/app/account` exige
+sessão de aluno e eu não tenho credencial de teste — o próprio PR já declarava
+essa limitação. Provado: compila, tipa, o destino é rota real, e o deploy
+concluiu no sha certo. Pra um `<p>` estático, aceito o risco residual.
+
+**Fica pendente, e desta vez conferi que NÃO há PR escrito:** o rótulo do menu
+lateral é *"Configurações"* nos 3 idiomas e não diz **API** em nenhum, enquanto o
+H1 da própria página é literalmente **"API"**. Esse é o consumo maior — o atalho
+só pega quem **já** errou o caminho.
 
 ---
 
