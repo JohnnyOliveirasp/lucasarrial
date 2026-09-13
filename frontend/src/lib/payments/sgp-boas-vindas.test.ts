@@ -33,6 +33,15 @@ import {
   TETO_TENTATIVAS_BOAS_VINDAS,
   boasVindasEntregues,
   tentativasDe,
+  classificarMx,
+  descreverDns,
+  dominioDoEmail,
+  ehNullMx,
+  entregaImpossivel,
+  mereceRegistro,
+  MOTIVO_ENTREGA_IMPOSSIVEL,
+  type CasoEntregabilidade,
+  type RespostaDns,
   type CanaisBoasVindas,
   type CompraSgp,
   type EstadoBoasVindas,
@@ -111,11 +120,21 @@ function canaisFalsos(
     assina?: boolean;
     /** #290: a consulta de assinatura explode — não pode custar o e-mail. */
     assinaFalha?: boolean;
+    /**
+     * 13/09: o que o DNS responde pro domínio do comprador. AUSENTE de
+     * propósito no default — canal sem `resolverDns` é o comportamento de
+     * antes desta mudança, e é o que os ~30 testes que já existiam exercitam.
+     */
+    dns?: RespostaDns;
+    /** 13/09: a consulta de DNS falha (ou estoura o tempo). */
+    dnsFalha?: string;
   } = {},
 ) {
   const enviados: Array<{ to: string; assunto: string; texto: string }> = [];
   const registros: Array<{ email: string; ok: boolean; erro: string | null }> = [];
   const contas: Array<{ email: string; nome: string | null }> = [];
+  const casos: CasoEntregabilidade[] = [];
+  const dominiosConsultados: string[] = [];
   const situacao = opts.conta ?? "criada";
   const canais: CanaisBoasVindas = {
     garantirConta: async ({ email, nome }) => {
@@ -141,8 +160,32 @@ function canaisFalsos(
       return opts.assina ?? false;
     },
   };
-  return { canais, enviados, registros, contas };
+  // Só pluga o DNS quando o teste pediu: sem isto, todo teste antigo passaria a
+  // exercitar um caminho que ele não escreveu.
+  if (opts.dns || opts.dnsFalha) {
+    canais.resolverDns = async (dominio) => {
+      dominiosConsultados.push(dominio);
+      if (opts.dnsFalha) throw new Error(opts.dnsFalha);
+      return opts.dns as RespostaDns;
+    };
+    canais.registrarEntregabilidade = async (caso) => {
+      casos.push(caso);
+    };
+  }
+  return { canais, enviados, registros, contas, casos, dominiosConsultados };
 }
+
+/** As respostas de DNS que os testes usam, medidas no DNS de verdade em 13/09. */
+const DNS_NULL_MX: RespostaDns = { mx: [{ exchange: "", priority: 0 }], temEndereco: null };
+const DNS_SEM_NADA: RespostaDns = { mx: [], temEndereco: false };
+const DNS_SEM_MX_COM_A: RespostaDns = { mx: [], temEndereco: true };
+const DNS_OK: RespostaDns = {
+  mx: [
+    { exchange: "gmail-smtp-in.l.google.com", priority: 5 },
+    { exchange: "alt1.gmail-smtp-in.l.google.com", priority: 10 },
+  ],
+  temEndereco: null,
+};
 
 /** Estado em memória, com contador de escrita (o `agent_state` de verdade). */
 function estadoFalso(inicial: EstadoBoasVindas = {}) {
@@ -817,4 +860,259 @@ test("#324 helpers: entrega é medida por `canais`, e registro pré-#324 conta 1
   // pré-#324 não tem contador: conta como 1 já gasta, senão o teto reiniciaria
   assert.equal(tentativasDe(falho), 1);
   assert.equal(tentativasDe({ ...falho, tentativas: 2 }), 2);
+});
+
+// ── 13/09: o domínio do comprador aceita e-mail? (caso Sheila) ─────────────
+//
+// O CASO REAL: compra do SGP em 13/09 13:53Z com o e-mail digitado no domínio
+// `gmail.com.br`, que publica NULL MX (`0 .`). O SMTP respondeu 250, a fila deu
+// o envio por feito, e a compradora ficou em silêncio. A resposta de DNS usada
+// nos testes abaixo foi MEDIDA no DNS de verdade em 13/09:
+//   gmail.com.br  → [{ exchange: "", priority: 0 }]  (+ tem A: 142.251.214.229)
+//   gmail.com     → 5 MX do Google
+//   example.com   → também NULL MX (é por isso que os 9 eventos de teste de
+//                   09/06 aparecem, e está certo que apareçam)
+
+/** A compradora do caso real, com o telefone que veio no payload da Hotmart. */
+const COMPRA_SHEILA: CompraSgp = {
+  ...compraDoPayload(PAYLOAD_SGP),
+  buyerEmail: "compradora.teste@gmail.com.br",
+  buyerName: "Sheila de Teste",
+  buyerPhone: "11984263680",
+};
+
+test("(a) NULL MX: o envio NÃO conta como entregue e o caso é registrado", async () => {
+  const { canais, enviados, casos, dominiosConsultados } = canaisFalsos({ dns: DNS_NULL_MX });
+  const { io, ver } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(COMPRA_SHEILA, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+  // O E-MAIL SAIU. A checagem detecta, não é porteiro.
+  assert.equal(enviados.length, 1, "a checagem de MX bloqueou o envio — ela NÃO pode bloquear");
+  assert.deepEqual(dominiosConsultados, ["gmail.com.br"]);
+
+  // Mas a casa NÃO registra isso como entregue.
+  assert.equal(r.entregabilidade, "null_mx");
+  assert.deepEqual(r.canais, [], "o SMTP aceitou, mas ninguém recebeu — canais tem que estar vazio");
+  assert.match(r.envioErro ?? "", new RegExp(MOTIVO_ENTREGA_IMPOSSIVEL));
+  assert.match(r.envioErro ?? "", /RFC 7505/);
+
+  // E a trava de idempotência lê isso como NÃO entregue (senão o caso morre aqui).
+  const chave = chaveDaBoasVindas(COMPRA_SHEILA);
+  assert.equal(boasVindasEntregues(ver()[chave]), false);
+  assert.equal(ver()[chave].entregabilidade, "null_mx");
+  assert.equal(ver()[chave].falhou, true);
+
+  // O CASO FOI PRO HUMANO, com nome, e-mail COMO FOI DIGITADO e telefone.
+  assert.equal(casos.length, 1);
+  assert.equal(casos[0].veredicto, "null_mx");
+  assert.equal(casos[0].dominio, "gmail.com.br");
+  assert.equal(casos[0].buyerName, "Sheila de Teste");
+  assert.equal(casos[0].buyerPhone, "11984263680", "sem o telefone não sobra canal nenhum");
+  assert.equal(casos[0].transacao, COMPRA_SHEILA.transaction);
+  assert.equal(casos[0].chave, chave, "a chave é a transação: reenvio atualiza, não duplica");
+});
+
+test("(a′) NUNCA adivinhar o endereço: o registro leva o e-mail exatamente como veio", async () => {
+  const { canais, enviados, casos } = canaisFalsos({ dns: DNS_NULL_MX });
+  const { io } = estadoFalso();
+
+  await mandarBoasVindasSgp(COMPRA_SHEILA, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+  // Trocar `gmail.com.br` por `gmail.com` entregaria a compra de um pagante na
+  // caixa de outra pessoa. Nem o envio nem o registro podem "corrigir" nada.
+  assert.equal(casos[0].buyerEmail, "compradora.teste@gmail.com.br");
+  assert.equal(enviados[0].to, "compradora.teste@gmail.com.br");
+  assert.doesNotMatch(
+    JSON.stringify(casos[0]),
+    /@gmail\.com[^.]/,
+    "alguém inventou uma correção do endereço do comprador",
+  );
+});
+
+test("(b) domínio sem MX nenhum e sem A/AAAA: mesmo tratamento", async () => {
+  const { canais, enviados, casos } = canaisFalsos({ dns: DNS_SEM_NADA });
+  const { io } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(COMPRA_SHEILA, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+  assert.equal(enviados.length, 1, "não pode bloquear o envio");
+  assert.equal(r.entregabilidade, "sem_mx");
+  assert.deepEqual(r.canais, []);
+  assert.match(r.envioErro ?? "", /sem MX e sem A\/AAAA/);
+  assert.equal(casos.length, 1);
+  assert.equal(casos[0].veredicto, "sem_mx");
+  assert.equal(casos[0].buyerPhone, "11984263680");
+});
+
+test("(b′) sem MX mas COM A/AAAA: registrado como observação, NÃO como falha", async () => {
+  // RFC 5321 §5.1: sem MX, o A/AAAA vira MX implícito e a entrega acontece.
+  // Chamar isso de indereçável inventaria um problema — mas sumir com a
+  // informação também é errado, então ele é anotado sem virar falha.
+  const { canais, enviados, casos } = canaisFalsos({ dns: DNS_SEM_MX_COM_A });
+  const { io, ver } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(COMPRA_SHEILA, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+  assert.equal(enviados.length, 1);
+  assert.equal(r.entregabilidade, "sem_mx_com_a");
+  assert.deepEqual(r.canais, ["email"], "MX implícito entrega — isto não é falha");
+  assert.equal(r.envioErro, null);
+  assert.equal(boasVindasEntregues(ver()[chaveDaBoasVindas(COMPRA_SHEILA)]), true);
+  assert.equal(casos.length, 1, "a observação tem que chegar ao humano mesmo assim");
+  assert.equal(casos[0].veredicto, "sem_mx_com_a");
+});
+
+test("(c) domínio normal: nenhum ruído e o fluxo fica idêntico ao de hoje", async () => {
+  const normal: CompraSgp = { ...COMPRA_SHEILA, buyerEmail: "compradora.teste@gmail.com" };
+  const comDns = canaisFalsos({ dns: DNS_OK });
+  const estadoComDns = estadoFalso();
+  const r = await mandarBoasVindasSgp(normal, SGP_PRODUCT_ID_PADRAO, estadoComDns.io, comDns.canais, AGORA);
+
+  assert.equal(r.entregabilidade, "ok");
+  assert.deepEqual(r.canais, ["email"]);
+  assert.equal(r.envioErro, null);
+  assert.equal(comDns.casos.length, 0, "domínio saudável não pode gerar caso pra humano");
+  assert.equal(comDns.enviados.length, 1);
+  assert.equal(estadoComDns.ver()[chaveDaBoasVindas(normal)].entregabilidade, undefined);
+
+  // E "idêntico ao de hoje" não é figura de linguagem: o estado gravado com o
+  // canal de DNS plugado é BYTE A BYTE o mesmo de quando ele não existe.
+  const semDns = canaisFalsos();
+  const estadoSemDns = estadoFalso();
+  await mandarBoasVindasSgp(normal, SGP_PRODUCT_ID_PADRAO, estadoSemDns.io, semDns.canais, AGORA);
+  assert.deepEqual(estadoComDns.ver(), estadoSemDns.ver());
+  assert.deepEqual(comDns.registros, semDns.registros);
+  assert.equal(comDns.enviados[0].texto, semDns.enviados[0].texto, "o DNS não pode mudar o e-mail");
+});
+
+test("(d) DNS que falha ou estoura o tempo NÃO impede o envio", async () => {
+  for (const falha of ["timeout de 3000ms em MX de gmail.com.br", "queryMx ESERVFAIL"]) {
+    const { canais, enviados, casos } = canaisFalsos({ dnsFalha: falha });
+    const { io, ver } = estadoFalso();
+
+    const r = await mandarBoasVindasSgp(COMPRA_SHEILA, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+    // "Não sei" NUNCA vira "não entrega": o e-mail sai e conta como entregue,
+    // exatamente como antes desta mudança.
+    assert.equal(enviados.length, 1, `DNS (${falha}) impediu o envio`);
+    assert.equal(r.entregabilidade, "indeterminado");
+    assert.deepEqual(r.canais, ["email"]);
+    assert.equal(r.envioErro, null);
+    assert.equal(boasVindasEntregues(ver()[chaveDaBoasVindas(COMPRA_SHEILA)]), true);
+    assert.equal(casos.length, 0, "não sei não pode virar caso pra humano");
+  }
+});
+
+test("(d′) canal de DNS AUSENTE = comportamento de antes desta mudança", async () => {
+  const { canais, enviados } = canaisFalsos();
+  const { io } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(COMPRA_SHEILA, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+  assert.equal(enviados.length, 1);
+  assert.equal(r.entregabilidade, "indeterminado");
+  assert.deepEqual(r.canais, ["email"]);
+});
+
+test("13/09: registrar o caso pode falhar sem derrubar nada (best-effort)", async () => {
+  const { canais, enviados } = canaisFalsos({ dns: DNS_NULL_MX });
+  canais.registrarEntregabilidade = async () => {
+    throw new Error("agent_state fora do ar");
+  };
+  const { io, ver } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(COMPRA_SHEILA, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+  assert.equal(enviados.length, 1);
+  assert.equal(r.entregabilidade, "null_mx");
+  // O que não pode sumir é a TRAVA: sem ela o reenvio da Hotmart perde a conta
+  // das tentativas e o caso nunca chega em `esgotou_tentativas`.
+  assert.equal(ver()[chaveDaBoasVindas(COMPRA_SHEILA)].tentativas, 1);
+});
+
+test("13/09: NULL MX cai na máquina de falha que já existe (#324), sem caminho novo", async () => {
+  // Depois do teto, `esgotou_tentativas` sobe pro webhook e vira
+  // `payment_events.error` — que é onde a casa já varre. O veredicto sobe junto
+  // pra quem for reparar saber que reenviar não adianta.
+  const { canais } = canaisFalsos({ dns: DNS_NULL_MX });
+  const { io } = estadoFalso();
+  for (let i = 0; i < TETO_TENTATIVAS_BOAS_VINDAS; i++) {
+    await mandarBoasVindasSgp(COMPRA_SHEILA, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+  }
+  const r = await mandarBoasVindasSgp(COMPRA_SHEILA, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+  assert.equal(r.motivo, "esgotou_tentativas");
+  assert.equal(r.entregabilidade, "null_mx");
+  assert.match(r.envioErro ?? "", new RegExp(MOTIVO_ENTREGA_IMPOSSIVEL));
+});
+
+test("13/09: falha REAL do SMTP não é mascarada pelo veredicto de DNS", async () => {
+  // Um domínio sem MX num envio que já tinha explodido no SMTP: a causa que
+  // fica registrada tem que ser a do SMTP, que é a que aconteceu primeiro.
+  const { canais } = canaisFalsos({ dns: DNS_NULL_MX, emailFalha: true });
+  const { io } = estadoFalso();
+
+  const r = await mandarBoasVindasSgp(COMPRA_SHEILA, SGP_PRODUCT_ID_PADRAO, io, canais, AGORA);
+
+  assert.deepEqual(r.canais, []);
+  assert.equal(r.envioErro, "SMTP fora do ar");
+  assert.equal(r.entregabilidade, "null_mx", "o veredicto continua visível no resultado");
+});
+
+// ── as peças puras, sozinhas ───────────────────────────────────────────────
+
+test("dominioDoEmail: normaliza, e o FQDN com ponto final NÃO é falso positivo", () => {
+  assert.equal(dominioDoEmail("a@GMAIL.com.BR"), "gmail.com.br");
+  // O card mediu que existem endereços assim na base e que eles são VÁLIDOS.
+  assert.equal(dominioDoEmail("a@gmail.com."), "gmail.com");
+  assert.equal(dominioDoEmail("  a@gmail.com  "), "gmail.com");
+  // Endereço com "+" e com subdomínio não muda nada.
+  assert.equal(dominioDoEmail("a+b@mail.empresa.com.br"), "mail.empresa.com.br");
+  // Nada consultável → null → nem se consulta o DNS.
+  assert.equal(dominioDoEmail("sem-arroba"), null);
+  assert.equal(dominioDoEmail("a@"), null);
+  assert.equal(dominioDoEmail("a@dominio com espaco"), null);
+  assert.equal(dominioDoEmail(""), null);
+});
+
+test("ehNullMx: só o `0 .` sozinho, e o `.` final não engana", () => {
+  assert.equal(ehNullMx([{ exchange: "", priority: 0 }]), true);
+  assert.equal(ehNullMx([{ exchange: ".", priority: 0 }]), true);
+  assert.equal(ehNullMx([{ exchange: "mx.google.com", priority: 10 }]), false);
+  assert.equal(ehNullMx([]), false);
+  // Domínio mal configurado (`.` junto de um MX real) não é domínio fechado:
+  // o lado seguro é considerar que ele recebe.
+  assert.equal(ehNullMx([{ exchange: "", priority: 0 }, { exchange: "mx.a.com", priority: 10 }]), false);
+});
+
+test("classificarMx: os cinco veredictos, e `null` (não consultado) é indeterminado", () => {
+  assert.equal(classificarMx(DNS_NULL_MX), "null_mx");
+  assert.equal(classificarMx(DNS_OK), "ok");
+  assert.equal(classificarMx(DNS_SEM_NADA), "sem_mx");
+  assert.equal(classificarMx(DNS_SEM_MX_COM_A), "sem_mx_com_a");
+  assert.equal(classificarMx(null), "indeterminado");
+  // NULL MX tem precedência sobre o MX implícito: é exatamente pra isso que a
+  // RFC 7505 existe, e `gmail.com.br` TEM A mesmo declarando `0 .`.
+  assert.equal(classificarMx({ mx: [{ exchange: "", priority: 0 }], temEndereco: true }), "null_mx");
+});
+
+test("entregaImpossivel/mereceRegistro: só os dois casos travam, três viram registro", () => {
+  assert.equal(entregaImpossivel("null_mx"), true);
+  assert.equal(entregaImpossivel("sem_mx"), true);
+  assert.equal(entregaImpossivel("sem_mx_com_a"), false);
+  assert.equal(entregaImpossivel("ok"), false);
+  assert.equal(entregaImpossivel("indeterminado"), false, "não sei NUNCA pode virar não entrega");
+
+  assert.equal(mereceRegistro("sem_mx_com_a"), true);
+  assert.equal(mereceRegistro("ok"), false);
+  assert.equal(mereceRegistro("indeterminado"), false);
+});
+
+test("descreverDns: a frase diz o que fazer, não só que deu errado", () => {
+  assert.match(descreverDns("null_mx", DNS_NULL_MX), /RFC 7505/);
+  assert.match(descreverDns("sem_mx", DNS_SEM_NADA), /sem MX e sem A\/AAAA/);
+  assert.match(descreverDns("sem_mx_com_a", DNS_SEM_MX_COM_A), /MX implícito/);
+  assert.match(descreverDns("ok", DNS_OK), /gmail-smtp-in\.l\.google\.com/);
+  assert.match(descreverDns("indeterminado", null), /não respondeu/);
 });
