@@ -135,13 +135,53 @@ export function classificarDiagnostico(diagnostico: string, status?: string | nu
     return "desconhecida";
   }
   // Filtro de SAÍDA do Namecheap/jellyfish: a culpa é do nosso lado.
-  if (/\bJFE\d{6}\b/i.test(d) || /jellyfish-error-codes/i.test(d)) return "spam-saida";
+  //
+  // ⚠️ A FRASE SOZINHA BASTA, e isso é correção de 13/09 (uid 608). A versão
+  // anterior exigia o código `JFE\d{6}`, sob a premissa de que o Namecheap
+  // sempre o carimba. Ele NÃO sempre: o bounce de `luctec@gmail.com` veio com
+  // "smtp; 550 Rejected due to high probability of spam" e mais nada, caiu em
+  // `desconhecida`, e com isso a casa não soube que o barramento tinha sido
+  // DELA. Prova de que é saída e não destino, no mesmo relatório: o MESMO
+  // bounce derrubou o aluno E a nossa cópia interna (`suporte@lucasarrial.com`).
+  // Se quem tivesse recusado fosse o Gmail, só o endereço do aluno falharia —
+  // os dois falhando significa que a mensagem não passou do nosso próprio relay.
+  if (/\bJFE\d{6}\b/i.test(d) || /jellyfish-error-codes/i.test(d) || /high probability of spam/i.test(d)) {
+    return "spam-saida";
+  }
   // Caixa cheia — 4.2.2 (gmail manda como 452-4.2.2, alguns como 552).
   if (/\b[45]\.2\.2\b/.test(d) || /(out of storage space|mailbox (is )?full|quota exceeded|over quota)/i.test(d)) {
     return "caixa-cheia";
   }
   // Endereço não existe.
-  if (/\b5\.1\.[01]\b/.test(d) || /(user unknown|no such user|address (does not|doesn't) exist|recipient (address )?rejected|unknown recipient)/i.test(d)) {
+  //
+  // ⚠️ A PROSA DO GMAIL SEM CÓDIGO, corrigida em 13/09. O Gmail manda a MESMA
+  // frase com e sem o `550-5.1.1` na frente, e a casa classificava as duas
+  // DIFERENTE: uid 607 (com o código) virava `inexistente`, uid 588/589/590/
+  // 591/606 (sem o código) viravam `desconhecida`. Mesma mensagem, mesmo
+  // defeito, dois destinos — só porque um trecho numérico veio junto. Note que
+  // `address (does not|doesn't) exist` NÃO casa aqui: o Gmail escreve "account
+  // that you tried to reach does not exist", e "no such user" não casa
+  // "NoSuchUser" (sem espaços) da URL de ajuda.
+  //
+  // ⚠️ DOMÍNIO QUE NÃO RECEBE E-MAIL NENHUM (uid 605, Sheila, 13/09). Ela
+  // digitou "gmail.com.br" no checkout. Esse domínio publica MX NULO
+  // (`0 .`, RFC 7505), que é a forma de um domínio declarar que NÃO aceita
+  // e-mail — conferido com `dig MX gmail.com.br` nesta ronda. Logo é PERMANENTE
+  // e a orientação de `inexistente` ("reenviar NUNCA vai funcionar, confirme o
+  // e-mail real no cadastro/Hotmart") é exatamente a certa. O DSN também veio
+  // com `Action: failed`, não `delayed`, que por RFC 3464 já é permanente.
+  //
+  // O padrão é ESTREITO de propósito — casa a falha de resolver o MX, não
+  // "DNS" solto — pra não carimbar como definitiva uma queda transitória de
+  // resolvedor, que mandaria a casa parar de escrever pra um aluno alcançável.
+  if (
+    /\b5\.1\.[01]\b/.test(d) ||
+    /(user unknown|no such user|address (does not|doesn't) exist|recipient (address )?rejected|unknown recipient)/i.test(d) ||
+    /account that you tried to reach (does not exist|is disabled)/i.test(d) ||
+    /\bNoSuchUser\b/i.test(d) ||
+    /failed to resolve any ip addresses for the mail exchange/i.test(d) ||
+    /\bno mx (record|hosts?)\b/i.test(d)
+  ) {
     return "inexistente";
   }
   // Destino bloqueou a gente (S3150 da Microsoft e parentes).
