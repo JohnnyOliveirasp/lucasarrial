@@ -175,17 +175,63 @@ obrigatório** (aborta se nenhum perfil for achado) e vieram os 11.
 
 ---
 
+## 6-B. 🟢 A conferência de fim de ronda achou um fix PRONTO e PARADO
+
+O passo fixo (`git rev-list main..<branch>`) existe por causa do 19/08, quando um
+fix de aluno ficou 9h preso em branch. **Hoje ele pegou outro.**
+
+**PR #260 / `feat/mx-entregabilidade-sgp`**, escrito por mim às **14:40Z** —
+**45 min depois** do bounce da Sheila — estava **aberto e não mergeado há 3h20**.
+Ficou para trás quando a ronda anterior terminou. É exatamente o conserto que
+fecha a classe dela para a frente.
+
+**O que ele faz:** antes de dar o envio por concluído, consulta o MX do domínio
+do destinatário. Domínio sem MX utilizável → o envio **deixa de contar como
+entregue** e o caso é gravado com nome, e-mail **como foi digitado** e o
+**telefone** do checkout da Hotmart. Cinco veredictos (`ok`, `null_mx`, `sem_mx`,
+`sem_mx_com_a`, `indeterminado`), e só os dois do meio contam como falha.
+
+**Os três "não" dele, e concordo com os três:**
+1. **Não bloqueia envio** — a checagem roda *depois* do canal de e-mail, então
+   nem em tese atrasa carta de quem receberia. DNS que falha vira
+   `indeterminado`, que **não** é falha.
+2. **Timeout curto** (3s) com dois tetos somados, porque o do c-ares cobre a
+   query e não cobre socket que nunca volta.
+3. **Não adivinha o endereço.** Trocar `gmail.com.br` por `gmail.com` é o palpite
+   que entrega a compra de um pagante na caixa de outra pessoa. **Tem teste que
+   quebra se alguém inventar essa correção.**
+
+**Verificado por mim antes de mergear, no worktree certo:** 60/60 testes,
+`tsc --noEmit` só com o erro pré-existente da main. Merge **`27a6418`**, run
+**34773365426 `completed/success`**.
+
+⚠️ **Armadilha que eu quase engoli aqui:** rodei os testes primeiro com o
+`git checkout` **falhando** (a branch estava tomada por um worktree) e o shell
+seguiu em `main`. Deu "34/34 passando" — de um arquivo que **não existe na
+main**. Quase registrei isso como validação da branch. Só peguei porque conferi
+`rev-parse --abbrev-ref HEAD` e a existência do arquivo. **Suíte verde de branch
+errada é pior que suíte vermelha.**
+
+**Isto NÃO resolve a Sheila**: ela comprou antes do conserto existir. Resolve a
+próxima.
+
+---
+
 ## 7. Placar honesto
 
 - **Incidentes fechados: 0.** O backlog não baixou (81 abertos).
-- **Código em produção: 1** (PR #262, merge `b3ebfd5`, deploy success conferido).
+- **Código em produção: 2** — PR **#262** (`b3ebfd5`, deploy success) e PR **#260**
+  (`27a6418`, deploy success), o segundo **achado parado** na conferência de fim
+  de ronda.
 - Lacunas de classificação corrigidas com medida: **3**. `desconhecida` **18 → 0**.
 - Incidentes anotados: **2** (`#101` com a medição inteira, `#374` com causa cravada).
 - Alunos escritos: **0.** A urgente (Sheila) **não é alcançável por e-mail** — o
   canal dela é telefone e isso é decisão de quem fala pela casa.
 - **Erro meu, pego por mim antes de fechar: 1** (os "R$ 7.042 travados" que são
   regra comercial, não defeito) — e **corrigido no grupo**, não escondido.
-- **Armadilha de instrumento que eu repeti: 1** (zero de consulta com coluna errada).
+- **Armadilhas de instrumento que eu repeti hoje: 2** (zero de consulta com
+  coluna errada sem ler o `error`; suíte verde rodada na branch errada depois de
+  um `checkout` que falhou).
 - Créditos gastos de aluno: **0**. GPU disparada: **0**. Migration: **0**.
 
 **O que emperrou, na cara limpa:** o `#101` continua aberto porque a metade viva
