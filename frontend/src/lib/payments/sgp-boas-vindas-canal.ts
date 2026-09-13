@@ -30,8 +30,10 @@ import { resolveUserIdByEmail } from "@/lib/credits/service";
 import { logger } from "@/lib/logger/server";
 import { ehEmailJaCadastrado } from "@/lib/payments/sgp-boas-vindas";
 import { entitlementValeAcesso } from "@/lib/payments/entitlements";
+import { resolverDnsDoDominio } from "@/lib/payments/sgp-mx";
 import type {
   CanaisBoasVindas,
+  CasoEntregabilidade,
   EstadoBoasVindas,
   EstadoBoasVindasIO,
   ResultadoConta,
@@ -39,6 +41,70 @@ import type {
 
 /** Chave do dedupe (um registro por transação já avisada). */
 const CHAVE_ESTADO = "sgp_boas_vindas";
+
+/**
+ * Onde ficam os casos de e-mail que NÃO TEM COMO CHEGAR (13/09).
+ *
+ * ⚠️ CHAVE PRÓPRIA, e isso é de propósito. `agent_state` é varrida por chave, e
+ * há varredura que trata linha encontrada como TRABALHO A FAZER (os recados
+ * `para_frank_*`). Um caso de auditoria escondido dentro de uma chave alheia
+ * viraria tarefa processada por engano. Esta chave é só leitura humana e da
+ * ferramenta de varredura — ninguém age em cima dela automaticamente.
+ *
+ * `agent_state.value` é NOT NULL, então sempre gravamos um objeto (no mínimo
+ * `{}`), nunca null.
+ */
+const CHAVE_ENTREGABILIDADE = "sgp_email_inalcancavel";
+
+/**
+ * Teto de casos guardados. O card mediu UM caso em toda a base, então isto é
+ * cinto de segurança contra crescimento sem fim de uma linha de `agent_state`,
+ * não dimensionamento de volume.
+ */
+const TETO_CASOS_GUARDADOS = 200;
+
+/**
+ * Guarda o caso pra um humano tratar.
+ *
+ * DUAS ESCRITAS, porque elas falham e são lidas por caminhos diferentes: o
+ * `logger.warn` é o que aparece no log em tempo real, e `agent_state` é o que
+ * ainda está lá amanhã quando alguém for procurar. A linha de
+ * `payment_events.error` — a que a casa realmente varre — quem escreve é o
+ * webhook, com o resultado que sobe daqui.
+ */
+async function guardarCasoEntregabilidade(caso: CasoEntregabilidade): Promise<void> {
+  logger.warn("api", "sgp.email.inalcancavel", {
+    target: caso.buyerEmail,
+    dominio: caso.dominio,
+    veredicto: caso.veredicto,
+    detalhe: caso.detalhe,
+    transacao: caso.transacao,
+    temTelefone: Boolean(caso.buyerPhone),
+  });
+
+  const admin = getAdmin();
+  const { data } = await admin
+    .from("agent_state" as never)
+    .select("value")
+    .eq("key", CHAVE_ENTREGABILIDADE)
+    .maybeSingle();
+  const atual = ((data as { value?: Record<string, CasoEntregabilidade> } | null)?.value ??
+    {}) as Record<string, CasoEntregabilidade>;
+
+  // Chave = a transação: o reenvio da Hotmart atualiza o mesmo caso em vez de
+  // empilhar cópias da mesma compradora.
+  atual[caso.chave] = caso;
+
+  const podados = Object.entries(atual)
+    .sort(([, a], [, b]) => String(b?.at ?? "").localeCompare(String(a?.at ?? "")))
+    .slice(0, TETO_CASOS_GUARDADOS);
+
+  await admin.from("agent_state" as never).upsert({
+    key: CHAVE_ENTREGABILIDADE,
+    value: Object.fromEntries(podados),
+    updated_at: new Date().toISOString(),
+  } as never);
+}
 
 /** `agent_state` fica fora do Database tipado (padrão das rotas do Vigia). */
 export function estadoDasBoasVindas(): EstadoBoasVindasIO {
@@ -215,6 +281,8 @@ export function canaisDoSgp(): CanaisBoasVindas {
   return {
     garantirConta: criarContaDoComprador,
     temAssinaturaFastcloner: temAssinaturaFastclonerAtiva,
+    resolverDns: resolverDnsDoDominio,
+    registrarEntregabilidade: guardarCasoEntregabilidade,
     email: async (to, assunto, texto) => {
       // `sendSupportMail` LANÇA quando falha; o orquestrador trata o throw e
       // grava a mensagem do erro. Devolver `true` aqui significa "o SMTP

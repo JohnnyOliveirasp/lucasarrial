@@ -33,7 +33,9 @@ import { avisarCompraOrfa } from "@/lib/payments/aviso-orfao";
 import { canaisDaCasa, estadoDosAvisos } from "@/lib/payments/aviso-orfao-canal";
 import { hottokValido, tokensEsperados } from "@/lib/payments/hottok";
 import {
+  entregaImpossivel,
   mandarBoasVindasSgp,
+  MOTIVO_ENTREGA_IMPOSSIVEL,
   roteamentoDoProduto,
   SGP_PRODUCT_ID_PADRAO,
   TETO_TENTATIVAS_BOAS_VINDAS,
@@ -43,6 +45,7 @@ import { canaisDoSgp, estadoDasBoasVindas } from "@/lib/payments/sgp-boas-vindas
 import {
   extractBuyerEmail,
   extractBuyerName,
+  extractBuyerPhone,
   extractExternalId,
   extractNextChargeIso,
   extractOfferCode,
@@ -394,6 +397,11 @@ async function processarCompraSgp(
         transaction: extractTransactionId(data),
         externalId,
         purchaseStatus: extractPurchaseStatus(data),
+        // 13/09 — vai junto SÓ pra viajar até o registro de e-mail
+        // inalcançável: quando o domínio do comprador não aceita e-mail, este
+        // telefone é o único canal que sobra pra alcançar a pessoa. Nenhuma
+        // decisão deste fluxo olha pra ele.
+        buyerPhone: extractBuyerPhone(data),
       },
       produtoSgp,
       estadoDasBoasVindas(),
@@ -422,6 +430,18 @@ async function processarCompraSgp(
         ? `boas-vindas do SGP desistiram após ${TETO_TENTATIVAS_BOAS_VINDAS} tentativas: ${buyerEmail} [${externalId}]`
         : null,
       r.contaErro ? `conta do SGP não criada (${r.conta}): ${buyerEmail} — ${r.contaErro}` : null,
+      // 13/09 — o domínio do comprador declara que NÃO ACEITA e-mail (NULL MX
+      // da RFC 7505, ou nem MX nem A/AAAA). Não é caixa cheia: é entrega
+      // impossível, hoje e sempre, e reenviar não conserta. A linha traz o
+      // TELEFONE do payload porque ele é o único canal que sobra — e NÃO traz
+      // palpite de correção do endereço: adivinhar `gmail.com` a partir de
+      // `gmail.com.br` entregaria a compra de um pagante na caixa de outra
+      // pessoa.
+      entregaImpossivel(r.entregabilidade)
+        ? `${MOTIVO_ENTREGA_IMPOSSIVEL} (${r.entregabilidade}): ${buyerEmail} [${externalId}] — ` +
+          `comprador ${extractBuyerName(data) ?? "sem nome no payload"}, ` +
+          `telefone ${extractBuyerPhone(data) ?? "ausente no payload"}`
+        : null,
     ].filter((x): x is string => x !== null);
     // `conta` no handled deixa a decomposição visível direto na listagem de
     // eventos: sgp:enviado:criada, sgp:enviado:ja_tinha, sgp:enviado:falhou.

@@ -112,7 +112,157 @@ export type CompraSgp = {
   externalId: string;
   /** data.purchase.status, em maiúsculas */
   purchaseStatus: string;
+  /**
+   * `data.buyer.checkout_phone`, cru. OPCIONAL porque nenhuma decisão depende
+   * dele — ele só vai junto no registro de e-mail inalcançável, onde é a ÚNICA
+   * forma de falar com a pessoa (o e-mail dela, por definição, não recebe).
+   */
+  buyerPhone?: string | null;
 };
+
+/* ------------------------------------------------------------------------- *
+ * ENTREGABILIDADE DO E-MAIL (13/09/2026) — o domínio do comprador aceita
+ * e-mail?
+ *
+ * O CASO: a Sheila comprou o SGP em 13/09 13:53Z e digitou o e-mail com o
+ * domínio `gmail.com.br`. Esse domínio publica NULL MX — a resposta de MX é
+ * literalmente `0 .` (medido: `[{ exchange: "", priority: 0 }]`) — que é a
+ * forma, pela RFC 7505, de um domínio declarar que NÃO ACEITA E-MAIL NENHUM.
+ * Não é caixa cheia nem endereço inexistente: é entrega impossível, hoje e
+ * sempre. O nosso SMTP respondeu 250, a fila deu o envio por feito, e a
+ * compradora ficou em silêncio sem saber que nunca foi respondida.
+ *
+ * TRÊS COISAS QUE ESTA CHECAGEM NÃO FAZ, e cada "não" é o ponto:
+ *
+ *  1. NÃO BLOQUEIA O ENVIO. Ela DETECTA, não é porteiro. DNS falha, resolve
+ *     devagar e responde errado; um falso negativo nosso deixaria de mandar
+ *     e-mail pra quem receberia normalmente. Consulta que falha ou estoura o
+ *     tempo vira `indeterminado` e o fluxo segue IDÊNTICO ao de hoje.
+ *  2. NÃO ADIVINHA NEM CORRIGE O E-MAIL. Trocar `gmail.com.br` por `gmail.com`
+ *     parece óbvio e é exatamente o palpite que entrega a compra de um pagante
+ *     na caixa de outra pessoa. O máximo que este código faz é registrar o caso
+ *     com o telefone do payload pra um humano tratar.
+ *  3. NÃO É UMA ONDA. Varri todos os `buyer_email` da base por domínio: UM caso
+ *     confirmado. Os candidatos que PARECEM erro de digitação não são —
+ *     `outlook.com.br` e `hotmail.com.br` têm MX de verdade da Microsoft e
+ *     entregam; `gmail.com.` com ponto final é FQDN válido; `gamil.com` tem MX
+ *     próprio (e aquela compra foi cancelada). Isto tapa um buraco silencioso
+ *     de uma compradora, não uma epidemia.
+ * ------------------------------------------------------------------------- */
+
+/** Um registro MX como o DNS devolve. */
+export type RegistroMx = { exchange: string; priority: number };
+
+/**
+ * O que o canal de DNS conseguiu ver do domínio.
+ *
+ * `temEndereco` é `null` quando nem perguntamos — e só faz sentido perguntar
+ * quando NÃO há MX: pela RFC 5321 §5.1 um domínio sem MX mas com A/AAAA ainda
+ * recebe e-mail pelo "MX implícito". Chamar isso de indereçável seria mentira.
+ */
+export type RespostaDns = {
+  mx: RegistroMx[];
+  temEndereco: boolean | null;
+};
+
+/**
+ * O veredicto sobre o domínio:
+ *  - `ok`            → publica MX utilizável. É o caso de 100% dos domínios
+ *                      normais e o fluxo não muda em nada;
+ *  - `null_mx`       → RFC 7505: o domínio declara que não aceita e-mail. É o
+ *                      `gmail.com.br` da Sheila (e o `example.com` dos 9
+ *                      eventos de teste de 09/06, que também é NULL MX);
+ *  - `sem_mx`        → nem MX nem A/AAAA. Não há pra onde entregar;
+ *  - `sem_mx_com_a`  → sem MX, mas com A/AAAA. PODE entregar por MX implícito.
+ *                      É registrado como observação e NÃO conta como falha:
+ *                      tratá-lo como entrega impossível inventaria um problema;
+ *  - `indeterminado` → a consulta falhou, estourou o tempo, ou não há canal de
+ *                      DNS plugado. "Não sei" — segue o fluxo normal.
+ */
+export type VeredictoMx = "ok" | "null_mx" | "sem_mx" | "sem_mx_com_a" | "indeterminado";
+
+/** O caso que vai pro humano. Leva o TELEFONE porque o e-mail não recebe. */
+export type CasoEntregabilidade = {
+  /** a mesma chave da idempotência (transação), pra não duplicar o registro */
+  chave: string;
+  at: string;
+  buyerEmail: string;
+  buyerName: string | null;
+  /** `data.buyer.checkout_phone` — o único canal que sobra pra alcançar a pessoa */
+  buyerPhone: string | null;
+  dominio: string;
+  veredicto: VeredictoMx;
+  /** o que o DNS respondeu, em texto, pra um humano conferir sem repetir a consulta */
+  detalhe: string;
+  transacao: string | null;
+};
+
+/**
+ * O domínio do endereço, normalizado.
+ *
+ * O ponto final é REMOVIDO de propósito: `fulano@gmail.com.` é FQDN válido e
+ * entrega normalmente. Sem essa linha ele viraria um falso positivo (e o card
+ * mediu que existem endereços assim na base).
+ *
+ * Devolve `null` quando não dá pra ler um domínio — aí não há o que consultar.
+ */
+export function dominioDoEmail(email: string): string | null {
+  const limpo = (email ?? "").trim().toLowerCase();
+  const at = limpo.lastIndexOf("@");
+  if (at < 0) return null;
+  const dominio = limpo.slice(at + 1).replace(/\.+$/, "").trim();
+  // Espaço no meio não é domínio; `/` e `,` também não. Consultar isso no DNS
+  // só gera ruído — e não há caso legítimo que caia aqui.
+  return dominio && !/[\s,/@]/.test(dominio) ? dominio : null;
+}
+
+/**
+ * NULL MX da RFC 7505: um ÚNICO registro cujo `exchange` é a raiz (`.`, que as
+ * bibliotecas entregam como string vazia).
+ *
+ * A exigência de ser único é da própria RFC e não é preciosismo: um domínio que
+ * publica `.` junto de um MX de verdade está mal configurado, não fechado — e
+ * nesse caso o lado seguro é considerar que ele recebe.
+ */
+export function ehNullMx(mx: RegistroMx[]): boolean {
+  if (mx.length !== 1) return false;
+  const alvo = (mx[0]?.exchange ?? "").trim().replace(/\.+$/, "");
+  return alvo === "";
+}
+
+/** O veredicto, a partir do que o DNS respondeu. `null` = não deu pra consultar. */
+export function classificarMx(resposta: RespostaDns | null): VeredictoMx {
+  if (!resposta) return "indeterminado";
+  if (ehNullMx(resposta.mx)) return "null_mx";
+  if (resposta.mx.length > 0) return "ok";
+  // Sem MX. O MX implícito (A/AAAA) decide — e NULL MX acima tem precedência
+  // sobre ele de propósito: a RFC 7505 existe justamente pra desligar essa
+  // regra, e `gmail.com.br` TEM A (142.251.214.229) mesmo declarando `0 .`.
+  return resposta.temEndereco ? "sem_mx_com_a" : "sem_mx";
+}
+
+/** O e-mail com certeza não chega? Só estes dois casos. */
+export function entregaImpossivel(v: VeredictoMx): boolean {
+  return v === "null_mx" || v === "sem_mx";
+}
+
+/** O veredicto merece olho humano? (`sem_mx_com_a` entra como observação.) */
+export function mereceRegistro(v: VeredictoMx): boolean {
+  return entregaImpossivel(v) || v === "sem_mx_com_a";
+}
+
+/** O DNS em uma frase, pra caber em `payment_events.error` e no registro. */
+export function descreverDns(veredicto: VeredictoMx, resposta: RespostaDns | null): string {
+  if (!resposta) return "consulta de DNS não respondeu";
+  if (veredicto === "null_mx") return "NULL MX (RFC 7505): o domínio declara que não aceita e-mail";
+  if (veredicto === "sem_mx") return "sem MX e sem A/AAAA: não há servidor de e-mail";
+  if (veredicto === "sem_mx_com_a") return "sem MX, mas com A/AAAA: pode entregar por MX implícito (RFC 5321)";
+  const nomes = resposta.mx.map((m) => m.exchange).filter(Boolean).join(", ");
+  return nomes ? `MX: ${nomes}` : "MX presente";
+}
+
+/** Prefixo do erro. Fixo pra que a varredura do #324 consiga procurar por ele. */
+export const MOTIVO_ENTREGA_IMPOSSIVEL = "domínio do comprador não aceita e-mail";
 
 export type MotivoBoasVindas =
   | "enviado"
@@ -146,6 +296,12 @@ export type ResultadoBoasVindas = {
    * timeout, recusa do servidor ou caixa inexistente.
    */
   envioErro: string | null;
+  /**
+   * O domínio do comprador aceita e-mail? (13/09) `indeterminado` quando não
+   * deu pra consultar, quando não há canal de DNS plugado, ou quando nem
+   * chegamos a tentar o envio — e nesses casos NADA no fluxo muda.
+   */
+  entregabilidade: VeredictoMx;
 };
 
 /** Registro por transação já avisada (mora em `agent_state`, sem migration). */
@@ -195,6 +351,14 @@ export type RegistroBoasVindas = {
    * Dois campos com o mesmo significado viram dois lugares pra mentir.
    */
   envioErro?: string;
+  /**
+   * O que o DNS disse do domínio na ÚLTIMA tentativa (13/09). Mora aqui pelo
+   * mesmo motivo do `envioErro`: quem descobre esta classe de falha é quem lê o
+   * estado procurando `canais: []`, e sem isto ele vê "não entregou" sem ver
+   * que o endereço é inalcançável por construção. Ausente nos registros
+   * anteriores a 13/09 e nos veredictos `ok`/`indeterminado`.
+   */
+  entregabilidade?: VeredictoMx;
 };
 
 /** Teto de tentativas por transação (#324). Abaixo do reenvio da Hotmart (5×). */
@@ -281,6 +445,21 @@ export type CanaisBoasVindas = {
    * falhar aqui não pode derrubar o e-mail de boas-vindas.
    */
   temAssinaturaFastcloner?: (buyerEmail: string) => Promise<boolean>;
+  /**
+   * Consulta o DNS do domínio do destinatário (13/09).
+   *
+   * OPCIONAL de propósito, e o default é o lado seguro: canal ausente =
+   * `indeterminado` = fluxo idêntico ao de antes desta mudança. A implementação
+   * é OBRIGADA a ter teto de tempo curto (envio de e-mail não pode ficar
+   * pendurado esperando resolver nome) e pode lançar à vontade: o orquestrador
+   * lê o throw como "não sei" e segue com o envio.
+   */
+  resolverDns?: (dominio: string) => Promise<RespostaDns>;
+  /**
+   * Guarda o caso de e-mail inalcançável pra um humano tratar (13/09).
+   * Best-effort: falhar aqui não pode custar nada do resto do fluxo.
+   */
+  registrarEntregabilidade?: (caso: CasoEntregabilidade) => Promise<void>;
   /**
    * registra a TENTATIVA em `avisos_enviados` (best-effort: a migration 104
    * pode não estar aplicada, e nesse caso isto só loga).
@@ -569,6 +748,7 @@ export async function mandarBoasVindasSgp(
       conta: null,
       contaErro: null,
       envioErro: null,
+      entregabilidade: "indeterminado",
     };
   }
 
@@ -586,6 +766,7 @@ export async function mandarBoasVindasSgp(
       conta: null,
       contaErro: null,
       envioErro: null,
+      entregabilidade: "indeterminado",
     };
   }
   if (tentativasDe(registro) >= TETO_TENTATIVAS_BOAS_VINDAS) {
@@ -600,6 +781,10 @@ export async function mandarBoasVindasSgp(
       conta: null,
       contaErro: null,
       envioErro: registro?.envioErro ?? null,
+      // O veredicto da ÚLTIMA tentativa sobe junto: se o teto estourou porque o
+      // domínio não aceita e-mail, quem for reparar à mão precisa saber que
+      // reenviar não adianta e que o caminho é o telefone.
+      entregabilidade: registro?.entregabilidade ?? "indeterminado",
     };
   }
 
@@ -646,6 +831,43 @@ export async function mandarBoasVindasSgp(
     erro = e instanceof Error ? e.message : String(e);
   }
 
+  // ENTREGABILIDADE (13/09) — DEPOIS do envio, de propósito: assim ela não
+  // consegue atrasar nem impedir o e-mail nem em teoria. O que ela muda é só o
+  // que a casa ANOTA sobre o envio, e é isso que o card pediu: "consultar o MX
+  // ANTES de considerar o envio CONCLUÍDO", não antes de enviar.
+  //
+  // Envelopada em try/catch inteira (além do catch de dentro) porque uma falha
+  // aqui nunca pode transformar um e-mail que saiu numa exceção do webhook.
+  const dominio = dominioDoEmail(d.buyerEmail);
+  let respostaDns: RespostaDns | null = null;
+  let entregabilidade: VeredictoMx = "indeterminado";
+  let detalheDns = "entregabilidade não consultada";
+  if (dominio && canais.resolverDns) {
+    try {
+      respostaDns = await canais.resolverDns(dominio);
+      entregabilidade = classificarMx(respostaDns);
+      detalheDns = descreverDns(entregabilidade, respostaDns);
+    } catch (e) {
+      // "NÃO SEI" — e não sei NUNCA vira "não entrega". DNS fora do ar ou lento
+      // não pode inventar uma falha de entrega em cima de um envio que deu
+      // certo: esse é o falso positivo que faria a casa parar de confiar neste
+      // sinal justamente quando ele apontar o caso real.
+      entregabilidade = "indeterminado";
+      detalheDns = `consulta de DNS falhou: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+
+  // O SMTP aceitou, mas o domínio declara que não recebe e-mail: o aluno NÃO
+  // recebeu. Marcar isso como sucesso é exatamente o que deixou a Sheila em
+  // silêncio — então o envio deixa de contar como entregue e cai na máquina de
+  // falha que JÁ EXISTE (o teto de tentativas do #324), sem tabela nova e sem
+  // caminho novo. Depois de 3 eventos isso vira `esgotou_tentativas`, que a
+  // varredura do #324 já lê e que é o estado que grita por mão humana.
+  if (ok && entregaImpossivel(entregabilidade)) {
+    ok = false;
+    erro = `${MOTIVO_ENTREGA_IMPOSSIVEL}: ${dominio} — ${detalheDns}`;
+  }
+
   // Best-effort e DEPOIS do envio: registrar nunca pode derrubar o aviso.
   try {
     await canais.registrar({ email: d.buyerEmail, assunto, ok, erro, referencia });
@@ -669,7 +891,36 @@ export async function mandarBoasVindasSgp(
     // `canais: []` (foi assim que o #324 foi medido); ter que cruzar com outra
     // tabela pra saber o motivo é o que fez a investigação custar horas.
     ...(erro ? { envioErro: erro.slice(0, 300) } : {}),
+    ...(mereceRegistro(entregabilidade) ? { entregabilidade } : {}),
   };
+
+  // O CASO VAI PRO HUMANO, com o TELEFONE — que é o único canal que sobra
+  // quando a caixa do comprador não existe. Best-effort e sem try/catch
+  // aninhado no resto: falhar aqui não pode custar o registro do estado acima,
+  // que é o que segura a idempotência.
+  if (mereceRegistro(entregabilidade) && canais.registrarEntregabilidade) {
+    try {
+      await canais.registrarEntregabilidade({
+        chave,
+        at: agoraIso,
+        buyerEmail: d.buyerEmail,
+        buyerName: d.buyerName,
+        // NÃO tentamos descobrir o telefone em lugar nenhum: ou ele veio no
+        // payload da Hotmart, ou é null e o caso sobe sem forma de contato —
+        // que é uma informação verdadeira e útil, não um buraco pra preencher
+        // com chute.
+        buyerPhone: d.buyerPhone ?? null,
+        dominio: dominio ?? "",
+        veredicto: entregabilidade,
+        detalhe: detalheDns,
+        transacao: d.transaction,
+      });
+    } catch {
+      // Mesmo desenho do `registrar`: a anotação é importante, mas não mais
+      // importante que o fluxo que ela anota.
+    }
+  }
+
   try {
     await estadoIO.gravar(estado);
   } catch {
@@ -685,5 +936,6 @@ export async function mandarBoasVindasSgp(
     conta: conta.situacao,
     contaErro: conta.erro,
     envioErro: erro,
+    entregabilidade,
   };
 }
