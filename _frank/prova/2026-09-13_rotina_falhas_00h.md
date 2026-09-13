@@ -100,6 +100,25 @@ há 62 min **sem** chamar de travado por não ter baseline, está agora
 abrir cartão. Os outros 3 em voo (`e65c3f71`, `4ebe5440`, `75e0e706`) são de
 23:52Z, 23:55Z e 00:14Z. **Nada a abrir.**
 
+## 4-B. O passo fixo de fim de ronda achou um branch com o nome do cartão
+
+`origin/main..HEAD` saiu **vazio** e `feat/reconcile-nao-adota-produto-de-curso`
+está com **0 commits fora da main** — o fix não ficou preso em lugar nenhum.
+
+Mas a varredura de branches achou **`vigia/2d0509b4`**, com **1 commit**
+(`290f1b8`, 09/09) e o mesmo título do fix. É uma tentativa **ANTERIOR** do
+Vigia pro mesmo defeito, superada pelo PR #242 (11/09). Mesma família dos STALE
+já fichados no `README.md` das ordens (`feat/onedrive-401`,
+`feat/fix-image-upload-retry`).
+
+**Risco: baixo, e medido** — ele **não existe no `origin`** (`git ls-remote`
+voltou vazio), então ninguém pode abrir PR dele. E o que ele trazia a mais **já
+está na main**: `reconciliacao-pure.ts` existe, e o detector
+(`sgp/reconciliacao.ts:50,63`) chama `produtosDeCurso()` + `entitlementDaPlataforma()`
+— a **mesma** lista vigente do reconcile, que é exatamente a divergência que o
+comentário do `acesso-regra.ts` manda evitar. **Não apaguei** (branch local de
+outro agente, e inofensivo). Fica registrado pra não ser redescoberto.
+
 ## 5. O que eu NÃO fiz
 
 - Não gastei GPU, não toquei em crédito, acesso, voz, assinatura nem migration.
