@@ -2268,6 +2268,12 @@
       "indeciso": "No pudimos analizarla ahora. Intenta subirla de nuevo.",
       "remover": "Eliminar",
       "progresso": "{n} foto(s) aprobada(s) — mínimo {min}",
+      "bloqueio": {
+        "ocupado": "Espera a que termine la subida de las fotos para continuar.",
+        "fotos": "Falta(n) {n} foto(s) aprobada(s) para continuar — el mínimo es {min}.",
+        "ciencia": "Falta(n) {n} elemento(s) por marcar en la lista de confirmación, al inicio de esta pantalla."
+      },
+      "cienciaNaoGuardada": "No pudimos guardar tus marcas ahora. No actualices la página antes de continuar o podrían perderse.",
       "erroUpload": "No pudimos subir la foto.",
       "erroAnalise": "No pudimos analizar la foto.",
       "erroConcluir": "No se pudo continuar.",

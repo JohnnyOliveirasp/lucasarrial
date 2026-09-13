@@ -26,7 +26,9 @@ export default async function SgpFotoPage({ params }: { params: Promise<{ locale
 
   return (
     <SgpShell passo="foto" titulo={t("titulo")} descricao={t("descricao")}>
-      <StepFotoForm iniciais={iniciais} />
+      {/* ciencia_foto volta pra tela: sem isso, atualizar a página apagava os
+          5 checkboxes em silêncio (caso amanda.rosaleal@gmail.com, 13/09). */}
+      <StepFotoForm iniciais={iniciais} cienciaInicial={pedido!.ciencia_foto ?? []} />
     </SgpShell>
   );
 }

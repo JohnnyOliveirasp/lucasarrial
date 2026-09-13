@@ -7,6 +7,7 @@ import { IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
 import { putToR2 } from "@/lib/images/upload";
 import { paraFormatoAceito } from "@/lib/images/qualquer-formato";
 import { criarFila } from "@/lib/sgp/fila";
+import { cienciaValida, motivosBloqueioFoto } from "@/lib/sgp/passo-foto-pure";
 import { CIENCIA_FOTO, SGP_FOTOS_MAX, SGP_FOTOS_MIN, type SgpFoto } from "@/lib/sgp/types";
 import { SgpFotoCard, type EstadoFoto } from "./sgp-foto-card";
 import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
@@ -19,8 +20,24 @@ type Inicial = { foto: SgpFoto; url: string };
  *  várias de uma vez · cada foto vira uma miniatura pequena, só as enviadas ·
  *  a IA analisa cada uma ao subir (✓ / ✕ com motivo) · Continuar com ≥ 4
  *  aprovadas (guia: 4 a 5) e os 5 itens marcados.
+ *
+ * 13/09 — dois consertos vindos do caso amanda.rosaleal@gmail.com, que perdeu
+ * o dia inteiro nesta tela:
+ *  1. o botão desligado agora DIZ o que falta (motivosBloqueioFoto). Antes o
+ *     único texto era o contador de fotos, que já estava verde;
+ *  2. os checkboxes são guardados a cada clique e reidratados na carga
+ *     (`cienciaInicial`), porque antes atualizar a página apagava tudo em
+ *     silêncio — e "atualize a página" é o conselho padrão do suporte.
+ * Nenhuma das três condições afrouxou.
  */
-export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
+export function StepFotoForm({
+  iniciais,
+  cienciaInicial = [],
+}: {
+  iniciais: Inicial[];
+  /** Rascunho dos checkboxes que já veio do banco (sgp_pedidos.ciencia_foto). */
+  cienciaInicial?: string[];
+}) {
   const t = useTranslations("sgp.foto");
   const router = useRouter();
   const input = useRef<HTMLInputElement | null>(null);
@@ -28,6 +45,9 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
   // Só a CONFIRMAÇÃO anda uma de cada vez; o upload pro R2 segue paralelo.
   // Defesa em profundidade do #238 — a trava de verdade é no banco.
   const fila = useRef(criarFila());
+  // Fila própria pro rascunho dos checkboxes: cliques rápidos não podem
+  // chegar fora de ordem e gravar um estado velho por último.
+  const filaCiencia = useRef(criarFila());
 
   const [fotos, setFotos] = useState<EstadoFoto[]>(() =>
     iniciais.map(({ foto, url }) =>
@@ -36,13 +56,16 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
         : { id: foto.key, preview: url, fase: "reprovada", motivos: foto.motivos ?? [] },
     ),
   );
-  const [ciencia, setCiencia] = useState<Set<string>>(new Set());
+  const [ciencia, setCiencia] = useState<Set<string>>(() => new Set(cienciaValida(cienciaInicial)));
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  /** O rascunho dos checkboxes não está subindo — recarregar pode apagar. */
+  const [cienciaEmRisco, setCienciaEmRisco] = useState(false);
 
   const aprovadas = fotos.filter((f) => f.fase === "aprovada").length;
   const ocupado = fotos.some((f) => f.fase === "enviando" || f.fase === "analisando");
-  const podeContinuar = aprovadas >= SGP_FOTOS_MIN && !ocupado && ciencia.size === CIENCIA_FOTO.length;
+  const motivos = motivosBloqueioFoto({ aprovadas, ocupado, ciencia: ciencia.size });
+  const podeContinuar = motivos.length === 0;
 
   function patch(id: string, novo: EstadoFoto) {
     setFotos((prev) => prev.map((f) => (f.id === id ? novo : f)));
@@ -121,12 +144,31 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
   }
 
   function alternar(item: string) {
-    setCiencia((prev) => {
-      const n = new Set(prev);
-      if (n.has(item)) n.delete(item);
-      else n.add(item);
-      return n;
-    });
+    const n = new Set(ciencia);
+    if (n.has(item)) n.delete(item);
+    else n.add(item);
+    setCiencia(n);
+    void guardarCiencia(n);
+  }
+
+  /**
+   * Guarda o rascunho no pedido. Otimista: a marcação aparece na hora e a
+   * gravação vai atrás. Se a gravação falhar, o aluno é AVISADO — perder as
+   * marcações caladas é exatamente o defeito que este conserto ataca.
+   */
+  async function guardarCiencia(marcados: Set<string>) {
+    try {
+      const r = await filaCiencia.current(() =>
+        fetch("/api/v1/sgp/foto/ciencia", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ciencia: [...marcados] }),
+        }),
+      );
+      setCienciaEmRisco(!r.ok);
+    } catch {
+      setCienciaEmRisco(true);
+    }
   }
 
   async function continuar() {
@@ -201,6 +243,27 @@ export function StepFotoForm({ iniciais }: { iniciais: Inicial[] }) {
       </div>
 
       {erro ? <p role="alert" className={SGP_ERROR_CLASS}>{erro}</p> : null}
+
+      {cienciaEmRisco ? (
+        <p role="status" className={SGP_ERROR_CLASS}>
+          {t("cienciaNaoGuardada")}
+        </p>
+      ) : null}
+
+      {/* Por que o botão está cinza. Sem isto o aluno só vê um botão morto. */}
+      {motivos.length ? (
+        <p role="status" aria-live="polite" className={SGP_HINT_CLASS}>
+          {motivos
+            .map((m) =>
+              m.tipo === "ocupado"
+                ? t("bloqueio.ocupado")
+                : m.tipo === "fotos"
+                  ? t("bloqueio.fotos", { n: m.faltam, min: SGP_FOTOS_MIN })
+                  : t("bloqueio.ciencia", { n: m.faltam }),
+            )
+            .join(" ")}
+        </p>
+      ) : null}
 
       <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={() => router.push("/sgp")} className={SGP_GHOST_CLASS}>

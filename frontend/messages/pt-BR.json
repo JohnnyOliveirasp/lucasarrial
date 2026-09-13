@@ -2268,6 +2268,12 @@
       "indeciso": "Não conseguimos analisar agora. Tente enviar de novo.",
       "remover": "Excluir",
       "progresso": "{n} foto(s) aprovada(s) — mínimo {min}",
+      "bloqueio": {
+        "ocupado": "Aguarde o envio das fotos terminar para continuar.",
+        "fotos": "Falta(m) {n} foto(s) aprovada(s) para continuar — o mínimo é {min}.",
+        "ciencia": "Falta(m) {n} item(ns) por marcar na lista de confirmação, no começo desta tela."
+      },
+      "cienciaNaoGuardada": "Não conseguimos guardar suas marcações agora. Não atualize a página antes de continuar, senão elas podem sumir.",
       "erroUpload": "Não conseguimos enviar a foto.",
       "erroAnalise": "Não conseguimos analisar a foto.",
       "erroConcluir": "Não foi possível continuar.",
