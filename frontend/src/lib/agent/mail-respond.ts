@@ -164,6 +164,7 @@ export async function encaminharParaRevisao(args: {
       subject: `[VER VÍDEO] ${args.fromEmail} — ${args.subject}`.slice(0, 180),
       text: texto,
       replyTo: args.fromEmail,
+      origem: "fast-revisao-interna",
     });
     console.log(`[agent/mail] encaminhado pra revisão: ${args.fromEmail} (${args.motivo})`);
   } catch (e) {
@@ -204,6 +205,7 @@ async function responderAnexoGrande(
     text: texto,
     inReplyTo: messageId,
     bcc,
+    origem: "fast-anexo-grande",
   });
   // O time precisa saber que existe material esperando — mesmo sem o anexo,
   // o assunto e o remetente bastam pra ir atrás na caixa do suporte@.
@@ -325,6 +327,7 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     text: visible,
     inReplyTo: messageId,
     bcc,
+    origem: "fast-resposta",
   });
   // TODA escalação abre incidente — técnica ou não (19/08).
   //

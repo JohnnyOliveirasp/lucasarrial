@@ -208,6 +208,7 @@ export async function verificarOnboardingPronto(admin: Admin, userId: string): P
             subject: assunto,
             text: semImagem ? EMAIL_TEXTO_SEM_IMAGEM : EMAIL_TEXTO,
             bcc: BCC_ADMINS,
+            origem: "onboarding-aviso",
           });
         } catch (e) {
           // Registrar a FALHA antes de propagar: é justamente ela que nunca

@@ -268,13 +268,13 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     try {
       if (acao === "convite") {
         const { subject, text } = inviteText(info.name, email, false);
-        await sendSupportMail({ to: email, subject, text, bcc });
+        await sendSupportMail({ to: email, subject, text, bcc, origem: "orfao-convite" });
         state[email] = registroDoConvite(new Date().toISOString(), info.pagoEm, record);
         summary.invited += 1;
         sent.push(`convite → ${email}`);
       } else {
         const { subject, text } = inviteText(info.name, email, true);
-        await sendSupportMail({ to: email, subject, text, bcc });
+        await sendSupportMail({ to: email, subject, text, bcc, origem: "orfao-convite" });
         record.reminder = new Date().toISOString();
         summary.reminded += 1;
         sent.push(`lembrete → ${email}`);

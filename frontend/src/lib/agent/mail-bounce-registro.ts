@@ -27,6 +27,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { limparFechamento } from "@/lib/incidents/closure";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { parseBounce, planoDoBounce, type AcaoDeBounce, type Bounce } from "./mail-bounce";
+import { marcarNaoEntregue } from "./mail-envio-registro";
 
 /**
  * Status que significam "esse aluno já está atendido". São exatamente os que
@@ -70,6 +71,15 @@ export type ResultadoBounce = {
   chamados: number[];
   /** Só a cópia interna falhou — sinal nosso, sem vítima do lado do aluno. */
   soInterno: boolean;
+  /** Envios que o bounce conseguiu carimbar como não-entregues (casou o Message-ID). */
+  enviosMarcados: number;
+  /**
+   * Bounces cujo envio NÃO estava registrado — mensagem anterior à tabela, ou
+   * saída por um caminho que não passa pelo `sendSupportMail`. Contado em vez
+   * de ignorado: se este número não cair com o tempo, o laço tem um furo e é
+   * melhor saber disso por um número do que por um aluno reclamando.
+   */
+  enviosNaoRegistrados: number;
 };
 
 /**
@@ -145,7 +155,15 @@ async function abrirChamadoDaAcao(a: AcaoDeBounce, emailsAfetados: string[]): Pr
  */
 export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> {
   const plano = planoDoBounce(bounce);
-  const res: ResultadoBounce = { tipo: plano.tipo, alunos: [], reabertos: [], chamados: [], soInterno: false };
+  const res: ResultadoBounce = {
+    tipo: plano.tipo,
+    alunos: [],
+    reabertos: [],
+    chamados: [],
+    soInterno: false,
+    enviosMarcados: 0,
+    enviosNaoRegistrados: 0,
+  };
 
   if (plano.tipo === "atraso") {
     // O servidor ainda vai tentar e o aluno provavelmente recebeu. Reabrir
@@ -167,6 +185,18 @@ export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> 
   for (const a of plano.alunos) {
     res.alunos.push(a.email);
     try {
+      // Carimba o ENVIO como não-entregue, casando pelo Message-ID que o
+      // relatório devolve. É isto que torna respondível a pergunta que ninguém
+      // conseguia responder — "quais alunos a gente acha que avisou e na
+      // verdade não avisou" —, porque liga o que voltou ao que saiu.
+      const marcado = await marcarNaoEntregue({
+        messageId: bounce.messageIdOriginal,
+        classe: a.classe,
+        diagnostico: a.diagnostico,
+      });
+      if (marcado.achou) res.enviosMarcados += 1;
+      else if (marcado.motivo === "envio-nao-registrado") res.enviosNaoRegistrados += 1;
+
       res.reabertos.push(...(await reabrirPorBounce(a.email, a.motivoReabertura)));
       const numero = await abrirChamadoDaAcao(a, [a.email]);
       if (numero != null) res.chamados.push(numero);
@@ -179,7 +209,9 @@ export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> 
     console.log(
       `[agent/bounce] entrega falhou para ${res.alunos.join(", ")}` +
         `${res.reabertos.length ? ` · reabertos ${res.reabertos.map((n) => `#${n}`).join(", ")}` : ""}` +
-        `${res.chamados.length ? ` · chamados ${res.chamados.map((n) => `#${n}`).join(", ")}` : ""}`,
+        `${res.chamados.length ? ` · chamados ${res.chamados.map((n) => `#${n}`).join(", ")}` : ""}` +
+        `${res.enviosMarcados ? ` · ${res.enviosMarcados} envio(s) carimbado(s) como não-entregue` : ""}` +
+        `${res.enviosNaoRegistrados ? ` · ${res.enviosNaoRegistrados} bounce(s) sem envio registrado` : ""}`,
     );
   }
   return res;

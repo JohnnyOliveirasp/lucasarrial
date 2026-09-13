@@ -7,6 +7,8 @@
 import net from "node:net";
 import tls from "node:tls";
 import { appendToSentFolder } from "./mail-imap";
+import { gerarMessageId, type OrigemEnvio } from "./mail-envio";
+import { registrarEnvio } from "./mail-envio-registro";
 
 const HOST = () => process.env.SUPPORT_MAIL_HOST || "mail.privateemail.com";
 const USER = () => process.env.SUPPORT_MAIL_USER || "suporte@fastcloner.com";
@@ -120,6 +122,14 @@ export type SupportMailArgs = {
    * sem ter que copiar e colar endereço.
    */
   replyTo?: string | null;
+  /**
+   * Qual fluxo da casa está escrevendo. Vai pro registro do envio e é o que
+   * responde "que tipo de mensagem some mais" — sem isso a tabela sabe que o
+   * aluno não recebeu, mas não sabe o que ele deixou de receber.
+   */
+  origem?: OrigemEnvio;
+  /** Conta do aluno, quando o chamador sabe qual é. */
+  userId?: string | null;
 };
 
 /** Envia texto puro como suporte@fastcloner.com. Lança em falha (caller trata). */
@@ -128,12 +138,16 @@ export async function sendSupportMail(args: SupportMailArgs): Promise<void> {
 
   // A mensagem é montada ANTES do envio pra mesma cópia byte a byte ir depois
   // pra pasta de enviados (auditoria: "esse aluno já foi avisado?").
+  // O Message-ID sai de `gerarMessageId` (mesmo formato de sempre) e fica numa
+  // variável porque ele é a CHAVE que casa este envio com o bounce, se voltar.
+  // Antes era uma expressão solta aqui dentro: ia pro cabeçalho e se perdia.
+  const messageId = gerarMessageId();
   const headers = [
     `From: Fast - FastCloner <${USER()}>`,
     `To: ${args.to}`,
     `Subject: ${encodeHeader(args.subject)}`,
     `Date: ${new Date().toUTCString()}`,
-    `Message-ID: <fast-${Date.now()}-${Math.random().toString(36).slice(2)}@fastcloner.com>`,
+    `Message-ID: ${messageId}`,
     ...(args.inReplyTo ? [`In-Reply-To: ${args.inReplyTo}`, `References: ${args.inReplyTo}`] : []),
     ...(args.replyTo ? [`Reply-To: ${args.replyTo}`] : []),
     "MIME-Version: 1.0",
@@ -161,6 +175,18 @@ export async function sendSupportMail(args: SupportMailArgs): Promise<void> {
   } finally {
     session.close();
   }
+
+  // O SMTP aceitou. Registrar o envio ANTES da cópia em Enviados, de propósito:
+  // o APPEND falha 1 vez em 4 neste servidor (medido 31/08) e é justamente a
+  // linha do banco que precisa existir pro bounce ter onde cair. Best-effort
+  // dos dois lados — `registrarEnvio` nunca lança.
+  await registrarEnvio({
+    messageId,
+    toEmail: args.to,
+    assunto: args.subject,
+    origem: args.origem ?? "desconhecida",
+    userId: args.userId ?? null,
+  });
 
   // O e-mail JÁ FOI ENTREGUE. Gravar a cópia em enviados é best-effort: a
   // caixa Sent estava VAZIA (achado 19/08) e sem cópia ninguém audita o que a
