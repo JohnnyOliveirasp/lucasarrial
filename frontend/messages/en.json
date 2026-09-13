@@ -837,7 +837,7 @@
       "generateWithCost": "Generate Video Clone · {cost} cr",
       "generatingLabel": "Generating video",
       "generatingTitle": "Generating your Video Clone",
-      "generatingHint": "It takes a few minutes — feel free to do something else meanwhile. Longer videos can take up to 15 minutes; when it's done it shows up here and in your history.",
+      "generatingHint": "It takes a few minutes — feel free to do something else meanwhile. When the queue is busy it can take over half an hour; when it's done it shows up here and in your history.",
       "download": "Download video",
       "again": "Generate another",
       "retry": "Try again",
@@ -853,7 +853,16 @@
         "generic": "Error",
         "missingImage": "Pick a photo to continue.",
         "missingAudio": "Pick or upload an audio to continue. If you haven't created a voice yet, you can upload an MP3 from your computer.",
-        "missingBoth": "Pick a photo and an audio to continue. If you haven't created a voice yet, you can upload an MP3 from your computer."
+        "missingBoth": "Pick a photo and an audio to continue. If you haven't created a voice yet, you can upload an MP3 from your computer.",
+        "cancelFailed": "We couldn't cancel right now. Try again in a moment."
+      },
+      "cancel": "Cancel generation",
+      "cancelConfirm": "Cancel this generation? The credits charged go back to your account.",
+      "canceledHint": "You canceled this generation. Your credits are back in your account.",
+      "espera": {
+        "normal": "Running for {min} min. Most are done in about 15 minutes — feel free to do something else; it shows up here and in your History when it's ready.",
+        "fila_cheia": "Running for {min} min. It's QUEUED, not stuck: when the queue fills up, going past 30 or 40 minutes is normal and the video does come out. You can wait, or cancel and get your credits back.",
+        "acima_do_medido": "Running for {min} min — longer than we usually see. It may still finish, but if you'd rather not wait, cancel and your credits go back to your account."
       }
     },
     "pickers": {
@@ -891,7 +900,8 @@
         "pending": "Queued",
         "generating": "Generating…",
         "ready": "Ready",
-        "failed": "Failed"
+        "failed": "Failed",
+        "canceled": "Canceled"
       },
       "nameAria": "Video name",
       "save": "Save",

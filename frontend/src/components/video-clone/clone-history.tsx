@@ -27,7 +27,7 @@ type Clone = {
   duration_seconds: number;
   tier: string;
   credits_cost: number;
-  status: "pending" | "generating" | "ready" | "failed";
+  status: "pending" | "generating" | "ready" | "failed" | "canceled";
   error_message: string | null;
   created_at: string;
   video_url: string | null;
@@ -256,8 +256,17 @@ export function CloneHistory({ reloadKey = 0 }: { reloadKey?: number }) {
                   </span>
                 )}
               </div>
-              {c.status === "failed" && c.error_message && (
-                <span className="font-mono text-[10px] text-[var(--status-error)]">{c.error_message}</span>
+              {/* `canceled` mostra a mesma explicação, mas em cor neutra: foi
+                  escolha do aluno, não defeito nosso — vermelho aqui faria
+                  parecer que o sistema quebrou. */}
+              {(c.status === "failed" || c.status === "canceled") && c.error_message && (
+                <span
+                  className={`font-mono text-[10px] ${
+                    c.status === "failed" ? "text-[var(--status-error)]" : "text-[var(--mute)]"
+                  }`}
+                >
+                  {c.error_message}
+                </span>
               )}
             </div>
 

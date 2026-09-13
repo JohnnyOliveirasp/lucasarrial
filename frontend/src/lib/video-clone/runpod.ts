@@ -50,6 +50,30 @@ export async function runInfiniteTalk(
   return { jobId: json.id };
 }
 
+/**
+ * Cancela o job no RunPod (o aluno desistiu da espera). Best-effort POR DESIGN:
+ * devolve `false` em vez de lançar.
+ *
+ * Por que NÃO pode lançar: quem chama já reivindicou a row como `canceled` e
+ * vai estornar em seguida. Se o cancelamento no RunPod falhar (rede, job que já
+ * terminou, 404 por expiração), a pior consequência é a GPU seguir moendo um
+ * trabalho que ninguém vai buscar — caro, mas inofensivo pro aluno. Deixar a
+ * exceção subir abortaria a requisição DEPOIS da row já estar cancelada,
+ * deixando-a cancelada e SEM estorno. Isso sim seria grave.
+ */
+export async function cancelInfiniteTalk(jobId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/${endpointId()}/cancel/${jobId}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey()}` },
+      cache: "no-store",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function getInfiniteTalkStatus(jobId: string): Promise<{
   status: CloneJobStatus;
   error: string | null;

@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Check, Clock, Download, Film, Info, Loader2, RefreshCw } from "lucide-react";
+import { Check, Clock, Download, Film, Info, Loader2, RefreshCw, X } from "lucide-react";
 import {
   CLONE_MAX_AUDIO_SECONDS,
   CLONE_TIERS,
@@ -23,6 +23,7 @@ import { CLONE_ANIM_CSS } from "./clone-anim";
 import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
 import { putToR2, UploadError, uploadErrorText } from "@/lib/images/upload";
 import { audioSemSinal } from "@/lib/video-clone/audio-silencio";
+import { lerEspera, minutosDesde } from "@/lib/video-clone/cancelar-politica";
 
 const PILL =
   "inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--pill-bg)] px-6 font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[transform,filter] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:brightness-95 active:scale-[0.98] disabled:opacity-50";
@@ -95,7 +96,19 @@ export function CloneStudio({
   const [uploading, setUploading] = useState<"image" | "audio" | null>(null);
   const [tierId, setTierId] = useState<CloneTierId>("480p-v3");
   const [submitting, setSubmitting] = useState(false);
-  const [job, setJob] = useState<{ id: string; status: string; video_url: string | null; error: string | null } | null>(null);
+  const [job, setJob] = useState<{
+    id: string;
+    status: string;
+    video_url: string | null;
+    error: string | null;
+    /** Quando o aluno clicou em Gerar — base do relógio de espera. */
+    created_at: string | null;
+  } | null>(null);
+  // Relógio da espera. A tela precisa dizer HÁ QUANTO TEMPO está rodando: sem
+  // isso o aluno não distingue "na fila" de "travado" e, passados alguns
+  // minutos, conclui o pior (incidente 13/09).
+  const [agora, setAgora] = useState(() => Date.now());
+  const [cancelando, setCancelando] = useState(false);
   // Foto que vira o "palco" da geração (borrada enquanto gera; poster do vídeo pronto).
   const [poster, setPoster] = useState<string | null>(null);
   // Bump → ImagePicker refaz o fetch do acervo e volta pra aba "Minhas fotos"
@@ -231,7 +244,13 @@ export function CloneStudio({
       }
       if (!res.ok) throw new Error(j?.error?.message || t("errors.start"));
       setPoster(image.preview);
-      setJob({ id: j.clone.id, status: "pending", video_url: null, error: null });
+      setJob({
+        id: j.clone.id,
+        status: "pending",
+        video_url: null,
+        error: null,
+        created_at: j.clone.created_at ?? new Date().toISOString(),
+      });
       onChanged();
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : t("errors.generic"));
@@ -249,12 +268,23 @@ export function CloneStudio({
         const res = await fetch("/api/v1/video-clone", { cache: "no-store" });
         if (!res.ok) return;
         const j = await res.json();
-        const running = ((j.clones ?? []) as { id: string; status: string; image_url: string | null }[]).find(
-          (c) => c.status === "pending" || c.status === "generating",
-        );
+        const running = ((j.clones ?? []) as {
+          id: string;
+          status: string;
+          image_url: string | null;
+          created_at?: string | null;
+        }[]).find((c) => c.status === "pending" || c.status === "generating");
         if (running && !cancelled) {
           setPoster(running.image_url);
-          setJob((prev) => prev ?? { id: running.id, status: running.status, video_url: null, error: null });
+          setJob((prev) => prev ?? {
+            id: running.id,
+            status: running.status,
+            video_url: null,
+            error: null,
+            // Retomada é justamente quem MAIS precisa do relógio: a pessoa
+            // recarregou a página no meio da espera.
+            created_at: running.created_at ?? null,
+          });
         }
       } catch {
         /* segue no formulário */
@@ -265,6 +295,43 @@ export function CloneStudio({
     };
   }, []);
 
+  // Relógio da espera: 1 tick por minuto, só enquanto há job em voo. Não faz
+  // rede — só reavalia o "há X min" que já está na tela.
+  useEffect(() => {
+    if (!inflight) return;
+    setAgora(Date.now());
+    const t = setInterval(() => setAgora(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, [inflight]);
+
+  /**
+   * O aluno desiste da espera. Devolve o controle a ele: até aqui não havia
+   * NENHUMA ação possível — `POST /video-clone` recusa nova geração enquanto
+   * houver job em voo, e o DELETE pula linha em voo.
+   */
+  async function cancelarGeracao() {
+    if (!job || cancelando) return;
+    if (!window.confirm(t("cancelConfirm"))) return;
+    setCancelando(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/v1/video-clone/${job.id}/cancel`, { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // 409 = o job terminou no meio do caminho (inclusive COM SUCESSO). Não
+        // é erro do aluno: o próximo poll já mostra o desfecho real.
+        setError(j?.error?.message || t("errors.cancelFailed"));
+        return;
+      }
+      setJob((prev) => (prev ? { ...prev, status: "canceled", error: null } : prev));
+      onChanged();
+    } catch {
+      setError(t("errors.cancelFailed"));
+    } finally {
+      setCancelando(false);
+    }
+  }
+
   // Poll do job em andamento (o GET sincroniza com o RunPod).
   useEffect(() => {
     if (!job || !inflight) return;
@@ -274,8 +341,17 @@ export function CloneStudio({
         if (!res.ok) return;
         const j = await res.json();
         const c = j.clone ?? {};
-        setJob({ id: job.id, status: c.status, video_url: c.video_url ?? null, error: c.error_message ?? null });
-        if (c.status === "ready" || c.status === "failed") onChanged();
+        setJob({
+          id: job.id,
+          status: c.status,
+          video_url: c.video_url ?? null,
+          error: c.error_message ?? null,
+          created_at: c.created_at ?? job.created_at,
+        });
+        // `canceled` é terminal como os outros dois: sem ele aqui, o histórico
+        // não recarregaria depois do cancelamento e a linha ficaria "gerando"
+        // na lista até o próximo refresh manual.
+        if (c.status === "ready" || c.status === "failed" || c.status === "canceled") onChanged();
       } catch {
         /* próximo tick */
       }
@@ -351,9 +427,35 @@ export function CloneStudio({
                 {t("generatingTitle")}<span className="vc-dots" />
               </span>
               <span className="relative flex max-w-[300px] items-start justify-center gap-1.5 font-mono text-[11px] leading-relaxed tracking-wide text-white/80">
-                <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {t("generatingHint")}
+                <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />{" "}
+                {job.created_at
+                  ? t(`espera.${lerEspera(minutosDesde(job.created_at, agora))}`, {
+                      min: minutosDesde(job.created_at, agora),
+                    })
+                  : t("generatingHint")}
               </span>
+              {/* A SAÍDA. Sem este botão o aluno fica sem nenhuma ação possível
+                  durante a espera inteira — foi o que gerou o incidente 13/09. */}
+              <button
+                type="button"
+                onClick={cancelarGeracao}
+                disabled={cancelando}
+                className="relative inline-flex h-9 items-center gap-1.5 rounded-[var(--radius)] border border-white/25 px-4 font-mono text-[11px] tracking-wide text-white/80 transition-colors hover:border-white/50 hover:text-white disabled:opacity-40"
+              >
+                {cancelando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                {t("cancel")}
+              </button>
             </div>
+          </div>
+        )}
+        {job.status === "canceled" && (
+          <div className="flex flex-col gap-3">
+            <p className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 py-2 font-mono text-[11px] tracking-wide text-[var(--mute)]">
+              {job.error || t("canceledHint")}
+            </p>
+            <button type="button" onClick={reset} className={`${PILL} w-fit`}>
+              <RefreshCw className="h-4 w-4" /> {t("again")}
+            </button>
           </div>
         )}
         {job.status === "ready" && job.video_url && (

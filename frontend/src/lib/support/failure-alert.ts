@@ -67,7 +67,7 @@ export type TechFailureArgs = {
  * falha, não só a primeira. Quem não foi cobrado (equipe/admin) não tem
  * débito no extrato → nada a devolver.
  */
-async function refundOriginalDebit(args: {
+export async function refundOriginalDebit(args: {
   userId: string;
   refId: string;
   debitRefType: string;

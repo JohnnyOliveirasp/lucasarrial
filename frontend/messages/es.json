@@ -837,7 +837,7 @@
       "generateWithCost": "Generar Video Clone · {cost} cr",
       "generatingLabel": "Generando video",
       "generatingTitle": "Generando tu Video Clone",
-      "generatingHint": "Tarda unos minutos — puedes ir a hacer otra cosa mientras tanto. Los videos más largos toman hasta 15 minutos; cuando termine aparece aquí y en el historial.",
+      "generatingHint": "Tarda unos minutos — puedes hacer otra cosa mientras tanto. Cuando la cola está llena puede pasar de media hora; cuando termine aparece aquí y en el Historial.",
       "download": "Descargar video",
       "again": "Generar otro",
       "retry": "Intentar de nuevo",
@@ -853,7 +853,16 @@
         "generic": "Error",
         "missingImage": "Elige una foto para continuar.",
         "missingAudio": "Elige o sube un audio para continuar. Si todavía no creaste una voz, puedes subir un MP3 desde tu computadora.",
-        "missingBoth": "Elige una foto y un audio para continuar. Si todavía no creaste una voz, puedes subir un MP3 desde tu computadora."
+        "missingBoth": "Elige una foto y un audio para continuar. Si todavía no creaste una voz, puedes subir un MP3 desde tu computadora.",
+        "cancelFailed": "No pudimos cancelar ahora. Inténtalo de nuevo en un momento."
+      },
+      "cancel": "Cancelar generación",
+      "cancelConfirm": "¿Cancelar esta generación? Los créditos cobrados vuelven a tu cuenta.",
+      "canceledHint": "Cancelaste esta generación. Los créditos volvieron a tu cuenta.",
+      "espera": {
+        "normal": "Lleva {min} min. La mayoría está lista en unos 15 minutos — puedes hacer otra cosa; cuando termine aparece aquí y en el Historial.",
+        "fila_cheia": "Lleva {min} min. Está en COLA, no trabado: cuando la cola se llena, pasar de 30 o 40 minutos es normal y el video sale. Puedes esperar o cancelar y recuperar tus créditos.",
+        "acima_do_medido": "Lleva {min} min — más de lo que solemos ver. Todavía puede terminar, pero si prefieres no esperar, cancela y los créditos vuelven a tu cuenta."
       }
     },
     "pickers": {
@@ -891,7 +900,8 @@
         "pending": "En cola",
         "generating": "Generando…",
         "ready": "Listo",
-        "failed": "Falló"
+        "failed": "Falló",
+        "canceled": "Cancelado"
       },
       "nameAria": "Nombre del video",
       "save": "Guardar",

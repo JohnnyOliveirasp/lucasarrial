@@ -863,7 +863,13 @@ export type CourtesyGrantInsert = {
 export type CourtesyGrantUpdate = Partial<CourtesyGrantRow>;
 
 // ───────── video_clones (Vídeo Clone / InfiniteTalk, migration 29) ─────────
-export type VideoCloneStatus = "pending" | "generating" | "ready" | "failed";
+/**
+ * `canceled` = o ALUNO desistiu da espera (migration 109, scripts/). Distinto
+ * de `failed`, que é defeito NOSSO — a separação existe pra taxa de falha
+ * seguir valendo como sinal de saúde do produto. Espelho do CHECK
+ * `video_clones_status_check`: valor novo muda a constraint ANTES do código.
+ */
+export type VideoCloneStatus = "pending" | "generating" | "ready" | "failed" | "canceled";
 export type VideoCloneRow = {
   id: string;
   user_id: string;

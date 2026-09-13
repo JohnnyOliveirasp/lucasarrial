@@ -837,7 +837,7 @@
       "generateWithCost": "Gerar Vídeo Clone · {cost} cr",
       "generatingLabel": "Gerando vídeo",
       "generatingTitle": "Gerando seu Vídeo Clone",
-      "generatingHint": "Demora alguns minutos — pode ir fazer outra coisa enquanto isso. Vídeos maiores levam até 15 minutos; quando terminar aparece aqui e no Histórico.",
+      "generatingHint": "Demora alguns minutos — pode ir fazer outra coisa enquanto isso. Quando a fila está cheia pode passar de meia hora; quando terminar aparece aqui e no Histórico.",
       "download": "Baixar vídeo",
       "again": "Gerar outro",
       "retry": "Tentar de novo",
@@ -853,7 +853,16 @@
         "generic": "Erro",
         "missingImage": "Escolha uma foto para continuar.",
         "missingAudio": "Escolha ou envie um áudio para continuar. Se você ainda não tem voz criada, pode enviar um arquivo MP3 do seu computador.",
-        "missingBoth": "Escolha uma foto e um áudio para continuar. Se você ainda não tem voz criada, pode enviar um MP3 do seu computador."
+        "missingBoth": "Escolha uma foto e um áudio para continuar. Se você ainda não tem voz criada, pode enviar um MP3 do seu computador.",
+        "cancelFailed": "Não conseguimos cancelar agora. Tente de novo em instantes."
+      },
+      "cancel": "Cancelar geração",
+      "cancelConfirm": "Cancelar esta geração? Os créditos cobrados voltam pra sua conta.",
+      "canceledHint": "Você cancelou esta geração. Os créditos voltaram pra sua conta.",
+      "espera": {
+        "normal": "Rodando há {min} min. A maioria fica pronta em torno de 15 minutos — pode ir fazer outra coisa, que quando terminar aparece aqui e no Histórico.",
+        "fila_cheia": "Rodando há {min} min. Está na FILA, não travado: quando a fila enche, passar de 30 ou 40 minutos é normal e o vídeo sai. Você pode esperar ou cancelar e receber os créditos de volta.",
+        "acima_do_medido": "Rodando há {min} min — acima do que a gente costuma ver. Ainda pode terminar, mas se preferir não esperar, cancele e os créditos voltam pra sua conta."
       }
     },
     "pickers": {
@@ -891,7 +900,8 @@
         "pending": "Na fila",
         "generating": "Gerando…",
         "ready": "Pronto",
-        "failed": "Falhou"
+        "failed": "Falhou",
+        "canceled": "Cancelado"
       },
       "nameAria": "Nome do vídeo",
       "save": "Salvar",
