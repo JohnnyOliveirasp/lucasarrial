@@ -11,10 +11,9 @@ import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { CODIGO_VALIDADE_MIN, enviarCodigo, gerarCodigo, hashCodigo } from "@/lib/sgp/codigo";
+import { EMAIL_RE, problemaNoNome } from "@/lib/sgp/identidade-pure";
 import { atualizarSessao, pedidoDaSessao } from "@/lib/sgp/sessao";
 import { normalizarWhatsapp } from "@/lib/sgp/types";
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 async function jaTemConta(email: string): Promise<boolean> {
   const { data } = await getAdmin()
@@ -35,7 +34,10 @@ export async function POST(request: NextRequest) {
   const nome = typeof body.nome === "string" ? body.nome.trim() : "";
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const whatsapp = typeof body.whatsapp === "string" ? normalizarWhatsapp(body.whatsapp) : null;
-  if (nome.length < 3) return badRequest("Informe o nome completo.");
+  // Tamanho E "isto é um e-mail?" (#377): o aluno que digitava o próprio
+  // endereço aqui passava reto e o e-mail virava o nome dele no cadastro.
+  const problemaNome = problemaNoNome(nome);
+  if (problemaNome) return badRequest(problemaNome);
   if (!whatsapp) return badRequest("Informe um WhatsApp válido com DDD.");
   if (!EMAIL_RE.test(email)) return badRequest("Informe um e-mail válido.");
 
