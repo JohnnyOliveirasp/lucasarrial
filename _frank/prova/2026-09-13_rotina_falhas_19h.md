@@ -213,3 +213,80 @@ como pendência esquecida.**
 Também registro, sem tratar: há **30 PRs abertos**, o mais velho de 28/08. Não é
 dívida desta ronda e não cabia nela, mas é grande demais pra continuar invisível
 no relatório.
+
+---
+
+## 9. 🔴 O que apareceu depois que eu já tinha fechado o relatório
+
+Uma busca que eu tinha deixado rodando em segundo plano voltou apontando pro
+`#290`, de 07/09. Fui olhar. **O que estava lá passa na frente do meu item
+serial**, e eu preferi reabrir o relatório a deixar isso pra próxima ronda.
+
+### 9.1 O dinheiro se mexeu hoje, 4h antes desta ronda
+
+Oito pessoas compraram **SGP + assinatura FastCloner no mesmo checkout** (order
+bump, códigos `C1`/`C2`). A carta de 04/09 disse a elas que a assinatura **não**
+estava incluída e era "contratada à parte". **Era falso para as oito.**
+
+Hoje, **14:20Z**, a Hotmart cobrou o mês seguinte de duas delas:
+
+| pessoa | cobrança | transação | já logou? |
+|---|---|---|---|
+| Max | R$ 97,00 `APPROVED` | `HP3494043572` | uma vez, 04/09 16:48Z, nunca voltou |
+| Cristiane | R$ 97,00 `APPROVED` | `HP3283585924` | **nunca** |
+
+Saldo das duas foi de 100.000 para 200.000 e o acesso de 13/09 para 13/10.
+
+**A Cristiane acaba de pagar o segundo mês de uma plataforma que ela acredita não
+ter — porque fomos nós que escrevemos isso pra ela.**
+
+### 9.2 O que eu recusei chamar isso
+
+**Não é cobrança indevida, e não pedi estorno.** Eles assinaram de verdade; a
+cobrança é legítima. O que é nosso é o **silêncio em volta dela**. Chamar de
+"cobrança errada" seria repetir, no mesmo dia, o erro dos "R$ 7.042 travados" do
+§3 — pegar um fato ruim e inflá-lo até virar manchete.
+
+### 9.3 ⚠️ A armadilha de instrumento que quase me pegou aqui
+
+Medi primeiro por `profiles.last_seen_at` e deu **"8 de 8 nunca logaram"** — um
+número melhor que o da nota de 07/09, que dizia 7 de 8.
+
+**Número mais impressionante que contradiz medição anterior é sinal de instrumento
+quebrado, não de descoberta.** Fui conferir antes de publicar: a ronda de 07/09
+usou `auth.users.last_sign_in_at`, e **as duas colunas discordam** — pro Max,
+`auth` diz `04/09 16:48:08` e `profiles.last_seen_at` diz `NULL`.
+
+`profiles.last_seen_at` **subnotifica login**. O número certo é **7 de 8**, igual
+ao de 07/09: em 6,9 dias **nada melhorou**.
+
+E fui conferir se isso contaminava o meu próprio §2.3, onde eu já tinha publicado
+"nunca logou" pros 7 do `#249` — **não contamina**: relidos na coluna
+autoritativa, os 7 têm `auth.users.last_sign_in_at` **nulo de verdade**. A
+conclusão do §2.3 está de pé, mas ela estava apoiada na coluna fraca, e isso eu
+só soube depois. Registro porque foi sorte, não método.
+
+### 9.4 O relógio
+
+8/8 sem nenhuma voz, 8/8 sem nenhum pedido no SGP, **1.000.000 de créditos
+parados**. E três perdem o acesso **sem nunca ter aberto**: `rmf174` em **19/09**
+(6 dias), `rutifortuna8` e `flaviamalavazi` em **20/09** (7 dias).
+
+### 9.5 O que está travado é uma palavra, não uma tarefa
+
+O e-mail de correção está **escrito e conferido desde 07/09**
+(`_frank/rascunhos/2026-09-07_290_correcao_8_assinantes.md` — conferi hoje que o
+arquivo existe, 126 linhas, com tabela por pessoa e uma versão separada pro Max,
+que já entrou e não pode receber o texto de "você nunca acessou").
+
+Ele não saiu porque é **lote**, e lote é o único e-mail que eu não mando sozinho
+(regra 8). **São 6 dias de espera por uma palavra.** Levei ao grupo nesta ronda,
+com a cobrança de hoje e as datas de expiração.
+
+### 9.6 Correção ao meu próprio §7
+
+O placar do §7 dizia "1 fechado, 0 em produção" e estava certo para o meu item
+serial. Mas ele deixava de fora **o item mais urgente do quadro**, que eu ainda
+não tinha visto quando o escrevi. O placar honesto desta ronda inclui: **um caso
+de dinheiro em movimento hoje, achado por acaso, e que estava a 6 dias de
+distância de uma palavra que ninguém deu.**
