@@ -593,6 +593,91 @@ class IdentidadeDoBuildTest(TrainBase):
             self.assertEqual(worker_config.worker_build_id(), "main@a1b2c3d pod=xyz789")
 
 
+class AmostraNeutraEntreVariantes(unittest.TestCase):
+    """Incidente #380 — a amostra pos-treino nao pode ser brasileira marcada.
+
+    O modelo pronuncia o que LE: guiao escrito em brasileiro sai com fonetica
+    brasileira mesmo por cima de uma LoRA treinada com locutor portugues. Como
+    esta amostra e' a PRIMEIRA coisa que o aluno ouve da propria voz, o texto
+    brasileiro fazia um cliente de Portugal concluir que o clone dele tinha
+    saido com sotaque do Brasil (caso Ricardo, voz fe59f698, 13/09: a
+    referencia dele e a geracao com texto dele sairam em portugues EUROPEU;
+    so a amostra da casa saiu brasileira).
+
+    Estes testes prendem a regra pra ela nao se perder no proximo refator.
+    """
+
+    def _sample_gen_de_verdade(self):
+        """Carrega o modulo REAL do disco.
+
+        O smoke deste arquivo registra um STUB de `sample_gen` em sys.modules
+        (pra nao precisar de GPU); um `import sample_gen` aqui pegaria o stub e
+        o teste passaria sem nunca ter olhado o texto de producao — verde de
+        mentira, que nesta casa ja e' armadilha conhecida.
+        """
+        import importlib.util
+
+        caminho = Path(__file__).resolve().parent / "sample_gen.py"
+        spec = importlib.util.spec_from_file_location("_sample_gen_real", caminho)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    # Marcas que denunciam a variante. Cada uma ja apareceu no texto antigo ou
+    # e' o espelho PT-PT dele — o par inteiro fica proibido, porque escolher um
+    # lado e' escolher um publico.
+    MARCAS = [
+        ("oi!", 'saudacao BR — use "Ola"'),
+        ("voce", 'tratamento BR'),
+        (" tu ", 'tratamento PT'),
+        ("ouvindo", 'gerundio progressivo BR ("esta a ouvir" e o espelho PT)'),
+        ("ouvir com", 'perifrase progressiva PT'),
+        ("treinamento", 'BR — o par PT e "treino"'),
+        ("treino", 'PT — o par BR e "treinamento"'),
+        ("me ouv", 'proclise + gerundio, BR marcado'),
+    ]
+
+    def test_amostra_pt_e_neutra(self):
+        sg = self._sample_gen_de_verdade()
+        texto = sg.sample_text_for("pt")
+        baixo = texto.lower()
+        for marca, porque in self.MARCAS:
+            self.assertNotIn(
+                marca, baixo,
+                f"texto da amostra PT contem {marca!r} ({porque}): {texto!r}",
+            )
+
+    def test_variante_nao_muda_a_amostra_porque_o_texto_e_neutro(self):
+        """`sample_text_for` corta a regiao de proposito (o whisper devolve
+        "pt", nunca "pt-PT"). Isso so e' aceitavel enquanto o texto de "pt"
+        servir as duas variantes — e e' exatamente isso que este teste cobra."""
+        sg = self._sample_gen_de_verdade()
+        pt = sg.sample_text_for("pt")
+        self.assertEqual(sg.sample_text_for("pt-PT"), pt)
+        self.assertEqual(sg.sample_text_for("pt-BR"), pt)
+        self.assertEqual(sg.DEFAULT_SAMPLE_TEXT, pt)
+
+    def test_o_backend_anuncia_o_MESMO_texto_que_o_worker_fala(self):
+        """A constante do backend e' a legenda que o aluno LE no historico; a
+        do worker e' o que a voz FALA. Divergir nao muda o audio — faz a
+        legenda mentir sobre ele, que e' pior. O comentario ja mandava "TEM
+        que bater" e nada cobrava."""
+        ts = (Path(__file__).resolve().parents[1]
+              / "frontend/src/lib/voices/finalize-training.ts")
+        if not ts.exists():
+            # Dentro da imagem o contexto de build e' so ./runpod-worker.
+            # Pular e' correto; falhar seria vermelho de ambiente.
+            self.skipTest("frontend fora do contexto (build da imagem)")
+        sg = self._sample_gen_de_verdade()
+        # Mensagem curta de proposito: `assertIn` despejaria o .ts INTEIRO
+        # (~10k chars) no vermelho e enterraria a unica linha que importa.
+        self.assertTrue(
+            sg.DEFAULT_SAMPLE_TEXT in ts.read_text(encoding="utf-8"),
+            "SAMPLE_TEXT do backend divergiu do worker.\n"
+            f"  o .ts tem de conter: {sg.DEFAULT_SAMPLE_TEXT!r}\n"
+            "  conserto: copiar essa string pra const SAMPLE_TEXT.",
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-

@@ -7,13 +7,33 @@ anti-churn. Falha aqui NUNCA derruba o treino (best-effort, erro registrado).
 """
 from pathlib import Path
 
+# ⚠️ ESTE TEXTO TEM DE SER NEUTRO ENTRE PT-BR E PT-PT — incidente #380.
+# O modelo pronuncia o que lê: texto escrito em brasileiro sai com FONÉTICA
+# brasileira, mesmo quando a LoRA foi treinada com um locutor português. A
+# versão anterior era brasileira marcada ("Oi", "você está me ouvindo",
+# "o treinamento") e, como esta amostra é a PRIMEIRA coisa que o aluno ouve
+# da própria voz, um cliente de Portugal concluía que o clone dele tinha
+# saído com sotaque do Brasil e que o treino estava estragado.
+#
+# Medido em 13/09 no caso Ricardo (voz fe59f698, ricardo@inventivebox.pt):
+# a referência dele e a geração com texto dele saíram em português EUROPEU;
+# só a amostra da casa saiu brasileira. O clone estava certo o tempo todo —
+# quem estava errado era o nosso guião.
+#
+# Regra ao mexer aqui: nada de "Oi"/"você"/"tu", nada de gerúndio progressivo
+# ("está ouvindo" × "está a ouvir") e nada de "treinamento"/"treino". 3ª pessoa
+# resolve os três de uma vez. O teste `test_amostra_pt_e_neutra` prende isto.
 DEFAULT_SAMPLE_TEXT = (
-    "Oi! Esta é a minha voz clonada. Se você está me ouvindo com clareza, "
-    "o treinamento funcionou muito bem."
+    "Olá. Esta é a minha voz clonada. Se o som está claro e natural, "
+    "o resultado final vai soar assim."
 )
 
 # Amostra no IDIOMA da voz (caso Joana 2026-07-21: voz espanhola recebia a
 # amostra falada em português). Fallback = inglês pra idiomas sem tradução.
+# ⚠️ A chave é só o IDIOMA (`split("-")[0]`), nunca a variante: o whisper do
+# treino devolve "pt", jamais "pt-PT", então uma entrada "pt-PT" aqui seria
+# código morto com cara de conserto. A variante resolve-se mantendo o texto
+# de "pt" neutro (acima), não inventando uma chave que nunca é consultada.
 SAMPLE_TEXTS = {
     "pt": DEFAULT_SAMPLE_TEXT,
     "es": (
