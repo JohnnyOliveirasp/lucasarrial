@@ -186,3 +186,30 @@ resolver, não mexi em crédito/acesso/assinatura, não gastei GPU, não mergeei
 branch STALE, não li a caixa do `suporte@` pra triagem (só varredura de bounces
 em `EXAMINE` + `BODY.PEEK` e a thread do Luciano, que é o caso que eu tratava), e
 não inventei causa pra parecer produtivo.
+
+---
+
+## 8. Passo fixo de fim de ronda
+
+`git fetch origin && git log --oneline origin/main..HEAD` saiu **vazio** — o log
+desta ronda está na `main` (`55628b3`), não preso em branch. Nenhum fix meu ficou
+para trás.
+
+**O que o passo achou, e que eu deliberadamente NÃO mergeei:** o **PR #263**
+(`feat/laco-bounce-message-id`, *"casa o e-mail que voltou com o envio, pelo
+Message-ID"*) está aberto, `MERGEABLE`/`CLEAN`, e é **exatamente** a metade viva
+do `#101` — o laço que faz o bounce voltar a apontar pro envio.
+
+Ele **não** é o caso do PR #260 de ontem, que ficou 3h20 esquecido. Foi criado às
+**18:43Z**, três minutos antes de eu começar. Não está parado: está fresco.
+
+Não mergeei de propósito, e o motivo é a armadilha registrada ontem nesta mesma
+fila: *"suíte verde de branch errada é pior que suíte vermelha"*. Eu não rodei os
+testes dele no worktree certo, e mergear código de entrega de e-mail que eu não
+verifiquei — no dia em que descobri 7 pessoas sem receber carta — seria o tipo de
+pressa que cria o próximo incidente. **Fica anotado como próximo da fila, não
+como pendência esquecida.**
+
+Também registro, sem tratar: há **30 PRs abertos**, o mais velho de 28/08. Não é
+dívida desta ronda e não cabia nela, mas é grande demais pra continuar invisível
+no relatório.
