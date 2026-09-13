@@ -287,7 +287,7 @@ export function canaisDoSgp(): CanaisBoasVindas {
       // `sendSupportMail` LANÇA quando falha; o orquestrador trata o throw e
       // grava a mensagem do erro. Devolver `true` aqui significa "o SMTP
       // aceitou", que é o mais longe que dá pra afirmar de dentro do processo.
-      await sendSupportMail({ to, subject: assunto, text: texto });
+      await sendSupportMail({ to, subject: assunto, text: texto, origem: "sgp-boas-vindas" });
       return true;
     },
     registrar: async ({ email, assunto, ok, erro, referencia }) => {

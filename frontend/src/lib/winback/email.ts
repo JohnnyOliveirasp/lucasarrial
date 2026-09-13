@@ -113,7 +113,7 @@ export async function enviarResgatePorEmail(limite = 200): Promise<{
       if (!corpo) throw new Error("texto vazio");
 
       const assunto = assuntoPara(alvo, nome);
-      await sendSupportMail({ to: alvo.email, subject: assunto, text: corpo });
+      await sendSupportMail({ to: alvo.email, subject: assunto, text: corpo, origem: "winback" });
 
       const agora = new Date().toISOString();
       await admin

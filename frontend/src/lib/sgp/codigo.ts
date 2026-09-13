@@ -37,11 +37,15 @@ function urlDoSgp(): string {
   return `${base.replace(/\/+$/, "")}/sgp`;
 }
 
-/** Só o que o `sendSupportMail` precisa — o mínimo pra dar pra injetar no teste. */
+/** Só o que o `sendSupportMail` precisa — o mínimo pra dar pra injetar no teste.
+ *  `origem` é `string` solto, e não o `OrigemEnvio` do `mail-envio.ts`, porque
+ *  importar o tipo de lá traria o alias `@/`, que NÃO resolve em `node --test` —
+ *  a mesma razão que já obriga o `sendSupportMail` a entrar por `await import`. */
 export type EnviarEmailDoCodigo = (mensagem: {
   to: string;
   subject: string;
   text: string;
+  origem?: string;
 }) => Promise<unknown>;
 
 /**
@@ -61,6 +65,7 @@ export async function enviarCodigo(
   const enviarEmail = enviar ?? (await import("@/lib/agent/mail-smtp")).sendSupportMail;
   await enviarEmail({
     to: email,
+    origem: "sgp-codigo",
     subject: `${codigo} é o seu código do Sistema de Geração Pronto`,
     text:
       `${ola}\n\n` +

@@ -63,7 +63,13 @@ async function mandar(
   let ok = true;
   let erro: string | null = null;
   try {
-    await sendSupportMail({ to, subject, text: text + ASSINATURA });
+    await sendSupportMail({
+      to,
+      subject,
+      text: text + ASSINATURA,
+      origem: "onboarding-aviso",
+      userId: extra?.userId ?? null,
+    });
   } catch (e) {
     ok = false;
     erro = e instanceof Error ? e.message : String(e);

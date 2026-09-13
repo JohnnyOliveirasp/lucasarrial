@@ -160,7 +160,12 @@ export async function lembrarVozesParadas(): Promise<LembreteSummary> {
 
     try {
       const r = await lembrarVoz(voz, estado, TRAINING_CREDIT_COST, agora, async (v, texto) => {
-        await sendSupportMail({ to: v.email, subject: texto.assunto, text: texto.texto });
+        await sendSupportMail({
+          to: v.email,
+          subject: texto.assunto,
+          text: texto.texto,
+          origem: "lembrete-treino",
+        });
       });
 
       if (r.enviou) {
