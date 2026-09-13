@@ -1102,6 +1102,16 @@ o caso que É bug de verdade e NUNCA pode ser silenciado junto.
 - Estorno se confere por `ref_type='generation_refund'`, **NUNCA por `kind`**
   (o estorno grava `kind='extra_purchase'`). Conferir por kind já quase pagou
   13 alunos em dobro.
+- **A REGRA GERAL, porque a armadilha repetiu em OUTRA coluna (13/09):**
+  marcador de dinheiro vive em **`ref_type`**, nunca no `note`. No `#341` eu
+  sondei o perdão por `note ilike '%perdao_negativo_onboarding%'` e voltou
+  **ZERO para os 16** — inclusive para os **4 que foram perdoados de verdade**.
+  O marcador estava em `ref_type='perdao_negativo_onboarding'`; o `note` é
+  texto corrido em português. A sonda errada diz *"ninguém foi perdoado"* e
+  mandaria pagar **42.100 cr em dobro**. Mesma classe do `kind`, coluna
+  diferente: **antes de afirmar que alguém NÃO recebeu, confira por `ref_type`
+  e valide a sonda num caso que você sabe que É positivo** — se ela não acende
+  no positivo conhecido, o seu zero não vale nada.
 - Saída sempre com denominador (quantos estornos examinados, quantos órfãos,
   quantos padrão-conhecido, quantos alarmes) — zero sem denominador é o medidor
   morto disfarçado de saúde.
