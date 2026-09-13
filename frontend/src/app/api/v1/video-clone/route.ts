@@ -27,7 +27,8 @@ import { buildInfiniteTalkWorkflow } from "@/lib/video-clone/workflow";
 import { runInfiniteTalk } from "@/lib/video-clone/runpod";
 import { webhookUrlFor } from "@/lib/runpod/client";
 import { handleTechFailure } from "@/lib/support/failure-alert";
-import { checkFrontalFace, faceGateMessage } from "@/lib/video-clone/face-gate";
+import { faceGateMessage } from "@/lib/video-clone/face-gate";
+import { checarRostoComRastro, depsRastroPadrao } from "@/lib/video-clone/registrar-face-gate";
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
@@ -149,14 +150,22 @@ export async function POST(request: NextRequest) {
   // GATE DE ROSTO FRONTAL (#131): a cadeia Imagem → Animar → Clone cobrava sem
   // checar que o quadro tem rosto de frente com boca visível. Roda ANTES de
   // cobrar; fail-open se a visão não responder.
+  //
+  // #372: o veredito agora deixa RASTRO em `face_gate_recusas` — recusa e
+  // fail-open viram linha; aprovação olhada não grava nada. O rastro é
+  // best-effort e não muda o veredito: se o banco recusar o insert, o aluno
+  // recebe a mesma resposta de sempre (`checarRostoComRastro`).
   {
     const gateUrl = await createPresignedGet(imageBucket, imagePath, 600).catch(() => null);
-    if (gateUrl) {
-      const gate = await checkFrontalFace(gateUrl);
-      if (!gate.ok) {
-        console.log("[video-clone] face-gate bloqueou", JSON.stringify({ user: auth.user_id, imagePath, reason: gate.reason }));
-        return jsonError("face_not_frontal", faceGateMessage(gate.reason), 400, { reason: gate.reason });
-      }
+    const gate = await checarRostoComRastro(depsRastroPadrao(admin0), {
+      userId: auth.user_id,
+      bucket: imageBucket,
+      imageKey: imagePath,
+      imageUrl: gateUrl,
+    });
+    if (!gate.ok) {
+      console.log("[video-clone] face-gate bloqueou", JSON.stringify({ user: auth.user_id, imagePath, reason: gate.reason }));
+      return jsonError("face_not_frontal", faceGateMessage(gate.reason), 400, { reason: gate.reason });
     }
   }
 
