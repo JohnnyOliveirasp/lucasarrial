@@ -103,6 +103,18 @@ export type SgpPedidoRow = {
    */
   cobrado_em?: string | null;
   cobrado_por?: string | null;
+  /**
+   * "Marcar erro" do time no /admin/sgp (migration 109). OPCIONAIS pelo mesmo
+   * motivo das de cobrança: enquanto a 109 não for aplicada as colunas não
+   * existem e a rota do painel devolve a linha sem elas.
+   *
+   * ⚠️ NÃO é a coluna `erro` acima. Aquela é do SISTEMA (o robô carimba a falha
+   * técnica em lib/sgp/etapas.ts); esta é do TIME, que descobriu por fora que o
+   * pedido deu errado. As duas aparecem como ERRO na tela, com motivos diferentes.
+   */
+  erro_manual_em?: string | null;
+  erro_manual_por?: string | null;
+  erro_manual_motivo?: string | null;
 };
 
 /** Só dígitos, com DDI. "+55 (11) 99999-8888" → "5511999998888". */

@@ -26,8 +26,13 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock, MessageCircle, Undo2 } from "lucide-react";
-import { SGP_PARADO_HORAS, type LinhaPainel, type ResumoPainel } from "@/lib/sgp/painel";
+import { AlertTriangle, CheckCircle2, Clock, MessageCircle, Undo2, XCircle } from "lucide-react";
+import {
+  SGP_PARADO_HORAS,
+  type LinhaPainel,
+  type ResumoPainel,
+  type SituacaoSgp,
+} from "@/lib/sgp/painel";
 import {
   telefoneLegivel,
   type AssinaturaFastCloner,
@@ -38,6 +43,44 @@ import {
 type EstadoCobranca = { disponivel: boolean; silencioHoras: number };
 
 type Aba = "fila" | "todos";
+
+/**
+ * A etiqueta PRONTO / AGUARDANDO / ERRO (pedido do Lucas, 10/09).
+ *
+ * A régua de QUEM é o quê mora em lib/sgp/painel.ts › situacao e é calculada no
+ * servidor; aqui é só cor. Ela fica ao lado da etapa, não no lugar dela: a etapa
+ * diz *em que passo está* e a situação diz *pronto, esperando ou quebrado* — a
+ * segunda é a que o time lê de longe, e é a leitura que a planilha antiga tinha.
+ */
+const CORES_SITUACAO: Record<SituacaoSgp, string> = {
+  pronto: "border-[var(--status-online)]/40 bg-[var(--status-online)]/10 text-[var(--status-online)]",
+  aguardando: "border-[var(--hairline-strong)] bg-[var(--surface-deep)] text-[var(--mute)]",
+  erro: "border-[var(--status-error)]/40 bg-[var(--status-error)]/10 text-[var(--status-error)]",
+};
+
+function Etiqueta({
+  situacao,
+  rotulo,
+  motivo,
+}: {
+  situacao: SituacaoSgp;
+  rotulo: string;
+  motivo: string;
+}) {
+  return (
+    <span className="flex flex-col gap-1">
+      <span
+        title={motivo}
+        className={`inline-flex w-fit items-center rounded-[var(--radius-full)] border px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider ${CORES_SITUACAO[situacao]}`}
+      >
+        {rotulo}
+      </span>
+      {/* O motivo fica ESCRITO, não só no title: o time lê a tela de relance e
+          num tablet não existe hover. Um rótulo sem porquê vira adivinhação. */}
+      <span className="max-w-[220px] text-[11px] leading-snug text-[var(--mute)]">{motivo}</span>
+    </span>
+  );
+}
 
 const dt = (iso: string | null) =>
   iso
@@ -64,6 +107,19 @@ export default function SgpPage() {
   /** Id da linha com clique em voo — desabilita o botão e evita clique duplo. */
   const [salvando, setSalvando] = useState<string | null>(null);
 
+  const [erroManualOk, setErroManualOk] = useState(false);
+  /**
+   * Qual linha está com o campo de "marcar erro" aberto, e o que já foi digitado.
+   *
+   * ⚠️ FICA FORA DO `pedidos`, e é o ponto do requisito: a tela recarrega sozinha
+   * a cada 30s. Se o rascunho morasse na linha (ou se o refresh fechasse o
+   * campo), o atendente digitaria metade do motivo e perderia no meio da frase.
+   * `load()` só troca `pedidos` — estes dois estados atravessam o refresh
+   * intactos, e a marcação já salva vem do servidor.
+   */
+  const [abertoErro, setAbertoErro] = useState<string | null>(null);
+  const [rascunhoErro, setRascunhoErro] = useState<Record<string, string>>({});
+
   const [aba, setAba] = useState<Aba>("fila");
   const [compradores, setCompradores] = useState<LinhaComprador[] | null>(null);
   const [resumoTodos, setResumoTodos] = useState<ResumoCompradores | null>(null);
@@ -78,6 +134,7 @@ export default function SgpPage() {
         setPedidos(json.pedidos ?? []);
         setResumo(json.resumo ?? null);
         setCobranca(json.cobranca ?? null);
+        setErroManualOk(!!json.erroManual?.disponivel);
         setErro(null);
       } else {
         setErro(json?.error?.message || "Não consegui carregar a fila.");
@@ -158,6 +215,48 @@ export default function SgpPage() {
     [load],
   );
 
+  /**
+   * Marca ou desfaz o "deu erro" e recarrega — mesma forma do "Já cobrei": o
+   * mesmo `salvando` (que trava o clique duplo), o mesmo reload, o mesmo lugar
+   * de mensagem de erro. O motivo é opcional; vai truncado em 500 na rota.
+   */
+  const marcarErro = useCallback(
+    async (id: string, marcar: boolean) => {
+      setSalvando(id);
+      try {
+        const res = await fetch(`/api/v1/admin/sgp/${id}/erro`, {
+          method: marcar ? "POST" : "DELETE",
+          ...(marcar
+            ? {
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ motivo: rascunhoErro[id] ?? "" }),
+              }
+            : {}),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          setErro(json?.error?.message || "Não consegui marcar o erro.");
+          return;
+        }
+        setErro(null);
+        // Só limpa o rascunho DEPOIS de o servidor confirmar. Se falhar, o que a
+        // pessoa escreveu continua na tela pra ela tentar de novo.
+        setRascunhoErro((r) => {
+          const resto = { ...r };
+          delete resto[id];
+          return resto;
+        });
+        setAbertoErro(null);
+        await load();
+      } catch {
+        setErro("Não consegui marcar o erro.");
+      } finally {
+        setSalvando(null);
+      }
+    },
+    [load, rascunhoErro],
+  );
+
   const silencioHoras = cobranca?.silencioHoras ?? SGP_PARADO_HORAS;
 
   return (
@@ -220,10 +319,21 @@ export default function SgpPage() {
         </span>
       </div>
 
-      {/* Contadores por etapa. */}
+      {/* Os três buckets da planilha primeiro, a etapa detalhada depois: é a
+          ordem em que o time lê — "quantos estão quebrados?" antes de "quantos
+          estão gravando o áudio?". */}
       {resumo && resumo.total > 0 && (
         <div className="flex flex-wrap gap-2">
           <Contador rotulo="Total" n={resumo.total} />
+          <Contador rotulo="PRONTO" n={resumo.situacoes.pronto} />
+          <Contador rotulo="AGUARDANDO" n={resumo.situacoes.aguardando} />
+          <Contador rotulo="ERRO" n={resumo.situacoes.erro} />
+        </div>
+      )}
+
+      {/* Contadores por etapa. */}
+      {resumo && resumo.total > 0 && (
+        <div className="flex flex-wrap gap-2">
           {resumo.porEtapa.map((e) => (
             <Contador key={e.status} rotulo={e.etapa} n={e.n} />
           ))}
@@ -244,16 +354,18 @@ export default function SgpPage() {
             nenhum pedido de SGP ainda
           </div>
         ) : (
-          <table className="w-full min-w-[1250px] border-collapse text-left">
+          <table className="w-full min-w-[1500px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
                 <Th>Nome</Th>
+                <Th>Situação</Th>
                 <Th>E-mail</Th>
                 <Th>WhatsApp</Th>
                 <Th>Etapa atual</Th>
                 <Th>Parado há</Th>
                 <Th>O que fazer</Th>
                 <Th>Cobrança</Th>
+                <Th>Marcar erro</Th>
                 <Th>Foto</Th>
                 <Th>Voz</Th>
                 <Th>Enviado em</Th>
@@ -280,6 +392,13 @@ export default function SgpPage() {
                     )}
                     {p.nome}
                   </Td>
+                  <Td className="min-w-[180px]">
+                    <Etiqueta
+                      situacao={p.situacao}
+                      rotulo={p.situacaoRotulo}
+                      motivo={p.situacaoMotivo}
+                    />
+                  </Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{p.email}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">
                     {p.whatsapp === "—" ? "—" : telefoneLegivel(p.whatsapp)}
@@ -303,6 +422,20 @@ export default function SgpPage() {
                       onDesfazer={() => marcarCobranca(p.id, false)}
                     />
                   </Td>
+                  <Td className="min-w-[210px]">
+                    <CelulaMarcarErro
+                      linha={p}
+                      disponivel={erroManualOk}
+                      salvando={salvando === p.id}
+                      aberto={abertoErro === p.id}
+                      rascunho={rascunhoErro[p.id] ?? ""}
+                      onAbrir={() => setAbertoErro(p.id)}
+                      onFechar={() => setAbertoErro(null)}
+                      onDigitar={(v) => setRascunhoErro((r) => ({ ...r, [p.id]: v }))}
+                      onMarcar={() => marcarErro(p.id, true)}
+                      onDesfazer={() => marcarErro(p.id, false)}
+                    />
+                  </Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{p.foto}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{p.voz}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{dt(p.enviadoEm)}</Td>
@@ -317,6 +450,24 @@ export default function SgpPage() {
       </div>
 
       <p className="text-[12px] text-[var(--ash)]">
+        <strong>Situação</strong> é a leitura de planilha: <strong>PRONTO</strong> é entregue,{" "}
+        <strong>ERRO</strong> é o que alguém precisa olhar (o sistema falhou, falhou em parte, ou o time
+        marcou na mão) e <strong>AGUARDANDO</strong> é todo o resto — esperando o aluno, na fila ou
+        gerando. ERRO ganha de PRONTO de propósito: material entregue errado é um pedido pronto que
+        precisa de gente.{" "}
+        {erroManualOk ? (
+          <>
+            Em <strong>Marcar erro</strong> o time registra o que descobriu por fora (o aluno avisou no
+            WhatsApp, o material veio errado). Essa marca <strong>não vence sozinha</strong> — sai só no{" "}
+            <strong>desfazer</strong>. Ela não muda nada na produção: não manda e-mail pro aluno e não
+            mexe no andamento do pedido.
+          </>
+        ) : (
+          <>
+            O botão <strong>Marcar erro</strong> ainda não está liberado — falta uma atualização do
+            sistema.
+          </>
+        )}{" "}
         &ldquo;Parado há&rdquo; conta desde a última vez que o pedido andou. Marcado em vermelho quando passa
         de {SGP_PARADO_HORAS}h no mesmo passo — é o único caso que precisa de alguém cobrando o aluno.{" "}
         {cobranca?.disponivel ? (
@@ -423,6 +574,123 @@ function CelulaCobranca({
 }
 
 /**
+ * "Marcar erro" (pedido do Lucas, 10/09): o time descobriu POR FORA que o pedido
+ * deu errado — o aluno avisou no WhatsApp, o material veio errado — e o sistema
+ * não tem como saber disso sozinho.
+ *
+ * Mesma forma da célula de cobrança de propósito (é o padrão que o time já usa e
+ * que funciona): três estados, nenhum deles esconde a linha, e sempre há como
+ * desfazer. Duas diferenças, as duas deliberadas:
+ *
+ *  1. O BOTÃO APARECE EM QUALQUER LINHA, inclusive nas ENTREGUES. "Material veio
+ *     errado" é, por definição, um pedido que o sistema deu por pronto — limitar
+ *     a marcação a quem está parado deixaria de fora justamente o caso do pedido.
+ *  2. A MARCA NÃO VENCE. "Já cobrei" é um timer que volta a gritar; "deu erro" é
+ *     uma afirmação de defeito. Ela sai por "desfazer", não pelo relógio.
+ */
+function CelulaMarcarErro({
+  linha,
+  disponivel,
+  salvando,
+  aberto,
+  rascunho,
+  onAbrir,
+  onFechar,
+  onDigitar,
+  onMarcar,
+  onDesfazer,
+}: {
+  linha: LinhaPainel;
+  disponivel: boolean;
+  salvando: boolean;
+  aberto: boolean;
+  rascunho: string;
+  onAbrir: () => void;
+  onFechar: () => void;
+  onDigitar: (v: string) => void;
+  onMarcar: () => void;
+  onDesfazer: () => void;
+}) {
+  if (linha.erroManualTexto) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="inline-flex items-start gap-1.5 text-[12px] text-[var(--status-error)]">
+          <XCircle className="mt-0.5 size-3.5 shrink-0" />
+          {linha.erroManualTexto}
+        </span>
+        {linha.erroManualMotivo && (
+          <span className="max-w-[200px] text-[11px] leading-snug text-[var(--body)]">
+            &ldquo;{linha.erroManualMotivo}&rdquo;
+          </span>
+        )}
+        {disponivel && (
+          <button
+            type="button"
+            onClick={onDesfazer}
+            disabled={salvando}
+            className="inline-flex w-fit items-center gap-1 text-[11px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)] disabled:opacity-50"
+          >
+            <Undo2 className="size-3" />
+            {salvando ? "desfazendo…" : "desfazer"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (!disponivel) {
+    return <span className="text-[11px] text-[var(--ash)]">marcação ainda não liberada</span>;
+  }
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={onAbrir}
+        className="rounded-[var(--radius)] border border-[var(--hairline-strong)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--status-error)]/50 hover:bg-[var(--status-error)]/5 disabled:opacity-50"
+      >
+        Marcar erro
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <textarea
+        value={rascunho}
+        onChange={(e) => onDigitar(e.target.value)}
+        rows={2}
+        maxLength={500}
+        autoFocus
+        placeholder="O que aconteceu? (opcional)"
+        className="w-[200px] resize-y rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-2 py-1.5 text-[12px] text-[var(--ink)] outline-none focus:border-[var(--status-error)]/60"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onMarcar}
+          disabled={salvando}
+          className="rounded-[var(--radius)] border border-[var(--status-error)]/50 bg-[var(--status-error)]/10 px-2.5 py-1.5 text-[12px] font-medium text-[var(--status-error)] transition-colors hover:bg-[var(--status-error)]/20 disabled:opacity-50"
+        >
+          {salvando ? "marcando…" : "Confirmar erro"}
+        </button>
+        {/* "cancelar" fecha o campo mas NÃO apaga o que foi digitado: reabrir
+            devolve o texto. Perder o motivo por um clique errado é o tipo de
+            atrito que faz o time voltar pra planilha. */}
+        <button
+          type="button"
+          onClick={onFechar}
+          disabled={salvando}
+          className="text-[11px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)] disabled:opacity-50"
+        >
+          cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * A planilha de TODOS os compradores (pedido do Lucas, 08/09).
  *
  * As colunas são as que ele pediu, nesta ordem: Nome, Status, Data de
@@ -470,6 +738,15 @@ function AbaCompradores({
         </div>
       )}
 
+      {/* Os três buckets primeiro, pelo mesmo motivo da outra aba. */}
+      {resumo && (
+        <div className="flex flex-wrap gap-2">
+          <Contador rotulo="PRONTO" n={resumo.situacoes.pronto} />
+          <Contador rotulo="AGUARDANDO" n={resumo.situacoes.aguardando} />
+          <Contador rotulo="ERRO" n={resumo.situacoes.erro} />
+        </div>
+      )}
+
       {resumo && (
         <div className="flex flex-wrap gap-2">
           <Contador rotulo="Total" n={resumo.total} />
@@ -503,10 +780,11 @@ function AbaCompradores({
             nenhum comprador de SGP encontrado
           </div>
         ) : (
-          <table className="w-full min-w-[1000px] border-collapse text-left">
+          <table className="w-full min-w-[1180px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
                 <Th>Nome</Th>
+                <Th>Situação</Th>
                 <Th>Status</Th>
                 <Th>FastCloner</Th>
                 <Th>Data Aquisição</Th>
@@ -529,6 +807,13 @@ function AbaCompradores({
                   }`}
                 >
                   <Td className="font-medium text-[var(--ink)]">{c.nome}</Td>
+                  <Td className="min-w-[180px]">
+                    <Etiqueta
+                      situacao={c.situacao}
+                      rotulo={c.situacaoRotulo}
+                      motivo={c.situacaoMotivo}
+                    />
+                  </Td>
                   <Td>
                     {c.status}
                     {/* Quem nunca abriu o portal é o alvo da lista: fica dito. */}
@@ -589,7 +874,11 @@ function AbaCompradores({
 
       <div className="flex items-center justify-between gap-4">
         <p className="text-[12px] text-[var(--ash)]">
-          Lista completa: quem comprou o SGP na Hotmart <strong>mais</strong> quem está no portal. Quem
+          A coluna <strong>Situação</strong> é a mesma régua da fila de trabalho (as duas abas nunca
+          discordam sobre o mesmo aluno); quem comprou e não abriu o portal é <strong>AGUARDANDO</strong>
+          , porque não há defeito nenhum — falta contato. Marcar erro se faz na aba{" "}
+          <strong>Fila de trabalho</strong>, que é onde existe o pedido. Lista completa: quem comprou o
+          SGP na Hotmart <strong>mais</strong> quem está no portal. Quem
           aparece nos dois lugares vem numa linha só. &ldquo;Esperando há&rdquo; conta desde a compra
           para quem nunca começou, e desde a última movimentação para quem já está no portal — destacado
           acima de {SGP_PARADO_HORAS}h. A coluna <strong>FastCloner</strong> é o que a pessoa paga na

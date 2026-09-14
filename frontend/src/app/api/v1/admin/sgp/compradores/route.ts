@@ -59,14 +59,58 @@ import {
   type CompraSgpBruta,
   type EntitlementFastClonerBruto,
 } from "@/lib/sgp/compradores";
+import { COLUNAS_ERRO_MANUAL, colunaErroManualAusente } from "@/lib/sgp/cobranca";
 import type { SgpPedidoRow } from "@/lib/sgp/types";
 
 export const dynamic = "force-dynamic";
 
-/** Só o que a planilha usa. Segredo de sessão fica de fora de propósito. */
-const COLUNAS_PEDIDO = "id, nome, email, whatsapp, status, criado_em, atualizado_em, enviado_em";
+/**
+ * Só o que a planilha usa. Segredo de sessão fica de fora de propósito.
+ *
+ * `erro` entrou em 14/09 junto com a coluna SITUAÇÃO: sem ela a planilha diria
+ * AGUARDANDO para um pedido que o sistema já marcou como quebrado, e as duas
+ * abas da MESMA tela discordariam sobre o mesmo aluno.
+ */
+const COLUNAS_PEDIDO = "id, nome, email, whatsapp, status, criado_em, atualizado_em, enviado_em, erro";
 
 type EventoLinha = { payload: unknown; received_at: string };
+
+/**
+ * Os pedidos, pedindo também as colunas de "marcar erro" (migration 109) e
+ * caindo pro conjunto sem elas enquanto ela não for aplicada.
+ *
+ * Aqui o fallback é na mão (e não o `criarFilaComFallback` da fila) porque esta
+ * consulta é PAGINADA e o `fetchAllPages` transforma o erro do PostgREST em
+ * `Error` com a mensagem embutida — o casamento por mensagem de
+ * `colunaErroManualAusente` continua valendo, o objeto com o `code` não.
+ * O custo do estado degradado é UMA página falha por request, e só enquanto a
+ * migration estiver pendente.
+ */
+async function buscarPedidos(
+  admin: ReturnType<typeof getAdmin>,
+): Promise<{ pedidos: SgpPedidoRow[]; erroManualDisponivel: boolean }> {
+  const paginar = (colunas: string) =>
+    fetchAllPages<SgpPedidoRow>("sgp_pedidos", (from, to) =>
+      admin
+        .from("sgp_pedidos" as never)
+        .select(colunas)
+        .order("id", { ascending: true })
+        .range(from, to) as unknown as PromiseLike<{
+        data: SgpPedidoRow[] | null;
+        error: { message: string } | null;
+      }>,
+    );
+
+  try {
+    const pedidos = await paginar(`${COLUNAS_PEDIDO}, ${COLUNAS_ERRO_MANUAL.join(", ")}`);
+    return { pedidos, erroManualDisponivel: true };
+  } catch (e) {
+    // Erro que NÃO é coluna ausente sobe cru: a planilha inteira falhando por
+    // outro motivo não pode virar "recurso desligado" em silêncio.
+    if (!colunaErroManualAusente(e instanceof Error ? { message: e.message } : e)) throw e;
+    return { pedidos: await paginar(COLUNAS_PEDIDO), erroManualDisponivel: false };
+  }
+}
 
 export async function GET(request: NextRequest) {
   const g = await gateAdmin(request, SUPORTE_OK);
@@ -82,7 +126,7 @@ export async function GET(request: NextRequest) {
   const admin = getAdmin();
 
   try {
-    const [eventos, pedidos, entitlements] = await Promise.all([
+    const [eventos, { pedidos, erroManualDisponivel }, entitlements] = await Promise.all([
       fetchAllPages<EventoLinha>("payment_events PURCHASE_APPROVED (sgp)", (from, to) =>
         admin
           .from("payment_events")
@@ -95,16 +139,7 @@ export async function GET(request: NextRequest) {
           .order("id", { ascending: true })
           .range(from, to),
       ),
-      fetchAllPages<SgpPedidoRow>("sgp_pedidos", (from, to) =>
-        admin
-          .from("sgp_pedidos" as never)
-          .select(COLUNAS_PEDIDO)
-          .order("id", { ascending: true })
-          .range(from, to) as unknown as PromiseLike<{
-          data: SgpPedidoRow[] | null;
-          error: { message: string } | null;
-        }>,
-      ),
+      buscarPedidos(admin),
       // A assinatura da plataforma HOJE (pedido do Lucas, 09/09). Paginado pelo
       // mesmo motivo dos outros: são 1.160 linhas do produto (medido 09/09),
       // acima do teto silencioso de 1000 do PostgREST — um select cru veria
@@ -178,6 +213,10 @@ export async function GET(request: NextRequest) {
         }).length,
         pedidos: pedidos.length,
       },
+      // A planilha só LÊ a marcação de erro (quem marca é a fila de trabalho,
+      // que tem o id do pedido). A tela usa isto pra não afirmar AGUARDANDO com
+      // ar de certeza quando, na verdade, ela não pôde ler a coluna.
+      erroManual: { disponivel: erroManualDisponivel },
     });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao carregar os compradores do SGP");

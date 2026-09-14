@@ -14,9 +14,11 @@ import assert from "node:assert/strict";
 import {
   ETAPA_HUMANA,
   lerCobranca,
+  lerErroManual,
   montarLinha,
   ordenar,
   resumir,
+  situacao,
   tempoHumano,
   SGP_PARADO_HORAS,
   SGP_COBRANCA_SILENCIO_HORAS,
@@ -405,6 +407,116 @@ test("ordem: quem já foi cobrado desce, mas fica acima de quem não precisa de 
   assert.deepEqual(ordem, ["id-1", "cobrado", "entregue"]);
 });
 
+// --- SITUAÇÃO: PRONTO / AGUARDANDO / ERRO (pedido do Lucas, 10/09) -----------
+
+test("os três rótulos saem dos campos que já existem, sem coluna nova", () => {
+  // AGUARDANDO cobre o wizard inteiro E o processamento nosso: o time lê três
+  // buckets, não oito etapas.
+  for (const s of ["dados", "foto", "audio", "revisao", "enviado", "processando"] as SgpStatus[]) {
+    assert.equal(situacao(pedido({ status: s }), AGORA).codigo, "aguardando", s);
+  }
+  assert.equal(situacao(pedido({ status: "pronto" }), AGORA).codigo, "pronto");
+  assert.equal(situacao(pedido({ status: "falhou" }), AGORA).codigo, "erro");
+});
+
+test("o rótulo é caixa alta e o motivo explica sem jargão", () => {
+  const s = situacao(pedido({ status: "foto" }), AGORA);
+  assert.equal(s.rotulo, "AGUARDANDO");
+  assert.equal(s.motivo, "Esperando o aluno mandar as fotos.");
+  // Nada de nome de coluna nem de enum cru na cara do atendente.
+  for (const proibido of ["status", "sgp_pedidos", "null", "erro_manual"]) {
+    assert.ok(!s.motivo.includes(proibido), `vazou jargão: ${proibido}`);
+  }
+});
+
+test("falha PARCIAL é ERRO mesmo com o status ainda andando", () => {
+  // É o caso que processar.ts grava: o clone de foto morreu, a voz seguiu, e o
+  // pedido continua em 'processando'. Sem esta regra ele aparece como
+  // AGUARDANDO e ninguém olha.
+  const s = situacao(pedido({ status: "processando", erro: "clone de foto: timeout" }), AGORA);
+  assert.equal(s.codigo, "erro");
+  assert.match(s.motivo, /clone de foto: timeout/);
+});
+
+test("ERRO ganha de PRONTO — é o caso 'material veio errado' do pedido", () => {
+  const entregue = pedido({ status: "pronto" });
+  assert.equal(situacao(entregue, AGORA).codigo, "pronto");
+
+  const marcado = pedido({
+    status: "pronto",
+    erro_manual_em: new Date(AGORA - 2 * H).toISOString(),
+    erro_manual_por: "suporte@x.com",
+    erro_manual_motivo: "aluno disse que a voz não é dele",
+  });
+  const s = situacao(marcado, AGORA);
+  assert.equal(s.codigo, "erro", "se PRONTO ganhasse, marcar erro aqui não mudaria nada na tela");
+  assert.match(s.motivo, /aluno disse que a voz não é dele/);
+  assert.match(s.motivo, /suporte@x\.com/, "quem marcou fica à vista");
+});
+
+test("marca de erro NÃO vence e NÃO se invalida quando o aluno mexe", () => {
+  // Diferença deliberada pro 'já cobrei': lá o aluno mexer invalida a marca.
+  const p = pedido({
+    status: "foto",
+    erro_manual_em: new Date(AGORA - 40 * 24 * H).toISOString(),
+    erro_manual_por: "suporte@x.com",
+    atualizado_em: new Date(AGORA - 1 * H).toISOString(), // mexeu DEPOIS de marcar
+  });
+  assert.equal(situacao(p, AGORA).codigo, "erro", "afirmação de defeito não expira sozinha");
+  assert.equal(lerErroManual(p, AGORA)?.por, "suporte@x.com");
+});
+
+test("marca sem motivo escrito continua valendo, e sem 'null' na tela", () => {
+  const p = pedido({
+    status: "audio",
+    erro_manual_em: new Date(AGORA - 3 * H).toISOString(),
+    erro_manual_por: "  ",
+    erro_manual_motivo: "   ",
+  });
+  const l = montarLinha(p, AGORA);
+  assert.equal(l.situacao, "erro");
+  assert.equal(l.erroManualMotivo, null);
+  assert.equal(l.erroManualTexto, "marcado há 3h por alguém do time");
+});
+
+test("linha em ERRO sobe pro topo, como já subia a que falhou", () => {
+  const erroMarcado = montarLinha(
+    pedido({
+      id: "marcado",
+      status: "pronto",
+      atualizado_em: new Date(AGORA - 20 * 24 * H).toISOString(),
+      erro_manual_em: new Date(AGORA - 1 * H).toISOString(),
+      erro_manual_por: "suporte@x.com",
+    }),
+    AGORA,
+  );
+  const tranquilo = montarLinha(
+    pedido({ id: "tranquilo", status: "foto", atualizado_em: new Date(AGORA - 1 * H).toISOString() }),
+    AGORA,
+  );
+  assert.equal(erroMarcado.precisaAcao, true);
+  assert.deepEqual(ordenar([tranquilo, erroMarcado]).map((l) => l.id), ["marcado", "tranquilo"]);
+});
+
+test("sem a migration 109 a linha não vira ERRO por acidente", () => {
+  // Campos ausentes (não `null`): é exatamente o que a rota devolve hoje.
+  const l = montarLinha(pedido({ status: "foto" }), AGORA);
+  assert.equal(l.situacao, "aguardando");
+  assert.equal(l.erroManualTexto, null);
+});
+
+test("o resumo conta os três buckets e eles fecham com o total", () => {
+  const linhas = [
+    montarLinha(pedido({ id: "a", status: "pronto" }), AGORA),
+    montarLinha(pedido({ id: "b", status: "foto" }), AGORA),
+    montarLinha(pedido({ id: "c", status: "processando" }), AGORA),
+    montarLinha(pedido({ id: "d", status: "falhou", erro: "x" }), AGORA),
+  ];
+  const r = resumir(linhas);
+  assert.deepEqual(r.situacoes, { pronto: 1, aguardando: 2, erro: 1 });
+  assert.equal(r.situacoes.pronto + r.situacoes.aguardando + r.situacoes.erro, r.total);
+});
+
 // --- degradação sem a migration (lib/sgp/cobranca.ts) ------------------------
 
 test("erro de coluna ausente é reconhecido — e erro de verdade NÃO é engolido", () => {
@@ -426,6 +538,12 @@ const SEM_COLUNA_ERR = {
   message: 'column sgp_pedidos.cobrado_em does not exist',
 };
 
+/** Os dois grupos opcionais reais: migration 106 e migration 109. */
+const GRUPOS = [
+  { nome: "cobranca", colunas: ["cobrado_em", "cobrado_por"] },
+  { nome: "erroManual", colunas: ["erro_manual_em", "erro_manual_por"] },
+] as const;
+
 test("sem a migration 106 a fila ainda responde — a tela do time não cai", async () => {
   const pedidas: string[] = [];
   const fila = criarFilaComFallback<{ id: string }>(
@@ -435,14 +553,14 @@ test("sem a migration 106 a fila ainda responde — a tela do time não cai", as
         ? { data: null, error: SEM_COLUNA_ERR }
         : { data: [{ id: "x" }], error: null };
     },
-    "id, cobrado_em, cobrado_por",
-    "id",
+    ["id"],
+    [GRUPOS[0]],
   );
 
   const r = await fila();
   assert.equal(r.error, null);
   assert.deepEqual(r.data, [{ id: "x" }]);
-  assert.equal(r.cobrancaDisponivel, false, "a tela some com o botão em vez de quebrar");
+  assert.equal(r.disponivel.cobranca, false, "a tela some com o botão em vez de quebrar");
   assert.deepEqual(pedidas, ["id, cobrado_em, cobrado_por", "id"], "tentou, caiu, repetiu sem");
 
   // Aprendeu: não bate de novo na coluna que não existe.
@@ -457,11 +575,11 @@ test("com a migration aplicada, pergunta uma vez só e nunca mais testa", async 
       pedidas.push(colunas);
       return { data: [{ id: "x" }], error: null };
     },
-    "id, cobrado_em",
-    "id",
+    ["id"],
+    [{ nome: "cobranca", colunas: ["cobrado_em"] }],
   );
-  assert.equal((await fila()).cobrancaDisponivel, true);
-  assert.equal((await fila()).cobrancaDisponivel, true);
+  assert.equal((await fila()).disponivel.cobranca, true);
+  assert.equal((await fila()).disponivel.cobranca, true);
   assert.deepEqual(pedidas, ["id, cobrado_em", "id, cobrado_em"], "sem consulta extra");
 });
 
@@ -473,13 +591,70 @@ test("erro REAL do banco vira erro, não 'recurso desligado'", async () => {
       n++;
       return { data: null, error: boom };
     },
-    "id, cobrado_em",
-    "id",
+    ["id"],
+    [{ nome: "cobranca", colunas: ["cobrado_em"] }],
   );
   const r = await fila();
   assert.equal(r.error, boom, "o 500 tem que subir");
-  assert.equal(r.cobrancaDisponivel, true, "não degrada o recurso por falha alheia");
+  assert.equal(r.disponivel.cobranca, true, "não degrada o recurso por falha alheia");
   assert.equal(n, 1, "não tenta de novo à toa");
+});
+
+/**
+ * O motivo de os grupos serem independentes: são DUAS migrations e quem aplica é
+ * o Johnny, uma de cada vez. Se aplicar a 109 sem a 106 derrubasse o "marcar
+ * erro" junto, o recurso teria nascido morto por causa de migration alheia.
+ */
+test("aplicar UMA das duas migrations não desliga a outra", async () => {
+  const pedidas: string[] = [];
+  const fila = criarFilaComFallback<{ id: string }>(
+    async (colunas) => {
+      pedidas.push(colunas);
+      // Mundo onde a 109 entrou e a 106 não.
+      return colunas.includes("cobrado_em")
+        ? { data: null, error: SEM_COLUNA_ERR }
+        : { data: [{ id: "x" }], error: null };
+    },
+    ["id"],
+    [...GRUPOS],
+  );
+
+  const r = await fila();
+  assert.equal(r.error, null);
+  assert.equal(r.disponivel.cobranca, false, "sem a 106, sem botão de cobrança");
+  assert.equal(r.disponivel.erroManual, true, "MAS o marcar erro continua de pé");
+  assert.deepEqual(pedidas[1], "id, erro_manual_em, erro_manual_por");
+});
+
+test("o inverso também: sem a 109, a cobrança sobrevive", async () => {
+  const fila = criarFilaComFallback<{ id: string }>(
+    async (colunas) =>
+      colunas.includes("erro_manual_em")
+        ? { data: null, error: { code: "42703", message: "column sgp_pedidos.erro_manual_em does not exist" } }
+        : { data: [{ id: "x" }], error: null },
+    ["id"],
+    [...GRUPOS],
+  );
+  const r = await fila();
+  assert.equal(r.disponivel.cobranca, true);
+  assert.equal(r.disponivel.erroManual, false);
+});
+
+test("42703 sem nome de coluna na mensagem derruba um grupo por vez, não todos", async () => {
+  // Acontece quando o PostgREST engole o detalhe (erro de schema cache). Aqui a
+  // 106 existe e a 109 não, mas a mensagem não diz de quem é a culpa.
+  const fila = criarFilaComFallback<{ id: string }>(
+    async (colunas) =>
+      colunas.includes("erro_manual_em")
+        ? { data: null, error: { code: "42703", message: "unknown column" } }
+        : { data: [{ id: "x" }], error: null },
+    ["id"],
+    [...GRUPOS],
+  );
+  const r = await fila();
+  assert.equal(r.error, null, "convergiu em vez de estourar");
+  assert.equal(r.disponivel.erroManual, false, "derrubou o último grupo, que era o culpado");
+  assert.equal(r.disponivel.cobranca, true, "e preservou o outro");
 });
 
 /** Caso REAL medido no banco em 02/09 — a aluna do chamado #206. */

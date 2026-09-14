@@ -35,7 +35,14 @@
  */
 import type { SgpPedidoRow, SgpStatus } from "./types.ts";
 import { normalizarWhatsapp } from "./types.ts";
-import { ETAPA_HUMANA, SGP_PARADO_HORAS, tempoHumano } from "./painel.ts";
+import {
+  ETAPA_HUMANA,
+  SGP_PARADO_HORAS,
+  SITUACAO_ROTULO,
+  situacao,
+  tempoHumano,
+  type SituacaoSgp,
+} from "./painel.ts";
 // A régua de acesso e a régua de "isto é dinheiro que entrou" vêm PRONTAS de
 // `acesso-regra.ts` — é o mesmo módulo puro que o gate de acesso e o sweeper de
 // compra órfã usam. Copiar qualquer uma das duas aqui era o caminho garantido
@@ -246,6 +253,17 @@ export type LinhaComprador = {
   celularDigitos: string | null;
   /** Status em português de gente. Nunca o enum cru. */
   status: string;
+  /**
+   * PRONTO / AGUARDANDO / ERRO — a etiqueta de planilha que o Lucas pediu
+   * (10/09). Vem da MESMA função da fila de trabalho (`situacao` em painel.ts):
+   * duas abas da mesma tela não podem discordar sobre o mesmo aluno.
+   *
+   * Quem nunca abriu o portal é AGUARDANDO — não há defeito nenhum, o que falta
+   * é alguém falar com a pessoa (e é justamente pra isso que esta aba existe).
+   */
+  situacao: SituacaoSgp;
+  situacaoRotulo: string;
+  situacaoMotivo: string;
   /** O status do pedido, quando existe. `null` = nunca começou o portal. */
   statusPedido: SgpStatus | null;
   /** ISO do PURCHASE_APPROVED mais antigo. `null` = sem compra registrada. */
@@ -357,6 +375,15 @@ export function montarComprador(
   const esperandoMs = Number.isFinite(referencia) ? Math.max(0, agora - referencia) : 0;
 
   const concluido = statusPedido === "pronto";
+  // Sem pedido não há o que derivar: a pessoa pagou e nem começou. Isso é
+  // AGUARDANDO, e o motivo é o próprio texto que a coluna Status já mostra.
+  const sit = pedido
+    ? situacao(pedido, agora)
+    : {
+        codigo: "aguardando" as SituacaoSgp,
+        rotulo: SITUACAO_ROTULO.aguardando,
+        motivo: "Comprou e ainda não abriu o portal — é com essa pessoa que o time precisa falar.",
+      };
   // "Parado" é só quem ainda espera algo. Quem já recebeu o clone não é alarme,
   // e quem está no meio do processamento nosso também não é cobrança do time.
   const esperandoAlguem = statusPedido === null || statusPedido !== "pronto";
@@ -369,6 +396,9 @@ export function montarComprador(
     celular: celularDigitos ? telefoneLegivel(celularDigitos) : "—",
     celularDigitos,
     status: statusPedido ? (ETAPA_HUMANA[statusPedido] ?? statusPedido) : STATUS_NAO_COMECOU,
+    situacao: sit.codigo,
+    situacaoRotulo: sit.rotulo,
+    situacaoMotivo: sit.motivo,
     statusPedido,
     dataAquisicao,
     semCompraRegistrada: dataAquisicao === null,
@@ -485,6 +515,8 @@ export function ordenarCompradores(linhas: LinhaComprador[]): LinhaComprador[] {
 export type ResumoCompradores = {
   /** Todas as linhas da planilha. */
   total: number;
+  /** Os três buckets da planilha (PRONTO / AGUARDANDO / ERRO). */
+  situacoes: Record<SituacaoSgp, number>;
   /** Compraram e nunca abriram o portal — o buraco que este painel revela. */
   naoComecaram: number;
   /** Começaram o portal (em qualquer etapa, inclusive entregue). */
@@ -512,8 +544,11 @@ export type ResumoCompradores = {
 };
 
 export function resumirCompradores(linhas: LinhaComprador[]): ResumoCompradores {
+  const situacoes: Record<SituacaoSgp, number> = { erro: 0, aguardando: 0, pronto: 0 };
+  for (const l of linhas) situacoes[l.situacao] += 1;
   return {
     total: linhas.length,
+    situacoes,
     naoComecaram: linhas.filter((l) => l.statusPedido === null).length,
     comecaram: linhas.filter((l) => l.statusPedido !== null).length,
     entregues: linhas.filter((l) => l.concluido).length,
