@@ -149,7 +149,38 @@ não é código com efeito.
 
 ## Estado do repo ao fim da ronda
 
-`git log origin/main..HEAD` vazio após o commit deste log. Havia mudanças **não
-commitadas** no diretório (SGP: `painel.ts`, `types.ts`, `cobranca.ts`,
-`compradores.ts`, `route.ts`, `page.tsx`) que **não são minhas** e que eu **não
-toquei nem commitei**.
+`git log origin/main..HEAD` vazio, `main` = `origin/main` = `bb44654`, e este
+log conferido dentro do `origin/main`. Havia mudanças **não commitadas** no
+diretório (SGP: `painel.ts`, `types.ts`, `cobranca.ts`, `compradores.ts`,
+`route.ts`, `page.tsx`) que **não eram minhas** e que eu **não toquei**.
+
+## Adendo: caí na MESMA armadilha que o vigia caiu 1h antes
+
+Registro porque é erro meu e porque é a segunda vez no mesmo dia.
+
+Abri a ronda com `git checkout main` e conferi `origin/main..HEAD` vazio. No
+meio da ronda o clone compartilhado foi parar em **`feat/sgp-concluir-atendimento`**
+(outro agente commitou `7102524` ali enquanto eu media áudio). Commitei meu log
+sem reconferir a branch: ele foi parar **em cima do trabalho do outro agente**, e
+o `git push origin main` empurrou o ref local `main`, que não tinha meu commit.
+**O log não chegou no origin.** O `echo PUSHED` saiu, o que torna o erro pior:
+o comando "deu certo" e mesmo assim a entrega não aconteceu.
+
+Quem pegou foi exatamente a conferência que a ordem manda fazer no fim
+(`origin/main..HEAD` tinha que sair vazio e saiu com 2 linhas). É a segunda vez
+hoje que essa conferência é a única coisa entre "ronda registrada" e "ronda
+perdida" — o vigia documentou o mesmo em `fd8aacf`, às 14hZ.
+
+Correção, sem `reset --hard` e sem tocar em working tree alheio:
+1. `git worktree add /tmp/wt-main-ronda main` e **cherry-pick** do meu commit
+   lá dentro, pra não disputar o checkout com o outro agente → `bb44654`.
+2. `push origin main` e reconferência (`origin/main..main` vazio).
+3. Worktree removida e `feat/sgp-concluir-atendimento` devolvida com
+   `branch -f` pro `7102524` que o origin já tinha. Conferido: local e origin
+   batem, e o trabalho do outro agente está intacto.
+
+**Lição, reforçando a do vigia:** `checkout main` no início da ronda não vale
+nada num clone compartilhado com ~100 worktrees e outros agentes commitando. A
+branch se reconfere **no instante do commit**, e `push` que imprime sucesso não
+é prova de entrega — a prova é `origin/main..HEAD` vazio **e** o arquivo lido de
+dentro do `origin/main`.
