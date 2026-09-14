@@ -277,3 +277,59 @@ export function blocoDeTentativas(r: ResumoDeContato, agoraMs: number, cobreDesd
     ...avisoCobertura,
   ];
 }
+
+/** Primeira linha do bloco derivado. */
+const MARCA_BLOCO = /^TENTATIVAS DE CONTATO/;
+/** Última linha do bloco derivado — é ela que fecha a região reescrita. */
+const MARCA_PASSO = /^PRÓXIMO PASSO: /;
+
+/**
+ * REESCREVE, do zero, o trecho derivado de uma ficha de bounce já gravada.
+ *
+ * POR QUE ISTO EXISTE, e é a correção do primeiro desenho deste conserto.
+ * Na primeira versão o bloco só era montado dentro do `descrever()` do
+ * `mail-bounce.ts` — ou seja, **só quando chegava um bounce novo**. O gatilho
+ * era o EVENTO DE FALHA. E o caso que abriu o cartão (b32af5ff) é justamente o
+ * contrário: a 3ª tentativa da Valdeni em 13/09 22:13Z DEU CERTO, não voltou
+ * bounce nenhum — então nada disparava a regravação e a ficha seguia mostrando
+ * o conselho escrito no 2º bounce, três dias antes. O caminho de SUCESSO, que é
+ * o mais comum, era exatamente o que o conserto não alcançava.
+ *
+ * Aqui a conta é refeita a CADA LEITURA, contra o `emails_enviados` de agora:
+ * quem abre a ficha lê o estado de agora, não o estado do último acidente. É o
+ * que "derivar na leitura" significa de verdade — sem coluna nova, sem
+ * migration (regra 21) e sem um segundo lugar pra divergir.
+ *
+ * NÃO INVENTA FICHA. Se a descrição não tem a linha `PRÓXIMO PASSO: `, ela não
+ * é do formato que este módulo escreve e volta INTACTA: é melhor uma ficha sem
+ * o bloco do que uma ficha corrompida por adivinhação de formato.
+ *
+ * Quando o histórico não manda nada (`passoDoHistorico` = null), o passo que já
+ * estava gravado é PRESERVADO — ele é a orientação padrão da classe, que segue
+ * correta pro primeiro bounce. Só o bloco de tentativas é atualizado.
+ */
+export function reescreverFichaDeBounce(
+  descricao: string,
+  r: ResumoDeContato,
+  agoraMs: number,
+  cobreDesde?: string,
+): string {
+  const linhas = descricao.split("\n");
+  const iPasso = linhas.findIndex((l) => MARCA_PASSO.test(l));
+  if (iPasso < 0) return descricao;
+
+  // O bloco antigo, quando existe, vive entre a marca e o passo. Sem marca, a
+  // região é só a linha do passo e o bloco novo entra por cima dela.
+  const iMarca = linhas.findIndex((l) => MARCA_BLOCO.test(l));
+  const iInicio = iMarca >= 0 && iMarca < iPasso ? iMarca : iPasso;
+
+  const bloco = blocoDeTentativas(r, agoraMs, cobreDesde);
+  const passo = passoDoHistorico(r, agoraMs) ?? linhas[iPasso].replace(MARCA_PASSO, "");
+
+  return [
+    ...linhas.slice(0, iInicio),
+    ...(bloco.length ? [...bloco, ""] : []),
+    `PRÓXIMO PASSO: ${passo}`,
+    ...linhas.slice(iPasso + 1),
+  ].join("\n");
+}

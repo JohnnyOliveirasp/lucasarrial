@@ -27,7 +27,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { limparFechamento } from "@/lib/incidents/closure";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { parseBounce, planoDoBounce, type AcaoDeBounce, type Bounce } from "./mail-bounce";
-import { resumirContato, type ResumoDeContato } from "./contato-tentativas";
+import { lerHistoricoDeContato } from "./contato-ficha";
 import { marcarNaoEntregue } from "./mail-envio-registro";
 
 /**
@@ -145,91 +145,6 @@ async function abrirChamadoDaAcao(a: AcaoDeBounce, emailsAfetados: string[]): Pr
     affectedEmails: emailsAfetados,
     sampleError: a.diagnostico || null,
   });
-}
-
-/**
- * Lê o histórico de contato de cada aluno pra a ficha poder mostrar TENTATIVAS
- * em vez de só o bounce da vez (b32af5ff). NUNCA lança: ficha com histórico é
- * melhor que ficha nenhuma, então falha aqui devolve `{}` e a descrição sai no
- * formato antigo.
- *
- * ⚠️ DERIVA NA LEITURA, não persiste em coluna nova — e a escolha é medida, não
- * estética. (a) Coluna nova (`incidents.contact_attempts`) exigiria migration, e
- * migration precisa do aval do Johnny (regra 21); as migrations 85, 104 e 107
- * seguem pendentes, então o código nasceria logando erro em silêncio, que é
- * exatamente o defeito que esta ficha veio consertar. (b) Coluna nova nasce
- * VAZIA e só passa a valer daqui pra frente, enquanto `emails_enviados` já
- * responde a pergunta pra todo envio que passa pelo `sendSupportMail`. (c) Dado
- * duplicado em dois lugares é dois lugares pra divergir: a verdade sobre envio
- * já mora em `emails_enviados` e sobre bounce já mora na mesma linha.
- */
-async function lerHistoricoDeContato(
-  emails: string[],
-  agoraMs: number,
-): Promise<Record<string, ResumoDeContato>> {
-  const fora: Record<string, ResumoDeContato> = {};
-  if (!emails.length) return fora;
-  try {
-    const admin = getAdmin();
-    const alvos = [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))];
-
-    const { data, error } = await admin
-      .from("emails_enviados" as never)
-      .select("to_email, enviado_em, assunto, origem, bounce_em, bounce_classe")
-      .in("to_email", alvos)
-      .order("enviado_em", { ascending: true });
-    if (error) {
-      // Tabela ausente (migration 108 não aplicada) cai aqui: log e segue.
-      console.error("[agent/bounce] histórico de contato indisponível:", error.message);
-      return fora;
-    }
-    const linhas = (data ?? []) as unknown as Array<{
-      to_email: string;
-      enviado_em: string;
-      assunto: string | null;
-      origem: string | null;
-      bounce_em: string | null;
-      bounce_classe: string | null;
-    }>;
-
-    // `first_seen_at` da ficha é o que denuncia cobertura PARCIAL: ficha mais
-    // velha que o registro de envios tem tentativas que a lista não enxerga, e
-    // renderizar isso como "0 tentativas" seria o zero cego que faz a ficha
-    // pedir reenvio de novo.
-    const { data: fichas } = await admin
-      .from("incidents" as never)
-      .select("first_seen_at, affected_emails")
-      .like("signature", "fast-bounce:%")
-      .overlaps("affected_emails", alvos);
-    const nascimento = new Map<string, string>();
-    for (const f of (fichas ?? []) as unknown as Array<{ first_seen_at: string; affected_emails: string[] }>) {
-      for (const e of f.affected_emails ?? []) {
-        const chave = e.toLowerCase();
-        const atual = nascimento.get(chave);
-        if (!atual || f.first_seen_at < atual) nascimento.set(chave, f.first_seen_at);
-      }
-    }
-
-    for (const alvo of alvos) {
-      fora[alvo] = resumirContato({
-        tentativas: linhas
-          .filter((l) => (l.to_email ?? "").toLowerCase() === alvo)
-          .map((l) => ({
-            enviadoEm: l.enviado_em,
-            assunto: l.assunto,
-            origem: l.origem,
-            bounceEm: l.bounce_em,
-            bounceClasse: l.bounce_classe,
-          })),
-        fichaDesde: nascimento.get(alvo) ?? null,
-        agoraMs,
-      });
-    }
-    return fora;
-  } catch (e) {
-    console.error("[agent/bounce] histórico de contato falhou:", e instanceof Error ? e.message : e);
-    return fora;
-  }
 }
 
 /**
