@@ -31,6 +31,7 @@ import { runpodSubmitTrain, webhookUrlFor } from "@/lib/runpod/client";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
 import { bypassesBilling } from "@/lib/credits/access";
 import { debitCreditsOnboarding } from "@/lib/credits/service";
+import { resumirDebitoFalho } from "@/lib/credits/debito-onboarding-falho";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
 import {
   deveCobrarOnboarding,
@@ -49,7 +50,18 @@ function trainExecutionTimeoutMs(durationSeconds: number | null): number {
 }
 
 export type TreinoResult =
-  | { ok: true; runpod_job_id: string }
+  | {
+      ok: true;
+      runpod_job_id: string;
+      /**
+       * Preenchido SÓ quando o treino saiu mas o débito não entrou. Continua
+       * `ok: true` de propósito: o treino foi disparado de verdade e o aluno
+       * vai receber a voz — transformar isso em falha faria o chamador
+       * reportar "treino não disparado" sobre uma entrega que está a
+       * caminho. É aviso de contabilidade, não de entrega.
+       */
+      debito_falhou?: string;
+    }
   | { ok: false; reason: string };
 
 export async function dispararTreinoOnboarding(
@@ -168,8 +180,16 @@ export async function dispararTreinoOnboarding(
   // Debita após o treino ser disparado com sucesso (mesmo shape do
   // start-training — o estorno do finalize-training casa com este débito).
   // Versão do onboarding: pode deixar negativo (cai em credits_extra).
+  //
+  // O retorno NÃO é descartado (era, até 14/09): a função devolve `ok:false`
+  // calado quando a RPC erra ou o perfil não existe, e nesta altura o treino
+  // JÁ foi submetido ao RunPod. Descartar entregava o clone sem cobrar, sem
+  // linha no razão e sem sinal nenhum. Não desfaz o treino — o material já
+  // saiu e cancelar puniria o aluno por erro de contabilidade nosso; o que
+  // faltava era o registro. Ver `lib/credits/debito-onboarding-falho.ts`.
+  let debitoFalhou: string | undefined;
   if (billed) {
-    await debitCreditsOnboarding({
+    const debito = await debitCreditsOnboarding({
       userId,
       amount: TRAINING_CREDIT_COST,
       kind: "training",
@@ -177,7 +197,17 @@ export async function dispararTreinoOnboarding(
       refId: voice.id,
       note: "clonagem/treino de voz (onboarding)",
     });
+    if (!debito.ok) {
+      debitoFalhou = resumirDebitoFalho({
+        userId,
+        amount: TRAINING_CREDIT_COST,
+        kind: "training",
+        refType: "voice",
+        refId: voice.id,
+        reason: debito.reason === "no_profile" ? "no_profile" : "error",
+      });
+    }
   }
 
-  return { ok: true, runpod_job_id: runpodJob.id };
+  return { ok: true, runpod_job_id: runpodJob.id, debito_falhou: debitoFalhou };
 }

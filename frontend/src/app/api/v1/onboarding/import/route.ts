@@ -348,7 +348,15 @@ export async function POST(request: NextRequest) {
   // NÃO derruba o import — fica registrada na resposta pra nota da planilha.
   const avatarsResult = await gerarAvatares(admin, userId, imagesResult.all_keys).catch((e) => {
     console.error("[onboarding/import] avatares:", e instanceof Error ? e.message : e);
-    return { created: 0, skipped: 0, failed: [{ nome: "todos", error: "falha geral" }] };
+    // `debitosFalhos: []` explícito: o resultado é serializado em
+    // `onboarding_runs.resultado`, e o campo sumir só no caminho de exceção
+    // deixaria a coluna com dois formatos diferentes pro mesmo evento.
+    return {
+      created: 0,
+      skipped: 0,
+      failed: [{ nome: "todos", error: "falha geral" }],
+      debitosFalhos: [] as string[],
+    };
   });
 
   // ── Áudio: SEMPRE tenta, mesmo que a imagem tenha falhado (Johnny 21/08).
