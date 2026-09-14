@@ -39,6 +39,24 @@
  * ela separa esses casos num bloco próprio, rotulado, pra que apareçam em vez
  * de ficarem invisíveis. Rotular ≠ decidir.
  *
+ * ── A PERNA DO CARD FECHADO (#384 / 6509c3bc) ──────────────────────────────
+ * A primeira versão só varria `open`/`investigating`. Medido pelo Frank em
+ * 13/09 22:50Z: o Marcelo pediu pra sair em 09/09, DENTRO da janela da cobrança
+ * de 05/09 (garantia até 12/09), e seguia sem devolução em 13/09 — invisível
+ * aqui porque TODOS os cards dele (#32, #128, #337, #351) estão `fixed`/
+ * `ignored`. Card fechado escondia aluno que ainda estava perdendo dinheiro na
+ * fila, que é exatamente a classe que esta ferramenta existe pra achar.
+ *
+ * Então a varredura passou a ter DUAS pernas: os abertos (como antes) e os
+ * NÃO-abertos com sinal recente (`last_seen_at` dentro de JANELA_FECHADO_DIAS,
+ * 30 por padrão). A segunda perna é escrita por NEGAÇÃO (`not in
+ * (open,investigating)`) de propósito: o vocabulário de status não tem CHECK no
+ * banco (ver scripts/107) e já ganhou `fixing` e `suporte_necessario` depois de
+ * escrito — enumerar os fechados criaria um vão novo a cada status novo.
+ *
+ * Fechar o card NÃO é o que decide: só muda o rótulo da linha. O que decide
+ * continua sendo a data da garantia contra o relógio.
+ *
  * ── CONTROLE POSITIVO, E POR QUE ABORTA ────────────────────────────────────
  * "Zero" de instrumento cego foi exatamente o que fez a casa reportar
  * "pagante sem acesso: zero" em 07/09 com um varredor que não enxergava o SGP.
@@ -112,23 +130,55 @@ const ehPedidoDePessoa = (inc) => inc.categoria === "atendimento";
 // no controle assim mesmo.
 const CONTROLE = ["victor.inscriptio@gmail.com", "contatoecocannabis@gmail.com"];
 
+// Quanto tempo um card FECHADO ainda conta como "sinal recente". Mensal: a
+// cobrança que o aluno quer de volta cabe em 30 dias. Só lê, então errar pra
+// mais custa linha lida; errar pra menos custa o prazo de alguém (#384).
+const JANELA_FECHADO_DIAS = Number(process.env.JANELA_FECHADO_DIAS || 30);
+if (!Number.isFinite(JANELA_FECHADO_DIAS) || JANELA_FECHADO_DIAS <= 0) {
+  throw new Error(`JANELA_FECHADO_DIAS inválido: ${process.env.JANELA_FECHADO_DIAS} (dias, número > 0)`);
+}
+
+const ABERTOS = ["open", "investigating"];
+// ⚠️ `categoria` é OBRIGATÓRIA aqui. É ela que `ehPedidoDePessoa` lê para separar
+// PEDIDO de COORTE (#266). Se cair desta lista, o campo chega `undefined`, TODO
+// card vira coorte técnica e os blocos de urgência ficam vazios para sempre —
+// o instrumento pararia de acusar sem dizer que parou. Foi o risco real ao
+// juntar o #266 (que ainda selecionava colunas inline) com o #384.
+const COLUNAS = "id,numero,status,title,first_seen_at,last_seen_at,affected_emails,categoria";
+
 const dia = (d) => (d ? new Date(d).toISOString().slice(0, 10) : "—");
 const horas = (ms) => (ms / 3600000).toFixed(1);
+const fechado = (inc) => !ABERTOS.includes(String(inc.status ?? ""));
 
-async function todosIncidentes(c) {
+/** Pagina até o fim. `filtrar` recebe a query e devolve a query. */
+async function varrer(c, rotulo, filtrar) {
   let todos = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await c
-      .from("incidents")
-      .select("id,numero,status,title,first_seen_at,affected_emails,categoria")
-      .in("status", ["open", "investigating"])
-      .order("first_seen_at", { ascending: true })
-      .range(from, from + 999);
+    const { data, error } = await filtrar(c.from("incidents").select(COLUNAS)).range(from, from + 999);
     // erro cru ANTES de acreditar em qualquer zero.
-    if (error) throw new Error("incidents: " + JSON.stringify(error));
+    if (error) throw new Error(`incidents(${rotulo}): ` + JSON.stringify(error));
     todos = todos.concat(data);
     if (data.length < 1000) return todos;
   }
+}
+
+/**
+ * As duas pernas. Devolve { abertos, fechadosVivos } separados porque o
+ * cabeçalho tem que DIZER quanto cada uma enxergou — perna nova que volta
+ * vazia em silêncio é o mesmo instrumento cego de antes, com outra cara.
+ */
+async function todosIncidentes(c, agora) {
+  const corte = new Date(agora - JANELA_FECHADO_DIAS * 86400000).toISOString();
+  const abertos = await varrer(c, "abertos", (q) =>
+    q.in("status", ABERTOS).order("first_seen_at", { ascending: true }),
+  );
+  const fechadosVivos = await varrer(c, "fechados-com-sinal-recente", (q) =>
+    q
+      .not("status", "in", `(${ABERTOS.join(",")})`)
+      .gte("last_seen_at", corte)
+      .order("last_seen_at", { ascending: false }),
+  );
+  return { abertos, fechadosVivos, corte };
 }
 
 async function comprasDe(c, email) {
@@ -158,10 +208,16 @@ function renovacaoMaisRecente(linhas) {
 (async () => {
   const c = supa();
   const agora = new Date();
-  const incidentes = await todosIncidentes(c);
+  // As duas pernas do #384 (aberto + fechado com sinal recente) passam pelo
+  // corte do #266 (pedido de pessoa × coorte de card técnico). São filtros
+  // ortogonais e os DOIS valem: o #384 decide QUEM é lido, o #266 decide quem
+  // pode ser chamado de emergência.
+  const { abertos, fechadosVivos, corte } = await todosIncidentes(c, agora);
+  const incidentes = abertos.concat(fechadosVivos);
   const casam = incidentes.filter((i) => PEDIDO.test(i.title || ""));
   const pedidos = casam.filter(ehPedidoDePessoa);
   const coorte = casam.filter((i) => !ehPedidoDePessoa(i));
+  const pedidosFechados = pedidos.filter(fechado);
 
   const achados = [];
   for (const inc of casam) {
@@ -241,10 +297,18 @@ function renovacaoMaisRecente(linhas) {
   console.log(`GARANTIA × FILA — ${agora.toISOString()}`);
   const nPedido = achados.filter((a) => a.souPedido).length;
   const nCoorte = achados.length - nPedido;
-  console.log(`${incidentes.length} incidentes abertos · ${casam.length} casam o vocabulário de reembolso/cancelamento`);
-  console.log(`  ├─ PEDIDO (categoria='atendimento'): ${pedidos.length} card(s) · ${nPedido} pessoa(s) — alguém escreveu pedindo`);
+  console.log(`${incidentes.length} incidentes varridos = ${abertos.length} abertos + ${fechadosVivos.length} FECHADOS com sinal desde ${dia(corte)} (${JANELA_FECHADO_DIAS}d)`);
+  console.log(`${casam.length} casam o vocabulário de reembolso/cancelamento`);
+  console.log(`  ├─ PEDIDO (categoria='atendimento'): ${pedidos.length} card(s) · ${nPedido} pessoa(s) — alguém escreveu pedindo (${pedidosFechados.length} em card FECHADO)`);
   console.log(`  └─ COORTE (card técnico):            ${coorte.length} card(s) · ${nCoorte} pessoa(s) — ninguém pediu; a casa achou varrendo`);
   console.log(`controle positivo: OK (reencontrados ${CONTROLE.length}/${CONTROLE.length} na perna de PEDIDO)`);
+  if (!fechadosVivos.length) {
+    console.log(
+      `⚠️  a perna dos FECHADOS voltou VAZIA. Pode ser verdade, mas foi essa cegueira que\n` +
+        `   escondeu o Marcelo por 4,2 dias (#384) — confira com 2026-08-20_fechados_que_disparam.cjs\n` +
+        `   antes de tratar este relatório como "não há ninguém".`,
+    );
+  }
   console.log(`${"=".repeat(78)}`);
 
   for (const cl of ordem) {
@@ -252,10 +316,13 @@ function renovacaoMaisRecente(linhas) {
     if (!bloco.length) continue;
     console.log(`\n${rotulo[cl]}  [${bloco.length}]`);
     for (const a of bloco) {
-      console.log(`   #${a.inc.numero} ${a.email}`);
+      const selo = fechado(a.inc)
+        ? `  ⚠️ CARD FECHADO (${a.inc.status}) — último sinal ${dia(a.inc.last_seen_at)}; não aparece na fila de ninguém`
+        : "";
+      console.log(`   #${a.inc.numero} ${a.email}${selo}`);
       // "pediu em" só é verdade na perna de PEDIDO. Na coorte, essa data é o dia
       // em que a CASA achou o defeito — chamar isso de "pediu" foi metade da
-      // mentira que este corte veio desfazer, e ela não pode sobreviver no texto.
+      // mentira que o #266 veio desfazer, e ela não pode sobreviver no texto.
       const quando = a.souPedido ? `pediu em ${dia(a.pediuEm)}` : `card aberto pela casa em ${dia(a.pediuEm)} (ela não pediu)`;
       console.log(`      ${quando} · janela ${a.jAgora ? `${dia(a.jAgora.compra)} → ${a.jAgora.fim.toISOString()}` : "(SEM LINHA NO NOSSO BANCO p/ este e-mail — não é 'não pagou')"}`);
       if (cl === "PERDEU_NA_FILA") {
@@ -271,9 +338,13 @@ function renovacaoMaisRecente(linhas) {
 
   const sangrando = achados.filter((a) => a.classe === "PERDEU_NA_FILA").length;
   const urgente = achados.filter((a) => a.classe === "VENCE_EM_48H").length;
+  const escondidos = achados.filter((a) => fechado(a.inc) && ["PERDEU_NA_FILA", "VENCE_EM_48H"].includes(a.classe)).length;
   console.log(`\n➡️  ${sangrando} perderam a janela na fila · ${urgente} vencem em 48h · ${achados.filter((a) => a.classe === "RENOVACAO_EM_ABERTO").length} na perna da renovação (Johnny).`);
   console.log(`   Os números acima contam SÓ quem pediu. ${nCoorte} pessoa(s) de card técnico`);
   console.log(`   ficaram no bloco 🔵 e de fora da conta — ninguém pediu nada por elas.`);
+  if (escondidos) {
+    console.log(`   🫥 ${escondidos} desses estão em card FECHADO: a casa considera o assunto resolvido e o aluno ainda está perdendo dinheiro (#384).`);
+  }
   console.log(`   Nada foi alterado: esta ferramenta só lê.\n`);
 })().catch((e) => {
   console.error("ABORTADO:", e.message);
