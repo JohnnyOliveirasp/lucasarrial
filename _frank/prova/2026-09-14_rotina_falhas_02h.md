@@ -164,6 +164,36 @@ dentro dele. Cartão aberto pra não virar conhecimento que morre no log.
 
 ## Fim de ronda
 
-- `git log --oneline origin/main..HEAD` → vazio depois do push deste log.
-- Nenhum fix preso em branch: não criei branch nesta ronda.
+- `git log --oneline origin/main..HEAD` → **vazio** depois do push deste log.
+- Não criei branch nesta ronda.
 - Fila de patches: **0**. Recados: **73** (inalterada).
+
+### Conferência das branches do Vigia (passo fixo — não afirmei, medi)
+
+Em 19/08 um fix de aluno ficou 9h preso numa branch. Rodei `git rev-list` nas
+quatro `vigia/*`:
+
+| branch | commits fora da main | veredito |
+|---|---|---|
+| `vigia/2c5bab42` | 0 | nada preso |
+| `vigia/cb4ae39d` | 0 | nada preso |
+| `vigia/2d0509b4` | 1 (`290f1b8`) | **não está preso** — o fix chegou à main por `36886fa` (#313 `fixed`), e conferi o filtro de produto vivo em `entitlements.ts:132-160`. A branch é duplicata superada. |
+| `vigia/7578c587` | 1 (`f0cdb15`) | ⚠️ **STALE — NÃO MERGEAR** (abaixo) |
+
+`vigia/6509c3bc` (no origin, patch de ontem): **mergeado**, confirmado por
+`merge-base --is-ancestor` contra `origin/main` (PR #267).
+
+### ⚠️ `vigia/7578c587` entra na lista de branches STALE
+
+É o patch morto do item 1 (`mail-mime-pure.ts`). O diff contra a main **remove
+44 linhas de `mail-respond.ts`** — as linhas do caminho novo. **Mergear essa
+branch derrubaria o fix de mojibake que está em produção** (`mail-charset.ts`,
+#320/PR #220).
+
+É o mesmo desenho de armadilha do `feat/onedrive-401` e do
+`feat/fix-image-upload-retry`, e por isso fica registrado aqui em vez de morrer
+no meu terminal. Atenuante: ela é **só local**, não está no origin — conferido
+com `git ls-remote --heads origin 'refs/heads/vigia/*'`, que devolve apenas
+`vigia/2c5bab42` e `vigia/6509c3bc`. Ou seja, ninguém além desta máquina pode
+mergear. Não apaguei; a convenção aqui é documentar branch stale, não sumir com
+ela em silêncio.
