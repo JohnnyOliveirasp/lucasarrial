@@ -121,6 +121,28 @@ do mais antigo pro mais novo.
 já olhou. Item irresolúvel que volta toda rodada **entope a varredura** e
 esconde o que dava pra resolver (aconteceu em 18/08).
 
+### 2-B. Quem pediu pra sair e ainda está sendo cobrado
+
+```bash
+node _frank/ferramentas/saida_x_assinatura.cjs
+```
+
+**Rode isto em TODA ronda**, junto da varredura acima. Ele cruza "o aluno pediu
+pra sair" com "a Hotmart ainda diz ACTIVE" — que é o defeito do `#384`: o pedido
+vira recado, ninguém executa, e a pessoa é cobrada de novo achando que saiu.
+Enquanto a varredura não existiu, o Marcelo ficou 4,2 dias assim, a Francislaine
+6 e a Lucila 7 — com R$ 194 marcados pra cobrar.
+
+**Só leitura.** O bloco 🩸 é o que exige ação: cancelar é **automático pela
+regra 9-C** quando o titular pediu por escrito (`cancelar_assinatura.cjs
+--aluno <email> --confirmar`) — não espere aval pra isso, e confira na Hotmart
+**depois** de gravar. O reembolso é outra conversa e **não é sua**.
+
+⚠️ Ele varre por **e-mail**, e pessoa não é e-mail: quem fala com um endereço e
+assina com outro tem a segunda assinatura invisível ali. Antes de dar um caso
+por fechado, confira se a pessoa tem outros e-mails (foi assim que a segunda
+assinatura da Lucila quase passou).
+
 ## 3. Aluno pagante parado
 
 O resumo de tudo: alguém com assinatura ativa, crédito no bolso e **nenhuma
