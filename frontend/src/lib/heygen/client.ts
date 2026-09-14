@@ -71,15 +71,27 @@ async function call<T>(
 
 // ───────── leitura (conexão + galeria) ─────────
 
-/** Valida a key e devolve a quota de API restante. Lança HeygenError(401) se inválida. */
-export async function getRemainingQuota(apiKey: string): Promise<{ credits: number }> {
+/**
+ * Valida a key e devolve a quota de API restante. Lança HeygenError(401) se inválida.
+ *
+ * ⚠️ Isto é a COTA DE API do HeyGen, NÃO o saldo do plano de vídeo dele — dá
+ * pra ter crédito no painel do HeyGen e cota de API zerada ao mesmo tempo.
+ *
+ * Devolve os DOIS números de propósito (14/09): `raw` é o `remaining_quota`
+ * exatamente como o HeyGen respondeu, e `credits` é o mesmo valor dividido
+ * por 60. A divisão esconde a ordem de grandeza (1.800 vira "30"), então a
+ * tela mostra o cru e usa o dividido só como leitura auxiliar.
+ */
+export async function getRemainingQuota(
+  apiKey: string,
+): Promise<{ credits: number; raw: number }> {
   const data = await call<{ remaining_quota?: number; details?: unknown }>(
     apiKey,
     "/v2/user/remaining_quota",
   );
   // remaining_quota vem em "unidades" internas (60 ≈ 1 crédito/minuto standard)
   const raw = typeof data.remaining_quota === "number" ? data.remaining_quota : 0;
-  return { credits: raw / 60 };
+  return { credits: raw / 60, raw };
 }
 
 export type HeygenAvatar = {
@@ -264,16 +276,44 @@ export async function getVideoStatus(apiKey: string, videoId: string): Promise<H
   };
 }
 
-/** Erros da API traduzidos pra mensagem que o aluno entende. */
-export function friendlyHeygenError(e: unknown): string {
+/**
+ * Tipo do erro do HeyGen. Existe porque "chave recusada" e "cota acabou"
+ * pediam AÇÕES OPOSTAS do aluno e até 14/09 recebiam tratamento parecido:
+ * chave inválida se resolve reconectando; cota zerada NÃO se resolve
+ * reconectando — e era exatamente isso que o aluno tentava, em loop.
+ *
+ *  - "auth"    → a key foi recusada (401/403). Reconectar resolve.
+ *  - "quota"   → a cota de API da conta HeyGen DELE acabou. Reconectar NÃO resolve.
+ *  - "heygen"  → o HeyGen recusou por outro motivo (mensagem dele).
+ *  - "network" → nem chegamos a falar com o HeyGen.
+ */
+export type HeygenErrorKind = "auth" | "quota" | "heygen" | "network";
+
+export function classifyHeygenError(e: unknown): { kind: HeygenErrorKind; message: string } {
   if (e instanceof HeygenError) {
     if (e.status === 401 || e.status === 403) {
-      return "Sua chave do HeyGen não foi aceita. Confira em Settings → Subscriptions & API e conecte de novo.";
+      return {
+        kind: "auth",
+        message:
+          "Sua chave do HeyGen não foi aceita. Confira em Settings → Subscriptions & API, no site do HeyGen, e conecte de novo aqui.",
+      };
     }
     if (/quota|credit|insufficient/i.test(e.message)) {
-      return "Sua conta HeyGen está sem créditos de API. Recarregue lá e tente de novo.";
+      return {
+        kind: "quota",
+        message:
+          "A COTA DE API da sua conta HeyGen chegou a zero. Isso é da sua conta no HeyGen, não da FastCloner: seus créditos FastCloner não pagam o HeyGen. Recarregue em Settings → Subscriptions & API, no site do HeyGen. Reconectar a chave aqui NÃO resolve — a chave está válida, o que acabou foi a cota.",
+      };
     }
-    return `O HeyGen recusou a operação: ${e.message}`;
+    return { kind: "heygen", message: `O HeyGen recusou a operação: ${e.message}` };
   }
-  return "Não foi possível falar com o HeyGen agora. Tente de novo em instantes.";
+  return {
+    kind: "network",
+    message: "Não foi possível falar com o HeyGen agora. Tente de novo em instantes.",
+  };
+}
+
+/** Erros da API traduzidos pra mensagem que o aluno entende. */
+export function friendlyHeygenError(e: unknown): string {
+  return classifyHeygenError(e).message;
 }

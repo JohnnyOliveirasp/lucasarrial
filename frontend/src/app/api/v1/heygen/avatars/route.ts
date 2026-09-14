@@ -16,6 +16,7 @@ import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { decryptApiKey } from "@/lib/heygen/crypto";
 import {
+  classifyHeygenError,
   createPhotoAvatarGroup,
   friendlyHeygenError,
   listAvatarGroups,
@@ -56,12 +57,18 @@ export async function GET(request: NextRequest) {
     );
     return jsonOk({ connected: true, groups: withLooks });
   } catch (e) {
-    // key revogada/expirada no HeyGen → marca e orienta reconectar
-    await getAdmin()
-      .from("heygen_accounts")
-      .update({ status: "invalid", updated_at: new Date().toISOString() })
-      .eq("user_id", auth.user_id);
-    return badRequest(friendlyHeygenError(e));
+    const { kind, message } = classifyHeygenError(e);
+    // Só a key RECUSADA (401/403) invalida a conexão e pede reconectar.
+    // Antes de 14/09 QUALQUER falha aqui marcava "invalid" — cota zerada,
+    // instabilidade do HeyGen ou timeout derrubavam a conexão e empurravam o
+    // aluno pra reconectar a chave, que é justamente o que não resolve.
+    if (kind === "auth") {
+      await getAdmin()
+        .from("heygen_accounts")
+        .update({ status: "invalid", updated_at: new Date().toISOString() })
+        .eq("user_id", auth.user_id);
+    }
+    return badRequest(message);
   }
 }
 

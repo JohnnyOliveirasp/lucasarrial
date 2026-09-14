@@ -3,18 +3,30 @@
 /**
  * Conexão BYOK do HeyGen + galeria importada (Lab · Vídeo HeyGen).
  * - Sem conexão: campo pra colar a API key (com passo a passo de onde pegar).
- * - Conectado: saldo de API da conta + grupos de foto-avatar (só os do aluno)
- *   + desconectar. A key NUNCA volta do servidor (nem mascarada).
+ * - Conectado: COTA DE API da conta (número cru, medido ao vivo) + grupos de
+ *   foto-avatar (só os do aluno) + desconectar. A key NUNCA volta do servidor
+ *   (nem mascarada).
+ *
+ * ⚠️ O que aparece aqui é a cota de API do HeyGen, NÃO o saldo FastCloner —
+ * são carteiras separadas e os créditos daqui não pagam o HeyGen (14/09).
  */
 import { useCallback, useEffect, useState } from "react";
 import { HeygenGenerate } from "./heygen-generate";
 import type { HeygenAudioSel } from "./heygen-audio-picker";
 
-type Account = {
-  status: string;
-  remaining_credits: number | null;
-  last_validated_at: string | null;
-  created_at: string;
+/**
+ * Cota de API do HeyGen, medida AO VIVO pelo GET /account (14/09).
+ * `raw` é o `remaining_quota` como o HeyGen devolveu; `credits` é o mesmo
+ * número dividido por 60. Mostramos o CRU porque a divisão escondia a ordem
+ * de grandeza e o aluno não conseguia distinguir "minha cota acabou" de "a
+ * integração deles quebrou" — e tentava reconectar a chave, que nunca resolve.
+ */
+type Quota = {
+  raw: number | null;
+  credits: number | null;
+  stale: boolean;
+  error: string | null;
+  error_kind: "auth" | "quota" | "heygen" | "network" | null;
 } | null;
 
 type Look = { id: string; name: string; image_url: string | null };
@@ -31,7 +43,7 @@ type Props = {
 export function HeygenConnect({ presetAudio, presetAudioLabel, onVideoReady }: Props = {}) {
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
-  const [account, setAccount] = useState<Account>(null);
+  const [quota, setQuota] = useState<Quota>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,7 +58,7 @@ export function HeygenConnect({ presetAudio, presetAudioLabel, onVideoReady }: P
     try {
       const acc = await (await fetch("/api/v1/heygen/account")).json();
       setConnected(Boolean(acc?.data?.connected ?? acc?.connected));
-      setAccount(acc?.data?.account ?? acc?.account ?? null);
+      setQuota(acc?.data?.quota ?? acc?.quota ?? null);
       if (acc?.data?.connected ?? acc?.connected) {
         const av = await (await fetch("/api/v1/heygen/avatars")).json();
         setGroups(av?.data?.groups ?? av?.groups ?? []);
@@ -128,9 +140,10 @@ export function HeygenConnect({ presetAudio, presetAudioLabel, onVideoReady }: P
           </button>
         </div>
         {error && <p className="mt-2 text-[13px] text-[var(--danger,#e5484d)]">{error}</p>}
-        <p className="mt-3 text-[12px] text-[var(--ash)]">
-          A chave fica criptografada e nunca aparece de volta. Os vídeos gerados aqui consomem os
-          créditos de API da sua conta HeyGen.
+        <p className="mt-3 text-[12px] leading-relaxed text-[var(--ash)]">
+          A chave fica criptografada e nunca aparece de volta. Os vídeos gerados aqui consomem a
+          cota de API da <strong>sua conta HeyGen</strong> — os seus{" "}
+          <strong>créditos FastCloner não pagam o HeyGen</strong>, são saldos separados.
         </p>
       </div>
     );
@@ -138,24 +151,73 @@ export function HeygenConnect({ presetAudio, presetAudioLabel, onVideoReady }: P
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] px-4 py-3">
-        <span className="inline-flex items-center gap-2 text-[13.5px] text-[var(--ink)]">
-          <span className="size-2 rounded-full bg-emerald-500" aria-hidden />
-          Conta HeyGen conectada
-        </span>
-        {typeof account?.remaining_credits === "number" && (
-          <span className="font-mono text-[12px] text-[var(--mute)]">
-            saldo do HeyGen: {account.remaining_credits.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} créditos
+      <div className="flex flex-col gap-3 rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface-card)] px-4 py-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="inline-flex items-center gap-2 text-[13.5px] text-[var(--ink)]">
+            <span className="size-2 rounded-full bg-emerald-500" aria-hidden />
+            Conta HeyGen conectada
           </span>
+          <button
+            type="button"
+            onClick={() => void disconnect()}
+            disabled={busy}
+            className="ml-auto text-[12.5px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)]"
+          >
+            Desconectar
+          </button>
+        </div>
+
+        {/* O NÚMERO, cru. Quem vê "0" entende; quem via só "sem créditos"
+            achava que o bug era nosso e ia reconectar a chave. */}
+        {typeof quota?.raw === "number" ? (
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="text-[13px] text-[var(--mute)]">Cota de API restante na sua conta HeyGen:</span>
+            <span
+              className={[
+                "font-mono text-[18px] font-semibold tabular-nums",
+                quota.raw <= 0 ? "text-[var(--danger,#e5484d)]" : "text-[var(--ink)]",
+              ].join(" ")}
+            >
+              {quota.raw.toLocaleString("pt-BR")}
+            </span>
+            <span className="font-mono text-[12px] text-[var(--ash)]">
+              (remaining_quota — equivale a ~
+              {(quota.raw / 60).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} créditos de vídeo)
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="text-[13px] text-[var(--mute)]">Cota de API restante na sua conta HeyGen:</span>
+            <span className="font-mono text-[13px] text-[var(--ash)]">
+              não foi possível consultar agora
+              {typeof quota?.credits === "number"
+                ? ` — última leitura: ~${quota.credits.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} créditos`
+                : ""}
+            </span>
+          </div>
         )}
-        <button
-          type="button"
-          onClick={() => void disconnect()}
-          disabled={busy}
-          className="ml-auto text-[12.5px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)]"
-        >
-          Desconectar
-        </button>
+
+        {/* Cota ZERADA: não mandar reconectar. Reconectar não devolve cota. */}
+        {typeof quota?.raw === "number" && quota.raw <= 0 && (
+          <div className="rounded-[var(--radius-sm)] border border-[var(--danger,#e5484d)]/40 bg-[var(--danger,#e5484d)]/10 px-3 py-2 text-[13px] leading-relaxed text-[var(--ink)]">
+            <strong>Sua cota de API do HeyGen chegou a zero.</strong> Enquanto ela estiver em 0,
+            nenhum vídeo vai gerar aqui.{" "}
+            <strong>Reconectar a chave não resolve</strong> — a sua chave está válida, o que
+            acabou foi a cota. Recarregue no site do HeyGen em{" "}
+            <strong>Settings → Subscriptions &amp; API</strong> e volte aqui.
+          </div>
+        )}
+
+        {/* Falha de leitura que NÃO é cota zerada nem chave recusada. */}
+        {quota?.error && quota.error_kind !== "quota" && (
+          <p className="text-[12.5px] leading-relaxed text-[var(--mute)]">{quota.error}</p>
+        )}
+
+        <p className="text-[12px] leading-relaxed text-[var(--ash)]">
+          Essa cota é da <strong>sua conta no HeyGen</strong>, comprada por você lá, e é gasta
+          com a sua chave. Os seus <strong>créditos FastCloner não pagam o HeyGen</strong> — são
+          saldos separados, e ter crédito aqui não gera vídeo lá.
+        </p>
       </div>
 
       <div>
