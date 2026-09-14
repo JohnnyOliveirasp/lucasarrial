@@ -117,25 +117,37 @@ Escritas conferidas na releitura: `#281` 1 linha afetada, `agent_notes` 4→5
 Nenhum fix desta ronda ficou preso em branch (não houve código: a entrega foi
 e-mail + escrituração).
 
-### ⚠️ O trabalho em voo do `#402` SUMIU entre as 23h e agora
+### ⚠️ ERRO MEU NESTA RONDA, corrigido antes de fechar: o `#402` não sumiu
 
-A ronda das 23h registrou `frontend/src/lib/agent/mail-bounce.ts` **modificado e
-não commitado** (+35 linhas, o tipo `VeredictoDns` da virada do `#402`), e
-escreveu de propósito que **não commitou nem descartou**, por ser trabalho
-alheio.
+**Primeiro eu escrevi que o trabalho em voo do `#402` tinha sido descartado. Era
+falso, e a falha foi de método — minha.**
 
-Medido agora, na abertura desta ronda:
+A ronda das 23h registrou `mail-bounce.ts` modificado e não commitado (+35
+linhas, o tipo `VeredictoDns`). Abri esta ronda com o working tree **limpo** e
+concluí "evaporou", em cima de duas medições que **não cobriam a pergunta**:
 
-- `git status` do arquivo: **limpo**. `git diff --stat HEAD` nele: **vazio**.
-- `grep -c VeredictoDns` no arquivo: **0**. O tipo não está lá.
-- último commit que toca o arquivo: **`3461733`, de 13/09 13:54** — ou seja,
-  **nada** daquele trabalho entrou na main.
+- `git log -- <arquivo>` — mas **só da main**, sem `--all`;
+- `grep VeredictoDns` — mas **só no working tree**, que é justamente o que muda
+  quando alguém commita.
 
-Conclusão, sem suavizar: as +35 linhas foram **descartadas**, não commitadas.
-Não fui eu — abri a ronda com o working tree já nesse estado e não rodei
-`checkout`/`restore`/`stash` em nada. **O `#402` continua sem uma linha de
-código em produção**, e quem for retomá-lo recomeça do zero.
+As duas dão "não existe" mesmo quando o código está vivo num branch. Conferi
+antes de fechar a ronda e o quadro real é o oposto:
 
-Registro isso porque é a lição de 19/08 pelo avesso: lá o conserto ficou
-invisível num branch; aqui ele evaporou do working tree. As duas terminam igual
-— aluno sem o fix.
+| medição correta | resultado |
+|---|---|
+| `git log --all -S"VeredictoDns"` | commit **`f386bb9`**, *"#402: quem julga falha de MX é o DNS, não a frase do bounce"* |
+| branch | **`feat/bounce-mx-pelo-dns`**, 1 commit à frente da main |
+| no origin? | **sim** — `git ls-remote` bate no mesmo sha |
+| PR | **#284, OPEN**, aberto **14/09 22:55Z** |
+
+Ou seja: entre a ronda das 23h e esta, o trabalho foi **commitado, empurrado e
+virou PR** — o caminho certo. Nada foi perdido.
+
+O que **continua valendo** do alerta, sem exagero: o `#402` está em **PR aberto,
+não em produção**. Card/PR não deploya, só a main deploya (lição de 19/08). O
+defeito segue vivo pro aluno até o merge — mas isso é um PR esperando revisão,
+não trabalho destruído, e a diferença entre as duas coisas é enorme.
+
+Deixo o erro escrito em vez de apagar a seção porque a lição é reaproveitável:
+**"não achei" só vira "não existe" depois de procurar em `--all`.** Foi por um
+fio que eu não acusei alguém de apagar trabalho alheio.
