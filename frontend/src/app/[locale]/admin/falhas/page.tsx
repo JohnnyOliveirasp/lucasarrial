@@ -62,6 +62,14 @@ const STATUS_META: Record<Incident["status"], { label: string; cls: string }> = 
 const FILTERS = [
   { key: "tecnicos", label: "Técnicos" },
   { key: "atendimento", label: "Atendimento" },
+  // O complemento exato de "Atendimento": aquela fila esconde de propósito quem
+  // já foi atendido (`!alunoRespondido` no `shown`), e o trabalho JÁ FEITO pelo
+  // time não tinha onde ser LISTADO — sobrava só diluído em "Todos", no meio de
+  // 200 chamados. Medido em 14/09: 29 chamados com a marcação ativa, 25 deles
+  // sumidos da fila de Atendimento. É o que permite ao Lucas acompanhar o que a
+  // equipe está fazendo (pedido dele, 14/09).
+  // NÃO é status novo: é a marcação humana que já mora em `agent_notes`.
+  { key: "equipe_atendeu", label: "Equipe já atendeu" },
   { key: "aguardando_aluno", label: "Aguardando o aluno" },
   { key: "suporte_necessario", label: "Suporte necessário" },
   { key: "fixed", label: "Corrigidos" },
@@ -146,6 +154,11 @@ export default function FalhasPage() {
     // defeito, e é exatamente essa confusão que o pedido do Lucas separa.
     if (filter === "atendimento")
       return incidents.filter((i) => emAberto(i) && i.categoria === "atendimento" && !alunoRespondido(i));
+    // Tudo que tem a marcação ATIVA, sem filtrar por status nem por categoria:
+    // a pergunta que esta gaveta responde é "o que a equipe já atendeu", e um
+    // chamado atendido continua contando depois de corrigido. Quem é "ativa"
+    // quem decide é o `alunoRespondido` — o desfazer já cai fora sozinho.
+    if (filter === "equipe_atendeu") return incidents.filter((i) => alunoRespondido(i));
     if (filter === "aguardando_aluno") return incidents.filter((i) => i.status === "aguardando_aluno");
     if (filter === "suporte_necessario") return incidents.filter((i) => i.status === "suporte_necessario");
     if (filter === "fixed") return incidents.filter((i) => i.status === "fixed");
@@ -240,12 +253,21 @@ export default function FalhasPage() {
                         {inc.affected_emails.length > 0
                           ? ` · ${inc.affected_emails.length} usuário(s)`
                           : inc.kind === "reported" && " · sem e-mail do aluno"}
-                        {/* A baixa aparece na LINHA, sem precisar abrir: quem varre a
-                            fila tem que enxergar o que já foi atendido de relance. */}
-                        {alunoRespondido(inc) && (
-                          <span className="text-[var(--status-online)]"> · ✅ aluno respondido</span>
-                        )}
                       </span>
+                      {/* A baixa aparece na LINHA, sem precisar abrir: quem varre a
+                          fila tem que enxergar o que já foi atendido de relance.
+                          Em linha PRÓPRIA (e não colada no rodapé acima) porque
+                          com a data e o autor o texto passava do `truncate` e a
+                          informação que interessa — QUEM e QUANDO — era
+                          justamente a que sumia cortada. */}
+                      {(() => {
+                        const baixa = alunoRespondido(inc);
+                        return baixa ? (
+                          <span className="block truncate font-mono text-[10px] text-[var(--status-online)]">
+                            ✅ a equipe já falou com este aluno em {dt(baixa.at)} por {baixa.by}
+                          </span>
+                        ) : null;
+                      })()}
                     </span>
                     <span className={`hidden text-[12px] font-medium md:block ${meta.cls}`}>{meta.label}</span>
                     <span className="hidden font-mono text-[11px] text-[var(--mute)] md:block">
@@ -354,8 +376,11 @@ function ActionBtn({
  * como CRM, com botão pro time dar baixa, sem que dar baixa vire mentira.
  *
  * DUAS COISAS SEPARADAS, que antes eram um botão só:
- *  · "Aluno respondido" — a parte humana está feita. Qualquer um do time
- *    marca, não muda status, não fecha nada. Tira da fila de ATENDIMENTO.
+ *  · "A equipe já falou com este aluno" — a parte humana está feita. Qualquer
+ *    um do time marca, não muda status, não fecha nada. Tira da fila de
+ *    ATENDIMENTO e joga na gaveta "Equipe já atendeu". O rótulo é literalmente
+ *    a frase que o Lucas usou (14/09): ele não achou o botão que a equipe dele
+ *    já usava 30 vezes porque "Aluno respondido" não era a língua dele.
  *  · "Marcar corrigido" — o DEFEITO acabou. Fica DESABILITADO (com o porquê
  *    escrito ao lado, não escondido) enquanto o defeito estiver vivo: mais de
  *    50 ocorrências ou mais de 5 alunos. Ver @/lib/incidents/baixa.
@@ -396,17 +421,19 @@ function Baixa({
     <div className="flex flex-col gap-2">
       {baixa && (
         <p className="text-[12px] text-[var(--status-online)]">
-          ✅ Aluno já respondido em {dt(baixa.at)} por {baixa.by}
+          ✅ A equipe já falou com este aluno em {dt(baixa.at)} por {baixa.by}
         </p>
       )}
       <div className="flex flex-wrap gap-2">
         {!fechado &&
           (baixa ? (
             <ActionBtn onClick={() => desfazerAlunoRespondido(inc.id)}>
-              Desfazer &quot;aluno respondido&quot;
+              Desfazer &quot;a equipe já falou&quot;
             </ActionBtn>
           ) : (
-            <ActionBtn onClick={() => marcarAlunoRespondido(inc.id)}>✓ Aluno respondido</ActionBtn>
+            <ActionBtn onClick={() => marcarAlunoRespondido(inc.id)}>
+              ✓ A equipe já falou com este aluno
+            </ActionBtn>
           ))}
         {!fechado && inc.status !== "suporte_necessario" && (
           <ActionBtn onClick={() => setStatus(inc.id, "suporte_necessario")}>
