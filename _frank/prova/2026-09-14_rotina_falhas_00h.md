@@ -185,7 +185,27 @@ não toquei em nada da planilha.
 
 ---
 
-## 6. Passo fixo de fim de ronda
+## 6. Para a próxima ronda não refazer o que eu fiz
 
-`git fetch origin && git log --oneline origin/main..HEAD` vazio e `git branch` /
-`git rev-list` conferidos — ver o commit desta ronda.
+- **A conta de teste da casa (`suporte@fastcloner.com`) tem credencial nova**,
+  gravada em `_Bugs/senha_conta_teste.txt` (**fora do git**, modo 600). A antiga
+  não servia mais (400 `invalid_credentials`) — **não precisa redefinir de
+  novo**. Estado dela está no snapshot original: `free` / NULL / NULL / 0 / 0.
+- **O instrumento ficou pronto:** `_Bugs/prova_gate_vitalicio.cjs <rótulo>`.
+  Entra por e-mail+senha na conta da casa, abre `/app/account` e imprime o
+  veredito (`Plano ativo` × `não tem assinatura ativa`) **mais a linha de
+  contaminação por bypass**, e salva screenshot. Qualquer pergunta futura do tipo
+  *"a produção rodando lê o estado X como acesso?"* responde-se com ele em ~40s,
+  sem tocar em aluno. Se for usado uma terceira vez, promover pra
+  `_frank/ferramentas/`.
+- **Não use magic-link/OAuth pra testar acesso**: `auth/callback:50` chama
+  `claimPurchasesOnLogin` sem guarda e **reescreve o estado do próprio teste**.
+  E-mail+senha com saldo > 0 não passa pelo claim (`claim-guard`, ramo 3).
+
+## 7. Passo fixo de fim de ronda
+
+`git fetch origin && git log --oneline origin/main..HEAD` → **vazio** (conferido).
+`git branch` / `git rev-list main..<branch>` conferidos: **esta ronda não criou
+branch nenhum e não mergeou PR nenhum**, então não há fix meu preso fora da main.
+(O repo carrega ~230 branches locais antigas, quase todas com 1 commit pré-squash
+de PR já mergeado — condição herdada, não desta ronda.)
