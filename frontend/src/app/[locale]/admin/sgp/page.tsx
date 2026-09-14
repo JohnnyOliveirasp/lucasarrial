@@ -357,15 +357,26 @@ export default function SgpPage() {
           <table className="w-full min-w-[1500px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
+                {/* ORDEM DAS COLUNAS = ALCANCE DO BOTÃO (14/09).
+                    A tabela é larga demais pra caber na tela (medido: 1787px de
+                    conteúdo contra 1158px de área útil num monitor de 1240px),
+                    então ela SEMPRE vai rolar de lado. O que decide se o time
+                    consegue clicar é o que cabe ANTES do corte.
+                    Por isso E-mail e WhatsApp (que juntos custavam 404px e não
+                    são usados pra DECIDIR, só depois de decidir) saíram da
+                    frente e foram pra logo depois dos botões. Assim as sete
+                    colunas de decisão + os dois botões somam 1050px e cabem
+                    inteiros; o contato fica a um passo de rolagem, e nada
+                    sumiu da tabela. */}
                 <Th>Nome</Th>
                 <Th>Situação</Th>
-                <Th>E-mail</Th>
-                <Th>WhatsApp</Th>
                 <Th>Etapa atual</Th>
                 <Th>Parado há</Th>
                 <Th>O que fazer</Th>
                 <Th>Cobrança</Th>
                 <Th>Marcar erro</Th>
+                <Th>WhatsApp</Th>
+                <Th>E-mail</Th>
                 <Th>Foto</Th>
                 <Th>Voz</Th>
                 <Th>Enviado em</Th>
@@ -398,10 +409,6 @@ export default function SgpPage() {
                       rotulo={p.situacaoRotulo}
                       motivo={p.situacaoMotivo}
                     />
-                  </Td>
-                  <Td className="font-mono text-[11px] text-[var(--mute)]">{p.email}</Td>
-                  <Td className="font-mono text-[11px] text-[var(--mute)]">
-                    {p.whatsapp === "—" ? "—" : telefoneLegivel(p.whatsapp)}
                   </Td>
                   <Td>{p.etapa}</Td>
                   <Td
@@ -436,6 +443,12 @@ export default function SgpPage() {
                       onDesfazer={() => marcarErro(p.id, false)}
                     />
                   </Td>
+                  {/* Contato logo depois dos botões: é o que se usa DEPOIS de
+                      decidir cobrar, não pra decidir. */}
+                  <Td className="font-mono text-[11px] text-[var(--mute)]">
+                    {p.whatsapp === "—" ? "—" : telefoneLegivel(p.whatsapp)}
+                  </Td>
+                  <Td className="font-mono text-[11px] text-[var(--mute)]">{p.email}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{p.foto}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{p.voz}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{dt(p.enviadoEm)}</Td>
