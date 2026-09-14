@@ -3,8 +3,15 @@
  * Só leitura. Mostra conta, compra, créditos, vozes, gerações e erros.
  *
  *   node _frank/ferramentas/aluno.cjs joao@exemplo.com
+ *
+ * ⚠️ ABRE PELO "A EQUIPE JÁ FALOU COM ELE?" de propósito (14/09): o raio-x é
+ * o último texto que alguém lê antes de escrever pro aluno, e em 14/09 eu
+ * escrevi pro Rodrigo "ninguém te deu retorno" com a equipe já tendo
+ * respondido. Ver `ja_falaram.cjs` — inclusive o limite: ausência de marcação
+ * NÃO é prova de silêncio.
  */
 const { supa, listar, BUCKETS, minutos } = require("./_comum.cjs");
+const { jaFalaram, renderTexto } = require("./ja_falaram.cjs");
 
 const EMAIL = (process.argv[2] || "").trim().toLowerCase();
 if (!EMAIL) {
@@ -14,6 +21,23 @@ if (!EMAIL) {
 
 (async () => {
   const db = supa();
+
+  // ANTES do perfil, de propósito: a marcação mora em `incidents.affected_emails`,
+  // que NÃO depende de o aluno ter conta — e quem não tem conta cai no `return`
+  // lá embaixo. Se este bloco viesse depois, sumiria justamente pra quem
+  // reclama sem ter perfil.
+  try {
+    const r = await jaFalaram(db, EMAIL);
+    console.log(`\n🗣️  A EQUIPE JÁ FALOU COM ELE?`);
+    console.log(renderTexto(r).join("\n"));
+  } catch (e) {
+    // Erro de consulta NÃO pode virar "ninguém respondeu" — seria a mentira
+    // que a ferramenta existe pra impedir. Diz que não sabe e segue o raio-x.
+    console.log(`\n🗣️  A EQUIPE JÁ FALOU COM ELE?`);
+    console.log(`   ❓ NÃO SEI — a consulta falhou (${e.message}).`);
+    console.log("      NÃO trate isto como 'sem resposta': rode ja_falaram.cjs antes de escrever.");
+  }
+
   const { data: p } = await db
     .from("profiles")
     .select("id, email, display_name, access_until, credits_subscription, credits_extra, image_ref_key, created_at")
