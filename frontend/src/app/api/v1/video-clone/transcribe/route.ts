@@ -7,7 +7,7 @@
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
-import { transcribeUploadedAudio } from "@/lib/video/transcribe";
+import { falhaDeAudio, transcribeUploadedAudio } from "@/lib/video/transcribe";
 import { CLONE_MAX_AUDIO_SECONDS } from "@/lib/video-clone/config";
 
 export async function POST(request: NextRequest) {
@@ -34,7 +34,9 @@ export async function POST(request: NextRequest) {
       );
     }
     return jsonOk({ text: t.text, duration_seconds: t.durationSeconds });
-  } catch {
-    return serverError("Não conseguimos processar esse áudio. Tente novamente.");
+  } catch (e) {
+    return serverError(
+      falhaDeAudio(e, { rota: "video-clone/transcribe", user: auth.user_id, audioKey }),
+    );
   }
 }

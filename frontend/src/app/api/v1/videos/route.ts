@@ -17,7 +17,7 @@ import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { MAX_AUDIO_SECONDS } from "@/lib/video/config";
-import { transcribeUploadedAudio } from "@/lib/video/transcribe";
+import { falhaDeAudio, transcribeUploadedAudio } from "@/lib/video/transcribe";
 
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
@@ -86,8 +86,8 @@ export async function POST(request: NextRequest) {
       const t = await transcribeUploadedAudio(uploadedKey);
       text = t.text;
       duration = t.durationSeconds;
-    } catch {
-      return serverError("Não conseguimos processar esse áudio. Tente novamente.");
+    } catch (e) {
+      return serverError(falhaDeAudio(e, { rota: "videos", user: auth.user_id, uploadedKey }));
     }
 
     // Validação DEFINITIVA do teto (o browser valida antes, mas aqui é a real).
