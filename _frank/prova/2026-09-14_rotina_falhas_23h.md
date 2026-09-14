@@ -130,3 +130,26 @@ Escritas conferidas na releitura: 1 linha afetada em cada, `agent_notes` 4→5 e
   Vídeo Clone voltar" dos 4 alunos foi **conferida e já estava paga** em 06/09
   00:36–00:37Z (medido na ronda de 08/09, §4). Uma carta hoje seria a 3ª ou 4ª
   repetindo o mesmo — regra 11.
+
+## Achado de fim de ronda: trabalho em voo, não commitado
+
+O passo fixo de fim de ronda (`origin/main..HEAD` vazio, nenhum fix preso em
+branch) passou: **nada desta ronda ficou pendurado**.
+
+Mas o `git status` acusa `frontend/src/lib/agent/mail-bounce.ts` **modificado e
+não commitado** (+35 linhas), que **não é meu** — é a virada do `#402` iniciada
+na ronda das 22h: parar de classificar falha de MX pela *frase* do bounce e
+passar a perguntar ao DNS.
+
+Estado real, conferido:
+
+- são só o tipo `VeredictoDns` + documentação. **Nenhuma mudança de
+  comportamento.**
+- o módulo que ele cita, `mail-bounce-dns.ts`, **não existe ainda** (citado só
+  em comentário, não importado — por isso não quebra build).
+
+Ou seja: é obra **em voo e pela metade**, não um fix pronto esquecido. **Não
+commitei nem descartei** — não é minha e descartar apagaria trabalho alheio.
+Registro aqui porque a lição de 19/08 é exatamente essa: conserto que fica
+invisível no working tree não chega em produção. Quem retomar o `#402` continua
+daqui.
