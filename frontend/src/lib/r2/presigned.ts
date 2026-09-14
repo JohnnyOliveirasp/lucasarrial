@@ -26,6 +26,38 @@ const ALLOWED_AUDIO_MIME = new Set([
   "audio/x-aac",
   "audio/aacp",
   "audio/opus",
+  /**
+   * Áudio de WhatsApp é Opus DENTRO de container Ogg. O browser rotula o
+   * arquivo pela EXTENSÃO, não pelo conteúdo — então o mesmo `.ogg` chega com
+   * MIME diferente dependendo do navegador/SO (incidente #391, 14/09).
+   *
+   * ⚠️ MEDIDO no fonte do Firefox (`uriloader/exthandler/
+   * nsExternalHelperAppService.cpp`): o array `defaultMimeEntries`, cujo
+   * comentário é "Default extension->mimetype mappings. These are NOT
+   * OVERRIDABLE", contém literalmente:
+   *     {VIDEO_OGG, "ogv"},
+   *     {APPLICATION_OGG, "ogg"},   // <- linha 503
+   *     {AUDIO_OGG, "oga"},
+   *     {AUDIO_OGG, "opus"},
+   * Ou seja: TODO `.ogg` escolhido no Firefox chega como `application/ogg`.
+   * Só `.oga` e `.opus` é que mapeiam pra `audio/ogg`. É por isso que a 1ª voz
+   * do aluno passou em agosto e a 2ª não — mudou o navegador, não o arquivo.
+   */
+  "application/ogg",
+  /**
+   * Mesmo arquivo, terceiro rótulo possível. `extraMimeEntries`, no MESMO
+   * fonte, tem `{VIDEO_OGG, "ogv,ogg", "Ogg Video"}` (linha 612) — a extensão
+   * `.ogg` também está amarrada a `video/ogg`. No Linux o `shared-mime-info`
+   * repete o conflito: conferi na máquina e `video/ogg` reivindica o glob
+   * `*.ogg` junto com `audio/ogg`. E o bug 1240259 do Mozilla ("audio ogg file
+   * has type 'video/ogg' instead of 'audio/ogg'") cita explicitamente
+   * `<input type="file">` entre os cenários afetados.
+   *
+   * Incluído por EVIDÊNCIA, não por simetria — mesma justificativa do
+   * `video/mp4` acima: é rótulo de container, o áudio está lá dentro e o
+   * worker extrai via ffmpeg.
+   */
+  "video/ogg",
 ]);
 
 export type UploadSlot = {
