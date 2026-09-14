@@ -12,7 +12,7 @@ import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { SALES_MAX_AUDIO_SECONDS } from "@/lib/video/config";
-import { transcribeUploadedAudio } from "@/lib/video/transcribe";
+import { falhaDeAudio, transcribeUploadedAudio } from "@/lib/video/transcribe";
 import { loadSalesProject } from "@/lib/video/sales";
 
 export const maxDuration = 60;
@@ -99,8 +99,10 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     const t = await transcribeUploadedAudio(uploadedKey);
     text = t.text;
     duration = t.durationSeconds;
-  } catch {
-    return serverError("Não conseguimos processar esse áudio. Tente novamente.");
+  } catch (e) {
+    return serverError(
+      falhaDeAudio(e, { rota: "videos/[id]/audio", user: auth.user_id, uploadedKey }),
+    );
   }
   if (duration <= 0) return badRequest("Não conseguimos ler a duração desse áudio.");
   if (duration > SALES_MAX_AUDIO_SECONDS + 0.5) {

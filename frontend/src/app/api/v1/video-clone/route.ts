@@ -16,7 +16,7 @@ import { getBalance, debitCredits } from "@/lib/credits/service";
 import { R2_BUCKETS, imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { deleteKeys } from "@/lib/r2/delete";
-import { transcribeUploadedAudio } from "@/lib/video/transcribe";
+import { falhaDeAudio, transcribeUploadedAudio } from "@/lib/video/transcribe";
 import {
   CLONE_MAX_AUDIO_SECONDS,
   cloneCreditsCost,
@@ -204,8 +204,8 @@ export async function POST(request: NextRequest) {
             "Confira o arquivo (dê play antes de enviar) e tente de novo. Você não foi cobrada.",
         );
       }
-    } catch {
-      return serverError("Não conseguimos processar esse áudio. Tente novamente.");
+    } catch (e) {
+      return serverError(falhaDeAudio(e, { rota: "video-clone", user: auth.user_id, audioKey }));
     }
   } else {
     return badRequest("Selecione um áudio gerado ou envie um novo.");

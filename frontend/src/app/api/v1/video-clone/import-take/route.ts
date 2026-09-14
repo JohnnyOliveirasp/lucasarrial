@@ -16,7 +16,7 @@ import { CopyObjectCommand } from "@aws-sdk/client-s3";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
-import { transcribeUploadedAudio } from "@/lib/video/transcribe";
+import { falhaDeAudio, transcribeUploadedAudio } from "@/lib/video/transcribe";
 import { CLONE_MAX_AUDIO_SECONDS } from "@/lib/video-clone/config";
 
 export async function POST(request: NextRequest) {
@@ -59,7 +59,13 @@ export async function POST(request: NextRequest) {
       );
     }
     return jsonOk({ audio_key: destKey, duration_seconds: t.durationSeconds, text: t.text });
-  } catch {
-    return serverError("Não conseguimos processar essa gravação. Tente novamente.");
+  } catch (e) {
+    return serverError(
+      falhaDeAudio(
+        e,
+        { rota: "video-clone/import-take", user: auth.user_id, takeKey, destKey },
+        { rotulo: "gravação", feminino: true },
+      ),
+    );
   }
 }
