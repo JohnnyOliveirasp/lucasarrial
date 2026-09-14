@@ -27,6 +27,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { limparFechamento } from "@/lib/incidents/closure";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { parseBounce, planoDoBounce, type AcaoDeBounce, type Bounce } from "./mail-bounce";
+import { resumirContato, type ResumoDeContato } from "./contato-tentativas";
 import { marcarNaoEntregue } from "./mail-envio-registro";
 
 /**
@@ -147,6 +148,91 @@ async function abrirChamadoDaAcao(a: AcaoDeBounce, emailsAfetados: string[]): Pr
 }
 
 /**
+ * Lê o histórico de contato de cada aluno pra a ficha poder mostrar TENTATIVAS
+ * em vez de só o bounce da vez (b32af5ff). NUNCA lança: ficha com histórico é
+ * melhor que ficha nenhuma, então falha aqui devolve `{}` e a descrição sai no
+ * formato antigo.
+ *
+ * ⚠️ DERIVA NA LEITURA, não persiste em coluna nova — e a escolha é medida, não
+ * estética. (a) Coluna nova (`incidents.contact_attempts`) exigiria migration, e
+ * migration precisa do aval do Johnny (regra 21); as migrations 85, 104 e 107
+ * seguem pendentes, então o código nasceria logando erro em silêncio, que é
+ * exatamente o defeito que esta ficha veio consertar. (b) Coluna nova nasce
+ * VAZIA e só passa a valer daqui pra frente, enquanto `emails_enviados` já
+ * responde a pergunta pra todo envio que passa pelo `sendSupportMail`. (c) Dado
+ * duplicado em dois lugares é dois lugares pra divergir: a verdade sobre envio
+ * já mora em `emails_enviados` e sobre bounce já mora na mesma linha.
+ */
+async function lerHistoricoDeContato(
+  emails: string[],
+  agoraMs: number,
+): Promise<Record<string, ResumoDeContato>> {
+  const fora: Record<string, ResumoDeContato> = {};
+  if (!emails.length) return fora;
+  try {
+    const admin = getAdmin();
+    const alvos = [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))];
+
+    const { data, error } = await admin
+      .from("emails_enviados" as never)
+      .select("to_email, enviado_em, assunto, origem, bounce_em, bounce_classe")
+      .in("to_email", alvos)
+      .order("enviado_em", { ascending: true });
+    if (error) {
+      // Tabela ausente (migration 108 não aplicada) cai aqui: log e segue.
+      console.error("[agent/bounce] histórico de contato indisponível:", error.message);
+      return fora;
+    }
+    const linhas = (data ?? []) as unknown as Array<{
+      to_email: string;
+      enviado_em: string;
+      assunto: string | null;
+      origem: string | null;
+      bounce_em: string | null;
+      bounce_classe: string | null;
+    }>;
+
+    // `first_seen_at` da ficha é o que denuncia cobertura PARCIAL: ficha mais
+    // velha que o registro de envios tem tentativas que a lista não enxerga, e
+    // renderizar isso como "0 tentativas" seria o zero cego que faz a ficha
+    // pedir reenvio de novo.
+    const { data: fichas } = await admin
+      .from("incidents" as never)
+      .select("first_seen_at, affected_emails")
+      .like("signature", "fast-bounce:%")
+      .overlaps("affected_emails", alvos);
+    const nascimento = new Map<string, string>();
+    for (const f of (fichas ?? []) as unknown as Array<{ first_seen_at: string; affected_emails: string[] }>) {
+      for (const e of f.affected_emails ?? []) {
+        const chave = e.toLowerCase();
+        const atual = nascimento.get(chave);
+        if (!atual || f.first_seen_at < atual) nascimento.set(chave, f.first_seen_at);
+      }
+    }
+
+    for (const alvo of alvos) {
+      fora[alvo] = resumirContato({
+        tentativas: linhas
+          .filter((l) => (l.to_email ?? "").toLowerCase() === alvo)
+          .map((l) => ({
+            enviadoEm: l.enviado_em,
+            assunto: l.assunto,
+            origem: l.origem,
+            bounceEm: l.bounce_em,
+            bounceClasse: l.bounce_classe,
+          })),
+        fichaDesde: nascimento.get(alvo) ?? null,
+        agoraMs,
+      });
+    }
+    return fora;
+  } catch (e) {
+    console.error("[agent/bounce] histórico de contato falhou:", e instanceof Error ? e.message : e);
+    return fora;
+  }
+}
+
+/**
  * Executa o plano de um relatório de entrega já parseado.
  *
  * Best-effort por aluno: erro no registro de um não impede o registro dos
@@ -154,6 +240,10 @@ async function abrirChamadoDaAcao(a: AcaoDeBounce, emailsAfetados: string[]): Pr
  * causa do primeiro seria repetir o mesmo silêncio que este código conserta.
  */
 export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> {
+  const agoraMs = Date.now();
+  // Roteamento primeiro (quem é aluno, quem é cópia interna) pra saber de quem
+  // buscar histórico. É puro e barato; o plano final é remontado abaixo já com
+  // o histórico, que é o que muda o PRÓXIMO PASSO da ficha.
   const plano = planoDoBounce(bounce);
   const res: ResultadoBounce = {
     tipo: plano.tipo,
@@ -182,8 +272,11 @@ export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> 
     return res;
   }
 
+  // CARIMBA ANTES DE LER O HISTÓRICO, e a ordem é o ponto: se lêssemos primeiro,
+  // o envio que ACABOU de quicar ainda apareceria sem `bounce_em` e a ficha diria
+  // "sem bounce — evidência de que entrou" sobre a mensagem que voltou agora.
+  // Seria a mentira exatamente oposta à que este conserto veio matar.
   for (const a of plano.alunos) {
-    res.alunos.push(a.email);
     try {
       // Carimba o ENVIO como não-entregue, casando pelo Message-ID que o
       // relatório devolve. É isto que torna respondível a pergunta que ninguém
@@ -196,7 +289,22 @@ export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> 
       });
       if (marcado.achou) res.enviosMarcados += 1;
       else if (marcado.motivo === "envio-nao-registrado") res.enviosNaoRegistrados += 1;
+    } catch (e) {
+      console.error(`[agent/bounce] falhou ao carimbar ${a.email}:`, e instanceof Error ? e.message : e);
+    }
+  }
 
+  // Agora sim: o histórico já enxerga este bounce, e a ficha nasce com as
+  // TENTATIVAS e com o passo que corresponde a elas.
+  const contato = await lerHistoricoDeContato(
+    plano.alunos.map((a) => a.email),
+    agoraMs,
+  );
+  const planoComHistorico = planoDoBounce(bounce, contato, agoraMs);
+
+  for (const a of planoComHistorico.alunos) {
+    res.alunos.push(a.email);
+    try {
       res.reabertos.push(...(await reabrirPorBounce(a.email, a.motivoReabertura)));
       const numero = await abrirChamadoDaAcao(a, [a.email]);
       if (numero != null) res.chamados.push(numero);
