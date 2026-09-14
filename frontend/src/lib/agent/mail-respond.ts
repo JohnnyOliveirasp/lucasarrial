@@ -21,7 +21,14 @@ import { buildAgentReply } from "./brain";
 import { buildAccountContext } from "./account";
 import { extractEscalation } from "./escalate";
 import { agentEnabled } from "./respond";
-import { fetchUnseen, markSeen, supportMailConfigured, type RawMail } from "./mail-imap";
+import {
+  fetchThread,
+  fetchUnseen,
+  markSeen,
+  supportMailConfigured,
+  type RawMail,
+  type ThreadMail,
+} from "./mail-imap";
 import { sendSupportMail } from "./mail-smtp";
 import { tratarSeForBounce } from "./mail-bounce-registro";
 import { winbackContextByEmail, applyWinbackMarkers } from "@/lib/winback/conversation";
@@ -220,6 +227,77 @@ async function responderAnexoGrande(
   return "replied";
 }
 
+/** Quanto a busca do fio pode atrasar UMA resposta, no pior caso. */
+const THREAD_TIMEOUT_MS = Number(process.env.AGENT_MAIL_THREAD_TIMEOUT_MS ?? 20_000);
+
+/** Message-ID comparável (minúsculo, entre <>). Vazio quando não há. */
+function chaveDeMensagem(id: string | null): string {
+  const bruto = (id ?? "").trim().toLowerCase();
+  if (!bruto) return "";
+  return bruto.startsWith("<") ? bruto : `<${bruto}>`;
+}
+
+/**
+ * O que já foi dito NESTE endereço, antes da mensagem de agora (#387).
+ *
+ * O e-mail era o único canal que respondia sem histórico: aqui se montava um
+ * array de UMA mensagem — a atual — enquanto WhatsApp (respond.ts:264) e chat
+ * do app (help/route.ts:288) carregam a conversa do banco. Num fio longo a
+ * Fast contradizia a própria casa: o caso medido é o Emanuel (#7578c587), que
+ * exigiu devolução às 11:09Z e às 14:15Z recebeu um "refaça o envio" — o
+ * caminho técnico que ele acabara de recusar.
+ *
+ * BEST-EFFORT, E ISSO É REGRA, NÃO PREGUIÇA. É rede no meio do caminho da
+ * resposta: falha, demora e caixa indisponível voltam array VAZIO e a Fast
+ * responde exatamente como respondia antes deste patch. Perder o histórico
+ * piora a resposta; derrubar o `respondOne` deixaria a mensagem sem markSeen
+ * e travaria a fila inteira — foi assim que a Fast ficou dois dias muda em
+ * 08/08. `AGENT_MAIL_THREAD=0` desliga sem deploy.
+ */
+async function fioDoAluno(
+  fromEmail: string,
+  messageIdAtual: string | null,
+  textoAtual: string,
+  remetente: string | null,
+): Promise<Partial<AgentMessageRow>[]> {
+  if (process.env.AGENT_MAIL_THREAD === "0") return [];
+  let relogio: NodeJS.Timeout | undefined;
+  let fio: ThreadMail[];
+  try {
+    fio = await Promise.race([
+      fetchThread(fromEmail),
+      new Promise<never>((_, reject) => {
+        relogio = setTimeout(() => reject(new Error("busca do fio demorou")), THREAD_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (e) {
+    console.error(`[agent/mail] sem histórico do fio de ${fromEmail}:`, e instanceof Error ? e.message : e);
+    return [];
+  } finally {
+    if (relogio) clearTimeout(relogio);
+  }
+
+  // A mensagem de agora já está na INBOX (o markSeen vem só no fim), então ela
+  // volta na busca: sairia duplicada, e como ÚLTIMA seria a duplicata que o
+  // cérebro responderia. Tira pelo Message-ID e, se o cabeçalho faltar, pelo
+  // começo do texto.
+  const chaveAtual = chaveDeMensagem(messageIdAtual);
+  const inicioAtual = textoAtual.trim().slice(0, 200);
+  const anteriores = fio.filter(
+    (m) =>
+      !(chaveAtual && m.messageId === chaveAtual) &&
+      !(!m.from_me && !chaveAtual && m.text.trim().slice(0, 200) === inicioAtual),
+  );
+  if (anteriores.length) {
+    console.log(`[agent/mail] fio de ${fromEmail}: ${anteriores.length} mensagem(ns) anteriores`);
+  }
+  return anteriores.map((m) => ({
+    content: m.text,
+    from_me: m.from_me,
+    sender_name: m.from_me ? null : remetente,
+  }));
+}
+
 async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "skipped" | "escalated" | "bounce"> {
   const raw = mail.raw;
   const fromHeader = header(raw, "From");
@@ -290,8 +368,13 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     .maybeSingle();
   const account = profile ? await buildAccountContext(profile.id) : null;
 
+  const remetente = fromHeader.split("<")[0].trim() || null;
+  // O FIO, não só a mensagem (#387). Ver `fioDoAluno`: best-effort, e quando
+  // falha o array volta vazio e a Fast responde como respondia antes.
+  const anteriores = await fioDoAluno(fromEmail, messageId, text, remetente);
   const history = [
-    { content: `Assunto: ${subject}\n\n${text}`, from_me: false, sender_name: fromHeader.split("<")[0].trim() || null },
+    ...anteriores,
+    { content: `Assunto: ${subject}\n\n${text}`, from_me: false, sender_name: remetente },
   ] as unknown as AgentMessageRow[];
 
   // RESGATE: se fomos NÓS que escrevemos primeiro (pessoa que cancelou), a

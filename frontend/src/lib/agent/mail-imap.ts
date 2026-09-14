@@ -9,6 +9,7 @@
  * SUPPORT_MAIL_USER (default suporte@fastcloner.com) · SUPPORT_MAIL_PASSWORD.
  */
 import tls from "node:tls";
+import { header, mailText } from "./mail-charset";
 
 const HOST = () => process.env.SUPPORT_MAIL_HOST || "mail.privateemail.com";
 const USER = () => process.env.SUPPORT_MAIL_USER || "suporte@fastcloner.com";
@@ -272,6 +273,129 @@ export async function appendToSentFolder(rawMessage: string): Promise<void> {
     // CRLF obrigatório no literal IMAP (mesma normalização do envio SMTP).
     const data = Buffer.from(rawMessage.replace(/\r?\n/g, "\r\n"), "utf8");
     await session.append(folder, "\\Seen", data);
+  } finally {
+    session.close();
+  }
+}
+
+/**
+ * Uma mensagem do fio, já em texto. É o que a Fast precisa pra saber o que a
+ * casa já disse — não é a mensagem inteira nem pretende ser.
+ */
+export type ThreadMail = {
+  /** Message-ID normalizado (minúsculo, entre <>): é como o fio se dedupica. */
+  messageId: string;
+  /** true = escrita pela casa (pasta de enviados). */
+  from_me: boolean;
+  /** Date: do cabeçalho, em ms. 0 quando o cabeçalho veio ilegível. */
+  date: number;
+  subject: string;
+  text: string;
+};
+
+/** Quantas mensagens do fio (somando os dois lados) no máximo. */
+const THREAD_LIMIT = Number(process.env.AGENT_MAIL_THREAD_LIMIT ?? 6);
+/**
+ * Teto por mensagem do FIO — muito menor que o `MAIL_MAX_BYTES` da fila.
+ * Aqui a mensagem é só contexto: um anexo antigo de 2MB baixado a cada
+ * resposta pagaria o preço do incidente de 08/08 (fila travada) sem nenhum
+ * ganho, porque o anexo não vira texto pro cérebro de qualquer jeito.
+ */
+const THREAD_MAX_BYTES = Number(process.env.AGENT_MAIL_THREAD_MAX_BYTES ?? 200_000);
+/** Corte do texto de CADA mensagem antiga (a atual vai inteira, em outro lugar). */
+const THREAD_MAX_CHARS = Number(process.env.AGENT_MAIL_THREAD_MAX_CHARS ?? 1500);
+
+/** Endereço dentro de aspas de comando IMAP. */
+function citar(v: string): string {
+  return v.replace(/(["\\])/g, "\\$1");
+}
+
+/** Message-ID comparável: minúsculo e sempre entre <>. Vazio quando não há. */
+function chaveDeMensagem(raw: string): string {
+  const bruto = header(raw, "Message-ID").trim().toLowerCase();
+  if (!bruto) return "";
+  return bruto.startsWith("<") ? bruto : `<${bruto}>`;
+}
+
+/**
+ * Lê as últimas mensagens TROCADAS com um endereço: o que ele mandou (INBOX) e
+ * o que a casa respondeu (pasta de enviados).
+ *
+ * POR QUE ISTO EXISTE (#387). O e-mail era o único canal que respondia sem
+ * histórico nenhum: `mail-respond` montava um array de UMA mensagem — a que
+ * acabara de chegar — enquanto WhatsApp e chat do app carregam a conversa do
+ * banco. Por e-mail não há banco pra ler (não existe tabela com o CORPO do que
+ * foi enviado; `emails_enviados` guarda assunto e origem, e sua migration 108
+ * nem foi aplicada), mas a conversa existe inteira na própria caixa: INBOX
+ * de um lado, pasta de enviados do outro. É de lá que ela vem.
+ *
+ * Só leitura: BODY.PEEK em toda busca, nenhuma flag muda. Quem chama trata
+ * falha como "sem histórico" e responde assim mesmo — perder o fio é ruim,
+ * deixar o aluno sem resposta é pior.
+ */
+export async function fetchThread(email: string, limit = THREAD_LIMIT): Promise<ThreadMail[]> {
+  const alvo = email.trim().toLowerCase();
+  if (!alvo.includes("@")) return [];
+
+  const session = new ImapSession();
+  await session.connect();
+  try {
+    await session.command(`LOGIN "${citar(USER())}" "${citar(PASS())}"`);
+    const enviados = await discoverSentFolder(session);
+    const since = (process.env.AGENT_MAIL_SINCE || "").trim();
+    const sinceSql = since ? ` SINCE ${since}` : "";
+
+    const out: ThreadMail[] = [];
+    const lados: { caixa: string; criterio: string; from_me: boolean }[] = [
+      { caixa: "INBOX", criterio: `FROM "${citar(alvo)}"`, from_me: false },
+      { caixa: enviados, criterio: `TO "${citar(alvo)}"`, from_me: true },
+    ];
+
+    for (const lado of lados) {
+      await session.command(`SELECT "${citar(lado.caixa)}"`);
+      const busca = await session.command(`UID SEARCH ${lado.criterio}${sinceSql}`);
+      // UID crescente = ordem de chegada: os últimos são os mais recentes.
+      const uids = (busca.match(/^\* SEARCH([\d ]*)$/m)?.[1] ?? "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(Number)
+        .slice(-limit);
+      if (!uids.length) continue;
+
+      // Mesma disciplina da fila: pergunta o tamanho ANTES de baixar.
+      const tamanhos = new Map<number, number>();
+      const info = await session.command(`UID FETCH ${uids.join(",")} (RFC822.SIZE)`);
+      for (const linha of info.split(/\r?\n/)) {
+        const m = linha.match(/UID (\d+).*RFC822\.SIZE (\d+)|RFC822\.SIZE (\d+).*UID (\d+)/);
+        if (!m) continue;
+        const uid = Number(m[1] ?? m[4]);
+        const size = Number(m[2] ?? m[3]);
+        if (uid && size) tamanhos.set(uid, size);
+      }
+
+      for (const uid of uids) {
+        if ((tamanhos.get(uid) ?? 0) > THREAD_MAX_BYTES) continue; // contexto não paga anexo
+        const buf = await session.commandRaw(`UID FETCH ${uid} BODY.PEEK[]`);
+        const raw = extrairLiteral(buf);
+        if (!raw) continue;
+        const text = mailText(raw, THREAD_MAX_CHARS).trim();
+        if (!text) continue;
+        const quando = Date.parse(header(raw, "Date"));
+        out.push({
+          messageId: chaveDeMensagem(raw),
+          from_me: lado.from_me,
+          date: Number.isFinite(quando) ? quando : 0,
+          subject: header(raw, "Subject"),
+          text,
+        });
+      }
+    }
+
+    // Cronológico: é assim que vira conversa. Sem Date legível (0) a mensagem
+    // vai pro começo, que é o lugar menos danoso pra uma data desconhecida.
+    out.sort((a, b) => a.date - b.date);
+    return out.slice(-limit);
   } finally {
     session.close();
   }
