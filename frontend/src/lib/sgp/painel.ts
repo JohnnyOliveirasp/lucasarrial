@@ -84,12 +84,23 @@ const FALTA_NO_WIZARD: Record<string, string> = {
  * próprio, e a etapa continua existindo ao lado dela.
  *
  * NADA aqui inventa coluna: sai de `status`, `erro` e das marcas de erro manual.
+ *
+ * ── O QUARTO RÓTULO (Lucas, 14/09) ──────────────────────────────────────────
+ * *"eu preciso de um botão de conclusão aqui nessa tela, para que a equipe
+ * consiga concluir o atendimento"*. CONCLUÍDO não é um quarto pé do PEDIDO: é
+ * uma declaração sobre o ATENDIMENTO, feita por gente, e por isso vem de coluna
+ * própria (migration 110) em vez de sair de `status`. O "concluído" que a tela
+ * tinha até aqui era derivado e não clicável (`compradores.ts` › `statusPedido
+ * === 'pronto'`), e derivado responde outra pergunta: "o robô entregou", não
+ * "alguém ainda precisa mexer nisto". A precedência entre os quatro está
+ * justificada inteira em `situacao`, logo abaixo.
  */
-export const SITUACOES = ["erro", "aguardando", "pronto"] as const;
+export const SITUACOES = ["concluido", "erro", "aguardando", "pronto"] as const;
 export type SituacaoSgp = (typeof SITUACOES)[number];
 
 /** Em caixa alta porque é etiqueta de planilha, não frase. */
 export const SITUACAO_ROTULO: Record<SituacaoSgp, string> = {
+  concluido: "CONCLUÍDO",
   erro: "ERRO",
   aguardando: "AGUARDANDO",
   pronto: "PRONTO",
@@ -135,22 +146,70 @@ export function lerErroManual(p: SgpPedidoRow, agora: number): ErroManual | null
   };
 }
 
+/** O "atendimento concluído" declarado por gente (migration 110). */
+export type Conclusao = {
+  em: string;
+  /** Quem concluiu. Nunca vazio: a rota grava e-mail ou id. */
+  por: string;
+  /** O que a pessoa escreveu ao concluir. `null` quando não escreveu nada. */
+  motivo: string | null;
+  desdeMs: number;
+  /**
+   * O PEDIDO ANDOU depois da conclusão — a declaração virou histórico.
+   *
+   * Mesma régua do requisito 4 do "já cobrei": `atualizado_em` passou na frente
+   * de `concluido_em`. É o que impede o buraco que esta marca criaria sozinha:
+   * o time conclui "o aluno desistiu", o aluno volta e manda foto, trava de novo
+   * — e a linha nunca mais gritaria, porque a conclusão não vence por tempo.
+   *
+   * A marca NÃO é apagada: ela continua na tela como histórico ("foi concluído
+   * há 5 dias por fulano, mas o aluno mexeu depois"). O que ela perde é o poder
+   * de calar o alerta. Apagar seria destruir uma declaração auditável de gente.
+   *
+   * (É o gatilho da migration 110 que garante que concluir não empurra
+   * `atualizado_em` — senão TODA conclusão se auto-superaria no mesmo instante.)
+   */
+  superada: boolean;
+};
+
 /**
- * A régua dos três estados, em ordem de precedência. É ela que o time vai ler na
- * tela, então está escrita aqui inteira, num lugar só:
+ * Lê a marca de conclusão da linha.
  *
- *  1. ERRO  — alguém do time marcou na mão (`erro_manual_em`); OU o pedido está
- *             em `falhou`; OU o sistema carimbou algo em `erro` (isso acontece
- *             em falha PARCIAL, com o status ainda em `processando` — é
- *             justamente o caso que passaria despercebido sem esta coluna).
- *  2. PRONTO — `status = 'pronto'`. Entregue, nada a fazer.
- *  3. AGUARDANDO — todo o resto (cadastro, foto, áudio, revisão, fila, geração).
- *
- * ERRO ganha de PRONTO de propósito: "material veio errado" é exatamente um
- * pedido ENTREGUE que o time precisa marcar. Se PRONTO ganhasse, marcar erro
- * nesse caso — o caso que o Lucas citou — não mudaria nada na tela.
+ * ⚠️ AS DUAS DIFERENÇAS PRAS OUTRAS DUAS MARCAS, as duas deliberadas:
+ *  · pro `lerCobranca`: esta NÃO vence por tempo. "Já cobrei" é um timer de 48h;
+ *    "concluí" é uma decisão, e decisão não expira no relógio.
+ *  · pro `lerErroManual`: aquela NÃO se invalida quando o aluno mexe (é uma
+ *    afirmação sobre um defeito que já aconteceu). Esta se invalida, porque é
+ *    uma afirmação sobre o FUTURO — "não preciso mais mexer nisto" — e o aluno
+ *    voltando a mexer é exatamente o fato que a desmente.
  */
-export function situacao(p: SgpPedidoRow, agora: number = Date.now()): Situacao {
+export function lerConclusao(p: SgpPedidoRow, agora: number): Conclusao | null {
+  if (!p.concluido_em) return null;
+  const em = new Date(p.concluido_em).getTime();
+  // Data ilegível não pode virar "concluído há NaN" na cara do atendente — mas
+  // também não pode sumir com a marca, então cai num tempo zerado e a marca fica.
+  const legivel = Number.isFinite(em);
+  const mexeuDepois = legivel && new Date(p.atualizado_em).getTime() > em;
+  return {
+    em: p.concluido_em,
+    por: p.concluido_por?.trim() || "alguém do time",
+    motivo: p.concluido_motivo?.trim() || null,
+    desdeMs: legivel ? Math.max(0, agora - em) : 0,
+    // Data ilegível conta como superada: dado torto nunca pode calar um alerta
+    // (é a mesma regra que `lerCobranca` já aplica).
+    superada: !legivel || mexeuDepois,
+  };
+}
+
+/**
+ * A situação do PEDIDO, ignorando o que o time declarou sobre o ATENDIMENTO.
+ *
+ * Fica separada porque é ela que continua escrita na tela por baixo do rótulo
+ * CONCLUÍDO. Sem isso, concluir esconderia o estado real — e é justamente o que
+ * o pedido do Lucas proíbe ("se sumir, a gente perde de vista quem pagou e não
+ * recebeu").
+ */
+export function situacaoDoPedido(p: SgpPedidoRow, agora: number = Date.now()): Situacao {
   const manual = lerErroManual(p, agora);
   if (manual) {
     const quem = `marcado pelo time há ${tempoHumano(manual.desdeMs)} (${manual.por})`;
@@ -201,6 +260,67 @@ export function situacao(p: SgpPedidoRow, agora: number = Date.now()): Situacao 
   };
 }
 
+/**
+ * A régua dos QUATRO estados, em ordem de precedência. É ela que o time vai ler
+ * na tela, então está escrita aqui inteira, num lugar só:
+ *
+ *  1. CONCLUÍDO  — alguém do time declarou o ATENDIMENTO encerrado
+ *                  (`concluido_em`) e o pedido não andou desde então.
+ *  2. ERRO       — alguém do time marcou na mão (`erro_manual_em`); OU o pedido
+ *                  está em `falhou`; OU o sistema carimbou algo em `erro` (falha
+ *                  PARCIAL, com o status ainda andando).
+ *  3. PRONTO     — `status = 'pronto'`. Entregue.
+ *  4. AGUARDANDO — todo o resto (cadastro, foto, áudio, revisão, fila, geração).
+ *
+ * ── POR QUE CONCLUÍDO GANHA DE ERRO (a decisão que o Lucas pediu, 14/09) ────
+ *
+ * O Lucas leu como "conclusão declarada por humano vence o derivado, porque o
+ * humano sabe coisas que o banco não sabe". Concordo, e vou além: ela tem que
+ * vencer também o ERRO, que não é derivado — e é exatamente aí que estava a
+ * dúvida. Três razões, em ordem de peso:
+ *
+ *  1. SENÃO O BOTÃO É DECORATIVO NO CASO QUE O MOTIVOU. É o mesmo argumento que
+ *     fez ERRO ganhar de PRONTO na 109, aplicado uma vez a mais: "deu erro, o
+ *     time tratou, acabou" é o caso mais comum de conclusão. Se ERRO ganhasse,
+ *     clicar em "Concluir" numa linha em erro não mudaria NADA na tela — e um
+ *     botão que não funciona justamente no caso que o pediu não é um botão.
+ *  2. É O MESMO PROBLEMA DE 04/09, UM NÍVEL ACIMA. "O time cobrou a Wallana e o
+ *     painel continuou gritando" virou o "Já cobrei". Um caso em `falhou` que o
+ *     time já resolveu (reembolsou, refez por fora) gritaria PARA SEMPRE, porque
+ *     `falhou` não sai sozinho. Alerta que não tem como ser baixado por quem o
+ *     resolveu é alerta que o time aprende a ignorar.
+ *  3. AS PERGUNTAS SÃO DIFERENTES. ERRO/PRONTO/AGUARDANDO respondem *em que pé
+ *     está o PEDIDO*; CONCLUÍDO responde *alguém ainda precisa mexer nisto*. O
+ *     time lê uma coluna só, e a segunda pergunta é a que decide o dia dele.
+ *
+ * ── O QUE IMPEDE ISSO DE VIRAR "SUMIR COM O PROBLEMA" ───────────────────────
+ * Quatro travas, porque esta precedência é a parte perigosa da mudança:
+ *  a) o estado real continua ESCRITO no motivo ("…O pedido em si está ERRO: o
+ *     sistema falhou: timeout"), nunca apagado;
+ *  b) `situacaoPorBaixo` fica na linha, e `resumir` conta os concluídos que
+ *     ainda têm pendência por baixo — se esse número cresce, alguém está
+ *     fechando caso quebrado, e isso aparece no topo da tela;
+ *  c) a linha NÃO some da tabela e o "parado há" continua contando a verdade
+ *     (o gatilho da 110 garante que concluir não zera o relógio);
+ *  d) a conclusão é SUPERADA se o pedido andar depois dela — ver `lerConclusao`.
+ */
+export function situacao(p: SgpPedidoRow, agora: number = Date.now()): Situacao {
+  const porBaixo = situacaoDoPedido(p, agora);
+  const fim = lerConclusao(p, agora);
+  if (!fim || fim.superada) return porBaixo;
+
+  const quem = `concluído pelo time há ${tempoHumano(fim.desdeMs)} (${fim.por})`;
+  const cabeca = fim.motivo ? `${fim.motivo} — ${quem}` : `Atendimento ${quem}`;
+  return {
+    codigo: "concluido",
+    rotulo: SITUACAO_ROTULO.concluido,
+    // Trava (a): o que o pedido É continua na frente do atendente. Sem esta
+    // segunda frase, CONCLUÍDO viraria uma tampa em cima de quem pagou e não
+    // recebeu — que é o que o pedido do Lucas proíbe em caixa alta.
+    motivo: `${cabeca}. O pedido em si está ${porBaixo.rotulo}: ${porBaixo.motivo}`,
+  };
+}
+
 export type LinhaPainel = {
   id: string;
   nome: string;
@@ -209,10 +329,27 @@ export type LinhaPainel = {
   /** Rótulo da etapa, já em linguagem de gente. */
   etapa: string;
   status: SgpStatus;
-  /** PRONTO / AGUARDANDO / ERRO — a etiqueta de planilha (pedido do Lucas). */
+  /** CONCLUÍDO / ERRO / PRONTO / AGUARDANDO — a etiqueta de planilha. */
   situacao: SituacaoSgp;
   situacaoRotulo: string;
   situacaoMotivo: string;
+  /**
+   * O que o PEDIDO é, ignorando a conclusão do atendimento. Igual a `situacao`
+   * em toda linha não concluída. Existe pra que "concluído" nunca apague o
+   * estado real de quem pagou e não recebeu — ver a trava (b) em `situacao`.
+   */
+  situacaoPorBaixo: SituacaoSgp;
+  /** O time declarou o atendimento encerrado E o pedido não andou depois. */
+  concluido: boolean;
+  /** "concluído há 3h por fulano@x.com", pra tela. `null` = ninguém concluiu. */
+  concluidoTexto: string | null;
+  /** O que o atendente escreveu ao concluir. `null` = concluiu sem escrever. */
+  concluidoMotivo: string | null;
+  /**
+   * Foi concluído, mas o pedido ANDOU depois: a marca virou histórico e parou
+   * de calar o alerta. A linha volta a se comportar como não concluída.
+   */
+  conclusaoSuperada: boolean;
   /** "marcado há 3h por fulano@x.com". `null` = ninguém marcou erro na mão. */
   erroManualTexto: string | null;
   /** O que o atendente escreveu ao marcar. `null` = marcou sem escrever nada. */
@@ -331,7 +468,30 @@ export function oQueFazer(
   p: SgpPedidoRow,
   paradoMs: number,
   cobranca: Cobranca | null = null,
+  conclusao: Conclusao | null = null,
 ): string {
+  // Conclusão viva manda em tudo: o time já decidiu que não precisa mexer.
+  // Mas a frase NÃO pode parar em "nada a fazer" quando o aluno pagou e não
+  // recebeu — aí ela diz as duas coisas, porque as duas são verdade.
+  if (conclusao && !conclusao.superada) {
+    const quem = `${conclusao.por} concluiu este atendimento há ${tempoHumano(conclusao.desdeMs)}`;
+    const porque = conclusao.motivo ? ` (“${conclusao.motivo}”)` : "";
+    const base = `Nada a fazer: ${quem}${porque}.`;
+    if (p.status === "pronto" && !p.erro?.trim()) return base;
+    return (
+      `${base} Atenção: o clone dele NÃO chegou a ser entregue — o pedido parou em ` +
+      `"${ETAPA_HUMANA[p.status] ?? p.status}". A linha fica aqui pra ninguém ` +
+      `perder de vista quem pagou e não recebeu. Se o caso voltar, é só desfazer.`
+    );
+  }
+  if (conclusao?.superada) {
+    // Não esconde a decisão anterior, mas também não deixa ela calar a tela: o
+    // pedido andou depois, então o caso pode ter reaberto sozinho.
+    const aviso =
+      `${conclusao.por} já tinha concluído este atendimento, mas o aluno mexeu depois ` +
+      `— confira se o caso reabriu. `;
+    return aviso + oQueFazer(p, paradoMs, cobranca, null);
+  }
   if (p.status === "falhou") {
     return "Deu erro no sistema. O time técnico já é acionado automaticamente — avise o aluno que estamos resolvendo e NÃO prometa prazo.";
   }
@@ -386,13 +546,21 @@ export function montarLinha(
   const cobranca = lerCobranca(p, agora, silencioMs);
   const sit = situacao(p, agora);
   const erroManual = lerErroManual(p, agora);
+  const fim = lerConclusao(p, agora);
+  const concluido = !!fim && !fim.superada;
 
   // Travado no wizard há +48h. Isto NÃO depende da cobrança: o aluno está
   // parado do mesmo jeito, e é o que a linha continua mostrando na tela.
   const travado = noWizard(p.status) && paradoMs > PARADO_MS;
   // O que GRITA. Um "já cobrei" recente tira o vermelho e o contador — e só.
-  const silenciado = travado && !!cobranca?.silenciado;
-  const parado = travado && !silenciado;
+  //
+  // A conclusão tira os dois, e é o ponto do botão: o time declarou que este
+  // caso não precisa mais de ninguém. O que ela NÃO faz é sumir com a linha nem
+  // mexer no relógio — `paradoMs` continua contando a verdade logo ao lado, e
+  // `situacaoPorBaixo` continua dizendo que o aluno não recebeu. Ela também não
+  // cala para sempre: se o pedido andar, `superada` devolve o alerta sozinho.
+  const silenciado = !concluido && travado && !!cobranca?.silenciado;
+  const parado = !concluido && travado && !silenciado;
   // Era `p.status === "falhou"`, que é um subconjunto estrito de `situacao ===
   // "erro"`: agora a falha PARCIAL (erro carimbado com status ainda andando) e a
   // marca do time também sobem pro topo. Quem está em ERRO precisa de gente por
@@ -409,6 +577,14 @@ export function montarLinha(
     situacao: sit.codigo,
     situacaoRotulo: sit.rotulo,
     situacaoMotivo: sit.motivo,
+    situacaoPorBaixo: situacaoDoPedido(p, agora).codigo,
+    concluido,
+    concluidoTexto: fim
+      ? `concluído há ${tempoHumano(fim.desdeMs)} por ${fim.por}` +
+        (fim.superada ? " — mas o aluno mexeu depois" : "")
+      : null,
+    concluidoMotivo: fim?.motivo ?? null,
+    conclusaoSuperada: !!fim?.superada,
     erroManualTexto: erroManual
       ? `marcado há ${tempoHumano(erroManual.desdeMs)} por ${erroManual.por}`
       : null,
@@ -425,7 +601,7 @@ export function montarLinha(
     voz: colunaVoz(p),
     enviadoEm: p.enviado_em,
     erro: p.erro,
-    oQueFazer: oQueFazer(p, paradoMs, cobranca),
+    oQueFazer: oQueFazer(p, paradoMs, cobranca, fim),
   };
 }
 
@@ -444,6 +620,12 @@ export function ordenar(linhas: LinhaPainel[]): LinhaPainel[] {
     // atrás — a linha continuaria "na tabela" e, na prática, escondida. O caso
     // ainda está aberto: ele fica logo abaixo do que grita, não no fim.
     if (a.silenciado !== b.silenciado) return a.silenciado ? -1 : 1;
+    // 3º degrau (14/09): concluído vai pro FIM, e é o único degrau que empurra
+    // pra baixo em vez de puxar pra cima. Sem ele, um caso encerrado há 30 dias
+    // subiria na frente de um aluno que entrou ontem — porque o desempate final
+    // é "mais tempo parado primeiro", e caso encerrado nunca mais anda. Ele
+    // continua na tabela; só não ocupa o lugar de quem ainda pode precisar.
+    if (a.concluido !== b.concluido) return a.concluido ? 1 : -1;
     return b.paradoMs - a.paradoMs;
   });
 }
@@ -457,10 +639,22 @@ export type ResumoPainel = {
    * da tela. Se este número só cresce, a cobrança não está resolvendo nada.
    */
   cobrados: number;
+  /** Atendimentos que o time declarou encerrados e que o pedido não desmentiu. */
+  concluidos: number;
   /**
-   * Os três buckets da planilha do Lucas. Ficam ao lado de `porEtapa`, não no
-   * lugar dele: etapa responde "em que passo", situação responde "pronto,
-   * esperando ou quebrado" — e é esta a leitura de longe.
+   * ⚠️ O CONTADOR QUE GUARDA A DECISÃO DE PRECEDÊNCIA (ver `situacao`, trava b).
+   *
+   * Concluídos cujo PEDIDO não está entregue e limpo — ou seja, gente que pagou
+   * e não recebeu, e cujo caso alguém encerrou mesmo assim. Isso é legítimo com
+   * frequência (reembolso, desistência), então não é alarme: é o número que
+   * torna a escolha auditável. Se ele só cresce, o botão virou vassoura de
+   * tapete — e aí dá pra ver, em vez de descobrir por reclamação de aluno.
+   */
+  concluidosComPendencia: number;
+  /**
+   * Os quatro buckets da planilha do Lucas. Ficam ao lado de `porEtapa`, não no
+   * lugar dele: etapa responde "em que passo", situação responde "encerrado,
+   * pronto, esperando ou quebrado" — e é esta a leitura de longe.
    */
   situacoes: Record<SituacaoSgp, number>;
   porEtapa: Array<{ status: SgpStatus; etapa: string; n: number }>;
@@ -470,12 +664,15 @@ export type ResumoPainel = {
 export function resumir(linhas: LinhaPainel[]): ResumoPainel {
   const contagem = new Map<SgpStatus, number>();
   for (const l of linhas) contagem.set(l.status, (contagem.get(l.status) ?? 0) + 1);
-  const situacoes: Record<SituacaoSgp, number> = { erro: 0, aguardando: 0, pronto: 0 };
+  const situacoes: Record<SituacaoSgp, number> = { concluido: 0, erro: 0, aguardando: 0, pronto: 0 };
   for (const l of linhas) situacoes[l.situacao] += 1;
   return {
     total: linhas.length,
     parados: linhas.filter((l) => l.parado).length,
     cobrados: linhas.filter((l) => l.silenciado).length,
+    concluidos: linhas.filter((l) => l.concluido).length,
+    concluidosComPendencia: linhas.filter((l) => l.concluido && l.situacaoPorBaixo !== "pronto")
+      .length,
     situacoes,
     porEtapa: (Object.keys(ETAPA_HUMANA) as SgpStatus[])
       .filter((s) => contagem.has(s))

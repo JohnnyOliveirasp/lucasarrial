@@ -14,16 +14,23 @@ import assert from "node:assert/strict";
 import {
   ETAPA_HUMANA,
   lerCobranca,
+  lerConclusao,
   lerErroManual,
   montarLinha,
   ordenar,
   resumir,
   situacao,
+  situacaoDoPedido,
   tempoHumano,
   SGP_PARADO_HORAS,
   SGP_COBRANCA_SILENCIO_HORAS,
 } from "./painel.ts";
-import { colunaCobrancaAusente, criarFilaComFallback } from "./cobranca.ts";
+import {
+  colunaCobrancaAusente,
+  colunaConclusaoAusente,
+  colunaErroManualAusente,
+  criarFilaComFallback,
+} from "./cobranca.ts";
 import type { SgpPedidoRow, SgpStatus } from "./types.ts";
 
 const H = 60 * 60 * 1000;
@@ -513,8 +520,11 @@ test("o resumo conta os três buckets e eles fecham com o total", () => {
     montarLinha(pedido({ id: "d", status: "falhou", erro: "x" }), AGORA),
   ];
   const r = resumir(linhas);
-  assert.deepEqual(r.situacoes, { pronto: 1, aguardando: 2, erro: 1 });
-  assert.equal(r.situacoes.pronto + r.situacoes.aguardando + r.situacoes.erro, r.total);
+  assert.deepEqual(r.situacoes, { concluido: 0, pronto: 1, aguardando: 2, erro: 1 });
+  assert.equal(
+    r.situacoes.concluido + r.situacoes.pronto + r.situacoes.aguardando + r.situacoes.erro,
+    r.total,
+  );
 });
 
 // --- degradação sem a migration (lib/sgp/cobranca.ts) ------------------------
@@ -678,4 +688,358 @@ test("reproduz o caso real da Wallana (travada em 'foto' desde 31/08)", () => {
   assert.equal(l.paradoTexto, "2 dias e 3h");
   assert.equal(l.foto, "1 de 4");
   assert.match(l.oQueFazer, /Cobrar o aluno.*WhatsApp.*fotos/);
+});
+
+/* ===========================================================================
+ * CONCLUIR ATENDIMENTO — o quarto estado (pedido do Lucas, 14/09)
+ *
+ * O que estes testes protegem, na ordem de importância:
+ *  1. a PRECEDÊNCIA dos quatro estados, que é a decisão do PR;
+ *  2. que concluir NÃO esconde quem pagou e não recebeu;
+ *  3. que concluir não destrói o relógio do "parado há";
+ *  4. que a marca não cala para sempre um caso que reabriu sozinho.
+ * ========================================================================= */
+
+/** Um pedido concluído pelo time, com o relógio parado ANTES da conclusão. */
+function concluido(over: Partial<SgpPedidoRow> = {}, hConcluido = 3): SgpPedidoRow {
+  return pedido({
+    // Concluir não mexe em `atualizado_em` (é o gatilho da migration 110 que
+    // garante isso). Aqui o pedido parou há 5 dias e foi concluído há 3h.
+    atualizado_em: new Date(AGORA - 5 * 24 * H).toISOString(),
+    concluido_em: new Date(AGORA - hConcluido * H).toISOString(),
+    concluido_por: "suporte@x.com",
+    ...over,
+  });
+}
+
+// --- 1) A PRECEDÊNCIA DOS QUATRO ESTADOS ------------------------------------
+
+test("precedência: CONCLUÍDO > ERRO > PRONTO > AGUARDANDO, caso a caso", () => {
+  // ⚠️ `atualizado_em` TEM que ser anterior à marca, senão a conclusão nasce
+  // SUPERADA (o pedido andou depois dela) — que é o comportamento correto e o
+  // que este fixture, na primeira versão, tropeçou sozinho.
+  const marca = {
+    atualizado_em: new Date(AGORA - 30 * H).toISOString(),
+    concluido_em: new Date(AGORA - 2 * H).toISOString(),
+    concluido_por: "suporte@x.com",
+  };
+  const erroDoTime = {
+    erro_manual_em: new Date(AGORA - 9 * H).toISOString(),
+    erro_manual_por: "suporte@x.com",
+  };
+
+  // Cada par é [pedido, situação esperada]. A tabela inteira num lugar só.
+  const casos: Array<[SgpPedidoRow, string, string]> = [
+    // ERRO ganha de PRONTO e de AGUARDANDO (régua da 109, não regride).
+    [pedido({ status: "pronto", ...erroDoTime }), "erro", "erro do time vence entregue"],
+    [pedido({ status: "foto", ...erroDoTime }), "erro", "erro do time vence esperando"],
+    [pedido({ status: "falhou" }), "erro", "falha do sistema é erro"],
+    [pedido({ status: "processando", erro: "timeout" }), "erro", "falha parcial é erro"],
+    [pedido({ status: "pronto" }), "pronto", "entregue"],
+    [pedido({ status: "audio" }), "aguardando", "no wizard"],
+    // CONCLUÍDO ganha dos TRÊS.
+    [pedido({ status: "foto", ...marca }), "concluido", "vence AGUARDANDO"],
+    [pedido({ status: "pronto", ...marca }), "concluido", "vence PRONTO"],
+    [pedido({ status: "falhou", ...marca }), "concluido", "vence ERRO do sistema"],
+    [pedido({ status: "processando", erro: "timeout", ...marca }), "concluido", "vence falha parcial"],
+    [pedido({ status: "pronto", ...erroDoTime, ...marca }), "concluido", "vence ERRO do time"],
+  ];
+
+  for (const [p, esperado, porque] of casos) {
+    assert.equal(situacao(p, AGORA).codigo, esperado, porque);
+  }
+});
+
+test("CONCLUÍDO vence ERRO — senão o botão não funciona no caso que o pediu", () => {
+  // "Deu erro, o time tratou, acabou" é o caso mais comum de conclusão. É o
+  // mesmo argumento que fez ERRO ganhar de PRONTO na migration 109.
+  const quebrado = pedido({
+    status: "falhou",
+    erro: "clone de voz: timeout",
+    atualizado_em: new Date(AGORA - 30 * H).toISOString(),
+  });
+  assert.equal(situacao(quebrado, AGORA).codigo, "erro");
+
+  const tratado = { ...quebrado, ...{
+    concluido_em: new Date(AGORA - 1 * H).toISOString(),
+    concluido_por: "suporte@x.com",
+    concluido_motivo: "aluno reembolsado na Hotmart",
+  } };
+  const s = situacao(tratado, AGORA);
+  assert.equal(s.codigo, "concluido", "se ERRO ganhasse, concluir aqui não mudaria nada na tela");
+  assert.match(s.motivo, /aluno reembolsado na Hotmart/);
+  assert.match(s.motivo, /suporte@x\.com/, "quem concluiu fica à vista");
+});
+
+// --- 2) CONCLUIR NÃO PODE ESCONDER QUEM PAGOU E NÃO RECEBEU -----------------
+
+test("o motivo do CONCLUÍDO carrega o estado REAL do pedido, nunca o apaga", () => {
+  const s = situacao(concluido({ status: "foto" }), AGORA);
+  assert.equal(s.codigo, "concluido");
+  // A etiqueta é CONCLUÍDO, mas a frase diz o que o pedido é de verdade.
+  assert.match(s.motivo, /AGUARDANDO/, "o estado por baixo fica escrito");
+  assert.match(s.motivo, /mandar as fotos/, "e com o motivo dele por extenso");
+
+  const quebrado = situacao(concluido({ status: "falhou", erro: "timeout" }), AGORA);
+  assert.match(quebrado.motivo, /ERRO/);
+  assert.match(quebrado.motivo, /timeout/);
+});
+
+test("situacaoPorBaixo denuncia quem foi encerrado sem ter recebido o clone", () => {
+  const semEntrega = montarLinha(concluido({ status: "foto" }), AGORA);
+  assert.equal(semEntrega.situacao, "concluido");
+  assert.equal(semEntrega.situacaoPorBaixo, "aguardando");
+
+  const comEntrega = montarLinha(concluido({ status: "pronto" }), AGORA);
+  assert.equal(comEntrega.situacao, "concluido");
+  assert.equal(comEntrega.situacaoPorBaixo, "pronto");
+
+  // E o contador que torna a decisão de precedência auditável.
+  const r = resumir([semEntrega, comEntrega]);
+  assert.equal(r.concluidos, 2);
+  assert.equal(r.concluidosComPendencia, 1, "só o que não recebeu conta como pendência");
+});
+
+test("a linha CONTINUA na tabela e o relógio continua contando a verdade", () => {
+  const l = montarLinha(concluido({ status: "foto" }), AGORA);
+  // Requisito duro do pedido: concluir não pode sumir com a linha.
+  assert.equal(l.id, "id-1");
+  assert.equal(l.paradoTexto, "5 dias", "o 'parado há' não foi zerado");
+  assert.equal(l.paradoMs > 4 * 24 * H, true);
+  // O que ela perde é só o grito.
+  assert.equal(l.parado, false);
+  assert.equal(l.precisaAcao, false);
+  assert.equal(l.silenciado, false);
+});
+
+test("concluir também cala o vermelho de quem já tinha sido cobrado", () => {
+  const l = montarLinha(
+    concluido({
+      status: "foto",
+      cobrado_em: new Date(AGORA - 200 * H).toISOString(),
+      cobrado_por: "suporte@x.com",
+    }),
+    AGORA,
+  );
+  assert.equal(l.parado, false, "cobrança vencida não ressuscita o alerta de um caso encerrado");
+  assert.equal(l.silenciado, false);
+});
+
+// --- 3) A MARCA NÃO VENCE POR TEMPO, MAS É SUPERADA SE O ALUNO MEXER -------
+
+test("conclusão NÃO vence por tempo, diferente do 'já cobrei'", () => {
+  const velha = montarLinha(
+    concluido({ status: "foto", atualizado_em: new Date(AGORA - 400 * 24 * H).toISOString() }, 300),
+    AGORA,
+  );
+  assert.equal(velha.situacao, "concluido", "decisão não expira no relógio");
+  assert.equal(velha.parado, false);
+});
+
+test("se o ALUNO mexer depois, a conclusão vira histórico e o alerta volta", () => {
+  const reaberto = pedido({
+    status: "foto",
+    concluido_em: new Date(AGORA - 10 * 24 * H).toISOString(),
+    concluido_por: "suporte@x.com",
+    concluido_motivo: "aluno desistiu",
+    // Mexeu DEPOIS de concluído, e voltou a travar.
+    atualizado_em: new Date(AGORA - 60 * H).toISOString(),
+  });
+  const l = montarLinha(reaberto, AGORA);
+  assert.equal(l.conclusaoSuperada, true);
+  assert.equal(l.concluido, false);
+  assert.equal(l.situacao, "aguardando", "a situação volta a ser a real");
+  assert.equal(l.parado, true, "o caso reabriu e volta a gritar sozinho");
+  assert.equal(l.precisaAcao, true);
+  // E a declaração de gente NÃO é apagada: fica como histórico.
+  assert.match(l.concluidoTexto ?? "", /concluído há 10 dias por suporte@x\.com/);
+  assert.match(l.concluidoTexto ?? "", /mexeu depois/);
+  assert.equal(l.concluidoMotivo, "aluno desistiu");
+  assert.match(l.oQueFazer, /confira se o caso reabriu/);
+  assert.match(l.oQueFazer, /Cobrar o aluno/, "e a frase de ação normal continua lá");
+});
+
+test("concluir não se auto-supera: a marca vale no instante em que é criada", () => {
+  // O gatilho da migration 110 preserva `atualizado_em` quando só as colunas de
+  // conclusão mudam. Sem isso, `atualizado_em` viraria `now()` e ficaria à frente
+  // de `concluido_em` — TODA conclusão nasceria superada.
+  const agoraMesmo = pedido({
+    status: "foto",
+    atualizado_em: new Date(AGORA - 5 * 24 * H).toISOString(),
+    concluido_em: new Date(AGORA).toISOString(),
+    concluido_por: "suporte@x.com",
+  });
+  assert.equal(lerConclusao(agoraMesmo, AGORA)?.superada, false);
+  assert.equal(montarLinha(agoraMesmo, AGORA).concluido, true);
+});
+
+test("data de conclusão ilegível não cala alerta nenhum", () => {
+  const torto = pedido({
+    status: "foto",
+    atualizado_em: new Date(AGORA - 60 * H).toISOString(),
+    concluido_em: "não é data",
+    concluido_por: "suporte@x.com",
+  });
+  const l = montarLinha(torto, AGORA);
+  assert.equal(l.concluido, false, "dado torto nunca pode encerrar um caso sozinho");
+  assert.equal(l.parado, true);
+  assert.equal(l.situacao, "aguardando");
+});
+
+// --- 4) BORDAS: AUTORIA, MOTIVO, MIGRATION AUSENTE, JARGÃO -----------------
+
+test("concluído sem autor identificado não escreve 'null' na cara do atendente", () => {
+  const l = montarLinha(concluido({ concluido_por: "   ", concluido_motivo: "  " }), AGORA);
+  assert.equal(l.concluidoTexto, "concluído há 3h por alguém do time");
+  assert.equal(l.concluidoMotivo, null);
+});
+
+test("pedido SEM as colunas da migration 110 se comporta como 'nunca concluído'", () => {
+  // Campos AUSENTES (não `null`): é exatamente o que a rota devolve hoje.
+  const l = montarLinha(pedido({ status: "foto" }), AGORA);
+  assert.equal(l.concluido, false);
+  assert.equal(l.concluidoTexto, null);
+  assert.equal(l.conclusaoSuperada, false);
+  assert.equal(l.situacao, "aguardando");
+  assert.equal(l.situacaoPorBaixo, "aguardando");
+});
+
+test("nenhuma frase de conclusão vaza jargão pro atendente", () => {
+  const jargao =
+    /\.tsx|\.ts\b|\.cjs|PR ?#|sgp_pedidos|status ?=|user_id|concluido_em|null|undefined|migration|endpoint/i;
+  const variantes: SgpPedidoRow[] = [
+    concluido({ status: "foto" }),
+    concluido({ status: "pronto", concluido_motivo: "resolvido no WhatsApp" }),
+    concluido({ status: "falhou", erro: "timeout" }),
+    // superada
+    pedido({
+      status: "audio",
+      concluido_em: new Date(AGORA - 50 * H).toISOString(),
+      concluido_por: "suporte@x.com",
+      atualizado_em: new Date(AGORA - 60 * H + 1).toISOString(),
+    }),
+  ];
+  for (const p of variantes) {
+    const l = montarLinha(p, AGORA);
+    assert.equal(jargao.test(l.oQueFazer), false, `jargão: ${l.oQueFazer}`);
+    assert.equal(jargao.test(l.concluidoTexto ?? ""), false, `jargão no selo: ${l.concluidoTexto}`);
+    assert.equal(jargao.test(l.situacaoMotivo), false, `jargão no motivo: ${l.situacaoMotivo}`);
+  }
+});
+
+test("a frase de ação avisa quando o encerrado NÃO recebeu o clone", () => {
+  const semEntrega = montarLinha(concluido({ status: "foto" }), AGORA);
+  assert.match(semEntrega.oQueFazer, /Nada a fazer/);
+  assert.match(semEntrega.oQueFazer, /NÃO chegou a ser entregue/);
+  assert.match(semEntrega.oQueFazer, /Enviando as fotos/, "diz em que passo o aluno parou");
+
+  const entregue = montarLinha(concluido({ status: "pronto" }), AGORA);
+  assert.match(entregue.oQueFazer, /Nada a fazer/);
+  assert.equal(/NÃO chegou a ser entregue/.test(entregue.oQueFazer), false);
+});
+
+// --- 5) ORDEM E CONTADORES -------------------------------------------------
+
+test("ordem: concluído vai pro FIM, mas continua na tabela", () => {
+  // O encerrado está parado há MUITO mais tempo que os outros: sem o degrau
+  // novo, o desempate por "mais tempo parado" o colocaria na frente.
+  const encerrado = montarLinha({ ...concluido({ status: "foto" }), id: "encerrado" }, AGORA);
+  const gritando = montarLinha(
+    pedido({ id: "gritando", status: "foto", atualizado_em: new Date(AGORA - 60 * H).toISOString() }),
+    AGORA,
+  );
+  const novo = montarLinha(
+    pedido({ id: "novo", status: "dados", atualizado_em: new Date(AGORA - 1 * H).toISOString() }),
+    AGORA,
+  );
+  const ordem = ordenar([encerrado, novo, gritando]).map((l) => l.id);
+  assert.deepEqual(ordem, ["gritando", "novo", "encerrado"]);
+  assert.equal(ordem.length, 3, "nada sumiu da tabela");
+});
+
+test("o resumo conta os QUATRO buckets e eles fecham com o total", () => {
+  const linhas = [
+    montarLinha(pedido({ id: "a", status: "pronto" }), AGORA),
+    montarLinha(pedido({ id: "b", status: "foto" }), AGORA),
+    montarLinha(pedido({ id: "c", status: "falhou", erro: "x" }), AGORA),
+    montarLinha({ ...concluido({ status: "foto" }), id: "d" }, AGORA),
+    montarLinha({ ...concluido({ status: "pronto" }), id: "e" }, AGORA),
+  ];
+  const r = resumir(linhas);
+  assert.deepEqual(r.situacoes, { concluido: 2, pronto: 1, aguardando: 1, erro: 1 });
+  assert.equal(
+    r.situacoes.concluido + r.situacoes.pronto + r.situacoes.aguardando + r.situacoes.erro,
+    r.total,
+  );
+  assert.equal(r.concluidos, 2);
+  assert.equal(r.concluidosComPendencia, 1);
+  assert.equal(r.parados, 0, "encerrado não conta como parado");
+});
+
+test("situacaoDoPedido ignora a conclusão — é a régua dos três de sempre", () => {
+  const p = concluido({ status: "falhou", erro: "timeout" });
+  assert.equal(situacao(p, AGORA).codigo, "concluido");
+  assert.equal(situacaoDoPedido(p, AGORA).codigo, "erro");
+});
+
+// --- 6) DEGRADAÇÃO SEM A MIGRATION 110 -------------------------------------
+
+test("coluna de conclusão ausente é reconhecida, e erro de verdade não é engolido", () => {
+  // ⚠️ ESTE É O ERRO REAL, copiado do PostgREST de produção em 14/09 pedindo as
+  // colunas da 110 (que não estão aplicadas):
+  //   code: "42703"  message: "column sgp_pedidos.concluido_em does not exist"
+  const real = { code: "42703", message: "column sgp_pedidos.concluido_em does not exist" };
+  assert.equal(colunaConclusaoAusente(real), true);
+
+  // E a rede de segurança por MENSAGEM (pro caso do PostgREST engolir o código,
+  // que acontece em erro de schema cache) também pega, ancorada no nome nosso.
+  assert.equal(
+    colunaConclusaoAusente({ message: "column sgp_pedidos.concluido_em does not exist" }),
+    true,
+  );
+  // Um "does not exist" de OUTRA coisa é bug e tem que estourar, não degradar.
+  assert.equal(colunaConclusaoAusente({ message: 'relation "outra" does not exist' }), false);
+  assert.equal(colunaConclusaoAusente({ code: "23505", message: "duplicate key" }), false);
+
+  // ⚠️ LIMITE MEDIDO, e está aqui escrito pra ninguém supor isolamento que não
+  // existe: com o erro REAL, os três atalhos de grupo dizem "true", porque o
+  // SQLSTATE 42703 curto-circuita ANTES da checagem por nome de coluna. Isso é
+  // inofensivo nas rotas de ESCRITA (cada uma só toca as suas três colunas, então
+  // um 42703 ali só pode ser sobre elas), e é irrelevante pro fallback da LEITURA,
+  // que separa os grupos pelo nome na mensagem — é o teste seguinte que prova isso.
+  assert.equal(colunaCobrancaAusente(real), true, "comportamento medido, não aspiracional");
+  assert.equal(colunaErroManualAusente(real), true, "idem");
+  // A separação por NOME, que é a que o fallback de leitura usa, essa vale:
+  assert.equal(colunaCobrancaAusente({ message: "column concluido_em does not exist" }), false);
+  assert.equal(colunaErroManualAusente({ message: "column concluido_em does not exist" }), false);
+});
+
+test("sem a migration 110 os outros dois botões continuam de pé", async () => {
+  const vistas: string[] = [];
+  const buscar = criarFilaComFallback<{ id: string }>(
+    async (colunas) => {
+      vistas.push(colunas);
+      if (colunas.includes("concluido_em")) {
+        // A forma EXATA do erro de produção (medida em 14/09).
+        return {
+          data: null,
+          error: { code: "42703", message: "column sgp_pedidos.concluido_em does not exist" },
+        };
+      }
+      return { data: [{ id: "1" }], error: null };
+    },
+    ["id"],
+    [
+      { nome: "cobranca", colunas: ["cobrado_em", "cobrado_por"] },
+      { nome: "erroManual", colunas: ["erro_manual_em"] },
+      { nome: "conclusao", colunas: ["concluido_em", "concluido_por"] },
+    ],
+  );
+  const r = await buscar();
+  assert.equal(r.error, null, "a tela do time não cai");
+  assert.deepEqual(r.data, [{ id: "1" }]);
+  assert.equal(r.disponivel.conclusao, false, "só o botão de concluir some");
+  assert.equal(r.disponivel.cobranca, true);
+  assert.equal(r.disponivel.erroManual, true);
+  assert.equal(vistas.length, 2, "derrubou só o grupo acusado, numa tentativa");
 });

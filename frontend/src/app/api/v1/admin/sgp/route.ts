@@ -23,6 +23,7 @@ import type { SgpPedidoRow } from "@/lib/sgp/types";
 import { montarLinha, ordenar, resumir } from "@/lib/sgp/painel";
 import {
   COLUNAS_COBRANCA,
+  COLUNAS_CONCLUSAO,
   COLUNAS_ERRO_MANUAL,
   criarFilaComFallback,
   silencioHorasConfigurado,
@@ -49,9 +50,9 @@ const COLUNAS_BASE = [
 
 /**
  * A fila, com queda pro conjunto de colunas antigo enquanto as migrations 106
- * (cobrança) e 109 (marcar erro) não entram — cada uma cai sozinha, porque quem
- * aplica é o Johnny e ele pode aplicar uma sem a outra. A régua do fallback (e o
- * memo) mora em lib/sgp/cobranca.ts, testada lá.
+ * (cobrança), 109 (marcar erro) e 110 (concluir atendimento) não entram — cada
+ * uma cai sozinha, porque quem aplica é o Johnny e ele pode aplicar uma sem as
+ * outras. A régua do fallback (e o memo) mora em lib/sgp/cobranca.ts, testada lá.
  */
 const buscar = criarFilaComFallback<SgpPedidoRow>(
   (colunas) =>
@@ -64,6 +65,7 @@ const buscar = criarFilaComFallback<SgpPedidoRow>(
   [
     { nome: "cobranca", colunas: COLUNAS_COBRANCA },
     { nome: "erroManual", colunas: COLUNAS_ERRO_MANUAL },
+    { nome: "conclusao", colunas: COLUNAS_CONCLUSAO },
   ],
 );
 
@@ -93,6 +95,8 @@ export async function GET(request: NextRequest) {
       cobranca: { disponivel: !!disponivel.cobranca, silencioHoras: silencioHorasConfigurado() },
       // Mesma ideia pro botão "Marcar erro" (migration 109).
       erroManual: { disponivel: !!disponivel.erroManual },
+      // E pro botão "Concluir atendimento" (migration 110).
+      conclusao: { disponivel: !!disponivel.conclusao },
     });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao carregar a fila do SGP");

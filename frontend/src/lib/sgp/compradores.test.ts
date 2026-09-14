@@ -185,7 +185,7 @@ test("quem já recebeu o clone nunca conta como parado, por mais antigo que seja
     pedidos: [pedido({ email: "entregue@x.com", status: "pronto", atualizado_em: iso(AGORA - 60 * 24 * H) })],
     agora: AGORA,
   });
-  assert.equal(linha.concluido, true);
+  assert.equal(linha.entregue, true);
   assert.equal(linha.parado, false);
 });
 

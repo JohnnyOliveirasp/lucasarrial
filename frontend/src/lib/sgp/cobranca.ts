@@ -18,8 +18,11 @@ export const COLUNAS_COBRANCA = ["cobrado_em", "cobrado_por"] as const;
 /** As colunas da migration 109 ("marcar erro"). Mesmo regime: opcionais. */
 export const COLUNAS_ERRO_MANUAL = ["erro_manual_em", "erro_manual_por", "erro_manual_motivo"] as const;
 
+/** As colunas da migration 110 ("concluir atendimento"). Mesmo regime. */
+export const COLUNAS_CONCLUSAO = ["concluido_em", "concluido_por", "concluido_motivo"] as const;
+
 /** Todas as colunas que podem não existir ainda, pra decidir se um erro é disso. */
-const COLUNAS_OPCIONAIS = [...COLUNAS_COBRANCA, ...COLUNAS_ERRO_MANUAL];
+const COLUNAS_OPCIONAIS = [...COLUNAS_COBRANCA, ...COLUNAS_ERRO_MANUAL, ...COLUNAS_CONCLUSAO];
 
 /**
  * O erro do Postgres é "coluna não existe"?
@@ -49,6 +52,10 @@ export function colunaCobrancaAusente(error: unknown): boolean {
 
 export function colunaErroManualAusente(error: unknown): boolean {
   return colunaAusente(error, COLUNAS_ERRO_MANUAL);
+}
+
+export function colunaConclusaoAusente(error: unknown): boolean {
+  return colunaAusente(error, COLUNAS_CONCLUSAO);
 }
 
 /**
