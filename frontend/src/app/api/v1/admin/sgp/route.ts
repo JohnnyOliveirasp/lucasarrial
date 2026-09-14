@@ -23,6 +23,7 @@ import type { SgpPedidoRow } from "@/lib/sgp/types";
 import { montarLinha, ordenar, resumir } from "@/lib/sgp/painel";
 import {
   COLUNAS_COBRANCA,
+  COLUNAS_ERRO_MANUAL,
   criarFilaComFallback,
   silencioHorasConfigurado,
   silencioMsConfigurado,
@@ -46,12 +47,11 @@ const COLUNAS_BASE = [
   "erro",
 ];
 
-const COM_COBRANCA = [...COLUNAS_BASE, ...COLUNAS_COBRANCA].join(", ");
-const SEM_COBRANCA = COLUNAS_BASE.join(", ");
-
 /**
- * A fila, com queda pro conjunto de colunas antigo enquanto a migration 106 não
- * entra. A régua do fallback (e o memo) mora em lib/sgp/cobranca.ts, testada lá.
+ * A fila, com queda pro conjunto de colunas antigo enquanto as migrations 106
+ * (cobrança) e 109 (marcar erro) não entram — cada uma cai sozinha, porque quem
+ * aplica é o Johnny e ele pode aplicar uma sem a outra. A régua do fallback (e o
+ * memo) mora em lib/sgp/cobranca.ts, testada lá.
  */
 const buscar = criarFilaComFallback<SgpPedidoRow>(
   (colunas) =>
@@ -60,8 +60,11 @@ const buscar = criarFilaComFallback<SgpPedidoRow>(
       .select(colunas)
       .order("atualizado_em", { ascending: true })
       .limit(500) as unknown as Promise<{ data: SgpPedidoRow[] | null; error: unknown }>,
-  COM_COBRANCA,
-  SEM_COBRANCA,
+  COLUNAS_BASE,
+  [
+    { nome: "cobranca", colunas: COLUNAS_COBRANCA },
+    { nome: "erroManual", colunas: COLUNAS_ERRO_MANUAL },
+  ],
 );
 
 /** O erro do fallback vem como `unknown` (ele não presume a forma do PostgREST). */
@@ -76,7 +79,7 @@ export async function GET(request: NextRequest) {
   const g = await gateAdmin(request, SUPORTE_OK);
   if ("res" in g) return g.res;
   try {
-    const { data, error, cobrancaDisponivel } = await buscar();
+    const { data, error, disponivel } = await buscar();
     if (error) return serverError(mensagemDoErro(error));
 
     const agora = Date.now();
@@ -87,7 +90,9 @@ export async function GET(request: NextRequest) {
       resumo: resumir(linhas),
       // A tela usa isto pra decidir se mostra o botão "Já cobrei" e pra escrever
       // o prazo certo no rodapé. Sem isto ela chutaria 48h mesmo com o env mudado.
-      cobranca: { disponivel: cobrancaDisponivel, silencioHoras: silencioHorasConfigurado() },
+      cobranca: { disponivel: !!disponivel.cobranca, silencioHoras: silencioHorasConfigurado() },
+      // Mesma ideia pro botão "Marcar erro" (migration 109).
+      erroManual: { disponivel: !!disponivel.erroManual },
     });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao carregar a fila do SGP");

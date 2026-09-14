@@ -68,6 +68,139 @@ const FALTA_NO_WIZARD: Record<string, string> = {
   revisao: "apertar o botão de enviar — o material dele já está todo lá",
 };
 
+/* ---------------------------------------------------------------------------
+ * SITUAÇÃO — os três rótulos que o Lucas pediu (10/09, reenviado 14/09)
+ * ------------------------------------------------------------------------- */
+
+/**
+ * *"Desses que já estão prontos, ou aguardando ou erro, precisamos deixar
+ * explicitamente nessa tela para meu time ver. Igual como era feito na
+ * planilha."*
+ *
+ * A tela já tinha a ETAPA (`ETAPA_HUMANA`: "Enviando as fotos", "Estamos
+ * gerando"…), que responde *em que passo está*. Isso NÃO é a mesma pergunta: o
+ * time da planilha lê a coluna de status procurando três buckets, e oito etapas
+ * não viram três buckets na cabeça de ninguém. Por isso a situação é um campo
+ * próprio, e a etapa continua existindo ao lado dela.
+ *
+ * NADA aqui inventa coluna: sai de `status`, `erro` e das marcas de erro manual.
+ */
+export const SITUACOES = ["erro", "aguardando", "pronto"] as const;
+export type SituacaoSgp = (typeof SITUACOES)[number];
+
+/** Em caixa alta porque é etiqueta de planilha, não frase. */
+export const SITUACAO_ROTULO: Record<SituacaoSgp, string> = {
+  erro: "ERRO",
+  aguardando: "AGUARDANDO",
+  pronto: "PRONTO",
+};
+
+export type Situacao = {
+  codigo: SituacaoSgp;
+  rotulo: string;
+  /** Uma linha dizendo POR QUE está nesse estado. Sem jargão, como o resto. */
+  motivo: string;
+};
+
+/** A marca de "deu erro" que alguém do time botou na mão (migration 109). */
+export type ErroManual = {
+  em: string;
+  /** Quem marcou. Nunca vazio: a rota grava e-mail ou id. */
+  por: string;
+  /** O que a pessoa escreveu. `null` quando ela não escreveu nada. */
+  motivo: string | null;
+  desdeMs: number;
+};
+
+/**
+ * Lê a marca de erro manual da linha.
+ *
+ * ⚠️ DIFERENÇA DELIBERADA PRO `lerCobranca`: esta marca **não vence** e **não se
+ * invalida quando o aluno mexe**. "Já cobrei" é um timer — cala o alerta por um
+ * tempo e volta. "Deu erro" é uma AFIRMAÇÃO de defeito feita por gente que viu
+ * algo que o sistema não vê (o aluno falou no WhatsApp, o material veio errado).
+ * O aluno mandar mais uma foto não desmente isso. Sai só por "desfazer".
+ */
+export function lerErroManual(p: SgpPedidoRow, agora: number): ErroManual | null {
+  if (!p.erro_manual_em) return null;
+  const em = new Date(p.erro_manual_em).getTime();
+  // Data ilegível não pode virar "marcado há NaN" na cara do atendente — mas
+  // também não pode sumir com a marca, então cai num tempo zerado e a marca fica.
+  const desdeMs = Number.isFinite(em) ? Math.max(0, agora - em) : 0;
+  return {
+    em: p.erro_manual_em,
+    por: p.erro_manual_por?.trim() || "alguém do time",
+    motivo: p.erro_manual_motivo?.trim() || null,
+    desdeMs,
+  };
+}
+
+/**
+ * A régua dos três estados, em ordem de precedência. É ela que o time vai ler na
+ * tela, então está escrita aqui inteira, num lugar só:
+ *
+ *  1. ERRO  — alguém do time marcou na mão (`erro_manual_em`); OU o pedido está
+ *             em `falhou`; OU o sistema carimbou algo em `erro` (isso acontece
+ *             em falha PARCIAL, com o status ainda em `processando` — é
+ *             justamente o caso que passaria despercebido sem esta coluna).
+ *  2. PRONTO — `status = 'pronto'`. Entregue, nada a fazer.
+ *  3. AGUARDANDO — todo o resto (cadastro, foto, áudio, revisão, fila, geração).
+ *
+ * ERRO ganha de PRONTO de propósito: "material veio errado" é exatamente um
+ * pedido ENTREGUE que o time precisa marcar. Se PRONTO ganhasse, marcar erro
+ * nesse caso — o caso que o Lucas citou — não mudaria nada na tela.
+ */
+export function situacao(p: SgpPedidoRow, agora: number = Date.now()): Situacao {
+  const manual = lerErroManual(p, agora);
+  if (manual) {
+    const quem = `marcado pelo time há ${tempoHumano(manual.desdeMs)} (${manual.por})`;
+    return {
+      codigo: "erro",
+      rotulo: SITUACAO_ROTULO.erro,
+      motivo: manual.motivo ? `${manual.motivo} — ${quem}` : `Erro ${quem}`,
+    };
+  }
+
+  const doSistema = p.erro?.trim() || null;
+  if (p.status === "falhou") {
+    return {
+      codigo: "erro",
+      rotulo: SITUACAO_ROTULO.erro,
+      motivo: doSistema
+        ? `O sistema falhou: ${doSistema}`
+        : "O sistema falhou ao gerar (sem motivo registrado).",
+    };
+  }
+  if (doSistema) {
+    // Falha parcial: uma parte do clone morreu e o pedido seguiu em frente.
+    return {
+      codigo: "erro",
+      rotulo: SITUACAO_ROTULO.erro,
+      motivo: `Parte da geração falhou: ${doSistema}`,
+    };
+  }
+
+  if (p.status === "pronto") {
+    return { codigo: "pronto", rotulo: SITUACAO_ROTULO.pronto, motivo: "Entregue." };
+  }
+
+  if (p.status === "processando") {
+    return { codigo: "aguardando", rotulo: SITUACAO_ROTULO.aguardando, motivo: "Estamos gerando." };
+  }
+  if (p.status === "enviado") {
+    return {
+      codigo: "aguardando",
+      rotulo: SITUACAO_ROTULO.aguardando,
+      motivo: "Na fila, esperando a geração começar.",
+    };
+  }
+  return {
+    codigo: "aguardando",
+    rotulo: SITUACAO_ROTULO.aguardando,
+    motivo: `Esperando o aluno ${FALTA_NO_WIZARD[p.status] ?? "continuar o cadastro"}.`,
+  };
+}
+
 export type LinhaPainel = {
   id: string;
   nome: string;
@@ -76,6 +209,14 @@ export type LinhaPainel = {
   /** Rótulo da etapa, já em linguagem de gente. */
   etapa: string;
   status: SgpStatus;
+  /** PRONTO / AGUARDANDO / ERRO — a etiqueta de planilha (pedido do Lucas). */
+  situacao: SituacaoSgp;
+  situacaoRotulo: string;
+  situacaoMotivo: string;
+  /** "marcado há 3h por fulano@x.com". `null` = ninguém marcou erro na mão. */
+  erroManualTexto: string | null;
+  /** O que o atendente escreveu ao marcar. `null` = marcou sem escrever nada. */
+  erroManualMotivo: string | null;
   /** Quanto tempo desde a última movimentação do pedido. */
   paradoMs: number;
   paradoTexto: string;
@@ -243,6 +384,8 @@ export function montarLinha(
 ): LinhaPainel {
   const paradoMs = agora - new Date(p.atualizado_em).getTime();
   const cobranca = lerCobranca(p, agora, silencioMs);
+  const sit = situacao(p, agora);
+  const erroManual = lerErroManual(p, agora);
 
   // Travado no wizard há +48h. Isto NÃO depende da cobrança: o aluno está
   // parado do mesmo jeito, e é o que a linha continua mostrando na tela.
@@ -250,7 +393,11 @@ export function montarLinha(
   // O que GRITA. Um "já cobrei" recente tira o vermelho e o contador — e só.
   const silenciado = travado && !!cobranca?.silenciado;
   const parado = travado && !silenciado;
-  const precisaAcao = parado || p.status === "falhou";
+  // Era `p.status === "falhou"`, que é um subconjunto estrito de `situacao ===
+  // "erro"`: agora a falha PARCIAL (erro carimbado com status ainda andando) e a
+  // marca do time também sobem pro topo. Quem está em ERRO precisa de gente por
+  // definição — era a regra que já valia pro "falhou", só que cega pros outros dois.
+  const precisaAcao = parado || sit.codigo === "erro";
 
   return {
     id: p.id,
@@ -259,6 +406,13 @@ export function montarLinha(
     whatsapp: p.whatsapp?.trim() || "—",
     etapa: ETAPA_HUMANA[p.status] ?? p.status,
     status: p.status,
+    situacao: sit.codigo,
+    situacaoRotulo: sit.rotulo,
+    situacaoMotivo: sit.motivo,
+    erroManualTexto: erroManual
+      ? `marcado há ${tempoHumano(erroManual.desdeMs)} por ${erroManual.por}`
+      : null,
+    erroManualMotivo: erroManual?.motivo ?? null,
     paradoMs,
     paradoTexto: tempoHumano(paradoMs),
     parado,
@@ -303,6 +457,12 @@ export type ResumoPainel = {
    * da tela. Se este número só cresce, a cobrança não está resolvendo nada.
    */
   cobrados: number;
+  /**
+   * Os três buckets da planilha do Lucas. Ficam ao lado de `porEtapa`, não no
+   * lugar dele: etapa responde "em que passo", situação responde "pronto,
+   * esperando ou quebrado" — e é esta a leitura de longe.
+   */
+  situacoes: Record<SituacaoSgp, number>;
   porEtapa: Array<{ status: SgpStatus; etapa: string; n: number }>;
 };
 
@@ -310,10 +470,13 @@ export type ResumoPainel = {
 export function resumir(linhas: LinhaPainel[]): ResumoPainel {
   const contagem = new Map<SgpStatus, number>();
   for (const l of linhas) contagem.set(l.status, (contagem.get(l.status) ?? 0) + 1);
+  const situacoes: Record<SituacaoSgp, number> = { erro: 0, aguardando: 0, pronto: 0 };
+  for (const l of linhas) situacoes[l.situacao] += 1;
   return {
     total: linhas.length,
     parados: linhas.filter((l) => l.parado).length,
     cobrados: linhas.filter((l) => l.silenciado).length,
+    situacoes,
     porEtapa: (Object.keys(ETAPA_HUMANA) as SgpStatus[])
       .filter((s) => contagem.has(s))
       .map((s) => ({ status: s, etapa: ETAPA_HUMANA[s], n: contagem.get(s) ?? 0 })),

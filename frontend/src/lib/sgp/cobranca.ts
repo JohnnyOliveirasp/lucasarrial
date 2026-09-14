@@ -15,22 +15,40 @@ import { SGP_COBRANCA_SILENCIO_HORAS } from "./painel.ts";
 /** As colunas da migration 106. Ausentes até ela ser aplicada. */
 export const COLUNAS_COBRANCA = ["cobrado_em", "cobrado_por"] as const;
 
+/** As colunas da migration 109 ("marcar erro"). Mesmo regime: opcionais. */
+export const COLUNAS_ERRO_MANUAL = ["erro_manual_em", "erro_manual_por", "erro_manual_motivo"] as const;
+
+/** Todas as colunas que podem não existir ainda, pra decidir se um erro é disso. */
+const COLUNAS_OPCIONAIS = [...COLUNAS_COBRANCA, ...COLUNAS_ERRO_MANUAL];
+
 /**
  * O erro do Postgres é "coluna não existe"?
  *
  * `42703` é o SQLSTATE de `undefined_column` — é por ele que decidimos, não por
  * texto. O casamento por mensagem é só rede de segurança pra quando o PostgREST
  * engole o código (acontece em erro de schema cache), e é ANCORADO nos nossos
- * dois nomes de coluna de propósito: um "column does not exist" genérico é bug
- * de verdade e TEM que estourar, não virar degradação silenciosa.
+ * nomes de coluna de propósito: um "column does not exist" genérico é bug de
+ * verdade e TEM que estourar, não virar degradação silenciosa.
  */
-export function colunaCobrancaAusente(error: unknown): boolean {
+export function colunaAusente(
+  error: unknown,
+  colunas: readonly string[] = COLUNAS_OPCIONAIS,
+): boolean {
   if (!error || typeof error !== "object") return false;
   const e = error as { code?: unknown; message?: unknown };
   if (e.code === "42703") return true;
   const msg = typeof e.message === "string" ? e.message.toLowerCase() : "";
   if (!msg.includes("does not exist") && !msg.includes("não existe")) return false;
-  return COLUNAS_COBRANCA.some((c) => msg.includes(c));
+  return colunas.some((c) => msg.includes(c));
+}
+
+/** Atalhos por grupo, pras rotas de escrita que só falam de um deles. */
+export function colunaCobrancaAusente(error: unknown): boolean {
+  return colunaAusente(error, COLUNAS_COBRANCA);
+}
+
+export function colunaErroManualAusente(error: unknown): boolean {
+  return colunaAusente(error, COLUNAS_ERRO_MANUAL);
 }
 
 /**
@@ -53,39 +71,76 @@ export function silencioMsConfigurado(): number {
 }
 
 export type Consulta<T> = { data: T[] | null; error: unknown };
-export type ResultadoFila<T> = Consulta<T> & { cobrancaDisponivel: boolean };
+
+/** Um bloco de colunas que pode não existir ainda, com o nome que a tela usa. */
+export type GrupoOpcional = { nome: string; colunas: readonly string[] };
+
+export type ResultadoFila<T> = Consulta<T> & {
+  /** `{ cobranca: true, erroManual: false }` — o que a tela pode oferecer hoje. */
+  disponivel: Record<string, boolean>;
+};
 
 /**
- * Consulta a fila pedindo as colunas de cobrança e, se elas ainda não existirem,
- * repete SEM elas. Fica aqui (e não solto na rota) porque a máquina de estados
- * do memo é a parte que dá pra errar em silêncio — e o preço de errar é a tela
- * do time de suporte fora do ar.
+ * Consulta a fila pedindo as colunas opcionais e, se alguma ainda não existir,
+ * repete sem o GRUPO daquela coluna. Fica aqui (e não solto na rota) porque a
+ * máquina de estados do memo é a parte que dá pra errar em silêncio — e o preço
+ * de errar é a tela do time de suporte fora do ar.
  *
- * O memo guarda SÓ o "sim". O "não" é re-testado a cada chamada de propósito:
- * é assim que o botão aparece sozinho no minuto em que o Johnny aplicar a
- * migration 106, sem deploy e sem restart. O custo do estado degradado é uma
- * consulta extra por request, num painel com dois pedidos: irrelevante.
+ * ⚠️ POR QUE OS GRUPOS SÃO INDEPENDENTES E NÃO UM BOOLEANO SÓ: são DUAS
+ * migrations (106 = cobrança, 109 = marcar erro) e quem aplica é o Johnny, uma
+ * de cada vez. Conferido em 14/09 com `_frank/ferramentas/ddl_aplicado.cjs`: a
+ * 106 está commitada desde 04/09 e NÃO está aplicada. Um booleano único faria
+ * aplicar só uma delas DESLIGAR a outra — recurso que já funciona morrendo por
+ * causa de migration alheia.
  *
- * Erro que NÃO é coluna ausente passa reto, com `cobrancaDisponivel: true` —
+ * O memo guarda SÓ o "sim". O "não" é re-testado a cada chamada de propósito: é
+ * assim que o botão aparece sozinho no minuto em que a migration entrar, sem
+ * deploy e sem restart. O custo do estado degradado é uma consulta extra por
+ * request, num painel com 236 pedidos: irrelevante.
+ *
+ * Erro que NÃO é coluna ausente passa reto, com tudo marcado como disponível —
  * a rota devolve 500 e ninguém confunde uma falha real com "recurso desligado".
  */
 export function criarFilaComFallback<T>(
   consultar: (colunas: string) => Promise<Consulta<T>>,
-  comCobranca: string,
-  semCobranca: string,
+  base: readonly string[],
+  grupos: readonly GrupoOpcional[],
 ): () => Promise<ResultadoFila<T>> {
-  let temColunas: boolean | null = null;
+  /** `false` = já provado ausente. `null` = ainda não sabemos (vale tentar). */
+  const conhecido = new Map<string, boolean | null>(grupos.map((g) => [g.nome, null]));
+
+  const mapa = (ativos: readonly GrupoOpcional[]): Record<string, boolean> =>
+    Object.fromEntries(grupos.map((g) => [g.nome, ativos.includes(g)]));
 
   return async () => {
-    if (temColunas !== false) {
-      const r = await consultar(comCobranca);
+    // No pior caso derruba um grupo por tentativa e ainda faz a consulta nua.
+    for (let tentativa = 0; tentativa <= grupos.length; tentativa++) {
+      const ativos = grupos.filter((g) => conhecido.get(g.nome) !== false);
+      const colunas = [...base, ...ativos.flatMap((g) => g.colunas)].join(", ");
+      const r = await consultar(colunas);
+
       if (!r.error) {
-        temColunas = true;
-        return { ...r, cobrancaDisponivel: true };
+        for (const g of ativos) conhecido.set(g.nome, true);
+        return { ...r, disponivel: mapa(ativos) };
       }
-      if (!colunaCobrancaAusente(r.error)) return { ...r, cobrancaDisponivel: true };
-      temColunas = false;
+      if (!ativos.length || !colunaAusente(r.error)) {
+        // Falha real (ou já estamos na consulta nua): sobe cru.
+        return { ...r, disponivel: mapa(ativos) };
+      }
+
+      // Quais grupos o erro acusa? O PostgREST costuma nomear a coluna.
+      const msg =
+        typeof (r.error as { message?: unknown }).message === "string"
+          ? ((r.error as { message: string }).message).toLowerCase()
+          : "";
+      const acusados = ativos.filter((g) => g.colunas.some((c) => msg.includes(c)));
+      // Sem nome na mensagem (42703 pelado) não dá pra saber de quem é a culpa:
+      // derruba UM grupo e tenta de novo, em vez de derrubar todos de uma vez.
+      for (const g of acusados.length ? acusados : [ativos[ativos.length - 1]]) {
+        conhecido.set(g.nome, false);
+      }
     }
-    return { ...(await consultar(semCobranca)), cobrancaDisponivel: false };
+    // Inalcançável: o laço acima sempre retorna na consulta sem grupo algum.
+    return { data: null, error: new Error("fallback do SGP não convergiu"), disponivel: mapa([]) };
   };
 }
