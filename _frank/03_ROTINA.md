@@ -241,7 +241,7 @@ Isto aqui é pra você fechar MAIS, não pra fechar mais rápido do que resolve.
 o backlog não baixar porque os casos são difíceis, isso é uma resposta legítima
 — escreva no relatório qual passo emperrou em cada um.
 
-## ⚠️ Duas armadilhas que já custaram caro numa varredura
+## ⚠️ Três armadilhas que já custaram caro numa varredura
 
 1. **Consulta que erra volta VAZIA.** Pedir uma coluna que não existe faz o
    Supabase devolver erro e `data: null` — e o script imprime alegremente
@@ -251,3 +251,16 @@ o backlog não baixar porque os casos são difíceis, isso é uma resposta legí
 2. **Registro velho entope a fila.** Item que a varredura não consegue
    resolver volta em toda rodada e come o teto, escondendo o que dava pra
    resolver. Ou resolve, ou fecha, ou tira da fila.
+3. **Teste que não RODOU sai com exit 0 e parece verde.** Medido em 14/09 no
+   #259: rodei a simulação, o `node --test` saiu **0**, e não havia passado
+   nada — eram **8 de 8 SKIP**. O arquivo se auto-marca SKIP quando falta o
+   mock (ali, `./mail-imap` sem `fetchThread`, que a main passou a importar
+   depois que o teste foi escrito) em vez de derrubar a suíte. Eu ia mergear
+   com ZERO evidência achando que tinha prova.
+   **Leia `# pass` / `# skipped`, nunca só o código de saída.** É a armadilha 1
+   aplicada a teste: zero que vem de instrumento cego não é zero medido.
+   ⚠️ E o complemento, que é o que dá valor ao verde: **rode o mesmo teste
+   contra o código SEM o fix.** Teste que passa nos dois lados não prova nada.
+   No #259 foram 8/8 com o fix e 4/8 contra a main sem ele — e as 4 que
+   continuaram passando (as de guarda) são o que mostra que o teste não
+   quebrou por acidente.
