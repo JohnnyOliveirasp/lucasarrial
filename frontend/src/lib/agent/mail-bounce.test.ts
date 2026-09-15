@@ -303,23 +303,39 @@ test("domínio com MX nulo é permanente, não 'desconhecida' — uid 605, Sheil
   );
 });
 
-test("'No MX SERVER found' é a MESMA falha da Sheila com outro substantivo — #402 (14/09)", () => {
+test("'No MX SERVER found': a FRASE não decide mais sozinha — quem julga é o DNS (#402)", () => {
   // Texto CRU do servidor, copiado do `bounce_diagnostico` das duas linhas de
   // `emails_enviados` (guitaschetti@pradocomunicacao.com, 21:55Z e 22:10Z).
-  // Caía em `desconhecida` porque a alternância era só `record|hosts?`: a ficha
-  // nascia sem instrução e a casa reenviou pro domínio morto no meio.
-  // `dig` confere: pradocomunicacao.com não tem MX nem A.
   const REAL =
     "smtp; DNS Error: DNS error occurred while resolving the Mail Exchange (MX) server " +
     "for the specified domain (pradocomunicacao.com). No MX server found";
-  assert.equal(classificarDiagnostico(REAL), "inexistente");
+
+  // ⚠️ ESTE TESTE MUDOU DE LADO, e a troca é deliberada.
+  //
+  // A primeira correção do #402 alargou o regex (`record|hosts?|servers?`) e
+  // este teste exigia `inexistente` DA FRASE. O #284 substituiu esse desenho:
+  // adivinhar a redação de cada provedor já furou três vezes no mesmo arquivo,
+  // então a frase virou REDE e o juiz virou o DNS (`refinarPorDns`).
+  //
+  // Logo, o classificador PURO defere — `desconhecida` — e é isso que se afirma
+  // aqui. Não é regressão: o veredito permanente sai do caminho com DNS, e está
+  // coberto em mail-bounce-dns.test.ts.
+  //
+  // Por que deferir é o lado seguro quando o resolvedor não responde: errar pra
+  // "continua tentando" custa um reenvio; errar pro outro lado abandona um
+  // aluno alcançável. Em 14/09 eu quase declarei o guitaschetti inalcançável
+  // lendo `0 dominio.com.br.` como se fosse MX nulo — e 7 e-mails nossos já
+  // tinham chegado nele.
+  assert.equal(classificarDiagnostico(REAL), "desconhecida");
 
   // As duas redações do MESMO servidor têm que dar a MESMA classe — foi a lição
   // de 13/09 (mesma frase do Gmail com e sem código dava classes diferentes).
+  // Continua valendo, agora no patamar de "ambas deferem ao DNS".
   assert.equal(
     classificarDiagnostico(REAL),
     classificarDiagnostico(
-      'smtp; DNS Error: Failed to resolve any IP addresses for the Mail Exchange (MX) server associated with "gmail.com.br"',
+      "smtp; DNS Error: DNS error occurred while resolving the Mail Exchange (MX) " +
+        "server for the specified domain (outro.exemplo). No MX server found",
     ),
   );
 });

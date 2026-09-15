@@ -185,10 +185,15 @@ export function pareceCaixaInexistente(diagnostico: string): boolean {
  * ele (ver `classeComDns`) — inclusive pra DESMENTIR isto aqui, que é o caso da
  * queda transitória de resolvedor que o comentário abaixo sempre temeu.
  */
-// `servers?` entra junto de `record|hosts?` porque a main ganhou essa palavra
-// enquanto este PR esperava: quando o DNS NAO responde, sobra so esta rede, e
-// ela nao pode ser mais fraca do que o que ja esta em producao hoje.
-const MX_FALHOU_ESTREITO = /failed to resolve any ip addresses for the mail exchange|\bno mx (record|hosts?|servers?)\b/i;
+// NAO acrescente `servers?` aqui. Tentei, e o teste do #402 me derrubou com
+// razao: este padrao e o que DECIDE `inexistente` pela frase, e a frase nao
+// deve decidir — quem julga e o DNS, em `refinarPorDns`. Com "No MX server
+// found" a classe pura fica `desconhecida` DE PROPOSITO e o DNS resolve
+// depois. Se o resolvedor estiver fora do ar, ficar em `desconhecida` e mais
+// seguro que carimbar `inexistente`: errar pra "continua tentando" custa um
+// reenvio, errar pro outro lado abandona um aluno alcancavel (foi o que quase
+// aconteceu com o guitaschetti em 14/09).
+const MX_FALHOU_ESTREITO = /failed to resolve any ip addresses for the mail exchange|\bno mx (record|hosts?)\b/i;
 
 /**
  * O bounce culpa a RESOLUÇÃO de MX/DNS do domínio do destinatário?
