@@ -1,5 +1,14 @@
+-- ⚠️ RENUMERADA EM 15/09: nascia como `108`, e HAVIA CINCO arquivos 108_*.sql
+-- diferentes no repo (emails_enviados, estorno, face_gate, retiradas, voices).
+-- O git nao reclama porque os nomes diferem, mas o NUMERO virava mentira e
+-- quem fosse aplicar nao sabia qual era qual. Passa a ser `111`.
+-- 🚨 ESTADO EM 15/09: **NAO APLICADA**. A funcao zero_subscription_credits_on_refund
+-- NAO existe no banco (medido). O codigo dela ja esta na main, entao a regra 9
+-- (estorno zera credito) segue SEM efeito em producao. Mexe em DINHEIRO de conta
+-- de aluno: so aplicar com aval explicito do Johnny.
+--
 -- ============================================================================
--- 108 — estorno zera o crédito de mensalidade
+-- 111 — estorno zera o crédito de mensalidade
 -- Regra do Johnny 18/08 ("ela cancela tudo porque ela pediu o estorno da
 -- compra", _frank/ordens/2026-08-18_regra_do_trial.md + ordem do dia):
 --

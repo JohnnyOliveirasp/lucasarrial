@@ -2,7 +2,7 @@
  * Retiradas dos sócios — camada de dados (server-only, service_role).
  * A regra e as contas moram em `retiradas-calc.ts` (puro, testado).
  *
- * ⚠️ A migration `scripts/108_retiradas_socios.sql` pode NÃO estar aplicada.
+ * ⚠️ A migration `scripts/113_retiradas_socios.sql` pode NÃO estar aplicada.
  * Quando não está, a leitura devolve `tabelaAusente: true` em vez de explodir —
  * e o painel DIZ isso na tela. Degradar pra "0 retiradas" em silêncio seria
  * pior que o erro: o "Em caixa" repetiria o lucro e mentiria pro Johnny.
@@ -46,7 +46,7 @@ export async function listRetiradas(range: DateRange): Promise<ListaRetiradas> {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (ehTabelaAusente(msg)) {
-      console.warn("[retiradas] tabela ausente — rode scripts/108_retiradas_socios.sql");
+      console.warn("[retiradas] tabela ausente — rode scripts/113_retiradas_socios.sql");
       return { retiradas: [], tabelaAusente: true };
     }
     throw e;
@@ -78,7 +78,7 @@ export async function createRetirada(nova: NovaRetirada): Promise<RetiradaSocioR
   if (error) {
     if (ehTabelaAusente(error.message)) {
       throw new Error(
-        "A tabela de retiradas ainda não existe no banco — rode scripts/108_retiradas_socios.sql.",
+        "A tabela de retiradas ainda não existe no banco — rode scripts/113_retiradas_socios.sql.",
       );
     }
     throw new Error(`Falha ao registrar a retirada: ${error.message}`);

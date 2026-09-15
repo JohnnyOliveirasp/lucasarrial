@@ -1,5 +1,11 @@
+-- ⚠️ RENUMERADA EM 15/09: nascia como `108`, e HAVIA CINCO arquivos 108_*.sql
+-- diferentes no repo (emails_enviados, estorno, face_gate, retiradas, voices).
+-- O git nao reclama porque os nomes diferem, mas o NUMERO virava mentira e
+-- quem fosse aplicar nao sabia qual era qual. Passa a ser `114`.
+-- ✅ ESTADO EM 15/09: APLICADA. A coluna voices.reference_cut_mode existe (medido).
+--
 -- ============================================================================
--- 108 — por qual CAMINHO a referência da voz foi cortada (incidente 89473013)
+-- 114 — por qual CAMINHO a referência da voz foi cortada (incidente 89473013)
 --
 -- POR QUE: runpod-worker/voice_pipeline/reference.py tem TRÊS caminhos que
 -- cortam a referência por TEMPO seco em vez de fronteira de palavra, e nenhum

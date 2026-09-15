@@ -123,7 +123,7 @@ export function RetiradasPanel({
       {tabelaAusente && (
         <p className="rounded-[var(--radius)] border border-[var(--status-warn)]/40 px-3 py-2 font-mono text-[11px] text-[var(--status-warn)]">
           ⚠ A tabela de retiradas ainda não existe no banco — rode
-          {" "}<code>scripts/108_retiradas_socios.sql</code>. Até lá esta lista fica vazia (nenhum outro
+          {" "}<code>scripts/113_retiradas_socios.sql</code>. Até lá esta lista fica vazia (nenhum outro
           número do painel é afetado).
         </p>
       )}

@@ -1,4 +1,10 @@
--- 108 — face_gate_recusas: o gate de rosto do Vídeo Clone deixa rastro (#372).
+-- ⚠️ RENUMERADA EM 15/09: nascia como `108`, e HAVIA CINCO arquivos 108_*.sql
+-- diferentes no repo (emails_enviados, estorno, face_gate, retiradas, voices).
+-- O git nao reclama porque os nomes diferem, mas o NUMERO virava mentira e
+-- quem fosse aplicar nao sabia qual era qual. Passa a ser `112`.
+-- ✅ ESTADO EM 15/09: APLICADA. A tabela face_gate_recusas existe no banco (medido).
+--
+-- 112 — face_gate_recusas: o gate de rosto do Vídeo Clone deixa rastro (#372).
 --
 -- ✅ APLICADA em 13/09 no projeto yizerthyrgrajivlotcw, via Management API
 --    (`_frank/ferramentas/sql.cjs`). O Lucas autorizou aplicar DDL por conta
