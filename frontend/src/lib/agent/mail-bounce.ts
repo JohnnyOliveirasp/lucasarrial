@@ -103,6 +103,34 @@ export type ClasseBounce =
 
 export type TipoRelatorio = "falha" | "atraso";
 
+/**
+ * O que o DNS REAL do domínio do destinatário respondeu.
+ *
+ * POR QUE EXISTE (chamado #402, medido 14/09). Julgar falha de MX pela FRASE do
+ * bounce é corrida perdida: cada provedor escreve do seu jeito e a gente sempre
+ * chega atrasado. Este arquivo foi remendado DUAS vezes em 13/09 pelo mesmo
+ * motivo e furou de novo no dia seguinte — o Google escreve "No MX server
+ * found" e o padrão daqui exigia "no mx record|hosts", então um bounce
+ * PERMANENTE (`pradocomunicacao.com`, sem MX e sem A) caiu em `desconhecida`.
+ *
+ * A saída não é um terceiro remendo: quando o bounce culpa a resolução de
+ * MX/DNS, a gente PERGUNTA AO DNS em vez de interpretar prosa. Isso é
+ * determinístico, vale pra qualquer provedor e não depende de redação.
+ *
+ * Quem produz este veredito é o `mail-bounce-dns.ts` (tem IO); aqui só mora o
+ * que ele SIGNIFICA para a classe, que é a parte que precisa ser testável.
+ */
+export type VeredictoDns =
+  /**
+   * O domínio não recebe e-mail de ninguém: nem MX utilizável, nem A/AAAA (que
+   * por RFC 5321 §5.1 serve de MX implícito), OU publica MX NULO (RFC 7505).
+   */
+  | "sem-registro"
+  /** Publica MX utilizável (ou A/AAAA): é alcançável, a falha foi de momento. */
+  | "resolve"
+  /** SERVFAIL, timeout, resolvedor fora do ar. NÃO carimba nada — é ignorância, não prova. */
+  | "indeterminado";
+
 export type DestinatarioQueFalhou = {
   email: string;
   classe: ClasseBounce;
@@ -112,6 +140,13 @@ export type DestinatarioQueFalhou = {
   acao: string;
   /** true = endereço nosso/da equipe (cópia oculta), não é o aluno. */
   interno: boolean;
+  /**
+   * Veredito do DNS do domínio deste endereço, quando foi consultado. Ausente
+   * no parse puro: é o `mail-bounce-dns.ts` que preenche, e só quando o
+   * diagnóstico culpa MX/DNS. Vai pro chamado como PROVA do que decidiu a
+   * classe — sem isso o humano lê "inexistente" e não sabe se foi frase ou fato.
+   */
+  dns?: VeredictoDns;
 };
 
 export type Bounce = {
@@ -123,6 +158,102 @@ export type Bounce = {
   /** Assunto do que a gente mandou — é o que identifica o caso pro humano. */
   assuntoOriginal: string | null;
 };
+
+/**
+ * Evidência de CAIXA que não existe — o defeito está no endereço, não no
+ * domínio. Separado de `pareceFalhaDeMx` porque as duas coisas chegam ao mesmo
+ * `inexistente` por caminhos diferentes, e na hora de reavaliar com o DNS a
+ * diferença decide: domínio que resolve não desmente "user unknown".
+ *
+ * Note que `address (does not|doesn't) exist` NÃO casa aqui: o Gmail escreve
+ * "account that you tried to reach does not exist", e "no such user" não casa
+ * "NoSuchUser" (sem espaços) da URL de ajuda.
+ */
+export function pareceCaixaInexistente(diagnostico: string): boolean {
+  const d = diagnostico || "";
+  return (
+    /\b5\.1\.[01]\b/.test(d) ||
+    /(user unknown|no such user|address (does not|doesn't) exist|recipient (address )?rejected|unknown recipient)/i.test(d) ||
+    /account that you tried to reach (does not exist|is disabled)/i.test(d) ||
+    /\bNoSuchUser\b/i.test(d)
+  );
+}
+
+/**
+ * Frases ESTREITAS de falha de MX que, sozinhas, já bastam pra carimbar
+ * permanente. Fica como REDE, não como regra: se o DNS responder, quem manda é
+ * ele (ver `classeComDns`) — inclusive pra DESMENTIR isto aqui, que é o caso da
+ * queda transitória de resolvedor que o comentário abaixo sempre temeu.
+ */
+// NAO acrescente `servers?` aqui. Tentei, e o teste do #402 me derrubou com
+// razao: este padrao e o que DECIDE `inexistente` pela frase, e a frase nao
+// deve decidir — quem julga e o DNS, em `refinarPorDns`. Com "No MX server
+// found" a classe pura fica `desconhecida` DE PROPOSITO e o DNS resolve
+// depois. Se o resolvedor estiver fora do ar, ficar em `desconhecida` e mais
+// seguro que carimbar `inexistente`: errar pra "continua tentando" custa um
+// reenvio, errar pro outro lado abandona um aluno alcancavel (foi o que quase
+// aconteceu com o guitaschetti em 14/09).
+const MX_FALHOU_ESTREITO = /failed to resolve any ip addresses for the mail exchange|\bno mx (record|hosts?)\b/i;
+
+/**
+ * O bounce culpa a RESOLUÇÃO de MX/DNS do domínio do destinatário?
+ *
+ * ⚠️ Este padrão é LARGO de propósito, ao contrário de tudo o mais neste
+ * arquivo — e só pode ser largo porque ele NÃO decide nada: ele só manda
+ * perguntar ao DNS. Acertar de menos aqui devolve a classe de hoje; acertar de
+ * mais custa uma consulta de DNS que responde "resolve" e não muda nada.
+ * É exatamente a inversão que tira a gente da corrida contra a redação de cada
+ * provedor — a que perdemos três vezes neste mesmo arquivo em dois dias.
+ */
+export function pareceFalhaDeMx(diagnostico: string): boolean {
+  const d = diagnostico || "";
+  return (
+    MX_FALHOU_ESTREITO.test(d) ||
+    // "No MX server found" (Google), "no MX for domain", "No MX hosts".
+    /\bno mx\b/i.test(d) ||
+    /\bmx (record|server|host)s?\b/i.test(d) ||
+    /mail exchange/i.test(d) ||
+    /dns (error|problem|failure)/i.test(d) ||
+    /(host or domain name not found|domain (name )?not found|name service error|unrouteable address)/i.test(d) ||
+    /(failed to resolve|unable to resolve|could ?n.t resolve|cannot resolve)/i.test(d)
+  );
+}
+
+/**
+ * Reavalia a classe à luz do DNS REAL do domínio do destinatário.
+ *
+ * Só opina quando o próprio bounce culpou MX/DNS — em bounce de caixa cheia ou
+ * de spam de saída o DNS do destino não diz nada sobre a causa, e deixar ele
+ * "corrigir" essas classes apagaria a prova que já temos.
+ *
+ * As três saídas, e por que cada uma:
+ *  - `sem-registro`: o domínio não recebe e-mail de NINGUÉM (sem MX/A, ou MX
+ *    nulo). Isso é fato verificável, não redação: reenviar nunca vai funcionar.
+ *  - `resolve`: o domínio é alcançável AGORA, então a falha de resolução foi de
+ *    momento. Aqui o DNS DESMENTE um `inexistente` que tenha vindo só da frase
+ *    — é este caso que o padrão estreito nunca conseguiu distinguir sozinho.
+ *    Mas evidência de CAIXA inexistente ganha: "user unknown" continua sendo
+ *    sobre o endereço, e um domínio que resolve não o contradiz.
+ *  - `indeterminado`: a gente não sabe. Não mexe. Ignorância não vira veredito.
+ */
+export function classeComDns(atual: ClasseBounce, diagnostico: string, veredito: VeredictoDns): ClasseBounce {
+  if (!pareceFalhaDeMx(diagnostico)) return atual;
+  // Classes com prova própria e alheia ao DNS do destino não se tocam.
+  if (atual !== "desconhecida" && atual !== "temporaria" && atual !== "inexistente") return atual;
+  if (veredito === "sem-registro") return "inexistente";
+  if (veredito === "resolve") return pareceCaixaInexistente(diagnostico) ? atual : "temporaria";
+  return atual;
+}
+
+/** Domínio de um endereço, normalizado pra consulta de DNS. */
+export function dominioDoEmail(email: string): string {
+  const i = (email || "").lastIndexOf("@");
+  if (i < 0) return "";
+  // O ponto final aqui é o do FQDN do ENDEREÇO (`fulano@dominio.com.`), que é
+  // só notação. NÃO confundir com o alvo `.` de um MX nulo (RFC 7505), que é
+  // outra coisa e se mede em `mail-bounce-dns.ts`.
+  return email.slice(i + 1).trim().toLowerCase().replace(/\.+$/, "");
+}
 
 /**
  * Classifica pelo texto do servidor remoto.
@@ -177,33 +308,17 @@ export function classificarDiagnostico(diagnostico: string, status?: string | nu
   // e-mail real no cadastro/Hotmart") é exatamente a certa. O DSN também veio
   // com `Action: failed`, não `delayed`, que por RFC 3464 já é permanente.
   //
-  // ⚠️ "No MX SERVER found" — a MESMA falha da Sheila com outro substantivo
-  // (#402, medido 14/09 22hZ). O mesmo servidor escreve a recusa de duas
-  // formas: "Failed to resolve any IP addresses for the Mail Exchange (MX)
-  // server" (pega no padrão de cima) e "DNS error occurred while resolving the
-  // Mail Exchange (MX) server for the specified domain (X). No MX server
-  // found" — que caía em `desconhecida` porque a alternância aceitava
-  // `record|host` e NÃO `server`. Dois bounces reais do mesmo endereço
-  // (guitaschetti@pradocomunicacao.com, 14/09 21:55Z e 22:10Z) nasceram sem
-  // instrução nenhuma por causa dessa palavra, e a casa reenviou pro domínio
-  // morto no meio. Conferido com `dig`: pradocomunicacao.com não tem MX NEM
-  // registro A — não recebe e-mail, então é permanente e a orientação de
-  // `inexistente` é a certa.
-  //
-  // O padrão é ESTREITO de propósito — casa a falha de resolver o MX, não
-  // "DNS" solto — pra não carimbar como definitiva uma queda transitória de
-  // resolvedor, que mandaria a casa parar de escrever pra um aluno alcançável.
-  // `servers?` entra na alternância junto de `record|hosts?` e mantém essa
-  // estreiteza: continua exigindo o literal "no mx" antes do substantivo, e
-  // por isso "DNS query timed out" segue caindo em `temporaria`.
-  if (
-    /\b5\.1\.[01]\b/.test(d) ||
-    /(user unknown|no such user|address (does not|doesn't) exist|recipient (address )?rejected|unknown recipient)/i.test(d) ||
-    /account that you tried to reach (does not exist|is disabled)/i.test(d) ||
-    /\bNoSuchUser\b/i.test(d) ||
-    /failed to resolve any ip addresses for the mail exchange/i.test(d) ||
-    /\bno mx (record|hosts?|servers?)\b/i.test(d)
-  ) {
+  // ⚠️ AQUI A FRASE NÃO DECIDE MAIS SOZINHA (chamado #402, 14/09). O padrão de
+  // MX continua ESTREITO pra não carimbar como definitiva uma queda transitória
+  // de resolvedor — mas ele virou REDE, não juiz: quem julga falha de MX é o
+  // DNS de verdade, em `classeComDns`, depois do parse. Dois efeitos:
+  //   · a frase que ninguém previu ("No MX server found", do Google) não cai
+  //     mais em `desconhecida` por uma palavra fora do regex;
+  //   · a frase prevista, quando o domínio ESTÁ no ar, é DESMENTIDA em vez de
+  //     virar "endereço não existe".
+  // Sem o DNS responder (resolvedor fora do ar), sobra esta rede, que é o
+  // comportamento de antes — nunca menos que hoje.
+  if (pareceCaixaInexistente(d) || MX_FALHOU_ESTREITO.test(d)) {
     return "inexistente";
   }
   // Destino bloqueou a gente (S3150 da Microsoft e parentes).
@@ -460,6 +575,24 @@ export type PlanoDeBounce = {
   interno: AcaoDeBounce | null;
 };
 
+/**
+ * A PROVA de DNS, em texto, quando ela participou da classe. Vai pro chamado
+ * junto do diagnóstico cru pelo mesmo motivo que ele: quem abre o quadro tem
+ * que poder conferir o que decidiu a classe, em vez de acreditar na palavra do
+ * classificador.
+ */
+function provaDns(email: string, dns: VeredictoDns | undefined): string | null {
+  if (!dns) return null;
+  const dominio = dominioDoEmail(email) || "(domínio ilegível)";
+  if (dns === "sem-registro") {
+    return `DNS conferido no momento do bounce: "${dominio}" não publica MX utilizável nem A/AAAA (ou publica MX nulo, RFC 7505) — não recebe e-mail de ninguém.`;
+  }
+  if (dns === "resolve") {
+    return `DNS conferido no momento do bounce: "${dominio}" resolve normalmente — a falha de resolução do relatório foi de momento, não definitiva.`;
+  }
+  return `DNS conferido no momento do bounce: não deu pra saber se "${dominio}" resolve (SERVFAIL/timeout) — a classe veio só do texto do servidor.`;
+}
+
 function descrever(a: {
   email: string;
   classe: ClasseBounce;
@@ -469,6 +602,7 @@ function descrever(a: {
   /** Histórico de contato já resumido. Ausente = ficha nasce como antes. */
   contato?: ResumoDeContato | null;
   agoraMs?: number;
+  dns?: VeredictoDns;
 }): string {
   const o = ORIENTACAO[a.classe];
   const agoraMs = a.agoraMs ?? Date.now();
@@ -492,6 +626,7 @@ function descrever(a: {
     a.assuntoOriginal ? `Assunto que não chegou: ${a.assuntoOriginal}` : null,
     a.messageIdOriginal ? `Message-ID do envio: ${a.messageIdOriginal}` : null,
     a.diagnostico ? `Diagnóstico cru do servidor: ${a.diagnostico}` : "Sem diagnóstico do servidor no relatório.",
+    provaDns(a.email, a.dns),
   ]
     .filter((l): l is string => l !== null)
     .join("\n");
@@ -540,6 +675,7 @@ export function planoDoBounce(
         messageIdOriginal: bounce.messageIdOriginal,
         contato: contatoPorEmail?.[d.email.toLowerCase()] ?? null,
         agoraMs,
+        dns: d.dns,
       }),
       motivoReabertura:
         `Bounce (${d.classe}): ${o.resumo}.` +

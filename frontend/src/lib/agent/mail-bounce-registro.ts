@@ -28,6 +28,7 @@ import { limparFechamento } from "@/lib/incidents/closure";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { parseBounce, planoDoBounce, type AcaoDeBounce, type Bounce } from "./mail-bounce";
 import { lerHistoricoDeContato } from "./contato-ficha";
+import { refinarPorDns } from "./mail-bounce-dns";
 import { marcarNaoEntregue } from "./mail-envio-registro";
 
 /**
@@ -156,10 +157,17 @@ async function abrirChamadoDaAcao(a: AcaoDeBounce, emailsAfetados: string[]): Pr
  */
 export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> {
   const agoraMs = Date.now();
-  // Roteamento primeiro (quem é aluno, quem é cópia interna) pra saber de quem
-  // buscar histórico. É puro e barato; o plano final é remontado abaixo já com
-  // o histórico, que é o que muda o PRÓXIMO PASSO da ficha.
-  const plano = planoDoBounce(bounce);
+  // Antes de decidir: se o relatório culpou a resolução de MX/DNS, PERGUNTA AO
+  // DNS (#402). É a única etapa deste caminho que sai pra rede, e ela existe
+  // porque julgar isso pela frase do provedor já falhou três vezes no mesmo
+  // arquivo. Não lança e não consulta nada quando o bounce é de outra causa.
+  // (relatório de ATRASO não vira caso nenhum — nem gasta consulta.)
+  //
+  // Roteamento (quem é aluno, quem é cópia interna) sai daqui já com o veredito
+  // do DNS embutido; o plano final é remontado abaixo com o histórico de
+  // contato, que é o que muda o PRÓXIMO PASSO da ficha.
+  const medido = bounce.tipo === "atraso" ? bounce : await refinarPorDns(bounce);
+  const plano = planoDoBounce(medido);
   const res: ResultadoBounce = {
     tipo: plano.tipo,
     alunos: [],
@@ -215,7 +223,11 @@ export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> 
     plano.alunos.map((a) => a.email),
     agoraMs,
   );
-  const planoComHistorico = planoDoBounce(bounce, contato, agoraMs);
+  // `medido`, NÃO `bounce`: o plano final tem que carregar o veredito do DNS.
+  // Passar o bounce cru aqui jogaria fora a medição do #402 em silêncio — a
+  // ficha voltaria a ser decidida pela frase do provedor, que é justo o que
+  // este caminho existe pra não fazer. (Pegadinha da junção com o #283.)
+  const planoComHistorico = planoDoBounce(medido, contato, agoraMs);
 
   for (const a of planoComHistorico.alunos) {
     res.alunos.push(a.email);

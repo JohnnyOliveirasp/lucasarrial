@@ -19,7 +19,16 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseBounce, pareceBounce, classificarDiagnostico, ehInterno, planoDoBounce } from "./mail-bounce.ts";
+import {
+  parseBounce,
+  pareceBounce,
+  classificarDiagnostico,
+  ehInterno,
+  planoDoBounce,
+  classeComDns,
+  pareceFalhaDeMx,
+  dominioDoEmail,
+} from "./mail-bounce.ts";
 
 /** Endereços nossos, como o mail-respond monta na produção. */
 const INTERNOS = ["@fastcloner.com", "@lucasarrial.com", "johnny.oliveirasp@gmail.com"];
@@ -294,23 +303,39 @@ test("domínio com MX nulo é permanente, não 'desconhecida' — uid 605, Sheil
   );
 });
 
-test("'No MX SERVER found' é a MESMA falha da Sheila com outro substantivo — #402 (14/09)", () => {
+test("'No MX SERVER found': a FRASE não decide mais sozinha — quem julga é o DNS (#402)", () => {
   // Texto CRU do servidor, copiado do `bounce_diagnostico` das duas linhas de
   // `emails_enviados` (guitaschetti@pradocomunicacao.com, 21:55Z e 22:10Z).
-  // Caía em `desconhecida` porque a alternância era só `record|hosts?`: a ficha
-  // nascia sem instrução e a casa reenviou pro domínio morto no meio.
-  // `dig` confere: pradocomunicacao.com não tem MX nem A.
   const REAL =
     "smtp; DNS Error: DNS error occurred while resolving the Mail Exchange (MX) server " +
     "for the specified domain (pradocomunicacao.com). No MX server found";
-  assert.equal(classificarDiagnostico(REAL), "inexistente");
+
+  // ⚠️ ESTE TESTE MUDOU DE LADO, e a troca é deliberada.
+  //
+  // A primeira correção do #402 alargou o regex (`record|hosts?|servers?`) e
+  // este teste exigia `inexistente` DA FRASE. O #284 substituiu esse desenho:
+  // adivinhar a redação de cada provedor já furou três vezes no mesmo arquivo,
+  // então a frase virou REDE e o juiz virou o DNS (`refinarPorDns`).
+  //
+  // Logo, o classificador PURO defere — `desconhecida` — e é isso que se afirma
+  // aqui. Não é regressão: o veredito permanente sai do caminho com DNS, e está
+  // coberto em mail-bounce-dns.test.ts.
+  //
+  // Por que deferir é o lado seguro quando o resolvedor não responde: errar pra
+  // "continua tentando" custa um reenvio; errar pro outro lado abandona um
+  // aluno alcançável. Em 14/09 eu quase declarei o guitaschetti inalcançável
+  // lendo `0 dominio.com.br.` como se fosse MX nulo — e 7 e-mails nossos já
+  // tinham chegado nele.
+  assert.equal(classificarDiagnostico(REAL), "desconhecida");
 
   // As duas redações do MESMO servidor têm que dar a MESMA classe — foi a lição
   // de 13/09 (mesma frase do Gmail com e sem código dava classes diferentes).
+  // Continua valendo, agora no patamar de "ambas deferem ao DNS".
   assert.equal(
     classificarDiagnostico(REAL),
     classificarDiagnostico(
-      'smtp; DNS Error: Failed to resolve any IP addresses for the Mail Exchange (MX) server associated with "gmail.com.br"',
+      "smtp; DNS Error: DNS error occurred while resolving the Mail Exchange (MX) " +
+        "server for the specified domain (outro.exemplo). No MX server found",
     ),
   );
 });
@@ -328,6 +353,94 @@ test("queda transitória de DNS NÃO vira 'endereço não existe'", () => {
     classificarDiagnostico("smtp; 421 4.4.3 Temporary DNS failure resolving the mail server, retrying"),
     "temporaria",
   );
+});
+
+// ------------------------------------- #402: quem julga falha de MX é o DNS
+// A ferida de 13/09 reabriu em 14/09 pela TERCEIRA vez no mesmo arquivo: o
+// Google escreve "No MX server found" e o padrão exigia "no mx record|hosts",
+// então um bounce PERMANENTE (`pradocomunicacao.com`, sem MX e sem A) caiu em
+// `desconhecida`. A correção não é a terceira redação do regex — é parar de
+// julgar pela frase e perguntar ao DNS. Estes testes são sobre o SIGNIFICADO
+// do veredito; a leitura do DNS em si está no `mail-bounce-dns.test.ts`.
+
+/** O texto EXATO do bounce de `guitaschetti@pradocomunicacao.com` (14/09, 2 bounces). */
+const DNS_GOOGLE_SEM_MX =
+  "smtp; DNS Error: DNS error occurred while resolving the Mail Exchange (MX) server for the specified domain (pradocomunicacao.com). No MX server found";
+
+/** O de 13/09, que a redação estreita já pegava. */
+const DNS_MX_FRASE_PREVISTA =
+  'smtp; DNS Error: Failed to resolve any IP addresses for the Mail Exchange (MX) server associated with "gmail.com.br"';
+
+test("#402: 'No MX server found' com domínio sem registro é PERMANENTE, não 'desconhecida'", () => {
+  // Uma palavra fora do regex ("server" em vez de "record") custou a classe
+  // certa em dois bounces reais. Pela frase, isto ainda é `desconhecida` — e é
+  // esse o ponto: a frase não decide mais sozinha.
+  assert.equal(classificarDiagnostico(DNS_GOOGLE_SEM_MX), "desconhecida");
+  // Medido no DNS: o domínio não publica MX nem A. Aí sim, permanente.
+  assert.equal(classeComDns("desconhecida", DNS_GOOGLE_SEM_MX, "sem-registro"), "inexistente");
+});
+
+test("#402: domínio que RESOLVE desmente a frase — não vira 'endereço não existe'", () => {
+  // Este é o medo que estava escrito no comentário do padrão estreito desde
+  // sempre, e que nenhuma redação conseguia resolver: a MESMA frase sai numa
+  // queda transitória de resolvedor. Com o domínio no ar, a falha foi de
+  // momento — e o DNS derruba até o `inexistente` que a frase tinha cravado.
+  assert.equal(classificarDiagnostico(DNS_MX_FRASE_PREVISTA), "inexistente");
+  assert.equal(classeComDns("inexistente", DNS_MX_FRASE_PREVISTA, "resolve"), "temporaria");
+  assert.equal(classeComDns("desconhecida", DNS_GOOGLE_SEM_MX, "resolve"), "temporaria");
+});
+
+test("#402: DNS que não respondeu NÃO vira veredito — a classe do texto fica de pé", () => {
+  // SERVFAIL/timeout é ignorância nossa, não prova sobre o aluno. Carimbar
+  // permanente aqui faria a casa parar de escrever pra alguém alcançável.
+  assert.equal(classeComDns("desconhecida", DNS_GOOGLE_SEM_MX, "indeterminado"), "desconhecida");
+  assert.equal(classeComDns("inexistente", DNS_MX_FRASE_PREVISTA, "indeterminado"), "inexistente");
+});
+
+test("#402: evidência de CAIXA inexistente ganha do DNS — 'user unknown' é sobre o endereço", () => {
+  // Domínio que resolve não desmente "esta caixa não existe": são camadas
+  // diferentes. Sem esta trava, um bounce que citasse DNS de passagem
+  // rebaixaria um endereço morto a "falha temporária" e a casa reenviaria pra
+  // sempre.
+  const MISTO = "smtp; 550-5.1.1 user unknown — DNS error while resolving the Mail Exchange (MX) server";
+  assert.equal(classificarDiagnostico(MISTO), "inexistente");
+  assert.equal(classeComDns("inexistente", MISTO, "resolve"), "inexistente");
+});
+
+test("#402: o DNS do destino não opina sobre spam de SAÍDA nem sobre caixa cheia", () => {
+  // A culpa do spam-saída é do NOSSO relay; a caixa cheia é fato do destino.
+  // Deixar o DNS "corrigir" essas classes apagaria a prova que já temos.
+  assert.equal(classeComDns("spam-saida", DNS_GOOGLE_SEM_MX, "sem-registro"), "spam-saida");
+  assert.equal(classeComDns("caixa-cheia", DNS_GOOGLE_SEM_MX, "sem-registro"), "caixa-cheia");
+  // E bounce que não culpa MX/DNS nem chega a ser consultado.
+  assert.equal(pareceFalhaDeMx("smtp; 452-4.2.2 out of storage space"), false);
+  assert.equal(classeComDns("caixa-cheia", "smtp; 452-4.2.2 out of storage space", "sem-registro"), "caixa-cheia");
+});
+
+test("#402: a detecção de 'isto é sobre MX/DNS' é LARGA porque não decide nada", () => {
+  // Cada provedor escreve do seu jeito. Errar de menos aqui devolve a classe de
+  // hoje; errar de mais custa uma consulta que responde "resolve" e não muda
+  // nada — por isso ela pode ser larga, e é o que tira a gente da corrida.
+  for (const frase of [
+    DNS_GOOGLE_SEM_MX,
+    DNS_MX_FRASE_PREVISTA,
+    "smtp; 550 5.4.1 No MX hosts for domain",
+    "smtp; Host or domain name not found. Name service error for name=exemplo.com type=MX",
+    "smtp; 550 unrouteable address",
+    "smtp; retry timeout exceeded: unable to resolve exemplo.com",
+  ]) {
+    assert.equal(pareceFalhaDeMx(frase), true, `deveria mandar perguntar ao DNS: ${frase}`);
+  }
+  assert.equal(pareceFalhaDeMx("smtp; 550 Rejected due to high probability of spam"), false);
+  assert.equal(pareceFalhaDeMx("smtp; 550-5.1.1 The email account that you tried to reach does not exist"), false);
+});
+
+test("dominioDoEmail: o ponto final do ENDEREÇO é notação, não alvo de MX", () => {
+  // Confusão que já custou um diagnóstico errado numa ronda: o ponto do FQDN
+  // não tem nada a ver com o alvo `.` de um MX nulo.
+  assert.equal(dominioDoEmail("guitaschetti@pradocomunicacao.com"), "pradocomunicacao.com");
+  assert.equal(dominioDoEmail("Fulano@Exemplo.COM."), "exemplo.com");
+  assert.equal(dominioDoEmail("sem-arroba"), "");
 });
 
 test("JFE ganha de 'spam' genérico: precisamos saber que o barramento foi NOSSO", () => {
