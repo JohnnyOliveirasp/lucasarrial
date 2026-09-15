@@ -280,8 +280,16 @@ export type LinhaComprador = {
   esperandoTexto: string;
   /** Passou de 48h esperando e a bola está com ela ou com a gente. */
   parado: boolean;
-  /** Chegou ao fim: material enviado e clone entregue. Não precisa de contato. */
-  concluido: boolean;
+  /**
+   * Chegou ao fim: material enviado e clone ENTREGUE pelo robô. Não precisa
+   * de contato.
+   *
+   * ⚠️ NÃO confundir com `situacao === 'concluido'` (migration 110), que é o
+   * TIME declarando que encerrou o ATENDIMENTO. Um pedido pode estar entregue
+   * sem o atendimento ter sido encerrado, e encerrado sem ter sido entregue —
+   * por isso os dois vivem em campos separados e com nomes diferentes.
+   */
+  entregue: boolean;
   /**
    * O que essa pessoa paga no FastCloner HOJE.
    *
@@ -374,7 +382,7 @@ export function montarComprador(
   const referencia = pedido ? new Date(pedido.atualizado_em).getTime() : dataAquisicao ? new Date(dataAquisicao).getTime() : NaN;
   const esperandoMs = Number.isFinite(referencia) ? Math.max(0, agora - referencia) : 0;
 
-  const concluido = statusPedido === "pronto";
+  const entregue = statusPedido === "pronto";
   // Sem pedido não há o que derivar: a pessoa pagou e nem começou. Isso é
   // AGUARDANDO, e o motivo é o próprio texto que a coluna Status já mostra.
   const sit = pedido
@@ -406,7 +414,7 @@ export function montarComprador(
     esperandoMs,
     esperandoTexto: Number.isFinite(referencia) ? tempoHumano(esperandoMs) : "—",
     parado,
-    concluido,
+    entregue,
     fastcloner,
   };
 }
@@ -507,7 +515,7 @@ export function montarCompradores(args: {
  */
 export function ordenarCompradores(linhas: LinhaComprador[]): LinhaComprador[] {
   return [...linhas].sort((a, b) => {
-    if (a.concluido !== b.concluido) return a.concluido ? 1 : -1;
+    if (a.entregue !== b.entregue) return a.entregue ? 1 : -1;
     return b.esperandoMs - a.esperandoMs;
   });
 }
@@ -515,7 +523,7 @@ export function ordenarCompradores(linhas: LinhaComprador[]): LinhaComprador[] {
 export type ResumoCompradores = {
   /** Todas as linhas da planilha. */
   total: number;
-  /** Os três buckets da planilha (PRONTO / AGUARDANDO / ERRO). */
+  /** Os quatro buckets da planilha (CONCLUÍDO / ERRO / PRONTO / AGUARDANDO). */
   situacoes: Record<SituacaoSgp, number>;
   /** Compraram e nunca abriram o portal — o buraco que este painel revela. */
   naoComecaram: number;
@@ -544,14 +552,14 @@ export type ResumoCompradores = {
 };
 
 export function resumirCompradores(linhas: LinhaComprador[]): ResumoCompradores {
-  const situacoes: Record<SituacaoSgp, number> = { erro: 0, aguardando: 0, pronto: 0 };
+  const situacoes: Record<SituacaoSgp, number> = { concluido: 0, erro: 0, aguardando: 0, pronto: 0 };
   for (const l of linhas) situacoes[l.situacao] += 1;
   return {
     total: linhas.length,
     situacoes,
     naoComecaram: linhas.filter((l) => l.statusPedido === null).length,
     comecaram: linhas.filter((l) => l.statusPedido !== null).length,
-    entregues: linhas.filter((l) => l.concluido).length,
+    entregues: linhas.filter((l) => l.entregue).length,
     semCompraRegistrada: linhas.filter((l) => l.semCompraRegistrada).length,
     parados: linhas.filter((l) => l.parado).length,
     semTelefone: linhas.filter((l) => l.celularDigitos === null).length,

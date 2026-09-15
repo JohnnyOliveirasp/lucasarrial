@@ -26,7 +26,15 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock, MessageCircle, Undo2, XCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCheck,
+  CheckCircle2,
+  Clock,
+  MessageCircle,
+  Undo2,
+  XCircle,
+} from "lucide-react";
 import {
   SGP_PARADO_HORAS,
   type LinhaPainel,
@@ -53,6 +61,10 @@ type Aba = "fila" | "todos";
  * segunda é a que o time lê de longe, e é a leitura que a planilha antiga tinha.
  */
 const CORES_SITUACAO: Record<SituacaoSgp, string> = {
+  // CONCLUÍDO é o único que o TIME declara. Cor sóbria de propósito: não é
+  // comemoração (o aluno pode não ter recebido nada) nem alarme.
+  concluido:
+    "border-[var(--ink)]/25 bg-[var(--ink)]/[0.06] text-[var(--ink)]",
   pronto: "border-[var(--status-online)]/40 bg-[var(--status-online)]/10 text-[var(--status-online)]",
   aguardando: "border-[var(--hairline-strong)] bg-[var(--surface-deep)] text-[var(--mute)]",
   erro: "border-[var(--status-error)]/40 bg-[var(--status-error)]/10 text-[var(--status-error)]",
@@ -127,6 +139,12 @@ export default function SgpPage() {
    */
   const [filtro, setFiltro] = useState<{ tipo: "situacao" | "etapa"; valor: string } | null>(null);
 
+  /** Mesmo trio pro "Concluir atendimento" (migration 110), e pelo mesmo motivo:
+   *  o rascunho tem que atravessar o refresh de 30s sem sumir do meio da frase. */
+  const [conclusaoOk, setConclusaoOk] = useState(false);
+  const [abertoConcluir, setAbertoConcluir] = useState<string | null>(null);
+  const [rascunhoConcluir, setRascunhoConcluir] = useState<Record<string, string>>({});
+
   const [aba, setAba] = useState<Aba>("fila");
   const [compradores, setCompradores] = useState<LinhaComprador[] | null>(null);
   const [resumoTodos, setResumoTodos] = useState<ResumoCompradores | null>(null);
@@ -142,6 +160,7 @@ export default function SgpPage() {
         setResumo(json.resumo ?? null);
         setCobranca(json.cobranca ?? null);
         setErroManualOk(!!json.erroManual?.disponivel);
+        setConclusaoOk(!!json.conclusao?.disponivel);
         setErro(null);
       } else {
         setErro(json?.error?.message || "Não consegui carregar a fila.");
@@ -264,6 +283,47 @@ export default function SgpPage() {
     [load, rascunhoErro],
   );
 
+  /**
+   * Conclui ou reabre o atendimento. Mesma forma das outras duas (mesmo
+   * `salvando`, mesmo reload, mesmo lugar de mensagem), porque é o padrão que o
+   * time já usa. Sem UI otimista: a régua inteira volta recalculada do servidor.
+   */
+  const marcarConclusao = useCallback(
+    async (id: string, marcar: boolean) => {
+      setSalvando(id);
+      try {
+        const res = await fetch(`/api/v1/admin/sgp/${id}/conclusao`, {
+          method: marcar ? "POST" : "DELETE",
+          ...(marcar
+            ? {
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ motivo: rascunhoConcluir[id] ?? "" }),
+              }
+            : {}),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          setErro(json?.error?.message || "Não consegui concluir o atendimento.");
+          return;
+        }
+        setErro(null);
+        // Só limpa o rascunho DEPOIS de o servidor confirmar.
+        setRascunhoConcluir((r) => {
+          const resto = { ...r };
+          delete resto[id];
+          return resto;
+        });
+        setAbertoConcluir(null);
+        await load();
+      } catch {
+        setErro("Não consegui concluir o atendimento.");
+      } finally {
+        setSalvando(null);
+      }
+    },
+    [load, rascunhoConcluir],
+  );
+
   const silencioHoras = cobranca?.silencioHoras ?? SGP_PARADO_HORAS;
 
   /** Clicar na pill já ligada DESLIGA o filtro — sem isso não há como voltar atrás. */
@@ -341,6 +401,19 @@ export default function SgpPage() {
               · {resumo.cobrados} já cobrado(s), esperando o aluno responder
             </span>
           ) : null}
+          {/* Concluído tira a linha do vermelho PARA SEMPRE (não é um timer como
+              o "já cobrei"), então o número fica à vista — e, principalmente, o
+              recorte de quem foi encerrado SEM ter recebido o produto. É o
+              contador que mantém a decisão de precedência auditável. */}
+          {resumo?.concluidos ? (
+            <span className="text-[var(--mute)]">
+              {" "}
+              · {resumo.concluidos} atendimento(s) concluído(s)
+              {resumo.concluidosComPendencia
+                ? `, sendo ${resumo.concluidosComPendencia} de gente que ainda não recebeu o clone`
+                : ""}
+            </span>
+          ) : null}
         </span>
       </div>
 
@@ -351,6 +424,12 @@ export default function SgpPage() {
         <div className="flex flex-wrap gap-2">
           {/* "Total" é o limpar-filtro: é onde a mão vai quando quer tudo de volta. */}
           <Contador rotulo="Total" n={resumo.total} ativo={filtro === null} onClick={() => setFiltro(null)} />
+          <Contador
+            rotulo="CONCLUÍDO"
+            n={resumo.situacoes.concluido}
+            ativo={filtro?.tipo === "situacao" && filtro.valor === "concluido"}
+            onClick={() => alternarFiltro("situacao", "concluido")}
+          />
           <Contador
             rotulo="PRONTO"
             n={resumo.situacoes.pronto}
@@ -442,6 +521,7 @@ export default function SgpPage() {
                 <Th>WhatsApp</Th>
                 <Th>Cobrança</Th>
                 <Th>Marcar erro</Th>
+                <Th>Atendimento</Th>
                 <Th>Etapa atual</Th>
                 <Th>E-mail</Th>
                 <Th>O que fazer</Th>
@@ -456,7 +536,12 @@ export default function SgpPage() {
                 <tr
                   key={p.id}
                   className={`border-t border-[var(--hairline)] align-top ${
-                    p.precisaAcao
+                    p.concluido
+                      ? // Encerrado pelo time: some do vermelho e perde destaque,
+                        // mas NÃO some da tabela — quem pagou e não recebeu tem
+                        // que continuar visível.
+                        "bg-[var(--surface-deep)] opacity-70"
+                      : p.precisaAcao
                       ? "bg-[var(--status-error)]/[0.07]"
                       : p.silenciado
                         ? // Já cobrado: sai do vermelho, mas não vira uma linha
@@ -514,6 +599,22 @@ export default function SgpPage() {
                       onDesfazer={() => marcarErro(p.id, false)}
                     />
                   </Td>
+                  {/* Atendimento vem junto dos outros dois botões: é AÇÃO, e ação
+                      fora do campo de visão foi o defeito reclamado 3x pelo Lucas. */}
+                  <Td className="min-w-[210px]">
+                    <CelulaConcluir
+                      linha={p}
+                      disponivel={conclusaoOk}
+                      salvando={salvando === p.id}
+                      aberto={abertoConcluir === p.id}
+                      rascunho={rascunhoConcluir[p.id] ?? ""}
+                      onAbrir={() => setAbertoConcluir(p.id)}
+                      onFechar={() => setAbertoConcluir(null)}
+                      onDigitar={(v) => setRascunhoConcluir((r) => ({ ...r, [p.id]: v }))}
+                      onMarcar={() => marcarConclusao(p.id, true)}
+                      onDesfazer={() => marcarConclusao(p.id, false)}
+                    />
+                  </Td>
                   <Td>{p.etapa}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{p.email}</Td>
                   {/* Prosa longa: foi pro fim porque era ela que empurrava os botões
@@ -534,11 +635,28 @@ export default function SgpPage() {
       </div>
 
       <p className="text-[12px] text-[var(--ash)]">
-        <strong>Situação</strong> é a leitura de planilha: <strong>PRONTO</strong> é entregue,{" "}
-        <strong>ERRO</strong> é o que alguém precisa olhar (o sistema falhou, falhou em parte, ou o time
-        marcou na mão) e <strong>AGUARDANDO</strong> é todo o resto — esperando o aluno, na fila ou
-        gerando. ERRO ganha de PRONTO de propósito: material entregue errado é um pedido pronto que
-        precisa de gente.{" "}
+        <strong>Situação</strong> é a leitura de planilha: <strong>CONCLUÍDO</strong> é o time dizendo
+        que encerrou o atendimento, <strong>PRONTO</strong> é entregue, <strong>ERRO</strong> é o que
+        alguém precisa olhar (o sistema falhou, falhou em parte, ou o time marcou na mão) e{" "}
+        <strong>AGUARDANDO</strong> é todo o resto — esperando o aluno, na fila ou gerando. A ordem de
+        prioridade é essa mesma: CONCLUÍDO ganha de ERRO, e ERRO ganha de PRONTO. Material entregue
+        errado é um pedido pronto que precisa de gente; e um caso que o time já resolveu não pode
+        continuar gritando para sempre só porque o sistema não sabe que foi resolvido.{" "}
+        {conclusaoOk ? (
+          <>
+            Em <strong>Atendimento</strong> o time encerra o caso (aluno reembolsado, desistiu,
+            resolvido por fora). Concluir <strong>não</strong> é dizer que o aluno recebeu:{" "}
+            <strong>a linha continua aqui</strong>, o &ldquo;parado há&rdquo; continua contando, e quem
+            não recebeu o clone fica marcado na própria célula e no contador do topo. A marca{" "}
+            <strong>não vence sozinha</strong> — sai no <strong>reabrir</strong>. E se o aluno voltar a
+            mexer depois, ela vira histórico e a linha volta a alertar por conta própria.
+          </>
+        ) : (
+          <>
+            O botão <strong>Concluir atendimento</strong> ainda não está liberado — falta uma
+            atualização do sistema.
+          </>
+        )}{" "}
         {erroManualOk ? (
           <>
             Em <strong>Marcar erro</strong> o time registra o que descobriu por fora (o aluno avisou no
@@ -775,6 +893,141 @@ function CelulaMarcarErro({
 }
 
 /**
+ * "Concluir atendimento" (pedido do Lucas, 14/09).
+ *
+ * Mesma forma das outras duas células (é o padrão que o time já usa e que
+ * funciona): nada esconde a linha e sempre há como desfazer. Três diferenças,
+ * todas deliberadas:
+ *
+ *  1. O BOTÃO APARECE EM QUALQUER LINHA, como o de erro. Concluir é uma decisão
+ *     sobre o ATENDIMENTO, e ela cabe tanto num pedido entregue quanto num que
+ *     nunca vai ser (aluno reembolsado, desistiu).
+ *  2. É A MARCA QUE MAIS SILENCIA: tira o vermelho, o contador de parados e a
+ *     posição no topo, e NÃO vence por tempo. Por isso o botão de desfazer fica
+ *     sempre visível, e não escondido atrás de nada.
+ *  3. QUANDO O ALUNO MEXE DEPOIS a conclusão vira HISTÓRICO em vez de sumir: a
+ *     tela diz isso com todas as letras e oferece concluir de novo. Apagar a
+ *     declaração de alguém seria destruir rastro; ignorá-la seria deixar um caso
+ *     reaberto calado para sempre.
+ */
+function CelulaConcluir({
+  linha,
+  disponivel,
+  salvando,
+  aberto,
+  rascunho,
+  onAbrir,
+  onFechar,
+  onDigitar,
+  onMarcar,
+  onDesfazer,
+}: {
+  linha: LinhaPainel;
+  disponivel: boolean;
+  salvando: boolean;
+  aberto: boolean;
+  rascunho: string;
+  onAbrir: () => void;
+  onFechar: () => void;
+  onDigitar: (v: string) => void;
+  onMarcar: () => void;
+  onDesfazer: () => void;
+}) {
+  // Concluído e valendo: quem, quando, por quê, e como desfazer.
+  if (linha.concluido) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="inline-flex items-start gap-1.5 text-[12px] text-[var(--ink)]">
+          <CheckCheck className="mt-0.5 size-3.5 shrink-0" />
+          {linha.concluidoTexto}
+        </span>
+        {linha.concluidoMotivo && (
+          <span className="max-w-[200px] text-[11px] leading-snug text-[var(--body)]">
+            &ldquo;{linha.concluidoMotivo}&rdquo;
+          </span>
+        )}
+        {/* O aviso que impede a etiqueta de virar tampa: encerrado NÃO quer
+            dizer entregue, e quando não foi entregue isso fica escrito. */}
+        {linha.situacaoPorBaixo !== "pronto" && (
+          <span className="max-w-[200px] text-[11px] leading-snug text-[var(--status-warn)]">
+            o aluno não recebeu o clone
+          </span>
+        )}
+        {disponivel && (
+          <button
+            type="button"
+            onClick={onDesfazer}
+            disabled={salvando}
+            className="inline-flex w-fit items-center gap-1 text-[11px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)] disabled:opacity-50"
+          >
+            <Undo2 className="size-3" />
+            {salvando ? "reabrindo…" : "reabrir"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (!disponivel) {
+    return <span className="text-[11px] text-[var(--ash)]">conclusão ainda não liberada</span>;
+  }
+
+  if (!aberto) {
+    return (
+      <div className="flex flex-col gap-1">
+        {/* Conclusão superada: a decisão anterior continua à vista, mas a linha
+            já voltou a se comportar como aberta. */}
+        {linha.conclusaoSuperada && linha.concluidoTexto && (
+          <span className="max-w-[200px] text-[11px] leading-snug text-[var(--mute)]">
+            {linha.concluidoTexto}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onAbrir}
+          className="w-fit rounded-[var(--radius)] border border-[var(--hairline-strong)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--surface-deep)]"
+        >
+          {linha.conclusaoSuperada ? "Concluir de novo" : "Concluir atendimento"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <textarea
+        value={rascunho}
+        onChange={(e) => onDigitar(e.target.value)}
+        rows={2}
+        maxLength={500}
+        autoFocus
+        placeholder="Como foi resolvido? (opcional)"
+        className="w-[200px] resize-y rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-2 py-1.5 text-[12px] text-[var(--ink)] outline-none focus:border-[var(--ink)]/60"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onMarcar}
+          disabled={salvando}
+          className="rounded-[var(--radius)] border border-[var(--ink)]/30 bg-[var(--ink)]/[0.06] px-2.5 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--ink)]/[0.12] disabled:opacity-50"
+        >
+          {salvando ? "concluindo…" : "Confirmar conclusão"}
+        </button>
+        {/* Igual ao de erro: fecha o campo mas NÃO apaga o que foi digitado. */}
+        <button
+          type="button"
+          onClick={onFechar}
+          disabled={salvando}
+          className="text-[11px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)] disabled:opacity-50"
+        >
+          cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * A planilha de TODOS os compradores (pedido do Lucas, 08/09).
  *
  * As colunas são as que ele pediu, nesta ordem: Nome, Status, Data de
@@ -825,6 +1078,7 @@ function AbaCompradores({
       {/* Os três buckets primeiro, pelo mesmo motivo da outra aba. */}
       {resumo && (
         <div className="flex flex-wrap gap-2">
+          <Contador rotulo="CONCLUÍDO" n={resumo.situacoes.concluido} />
           <Contador rotulo="PRONTO" n={resumo.situacoes.pronto} />
           <Contador rotulo="AGUARDANDO" n={resumo.situacoes.aguardando} />
           <Contador rotulo="ERRO" n={resumo.situacoes.erro} />
@@ -883,7 +1137,7 @@ function AbaCompradores({
                 <tr
                   key={c.chave}
                   className={`border-t border-[var(--hairline)] align-top ${
-                    c.concluido
+                    c.entregue
                       ? "bg-[var(--surface-card)]"
                       : c.parado
                         ? "bg-[var(--status-warn)]/[0.07]"
@@ -947,7 +1201,7 @@ function AbaCompradores({
                       c.parado ? "font-semibold text-[var(--status-warn)]" : "text-[var(--mute)]"
                     }`}
                   >
-                    {c.concluido ? "—" : c.esperandoTexto}
+                    {c.entregue ? "—" : c.esperandoTexto}
                   </Td>
                 </tr>
               ))}
@@ -960,8 +1214,8 @@ function AbaCompradores({
         <p className="text-[12px] text-[var(--ash)]">
           A coluna <strong>Situação</strong> é a mesma régua da fila de trabalho (as duas abas nunca
           discordam sobre o mesmo aluno); quem comprou e não abriu o portal é <strong>AGUARDANDO</strong>
-          , porque não há defeito nenhum — falta contato. Marcar erro se faz na aba{" "}
-          <strong>Fila de trabalho</strong>, que é onde existe o pedido. Lista completa: quem comprou o
+          , porque não há defeito nenhum — falta contato. Marcar erro e concluir o atendimento se fazem
+          na aba <strong>Fila de trabalho</strong>, que é onde existe o pedido. Lista completa: quem comprou o
           SGP na Hotmart <strong>mais</strong> quem está no portal. Quem
           aparece nos dois lugares vem numa linha só. &ldquo;Esperando há&rdquo; conta desde a compra
           para quem nunca começou, e desde a última movimentação para quem já está no portal — destacado

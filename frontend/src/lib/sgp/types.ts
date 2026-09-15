@@ -115,6 +115,20 @@ export type SgpPedidoRow = {
   erro_manual_em?: string | null;
   erro_manual_por?: string | null;
   erro_manual_motivo?: string | null;
+  /**
+   * "Concluir atendimento" do time no /admin/sgp (migration 110). OPCIONAIS
+   * pelo mesmo motivo das anteriores: enquanto a 110 não for aplicada as
+   * colunas não existem e a rota do painel devolve a linha sem elas.
+   *
+   * ⚠️ NÃO é `status === 'pronto'`. Aquilo é o ROBÔ dizendo que entregou o
+   * produto; isto é o TIME dizendo que não precisa mais mexer neste caso (o
+   * aluno foi reembolsado, desistiu, resolveu por fora). Um pedido pode estar
+   * concluído SEM ter sido entregue — e é justamente esse o caso que a tela
+   * não pode deixar de mostrar.
+   */
+  concluido_em?: string | null;
+  concluido_por?: string | null;
+  concluido_motivo?: string | null;
 };
 
 /** Só dígitos, com DDI. "+55 (11) 99999-8888" → "5511999998888". */
