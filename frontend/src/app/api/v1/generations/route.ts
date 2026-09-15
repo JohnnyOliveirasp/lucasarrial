@@ -14,6 +14,7 @@ import {
   unauthorized,
 } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { fetchAuthEmailsById } from "@/lib/db/auth-users";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { deleteKeys } from "@/lib/r2/delete";
 import { createPresignedGet } from "@/lib/r2/presigned";
@@ -67,16 +68,21 @@ export async function GET(request: NextRequest) {
   }
 
   // Admin view: mapeia user_id -> email pra mostrar quem fez cada geracao.
-  // listUsers() pagina (max 1000 por pagina); pra MVP basta 1 pagina.
-  const emailById = new Map<string, string>();
+  //
+  // 12/09: aqui pedia UMA pagina de listUsers ("pra MVP basta 1 pagina") e a
+  // base ja tinha 2.542 contas — ~60% das geracoes apareciam sem e-mail na
+  // tela de admin, sem nenhum aviso de que a leitura tinha sido cortada.
+  // fetchAuthEmailsById le a base inteira e ABORTA em vez de entregar metade.
+  let emailById = new Map<string, string>();
   if (auth.is_admin) {
     try {
-      const { data: usersData } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      for (const u of usersData?.users ?? []) {
-        if (u.email) emailById.set(u.id, u.email);
-      }
-    } catch {
-      // best-effort; sem email no card mas a lista nao quebra
+      emailById = await fetchAuthEmailsById(admin, "generations:admin-view");
+    } catch (e) {
+      // best-effort: a lista nao quebra por causa do e-mail. Mas o card fica
+      // SEM e-mail nenhum (nunca com a metade que coube numa pagina), e a
+      // falha vai pro log em vez de virar silencio.
+      console.error("[generations] mapa de e-mails indisponivel:", e);
+      emailById = new Map();
     }
   }
 
