@@ -16,7 +16,10 @@
  *      impede o conserto virar "nunca mais estorna");
  *   3. jobId nulo preserva o comportamento de hoje (gate só por status);
  *   4. idempotência velha intacta: row já `failed`/`ready` não é reivindicada;
- *   5. o gate realmente filtra por `runpod_job_id` (pega a mutação).
+ *   5. o gate realmente filtra por `runpod_job_id` (pega a mutação);
+ *   6. o LOG de diagnóstico do #52: sai quando o gate barra a falha de um job
+ *      VELHO por cima de reenvio VIVO, e NÃO sai nos outros motivos de claim
+ *      vazio (senão vira ruído e o sinal deixa de servir como evidência).
  *
  * O QUE ESTE ARQUIVO NÃO PROVA: que os dois chamadores só estornam quando
  * `reivindicarFalha` devolve `true`. Isso é o `if (claimed)` em
@@ -48,14 +51,34 @@ function falhaUpdate(msg = "RunPod TIMED_OUT") {
  * aplica o patch SÓ nas linhas que casam com todos os filtros e devolve as
  * linhas afetadas — que é exatamente o sinal em que o gate se apoia.
  */
-function bancoFake(linhas: Linha[]) {
+function bancoFake(linhas: Linha[], opcoes: { leituraExplode?: boolean } = {}) {
   const colunasFiltradas: string[] = [];
+  // Contador separado do `colunasFiltradas` de propósito: as leituras de
+  // diagnóstico não podem contaminar as asserções de filtro do UPDATE.
+  const leituras: string[][] = [];
   const valorDe = (l: Linha, c: string) => (l as unknown as Record<string, unknown>)[c];
 
   const admin = {
     from(tabela: string) {
       assert.equal(tabela, "generations");
       return {
+        // Caminho de LEITURA (só o diagnóstico do #52 usa).
+        select(colunas: string) {
+          const eqs: Array<[string, unknown]> = [];
+          const builder = {
+            eq(coluna: string, valor: unknown) {
+              eqs.push([coluna, valor]);
+              return builder;
+            },
+            maybeSingle() {
+              leituras.push(colunas.split(",").map((c) => c.trim()));
+              if (opcoes.leituraExplode) return Promise.reject(new Error("PostgREST caiu"));
+              const achada = linhas.find((l) => eqs.every(([c, v]) => valorDe(l, c) === v));
+              return Promise.resolve({ data: achada ?? null, error: null });
+            },
+          };
+          return builder;
+        },
         update(valores: Record<string, unknown>) {
           const eqs: Array<[string, unknown]> = [];
           const ins: Array<[string, readonly string[]]> = [];
@@ -86,7 +109,24 @@ function bancoFake(linhas: Linha[]) {
     },
   };
 
-  return { admin: admin as unknown as SupabaseClient<Database>, colunasFiltradas };
+  return { admin: admin as unknown as SupabaseClient<Database>, colunasFiltradas, leituras };
+}
+
+/**
+ * Captura o `console.log` durante a chamada. Sem isto o teste do log seria
+ * "leitura visual", que não pega regressão nenhuma.
+ */
+async function capturarLog<T>(fn: () => Promise<T>): Promise<{ valor: T; linhas: string[] }> {
+  const original = console.log;
+  const linhas: string[] = [];
+  console.log = (...args: unknown[]) => {
+    linhas.push(args.map(String).join(" "));
+  };
+  try {
+    return { valor: await fn(), linhas };
+  } finally {
+    console.log = original;
+  }
 }
 
 test("CORRIDA: falha do job VELHO não marca failed nem reivindica o estorno", async () => {
@@ -214,4 +254,153 @@ test("o gate filtra por id, status E runpod_job_id quando há job", async () => 
   await reivindicarFalha(admin, "g11", "JOB_A", falhaUpdate());
 
   assert.deepEqual(colunasFiltradas.sort(), ["id", "runpod_job_id", "status"]);
+});
+
+/* ------------------------------------------------------------------------- *
+ * LOG DE DIAGNÓSTICO DO #52
+ *
+ * O acerto do gate é um NÃO-EVENTO: não escreve no banco e não muda a row. Sem
+ * log não dá pra distinguir "o gate funcionou" de "a corrida não aconteceu" — e
+ * em 12/09 o próprio aluno apagou as duas rows da corrida, então a row nem é
+ * evidência confiável. Estes testes cobram o sinal E o silêncio.
+ * ------------------------------------------------------------------------- */
+
+test("ALVO: gate barrando job VELHO sobre reenvio VIVO loga uma linha com os dois jobs", async () => {
+  const row: Linha = {
+    id: "b744e6da",
+    status: "pending",
+    runpod_job_id: "JOB_NOVO",
+    error_message: null,
+  };
+  const { admin } = bancoFake([row]);
+
+  const { valor: claimed, linhas } = await capturarLog(() =>
+    reivindicarFalha(admin, "b744e6da", "JOB_VELHO", falhaUpdate()),
+  );
+
+  assert.equal(claimed, false, "a decisão do gate não pode mudar por causa do log");
+  assert.equal(row.status, "pending", "diagnóstico não pode escrever na row");
+  assert.equal(linhas.length, 1, `esperava 1 linha de log, veio ${linhas.length}`);
+  assert.match(linhas[0], /^\[generations\/falha-claim\] #52 gate barrou falha de job velho /);
+  assert.match(linhas[0], /b744e6da/);
+  assert.match(linhas[0], /job_que_falhou=JOB_VELHO/);
+  assert.match(linhas[0], /job_atual=JOB_NOVO/);
+});
+
+test("ALVO: vale também com a row em generating", async () => {
+  const row: Linha = {
+    id: "g12",
+    status: "generating",
+    runpod_job_id: "JOB_NOVO",
+    error_message: null,
+  };
+  const { admin } = bancoFake([row]);
+
+  const { linhas } = await capturarLog(() =>
+    reivindicarFalha(admin, "g12", "JOB_VELHO", falhaUpdate()),
+  );
+
+  assert.equal(linhas.length, 1);
+  assert.match(linhas[0], /job_atual=JOB_NOVO/);
+});
+
+test("CONTROLE 1: row já failed barra e NÃO loga (idempotência velha não é ruído)", async () => {
+  const row: Linha = {
+    id: "g13",
+    status: "failed",
+    runpod_job_id: "JOB_A",
+    error_message: "primeiro erro",
+  };
+  const { admin } = bancoFake([row]);
+
+  const { valor: claimed, linhas } = await capturarLog(() =>
+    reivindicarFalha(admin, "g13", "JOB_B", falhaUpdate("segundo erro")),
+  );
+
+  assert.equal(claimed, false);
+  assert.deepEqual(linhas, [], "row já failed acontece o tempo todo; logar aqui mata o sinal");
+});
+
+test("CONTROLE 2: row já ready barra e NÃO loga", async () => {
+  const row: Linha = { id: "g14", status: "ready", runpod_job_id: "JOB_A", error_message: null };
+  const { admin } = bancoFake([row]);
+
+  const { valor: claimed, linhas } = await capturarLog(() =>
+    reivindicarFalha(admin, "g14", "JOB_VELHO", falhaUpdate()),
+  );
+
+  assert.equal(claimed, false);
+  assert.deepEqual(linhas, []);
+});
+
+test("CONTROLE 3: falha do job ATUAL reivindica, não loga e NÃO faz leitura extra", async () => {
+  const row: Linha = { id: "g15", status: "pending", runpod_job_id: "JOB_A", error_message: null };
+  const { admin, leituras } = bancoFake([row]);
+
+  const { valor: claimed, linhas } = await capturarLog(() =>
+    reivindicarFalha(admin, "g15", "JOB_A", falhaUpdate()),
+  );
+
+  assert.equal(claimed, true);
+  assert.equal(row.status, "failed");
+  assert.deepEqual(linhas, []);
+  assert.deepEqual(leituras, [], "o caminho normal não pode ganhar uma leitura a mais");
+});
+
+test("CONTROLE 4: jobId nulo não loga e não lê nada (comportamento de hoje intacto)", async () => {
+  const row: Linha = { id: "g16", status: "ready", runpod_job_id: "JOB_A", error_message: null };
+  const { admin, leituras } = bancoFake([row]);
+
+  // `ready` + jobId nulo = claim vazio, que é o gatilho do diagnóstico; sem job
+  // não há o que comparar, então nem a leitura pode acontecer.
+  const { valor: claimed, linhas } = await capturarLog(() =>
+    reivindicarFalha(admin, "g16", null, falhaUpdate()),
+  );
+
+  assert.equal(claimed, false);
+  assert.deepEqual(linhas, []);
+  assert.deepEqual(leituras, []);
+});
+
+test("a leitura de diagnóstico pede só status e runpod_job_id (nada do aluno)", async () => {
+  const row: Linha = {
+    id: "g17",
+    status: "pending",
+    runpod_job_id: "JOB_NOVO",
+    error_message: null,
+  };
+  const { admin, leituras } = bancoFake([row]);
+
+  await capturarLog(() => reivindicarFalha(admin, "g17", "JOB_VELHO", falhaUpdate()));
+
+  assert.deepEqual(leituras, [["status", "runpod_job_id"]]);
+});
+
+test("row inexistente: barra e não loga (não há corrida pra provar)", async () => {
+  const { admin } = bancoFake([]);
+
+  const { valor: claimed, linhas } = await capturarLog(() =>
+    reivindicarFalha(admin, "sumida", "JOB_VELHO", falhaUpdate()),
+  );
+
+  assert.equal(claimed, false);
+  assert.deepEqual(linhas, []);
+});
+
+test("diagnóstico é best-effort: leitura que explode não derruba o gate", async () => {
+  const row: Linha = {
+    id: "g18",
+    status: "pending",
+    runpod_job_id: "JOB_NOVO",
+    error_message: null,
+  };
+  const { admin } = bancoFake([row], { leituraExplode: true });
+
+  const { valor: claimed, linhas } = await capturarLog(() =>
+    reivindicarFalha(admin, "g18", "JOB_VELHO", falhaUpdate()),
+  );
+
+  assert.equal(claimed, false, "instrumentação não pode virar exceção no caminho de falha");
+  assert.deepEqual(linhas, []);
+  assert.equal(row.status, "pending");
 });
