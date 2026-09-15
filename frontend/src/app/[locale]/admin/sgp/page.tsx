@@ -426,9 +426,14 @@ export default function SgpPage() {
            * então os dois ÚNICOS botões da tela ficavam fora do campo de visão e o
            * time não conseguia clicar — reclamado 3x pelo Lucas.
            * Agora vêm logo depois de quem-é/como-falar, e a prosa foi pro fim.
-           * min-w caiu de 1500 pra 1200: o miolo acionável cabe sem rolagem.
+           *
+           * O `min-w-[1500px]` fica como está DE PROPÓSITO: medido, não é ele que
+           * corta a tela. A tabela renderiza com ~1780px porque quem manda é a soma
+           * dos `min-content` das 13 colunas, então baixar o min-w não move um
+           * pixel. (Medição do PR #281, confirmada aqui: com min-w 1200 a tabela
+           * seguiu em 1773px.) Mexer nele só criaria conflito à toa com o #277.
            */
-          <table className="w-full min-w-[1200px] border-collapse text-left">
+          <table className="w-full min-w-[1500px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
                 <Th>Nome</Th>
