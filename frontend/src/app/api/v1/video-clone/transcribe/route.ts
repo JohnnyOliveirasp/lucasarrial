@@ -7,7 +7,7 @@
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
-import { falhaDeAudio, transcribeUploadedAudio } from "@/lib/video/transcribe";
+import { falhaDeAudio, recusaPorDuracao, transcribeUploadedAudio } from "@/lib/video/transcribe";
 import { CLONE_MAX_AUDIO_SECONDS } from "@/lib/video-clone/config";
 
 export async function POST(request: NextRequest) {
@@ -26,13 +26,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // A guarda de TAMANHO (25 MB, dentro do transcribeUploadedAudio) não
+    // substitui esta: quem decide os 90s é a duração medida pelo Whisper.
     const t = await transcribeUploadedAudio(audioKey);
-    if (t.durationSeconds <= 0) return badRequest("Não conseguimos ler a duração desse áudio.");
-    if (t.durationSeconds > CLONE_MAX_AUDIO_SECONDS + 0.5) {
-      return badRequest(
-        `O áudio tem ${Math.round(t.durationSeconds)}s — o máximo é ${CLONE_MAX_AUDIO_SECONDS}s (1min30s).`,
-      );
-    }
+    const recusa = recusaPorDuracao(t.durationSeconds, CLONE_MAX_AUDIO_SECONDS);
+    if (recusa) return badRequest(recusa);
     return jsonOk({ text: t.text, duration_seconds: t.durationSeconds });
   } catch (e) {
     // Incidente #251: este `catch` era MUDO e DESTRUÍA o erro do Whisper/R2 —
