@@ -11,10 +11,17 @@ import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { AlertTriangle, Check, Loader2, RefreshCw, Upload } from "lucide-react";
 import { acimaDoTeto, duracaoLegivel, separarPorTeto } from "@/lib/video/audio-eligibility";
+import { avisoDeFormato } from "@/lib/video-clone/formato-saida";
 
+/**
+ * `aspectRatio` é a proporção declarada da foto (image_generations.aspect_ratio
+ * do acervo, ou "W:H" montado das dimensões do arquivo recém-enviado). Serve
+ * SÓ pro aviso de formato: ausente ou "auto" cai no aviso genérico, e em
+ * nenhum caso bloqueia a geração.
+ */
 export type ImageChoice =
-  | { kind: "history"; id: string; preview: string }
-  | { kind: "upload"; key: string; preview: string };
+  | { kind: "history"; id: string; preview: string; aspectRatio?: string | null }
+  | { kind: "upload"; key: string; preview: string; aspectRatio?: string | null };
 
 export type AudioChoice =
   | { kind: "history"; id: string; seconds: number; preview: string | null; label: string; text: string | null }
@@ -33,7 +40,14 @@ export type AudioChoice =
       textError?: string | null;
     };
 
-type HistImage = { id: string; status: string; image_url: string | null; name: string | null };
+type HistImage = {
+  id: string;
+  status: string;
+  image_url: string | null;
+  name: string | null;
+  /** Já vem no GET /api/v1/images — dá pra saber se é deitada sem abrir o arquivo. */
+  aspect_ratio: string | null;
+};
 type HistAudio = {
   id: string;
   voice_name: string;
@@ -67,6 +81,11 @@ export function ImagePicker({
   const [tab, setTab] = useState<"history" | "upload">("history");
   const [items, setItems] = useState<HistImage[] | null>(null);
 
+  // A saída do Vídeo Clone é sempre o mesmo quadro em pé (CLONE_TIERS). Dizer
+  // isso ANTES de gerar é o que faltava no caso quaglioandre@gmail.com: 8
+  // vídeos e 43.360 créditos pra descobrir sozinho que foto deitada é cortada.
+  const { formato, cortaLaterais } = avisoDeFormato(selected?.aspectRatio);
+
   useEffect(() => {
     if (refreshKey > 0) {
       setItems(null);
@@ -97,6 +116,25 @@ export function ImagePicker({
           strong: (chunks) => <strong className="text-[var(--silver)]">{chunks}</strong>,
         })}
       </p>
+      {/* Formato da saída: aparece SEMPRE, antes de escolher qualquer foto.
+          Largura/altura vão como TEXTO de propósito: como número, o next-intl
+          formataria por locale e um quadro futuro de 1280 viraria "1.280". */}
+      {formato && (
+        <p className="font-mono text-[10px] tracking-wide text-[var(--ash)]">
+          {t("outputVertical", { w: String(formato.width), h: String(formato.height) })}
+        </p>
+      )}
+      {/* Foto deitada: o recado específico, no momento da escolha. É AVISO —
+          o botão de gerar continua habilitado (recortar é uso legítimo). */}
+      {formato && cortaLaterais && (
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 py-2 text-[12px] leading-snug text-[var(--mute)]"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none text-[var(--silver)]" />
+          <span>{t("horizontalWarning", { w: String(formato.width), h: String(formato.height) })}</span>
+        </p>
+      )}
 
       {tab === "history" &&
         (items === null ? (
@@ -120,7 +158,14 @@ export function ImagePicker({
                   <li key={img.id}>
                     <button
                       type="button"
-                      onClick={() => onSelect({ kind: "history", id: img.id, preview: img.image_url! })}
+                      onClick={() =>
+                        onSelect({
+                          kind: "history",
+                          id: img.id,
+                          preview: img.image_url!,
+                          aspectRatio: img.aspect_ratio,
+                        })
+                      }
                       aria-pressed={active}
                       className={`relative block aspect-square w-full overflow-hidden rounded-[var(--radius)] border transition-colors ${
                         active ? "border-[var(--hairline-bright)] shadow-[0_0_0_1px_var(--hairline-bright)]" : "border-[var(--hairline)] hover:border-[var(--hairline-bright)]"

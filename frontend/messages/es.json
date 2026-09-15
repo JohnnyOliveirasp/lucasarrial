@@ -865,6 +865,8 @@
       "myPhotos": "Mis fotos",
       "uploadPhoto": "Subir foto",
       "photoHint": "📸 Mejor resultado: foto de la <strong>mitad del cuerpo hacia arriba</strong>, rostro nítido y bien iluminado.",
+      "outputVertical": "🎬 El video siempre sale de pie (vertical), {w}×{h} — no se puede elegir otro formato.",
+      "horizontalWarning": "Esta foto es horizontal. El video sale de pie, {w}×{h}: los lados se van a recortar y solo aparece el centro. Puedes generarlo igual — si prefieres, elige una foto de pie.",
       "loadingPhotos": "Cargando tus fotos…",
       "noPhotos": "Todavía no tienes fotos generadas.",
       "createPhoto": "Crear mi foto en el Generador de Imagen →",

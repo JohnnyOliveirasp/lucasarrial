@@ -865,6 +865,8 @@
       "myPhotos": "My photos",
       "uploadPhoto": "Upload photo",
       "photoHint": "📸 Best result: a photo from the <strong>waist up</strong>, with a sharp, well-lit face.",
+      "outputVertical": "🎬 The video always comes out upright (vertical), {w}×{h} — there's no other format to choose.",
+      "horizontalWarning": "This photo is landscape. The video comes out upright, {w}×{h}: the sides will be cropped and only the middle shows. You can still generate it — if you'd rather not, pick an upright photo.",
       "loadingPhotos": "Loading your photos…",
       "noPhotos": "You don't have any generated photos yet.",
       "createPhoto": "Create my photo in the Image Generator →",

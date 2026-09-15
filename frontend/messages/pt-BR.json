@@ -865,6 +865,8 @@
       "myPhotos": "Minhas fotos",
       "uploadPhoto": "Enviar foto",
       "photoHint": "📸 Melhor resultado: foto da <strong>metade do corpo pra cima</strong>, rosto nítido e bem iluminado.",
+      "outputVertical": "🎬 O vídeo sai sempre em pé (vertical), {w}×{h} — não dá pra escolher outro formato.",
+      "horizontalWarning": "Esta foto é deitada (horizontal). O vídeo sai em pé, {w}×{h}: as laterais vão ser cortadas e só o miolo aparece. Dá pra gerar assim mesmo — se preferir, escolha uma foto em pé.",
       "loadingPhotos": "Carregando suas fotos…",
       "noPhotos": "Você ainda não tem fotos geradas.",
       "createPhoto": "Criar minha foto no Gerador de Imagem →",
