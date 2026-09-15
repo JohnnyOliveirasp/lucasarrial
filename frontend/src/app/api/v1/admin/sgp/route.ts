@@ -22,6 +22,7 @@ import { getAdmin } from "@/lib/db/admin";
 import type { SgpPedidoRow } from "@/lib/sgp/types";
 import { montarLinha, ordenar, resumir } from "@/lib/sgp/painel";
 import {
+  COLUNAS_CANAL,
   COLUNAS_COBRANCA,
   COLUNAS_CONCLUSAO,
   COLUNAS_ERRO_MANUAL,
@@ -64,6 +65,10 @@ const buscar = criarFilaComFallback<SgpPedidoRow>(
   COLUNAS_BASE,
   [
     { nome: "cobranca", colunas: COLUNAS_COBRANCA },
+    // Grupo PRÓPRIO, e não uma coluna a mais em "cobranca": a 106 já está
+    // aplicada e a 115 não. Juntas, a ausência da 115 derrubaria o "já cobrei"
+    // que funciona hoje — é a armadilha descrita em `criarFilaComFallback`.
+    { nome: "canalCobranca", colunas: COLUNAS_CANAL },
     { nome: "erroManual", colunas: COLUNAS_ERRO_MANUAL },
     { nome: "conclusao", colunas: COLUNAS_CONCLUSAO },
   ],

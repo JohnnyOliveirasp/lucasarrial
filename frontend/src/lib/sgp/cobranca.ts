@@ -21,8 +21,22 @@ export const COLUNAS_ERRO_MANUAL = ["erro_manual_em", "erro_manual_por", "erro_m
 /** As colunas da migration 110 ("concluir atendimento"). Mesmo regime. */
 export const COLUNAS_CONCLUSAO = ["concluido_em", "concluido_por", "concluido_motivo"] as const;
 
+/**
+ * A coluna da migration 115 (POR ONDE o time falou). Grupo SEPARADO da 106, e
+ * este é o ponto: a 106 já está aplicada e a 115 não. Se `cobrado_canal` entrasse
+ * em `COLUNAS_COBRANCA`, a ausência dela derrubaria o grupo inteiro e o "já
+ * cobrei" — que funciona hoje — sumiria da tela por causa de migration alheia.
+ * É a mesma armadilha que o cabeçalho de `criarFilaComFallback` documenta.
+ */
+export const COLUNAS_CANAL = ["cobrado_canal"] as const;
+
 /** Todas as colunas que podem não existir ainda, pra decidir se um erro é disso. */
-const COLUNAS_OPCIONAIS = [...COLUNAS_COBRANCA, ...COLUNAS_ERRO_MANUAL, ...COLUNAS_CONCLUSAO];
+const COLUNAS_OPCIONAIS = [
+  ...COLUNAS_COBRANCA,
+  ...COLUNAS_CANAL,
+  ...COLUNAS_ERRO_MANUAL,
+  ...COLUNAS_CONCLUSAO,
+];
 
 /**
  * O erro do Postgres é "coluna não existe"?
@@ -48,6 +62,11 @@ export function colunaAusente(
 /** Atalhos por grupo, pras rotas de escrita que só falam de um deles. */
 export function colunaCobrancaAusente(error: unknown): boolean {
   return colunaAusente(error, COLUNAS_COBRANCA);
+}
+
+/** Só a 115. A rota de escrita usa pra repetir o UPDATE sem o canal. */
+export function colunaCanalAusente(error: unknown): boolean {
+  return colunaAusente(error, COLUNAS_CANAL);
 }
 
 export function colunaErroManualAusente(error: unknown): boolean {

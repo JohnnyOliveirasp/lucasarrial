@@ -104,6 +104,20 @@ export type SgpPedidoRow = {
   cobrado_em?: string | null;
   cobrado_por?: string | null;
   /**
+   * POR ONDE o time falou — "whatsapp" ou "email" (migration 115).
+   *
+   * Grupo opcional PRÓPRIO, separado de `cobrado_em`/`cobrado_por` de propósito:
+   * são migrations diferentes (106 e 115) e a 106 JÁ ESTÁ APLICADA (conferido em
+   * 15/09 com `_frank/ferramentas/ddl_aplicado.cjs`). Amarrar as três no mesmo
+   * grupo faria a 115 ausente DESLIGAR o "já cobrei" inteiro — que é exatamente
+   * o defeito que `criarFilaComFallback` existe pra evitar.
+   *
+   * Ausente = a 115 ainda não entrou. `null` = cobrança registrada antes de ela
+   * existir (as 3 que já estão no banco). Os dois casos querem dizer "não
+   * sabemos por onde", e a tela diz isso em vez de chutar um canal.
+   */
+  cobrado_canal?: string | null;
+  /**
    * "Marcar erro" do time no /admin/sgp (migration 109). OPCIONAIS pelo mesmo
    * motivo das de cobrança: enquanto a 109 não for aplicada as colunas não
    * existem e a rota do painel devolve a linha sem elas.

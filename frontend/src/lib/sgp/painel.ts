@@ -21,6 +21,8 @@
  */
 import type { SgpPedidoRow, SgpStatus } from "./types.ts";
 import { SGP_FOTOS_MIN, SGP_PASSOS } from "./types.ts";
+import { CANAL_ROTULO, ehCanal } from "./contato.ts";
+import type { CanalCobranca } from "./contato.ts";
 
 /** Parado além disto = alguém precisa cobrar o aluno. Único caso com ação humana. */
 export const SGP_PARADO_HORAS = 48;
@@ -426,6 +428,13 @@ export type Cobranca = {
   silenciado: boolean;
   /** Quanto falta pra voltar a alertar. */
   restaMs: number;
+  /**
+   * Por onde falaram. `null` = não sabemos — ou a migration 115 ainda não
+   * entrou, ou a marca é anterior a ela (as 3 que já estavam no banco em 15/09).
+   * NUNCA chutar "whatsapp" aqui: o time usa isto pra decidir ONDE procurar a
+   * conversa, e um canal inventado manda a pessoa pro lugar errado.
+   */
+  canal: CanalCobranca | null;
 };
 
 /**
@@ -457,6 +466,9 @@ export function lerCobranca(
     desdeMs,
     silenciado: desdeMs <= silencioMs,
     restaMs: Math.max(0, silencioMs - desdeMs),
+    // Passa pelo validador em vez de `as CanalCobranca`: o que estiver gravado
+    // fora dos dois valores conhecidos vira "não sabemos", não um rótulo torto.
+    canal: ehCanal(p.cobrado_canal) ? p.cobrado_canal : null,
   };
 }
 
@@ -594,7 +606,13 @@ export function montarLinha(
     parado,
     precisaAcao,
     silenciado,
-    cobradoTexto: cobranca ? `cobrado há ${tempoHumano(cobranca.desdeMs)} por ${cobranca.por}` : null,
+    // O canal só entra quando ele é CONHECIDO. Marca antiga (anterior à 115) e
+    // banco sem a coluna caem na frase de sempre, sem "por canal desconhecido"
+    // pendurado no fim — o time lê isto o dia inteiro.
+    cobradoTexto: cobranca
+      ? `cobrado há ${tempoHumano(cobranca.desdeMs)} por ${cobranca.por}` +
+        (cobranca.canal ? ` (${CANAL_ROTULO[cobranca.canal]})` : "")
+      : null,
     voltaAAvisarTexto:
       cobranca?.silenciado ? `volta a avisar em ${tempoHumano(cobranca.restaMs)}` : null,
     foto: colunaFoto(p),

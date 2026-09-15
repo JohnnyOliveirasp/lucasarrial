@@ -22,7 +22,9 @@ import type { NextRequest } from "next/server";
 import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
 import { jsonError, jsonOk, notFound, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { colunaCobrancaAusente } from "@/lib/sgp/cobranca";
+import { colunaCanalAusente, colunaCobrancaAusente } from "@/lib/sgp/cobranca";
+import { ehCanal } from "@/lib/sgp/contato";
+import type { CanalCobranca } from "@/lib/sgp/contato";
 import { logger } from "@/lib/logger/server";
 
 export const dynamic = "force-dynamic";
@@ -37,21 +39,48 @@ const SEM_COLUNA =
   "Ainda não dá pra marcar a cobrança: falta uma atualização do sistema, que já está com o time técnico. " +
   "Pode cobrar o aluno normalmente pelo WhatsApp — só não vai ficar registrado aqui ainda.";
 
-async function gravar(request: NextRequest, id: string, marcar: boolean) {
+async function gravar(
+  request: NextRequest,
+  id: string,
+  marcar: boolean,
+  canal: CanalCobranca | null = null,
+) {
   const g = await gateAdmin(request, SUPORTE_OK);
   if ("res" in g) return g.res;
 
   const quem = g.auth.email ?? g.auth.user_id;
-  const update = marcar
+  const base = marcar
     ? { cobrado_em: new Date().toISOString(), cobrado_por: quem }
     : { cobrado_em: null, cobrado_por: null };
+  // Desmarcar SEMPRE limpa o canal junto: deixar "whatsapp" pendurado numa linha
+  // sem `cobrado_em` seria uma meia-verdade que a próxima leitura não tem como
+  // desfazer. Marcar sem canal (chamada antiga da tela) não escreve a coluna.
+  const comCanal = marcar
+    ? canal
+      ? { ...base, cobrado_canal: canal }
+      : base
+    : { ...base, cobrado_canal: null };
 
-  try {
-    const { data, error } = await getAdmin()
+  /** Um UPDATE. Separado pra poder repetir sem o canal quando a 115 não entrou. */
+  const escrever = (patch: Record<string, unknown>) =>
+    getAdmin()
       .from("sgp_pedidos" as never)
-      .update(update as never)
+      .update(patch as never)
       .eq("id", id)
       .select("id");
+
+  try {
+    let usouCanal = comCanal !== base;
+    let { data, error } = await escrever(comCanal);
+
+    // A 115 ainda não entrou: repete SEM o canal em vez de recusar o clique. O
+    // registro de data + autor (106, já aplicada) é o que importa pro time —
+    // perder o canal é degradação aceitável, perder a cobrança inteira não é.
+    if (error && usouCanal && colunaCanalAusente(error)) {
+      logger.info("audit", "sgp.cobranca_canal_indisponivel", { by: g.auth.email, pedido: id });
+      usouCanal = false;
+      ({ data, error } = await escrever(base));
+    }
 
     if (error) {
       if (colunaCobrancaAusente(error)) {
@@ -67,16 +96,34 @@ async function gravar(request: NextRequest, id: string, marcar: boolean) {
     logger.info("audit", marcar ? "sgp.cobranca_marcada" : "sgp.cobranca_desfeita", {
       by: g.auth.email,
       pedido: id,
+      canal: usouCanal ? canal : null,
     });
-    return jsonOk({ ok: true, cobrado_em: update.cobrado_em, cobrado_por: update.cobrado_por });
+    return jsonOk({
+      ok: true,
+      cobrado_em: base.cobrado_em,
+      cobrado_por: base.cobrado_por,
+      // O que FICOU gravado, não o que foi pedido: sem a 115 o canal não entrou,
+      // e a tela não pode exibir um canal que o banco não tem.
+      cobrado_canal: marcar ? (usouCanal ? canal : null) : null,
+    });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao registrar a cobrança");
   }
 }
 
+/**
+ * `{ canal: "whatsapp" | "email" }` no corpo — é o clique no link de contato que
+ * registra a cobrança agora, então a tela informa por onde a pessoa foi falar.
+ *
+ * Corpo ausente ou canal desconhecido NÃO é erro: vira `null` e o clique é
+ * registrado assim mesmo. Recusar o POST por causa do canal transformaria um
+ * detalhe de telemetria em bloqueio do registro que o time precisa.
+ */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return gravar(request, id, true);
+  const corpo = await request.json().catch(() => null);
+  const bruto = (corpo as { canal?: unknown } | null)?.canal;
+  return gravar(request, id, true, ehCanal(bruto) ? bruto : null);
 }
 
 /**

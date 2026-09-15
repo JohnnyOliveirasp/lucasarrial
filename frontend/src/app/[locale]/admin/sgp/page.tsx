@@ -48,12 +48,19 @@ import {
   ChevronRight,
   Clock,
   ExternalLink,
-  MessageCircle,
+  Mail,
   Search,
   Undo2,
   XCircle,
 } from "lucide-react";
 import { filtrarBusca } from "@/lib/sgp/busca";
+import {
+  linkEmail,
+  linkWhatsapp,
+  rascunhoDeCobranca,
+  type CanalCobranca,
+} from "@/lib/sgp/contato";
+import type { SgpStatus } from "@/lib/sgp/types";
 import type { SgpGeracoes } from "@/lib/sgp/geracoes";
 import { videoLegivel, vozLegivel } from "@/lib/sgp/geracoes-pure";
 import {
@@ -262,13 +269,25 @@ export default function SgpPage() {
     if (aba === "todos" && compradores === null && !carregandoTodos) void carregarTodos();
   }, [aba, compradores, carregandoTodos, carregarTodos]);
 
-  /** Marca ou desfaz a cobrança e recarrega — a régua toda é recalculada no servidor. */
+  /**
+   * Marca ou desfaz a cobrança e recarrega — a régua toda é recalculada no
+   * servidor. `canal` só existe ao MARCAR: é por onde a pessoa foi falar.
+   * `null` = clique no botão "Já cobrei" avulso (falou por fora, por telefone,
+   * pessoalmente) — o registro vale igual, só não sabemos o canal, e a tela diz
+   * isso em vez de chutar um.
+   */
   const marcarCobranca = useCallback(
-    async (id: string, marcar: boolean) => {
+    async (id: string, marcar: boolean, canal: CanalCobranca | null = null) => {
       setSalvando(id);
       try {
         const res = await fetch(`/api/v1/admin/sgp/${id}/cobranca`, {
           method: marcar ? "POST" : "DELETE",
+          ...(marcar
+            ? {
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ canal }),
+              }
+            : {}),
         });
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
@@ -282,6 +301,36 @@ export default function SgpPage() {
       } finally {
         setSalvando(null);
       }
+    },
+    [load],
+  );
+
+  /**
+   * O clique no link de contato. Mesma escrita do "Já cobrei", com o canal.
+   *
+   * ⚠️ NÃO usa `setSalvando`: o link já abriu numa aba nova e o atendente está
+   * digitando pro aluno. Desabilitar a linha inteira enquanto o POST vai e volta
+   * piscaria a tela debaixo da mão dele, e o clique já aconteceu — não há clique
+   * duplo pra travar. Se a gravação falhar, o erro aparece no topo como sempre,
+   * e o contato (que é o que importa) já foi feito de qualquer jeito.
+   */
+  const registrarContato = useCallback(
+    (id: string, canal: CanalCobranca) => {
+      void fetch(`/api/v1/admin/sgp/${id}/cobranca`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ canal }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const json = await res.json().catch(() => ({}));
+            setErro(json?.error?.message || "Falei com o aluno, mas não consegui registrar aqui.");
+            return;
+          }
+          setErro(null);
+          await load();
+        })
+        .catch(() => setErro("Falei com o aluno, mas não consegui registrar aqui."));
     },
     [load],
   );
@@ -471,6 +520,7 @@ export default function SgpPage() {
           carregando={carregandoTodos}
           erro={erroTodos}
           onRecarregar={carregarTodos}
+          onContato={registrarContato}
         />
       ) : (
         <>
@@ -735,7 +785,14 @@ export default function SgpPage() {
                     {p.paradoTexto}
                   </Td>
                   <Td className="whitespace-nowrap font-mono text-[11px] text-[var(--mute)]">
-                    {p.whatsapp === "—" ? "—" : telefoneLegivel(p.whatsapp)}
+                    <CelulaContato
+                      status={p.status}
+                      nome={p.nome}
+                      rotulo={p.whatsapp === "—" ? "—" : telefoneLegivel(p.whatsapp)}
+                      whatsapp={p.whatsapp === "—" ? null : p.whatsapp}
+                      email={p.email}
+                      onContato={(canal) => registrarContato(p.id, canal)}
+                    />
                   </Td>
                   <Td className="min-w-[190px]">
                     <CelulaCobranca
@@ -860,6 +917,17 @@ export default function SgpPage() {
         ) : (
           <>O botão de marcar cobrança ainda não está liberado — falta uma atualização do sistema.</>
         )}
+      </p>
+
+      <p className="text-[12px] text-[var(--ash)]">
+        No <strong>WhatsApp</strong> o número é um link e o <strong>envelope</strong> ao lado abre o
+        e-mail — os dois já vêm com um texto pronto <strong>para a etapa daquele aluno</strong>, que
+        você pode editar antes de mandar. <strong>O sistema não envia nada</strong>: o WhatsApp que
+        abre é o <strong>seu</strong>, o e-mail sai da <strong>sua</strong> caixa, e quem aperta
+        enviar é você. Não existe cobrança automática nenhuma nesta tela. Clicar em qualquer um dos
+        dois já <strong>registra a cobrança</strong> com a data e por onde você falou, então não
+        precisa lembrar de marcar depois — o botão <strong>Já cobrei</strong> continua aí para quando
+        você falar por fora (telefone, pessoalmente).
       </p>
         </>
       )}
@@ -1162,6 +1230,96 @@ function SecaoGerados({
  *  - parado sem cobrança → o botão;
  *  - resto → um traço (não há o que cobrar).
  */
+/**
+ * O CONTATO do aluno — e o único lugar da tela onde o time fala com ele.
+ *
+ * ⚠️ NADA AQUI ENVIA. O `wa.me` abre o WhatsApp DE QUEM CLICOU (nunca o número
+ * da empresa) e o `mailto:` abre o cliente de e-mail dele, os dois com o texto
+ * da etapa já escrito. A pessoa lê, edita se quiser, e manda ELA. Não existe
+ * disparo automático, cron de 48h/D+5/D+9, nem WAHA em lugar nenhum deste fluxo:
+ * a regra de que a empresa nunca inicia WhatsApp por robô continua inteira.
+ *
+ * ⚠️ POR QUE OS DOIS CABEM NA MESMA CÉLULA, e isto é conserto e não gosto: os
+ * três botões de ação desta tela terminam em x=1177 numa viewport de 1267px, e
+ * ficar sem folga já foi reclamado 3x pelo Lucas. Duas colunas novas comeriam os
+ * 90px que sobram. Então o telefone VIRA o link (custo zero de largura, e é onde
+ * a mão já vai) e o e-mail é um ícone de 14px ao lado — +20px no pior caso. A
+ * medição em Chrome headless a 1267px está no PR.
+ *
+ * O clique REGISTRA a cobrança (data + canal). Era um botão separado e por isso
+ * só 3 dos 267 pedidos tinham `cobrado_em`: dependia de alguém lembrar de marcar
+ * depois de já ter falado. Agora clicar pra falar é o próprio registro.
+ *
+ * `onContato === null` = não há pedido pra registrar (comprador que nunca abriu
+ * o portal). O link continua funcionando — o que some é só o registro, porque
+ * não existe linha onde gravá-lo.
+ */
+function CelulaContato({
+  status,
+  nome,
+  rotulo,
+  whatsapp,
+  email,
+  onContato,
+}: {
+  /** A etapa do pedido, que escolhe o texto. `null` = nunca abriu o portal. */
+  status: SgpStatus | null;
+  nome: string;
+  /** Como o telefone aparece na tela ("(61) 99310-7338"). */
+  rotulo: string;
+  /** O telefone CRU — a normalização é a da casa, dentro de `linkWhatsapp`. */
+  whatsapp: string | null;
+  email: string | null;
+  onContato: ((canal: CanalCobranca) => void) | null;
+}) {
+  const rascunho = rascunhoDeCobranca(status, nome);
+  const zap = linkWhatsapp(whatsapp, rascunho.corpo);
+  const mail = linkEmail(email, rascunho);
+
+  return (
+    // ⚠️ EMPILHADO, não lado a lado, e isto é MEDIÇÃO e não gosto: lado a lado o
+    // ícone do WhatsApp e o do e-mail somavam 42px na coluna e empurravam os TRÊS
+    // botões de ação 42px pra direita (medido a 1267px: a última ação ia de
+    // x=1293 pra x=1335). Em cima do número, a coluna não cresce nenhum pixel —
+    // quem manda na largura continua sendo o telefone, que já estava aqui. O
+    // número do PR traz as duas medições.
+    <span className="flex flex-col items-start gap-0.5 whitespace-nowrap">
+      {zap ? (
+        <a
+          href={zap}
+          target="_blank"
+          rel="noopener noreferrer"
+          // Sem `preventDefault`: o link tem que abrir de qualquer jeito. O
+          // registro é best-effort e vai POR CIMA disso — se a gravação falhar,
+          // o atendente já falou com o aluno, e travar o contato por causa de
+          // telemetria seria inverter a prioridade.
+          onClick={() => onContato?.("whatsapp")}
+          title={`Abrir o WhatsApp com o texto já escrito:\n\n${rascunho.corpo}`}
+          className="text-[var(--ink)] underline underline-offset-2 hover:text-[var(--status-online)]"
+        >
+          {rotulo}
+        </a>
+      ) : (
+        // Sem telefone utilizável não se desenha link nenhum: um `wa.me/` vazio
+        // abriria o WhatsApp num número inexistente e o atendente acharia que
+        // falou com alguém.
+        <span className="text-[var(--ash)]">{rotulo}</span>
+      )}
+      {mail && (
+        <a
+          href={mail}
+          onClick={() => onContato?.("email")}
+          title={`Abrir o e-mail com assunto e texto já escritos:\n\n${rascunho.assunto}\n\n${rascunho.corpo}`}
+          className="inline-flex items-center gap-1 text-[10px] text-[var(--mute)] underline underline-offset-2 transition-colors hover:text-[var(--status-online)]"
+        >
+          <Mail className="size-3 shrink-0" />
+          escrever e-mail
+        </a>
+      )}
+    </span>
+  );
+}
+
 function CelulaCobranca({
   linha,
   disponivel,
@@ -1488,12 +1646,15 @@ function AbaCompradores({
   carregando,
   erro,
   onRecarregar,
+  onContato,
 }: {
   linhas: LinhaComprador[] | null;
   resumo: ResumoCompradores | null;
   carregando: boolean;
   erro: string | null;
   onRecarregar: () => void;
+  /** Registra o contato no pedido. Só chamado quando a linha TEM pedido. */
+  onContato: (pedidoId: string, canal: CanalCobranca) => void;
 }) {
   /**
    * A busca desta aba é INDEPENDENTE da da fila de propósito: são duas listas
@@ -1655,19 +1816,18 @@ function AbaCompradores({
                     )}
                   </Td>
                   <Td className="font-mono text-[11px]">
-                    {c.celularDigitos ? (
-                      <a
-                        href={`https://wa.me/${c.celularDigitos}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-[var(--ink)] underline underline-offset-2 hover:text-[var(--status-online)]"
-                      >
-                        <MessageCircle className="size-3.5 shrink-0" />
-                        {c.celular}
-                      </a>
-                    ) : (
-                      <span className="text-[var(--ash)]">—</span>
-                    )}
+                    <CelulaContato
+                      status={c.statusPedido}
+                      nome={c.nome}
+                      rotulo={c.celularDigitos ? c.celular : "—"}
+                      whatsapp={c.celularDigitos}
+                      email={c.email}
+                      // Sem pedido não há onde gravar: o link abre igual, mas o
+                      // registro não é prometido. Ver `pedidoId` em compradores.ts.
+                      onContato={
+                        c.pedidoId ? (canal) => onContato(c.pedidoId as string, canal) : null
+                      }
+                    />
                   </Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{c.email}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{dt(c.enviadoEm)}</Td>
@@ -1697,7 +1857,13 @@ function AbaCompradores({
           acima de {SGP_PARADO_HORAS}h. A coluna <strong>FastCloner</strong> é o que a pessoa paga na
           plataforma <strong>hoje</strong>: &ldquo;Paga&rdquo; é assinatura com cobrança confirmada,
           &ldquo;Trial&rdquo; é acesso vivo sem pagamento (adesão de valor zero). Ela é só informativa e{" "}
-          <strong>não</strong> tira ninguém da lista. Esta aba <strong>não</strong> atualiza sozinha.
+          <strong>não</strong> tira ninguém da lista. No <strong>WhatsApp</strong> o número é um link
+          e o <strong>envelope</strong> abre o e-mail, os dois com um texto pronto que{" "}
+          <strong>você</strong> lê, edita e manda — <strong>o sistema não envia nada</strong>, o
+          WhatsApp e a caixa de e-mail que abrem são os seus. Para quem já começou o portal, o clique
+          registra a cobrança na fila de trabalho; para quem <strong>nunca abriu</strong> (a maior
+          parte desta lista) ainda não existe pedido onde registrar, então o link abre mas nada fica
+          marcado. Esta aba <strong>não</strong> atualiza sozinha.
         </p>
         <button
           type="button"

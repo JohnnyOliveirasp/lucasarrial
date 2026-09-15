@@ -394,6 +394,48 @@ test("pedido SEM as colunas da migration 106 se comporta como 'nunca cobrado'", 
   assert.equal(l.silenciado, false);
 });
 
+// ---------------------------------------------------------------------------
+// O CANAL da cobrança (migration 115) — "por onde o time falou".
+//
+// A regra que estes testes protegem: canal DESCONHECIDO nunca vira canal
+// chutado. O time usa isto pra decidir ONDE procurar a conversa, e "whatsapp"
+// inventado numa cobrança que saiu por e-mail manda a pessoa pro lugar errado.
+// ---------------------------------------------------------------------------
+
+test("o canal aparece no selo quando foi registrado", () => {
+  const zap = montarLinha({ ...paradoCobrado(3), cobrado_canal: "whatsapp" }, AGORA);
+  assert.match(zap.cobradoTexto ?? "", /cobrado há 3h por suporte@time\.com \(WhatsApp\)/);
+
+  const mail = montarLinha({ ...paradoCobrado(3), cobrado_canal: "email" }, AGORA);
+  assert.match(mail.cobradoTexto ?? "", /cobrado há 3h por suporte@time\.com \(e-mail\)/);
+});
+
+test("cobrança SEM canal (as 3 que já estavam no banco) não ganha canal chutado", () => {
+  // `null` = marca anterior à 115, ou clique no "Já cobrei" avulso. A frase é a
+  // de sempre, sem parêntese pendurado — o time lê isto o dia inteiro.
+  const l = montarLinha({ ...paradoCobrado(3), cobrado_canal: null }, AGORA);
+  assert.equal(l.cobradoTexto, "cobrado há 3h por suporte@time.com");
+  assert.doesNotMatch(l.cobradoTexto ?? "", /\(/);
+});
+
+test("pedido SEM a coluna da migration 115 se comporta como 'canal desconhecido'", () => {
+  // É o que a rota devolve enquanto a 115 não é aplicada: o grupo `canalCobranca`
+  // cai sozinho e a linha vem sem a coluna. O "já cobrei" (106, JÁ aplicada) NÃO
+  // pode cair junto — é o ponto de os dois grupos serem separados.
+  const semCanal = { ...paradoCobrado(3) } as Partial<SgpPedidoRow>;
+  delete semCanal.cobrado_canal;
+  const l = montarLinha(semCanal as SgpPedidoRow, AGORA);
+  assert.equal(l.silenciado, true, "a cobrança continua valendo sem a 115");
+  assert.equal(l.cobradoTexto, "cobrado há 3h por suporte@time.com");
+});
+
+test("canal desconhecido gravado no banco vira 'não sabemos', não rótulo torto", () => {
+  for (const lixo of ["sms", "WHATSAPP", "", "telefone"]) {
+    const l = montarLinha({ ...paradoCobrado(3), cobrado_canal: lixo }, AGORA);
+    assert.equal(l.cobradoTexto, "cobrado há 3h por suporte@time.com", `canal "${lixo}"`);
+  }
+});
+
 test("nenhuma frase de cobrança vaza jargão pro atendente", () => {
   const jargao = /\.tsx|\.ts\b|\.cjs|PR ?#|sgp_pedidos|status ?=|user_id|cobrado_em|null|undefined|migration|endpoint/i;
   for (const h of [1, S - 1, S, S + 1, 200]) {
@@ -634,6 +676,36 @@ test("aplicar UMA das duas migrations não desliga a outra", async () => {
   assert.equal(r.disponivel.cobranca, false, "sem a 106, sem botão de cobrança");
   assert.equal(r.disponivel.erroManual, true, "MAS o marcar erro continua de pé");
   assert.deepEqual(pedidas[1], "id, erro_manual_em, erro_manual_por");
+});
+
+/**
+ * O caso REAL de hoje (15/09, conferido com `_frank/ferramentas/ddl_aplicado.cjs`):
+ * a 106 ESTÁ aplicada e a 115 NÃO. Se `cobrado_canal` morasse dentro do grupo
+ * "cobranca", a ausência dela derrubaria o grupo inteiro e o "Já cobrei" — que
+ * funciona em produção agora — sumiria da tela por causa de migration alheia.
+ * É a mesma armadilha que o teste acima protege pro par 106/109.
+ */
+test("sem a 115 o canal cai SOZINHO: o 'já cobrei' da 106 continua de pé", async () => {
+  const pedidas: string[] = [];
+  const fila = criarFilaComFallback<{ id: string }>(
+    async (colunas) => {
+      pedidas.push(colunas);
+      return colunas.includes("cobrado_canal")
+        ? {
+            data: null,
+            error: { code: "42703", message: "column sgp_pedidos.cobrado_canal does not exist" },
+          }
+        : { data: [{ id: "x" }], error: null };
+    },
+    ["id"],
+    [GRUPOS[0], { nome: "canalCobranca", colunas: ["cobrado_canal"] }],
+  );
+
+  const r = await fila();
+  assert.equal(r.error, null);
+  assert.equal(r.disponivel.cobranca, true, "o 'já cobrei' NÃO pode cair junto com o canal");
+  assert.equal(r.disponivel.canalCobranca, false);
+  assert.deepEqual(pedidas[1], "id, cobrado_em, cobrado_por");
 });
 
 test("o inverso também: sem a 109, a cobrança sobrevive", async () => {
