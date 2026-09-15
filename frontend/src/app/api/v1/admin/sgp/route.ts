@@ -29,6 +29,7 @@ import {
   silencioHorasConfigurado,
   silencioMsConfigurado,
 } from "@/lib/sgp/cobranca";
+import { COLUNAS_AVISO, buscarAvisos } from "@/lib/sgp/aviso";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,10 @@ const COLUNAS_BASE = [
   "fotos",
   "audios",
   "erro",
+  // `user_id` entrou em 15/09 (recado 6): é a chave pra ler o carimbo de aviso
+  // em `profiles.onboarding_ready_email_at`. NÃO é segredo de sessão — segredo
+  // é `sessao`/`codigo_hash`, que continuam fora daqui de propósito.
+  "user_id",
 ];
 
 /**
@@ -66,6 +71,9 @@ const buscar = criarFilaComFallback<SgpPedidoRow>(
     { nome: "cobranca", colunas: COLUNAS_COBRANCA },
     { nome: "erroManual", colunas: COLUNAS_ERRO_MANUAL },
     { nome: "conclusao", colunas: COLUNAS_CONCLUSAO },
+    // A 116 ainda não foi aplicada — cai sozinha, como as outras três. Sem ela
+    // o corte GERADO/ENTREGUE continua funcionando pelo carimbo do sistema.
+    { nome: "aviso", colunas: COLUNAS_AVISO },
   ],
 );
 
@@ -86,7 +94,13 @@ export async function GET(request: NextRequest) {
 
     const agora = Date.now();
     const silencioMs = silencioMsConfigurado();
-    const linhas = ordenar((data ?? []).map((p) => montarLinha(p, agora, silencioMs)));
+    const pedidos = data ?? [];
+    // O carimbo de "o aluno foi avisado" (recado 6). SOMENTE LEITURA, como o
+    // resto desta rota: uma consulta a `profiles` por leva de 200 prontos.
+    const avisos = await buscarAvisos(getAdmin(), pedidos);
+    const linhas = ordenar(
+      pedidos.map((p) => montarLinha(p, agora, silencioMs, avisos.get(p.id) ?? null)),
+    );
     return jsonOk({
       pedidos: linhas,
       resumo: resumir(linhas),
@@ -97,6 +111,10 @@ export async function GET(request: NextRequest) {
       erroManual: { disponivel: !!disponivel.erroManual },
       // E pro botão "Concluir atendimento" (migration 110).
       conclusao: { disponivel: !!disponivel.conclusao },
+      // E pro registro de "Avisei o aluno" (migration 116). A tela usa isto pra
+      // explicar POR QUE não dá pra registrar um aviso dado por fora — em vez
+      // de oferecer um botão que daria erro.
+      aviso: { disponivel: !!disponivel.aviso },
     });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao carregar a fila do SGP");
