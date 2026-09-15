@@ -144,7 +144,40 @@ export type DepsTransicao = {
   carimbarStatus: (patch: { status: SgpStatus; erro: null }) => Promise<void>;
   avisarAluno: (email: string, assunto: string, texto: string, ref: string) => Promise<void>;
   escalar: (erro: ErroOnboarding) => Promise<void>;
+  /**
+   * LIVRO-CAIXA, perna de ida (migration 117). Abre o episódio de fracasso:
+   * grava `falhou_em` e o `motivo` numa linha própria, que NUNCA é apagada.
+   *
+   * Chamada SÓ por quem ganhou o cadeado `carimbarFracasso` — então é uma
+   * linha por episódio, sem corrida, sem precisar de cadeado próprio.
+   *
+   * Opcional de propósito: quem não passa segue com o comportamento de antes.
+   */
+  abrirEpisodio?: (ep: { pedidoId: string; motivo: string | null }) => Promise<void>;
+  /**
+   * LIVRO-CAIXA, perna de volta. Fecha o episódio aberto deste pedido
+   * (`recuperado_em = now`, `recuperado_para = <status novo>`).
+   *
+   * Tem que ser IDEMPOTENTE no banco: a implementação real filtra por
+   * `recuperado_em is null`, então pedido sem episódio aberto é no-op.
+   */
+  fecharEpisodio?: (ep: { pedidoId: string; recuperadoPara: SgpStatus }) => Promise<void>;
 };
+
+/**
+ * Livro-caixa que derruba a produção é pior que livro-caixa nenhum: a migration
+ * 117 pode não estar aplicada, e nesse caso a escrita erra. Engolir aqui (e não
+ * no chamador) mantém a garantia testável dentro do módulo puro, igual às
+ * pernas de e-mail e escalação logo abaixo.
+ */
+async function registrar(nome: string, fn: (() => Promise<void>) | undefined): Promise<void> {
+  if (!fn) return;
+  try {
+    await fn();
+  } catch (e) {
+    console.error(`[sgp/fracasso] ${nome}:`, e instanceof Error ? e.message : e);
+  }
+}
 
 /**
  * O que esta chamada fez — existe pra o teste conseguir afirmar "avisou UMA
@@ -211,6 +244,16 @@ export async function processarTransicao(
     const limpaErro = pedido.erro !== null;
     if (!mudaStatus && !limpaErro) return "sem_mudanca";
     await deps.carimbarStatus({ status: statusNovo, erro: null });
+    // A recuperação some com a EXIBIÇÃO (acima) e preserva o HISTÓRICO (aqui).
+    // Sem esta linha, `erro: null` era amnésia: em 15/09 a base tinha 268
+    // pedidos, ZERO em 'falhou' e `erro` NULL em todos — no mesmo dia em que um
+    // pedido morreu por CUDA OOM e foi recuperado à mão.
+    const fechar = deps.fecharEpisodio;
+    if (fechar && (pedido.status === "falhou" || limpaErro)) {
+      await registrar("fecharEpisodio", () =>
+        fechar({ pedidoId: pedido.id, recuperadoPara: statusNovo }),
+      );
+    }
     return mudaStatus ? "status_atualizado" : "erro_limpo";
   }
 
@@ -222,6 +265,14 @@ export async function processarTransicao(
   if (!linha) return "ja_avisado"; // outra chamada ganhou a corrida
 
   const motivo = pedido.erro ?? motivoNovo;
+
+  // Perna de IDA do livro-caixa. Aqui dentro do `if (!linha) return` de
+  // propósito: quem perdeu a corrida não abre episódio, então o cadeado do
+  // `status` também serve de cadeado do histórico — uma linha por episódio.
+  const abrir = deps.abrirEpisodio;
+  if (abrir) {
+    await registrar("abrirEpisodio", () => abrir({ pedidoId: pedido.id, motivo }));
+  }
   const aviso = montarAvisoAoAluno({ nome: linha.nome ?? pedido.nome }, motivo);
   const email = linha.email ?? pedido.email;
 
