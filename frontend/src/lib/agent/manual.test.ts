@@ -353,3 +353,34 @@ test("o manual NÃO afirma o que existe dentro das fotos extras (#270, a armadil
     "o guard que protege os 98% que só mandam selfie sumiu",
   );
 });
+
+test("o manual manda PERGUNTAR em vez de deduzir se a foto entrou, e cita o aviso que a tela dá (#392)", () => {
+  const secao = secaoDoGerador();
+  // O defeito do #392 é a Fast AFIRMAR sobre uma tela que ela não vê. O item
+  // anterior descreve dois caminhos com resultados opostos; sem este guard, a
+  // Fast escolhe um dos dois por dedução e acerta metade das vezes.
+  assert.match(
+    secao,
+    /VOCÊ NÃO VÊ A TELA DELE/,
+    "o guard que proíbe deduzir o estado da tela sumiu — é o defeito do #392 pela raiz",
+  );
+  assert.match(
+    secao,
+    /não DEDUZA se a foto que ele subiu entrou ou não: PERGUNTE/,
+    "sem mandar PERGUNTAR, dizer 'você não vê a tela' não vira ação nenhuma",
+  );
+  // ⚠️ ANCORAGEM: a frase que o manual manda o aluno procurar tem que ser a
+  // frase que a UI realmente escreve. Se `usingNow` for reescrita no pt-BR.json
+  // e o manual não, a Fast manda o aluno procurar um texto que não existe —
+  // que é inventar tela, exatamente o que este PR conserta.
+  const usingNow = rotuloDaUI("usingNow");
+  const trecho = "Nesta geração entram a foto principal do quadro e";
+  assert.ok(
+    usingNow.includes(trecho),
+    `a UI mudou o texto de "usingNow" — o manual cita "${trecho}", que não está mais lá; ajuste os dois juntos`,
+  );
+  assert.ok(
+    secao.replace(/\s+/g, " ").includes(trecho),
+    "o manual parou de citar o aviso real da tela — sem ele o aluno não sabe onde olhar",
+  );
+});
