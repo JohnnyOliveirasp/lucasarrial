@@ -12,9 +12,11 @@
  *
  * Server-only. As tabelas da mig 47 não estão nos types gerados → `as never`.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAdmin } from "@/lib/db/admin";
-import { limparFechamento } from "./closure";
-import { inserirChamadoUnico } from "./gravar";
+import { assinaturaLegada } from "@/lib/agent/mail-incident";
+import { CLOSED_STATUSES, limparFechamento } from "./closure";
+import { CONFLITO, inserirChamadoUnico } from "./gravar";
 
 export type ChamadoReportado = {
   /** Dedupe. Precisa distinguir PEDIDOS, não canais: num grupo o chat é um só,
@@ -42,27 +44,85 @@ export type ChamadoReportado = {
   categoria?: "tecnico" | "atendimento";
 };
 
+type ChamadoExistente = {
+  id: string;
+  numero: number | null;
+  status: string;
+  occurrences: number;
+  affected_emails: string[];
+  title: string | null;
+};
+
+/** Lista de status fechados no formato que o PostgREST espera no `.not(…,"in",…)`.
+ *  Derivada de `CLOSED_STATUSES` pra não virar a sétima cópia da lista. */
+const FECHADOS_PGRST = `(${[...CLOSED_STATUSES].map((s) => `"${s}"`).join(",")})`;
+
+/**
+ * Procura o chamado dono de uma assinatura. `apenasAberto` existe porque as
+ * duas buscas têm regras DIFERENTES, e a diferença é o ponto:
+ *
+ *  · chave EXATA (false): inclui fechado de propósito — é assim que um pedido
+ *    que volta depois de resolvido REABRE o chamado dele (ver `limparFechamento`
+ *    logo abaixo). Comportamento antigo, intocado.
+ *  · chave LEGADA (true): só chamado ABERTO. Ressuscitar um chamado fechado
+ *    por uma chave que nem é mais a dele é outra coisa, e não foi pedido: se o
+ *    legado está fechado, que nasça chamado novo.
+ */
+async function buscarPorAssinatura(
+  admin: SupabaseClient<never>,
+  signature: string,
+  apenasAberto: boolean,
+): Promise<ChamadoExistente | null> {
+  let q = admin
+    .from("incidents" as never)
+    .select("id, numero, status, occurrences, affected_emails, title")
+    .eq("signature", signature);
+  if (apenasAberto) q = q.not("status", "in", FECHADOS_PGRST);
+  const { data } = await q.order("last_seen_at", { ascending: false }).limit(1).maybeSingle();
+  return (data as unknown as ChamadoExistente | null) ?? null;
+}
+
 /** Devolve o número curto do chamado (#85), que é como as pessoas se referem
  *  a ele. null se a gravação falhou. */
 export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number | null> {
   const admin = getAdmin();
   const now = new Date().toISOString();
 
-  const { data: existingRaw } = await admin
-    .from("incidents" as never)
-    .select("id, numero, status, occurrences, affected_emails, title")
-    .eq("signature", c.signature)
-    .order("last_seen_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const existing = existingRaw as unknown as {
-    id: string;
-    numero: number | null;
-    status: string;
-    occurrences: number;
-    affected_emails: string[];
-    title: string | null;
-  } | null;
+  let existing = await buscarPorAssinatura(admin, c.signature, false);
+
+  /**
+   * FALLBACK DE LEITURA PRA CHAVE LEGADA (#410, 15/09).
+   *
+   * O conserto do dedupe por queixa (#23) mudou a assinatura do e-mail de
+   * `fast-email:{canal}:{email}` pra `fast-email:{canal}:{classe}:{email}` e
+   * subiu sem cuidar do que já estava gravado. Como esta busca casa por
+   * igualdade EXATA, chamado aberto sob a chave velha nunca mais somava
+   * ocorrência: a queixa seguinte do mesmo aluno procurava a chave nova, não
+   * achava, e nascia chamado novo com o histórico rachado em dois. Medido em
+   * 15/09: 23 abertos na chave velha contra 2 na nova, e o racha já consumado
+   * no #408/#356 (o reembolso da Maria Teresa).
+   *
+   * A cura é aqui e não no banco: uma migration teria que ADIVINHAR
+   * retroativamente a classe de 23 chamados, e classe inventada é pior que
+   * chave velha. Assim cada chamado se migra sozinho na primeira queixa que
+   * chegar, com a classe REAL da queixa de agora — e some da lista dos 23.
+   *
+   * ORDEM IMPORTA: a chave nova é consultada PRIMEIRO. Quando o aluno já tem
+   * os dois chamados (o legado e o que nasceu do racha), quem recebe é o NOVO.
+   * Fazer o contrário jogaria uma queixa de classe conhecida dentro de um
+   * chamado de classe desconhecida, que é exatamente o bug que o #23 consertou.
+   * O par que já rachou (#408/#356) NÃO é fundido por código: fundir é decidir
+   * qual título e qual histórico morre, e isso é decisão de dono, não de
+   * função de gravação.
+   */
+  let adotadoDoLegado = false;
+  if (!existing) {
+    const legada = assinaturaLegada(c.signature);
+    if (legada) {
+      existing = await buscarPorAssinatura(admin, legada, true);
+      adotadoDoLegado = existing !== null;
+    }
+  }
 
   if (existing) {
     const reopened = existing.status === "fixed" || existing.status === "ignored";
@@ -92,33 +152,63 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
         `O pedido anterior deste mesmo chamado era: "${existing.title}". ` +
         `Confira se ELE já foi respondido antes de tratar só o de agora.`
       : c.description;
-    await admin
-      .from("incidents" as never)
-      .update({
-        status: reopened ? "open" : existing.status,
-        /**
-         * REABERTURA AUTOMÁTICA LIMPA O CARIMBO (02/09).
-         *
-         * Só quando `reopened`: aqui a mesma escrita também serve pro bump de
-         * ocorrência de um chamado que continua no status em que estava. Se a
-         * limpeza fosse incondicional, uma ocorrência nova num chamado ainda
-         * FECHADO apagaria a data do fechamento legítimo dele.
-         *
-         * Sem isto o chamado voltava pra "open" carregando resolved_at/by/
-         * commit do fechamento anterior — o registro afirmava aberto E
-         * resolvido ao mesmo tempo. É o sexto conserto desta família; o
-         * porquê de ela reincidir está em ./closure.ts.
-         */
-        ...(reopened ? limparFechamento() : {}),
-        occurrences: (existing.occurrences ?? 1) + 1,
-        last_seen_at: now,
-        sample_error: (c.sampleError ?? "").slice(0, 1000) || null,
-        title: tituloNovo,
-        description,
-        ...(c.attachments?.length ? { attachment_path: c.attachments.join(",") } : {}),
-      } as never)
-      .eq("id", existing.id);
-    return existing.numero ?? null;
+    const alvo = existing;
+    const gravar = (migrarChave: boolean) =>
+      admin
+        .from("incidents" as never)
+        .update({
+          status: reopened ? "open" : alvo.status,
+          /**
+           * A MIGRAÇÃO DA CHAVE (#410) — só no chamado adotado pelo legado.
+           *
+           * Vai JUNTO com o bump de ocorrência, numa escrita só: ou o chamado
+           * soma e passa a viver na chave nova, ou não acontece nada. Duas
+           * escritas separadas deixariam a janela de um chamado somado que
+           * continua invisível pra próxima busca.
+           */
+          ...(migrarChave ? { signature: c.signature } : {}),
+          /**
+           * REABERTURA AUTOMÁTICA LIMPA O CARIMBO (02/09).
+           *
+           * Só quando `reopened`: aqui a mesma escrita também serve pro bump de
+           * ocorrência de um chamado que continua no status em que estava. Se a
+           * limpeza fosse incondicional, uma ocorrência nova num chamado ainda
+           * FECHADO apagaria a data do fechamento legítimo dele.
+           *
+           * Sem isto o chamado voltava pra "open" carregando resolved_at/by/
+           * commit do fechamento anterior — o registro afirmava aberto E
+           * resolvido ao mesmo tempo. É o sexto conserto desta família; o
+           * porquê de ela reincidir está em ./closure.ts.
+           */
+          ...(reopened ? limparFechamento() : {}),
+          occurrences: (alvo.occurrences ?? 1) + 1,
+          last_seen_at: now,
+          sample_error: (c.sampleError ?? "").slice(0, 1000) || null,
+          title: tituloNovo,
+          description,
+          ...(c.attachments?.length ? { attachment_path: c.attachments.join(",") } : {}),
+        } as never)
+        .eq("id", alvo.id);
+
+    const { error } = await gravar(adotadoDoLegado);
+    /**
+     * PERDEMOS A CORRIDA NA MIGRAÇÃO (#410).
+     *
+     * Entre o SELECT e este UPDATE, alguém criou o chamado da chave nova — e
+     * o índice único da mig 92 recusa dois ABERTOS com a mesma signature.
+     * Aqui o conflito não é erro, é informação: a chave nova já tem dono, e a
+     * migração simplesmente não é desta vez (a próxima queixa tenta de novo,
+     * ou nem precisa, porque a busca exata vai achar o dono).
+     *
+     * O que NÃO pode acontecer é a ocorrência sumir junto com a migração
+     * recusada — o update inteiro é atômico, então sem este retry o aluno
+     * teria escrito e o chamado não registraria nada. Regrava sem a chave: a
+     * ocorrência entra no legado, que é onde ela estava indo.
+     */
+    if (error && adotadoDoLegado && (error as { code?: string }).code === CONFLITO) {
+      await gravar(false);
+    }
+    return alvo.numero ?? null;
   }
 
   const criado = await inserirChamadoUnico(admin, {

@@ -18,8 +18,24 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** Violação de UNIQUE no Postgres. */
-const CONFLITO = "23505";
+/**
+ * Violação de UNIQUE no Postgres.
+ *
+ * Exportado em 15/09 (#410): o `reportar.ts` passou a REGRAVAR a signature de
+ * um chamado legado adotado, e regravar signature é a segunda escrita da casa
+ * capaz de esbarrar no índice da mig 92. Um código só, num lugar só — duas
+ * cópias de "23505" é como uma das duas fica para trás.
+ *
+ * Aqui NÃO entra fallback de chave legada, e isto é decisão, não esquecimento:
+ * este bloco só roda DEPOIS que o insert bateu no índice único, e o índice é
+ * por valor exato de `signature`. Bater aqui significa, necessariamente, que
+ * existe um chamado ABERTO com a chave NOVA que acabamos de tentar inserir —
+ * a chave legada não tem como ter causado este conflito. Procurar o legado
+ * neste ponto desviaria a ocorrência para o chamado ERRADO: o dono do
+ * conflito é quem tem a chave nova. Quem cura o legado é a busca do
+ * `reportar.ts`, ANTES de chegar no insert.
+ */
+export const CONFLITO = "23505";
 
 export type ResultadoGravacao = {
   id: string;
