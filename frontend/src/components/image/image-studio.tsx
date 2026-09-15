@@ -589,7 +589,10 @@ export function ImageStudio({
       const r = await fetch("/api/v1/images/generate-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: idea.trim() }),
+        // #270: manda QUANTAS fotos entram nesta geração (`readyKeys` é o mesmo
+        // conjunto que vai pro modelo). Sem isso o gerador de prompt não sabe
+        // que existem extras e apaga o "isto vem da foto extra" do texto.
+        body: JSON.stringify({ idea: idea.trim(), refs: readyKeys.length }),
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));

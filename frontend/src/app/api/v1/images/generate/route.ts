@@ -136,7 +136,9 @@ export async function POST(request: NextRequest) {
   let prompt = (body.prompt ?? "").trim();
   const idea = (body.idea ?? "").trim() || null;
   if (!prompt && idea) {
-    prompt = (await generateImagePrompt(idea)).trim();
+    // #270: o gerador de prompt precisa saber quantas referências entram nesta
+    // geração, senão apaga do texto do aluno o "isto vem da foto extra".
+    prompt = (await generateImagePrompt(idea, inputKeys.length)).trim();
   }
   if (!prompt) return badRequest("Escreva um prompt ou uma ideia");
   if (prompt === "__BLOCKED__") return jsonError("content_blocked", CONTENT_BLOCKED_MESSAGE, 400);
