@@ -17,7 +17,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { agentProvider } from "@/lib/agent/provider";
 import { wahaLidToPhone } from "@/lib/agent/waha";
 import type { AgentChatRow, ProfileRow } from "@/lib/db/types";
-import { janelaGarantia, type EventoCompra } from "@/lib/agent/garantia";
+import { janelaGarantia, janelasPorProduto, type EventoCompra } from "@/lib/agent/garantia";
 import { qaVeredito, AVISO_QA_NAO_PROVA } from "@/lib/generations/qa-veredito";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
@@ -189,6 +189,38 @@ async function linhaGarantiaHotmart(email: string | null): Promise<string> {
 
     const agora = new Date();
     const j = janelaGarantia(data as EventoCompra[], agora);
+
+    // ── 2+ PRODUTOS: uma linha POR produto (incidente #265, falso positivo da
+    // Evelyn, 14/09). Com UMA linha sem dono, a Fast atribui a data ao produto
+    // que o aluno perguntou — com 2+ compras é erro garantido, não risco.
+    // Medido em 15/09: 237 alunos têm 2+ janelas distintas.
+    const porProduto = janelasPorProduto(data as EventoCompra[], agora);
+    if (porProduto.length > 1) {
+      const linhas = porProduto
+        .map((p) => {
+          const nome = p.produto ?? `produto ${p.produtoId}`;
+          if (p.semGarantia) {
+            const cobra = p.primeiraCobranca
+              ? ` A 1ª cobrança dele é ${diaBR(p.primeiraCobranca)} — é ESSA a data que vale pra ele.`
+              : "";
+            return `  · ${nome}: adesão de R$ 0, NÃO há valor a reembolsar (logo não há janela de garantia).${cobra}`;
+          }
+          if (!p.fim) return `  · ${nome}: garantia NÃO confirmada — não afirme prazo, escale.`;
+          return p.dentro
+            ? `  · ${nome}: garantia até ${diaBR(p.fim)} → DENTRO da janela.`
+            : `  · ${nome}: garantia terminou em ${diaBR(p.fim)} → FORA da janela.`;
+        })
+        .join("\n");
+      return (
+        `GARANTIA HOTMART (calculado pelo sistema — obedeça estas linhas): este e-mail tem ` +
+        `${porProduto.length} produtos, e CADA UM tem a sua própria janela. Hoje é ${diaBR(agora)}.\n${linhas}\n` +
+        `USE A LINHA DO PRODUTO SOBRE O QUAL A PESSOA ESTÁ FALANDO. NUNCA repita a data de um produto ao ` +
+        `falar de outro — foi exatamente isso que a casa fez com uma aluna, citando a compra e a garantia ` +
+        `do produto errado. Se não estiver claro de qual produto ela fala, PERGUNTE antes de dizer ` +
+        `qualquer data. Cite a DATA, nunca um número de dias. (Renovação mensal NÃO reabre a garantia.)`
+      );
+    }
+
     if (!j) return GARANTIA_ESCALAR;
 
     const cabeca =

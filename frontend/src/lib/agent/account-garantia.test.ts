@@ -25,7 +25,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { janelaGarantia, type EventoCompra } from "./garantia.ts";
+import { janelaGarantia, janelasPorProduto, type EventoCompra } from "./garantia.ts";
 
 /** Monta a linha como o `payment_events` entrega (approved_date em epoch ms
  *  STRING, warranty_date em ISO — os dois formatos convivem no mesmo payload,
@@ -107,4 +107,100 @@ test("FORA continua sendo FORA depois do warranty real", () => {
   const j = janelaGarantia([KATIA_PAGA], new Date("2026-09-20T00:00:00Z"));
   assert.ok(j);
   assert.equal(j.dentro, false);
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * IDENTIDADE DE PRODUTO (#265, falso positivo da Evelyn — Vigia 14/09 10hZ/12hZ)
+ *
+ * AMOSTRA REAL, recortada de `payment_events` em 15/09/2026 (nada reescrito):
+ *   evelyn.cheida@gmail.com — DUAS compras de produtos DIFERENTES.
+ *     Sistema de Geração Pronto (7283229) · R$ 617,12 · 07/09 · warranty 14/09
+ *     FastCloner (7851642) · R$ 0 adesão trial · 10/09 · date_next_charge 17/09 12:00Z
+ *   A casa respondeu a ela "sua compra [FastCloner] foi feita em 07/09 e a
+ *   garantia vai até 13/09". AS DUAS DATAS ERAM DO OUTRO PRODUTO.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const evP = (
+  pid: string,
+  nome: string,
+  approvedMs: string,
+  warranty: string | null,
+  valor: number,
+  nextCharge?: string,
+): EventoCompra => ({
+  payload: {
+    data: {
+      product: warranty === null ? { id: pid, name: nome } : { id: pid, name: nome, warranty_date: warranty },
+      purchase: { approved_date: approvedMs, price: { value: valor }, date_next_charge: nextCharge },
+    },
+  },
+});
+
+const EVELYN_SGP = evP("7283229", "Sistema de Geração Pronto", "1788818903000", "2026-09-14T00:00:00Z", 617.12);
+const EVELYN_FC = evP("7851642", "FastCloner", "1789078887000", "2026-09-17T00:00:00Z", 0, "1789646400000");
+
+test("Evelyn: o produto que ela perguntou NÃO herda a data do outro", () => {
+  // 15/09 — a janela do SGP já fechou (14/09) e era ela que a linha única citava.
+  const ps = janelasPorProduto([EVELYN_SGP, EVELYN_FC], new Date("2026-09-15T15:00:00Z"));
+  assert.equal(ps.length, 2, "dois produtos = duas linhas, nunca uma só sem dono");
+
+  const fc = ps.find((p) => p.produtoId === "7851642");
+  assert.ok(fc);
+  assert.equal(fc.semGarantia, true, "adesão de R$ 0 não tem o que reembolsar — a regra NÃO muda");
+  assert.equal(
+    fc.primeiraCobranca?.toISOString(),
+    "2026-09-17T12:00:00.000Z",
+    "date_next_charge é a única data que importa pra quem está em adesão trial",
+  );
+  // O defeito em uma linha: a data do SGP NUNCA pode sair como sendo do FastCloner.
+  assert.notEqual(fc.fim?.toISOString(), "2026-09-14T00:00:00.000Z");
+
+  const sgp = ps.find((p) => p.produtoId === "7283229");
+  assert.equal(sgp?.fim?.toISOString(), "2026-09-14T00:00:00.000Z");
+  assert.equal(sgp?.dentro, false);
+});
+
+test("produto DIFERENTE com janela viva não é declarado FORA pela âncora do outro", () => {
+  // A classe dos 3 medidos em 15/09 (claudiobeneditod, leleodacuca, silvaporto):
+  // âncora = SGP fechado; vivo = FastCloner até 21/09. A linha única dizia FORA.
+  const sgpFechado = evP("7283229", "Sistema de Geração Pronto", "1788818903000", "2026-09-13T00:00:00Z", 617.12);
+  const fcVivo = evP("7851642", "FastCloner", "1789078887000", "2026-09-21T00:00:00Z", 97);
+  const agora = new Date("2026-09-15T15:00:00Z");
+
+  assert.equal(janelaGarantia([sgpFechado, fcVivo], agora)?.dentro, false, "a linha única segue dizendo FORA");
+
+  const ps = janelasPorProduto([sgpFechado, fcVivo], agora);
+  assert.equal(ps.find((p) => p.produtoId === "7851642")?.dentro, true, "mas o FastCloner dele está DENTRO");
+  assert.equal(ps.find((p) => p.produtoId === "7283229")?.dentro, false);
+});
+
+test("renovação do MESMO produto continua colapsando — a política é do Johnny, não minha", () => {
+  // 73 dos 76 casos são isto. Se este teste começar a devolver 2 linhas, alguém
+  // decidiu política de dinheiro dentro de um conserto de atribuição.
+  const ciclo1 = evP("7851642", "FastCloner", "1787407524000", "2026-08-29T00:00:00Z", 97);
+  const ciclo2 = evP("7851642", "FastCloner", "1789078887000", "2026-09-21T00:00:00Z", 97);
+  const ps = janelasPorProduto([ciclo1, ciclo2], new Date("2026-09-15T15:00:00Z"));
+  assert.equal(ps.length, 1, "mesmo produto = UMA linha");
+  assert.equal(ps[0].fim?.toISOString(), "2026-08-29T00:00:00.000Z", "segue valendo a que FECHA PRIMEIRO");
+  assert.equal(ps[0].dentro, false);
+});
+
+test("compra PAGA ganha da adesão de R$ 0 do MESMO produto", () => {
+  const adesao = evP("7851642", "FastCloner", "1787407524000", "2026-08-29T00:00:00Z", 0, "1789646400000");
+  const paga = evP("7851642", "FastCloner", "1789078887000", "2026-09-21T00:00:00Z", 97);
+  const ps = janelasPorProduto([adesao, paga], new Date("2026-09-15T15:00:00Z"));
+  assert.equal(ps.length, 1);
+  assert.equal(ps[0].semGarantia, false, "existe compra paga: há o que reembolsar");
+  assert.equal(ps[0].fim?.toISOString(), "2026-09-21T00:00:00.000Z");
+  assert.equal(ps[0].primeiraCobranca?.toISOString(), "2026-09-17T12:00:00.000Z", "não perde o dado da adesão");
+});
+
+test("um produto só: nada muda (é a maioria da base, não pode regredir)", () => {
+  const ps = janelasPorProduto([EVELYN_SGP], new Date("2026-09-05T18:00:00Z"));
+  assert.equal(ps.length, 1);
+  assert.equal(ps[0].dentro, true);
+});
+
+test("linha sem identidade de produto NÃO vira um balde 'null'", () => {
+  // Agrupar tudo que não tem id nem nome num só balde reconstruiria o bug.
+  assert.equal(janelasPorProduto([KATIA_PAGA, LUAN_PAGA], new Date("2026-09-05T18:00:00Z")).length, 0);
 });
