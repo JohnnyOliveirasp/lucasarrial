@@ -11,10 +11,25 @@
  *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html
  *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html --bcc suporte@lucasarrial.com
  *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html --dry-run
+ *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html --chave video-clone-voltou
+ *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html --forcar
  *
  * --dry-run é o ENSAIO: imprime destinatário, remetente, assunto, bcc e o
  * corpo inteiro SEM enviar nada. E-mail não tem desfazer — destinatário
- * errado já chegou na caixa da pessoa. Ensaie antes.
+ * errado já chegou na caixa da pessoa. Ensaie antes. O ensaio também mostra o
+ * VEREDITO da trava anti-duplicata, então serve de consulta ("esse aluno já
+ * recebeu este aviso?") sem tocar em nada.
+ *
+ * TRAVA ANTI-DUPLICATA (06/09): todo envio vira registro (destinatário + chave
+ * do aviso + instante) e o mesmo par dentro de 72h é RECUSADO com saída 2. Em
+ * 06/09 duas levas mandaram a mesma carta pros mesmos 4 alunos com 32 min de
+ * intervalo porque a segunda não sabia da primeira — ver `_envios.cjs`.
+ *   --chave <slug>    identidade do aviso (padrão: o assunto normalizado).
+ *                     Use explícita na ronda: assunto reescrito à mão muda,
+ *                     a chave não.
+ *   --janela <horas>  tamanho da janela (padrão 72, ou DEDUPE_EMAIL_HORAS).
+ *   --forcar          manda mesmo assim. É decisão consciente, não atalho:
+ *                     o que já saiu antes aparece impresso antes do envio.
  *
  * Teste SEMPRE mandando pra você mesmo antes de mandar pro aluno.
  */
@@ -28,15 +43,30 @@ require(path.join(RAIZ, "frontend", "node_modules", "dotenv")).config({
   path: path.join(RAIZ, "frontend", ".env.local"),
 });
 
+const envios = require(path.join(__dirname, "_envios.cjs"));
+
 // Separa flags dos posicionais pra --dry-run/--bcc funcionarem em qualquer posição.
 const argv = process.argv.slice(2);
 const dryRun = argv.includes("--dry-run");
+const forcar = argv.includes("--forcar");
 let bcc = null;
+let chaveExplicita = null;
+let janelaHoras = Number(process.env.DEDUPE_EMAIL_HORAS ?? envios.JANELA_PADRAO_HORAS);
 const posicionais = [];
 for (let i = 0; i < argv.length; i++) {
-  if (argv[i] === "--dry-run") continue;
+  if (argv[i] === "--dry-run" || argv[i] === "--forcar") continue;
   if (argv[i] === "--bcc") {
     bcc = argv[i + 1] || null;
+    i++;
+    continue;
+  }
+  if (argv[i] === "--chave") {
+    chaveExplicita = argv[i + 1] || null;
+    i++;
+    continue;
+  }
+  if (argv[i] === "--janela") {
+    janelaHoras = Number(argv[i + 1]);
     i++;
     continue;
   }
@@ -45,7 +75,11 @@ for (let i = 0; i < argv.length; i++) {
 const [dest, assunto, arquivo] = posicionais;
 
 if (!dest || !assunto || !arquivo) {
-  console.error('uso: node enviar_email.cjs <destino> "<assunto>" <corpo.html> [--bcc <email>] [--dry-run]');
+  console.error('uso: node enviar_email.cjs <destino> "<assunto>" <corpo.html> [--bcc <email>] [--chave <slug>] [--janela <horas>] [--forcar] [--dry-run]');
+  process.exit(1);
+}
+if (!Number.isFinite(janelaHoras) || janelaHoras < 0) {
+  console.error(`--janela/DEDUPE_EMAIL_HORAS inválido: "${janelaHoras}" (esperava número de horas >= 0)`);
   process.exit(1);
 }
 
@@ -294,8 +328,56 @@ function registrarLocal(registro) {
   return destino;
 }
 
+/** Uma linha legível por envio anterior — é o que decide se cabe `--forcar`. */
+function descreverAnterior(a) {
+  const quando = a.horas === null ? "data ilegível" : `${a.horas.toFixed(1)}h atrás`;
+  return `   • ${a.at} (${quando}) · chave "${a.chave}" · assunto "${a.assunto ?? "?"}" · ${a.message_id ?? "sem Message-ID"}`;
+}
+
 (async () => {
   const html = fs.readFileSync(path.resolve(arquivo), "utf8");
+
+  // A trava roda ANTES do SMTP e antes do ensaio: no --dry-run ela é a consulta
+  // ("já mandei isto pra este aluno?"), no envio de verdade ela é a porta.
+  const chave = envios.chaveDoAviso(assunto, chaveExplicita);
+  const sha = envios.shaCorpo(html);
+  let veredito;
+  try {
+    const estado = await envios.lerEstado();
+    veredito = envios.decidir(envios.consultar(estado, { para: dest, chave, sha }), { janelaHoras, forcar });
+  } catch (e) {
+    // Não consegui LER o histórico. Estado vazio aqui significaria "nunca
+    // escrevi pra esta pessoa" — a mentira exata que duplica a carta. Fecha.
+    console.error(`FALHOU: não consegui conferir o histórico de envios (${e.message})`);
+    if (!forcar) {
+      console.error(`   Confira à mão:  node _frank/ferramentas/ler_caixa.cjs --enviados --para ${dest}`);
+      console.error("   Se tiver certeza de que este aviso ainda não saiu, repita com --forcar.");
+      process.exit(2);
+    }
+    console.error("⚠️ --forcar: seguindo SEM conferir o histórico — ninguém garante que este aviso já não saiu.");
+    veredito = { bloqueia: false, forcado: true, motivos: [], anteriores: [] };
+  }
+
+  if (veredito.anteriores.length) {
+    console.log(`📓 já saiu pra ${dest} sob a chave "${chave}":`);
+    for (const a of veredito.anteriores) console.log(descreverAnterior(a));
+  }
+
+  if (veredito.bloqueia) {
+    console.error("");
+    console.error(`⛔ RECUSADO — este aviso já foi enviado para ${dest} dentro da janela de ${janelaHoras}h.`);
+    for (const m of veredito.motivos) {
+      const idade = m.horas === null ? m.detalhe : `há ${m.horas.toFixed(1)}h`;
+      console.error(`   trava: ${m.tipo} (${idade})`);
+    }
+    console.error("   NADA foi enviado. Em 06/09 duas levas mandaram a mesma carta pros mesmos 4 alunos");
+    console.error("   com 32 min de intervalo — é isto que esta trava impede.");
+    console.error(`   Se o reenvio é intencional, repita o comando com --forcar.`);
+    process.exit(2);
+  }
+  if (veredito.forcado && veredito.motivos.length) {
+    console.log(`⚠️ --forcar: mandando DE NOVO um aviso que já saiu (${veredito.motivos.map((m) => m.tipo).join(", ")}).`);
+  }
 
   if (dryRun) {
     // Ensaio: mostra exatamente o que sairia e para aqui. Nada toca o SMTP.
@@ -303,11 +385,14 @@ function registrarLocal(registro) {
     console.log(`Destinatário: ${dest}`);
     console.log(`Remetente:    Fast - FastCloner <${USER}>`);
     console.log(`Assunto:      ${assunto}`);
+    console.log(`Chave:        ${chave} (janela ${janelaHoras}h) — liberado pela trava`);
     if (bcc) console.log(`Bcc:          ${bcc}`);
     console.log("--- CORPO INTEIRO ---");
     console.log(html);
     console.log("--- FIM DO CORPO ---");
     console.log("========== MODO SECO — NADA FOI ENVIADO ==========");
+    // Ensaio NÃO registra: registrar aqui barraria o envio de verdade logo em
+    // seguida, e o ensaio existe justamente pra vir antes dele.
     return;
   }
 
@@ -347,6 +432,24 @@ function registrarLocal(registro) {
   await smtp.conectar();
   await smtp.enviar(USER, destinos, mensagem);
   console.log(`✅ enviado para ${dest}${bcc ? ` (bcc ${bcc})` : ""}`);
+
+  // Registro da trava — PRIMEIRA coisa depois do envio, antes do IMAP. O
+  // APPEND em enviados leva segundos e pode falhar 3× (incidente #210); se o
+  // registro viesse depois, uma leva rodando em paralelo pegaria a janela
+  // aberta justamente enquanto a anterior escrevia a cópia.
+  try {
+    const r = await envios.registrar({ para: dest, chave, assunto, messageId, sha });
+    if (!r.banco.ok) {
+      console.error(`⚠️ envio registrado SÓ localmente (${r.local.arquivo}): agent_state falhou — ${r.banco.erro}`);
+      console.error("   Outra máquina não vai enxergar este envio: confira antes de mandar de novo.");
+    }
+    if (!r.local.ok) console.error(`⚠️ espelho local não gravou: ${r.local.erro}`);
+  } catch (e) {
+    // O e-mail SAIU. Falhar aqui alto e sem quebrar o resto: a próxima chamada
+    // pode não ver este envio, e quem for reenviar precisa saber disso.
+    console.error(`⚠️ e-mail ENVIADO, mas o registro anti-duplicata NÃO gravou: ${e.message}`);
+    console.error(`   A trava não vai barrar um reenvio deste aviso — confira à mão antes.`);
+  }
 
   // O e-mail JÁ SAIU — daqui pra baixo é auditoria, nunca pode virar "FALHOU"
   // (o operador reenviaria e o aluno receberia duas vezes).

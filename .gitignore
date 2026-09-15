@@ -118,3 +118,10 @@ voxbr/**/*.safetensors
 _frank/prova/lgpd/
 *planilha*.csv
 *planilha*.xlsx
+
+# Livro-caixa dos e-mails que saíram (trava anti-duplicata do enviar_email.cjs)
+# e o registro de envio sem cópia em Enviados (#210). Cada linha tem e-mail de
+# aluno e este repositório é PÚBLICO — a fonte durável e compartilhada é o
+# `agent_state`; estes arquivos são espelho local.
+_frank/prova/envios_ledger.jsonl
+_frank/prova/enviados_local.jsonl
