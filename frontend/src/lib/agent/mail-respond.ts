@@ -15,6 +15,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { reabrirPorRespostaDoAluno } from "@/lib/incidents/espera";
 import { entregarAoTime } from "@/lib/incidents/entregar";
+import { casoComHumano, anotarQueOAlunoFalou, type CasoComHumano } from "@/lib/incidents/humano-io";
 import { guardarPrints } from "./mail-anexos";
 import type { AgentMessageRow } from "@/lib/db/types";
 import { buildAgentReply } from "./brain";
@@ -321,6 +322,26 @@ async function fioDoAluno(
   }));
 }
 
+/**
+ * A casa cala porque o caso tem dono (#415) — mas cala REGISTRANDO.
+ *
+ * Deixa o rastro no chamado (o que o aluno disse agora), marca a mensagem como
+ * lida pra não travar a fila, e devolve "skipped". Silêncio sem rastro seria
+ * trocar um defeito por outro pior: a mensagem do aluno sumindo.
+ */
+async function calarPorqueTemDono(
+  caso: CasoComHumano,
+  mail: RawMail,
+  args: { fromEmail: string; subject: string; text: string; onde: string },
+): Promise<"skipped"> {
+  await anotarQueOAlunoFalou(caso, { assunto: args.subject, trecho: args.text });
+  await markSeen(mail.uid);
+  console.log(
+    `[agent/mail] uid=${mail.uid} de=${args.fromEmail} — CALADA (${args.onde}): o chamado #${caso.numero ?? "?"} já está com o time`,
+  );
+  return "skipped";
+}
+
 async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "skipped" | "escalated" | "bounce"> {
   const raw = mail.raw;
   const fromHeader = header(raw, "From");
@@ -395,6 +416,21 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     });
   }
 
+  // ⚠️ ESTE CASO JÁ TEM DONO? (#415) A partir daqui tudo é "falar com o aluno",
+  // e é isso que a casa não pode fazer por cima de gente: depois de a tuquinha
+  // ser entregue ao time às 11:55Z, saíram NOVE mensagens automáticas em 2h50,
+  // uma delas por cima de uma correção escrita à mão.
+  //
+  // POR QUE AQUI E NÃO LÁ EM CIMA: o que vem antes (reabrir o chamado que
+  // esperava por ele, encaminhar link de arquivo pros revisores) é INTERNO —
+  // some pro time, não pro aluno — e continua valendo com o caso na mão de
+  // alguém. O que vem DEPOIS custa dinheiro (o cérebro) e termina em e-mail pro
+  // aluno. Então a trava entra exatamente na fronteira entre as duas coisas.
+  const temDono = await casoComHumano(fromEmail);
+  if (temDono) {
+    return calarPorqueTemDono(temDono, mail, { fromEmail, subject, text, onde: "antes de gerar" });
+  }
+
   // Conta do aluno pelo remetente (identidade forte: ele escreveu DESSE e-mail).
   const admin = getAdmin();
   const { data: profile } = await admin
@@ -439,6 +475,28 @@ async function respondOne(mail: RawMail, bcc: string[]): Promise<"replied" | "sk
     }
   }
   const replySubject = /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+
+  // RE-CHECA A TRAVA IMEDIATAMENTE ANTES DE ENVIAR (#415).
+  //
+  // Não é paranoia nem código repetido à toa: é o que o canal irmão faz em
+  // respond.ts:247-253, e existe porque o estado MUDA durante o processamento.
+  // Entre a checagem lá de cima e esta linha rodaram a busca do fio (até 20s,
+  // THREAD_TIMEOUT_MS) e o cérebro (chamada de modelo, mais alguns segundos) —
+  // é uma janela larga, e foi dentro de janelas assim que a casa passou por
+  // cima da correção humana no caso da tuquinha. Checar só no começo deixaria
+  // justamente a resposta mais lenta, que é a mais perigosa, escapar.
+  //
+  // Vem ANTES de `reservarResposta` de propósito: sair aqui não deixa reserva
+  // pendurada pra ninguém liberar depois.
+  const assumiuNoMeio = await casoComHumano(fromEmail);
+  if (assumiuNoMeio) {
+    return calarPorqueTemDono(assumiuNoMeio, mail, {
+      fromEmail,
+      subject,
+      text,
+      onde: "assumiram durante o processamento",
+    });
+  }
 
   // Reserva ANTES de enviar (#259): se o registro fosse depois, um envio que
   // desse certo com registro falho deixaria a reentrega responder de novo.

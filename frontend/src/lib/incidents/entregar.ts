@@ -19,6 +19,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { limparFechamento } from "./closure";
+import { notaEntregueAoHumano } from "./humano";
 import { sendAgentText } from "@/lib/agent/provider";
 import { gruposDoTime } from "@/lib/support/grupo";
 
@@ -116,7 +117,20 @@ export async function entregarAoTime(e: EntregaAoTime): Promise<boolean> {
         // esquecia `resolved_commit`. Foi esta linha que deixou #171, #192,
         // #202 e #226 em "investigating" com commit de fechamento órfão.
         ...limparFechamento(),
-        agent_notes: [...(linha.agent_notes ?? []), { at: agora, by: "carol", note: nota }],
+        // A MESMA nota de sempre (texto idêntico, `at`/`by` idênticos) — só
+        // ganhou a chave `tipo`, que é o que a trava do e-mail lê pra saber
+        // que este caso passou pra mão de gente (#415). Quem lê `agent_notes`
+        // usa `note`/`by`/`at` e ignora `tipo`, então nada mais muda.
+        //
+        // ⚠️ A marca é gravada AQUI, e não no `mail-respond`, de propósito:
+        // aqui é o ponto em que a entrega REALMENTE aconteceu (algum grupo
+        // recebeu o aviso — senão a função já tinha saído em `if (!avisou)`).
+        // Marcar antes disso calaria a Fast num caso que ninguém foi avisado
+        // de que existe: o aluno sem resposta E o time sem saber.
+        agent_notes: [
+          ...(linha.agent_notes ?? []),
+          notaEntregueAoHumano({ at: agora, by: "carol", note: nota }),
+        ],
       } as never)
       .eq("id", linha.id);
     if (error) {
