@@ -65,6 +65,7 @@ export function ImageStudio({
   onFixedRefKey,
   onRefsChanged,
   onExtrasChange,
+  onEscolherNoBanco,
 }: {
   creditsTotal: number;
   unlimited: boolean;
@@ -85,6 +86,12 @@ export function ImageStudio({
   onRefsChanged?: () => void;
   /** Chaves das fotos extras no quadro (a aba marca "já está nas extras"). */
   onExtrasChange?: (keys: string[]) => void;
+  /**
+   * Abre a aba "Imagens de Referência" (caso #e6c53db1). As extras só entram no
+   * quadro por lá (`extraRequest`); o seletor de arquivo manda TUDO pro banco e
+   * nunca preenche as extras — ver o comentário no botão da grade de extras.
+   */
+  onEscolherNoBanco?: () => void;
 }) {
   const t = useTranslations("images.studio");
   const tUpload = useTranslations("uploadErrors");
@@ -857,8 +864,16 @@ export function ImageStudio({
           {t("refs.historyTip")}
         </p>
 
-        {/* Fotos extras (opcionais — melhoram a semelhança) */}
+        {/* Fotos extras: mais ângulos da MESMA pessoa (semelhança) OU uma foto
+            DIFERENTE pra compor — cenário, ambiente, objeto, roupa. O segundo
+            uso existe desde sempre no back (generate/route.ts aceita
+            input_image_keys), mas nenhum texto da tela dizia isso: o caso
+            #e6c53db1 é um aluno que queria rosto de uma foto + consultório de
+            outra e concluiu que a plataforma não fazia. */}
         <span className={`${LABEL} mt-2`}>{t("refs.extrasLabel")}</span>
+        <p className="-mt-1 text-[12px] leading-snug text-[var(--ash)]">
+          {t("refs.extrasHelp")}
+        </p>
         <div
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
@@ -901,11 +916,29 @@ export function ImageStudio({
           {refs.length < MAX_EXTRAS && (
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              /* ⚠️ ARMADILHA CORRIGIDA (#e6c53db1). Este botão abria o seletor
+               * de arquivo (`fileInputRef` → `handleFiles`), e handleFiles
+               * manda TUDO pro banco: ele nunca chama setRefs, então a extra
+               * NÃO entrava e o contador ao lado não mexia. O aluno clicava no
+               * botão óbvio de "adicionar extra", escolhia a foto e não
+               * acontecia nada visível — daí "a plataforma não combina duas
+               * fotos". As extras só entram por `extraRequest`, que vem do
+               * "Adicionar como extra" da aba Imagens de Referência.
+               * Por isso aqui a gente LEVA a pessoa pra aba certa. O upload
+               * continua no dropzone acima, e a regra de 19/08 ("lote nunca
+               * preenche o quadro") segue intacta — não é ela que muda. */
+              onClick={() =>
+                onEscolherNoBanco
+                  ? onEscolherNoBanco()
+                  : fileInputRef.current?.click()
+              }
               aria-label={t("refs.addMore")}
               className="flex aspect-square flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--hairline-strong)] text-[var(--ash)] transition-colors hover:border-[var(--hairline-bright)] hover:text-[var(--silver)]"
             >
               <ImagePlus className="h-5 w-5" />
+              <span className="px-1 text-center text-[10px] leading-tight">
+                {t("refs.extrasPick")}
+              </span>
               <span className="font-mono text-[9px]">
                 {refs.length + (fixedRef ? 1 : 0)}/{MAX_IMAGES}
               </span>

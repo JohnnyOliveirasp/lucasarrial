@@ -60,8 +60,13 @@ const MAX_REFERENCE_IMAGES = 15;
 const MAX_REFERENCE_BYTES = 150 * 1024 * 1024;
 
 type Body = {
-  // Aceita uma (input_image_key) ou várias (input_image_keys) — várias fotos da
-  // mesma pessoa melhoram a semelhança. Todas vão pro Kie em input_urls.
+  // Aceita uma (input_image_key) ou várias (input_image_keys). Todas vão pro Kie
+  // em input_urls, e a primeira é a âncora do rosto.
+  // ⚠️ Vários usos, não um só — este comentário já dizia apenas "fotos da mesma
+  // pessoa melhoram a semelhança" e isso confundiu até o time interno (caso
+  // #e6c53db1): as chaves extras também servem pra COMPOR, ou seja trazer um
+  // cenário/ambiente/objeto/roupa de OUTRA foto. O aluno pede no prompt o que
+  // vem de cada uma. Não é um recurso novo: sempre funcionou por aqui.
   input_image_key?: string;
   input_image_keys?: string[];
   prompt?: string;

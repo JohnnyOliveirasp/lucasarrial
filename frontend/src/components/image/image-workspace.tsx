@@ -37,6 +37,21 @@ export function ImageWorkspace({
   // Foto apagada do banco: o studio tira ela do quadro (principal ou extra).
   const [removeRequest, setRemoveRequest] = useState<{ key: string; seq: number } | null>(null);
   const studioRef = useRef<HTMLElement>(null);
+  const bancoRef = useRef<HTMLElement>(null);
+
+  /**
+   * "Escolher em Imagens de Referência" (grade de extras → aqui). As fotos
+   * extras SÓ entram no quadro pelo `onAddExtra` desta aba, que por padrão nem
+   * está aberta (`aba` começa em "criadas") e mora numa seção abaixo do
+   * estúdio. Sem isto a pessoa não tem como chegar: era o caminho #e6c53db1.
+   */
+  function abrirBanco() {
+    setAba("refs");
+    // O setState acima ainda não pintou a aba; rola no próximo frame.
+    requestAnimationFrame(() =>
+      bancoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }
 
   function useAsReference(key: string, url: string) {
     setRefRequest((prev) => ({ key, url, seq: (prev?.seq ?? 0) + 1 }));
@@ -68,13 +83,14 @@ export function ImageWorkspace({
           removeRequest={removeRequest}
           onFixedRefKey={setCurrentRefKey}
           onExtrasChange={setExtrasKeys}
+          onEscolherNoBanco={abrirBanco}
           onRefsChanged={() => setRefsReloadKey((k) => k + 1)}
           onGenerated={() => setReloadKey((k) => k + 1)}
           onAnimate={(id) => setAnimateId(id)}
         />
       </section>
 
-      <section className="flex flex-col gap-4">
+      <section ref={bancoRef} className="flex flex-col gap-4">
         {/* Abas (19/08): "Imagens criadas" continua o histórico de sempre;
             "Referências salvas" é a área que o apagar-do-histórico não toca —
             nasceu do erro "uma das fotos de referência não existe mais". */}
