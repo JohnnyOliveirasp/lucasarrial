@@ -25,8 +25,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   compradorMereceConvite,
+  entitlementDaPlataforma,
   entitlementValeAcesso,
   eventoEhPagamento,
+  produtosDeCurso,
 } from "./acesso-regra.ts";
 
 const AGORA = "2026-09-08T12:00:00.000Z";
@@ -147,4 +149,57 @@ test("a condição de ACESSO do convite é a MESMA do gate, caso a caso", () => 
 
 test("o gate NÃO mudou na extração: active com data vencida continua sem acesso", () => {
   assert.equal(entitlementValeAcesso({ status: "active", access_until: PASSADO }, AGORA), false);
+});
+
+// ── condição 3: quem DECIDE o convite tem que ser linha de PLATAFORMA ──────
+//
+// #312, 15/09. O sweeper montava `ultimoEnt` pegando a linha de maior
+// updated_at do e-mail, SEM olhar `product_code`, e entregava essa linha pro
+// `compradorMereceConvite` — que só sabe perguntar "vale acesso?". Quem comprou
+// só o curso em 09/06 tem vitalício de CURSO (active, access_until NULL), que é
+// a linha mais nova que existe pra ele: ela ganharia a disputa e o convite
+// sairia. Desde o #313 a conta criada não adota entitlement de curso, então o
+// convite prometeria crédito reservado e entregaria nada.
+//
+// Os 4 casos reais de 09/06 estão travados aqui com produto e tudo.
+
+test("vitalício de CURSO não pode ser a linha que decide o convite", () => {
+  const cursos = produtosDeCurso({});
+  // A linha existe e "vale acesso" pela régua pura — é justamente por isso que
+  // a filtragem por produto precisa vir ANTES, e não depois.
+  const vitalicioDeCurso = { status: "active", access_until: null };
+  assert.equal(entitlementValeAcesso(vitalicioDeCurso, AGORA), true);
+  assert.equal(compradorMereceConvite(vitalicioDeCurso, PAGOU, AGORA), true);
+  // ...e é por isso que ela nunca pode chegar lá: não é da plataforma.
+  for (const produtoDeCurso of ["7283229", "7283335"]) {
+    assert.equal(
+      entitlementDaPlataforma(produtoDeCurso, cursos),
+      false,
+      `${produtoDeCurso} não é curso — o sweeper voltaria a convidar comprador de curso`,
+    );
+  }
+});
+
+test("linha da plataforma continua decidindo normalmente", () => {
+  const cursos = produtosDeCurso({});
+  assert.equal(entitlementDaPlataforma("7851642", cursos), true);
+});
+
+test("product_code ausente NÃO é lido como curso (pagante antigo não perde o convite)", () => {
+  const cursos = produtosDeCurso({});
+  // Ausência de informação não é a informação "é curso" — mesma guarda do #222.
+  assert.equal(entitlementDaPlataforma(null, cursos), true);
+  assert.equal(entitlementDaPlataforma("", cursos), true);
+  assert.equal(entitlementDaPlataforma("   ", cursos), true);
+});
+
+test("SGP vindo do ambiente também é curso pro sweeper", () => {
+  // O sweeper chama produtosDeCurso() sem argumento (lê process.env), a mesma
+  // lista do conserto e do detector. Um SGP novo em ambiente não pode ficar de
+  // fora só aqui: era assim que o conserto pulava a órfã por ser curso
+  // enquanto o detector a contava como plataforma.
+  const cursos = produtosDeCurso({ HOTMART_SGP_PRODUCT_ID: "9999999" });
+  assert.equal(entitlementDaPlataforma("9999999", cursos), false);
+  assert.equal(entitlementDaPlataforma("7283229", cursos), false);
+  assert.equal(entitlementDaPlataforma("7851642", cursos), true);
 });

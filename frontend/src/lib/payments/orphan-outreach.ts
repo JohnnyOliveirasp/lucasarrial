@@ -17,7 +17,12 @@
 import { getAdmin } from "@/lib/db/admin";
 import { sendEmail } from "@/lib/email/resend";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
-import { compradorMereceConvite, eventoEhPagamento } from "@/lib/payments/acesso-regra";
+import {
+  compradorMereceConvite,
+  entitlementDaPlataforma,
+  eventoEhPagamento,
+  produtosDeCurso,
+} from "@/lib/payments/acesso-regra";
 import {
   decidirAcaoConvite,
   registroDoConvite,
@@ -208,22 +213,47 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
   // porque o dedupe eterno os calava. Ao tornar o dedupe cíclico, sem esta
   // guarda eu criaria o incidente 72a4c9db de novo: convite pra cliente ATIVO.
   const nowIso = new Date().toISOString();
+  // A MESMA lista de curso que o conserto (`reconcileUserEntitlements`) e o
+  // detector (`sgp/reconciliacao.ts`) usam — lida do ambiente, não copiada.
+  const cursos = produtosDeCurso();
   const ultimoEnt = new Map<string, { status: string; access_until: string | null; at: string }>();
   const jaTemDono = new Set<string>();
   for (let i = 0; i < buyerEmails.length; i += CHUNK) {
     const chunk = buyerEmails.slice(i, i + CHUNK);
     const { data, error } = await admin
       .from("entitlements")
-      .select("buyer_email, status, access_until, updated_at, created_at, user_id")
+      .select("buyer_email, status, access_until, updated_at, created_at, user_id, product_code")
       .in("buyer_email", chunk);
     if (error) throw new Error(`[orphan-outreach] guarda entitlements falhou: ${error.message}`);
     for (const e of (data ?? []) as {
       buyer_email: string | null; status: string | null; access_until: string | null;
       updated_at: string | null; created_at: string | null; user_id: string | null;
+      product_code: string | null;
     }[]) {
       const em = (e.buyer_email ?? "").toLowerCase();
       if (!em) continue;
+      // `jaTemDono` olha TODA linha, inclusive a de curso, DE PROPÓSITO: a
+      // pergunta dele é "esta compra já está ligada a alguma conta?", e uma
+      // linha de curso com dono responde que sim. Filtrar produto antes daqui
+      // reabriria o 72a4c9db (convite pra cliente ATIVO).
       if (e.user_id) jaTemDono.add(em);
+      // ⚠️ SÓ entitlement da PLATAFORMA pode decidir o convite (#312, 15/09).
+      // `ultimoEnt` escolhia a linha mais recente do e-mail sem olhar produto,
+      // e `compradorMereceConvite` só pergunta "este entitlement vale acesso?".
+      // Um vitalício de CURSO (active, access_until NULL) é a linha mais nova
+      // que existe pra quem comprou só o curso em 09/06: ele venceria a disputa
+      // e o convite sairia dizendo "seus créditos estão reservados, é só criar
+      // a conta". Desde o #313 (36886fa) a conta criada NÃO adota entitlement
+      // de curso — a promessa não teria o que entregar.
+      //
+      // Hoje isto é NO-OP MEDIDO, não suposição: `buyers` só é alimentado por
+      // compra do PRODUCT_ID da plataforma, e os 13 e-mails da base cujo
+      // entitlement mais recente é de curso têm ZERO evento de compra desse
+      // produto (medido 15/09). A guarda existe pro dia em que alguém atender
+      // ao pedido (a) do #312 e fizer o varredor enxergar o SGP — que é o mesmo
+      // dia em que a armadilha arma. Aviso em nota já falhou três vezes neste
+      // cartão; em código ele não depende de ninguém ler.
+      if (!entitlementDaPlataforma(e.product_code, cursos)) continue;
       const at = e.updated_at ?? e.created_at ?? "";
       const cur = ultimoEnt.get(em);
       if (!cur || at > cur.at) {
