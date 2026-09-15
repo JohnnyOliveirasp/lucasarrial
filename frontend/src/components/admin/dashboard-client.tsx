@@ -129,8 +129,10 @@ export function DashboardClient() {
         </div>
       </div>
 
-      {/* Financeiro (KPIs + compra×promoção + destino do bruto + gasto por ferramenta) */}
-      <FinanceSection money={money} fin={fin} periodLabel={periodLabel} />
+      {/* Financeiro (KPIs + retiradas dos sócios + compra×promoção + destino do
+          bruto + gasto por ferramenta). gran/periodKey vão junto porque o bloco
+          de Retiradas busca a própria lista na MESMA janela de calendário. */}
+      <FinanceSection money={money} fin={fin} periodLabel={periodLabel} gran={gran} periodKey={periodKey} />
 
       {/* Acumulado da operação inteira — não depende do filtro de período.
           Lucro acumulado é a régua do gatilho de retirada dos sócios (R$15k).
