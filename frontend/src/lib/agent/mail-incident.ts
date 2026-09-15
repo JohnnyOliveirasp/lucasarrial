@@ -97,6 +97,14 @@ export function classifyComplaint(reason: string, excerpt = ""): string | null {
   return null;
 }
 
+/** Prefixo das assinaturas desta família. Compartilhado pelas duas funções de
+ *  propósito: se `incidentSignature` mudar de prefixo, `assinaturaLegada` muda
+ *  junto e não fica procurando uma chave que ninguém mais escreve. */
+const PREFIXO = "fast-email";
+
+/** Canais válidos. Fora destes, a assinatura não é desta família. */
+const CANAIS = ["tec", "atend"] as const;
+
 /** Monta a assinatura de dedupe. Classe null → formato legado (só remetente). */
 export function incidentSignature(
   technical: boolean,
@@ -105,6 +113,44 @@ export function incidentSignature(
 ): string {
   const canal = technical ? "tec" : "atend";
   return classe
-    ? `fast-email:${canal}:${classe}:${fromEmail}`
-    : `fast-email:${canal}:${fromEmail}`;
+    ? `${PREFIXO}:${canal}:${classe}:${fromEmail}`
+    : `${PREFIXO}:${canal}:${fromEmail}`;
+}
+
+/**
+ * A assinatura LEGADA (3 segmentos, sem classe) que o MESMO remetente teria
+ * antes do conserto de 15/09 — ou null quando `signature` não é uma chave nova
+ * desta família.
+ *
+ * POR QUE ISTO EXISTE (chamado #410). O conserto do dedupe por queixa (#23,
+ * commit 3b9cb97) entrou em produção sem cuidar dos chamados JÁ ABERTOS sob a
+ * chave de 3 segmentos. Como a busca casa `signature` por igualdade EXATA
+ * (`lib/incidents/reportar.ts`), um chamado velho nunca mais soma ocorrência:
+ * a próxima queixa do mesmo aluno procura a chave de 4 segmentos, não acha
+ * nada, e nasce um chamado novo — o histórico racha em dois. Medido em 15/09:
+ * 23 chamados abertos com chave de 3 segmentos contra 2 com 4, e o racha já
+ * consumado uma vez (#408 nasceu do #356, o reembolso da Maria Teresa).
+ *
+ * A chave legada é DERIVADA da nova (tira-se o 3º segmento e remonta-se pelo
+ * `incidentSignature`), nunca remontada na mão — remontar na mão é como as
+ * duas cópias divergem depois.
+ *
+ * ESCOPO DELIBERADAMENTE ESTREITO: só devolve algo para
+ * `fast-email:{tec|atend}:{classe}:{email}`, exatamente 4 segmentos. Uma chave
+ * que JÁ é legada devolve null (não existe fallback do fallback), e as outras
+ * famílias de assinatura da casa (`help:atend:<email>`, `carol-grupo:…`,
+ * `sgp-lote:…`) nunca entram neste caminho. `abrirChamadoReportado` é porta
+ * compartilhada por 6 chamadores — alargar isto aqui mexeria em todos eles.
+ */
+export function assinaturaLegada(signature: string): string | null {
+  const partes = signature.split(":");
+  if (partes.length !== 4) return null;
+  const [prefixo, canal, classe, email] = partes;
+  if (prefixo !== PREFIXO) return null;
+  if (!(CANAIS as readonly string[]).includes(canal)) return null;
+  // Classe e e-mail vazios não são chave de ninguém: `fast-email:tec::x` só
+  // pode ter vindo de dado corrompido, e adotar em cima disso é pior que não
+  // adotar.
+  if (!classe || !email) return null;
+  return incidentSignature(canal === "tec", email, null);
 }

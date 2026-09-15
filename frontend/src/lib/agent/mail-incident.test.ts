@@ -14,10 +14,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyComplaint, incidentSignature } from "./mail-incident.ts";
+import { assinaturaLegada, classifyComplaint, incidentSignature } from "./mail-incident.ts";
 
 const KATIA = "katiasalvador32@gmail.com";
 const SIG_LEGADA = `fast-email:tec:${KATIA}`;
+
+/** Maria Teresa (#356 legado / #408 novo) — o racha REAL que o #410 mediu. */
+const MARIA = "tuquinha36@hotmail.com";
 
 // Ocorrência 1 (19/08 12:10 UTC) — resumo da Fast que virou o title do ce6e157d.
 const QUEIXA_ECO =
@@ -116,4 +119,52 @@ test("canal atendimento (technical=false) mantém o prefixo atend na chave", () 
     incidentSignature(false, KATIA, classifyComplaint("quero reembolso da mensalidade")),
     `fast-email:atend:cobranca:${KATIA}`,
   );
+});
+
+// ── #410: a chave legada que a busca tem que tentar antes de abrir card novo ──
+
+test("#410: a legada é a chave nova SEM o segmento de classe (caso real #356/#408)", () => {
+  // A queixa da Maria Teresa de 15/09 11:52Z classifica em "cobranca" e vira
+  // `fast-email:atend:cobranca:<email>`. O chamado que tem o histórico dela
+  // (#356) está gravado na chave de 3 segmentos — é ESTA que o fallback busca.
+  const nova = incidentSignature(false, MARIA, classifyComplaint("quero o reembolso da minha compra"));
+  assert.equal(nova, `fast-email:atend:cobranca:${MARIA}`);
+  assert.equal(assinaturaLegada(nova), `fast-email:atend:${MARIA}`);
+});
+
+test("#410: a legada é DERIVADA, bate com o que incidentSignature produz pra classe null", () => {
+  // Trava contra divergência: se alguém mexer no formato e só num dos lados, a
+  // busca do fallback passa a procurar uma chave que ninguém nunca gravou.
+  for (const tec of [true, false]) {
+    for (const classe of ["corte", "pacing", "cobranca", "acesso"]) {
+      assert.equal(
+        assinaturaLegada(incidentSignature(tec, KATIA, classe)),
+        incidentSignature(tec, KATIA, null),
+      );
+    }
+  }
+});
+
+test("#410: canal NÃO se mistura — legada de tec nunca aponta pro card de atend", () => {
+  assert.equal(assinaturaLegada(`fast-email:tec:corte:${KATIA}`), `fast-email:tec:${KATIA}`);
+  assert.equal(assinaturaLegada(`fast-email:atend:corte:${KATIA}`), `fast-email:atend:${KATIA}`);
+});
+
+test("#410: chave que JÁ é legada devolve null (não existe fallback do fallback)", () => {
+  assert.equal(assinaturaLegada(SIG_LEGADA), null);
+  assert.equal(assinaturaLegada(incidentSignature(false, KATIA, null)), null);
+});
+
+test("#410: as OUTRAS famílias de assinatura da casa não entram neste caminho", () => {
+  // `abrirChamadoReportado` é porta compartilhada (help, sgp, escalate, bounce,
+  // rescue, reconciliação). O fallback tem que ser cego pra todas elas.
+  assert.equal(assinaturaLegada(`help:atend:${KATIA}`), null);
+  assert.equal(assinaturaLegada("carol-grupo:pedido:abc:123"), null);
+  assert.equal(assinaturaLegada(`sgp-lote:erro:503:${KATIA}`), null);
+  assert.equal(assinaturaLegada(""), null);
+  // Canal desconhecido: não é chave desta família, mesmo com 4 segmentos.
+  assert.equal(assinaturaLegada(`fast-email:zap:corte:${KATIA}`), null);
+  // Classe vazia só vem de dado corrompido — adotar em cima disso é pior.
+  assert.equal(assinaturaLegada(`fast-email:tec::${KATIA}`), null);
+  assert.equal(assinaturaLegada("fast-email:tec:corte:"), null);
 });
