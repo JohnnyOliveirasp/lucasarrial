@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
       return badRequest("Esse áudio não está pronto.");
     }
     // Amostra automática do treino: serve pra OUVIR a voz, não pra vídeo
-    // (frase fixa "Oi! Esta é a minha voz clonada..."). O seletor já não a
+    // (frase fixa "Olá. Esta é a minha voz clonada..."). O seletor já não a
     // oferece mais; esta trava pega aba antiga / chamada direta na API.
     // 85 clones de 65 alunos saíram "ruins" por isso antes do filtro.
     if (gen.audio_path.endsWith("/sample.wav")) {

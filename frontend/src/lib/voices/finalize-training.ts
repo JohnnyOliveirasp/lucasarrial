@@ -90,9 +90,15 @@ export type TrainOutput = {
   stderr_tail?: string;
 };
 
-/** Texto fixo da amostra — TEM que bater com DEFAULT_SAMPLE_TEXT do worker. */
+/** Texto fixo da amostra — TEM que bater com DEFAULT_SAMPLE_TEXT do worker
+ * (`runpod-worker/sample_gen.py`). Só é usado como FALLBACK de rótulo: quem
+ * escolhe o que a amostra realmente FALA é o worker. Divergir daqui não muda
+ * o áudio, muda o texto que o aluno lê no histórico — que é pior, porque a
+ * legenda passa a mentir sobre o áudio. `test_amostra_pt_e_neutra` (worker)
+ * lê esta constante e falha se as duas saírem de sincronia.
+ * ⚠️ Neutro entre PT-BR e PT-PT de propósito — incidente #380. */
 const SAMPLE_TEXT =
-  "Oi! Esta é a minha voz clonada. Se você está me ouvindo com clareza, o treinamento funcionou muito bem.";
+  "Olá. Esta é a minha voz clonada. Se o som está claro e natural, o resultado final vai soar assim.";
 
 /** Erros de dataset inútil → o usuário não recebeu nada; devolvemos os créditos.
  * Checa também o erro CRU: quando o worker devolve {"error": ...}, o RunPod
