@@ -20,21 +20,42 @@
  * aba (a fila de trabalho) NÃO mudou: ela continua sendo o que se olha no dia a
  * dia, e a nova é a lista de prospecção.
  *
+ * Pedido do Lucas (recado 5): duas coisas que o time faz todo dia e que a tela
+ * não fazia. (a) BUSCA por nome, e-mail e WhatsApp, nas duas abas — o atendente
+ * abre a tela pra atender UMA pessoa que acabou de chamar, e varria a tabela com
+ * o olho. (b) PAINEL por aluno com o que já foi GERADO (voz, imagens, vídeo) —
+ * pra saber se a voz saiu, ele saía da tela e ia perguntar pra alguém.
+ *
+ * ⚠️ ONDE AS DUAS COISAS NOVAS PODEM FICAR, e isso é conserto, não gosto: os
+ * botões de ação desta tela já ficaram FORA do campo de visão uma vez, e o Lucas
+ * reclamou 3x. Medido em Chrome headless a 1267px (a largura real de uso), eles
+ * vivem em x=631..1177. Por isso: a BUSCA vai ACIMA da tabela, nunca como
+ * coluna; e o PAINEL abre em LINHA NOVA, nunca como coluna lateral. Nenhuma das
+ * duas pode comer a folga até a borda — ver a medição no PR.
+ *
  * A régua (tradução do status, frase de ação, contadores, ordem, silêncio da
- * cobrança) mora em lib/sgp/painel.ts e lib/sgp/compradores.ts e é calculada no
- * servidor — aqui é só desenho.
+ * cobrança, e o que pode aparecer no painel de gerados) mora em lib/sgp/painel.ts,
+ * lib/sgp/compradores.ts, lib/sgp/busca.ts e lib/sgp/geracoes-pure.ts, e é
+ * calculada fora daqui — nesta tela é só desenho.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCheck,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock,
+  ExternalLink,
   MessageCircle,
+  Search,
   Undo2,
   XCircle,
 } from "lucide-react";
+import { filtrarBusca } from "@/lib/sgp/busca";
+import type { SgpGeracoes } from "@/lib/sgp/geracoes";
+import { videoLegivel, vozLegivel } from "@/lib/sgp/geracoes-pure";
 import {
   SGP_PARADO_HORAS,
   type LinhaPainel,
@@ -51,6 +72,9 @@ import {
 type EstadoCobranca = { disponivel: boolean; silencioHoras: number };
 
 type Aba = "fila" | "todos";
+
+/** O painel de gerados de UMA linha: o que veio, se está indo, ou por que não veio. */
+type EstadoGeracoes = { carregando: boolean; erro: string | null; dados: SgpGeracoes | null };
 
 /**
  * A etiqueta PRONTO / AGUARDANDO / ERRO (pedido do Lucas, 10/09).
@@ -138,6 +162,27 @@ export default function SgpPage() {
    * `situacao` casa com LinhaPainel.situacao; `etapa` casa com LinhaPainel.status.
    */
   const [filtro, setFiltro] = useState<{ tipo: "situacao" | "etapa"; valor: string } | null>(null);
+
+  /**
+   * O que foi digitado na busca. FICA FORA DO `pedidos` pelo mesmo motivo dos
+   * rascunhos de erro/conclusão: a tela recarrega sozinha a cada 30s, e o time
+   * digita o nome do aluno enquanto fala com ele no WhatsApp. Se a busca morasse
+   * na linha, o refresh limparia o campo no meio do atendimento.
+   */
+  const [busca, setBusca] = useState("");
+
+  /**
+   * Qual linha está com o painel de gerados aberto, e o que já foi carregado.
+   *
+   * UMA POR VEZ de propósito: cada painel custa 5 consultas + assinatura de URL
+   * no servidor. Deixar várias abertas com o refresh de 30s rodando seria
+   * marteladas no banco pra mostrar o que ninguém está olhando.
+   *
+   * O cache por id (`geracoes`) faz fechar-e-reabrir não custar nada, e também
+   * atravessa o refresh — quem fecha a linha não perde o que já viu.
+   */
+  const [expandido, setExpandido] = useState<string | null>(null);
+  const [geracoes, setGeracoes] = useState<Record<string, EstadoGeracoes>>({});
 
   /** Mesmo trio pro "Concluir atendimento" (migration 110), e pelo mesmo motivo:
    *  o rascunho tem que atravessar o refresh de 30s sem sumir do meio da frase. */
@@ -324,6 +369,47 @@ export default function SgpPage() {
     [load, rascunhoConcluir],
   );
 
+  /**
+   * Busca o que já foi gerado pra UMA linha. Só sob clique (ver o comentário do
+   * estado): nunca entra no polling de 30s.
+   */
+  const carregarGeracoes = useCallback(async (id: string) => {
+    setGeracoes((g) => ({ ...g, [id]: { carregando: true, erro: null, dados: null } }));
+    try {
+      const res = await fetch(`/api/v1/admin/sgp/${id}/geracoes`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setGeracoes((g) => ({ ...g, [id]: { carregando: false, erro: null, dados: json } }));
+      } else {
+        setGeracoes((g) => ({
+          ...g,
+          [id]: {
+            carregando: false,
+            erro: json?.error?.message || "Não consegui carregar o que foi gerado.",
+            dados: null,
+          },
+        }));
+      }
+    } catch {
+      setGeracoes((g) => ({
+        ...g,
+        [id]: { carregando: false, erro: "Não consegui carregar o que foi gerado.", dados: null },
+      }));
+    }
+  }, []);
+
+  /** Abre/fecha o painel. Fechar NÃO descarta o que já veio (reabrir é de graça). */
+  const alternarGeracoes = useCallback(
+    (id: string) => {
+      const fechando = expandido === id;
+      setExpandido(fechando ? null : id);
+      // Recarrega só o que falhou ou o que nunca foi buscado — reabrir uma linha
+      // que já deu certo não gasta consulta nenhuma.
+      if (!fechando && !geracoes[id]?.dados && !geracoes[id]?.carregando) void carregarGeracoes(id);
+    },
+    [expandido, geracoes, carregarGeracoes],
+  );
+
   const silencioHoras = cobranca?.silencioHoras ?? SGP_PARADO_HORAS;
 
   /** Clicar na pill já ligada DESLIGA o filtro — sem isso não há como voltar atrás. */
@@ -334,10 +420,21 @@ export default function SgpPage() {
   /**
    * O filtro é só de LEITURA, em cima do que já veio: não refaz busca e não
    * altera nada no banco. Some da tela, não some do mundo.
+   *
+   * A BUSCA entra depois da pill e se SOMA a ela (as duas valem ao mesmo tempo):
+   * o time filtra por ERRO e procura o aluno dentro daquele recorte. A régua de
+   * quem casa mora em lib/sgp/busca.ts, testada lá.
    */
-  const visiveis = filtro
+  const porPill = filtro
     ? pedidos.filter((p) => (filtro.tipo === "situacao" ? p.situacao === filtro.valor : p.status === filtro.valor))
     : pedidos;
+
+  const visiveis = filtrarBusca(busca, porPill, (p) => ({
+    nome: p.nome,
+    email: p.email,
+    // Vem "—" quando não há telefone; a régua ignora, porque não tem dígito.
+    telefone: p.whatsapp,
+  }));
 
   const rotuloDoFiltro =
     filtro?.tipo === "situacao"
@@ -466,21 +563,55 @@ export default function SgpPage() {
         </div>
       )}
 
-      {/* Filtro ligado precisa DIZER que está ligado: sem isto, "sumiram alunos"
-          vira chamado. Mostra o que está filtrando e como sair num clique. */}
-      {filtro && (
+      {/* ⚠️ A BUSCA VIVE AQUI, ACIMA DA TABELA — nunca como coluna. Coluna nova
+          empurraria os botões de ação pra fora da tela de 1267px, que é o
+          defeito que o Lucas reclamou 3x. Ver o ⚠️ do topo do arquivo. */}
+      <CampoBusca
+        valor={busca}
+        onMudar={setBusca}
+        placeholder="Buscar por nome, e-mail ou WhatsApp…"
+        achados={visiveis.length}
+      />
+
+      {/* Recorte ligado precisa DIZER que está ligado: sem isto, "sumiram alunos"
+          vira chamado. Mostra o que está recortando e como sair num clique — e
+          fala dos DOIS (pill e busca), porque eles se somam. */}
+      {(filtro || busca.trim() !== "") && (
         <div className="flex flex-wrap items-center gap-2 text-[13px] text-[var(--body)]">
           <span>
-            Mostrando <strong>{visiveis.length}</strong> de {pedidos.length} — filtrado por{" "}
-            <strong>{rotuloDoFiltro}</strong>.
+            Mostrando <strong>{visiveis.length}</strong> de {pedidos.length}
+            {filtro ? (
+              <>
+                {" "}
+                — filtrado por <strong>{rotuloDoFiltro}</strong>
+              </>
+            ) : null}
+            {busca.trim() !== "" ? (
+              <>
+                {" "}
+                — procurando por <strong>{busca.trim()}</strong>
+              </>
+            ) : null}
+            .
           </span>
-          <button
-            type="button"
-            onClick={() => setFiltro(null)}
-            className="rounded-[var(--radius-full)] border border-[var(--hairline-strong)] px-3 py-1 text-[12px] text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)]"
-          >
-            limpar filtro ✕
-          </button>
+          {filtro && (
+            <button
+              type="button"
+              onClick={() => setFiltro(null)}
+              className="rounded-[var(--radius-full)] border border-[var(--hairline-strong)] px-3 py-1 text-[12px] text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)]"
+            >
+              limpar filtro ✕
+            </button>
+          )}
+          {busca.trim() !== "" && (
+            <button
+              type="button"
+              onClick={() => setBusca("")}
+              className="rounded-[var(--radius-full)] border border-[var(--hairline-strong)] px-3 py-1 text-[12px] text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)]"
+            >
+              limpar busca ✕
+            </button>
+          )}
         </div>
       )}
 
@@ -495,7 +626,16 @@ export default function SgpPage() {
           <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">carregando…</div>
         ) : visiveis.length === 0 ? (
           <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">
-            {filtro ? "nenhum aluno neste filtro" : "nenhum pedido de SGP ainda"}
+            {/* "Nada encontrado" precisa dizer POR QUE está vazio. Sem isso, o
+                time lê "nenhum pedido de SGP ainda" com a busca ligada e conclui
+                que o aluno não existe — quando ele só não casou com o texto. */}
+            {busca.trim() !== ""
+              ? filtro
+                ? "nenhum aluno com esse texto DENTRO deste filtro — tente limpar o filtro"
+                : "nenhum aluno com esse texto"
+              : filtro
+                ? "nenhum aluno neste filtro"
+                : "nenhum pedido de SGP ainda"}
           </div>
         ) : (
           /**
@@ -533,8 +673,8 @@ export default function SgpPage() {
             </thead>
             <tbody>
               {visiveis.map((p) => (
+                <Fragment key={p.id}>
                 <tr
-                  key={p.id}
                   className={`border-t border-[var(--hairline)] align-top ${
                     p.concluido
                       ? // Encerrado pelo time: some do vermelho e perde destaque,
@@ -552,12 +692,33 @@ export default function SgpPage() {
                 >
                   {/* min-w: sem ele o nome é a primeira coluna a ser espremida e
                       "Stella Maris Gomes Pereira Pontes Pinheiro" vira 6 linhas,
-                      inflando a altura da linha inteira. */}
+                      inflando a altura da linha inteira.
+
+                      ⚠️ O gatilho do painel mora AQUI DENTRO, na primeira coluna,
+                      e de dentro do mesmo `min-w-[190px]`: é a única posição que
+                      não empurra as colunas 2–4 e, com elas, os três botões de
+                      ação. Ele é o próprio NOME (alvo grande, e o nome é onde a
+                      mão já vai), com a seta como aviso de que abre. */}
                   <Td className="min-w-[190px] font-medium text-[var(--ink)]">
-                    {p.parado && (
-                      <span className="mr-1.5 inline-block align-middle text-[var(--status-error)]">●</span>
-                    )}
-                    {p.nome}
+                    <button
+                      type="button"
+                      onClick={() => alternarGeracoes(p.id)}
+                      aria-expanded={expandido === p.id}
+                      title="Ver o que já foi gerado para este aluno"
+                      className="flex w-full items-start gap-1 text-left transition-colors hover:text-[var(--status-online)]"
+                    >
+                      {expandido === p.id ? (
+                        <ChevronDown className="mt-[3px] size-3.5 shrink-0 text-[var(--mute)]" />
+                      ) : (
+                        <ChevronRight className="mt-[3px] size-3.5 shrink-0 text-[var(--mute)]" />
+                      )}
+                      <span>
+                        {p.parado && (
+                          <span className="mr-1.5 inline-block align-middle text-[var(--status-error)]">●</span>
+                        )}
+                        {p.nome}
+                      </span>
+                    </button>
                   </Td>
                   <Td className="min-w-[180px]">
                     <Etiqueta
@@ -628,6 +789,24 @@ export default function SgpPage() {
                     {p.erro ?? "—"}
                   </Td>
                 </tr>
+                {/* ⚠️ LINHA NOVA, não coluna lateral: é o que mantém os três
+                    botões de ação onde estão. A tabela é larga (~1780px) e rola
+                    na horizontal, então o miolo do painel é `sticky left-0` —
+                    sem isso ele nasceria na largura do colSpan e o time teria
+                    que rolar pro lado pra ler o que acabou de abrir. */}
+                {expandido === p.id && (
+                  <tr className="border-t border-[var(--hairline)] bg-[var(--surface-deep)]">
+                    <td colSpan={14} className="px-3 py-4">
+                      <div className="sticky left-0 w-fit max-w-[1100px]">
+                        <PainelGeracoes
+                          estado={geracoes[p.id]}
+                          onTentarDeNovo={() => carregarGeracoes(p.id)}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -709,6 +888,271 @@ function BotaoAba({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * A BUSCA (pedido do Lucas, recado 5) — nome, e-mail ou WhatsApp.
+ *
+ * ⚠️ MORA ACIMA DA TABELA, NAS DUAS ABAS, e isso não é estética: coluna nova
+ * empurraria os três botões de ação pra fora da tela de 1267px, que é o defeito
+ * reclamado 3x. Aqui em cima ela não disputa um pixel com a tabela.
+ *
+ * `type="search"` de propósito: o Chrome desenha o ✕ de limpar sozinho, e o time
+ * apaga a busca sem ter que selecionar o texto na mão entre um atendimento e
+ * outro.
+ *
+ * O contador ao lado existe porque zero resultados precisa ser um FATO na tela,
+ * não uma tabela vazia que o atendente lê como "esse aluno não existe".
+ */
+function CampoBusca({
+  valor,
+  onMudar,
+  placeholder,
+  achados,
+}: {
+  valor: string;
+  onMudar: (v: string) => void;
+  placeholder: string;
+  achados: number;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="relative w-full max-w-[420px]">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--ash)]" />
+        <input
+          type="search"
+          value={valor}
+          onChange={(e) => onMudar(e.target.value)}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          className="w-full rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] py-2 pl-9 pr-3 text-[13px] text-[var(--ink)] outline-none placeholder:text-[var(--ash)] focus:border-[var(--ink)]/60"
+        />
+      </div>
+      {valor.trim() !== "" && (
+        <span
+          className={`font-mono text-[12px] tabular-nums ${
+            achados === 0 ? "text-[var(--status-warn)]" : "text-[var(--mute)]"
+          }`}
+        >
+          {achados === 0 ? "nenhum aluno com esse texto" : `${achados} encontrado(s)`}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * O PAINEL "o que já foi gerado" (pedido do Lucas, recado 5), que abre em linha
+ * nova embaixo do aluno.
+ *
+ * Quem decide o QUE pode aparecer é lib/sgp/geracoes-pure.ts (com os testes);
+ * aqui é só desenho. Três decisões que NÃO são de desenho e por isso estão
+ * escritas:
+ *
+ *  1. VÍDEO NÃO É ENTREGA DO SGP. As etapas são recebido → foto → voz → pronto:
+ *     não existe passo de vídeo. O que aparece ali é o que a pessoa fez na
+ *     PLATAFORMA depois de entrar, e a seção DIZ isso — senão o atendente
+ *     afirmaria pro aluno uma entrega que o SGP nunca prometeu.
+ *  2. O QUE NÃO DEU PRA LER APARECE. Consulta que falhou vira aviso, não lista
+ *     vazia: "nenhuma imagem" tem que significar que não há imagem, e não que a
+ *     tela não conseguiu olhar.
+ *  3. TETO DIZ QUE CORTOU. "12 de 30" em vez de 12 caladas.
+ */
+function PainelGeracoes({
+  estado,
+  onTentarDeNovo,
+}: {
+  estado: EstadoGeracoes | undefined;
+  onTentarDeNovo: () => void;
+}) {
+  if (!estado || estado.carregando) {
+    return (
+      <span className="font-mono text-[12px] text-[var(--ash)]">carregando o que foi gerado…</span>
+    );
+  }
+
+  if (estado.erro) {
+    return (
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-[13px] text-[var(--status-error)]">{estado.erro}</span>
+        <button
+          type="button"
+          onClick={onTentarDeNovo}
+          className="rounded-[var(--radius)] border border-[var(--hairline-strong)] px-2.5 py-1 text-[12px] text-[var(--ink)] transition-colors hover:bg-[var(--surface-card)]"
+        >
+          tentar de novo
+        </button>
+      </div>
+    );
+  }
+
+  const g = estado.dados;
+  if (!g) return null;
+
+  // Aluno que ainda não terminou o envio: não há conta, logo não há nada gerado.
+  // A frase vem do servidor pronta pro atendente ler (nada de "user_id null").
+  if (g.motivo) {
+    return <p className="max-w-[640px] text-[13px] text-[var(--body)]">{g.motivo}</p>;
+  }
+
+  const vazio = !g.voz && g.imagens.length === 0 && g.videos.length === 0;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Decisão 2: o que não deu pra ler vem ANTES de tudo, senão a lista vazia
+          embaixo seria lida como resposta. */}
+      {g.falhas.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--status-warn)]/5 px-3 py-2">
+          {g.falhas.map((f, i) => (
+            <span key={i} className="text-[12px] text-[var(--status-warn)]">
+              {f} Isso é falha da tela, não do pedido — não dá pra dizer ao aluno que não existe.
+            </span>
+          ))}
+        </div>
+      )}
+
+      {vazio && g.falhas.length === 0 && (
+        <p className="text-[13px] text-[var(--body)]">
+          Nada gerado ainda para este aluno — nem voz, nem imagem, nem vídeo.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-start gap-x-10 gap-y-6">
+        <SecaoGerados titulo="Voz do pedido">
+          {g.voz ? (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[13px] text-[var(--ink)]">{vozLegivel(g.voz.status)}</span>
+              <span className="font-mono text-[11px] text-[var(--ash)]">{dt(g.voz.data)}</span>
+              {g.voz.erro && (
+                <span className="max-w-[300px] font-mono text-[11px] text-[var(--status-error)]">
+                  {g.voz.erro}
+                </span>
+              )}
+              {g.voz.amostraUrl ? (
+                <audio
+                  controls
+                  preload="none"
+                  src={g.voz.amostraUrl}
+                  className="mt-1 h-9 w-[280px]"
+                >
+                  <track kind="captions" />
+                </audio>
+              ) : (
+                <span className="text-[12px] text-[var(--ash)]">
+                  {g.voz.status === "ready"
+                    ? "a amostra de áudio não foi encontrada"
+                    : "ainda não há áudio para ouvir"}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-[12px] text-[var(--ash)]">
+              Este pedido ainda não tem voz criada.
+            </span>
+          )}
+        </SecaoGerados>
+
+        <SecaoGerados
+          titulo="Imagens do clone"
+          // Decisão 3: teto que corta em silêncio faz o atendente afirmar um
+          // número menor do que o aluno tem.
+          nota={
+            g.imagensTotal > g.imagens.length
+              ? `mostrando ${g.imagens.length} de ${g.imagensTotal}`
+              : null
+          }
+        >
+          {g.imagens.length === 0 ? (
+            <span className="text-[12px] text-[var(--ash)]">Nenhuma imagem gerada ainda.</span>
+          ) : (
+            <div className="flex max-w-[460px] flex-wrap gap-2">
+              {g.imagens.map((img) => (
+                <a
+                  key={img.id ?? img.url}
+                  href={img.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`Abrir em tamanho real · ${dt(img.criadoEm)}`}
+                  className="block overflow-hidden rounded-[var(--radius)] border border-[var(--hairline-strong)] transition-colors hover:border-[var(--hairline-bright)]"
+                >
+                  {/* <img> cru, não next/image: são URLs assinadas de 1h de um
+                      bucket R2, que o otimizador não tem como pré-processar. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={img.url} alt="" loading="lazy" className="size-[72px] object-cover" />
+                </a>
+              ))}
+            </div>
+          )}
+        </SecaoGerados>
+
+        <SecaoGerados
+          titulo="Vídeos na plataforma"
+          // Decisão 1: escrito na própria seção, não só no comentário do código.
+          nota="não faz parte da entrega do SGP"
+        >
+          {g.videos.length === 0 ? (
+            <span className="text-[12px] text-[var(--ash)]">
+              Esta pessoa ainda não fez vídeo na plataforma.
+            </span>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {g.videos.map((v) => (
+                <span key={v.id ?? `${v.origem}-${v.criadoEm}`} className="flex items-center gap-2">
+                  {v.url ? (
+                    <a
+                      href={v.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-[13px] text-[var(--ink)] underline underline-offset-2 hover:text-[var(--status-online)]"
+                    >
+                      <ExternalLink className="size-3.5 shrink-0" />
+                      {v.nome ?? "vídeo sem nome"}
+                    </a>
+                  ) : (
+                    <span className="text-[13px] text-[var(--mute)]">
+                      {v.nome ?? "vídeo sem nome"}
+                    </span>
+                  )}
+                  <span
+                    className={`font-mono text-[11px] ${
+                      v.status === "failed" ? "text-[var(--status-error)]" : "text-[var(--ash)]"
+                    }`}
+                  >
+                    {videoLegivel(v.status)} · {dt(v.criadoEm)}
+                  </span>
+                </span>
+              ))}
+              {g.videosTotal > g.videos.length && (
+                <span className="font-mono text-[11px] text-[var(--ash)]">
+                  mostrando {g.videos.length} de {g.videosTotal}
+                </span>
+              )}
+            </div>
+          )}
+        </SecaoGerados>
+      </div>
+    </div>
+  );
+}
+
+function SecaoGerados({
+  titulo,
+  nota = null,
+  children,
+}: {
+  titulo: string;
+  nota?: string | null;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--ash)]">
+        {titulo}
+        {nota ? <span className="ml-2 normal-case tracking-normal">({nota})</span> : null}
+      </span>
+      {children}
+    </div>
   );
 }
 
@@ -1051,6 +1495,22 @@ function AbaCompradores({
   erro: string | null;
   onRecarregar: () => void;
 }) {
+  /**
+   * A busca desta aba é INDEPENDENTE da da fila de propósito: são duas listas
+   * diferentes e dois momentos diferentes do trabalho (atender quem chamou ×
+   * prospectar quem nunca começou). Uma busca só, compartilhada, faria o time
+   * trocar de aba e encontrar a lista já recortada sem ter pedido.
+   */
+  const [busca, setBusca] = useState("");
+
+  // Mesma régua da outra aba (lib/sgp/busca.ts). Só o telefone mora com outro
+  // nome aqui: `celularDigitos`, que já vem só com dígito e `null` quando falta.
+  const visiveis = filtrarBusca(busca, linhas ?? [], (c) => ({
+    nome: c.nome,
+    email: c.email,
+    telefone: c.celularDigitos,
+  }));
+
   return (
     <div className="flex flex-col gap-6">
       {/* O número que motivou a tela: quanta gente pagou e nunca apareceu. */}
@@ -1110,12 +1570,27 @@ function AbaCompradores({
         </p>
       )}
 
+      {/* Acima da tabela, igual à outra aba — e pelo mesmo motivo. */}
+      <CampoBusca
+        valor={busca}
+        onMudar={setBusca}
+        placeholder="Buscar por nome, e-mail ou WhatsApp…"
+        achados={visiveis.length}
+      />
+
       <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
         {carregando && linhas === null ? (
           <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">carregando…</div>
         ) : !linhas || linhas.length === 0 ? (
           <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">
             nenhum comprador de SGP encontrado
+          </div>
+        ) : visiveis.length === 0 ? (
+          <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">
+            {/* A lista TEM gente; quem não achou foi a busca. Sem esta distinção
+                o atendente lê "nenhum comprador" e conclui que a pessoa não
+                comprou — exatamente a afirmação que ele não pode fazer. */}
+            nenhum dos {linhas.length} compradores casa com esse texto
           </div>
         ) : (
           <table className="w-full min-w-[1180px] border-collapse text-left">
@@ -1133,7 +1608,7 @@ function AbaCompradores({
               </tr>
             </thead>
             <tbody>
-              {linhas.map((c) => (
+              {visiveis.map((c) => (
                 <tr
                   key={c.chave}
                   className={`border-t border-[var(--hairline)] align-top ${
