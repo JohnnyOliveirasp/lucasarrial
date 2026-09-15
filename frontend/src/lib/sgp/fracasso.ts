@@ -136,8 +136,12 @@ export type DepsTransicao = {
    * cadeado é o próprio `status`.
    */
   carimbarFracasso: (patch: { status: "falhou"; erro?: string }) => Promise<LinhaCarimbada | null>;
-  /** Update simples de status, pros desfechos que não são fracasso. */
-  carimbarStatus: (status: SgpStatus) => Promise<void>;
+  /**
+   * Os desfechos que NÃO são fracasso. Recebe o patch inteiro (e não só o
+   * status) porque `erro: null` tem que viajar na MESMA escrita: pedido que
+   * saiu de 'falhou' e ainda carrega o motivo velho é o defeito do #365.
+   */
+  carimbarStatus: (patch: { status: SgpStatus; erro: null }) => Promise<void>;
   avisarAluno: (email: string, assunto: string, texto: string, ref: string) => Promise<void>;
   escalar: (erro: ErroOnboarding) => Promise<void>;
 };
@@ -146,7 +150,12 @@ export type DepsTransicao = {
  * O que esta chamada fez — existe pra o teste conseguir afirmar "avisou UMA
  * vez" sem depender de contar e-mail.
  */
-export type ResultadoTransicao = "avisou" | "ja_avisado" | "status_atualizado" | "sem_mudanca";
+export type ResultadoTransicao =
+  | "avisou"
+  | "ja_avisado"
+  | "status_atualizado"
+  | "erro_limpo"
+  | "sem_mudanca";
 
 /**
  * A transição de status do pedido, com o aviso do fracasso pendurado nela.
@@ -164,6 +173,30 @@ export type ResultadoTransicao = "avisou" | "ja_avisado" | "status_atualizado" |
  *     é o ÚNICO lugar do repo que escreve 'falhou' em `sgp_pedidos`. Então
  *     `.neq('status','falhou')` é atômico no banco e não tem concorrente.
  * Resultado: zero DDL e o cadeado vale HOJE, sem depender de migration.
+ *
+ * ⚠️ A VOLTA (#365, 12/09): o `erro` era carimbado na ida e NUNCA na volta.
+ * Quem saía de 'falhou' passava pelo `carimbarStatus`, que só escrevia
+ * `{status}` — o motivo velho ficava pendurado na linha pra sempre. Dois
+ * estragos MEDIDOS, não projetados:
+ *   1. Tela: o pedido fe00d4e2 (rafaelzan@me.com, R$ 94) voltou pra 'pronto'
+ *      exibindo "não foi possível gerar o seu clone a partir das fotos
+ *      enviadas" — pedido PRONTO culpando as 4 fotos impecáveis do aluno.
+ *      Limpado à mão na ronda das 13hZ; a recuperação seguia sem caminho.
+ *   2. E-mail (pior, e novo desde o #248): com um `erro` velho na linha, a
+ *      falha SEGUINTE caía em `!pedido.erro` = false → o motivo NOVO não era
+ *      gravado E `pedido.erro ?? motivoNovo` mandava o aviso com a causa
+ *      ERRADA. Se o motivo velho fosse do tipo 'aluno', o aluno recebia
+ *      "confira as fotos que você enviou" por uma falha que foi NOSSA — a
+ *      armadilha do #72: fazer o aluno achar que a culpa é dele.
+ * A cura é na raiz e não mexe na regra do #246 (motivo já gravado não é
+ * sobrescrito): se o pedido não está mais 'falhou', ele não tem motivo de
+ * fracasso, ponto. Zerar na volta faz o `!pedido.erro` da ida voltar a ser
+ * verdadeiro sozinho, e o #246 segue valendo DENTRO de um mesmo episódio.
+ *
+ * Por que também limpamos quando o status NÃO muda: `estadoDasEtapas` roda a
+ * cada render, então a condição é o próprio `erro` (mesmo padrão de carimbo
+ * condicional das pernas de sucesso). Isso NÃO gera escrita por render — na
+ * chamada seguinte `pedido.erro` já vem `null` e cai no `sem_mudanca`.
  */
 export async function processarTransicao(
   pedido: PedidoFracassado,
@@ -172,9 +205,13 @@ export async function processarTransicao(
   deps: DepsTransicao,
 ): Promise<ResultadoTransicao> {
   if (statusNovo !== "falhou") {
-    if (statusNovo === pedido.status) return "sem_mudanca";
-    await deps.carimbarStatus(statusNovo);
-    return "status_atualizado";
+    const mudaStatus = statusNovo !== pedido.status;
+    // Fora de 'falhou' não existe motivo de fracasso: o carimbo velho morre
+    // junto com o status, numa escrita só (#365).
+    const limpaErro = pedido.erro !== null;
+    if (!mudaStatus && !limpaErro) return "sem_mudanca";
+    await deps.carimbarStatus({ status: statusNovo, erro: null });
+    return mudaStatus ? "status_atualizado" : "erro_limpo";
   }
 
   // Nunca sobrescreve um motivo que outro caminho já escreveu (regra do #246).

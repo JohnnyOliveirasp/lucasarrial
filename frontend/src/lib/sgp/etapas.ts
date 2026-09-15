@@ -121,10 +121,11 @@ export async function estadoDasEtapas(pedido: SgpPedidoRow): Promise<EtapasSgp> 
           .select("email, nome");
         return (data?.[0] as { email: string | null; nome: string | null } | undefined) ?? null;
       },
-      carimbarStatus: async (novo) => {
+      // Sai de 'falhou' => o motivo velho morre na MESMA escrita (#365).
+      carimbarStatus: async (patch) => {
         await admin
           .from("sgp_pedidos" as never)
-          .update({ status: novo } as never)
+          .update(patch as never)
           .eq("id", pedido.id);
       },
       avisarAluno: avisoSgpFalhou,
@@ -153,6 +154,10 @@ export async function estadoDasEtapas(pedido: SgpPedidoRow): Promise<EtapasSgp> 
       { chave: "pronto", estado: s.pronto ? "feito" : s.falhou ? "falhou" : "espera" },
     ],
     pronto: s.pronto,
-    erro: pedido.erro ?? erroCarimbado,
+    // `pedido` foi lido ANTES da transição, então `pedido.erro` ainda é o motivo
+    // velho. Se o pedido não está mais 'falhou', a escrita acima acabou de
+    // zerá-lo no banco — devolver o valor velho faria a PRÓPRIA tela da
+    // recuperação exibir o erro de ontem por mais um render (#365).
+    erro: status === "falhou" ? (pedido.erro ?? erroCarimbado) : null,
   };
 }
