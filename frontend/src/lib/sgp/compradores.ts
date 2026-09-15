@@ -266,6 +266,14 @@ export type LinhaComprador = {
   situacaoMotivo: string;
   /** O status do pedido, quando existe. `null` = nunca começou o portal. */
   statusPedido: SgpStatus | null;
+  /**
+   * O id do pedido, quando existe. `null` = a pessoa comprou e nunca abriu o
+   * portal, então NÃO HÁ LINHA onde registrar um "já cobrei" — e esse é o caso
+   * da maioria desta aba. Os links de contato continuam valendo (falar com quem
+   * nunca começou é justamente pra isso que a aba existe); o que a tela não faz
+   * é fingir que registrou num lugar que não existe.
+   */
+  pedidoId: string | null;
   /** ISO do PURCHASE_APPROVED mais antigo. `null` = sem compra registrada. */
   dataAquisicao: string | null;
   /**
@@ -403,6 +411,7 @@ export function montarComprador(
     email,
     celular: celularDigitos ? telefoneLegivel(celularDigitos) : "—",
     celularDigitos,
+    pedidoId: pedido?.id ?? null,
     status: statusPedido ? (ETAPA_HUMANA[statusPedido] ?? statusPedido) : STATUS_NAO_COMECOU,
     situacao: sit.codigo,
     situacaoRotulo: sit.rotulo,
