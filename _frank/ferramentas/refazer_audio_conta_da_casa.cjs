@@ -7,16 +7,17 @@ if (process.argv.includes("--teste")) {
   console.log("⚠️  MODO TESTE: endpoint vtfxcwcb0ohvdn (fast_cloner_TESTE_dev)");
 }
 /**
- * 19/08 — REFAZER uma geração de áudio POR CONTA DA CASA (sem cobrar).
+ * 19/08 — gerar áudio POR CONTA DA CASA (sem cobrar o aluno).
  *
  * Nasceu do caso Katia (incidente 4396496b): o suporte prometeu por escrito
  * refazer o áudio dela sem cobrar, a aluna aceitou 2x — e ninguém gerou,
  * porque não existia caminho pra "gerar em nome do aluno" fora da rota da
  * API (que exige a sessão dele). Ficou palavra dada sem dono por 24h.
  *
- * Réplica EXATA do POST /api/v1/voices/[id]/generate (mesmo payload: cfg 1.6,
+ * Réplica do POST /api/v1/voices/[id]/generate (mesmo payload: cfg 1.6,
  * timesteps 15, lora_alpha da voz, prompt_text = reference_transcript da voz,
- * policy.executionTimeout por job), menos o débito.
+ * policy.executionTimeout pela régua de `generations/execucao.ts`), menos o
+ * débito. O payload mora em `_conta_da_casa.cjs`, um lugar só.
  *
  * ⚠️ REGRA 7: só rode quando o aluno PEDIU **ou** quando é compensação por
  * erro nosso — e aí sem cobrar. Nunca gaste GPU do aluno por iniciativa própria.
@@ -25,17 +26,43 @@ if (process.argv.includes("--teste")) {
  * crédito que nunca pagou. Em compensação por erro nosso isso é aceito DE
  * PROPÓSITO. Registre no relatório.
  *
- * Reaproveita o `text_normalized` JÁ GRAVADO na geração original: é o texto
- * que de fato foi pra GPU (a normalização por Haiku já corrigiu números,
- * abreviações e erros de digitação). Refazer com ele reproduz a mesma
- * entrada, sem depender de chamar o normalizador de novo.
+ * ───────────────────────── OS DOIS MODOS ─────────────────────────
  *
- * Uso (de qualquer pasta do projeto):
- *   node _frank/ferramentas/refazer_audio_conta_da_casa.cjs <generationId>
- *   node _frank/ferramentas/refazer_audio_conta_da_casa.cjs <generationId> --confirmar
+ * 1) REFAZER uma geração que existe (modo original):
+ *      node refazer_audio_conta_da_casa.cjs <generationId> [--confirmar]
+ *    Reaproveita o `text_normalized` JÁ GRAVADO na geração — o texto que de
+ *    fato foi pra GPU. Refazer com ele reproduz a mesma entrada.
+ *
+ *    Com `--texto-arquivo`, REFORMATA esse mesmo texto (caso Katia, incidente
+ *    47/ce6e157d: o defeito não é a voz nem o texto, é ONDE o chunker corta;
+ *    quebrar em parágrafos põe cada frase no seu chunk sem mexer no worker).
+ *    ⚠️ O conteúdo FALADO tem que ser o mesmo: o script confere e ABORTA se as
+ *    palavras não baterem. Isso é REFORMATAR, não reescrever.
+ *
+ * 2) GERAR COM TEXTO NOVO (12/09, caso #369):
+ *      node refazer_audio_conta_da_casa.cjs --voz <voiceId> \
+ *           --texto-arquivo <arquivo.txt> [--confirmar]
+ *
+ *    O buraco que isto fecha: a promessa mais comum do suporte é "manda o
+ *    texto que você quiser que eu gero por conta da casa" — e não havia
+ *    caminho. Só dava pra repetir uma geração que já existia; a trava de
+ *    palavras do modo 1 (que existe pra impedir reescrita acidental) abortava
+ *    exatamente o pedido legítimo. O aluno contato@mastroiannioliveira.com.br
+ *    ficou "no aguardo" de um texto novo com a voz dele. É o padrão do caso
+ *    Katia de novo: palavra dada sem dono.
+ *
+ *    Aqui o texto passa pela MESMA normalização da rota de produção
+ *    (`normalizeTextForTTS`, de `frontend/src/lib/llm/normalize.ts`, que a rota
+ *    chama em route.ts:175) antes de ir pra GPU. Sem isso o teste da casa não
+ *    representa o que o aluno recebe. A trava de palavras NÃO se aplica aqui:
+ *    texto diferente é o pedido, não o acidente.
+ *
+ * Sem `--confirmar` os dois modos são ENSAIO: imprimem o plano e não disparam
+ * nem gravam nada.
  */
 const { supa, RAIZ } = require("./_comum.cjs");
 const path = require("node:path");
+const { randomUUID } = require("node:crypto");
 
 const { S3Client, GetObjectCommand, PutObjectCommand } = require(
   path.join(RAIZ, "frontend", "node_modules", "@aws-sdk/client-s3"),
@@ -43,47 +70,55 @@ const { S3Client, GetObjectCommand, PutObjectCommand } = require(
 const { getSignedUrl } = require(
   path.join(RAIZ, "frontend", "node_modules", "@aws-sdk/s3-request-presigner"),
 );
-const { randomUUID } = require("node:crypto");
 
-const GEN_ID = process.argv[2];
-const CONFIRMAR = process.argv.includes("--confirmar");
-/** --texto-arquivo <path>: manda OUTRO texto pra GPU, no lugar do
- * `text_normalized` gravado. Existe pro caso Katia (incidente 47/ce6e157d):
- * o defeito dela não é a voz nem o texto, é ONDE o chunker corta — 7 das 8
- * marcações dela caem em início/fim de chunk, e a pior ("Minha missão é...
- * sem peso") é uma frase colada na cauda de um chunk de 160 chars. Quebrar o
- * MESMO texto em parágrafos (`\n\n`) põe cada frase no seu próprio chunk sem
- * mexer em uma linha do worker. ⚠️ O conteúdo FALADO tem que ser o mesmo:
- * isto é pra REFORMATAR, não pra reescrever o texto do aluno. O script
- * confere isso sozinho e ABORTA se as palavras não baterem. */
-const iTexto = process.argv.indexOf("--texto-arquivo");
-const TEXTO_ARQUIVO = iTexto > -1 ? process.argv[iTexto + 1] : null;
-/** --nome "<rótulo>": rótulo da geração, pra distinguir variantes num A/B.
- * O prefixo "Conta da casa —" é mantido SEMPRE (é o que o detector de
- * "entregue e não cobrada" usa pra não acusar vazamento de receita, #125). */
-const iNome = process.argv.indexOf("--nome");
-const NOME = iNome > -1 ? process.argv[iNome + 1] : null;
-if (!GEN_ID) {
-  console.error(
-    'uso: node refazer_audio_conta_da_casa.cjs <generationId> [--texto-arquivo <path>] [--nome "<rotulo>"] [--confirmar]',
-  );
-  process.exit(1);
+const nucleo = require("./_conta_da_casa.cjs");
+
+// ── produção, carregada de verdade (sem cópia) ─────────────────────────────
+// Mesmo padrão de `garantia_na_fila.cjs`: o que a rota do aluno usa é o que
+// este script usa. Reimplementar qualquer um destes três aqui seria assinar
+// que eles vão sair do ar um do outro no primeiro ajuste da régua.
+const createJiti = require(path.join(RAIZ, "frontend", "node_modules", "jiti"));
+const jiti = (createJiti.default || createJiti)(path.join(RAIZ, "frontend", "noop.js"), {
+  alias: { "@": path.join(RAIZ, "frontend", "src") },
+  interopDefault: true,
+});
+const SRC = path.join(RAIZ, "frontend", "src");
+const { normalizeTextForTTS } = jiti(path.join(SRC, "lib", "llm", "normalize.ts"));
+const { inferenceExecutionTimeoutMs } = jiti(path.join(SRC, "lib", "generations", "execucao.ts"));
+const { generationCreditCost } = jiti(path.join(SRC, "lib", "credits", "config.ts"));
+for (const [nome, fn] of [
+  ["normalizeTextForTTS", normalizeTextForTTS],
+  ["inferenceExecutionTimeoutMs", inferenceExecutionTimeoutMs],
+  ["generationCreditCost", generationCreditCost],
+]) {
+  if (typeof fn !== "function") {
+    throw new Error(
+      `produção não exporta ${nome}() — ferramenta abortada (não vou adivinhar a regra)`,
+    );
+  }
 }
 
-/** Palavras comparáveis: só letras/dígitos, minúsculas, sem pontuação nem
- * espaço. É a trava do `--texto-arquivo` — reformatar mantém a sequência de
- * palavras idêntica; reescrever, não. */
-const palavras = (s) =>
-  (s || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
+/* ────────────────────────────── argumentos ────────────────────────────── */
+
+const USO = `uso:
+  REFAZER geração existente:
+    node refazer_audio_conta_da_casa.cjs <generationId> [--texto-arquivo <path>] [--nome "<rotulo>"] [--confirmar]
+  GERAR com TEXTO NOVO (conta da casa):
+    node refazer_audio_conta_da_casa.cjs --voz <voiceId> --texto-arquivo <path> [--nome "<rotulo>"] [--confirmar]
+  --teste manda o job pro endpoint isolado da dev.`;
+
+let ARGS;
+try {
+  ARGS = nucleo.interpretarArgumentos(process.argv.slice(2));
+} catch (e) {
+  console.error(`${e.message}\n\n${USO}`);
+  process.exit(1);
+}
+const MODO = ARGS.modo;
+
+/* ────────────────────────────── dependências ──────────────────────────── */
 
 const PRESIGN_EXPIRES = 2 * 60 * 60;
-
 const r2 = new S3Client({
   region: "auto",
   endpoint: process.env.R2_ENDPOINT,
@@ -93,166 +128,116 @@ const r2 = new S3Client({
   },
 });
 const getUrl = (bucket, key) =>
-  getSignedUrl(r2, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn: PRESIGN_EXPIRES });
+  getSignedUrl(r2, new GetObjectCommand({ Bucket: bucket, Key: key }), {
+    expiresIn: PRESIGN_EXPIRES,
+  });
 const putUrl = (bucket, key, type) =>
   getSignedUrl(r2, new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: type }), {
     expiresIn: PRESIGN_EXPIRES,
   });
 
-/** Espelha inferenceExecutionTimeoutMs da rota (piso 30min; 160 chars/chunk). */
-function timeoutMs(textLen) {
-  const chunks = Math.max(1, Math.ceil(textLen / 160));
-  return Math.max(30 * 60, 15 * 60 + chunks * 2 * 60) * 1000;
-}
-
 (async () => {
   const db = supa();
+  const conteudoArquivo = ARGS.textoArquivo
+    ? require("node:fs").readFileSync(ARGS.textoArquivo, "utf8")
+    : null;
 
-  const { data: origem, error: eGen } = await db
-    .from("generations")
-    .select("id, user_id, voice_id, text_raw, text_normalized, status, created_at")
-    .eq("id", GEN_ID)
-    .maybeSingle();
-  if (eGen) throw new Error(`consulta generations: ${eGen.message}`);
-  if (!origem) throw new Error("geração de origem não encontrada");
-
-  const { data: voz, error: eVoz } = await db
-    .from("voices")
-    .select("id, user_id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language")
-    .eq("id", origem.voice_id)
-    .maybeSingle();
-  if (eVoz) throw new Error(`consulta voices: ${eVoz.message}`);
-  if (!voz) throw new Error("voz não encontrada");
-  if (voz.status !== "ready" || !voz.lora_path) {
-    throw new Error(`voz não está pronta (status=${voz.status})`);
+  // `normalizeTextForTTS` falha GRACIOSAMENTE: sem chave de API ela devolve o
+  // texto cru (só sanitizado) e não avisa ninguém. Em produção isso é a rede
+  // de segurança certa; AQUI seria mentira silenciosa — a casa mandaria pra
+  // GPU um texto que a rota do aluno teria normalizado, e o "teste da casa"
+  // não representaria o que o aluno recebe. Então neste script é erro, não
+  // fallback.
+  if (MODO === "texto-novo" && !process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
+    throw new Error(
+      "sem OPENAI_API_KEY nem ANTHROPIC_API_KEY: a normalização seria PULADA em silêncio e o " +
+        "áudio da casa não representaria o que o aluno recebe. Configure a chave em frontend/.env.local.",
+    );
   }
 
-  // ⚠️ Checar o `error` SEMPRE: consulta que erra volta data:null e o script
-  // imprime "undefined" alegremente (armadilha 1 do 03_ROTINA — pedir coluna
-  // que não existe já quase deu um dia por limpo com 2 itens presos).
-  // A coluna é `display_name`; `full_name` NÃO existe nesta tabela.
-  const { data: perfil, error: ePerfil } = await db
-    .from("profiles")
-    .select("email, display_name, credits_subscription, credits_extra, access_until")
-    .eq("id", origem.user_id)
-    .maybeSingle();
-  if (ePerfil) throw new Error(`consulta profiles: ${ePerfil.message}`);
-  if (!perfil) throw new Error("perfil do aluno não encontrado");
+  const plano = await nucleo.montarPlano(
+    {
+      modo: MODO,
+      genId: ARGS.genId,
+      vozId: ARGS.vozId,
+      conteudoArquivo,
+      rotulo: ARGS.rotulo,
+    },
+    {
+      db,
+      normalizar: normalizeTextForTTS,
+      timeoutMs: inferenceExecutionTimeoutMs,
+      custoEmCreditos: generationCreditCost,
+    },
+  );
 
-  const textoOriginal = (origem.text_normalized || origem.text_raw || "").trim();
-  if (!textoOriginal) throw new Error("geração de origem sem texto");
-
-  // --texto-arquivo: reformatação do MESMO texto. A trava compara a sequência
-  // de palavras e ABORTA se mudou — sem ela, um erro de copiar/colar manda um
-  // texto diferente pra GPU e o aluno recebe um áudio que ele não escreveu.
-  let texto = textoOriginal;
-  if (TEXTO_ARQUIVO) {
-    texto = require("node:fs").readFileSync(TEXTO_ARQUIVO, "utf8").trim();
-    if (!texto) throw new Error(`--texto-arquivo vazio: ${TEXTO_ARQUIVO}`);
-    const a = palavras(textoOriginal);
-    const b = palavras(texto);
-    if (a.join(" ") !== b.join(" ")) {
-      const i = a.findIndex((w, k) => w !== b[k]);
-      throw new Error(
-        `--texto-arquivo NÃO é reformatação: a sequência de palavras mudou ` +
-          `(original ${a.length} palavras, arquivo ${b.length}; 1ª diferença na posição ${i}: ` +
-          `"${a[i] ?? "(fim)"}" vs "${b[i] ?? "(fim)"}"). Abortei sem disparar nada.`,
-      );
-    }
-  }
-
-  const custoQueNaoSeraCobrado = Math.max(400, (origem.text_raw || "").length);
-
+  const { voz, perfil, origem } = plano;
   console.log("=".repeat(64));
+  console.log(
+    `MODO  : ${MODO === "texto-novo" ? "TEXTO NOVO (conta da casa)" : "REFAZER geração existente"}`,
+  );
   console.log(`ALUNO : ${perfil.display_name} <${perfil.email}>`);
   console.log(`ACESSO: até ${perfil.access_until}`);
   console.log(`SALDO : ${(perfil.credits_subscription ?? 0) + (perfil.credits_extra ?? 0)}`);
   console.log(`VOZ   : ${voz.id} [${voz.status}] lang=${voz.language} alpha=${voz.lora_alpha ?? 16}`);
-  console.log(`ORIGEM: ${origem.id} (${origem.status}, ${origem.created_at})`);
-  console.log(`TEXTO : ${texto.length} chars${TEXTO_ARQUIVO ? ` — REFORMATADO de ${TEXTO_ARQUIVO} (mesmas ${palavras(texto).length} palavras, conferido)` : ""}`);
-  console.log(`CUSTO : ${custoQueNaoSeraCobrado} cr — NÃO SERÁ COBRADO (conta da casa)`);
-  console.log(`TIMEOUT: ${timeoutMs(texto.length) / 60000} min`);
-  console.log("-".repeat(64));
-  console.log(texto);
+  if (origem) {
+    console.log(`ORIGEM: ${origem.id} (${origem.status}, ${origem.created_at})`);
+    if (ARGS.textoArquivo) {
+      console.log(
+        `TEXTO : REFORMATADO de ${ARGS.textoArquivo} ` +
+          `(mesmas ${nucleo.palavras(plano.textoParaGpu).length} palavras, conferido)`,
+      );
+    }
+  } else {
+    console.log(`ORIGEM: — (texto NOVO, de ${ARGS.textoArquivo})`);
+  }
+  console.log(`CUSTO : ${plano.custoQueNaoSeraCobrado} cr — NÃO SERÁ COBRADO (conta da casa)`);
+  console.log(`TIMEOUT: ${plano.timeoutMs / 60000} min`);
+
+  if (plano.normalizado) {
+    console.log("-".repeat(64));
+    console.log(`CRU (${plano.textoRaw.length} chars) — o que o aluno mandou:`);
+    console.log(plano.textoRaw);
+    console.log("-".repeat(64));
+    console.log(
+      `NORMALIZADO (${plano.textoParaGpu.length} chars) — o que VAI PRA GPU` +
+        `${plano.textoParaGpu === plano.textoRaw ? " (saiu idêntico ao cru)" : ""}:`,
+    );
+  } else {
+    console.log("-".repeat(64));
+    console.log(`TEXTO (${plano.textoParaGpu.length} chars) — o que VAI PRA GPU:`);
+  }
+  console.log(plano.textoParaGpu);
   console.log("=".repeat(64));
 
-  if (!CONFIRMAR) {
+  if (!ARGS.confirmar) {
     console.log("\n(SIMULAÇÃO — nada foi disparado. rode com --confirmar pra executar)");
     return;
   }
 
-  const novoId = randomUUID();
-  const outputKey = `${origem.user_id}/${novoId}.wav`;
-  const B_VOICES = process.env.R2_BUCKET_VOICES;
-  const B_GEN = process.env.R2_BUCKET_GENERATIONS;
-
-  const input = {
-    type: "inference",
-    text: texto,
-    output_upload_url: await putUrl(B_GEN, outputKey, "audio/wav"),
-    lora_alpha: typeof voz.lora_alpha === "number" ? voz.lora_alpha : 16,
-    cfg_value: 1.6,
-    inference_timesteps: 15,
-    language: voz.language || "pt",
-    lora_url: await getUrl(B_VOICES, voz.lora_path),
-  };
-  const refKey = (voz.reference_audio_path ?? "").trim();
-  if (refKey) {
-    input.prompt_wav_url = await getUrl(B_VOICES, refKey);
-    const t = (voz.reference_transcript ?? "").trim();
-    if (t) input.prompt_text = t;
-  }
-  if (typeof voz.tts_silence_ms === "number") input.chunk_silence_ms = voz.tts_silence_ms;
-  if (typeof voz.tts_crossfade_ms === "number") input.chunk_crossfade_ms = voz.tts_crossfade_ms;
-
-  // ⚠️ O webhook TEM que ser o de PRODUÇÃO. Na máquina local
-  // NEXT_PUBLIC_SITE_URL=http://localhost:3000 — a rota da API usa essa
-  // precedência porque roda NO servidor, mas um script operacional roda daqui:
-  // com localhost o RunPod recusa o job ("invalid webhook url", 400) e, se
-  // aceitasse, o callback nunca chegaria e a geração ficaria pendente pra sempre.
-  // Por isso preferimos SITE_URL e descartamos qualquer coisa local.
-  const candidatos = [process.env.SITE_URL, process.env.NEXT_PUBLIC_SITE_URL, "https://fastcloner.com"];
-  const site = candidatos
-    .find((u) => u && /^https:\/\//i.test(u) && !/localhost|127\.0\.0\.1/i.test(u))
-    .replace(/\/$/, "");
-  const endpoint = process.env.RUNPOD_ENDPOINT_INFERENCE_ID || process.env.RUNPOD_ENDPOINT_TRAIN_ID;
-
-  const res = await fetch(`https://api.runpod.ai/v2/${endpoint}/run`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.RUNPOD_API_KEY}`,
-      "Content-Type": "application/json",
+  const feito = await nucleo.dispararPlano(plano, {
+    db,
+    fetch: globalThis.fetch,
+    getUrl,
+    putUrl,
+    uuid: randomUUID,
+    agora: () => new Date().toISOString(),
+    env: process.env,
+    buckets: {
+      vozes: process.env.R2_BUCKET_VOICES,
+      geracoes: process.env.R2_BUCKET_GENERATIONS,
     },
-    body: JSON.stringify({
-      input,
-      webhook: `${site}/api/v1/webhooks/runpod`,
-      policy: { executionTimeout: timeoutMs(texto.length) },
-    }),
   });
-  if (!res.ok) throw new Error(`RunPod ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const job = await res.json();
 
-  const { error: eIns } = await db.from("generations").insert({
-    id: novoId,
-    user_id: origem.user_id,
-    voice_id: voz.id,
-    text_raw: origem.text_raw,
-    text_normalized: texto,
-    reference_audio_path: refKey || null,
-    reference_transcript: (voz.reference_transcript ?? "").trim() || null,
-    audio_path: outputKey,
-    runpod_job_id: job.id,
-    // #125 (24/08): geracao da equipe SEM debito precisa ser reconhecivel no
-    // banco — sem nome, o detector de 'entregue e nao cobrada' a confunde com
-    // vazamento de receita (28% falso). Nome = rotulo + data.
-    name: `Conta da casa — ${new Date().toISOString().slice(0, 10)}${NOME ? ` — ${NOME}` : ""}`,
-  });
-  if (eIns) throw new Error(`insert generations: ${eIns.message} (job ${job.id} JÁ disparado)`);
-
-  console.log(`✅ disparado: job ${job.id} (${job.status})`);
-  console.log(`✅ generation ${novoId} criada para ${perfil.email}`);
+  console.log(`✅ disparado: job ${feito.jobId} (${feito.jobStatus})`);
+  console.log(`✅ generation ${feito.novoId} criada para ${feito.email}`);
   console.log(`✅ SEM débito — por conta da casa`);
-  console.log(`\nacompanhe: node _frank/ferramentas/aluno.cjs ${perfil.email}`);
+  console.log(
+    `\n⚠️  REGRA 8: se este job FALHAR, o estorno automático vai CREDITAR ` +
+      `${plano.custoQueNaoSeraCobrado} cr a ${feito.email} sem ter havido débito. ` +
+      `É conhecido e aceito em compensação por erro nosso; registre no chamado.`,
+  );
+  console.log(`\nacompanhe: node _frank/ferramentas/aluno.cjs ${feito.email}`);
 })().catch((e) => {
   console.error("FALHOU:", e.message);
   process.exit(1);
