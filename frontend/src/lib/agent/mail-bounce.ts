@@ -171,16 +171,32 @@ export function classificarDiagnostico(diagnostico: string, status?: string | nu
   // e-mail real no cadastro/Hotmart") é exatamente a certa. O DSN também veio
   // com `Action: failed`, não `delayed`, que por RFC 3464 já é permanente.
   //
+  // ⚠️ "No MX SERVER found" — a MESMA falha da Sheila com outro substantivo
+  // (#402, medido 14/09 22hZ). O mesmo servidor escreve a recusa de duas
+  // formas: "Failed to resolve any IP addresses for the Mail Exchange (MX)
+  // server" (pega no padrão de cima) e "DNS error occurred while resolving the
+  // Mail Exchange (MX) server for the specified domain (X). No MX server
+  // found" — que caía em `desconhecida` porque a alternância aceitava
+  // `record|host` e NÃO `server`. Dois bounces reais do mesmo endereço
+  // (guitaschetti@pradocomunicacao.com, 14/09 21:55Z e 22:10Z) nasceram sem
+  // instrução nenhuma por causa dessa palavra, e a casa reenviou pro domínio
+  // morto no meio. Conferido com `dig`: pradocomunicacao.com não tem MX NEM
+  // registro A — não recebe e-mail, então é permanente e a orientação de
+  // `inexistente` é a certa.
+  //
   // O padrão é ESTREITO de propósito — casa a falha de resolver o MX, não
   // "DNS" solto — pra não carimbar como definitiva uma queda transitória de
   // resolvedor, que mandaria a casa parar de escrever pra um aluno alcançável.
+  // `servers?` entra na alternância junto de `record|hosts?` e mantém essa
+  // estreiteza: continua exigindo o literal "no mx" antes do substantivo, e
+  // por isso "DNS query timed out" segue caindo em `temporaria`.
   if (
     /\b5\.1\.[01]\b/.test(d) ||
     /(user unknown|no such user|address (does not|doesn't) exist|recipient (address )?rejected|unknown recipient)/i.test(d) ||
     /account that you tried to reach (does not exist|is disabled)/i.test(d) ||
     /\bNoSuchUser\b/i.test(d) ||
     /failed to resolve any ip addresses for the mail exchange/i.test(d) ||
-    /\bno mx (record|hosts?)\b/i.test(d)
+    /\bno mx (record|hosts?|servers?)\b/i.test(d)
   ) {
     return "inexistente";
   }

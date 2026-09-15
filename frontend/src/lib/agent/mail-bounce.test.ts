@@ -294,10 +294,40 @@ test("domínio com MX nulo é permanente, não 'desconhecida' — uid 605, Sheil
   );
 });
 
+test("'No MX SERVER found' é a MESMA falha da Sheila com outro substantivo — #402 (14/09)", () => {
+  // Texto CRU do servidor, copiado do `bounce_diagnostico` das duas linhas de
+  // `emails_enviados` (guitaschetti@pradocomunicacao.com, 21:55Z e 22:10Z).
+  // Caía em `desconhecida` porque a alternância era só `record|hosts?`: a ficha
+  // nascia sem instrução e a casa reenviou pro domínio morto no meio.
+  // `dig` confere: pradocomunicacao.com não tem MX nem A.
+  const REAL =
+    "smtp; DNS Error: DNS error occurred while resolving the Mail Exchange (MX) server " +
+    "for the specified domain (pradocomunicacao.com). No MX server found";
+  assert.equal(classificarDiagnostico(REAL), "inexistente");
+
+  // As duas redações do MESMO servidor têm que dar a MESMA classe — foi a lição
+  // de 13/09 (mesma frase do Gmail com e sem código dava classes diferentes).
+  assert.equal(
+    classificarDiagnostico(REAL),
+    classificarDiagnostico(
+      'smtp; DNS Error: Failed to resolve any IP addresses for the Mail Exchange (MX) server associated with "gmail.com.br"',
+    ),
+  );
+});
+
 test("queda transitória de DNS NÃO vira 'endereço não existe'", () => {
   // O padrão do MX é estreito de propósito. Carimbar qualquer erro de DNS como
   // permanente faria a casa parar de escrever pra um aluno alcançável.
   assert.equal(classificarDiagnostico("smtp; 451 4.4.0 DNS query timed out, try again later"), "temporaria");
+
+  // GUARDA DO #402: `servers?` entrou na alternância, e não pode ter alargado o
+  // padrão pra "DNS" solto. Estes seguem transitórios — sem o literal "no mx",
+  // nada aqui casa o bloco de `inexistente`.
+  assert.equal(classificarDiagnostico("smtp; 451 DNS error occurred while resolving the MX"), "temporaria");
+  assert.equal(
+    classificarDiagnostico("smtp; 421 4.4.3 Temporary DNS failure resolving the mail server, retrying"),
+    "temporaria",
+  );
 });
 
 test("JFE ganha de 'spam' genérico: precisamos saber que o barramento foi NOSSO", () => {
