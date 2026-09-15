@@ -179,11 +179,13 @@ export function ClonePadrao({ audio, selecionado, escolher }: Props) {
       })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null);
+      // Proporção pro aviso de formato do seletor (dims 0 → só o genérico).
+      const aspectRatio = dims.width > 0 && dims.height > 0 ? `${dims.width}:${dims.height}` : null;
       if (imp?.image?.id) {
-        setImage({ kind: "history", id: imp.image.id, preview: imp.image.image_url ?? preview });
+        setImage({ kind: "history", id: imp.image.id, preview: imp.image.image_url ?? preview, aspectRatio });
         setPickerRefresh((k) => k + 1);
       } else {
-        setImage({ kind: "upload", key, preview });
+        setImage({ kind: "upload", key, preview, aspectRatio });
       }
     } catch (e) {
       setErro(e instanceof Error && e.message ? e.message : t("erroUpload"));

@@ -128,12 +128,16 @@ export function CloneStudio({
       })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null);
+      // Proporção pro aviso de formato: as dimensões lidas aqui são mais
+      // precisas que o rótulo salvo, e valem mesmo se o import falhar. Se o
+      // arquivo não abriu (dims 0), vai nulo → o seletor mostra só o genérico.
+      const aspectRatio = dims.width > 0 && dims.height > 0 ? `${dims.width}:${dims.height}` : null;
       if (imp?.image?.id) {
-        setImage({ kind: "history", id: imp.image.id, preview: imp.image.image_url ?? preview });
+        setImage({ kind: "history", id: imp.image.id, preview: imp.image.image_url ?? preview, aspectRatio });
         setPickerRefresh((k) => k + 1);
       } else {
         // Acervo indisponível → fluxo antigo (upload vale só nesta seleção).
-        setImage({ kind: "upload", key, preview });
+        setImage({ kind: "upload", key, preview, aspectRatio });
       }
     } catch (e) {
       setError(
