@@ -21,14 +21,23 @@
  * continua usando até o período acabar. Esta ferramenta não encosta em
  * crédito nem em acesso — só para a cobrança futura.
  *
+ * ⚠️ O REGISTRO NO INCIDENTE NÃO PODE MENTIR (medido 15/09). O cancelamento do
+ * Luciano funcionou na Hotmart e o script imprimiu "registrado no incidente
+ * 407." sem ter gravado nada: `--incidente` ia CRU pro `.eq("id", ...)`, e 407
+ * é o `numero` do incidente, não o `uuid` — o UPDATE pegou 0 linhas, em
+ * silêncio, e a linha de sucesso era incondicional. Agora o alvo é RESOLVIDO
+ * (número ou uuid) ANTES de encostar na Hotmart, e a escrita é CONFERIDA
+ * depois. Ver `_incidente_nota.cjs`.
+ *
  * USO (de qualquer pasta):
  *   node _frank/ferramentas/cancelar_assinatura.cjs --aluno maria@exemplo.com
  *   node _frank/ferramentas/cancelar_assinatura.cjs --aluno maria@exemplo.com --confirmar
- *   ... --incidente <id>   registra o cancelamento como nota no incidente
+ *   ... --incidente <numero|uuid>   registra o cancelamento como nota no incidente
  *   ... --orfa             compra ÓRFÃ (#222): sem perfil nosso. Ver secao 3-B.
  */
 const path = require("node:path");
 const { supa } = require("./_comum.cjs");
+const { resolverIncidente, anexarNota } = require("./_incidente_nota.cjs");
 
 const argv = process.argv.slice(2);
 const arg = (n) => {
@@ -72,7 +81,7 @@ async function get(url, H) {
 
 (async () => {
   if (!EMAIL) {
-    console.error("uso: --aluno <email do aluno> [--incidente <id>] [--confirmar]");
+    console.error("uso: --aluno <email do aluno> [--incidente <numero|uuid>] [--confirmar]");
     process.exit(1);
   }
   for (const v of ["HOTMART_CLIENT_ID", "HOTMART_CLIENT_SECRET", "HOTMART_BASIC"]) {
@@ -83,7 +92,30 @@ async function get(url, H) {
   }
 
   console.log(`\n# cancelar_assinatura — ${CONFIRMAR ? "VALENDO" : "ENSAIO (nada será cancelado)"}`);
-  console.log(`# aluno pedido: ${EMAIL}\n`);
+  console.log(`# aluno pedido: ${EMAIL}`);
+
+  // ---- 0. INCIDENTE: resolver ANTES de encostar na Hotmart --------------
+  // A ordem importa. Se o alvo do registro for inválido, é aqui que tem que
+  // morrer — depois do POST de cancelamento não existe desfazer, e o operador
+  // ficaria com a assinatura cancelada e o card sem rastro. O ensaio também
+  // passa por aqui de propósito: `--incidente 407` errado aparece no ensaio,
+  // não na hora do estrago.
+  let alvoIncidente = null;
+  if (INCIDENTE !== null) {
+    try {
+      const r = await resolverIncidente(db, INCIDENTE);
+      alvoIncidente = r.incidente;
+      for (const a of r.avisos) console.log(`# ⚠️  incidente: ${a}`);
+      console.log(
+        `# incidente: #${alvoIncidente.numero} ${alvoIncidente.id} (por ${r.via}) — ${String(alvoIncidente.title ?? "").slice(0, 60)}`,
+      );
+    } catch (e) {
+      console.error(`\nERRO no --incidente: ${e.message}`);
+      console.error("NÃO cancelei nada. Registro sem alvo vira cancelamento sem rastro.");
+      process.exit(1);
+    }
+  }
+  console.log("");
 
   // ---- 1. TITULARIDADE: quem é essa pessoa no NOSSO banco --------------
   const perfil = await db
@@ -239,23 +271,34 @@ async function get(url, H) {
   console.log(`\n✅ assinatura ${code} CANCELADA na Hotmart (o aluno recebe o e-mail deles).`);
   console.log("   O crédito já pago continua com ele até o período acabar (regra 9).");
 
-  if (INCIDENTE) {
-    const { data: row } = await db
-      .from("incidents")
-      .select("agent_notes")
-      .eq("id", INCIDENTE)
-      .maybeSingle();
-    const notes = row?.agent_notes ?? [];
-    notes.push({
-      at: new Date().toISOString(),
-      by: "frank",
-      note:
-        `CANCELAMENTO EXECUTADO (regra 9-C): assinatura ${code} de ${EMAIL} cancelada na ` +
-        `Hotmart a pedido do aluno. Titularidade conferida no banco antes. ` +
-        `Crédito pago NÃO foi tocado.`,
-    });
-    await db.from("incidents").update({ agent_notes: notes }).eq("id", INCIDENTE);
-    console.log(`   registrado no incidente ${INCIDENTE}.`);
+  if (alvoIncidente) {
+    const nota =
+      `CANCELAMENTO EXECUTADO (regra 9-C): assinatura ${code} de ${EMAIL} cancelada na ` +
+      `Hotmart a pedido do aluno. Titularidade conferida no banco antes. ` +
+      `Crédito pago NÃO foi tocado.`;
+    try {
+      const g = await anexarNota(db, alvoIncidente, nota, { por: "frank" });
+      if (g.eraLegado) {
+        console.log("   ⚠️  agent_notes estava CORROMPIDO (string); preservado como nota legada.");
+      }
+      console.log(
+        `   registrado no incidente #${alvoIncidente.numero} (${alvoIncidente.id}): ` +
+          `${g.antes} -> ${g.depois} notas, conferido na releitura.`,
+      );
+    } catch (e) {
+      // A Hotmart JÁ cancelou e não tem desfazer. Então esta falha não pode
+      // sair parecida com "deu tudo certo": o operador precisa saber que o
+      // dinheiro parou mas o card ficou sem rastro, e ir anotar na mão.
+      console.error(`\n❌ FALHA AO REGISTRAR NO INCIDENTE: ${e.message}`);
+      console.error(
+        `   ⚠️  A assinatura ${code} de ${EMAIL} FOI CANCELADA na Hotmart (irreversível),`,
+      );
+      console.error("   MAS a nota NÃO foi gravada no incidente. Anote na mão, agora:");
+      console.error(
+        `   node _frank/ferramentas/anotar_incidente.cjs ${alvoIncidente.id} --nota "${nota}" --confirmar`,
+      );
+      process.exit(1);
+    }
   }
 })().catch((e) => {
   console.error("ERRO:", e.message);
