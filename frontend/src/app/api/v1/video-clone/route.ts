@@ -212,8 +212,18 @@ export async function POST(request: NextRequest) {
   }
   if (duration <= 0) return badRequest("Não conseguimos ler a duração desse áudio.");
   if (duration > CLONE_MAX_AUDIO_SECONDS + 0.5) {
+    // Portão que recusa tem que dizer o que FAZER, não só o que falta (caso
+    // William, #386: "pra mim foi uma enganação"). A mensagem antiga dava só o
+    // número, e quem queria montar aula longa concluía que o produto não servia.
+    // O teto é do motor de lip-sync (InfiniteTalk), não é política comercial:
+    // o caminho que funciona HOJE é gerar em partes.
+    const partes = Math.ceil(duration / CLONE_MAX_AUDIO_SECONDS);
     return badRequest(
-      `O áudio tem ${Math.round(duration)}s — o máximo é ${CLONE_MAX_AUDIO_SECONDS}s (1min30s).`,
+      `O áudio tem ${Math.round(duration)}s — o Vídeo Clone gera no máximo ` +
+        `${CLONE_MAX_AUDIO_SECONDS}s (1min30s) por vídeo, limite do motor de lip-sync. ` +
+        `Pra um conteúdo mais longo, divida o texto e gere um vídeo por parte ` +
+        `(esse áudio daria ${partes} partes). Dica: acima de ~40s o rosto tende a ` +
+        `se afastar da foto, então partes mais curtas ficam melhores.`,
     );
   }
 
