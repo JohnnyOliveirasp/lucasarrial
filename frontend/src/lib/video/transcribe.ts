@@ -6,8 +6,35 @@
  */
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
+import { objectHead } from "@/lib/r2/exists";
+import { duracaoLegivel } from "./audio-eligibility";
 
 export type Transcription = { text: string; durationSeconds: number };
+
+/**
+ * O teto de UPLOAD da Whisper API (25 MB). ÚNICO lugar onde esse número mora:
+ * a frase do `falhaDeAudio` e a recusa antecipada do `transcribeUploadedAudio`
+ * leem daqui. Não reescreva o literal em lugar nenhum — foi assim que o contato
+ * do #414 divergiu do código.
+ *
+ * ⚠️ TAMANHO NÃO É DURAÇÃO. O teto do PRODUTO é 90s (`CLONE_MAX_AUDIO_SECONDS`);
+ * este aqui é só o da ferramenta. Um MP3 de 20min em bitrate baixo cabe nos
+ * 25 MB e continua violando os 90s — por isso a checagem de duração CONTINUA
+ * depois da transcrição, em todas as rotas. Esta guarda não substitui aquela:
+ * ela só evita gastar o upload inteiro à toa (caso valdirtrentotrg, 15/09 —
+ * MP4 de 60 minutos baixado do R2 e empurrado pro Whisper pra voltar 413).
+ */
+export const WHISPER_MAX_BYTES = 25 * 1024 * 1024;
+
+/** "25 MB" — derivado da constante, pra frase nunca divergir do corte. */
+const WHISPER_MAX_MB = Math.round(WHISPER_MAX_BYTES / (1024 * 1024));
+
+/**
+ * Marca do erro que ESTE módulo levanta ao recusar por tamanho antes de subir.
+ * `falhaDeAudio` reconhece a marca e devolve a MESMA frase do 413 da Whisper —
+ * o aluno não tem que saber se quem recusou fomos nós ou a OpenAI.
+ */
+const MARCA_GRANDE_DEMAIS = "audio-grande-demais-pre-upload";
 
 /**
  * O erro REAL da transcrição: registrado do lado da casa e traduzido pro aluno.
@@ -52,9 +79,14 @@ export function falhaDeAudio(
   console.error("[video/transcribe] falhou", JSON.stringify({ ...ctx, erro }));
 
   const NAO_COBRADO = " Nenhum crédito foi cobrado.";
-  if (/Whisper API 413/.test(erro) || /Maximum content size/i.test(erro)) {
+  if (
+    /Whisper API 413/.test(erro) ||
+    /Maximum content size/i.test(erro) ||
+    // recusado AQUI pelo HEAD, antes de baixar/subir: mesma causa, mesma frase
+    erro.includes(MARCA_GRANDE_DEMAIS)
+  ) {
     return (
-      `${Esse} ${rotulo} passou do tamanho que a transcrição aceita (o limite é 25 MB). ` +
+      `${Esse} ${rotulo} passou do tamanho que a transcrição aceita (o limite é ${WHISPER_MAX_MB} MB). ` +
       `Exporte em MP3 — ou mande só o trecho que você vai usar — e tente de novo.${NAO_COBRADO}`
     );
   }
@@ -77,12 +109,78 @@ async function downloadAudio(key: string): Promise<Uint8Array> {
 }
 
 /**
+ * A REGRA, pura e testável: este objeto é grande demais pra transcrição?
+ *
+ * FAIL-OPEN por decisão: `bytes: null` (HEAD falhou por erro transitório, ou o
+ * R2 não devolveu ContentLength) NÃO recusa. Um falso positivo aqui é pior que
+ * o defeito — barraria um áudio bom por causa de um 5xx passageiro do R2 —, e o
+ * caminho antigo continua intacto: quem estiver mesmo acima do teto leva o 413
+ * da Whisper e cai na MESMA frase. Só bytes MEDIDOS e acima do teto recusam.
+ */
+export function acimaDoTetoDaTranscricao(
+  bytes: number | null,
+  max: number = WHISPER_MAX_BYTES,
+): boolean {
+  return typeof bytes === "number" && Number.isFinite(bytes) && bytes > max;
+}
+
+/**
+ * A OUTRA regra, que a guarda de tamanho NÃO substitui: o teto de DURAÇÃO.
+ *
+ * Vive aqui, pura, porque tamanho e duração são coisas diferentes e alguém vai
+ * confundir de novo: um MP3 de 20min em bitrate baixo passa folgado nos 25 MB e
+ * continua violando os 90s. Esta checagem roda DEPOIS da transcrição (é o
+ * Whisper quem mede a duração real) e continua sendo a palavra final.
+ *
+ * Devolve a frase da recusa, ou `null` quando está tudo certo. As frases são
+ * literalmente as que a rota já devolvia — extraí pra cá pra poder TESTAR a
+ * regra de verdade, não uma cópia dela.
+ */
+export function recusaPorDuracao(durationSeconds: number, maxSeconds: number): string | null {
+  if (!(durationSeconds > 0)) return "Não conseguimos ler a duração desse áudio.";
+  // tolerância de 0,5s: o Whisper devolve fracionado e 90,2s é um áudio de 90s
+  if (durationSeconds > maxSeconds + 0.5) {
+    return `O áudio tem ${Math.round(durationSeconds)}s — o máximo é ${maxSeconds}s (${duracaoLegivel(maxSeconds)}).`;
+  }
+  return null;
+}
+
+/** Só pro teste injetar o HEAD e a chamada da Whisper sem tocar na rede. */
+type DepsTranscricao = {
+  head: (bucket: string, key: string) => Promise<{ bytes: number | null }>;
+  baixar: (key: string) => Promise<Uint8Array>;
+  transcrever: (bytes: Uint8Array, filename: string) => Promise<Transcription>;
+};
+
+const DEPS_REAIS: DepsTranscricao = {
+  head: (bucket, key) => objectHead(bucket, key),
+  baixar: (key) => downloadAudio(key),
+  transcrever: (bytes, filename) => transcribeAudioBuffer(bytes, filename),
+};
+
+/**
  * Whisper `verbose_json` traz `duration` (segundos) + `text`.
  * Mesmo padrão do worker de render (render/subtitles.mjs).
+ *
+ * Antes de baixar o objeto do R2 e empurrar os bytes pra OpenAI, pergunta o
+ * TAMANHO por HEAD (barato, sem baixar) e recusa ali se já estiver acima do
+ * teto. O caso valdirtrentotrg (15/09) era um MP4 de 60 minutos: o arquivo
+ * inteiro era baixado e enviado só pra voltar 413. A mensagem pro aluno é a
+ * mesma de antes — muda só QUANDO a gente descobre, não O QUE ele lê.
  */
-export async function transcribeUploadedAudio(key: string): Promise<Transcription> {
-  const bytes = await downloadAudio(key);
-  return transcribeAudioBuffer(bytes, key.split("/").pop() || "audio.mp3");
+export async function transcribeUploadedAudio(
+  key: string,
+  deps: DepsTranscricao = DEPS_REAIS,
+): Promise<Transcription> {
+  const { bytes: tamanho } = await deps.head(R2_BUCKETS.generations, key);
+  if (acimaDoTetoDaTranscricao(tamanho)) {
+    throw new Error(
+      `${MARCA_GRANDE_DEMAIS}: ${tamanho} bytes no R2, teto ${WHISPER_MAX_BYTES} (key=${key})`,
+    );
+  }
+
+  const bytes = await deps.baixar(key);
+  return deps.transcrever(bytes, key.split("/").pop() || "audio.mp3");
 }
 
 /** Transcreve bytes de áudio direto (usado também pelo agente de suporte). */
