@@ -7,6 +7,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { destravarAvisoDeCredito } from "@/lib/voices/destravar-aviso-credito";
+import { montarAvisoDebitoFalho } from "./debito-onboarding-falho";
 
 export type Balance = {
   subscription: number;
@@ -101,7 +102,31 @@ export async function debitCreditsOnboarding(args: {
     p_ref_id: args.refId ?? null,
     p_note: args.note ?? null,
   } as never);
-  if (error) return { ok: false, reason: "error", balance: 0 };
+
+  // ⚠️ Os dois retornos `ok:false` daqui eram MUDOS, e os dois chamadores
+  // (`onboarding/treino.ts`, `onboarding/avatares.ts`) descartavam o retorno.
+  // Como o material é entregue ANTES do débito, a combinação entregava o
+  // clone, não cobrava, não gravava linha no razão e não deixava rastro —
+  // dívida invisível. Pior, o `error.message` da RPC era descartado inteiro,
+  // então "error" não dizia se foi timeout, permissão ou função ausente.
+  // Este log é o sensor que faltava (mesmo papel do aviso de `went_negative`
+  // logo abaixo). NÃO é trava: travar aqui reverteria a decisão do Johnny de
+  // 21/08. Ver `debito-onboarding-falho.ts` para a medição que delimita o
+  // alcance real disto.
+  if (error) {
+    console.error(
+      montarAvisoDebitoFalho({
+        userId: args.userId,
+        amount: args.amount,
+        kind: args.kind,
+        refType: args.refType,
+        refId: args.refId,
+        reason: "error",
+        detalhe: error.message,
+      }),
+    );
+    return { ok: false, reason: "error", balance: 0 };
+  }
 
   const r = (data ?? {}) as RpcResult & { went_negative?: boolean };
   if (r.ok) {
@@ -125,7 +150,21 @@ export async function debitCreditsOnboarding(args: {
     }
     return { ok: true, balance: r.balance ?? 0, wentNegative: r.went_negative === true };
   }
-  return { ok: false, reason: r.reason === "no_profile" ? "no_profile" : "error", balance: r.balance ?? 0 };
+  const reason = r.reason === "no_profile" ? "no_profile" : "error";
+  console.error(
+    montarAvisoDebitoFalho({
+      userId: args.userId,
+      amount: args.amount,
+      kind: args.kind,
+      refType: args.refType,
+      refId: args.refId,
+      reason,
+      // A RPC respondeu; o detalhe útil aqui é o que ELA disse, não um erro
+      // de transporte (que já foi tratado acima).
+      detalhe: r.reason && r.reason !== reason ? `rpc_reason=${r.reason}` : null,
+    }),
+  );
+  return { ok: false, reason, balance: r.balance ?? 0 };
 }
 
 /**

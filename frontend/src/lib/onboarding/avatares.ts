@@ -22,6 +22,7 @@ import { pickImageRoute } from "@/lib/kie/failover";
 import { imageCreditCost } from "@/lib/kie/config";
 import { bypassesBilling } from "@/lib/credits/access";
 import { debitCreditsOnboarding } from "@/lib/credits/service";
+import { resumirDebitoFalho } from "@/lib/credits/debito-onboarding-falho";
 import {
   deveCobrarOnboarding,
   type OrigemOnboarding,
@@ -63,6 +64,12 @@ export type AvataresResult = {
   created: number;
   skipped: number;
   failed: Array<{ nome: string; error: string }>;
+  /**
+   * Avatares GERADOS cuja cobrança não entrou. Separado de `failed` de
+   * propósito: a entrega deu certo, quem falhou foi o razão. Ver
+   * `lib/credits/debito-onboarding-falho.ts`.
+   */
+  debitosFalhos: string[];
 };
 
 /**
@@ -89,7 +96,7 @@ export async function gerarAvatares(
    */
   origem: OrigemOnboarding = "planilha",
 ): Promise<AvataresResult> {
-  const result: AvataresResult = { created: 0, skipped: 0, failed: [] };
+  const result: AvataresResult = { created: 0, skipped: 0, failed: [], debitosFalhos: [] };
   if (refKeys.length === 0) return result;
 
   // Idempotência: já gerou avatares do onboarding? Não duplica.
@@ -166,8 +173,14 @@ export async function gerarAvatares(
 
       // Debita após criar a row (mesmo shape/ordem do /images/generate —
       // o estorno automático do finalize casa com este débito pelo refId).
+      //
+      // Retorno tratado (era descartado até 14/09): a imagem já foi criada no
+      // Kie e a row já existe com `credits_cost` preenchido — um `ok:false`
+      // mudo aqui deixava uma geração cobrável sem lançamento no razão e sem
+      // rastro. Não entra em `failed`: o avatar foi gerado, e marcá-lo como
+      // falho faria o onboarding reportar erro de entrega que não houve.
       if (billed) {
-        await debitCreditsOnboarding({
+        const debito = await debitCreditsOnboarding({
           userId,
           amount: creditCost,
           kind: "image",
@@ -175,6 +188,18 @@ export async function gerarAvatares(
           refId: id,
           note: "avatar do onboarding (1K)",
         });
+        if (!debito.ok) {
+          result.debitosFalhos.push(
+            resumirDebitoFalho({
+              userId,
+              amount: creditCost,
+              kind: "image",
+              refType: "image_generation",
+              refId: id,
+              reason: debito.reason === "no_profile" ? "no_profile" : "error",
+            }),
+          );
+        }
       }
       result.created++;
     } catch (e) {
