@@ -1,4 +1,12 @@
--- 108 — retiradas_socios: o dinheiro que os sócios TIRAM do caixa.
+-- ⚠️ RENUMERADA EM 15/09: nascia como `108`, e HAVIA CINCO arquivos 108_*.sql
+-- diferentes no repo (emails_enviados, estorno, face_gate, retiradas, voices).
+-- O git nao reclama porque os nomes diferem, mas o NUMERO virava mentira e
+-- quem fosse aplicar nao sabia qual era qual. Passa a ser `113`.
+-- 🚨 ESTADO EM 15/09: **NAO APLICADA**. A tabela retiradas_socios NAO existe no
+-- banco (medido), mas o codigo que le ela ja esta na main — entao a tela nasce
+-- quebrada ate alguem aplicar, igual aconteceu com o botao 'Ja cobrei'.
+--
+-- 113 — retiradas_socios: o dinheiro que os sócios TIRAM do caixa.
 --
 -- ⚠️ NÃO APLICADA. Rodar este SQL é decisão do Johnny. Enquanto a tabela não
 -- existir, nada quebra: o painel detecta a ausência (erro 42P01/PGRST205),
