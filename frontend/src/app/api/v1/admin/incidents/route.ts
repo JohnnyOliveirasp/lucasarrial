@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
+import { enriquecerFichasDeBounce, type FichaEnriquecivel } from "@/lib/agent/contato-ficha";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
@@ -28,13 +29,30 @@ export async function GET(request: NextRequest) {
       .select("*")
       .order("last_seen_at", { ascending: false })
       .limit(200);
+    /**
+     * A ficha de "e-mail não chegou" é RECALCULADA AQUI, a cada leitura do
+     * quadro, contra o `emails_enviados` de agora (b32af5ff).
+     *
+     * ⚠️ Não dá pra deixar isso só no caminho do bounce. Lá o gatilho é o
+     * EVENTO DE FALHA, e o caso que abriu o cartão é o contrário: o reenvio da
+     * Valdeni em 13/09 22:13Z DEU CERTO, não voltou bounce nenhum, e por isso
+     * nada regravava a ficha — ela seguiu pedindo reenvio com o texto do 2º
+     * bounce, de três dias antes. Reenvio que funciona é o caminho MAIS comum e
+     * era justamente o que não atualizava nada. Aqui toda renderização refaz a
+     * conta do zero, com bounce novo ou sem ele.
+     *
+     * Nunca lança: se o histórico falhar, a lista sai como veio do banco.
+     */
+    const incidents = await enriquecerFichasDeBounce(
+      (data ?? []) as unknown as Array<FichaEnriquecivel & Record<string, unknown>>,
+    );
     // `role` viaja junto de propósito: a aba Falhas é client component e
     // precisa saber se quem está olhando pode FORÇAR o fechamento de um
     // chamado com defeito vivo (ver a trava em [id]/route.ts). A alternativa
     // era plumbar o papel pelo layout inteiro do /admin só por causa de um
     // botão. Não é gate: o gate de verdade é o `g.role` conferido na rota de
     // escrita — aqui é só pra tela não oferecer o que vai levar 409.
-    return jsonOk({ incidents: data ?? [], role: g.role });
+    return jsonOk({ incidents, role: g.role });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Failed to load incidents");
   }

@@ -19,6 +19,22 @@ Pra cada um: é falha nossa ou erro do aluno? Falha nossa → conserte e feche
 com `fixed` + nota. Erro do aluno → `ignored`. **Não deixe nada "investigando"
 de véspera** — ou você está investigando agora, ou tem que fechar.
 
+> ⚠️ **Ficha de "e-mail não chegou" (`fast-bounce:%`): NÃO decida pelo SELECT
+> cru.** A `description` gravada é do dia do último BOUNCE — reenvio que dá
+> certo não escreve nada nela, então ela pode estar mandando reenviar uma
+> mensagem que já entrou. Foi assim que o caso b32af5ff gerou **quatro** ordens
+> de reenvio, a última pedindo gerar link de recovery novo — o que apagaria
+> `auth.users.recovery_sent_at`, a única prova da entrega. Leia com:
+>
+> ```bash
+> node _frank/ferramentas/ficha_bounce.cjs            # todas as abertas
+> node _frank/ferramentas/ficha_bounce.cjs <e-mail>   # uma pessoa
+> ```
+>
+> Ele recalcula TENTATIVAS + PRÓXIMO PASSO contra `emails_enviados` na hora. Só
+> lê: não envia e-mail nem gera link. (O quadro /admin/falhas já faz o mesmo
+> cálculo sozinho, a cada leitura.)
+
 ## 1-B. Patch do Vigia esperando (faça ANTES do resto)
 
 O Vigia **não consegue subir código** — o sandbox dele clona o repo público sem

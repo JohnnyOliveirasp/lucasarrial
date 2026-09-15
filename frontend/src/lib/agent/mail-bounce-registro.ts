@@ -27,6 +27,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { limparFechamento } from "@/lib/incidents/closure";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { parseBounce, planoDoBounce, type AcaoDeBounce, type Bounce } from "./mail-bounce";
+import { lerHistoricoDeContato } from "./contato-ficha";
 import { marcarNaoEntregue } from "./mail-envio-registro";
 
 /**
@@ -154,6 +155,10 @@ async function abrirChamadoDaAcao(a: AcaoDeBounce, emailsAfetados: string[]): Pr
  * causa do primeiro seria repetir o mesmo silêncio que este código conserta.
  */
 export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> {
+  const agoraMs = Date.now();
+  // Roteamento primeiro (quem é aluno, quem é cópia interna) pra saber de quem
+  // buscar histórico. É puro e barato; o plano final é remontado abaixo já com
+  // o histórico, que é o que muda o PRÓXIMO PASSO da ficha.
   const plano = planoDoBounce(bounce);
   const res: ResultadoBounce = {
     tipo: plano.tipo,
@@ -182,8 +187,11 @@ export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> 
     return res;
   }
 
+  // CARIMBA ANTES DE LER O HISTÓRICO, e a ordem é o ponto: se lêssemos primeiro,
+  // o envio que ACABOU de quicar ainda apareceria sem `bounce_em` e a ficha diria
+  // "sem bounce — evidência de que entrou" sobre a mensagem que voltou agora.
+  // Seria a mentira exatamente oposta à que este conserto veio matar.
   for (const a of plano.alunos) {
-    res.alunos.push(a.email);
     try {
       // Carimba o ENVIO como não-entregue, casando pelo Message-ID que o
       // relatório devolve. É isto que torna respondível a pergunta que ninguém
@@ -196,7 +204,22 @@ export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> 
       });
       if (marcado.achou) res.enviosMarcados += 1;
       else if (marcado.motivo === "envio-nao-registrado") res.enviosNaoRegistrados += 1;
+    } catch (e) {
+      console.error(`[agent/bounce] falhou ao carimbar ${a.email}:`, e instanceof Error ? e.message : e);
+    }
+  }
 
+  // Agora sim: o histórico já enxerga este bounce, e a ficha nasce com as
+  // TENTATIVAS e com o passo que corresponde a elas.
+  const contato = await lerHistoricoDeContato(
+    plano.alunos.map((a) => a.email),
+    agoraMs,
+  );
+  const planoComHistorico = planoDoBounce(bounce, contato, agoraMs);
+
+  for (const a of planoComHistorico.alunos) {
+    res.alunos.push(a.email);
+    try {
       res.reabertos.push(...(await reabrirPorBounce(a.email, a.motivoReabertura)));
       const numero = await abrirChamadoDaAcao(a, [a.email]);
       if (numero != null) res.chamados.push(numero);

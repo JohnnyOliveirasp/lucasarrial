@@ -38,6 +38,12 @@
  *     só (uid 277), então não dá pra confiar em "um campo, um endereço".
  */
 
+// O histórico de contato é o único import daqui, e continua sem IO: o
+// `contato-tentativas.ts` também é puro, então este módulo segue testável com
+// `node --test` sem Supabase. Extensão `.ts` explícita porque é assim que o
+// type-stripping nativo resolve (mesmo padrão de `failure-alert.ts`).
+import { blocoDeTentativas, passoDoHistorico, type ResumoDeContato } from "./contato-tentativas.ts";
+
 // ---------- o que é bounce ----------
 
 /** Daemons que já vimos escrevendo pra caixa do suporte@. */
@@ -460,15 +466,28 @@ function descrever(a: {
   diagnostico: string;
   assuntoOriginal: string | null;
   messageIdOriginal: string | null;
+  /** Histórico de contato já resumido. Ausente = ficha nasce como antes. */
+  contato?: ResumoDeContato | null;
+  agoraMs?: number;
 }): string {
   const o = ORIENTACAO[a.classe];
+  const agoraMs = a.agoraMs ?? Date.now();
+  // O PASSO DEIXA DE SER CONSTANTE (b32af5ff). A frase fixa da classe é correta
+  // no PRIMEIRO bounce e vira mentira operacional a partir do segundo: ela
+  // mandava "tentar de novo mais tarde" mesmo depois da mensagem ter entrado,
+  // e foi ela que produziu quatro ordens de reenvio no mesmo caso.
+  const passo = (a.contato ? passoDoHistorico(a.contato, agoraMs) : null) ?? o.passo;
+  const bloco = a.contato ? blocoDeTentativas(a.contato, agoraMs) : [];
   return [
     `A resposta do suporte@ para ${a.email} NÃO foi entregue: ${o.resumo}.`,
     "",
     'O 250 do SMTP só disse "aceitei pra entrega" — a recusa veio depois, por bounce, e a fila',
     "considerou o aluno respondido. Ele está em silêncio SEM saber, e não adianta esperar retorno dele.",
     "",
-    `PRÓXIMO PASSO: ${o.passo}`,
+    // Vem ANTES do próximo passo de propósito: quem bate o olho na ficha lê o
+    // que já foi tentado antes de ler o que fazer.
+    ...(bloco.length ? [...bloco, ""] : []),
+    `PRÓXIMO PASSO: ${passo}`,
     "",
     a.assuntoOriginal ? `Assunto que não chegou: ${a.assuntoOriginal}` : null,
     a.messageIdOriginal ? `Message-ID do envio: ${a.messageIdOriginal}` : null,
@@ -484,8 +503,17 @@ function descrever(a: {
  *
  * Devolve plano VAZIO para atraso: `Action: delayed` significa que o servidor
  * ainda vai tentar, e transformar isso em chamado seria alarme falso.
+ *
+ * `contatoPorEmail` (b32af5ff) é o histórico de tentativas JÁ RESUMIDO, por
+ * e-mail em minúsculas — quem lê o banco é o `mail-bounce-registro.ts`, pra
+ * este módulo continuar testável sem Supabase. Ausente = comportamento
+ * idêntico ao de antes, que é o que mantém os testes de bounce puro válidos.
  */
-export function planoDoBounce(bounce: Bounce): PlanoDeBounce {
+export function planoDoBounce(
+  bounce: Bounce,
+  contatoPorEmail?: Record<string, ResumoDeContato>,
+  agoraMs: number = Date.now(),
+): PlanoDeBounce {
   if (bounce.tipo === "atraso") return { tipo: "atraso", alunos: [], interno: null };
 
   const falharam = bounce.destinatarios.filter((d) => d.acao !== "delayed");
@@ -510,6 +538,8 @@ export function planoDoBounce(bounce: Bounce): PlanoDeBounce {
         diagnostico: d.diagnostico,
         assuntoOriginal: bounce.assuntoOriginal,
         messageIdOriginal: bounce.messageIdOriginal,
+        contato: contatoPorEmail?.[d.email.toLowerCase()] ?? null,
+        agoraMs,
       }),
       motivoReabertura:
         `Bounce (${d.classe}): ${o.resumo}.` +
