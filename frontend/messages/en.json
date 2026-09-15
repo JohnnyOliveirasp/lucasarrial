@@ -2268,6 +2268,12 @@
       "indeciso": "We couldn't analyze it right now. Try uploading again.",
       "remover": "Delete",
       "progresso": "{n} photo(s) approved — minimum {min}",
+      "bloqueio": {
+        "ocupado": "Wait for the photo upload to finish to continue.",
+        "fotos": "{n} more approved photo(s) needed to continue — the minimum is {min}.",
+        "ciencia": "{n} item(s) still unchecked in the confirmation list at the top of this screen."
+      },
+      "cienciaNaoGuardada": "We couldn't save your check marks right now. Don't refresh the page before continuing or they may be lost.",
       "erroUpload": "We couldn't upload the photo.",
       "erroAnalise": "We couldn't analyze the photo.",
       "erroConcluir": "Couldn't continue.",
