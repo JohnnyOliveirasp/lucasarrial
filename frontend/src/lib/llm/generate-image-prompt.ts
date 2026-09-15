@@ -70,7 +70,7 @@ Rules:
 - Output ONE single prompt in BRAZILIAN PORTUGUESE (pt-BR), ready to use. The user reads and edits this prompt — it must be natural Portuguese. (The system translates it to English later, before the image model sees it.) No preamble, no quotes, no explanations, no options.
 - The subject is "the person in the reference photo". NEVER invent or change their identity: do not specify age, ethnicity, body type, hair color/length, or facial features — those come from the reference image. You may describe pose, expression, wardrobe, action, scene, background, lighting, camera angle, lens, mood and overall style.
 - EXTRA PHOTOS, and ONLY IF the user's idea itself attributes something to one ("da foto extra", "das fotos extras", "o escritório da foto extra", "a logo da imagem extra"): that attribution is an INSTRUCTION, not decoration. KEEP IT EXPLICIT in the output, naming the extra photo. NEVER replace it with a generic description of your own ("um escritório moderno", "um cenário semelhante", "uma sala minimalista") — that throws away the exact thing the user uploaded the photo for.
-- If the idea does NOT mention an extra photo, do not mention one either, and do not invent a scene, object, garment or logo that the user did not describe. Extra photos are very often just more angles of the same person; treating them as scenery is as wrong as ignoring them.
+- NEVER attribute anything to an extra photo unless the user's idea attributed it first, and never claim an extra photo holds a scene, object, garment or logo when the idea does not say so. Extra photos are very often just more angles of the same person; treating them as scenery is as wrong as ignoring them. This limits ATTRIBUTION only — you may still describe the scene the idea asks for, and a vague idea still becomes a simple photorealistic scene as usual.
 - PRESERVING THE ORIGINAL — when the user asks to keep something as it is ("sem perder a originalidade", "o escritório original", "a mesma sala", "o restante permanece"), repeat that requirement in the output. Never swap it for an invented style adjective.
 - Stay faithful to the user's idea. Do not add unrelated elements. If the idea is vague, keep the scene simple and photorealistic.
 - Prefer photorealistic, natural results unless the user clearly asks for another style (cartoon, 3D, painting, etc.).
@@ -126,10 +126,15 @@ export function mensagemDoUsuario(idea: string, refCount?: number): string {
  * `refCount` (opcional, #270): quantas fotos de referência entram NESTA
  * geração. Quem não passa cai no texto de uma foto só.
  *
- * ⚠️ O Vídeo Vendas TEM caso de composição de verdade: `videos/[id]/images`
- * monta `[...pessoa(3), ...produto(2)]`, ou seja a foto do PRODUTO entra como
- * referência extra. É o único lugar do código onde "isto vem da foto extra" é
- * inequívoco — se o count não chegar lá, o aluno perde o produto da cena.
+ * O GERADOR DE CENAS DO VÍDEO NÃO PASSA, DE PROPÓSITO. Chegou a passar numa
+ * versão deste conserto e eu tirei: o `promptPt` das cenas é escrito por
+ * máquina e nunca diz "da foto extra", então a regra de preservar atribuição
+ * não dispara lá e o count não compraria nada. O Vídeo Vendas tem, sim, um
+ * caso de composição real (`videos/[id]/images` monta `[...pessoa(3),
+ * ...produto(2)]`, a foto do PRODUTO é referência extra de verdade) — mas se
+ * o produto sai ou não da cena hoje é pergunta que eu NÃO medi: a medição do
+ * #270 lê `image_generations`, não as cenas de vídeo. Fica como pergunta
+ * aberta, não como conserto de brinde.
  */
 export async function generateImagePrompt(
   idea: string,

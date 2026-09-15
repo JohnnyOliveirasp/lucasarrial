@@ -17,8 +17,6 @@ import {
 } from "@/lib/llm/moderate-image-prompt";
 
 const IDEA_MAX = 1000;
-/** Mesmo teto do `MAX_REFERENCE_IMAGES` da rota de gerar imagem. */
-const REFS_MAX = 15;
 
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
@@ -37,11 +35,10 @@ export async function POST(request: NextRequest) {
 
   // #270: quantas fotos entram na geração. Campo NOVO e opcional — cliente
   // velho (ou qualquer coisa que não mande) cai no comportamento de sempre.
-  // Vem do navegador, então não se confia: número finito, inteiro e no teto.
-  const refs =
-    typeof body.refs === "number" && Number.isFinite(body.refs)
-      ? Math.min(Math.max(Math.trunc(body.refs), 0), REFS_MAX)
-      : undefined;
+  // Vem do navegador, então não se confia — mas quem trunca e clampa é a
+  // própria `mensagemDoUsuario` (o invariante mora lá, não aqui); isto só
+  // recusa o que não é número, pra não mandar string/objeto adiante.
+  const refs = typeof body.refs === "number" ? body.refs : undefined;
 
   // Segurança: barra a ideia antes de gastar a LLM com conteúdo proibido.
   const mod = await moderateImagePrompt(idea);

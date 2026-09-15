@@ -58,12 +58,54 @@ test("SYSTEM põe a regra das extras no CONDICIONAL, nos dois sentidos", () => {
   // preservar a atribuição que existe...
   assert.match(SYSTEM, /ONLY IF the user's idea itself attributes something to one/);
   // ...e não inventar a que não existe
-  assert.match(SYSTEM, /If the idea does NOT mention an extra photo, do not mention one either/);
-  assert.match(SYSTEM, /do not invent a scene, object, garment or logo/);
+  assert.match(SYSTEM, /NEVER attribute anything to an extra photo unless the user's idea attributed it first/);
+  assert.match(SYSTEM, /never claim an extra photo holds a scene, object, garment or logo when the idea does not say so/);
 });
 
 test("SYSTEM não voltou a dizer que a cena é sempre NOVA (defeito do #270)", () => {
-  assert.doesNotMatch(SYSTEM, /placed into a new scene/i);
+  assert.doesNotMatch(SYSTEM, /into a (brand )?new scene/i);
+});
+
+// LIMITE HONESTO destas duas guardas, pra ninguém ler mais do que elas provam:
+// regex prova AUSÊNCIA DE UMA FRASE, não ausência de afirmação. Uma afirmação
+// nova, escrita com outras palavras e ACRESCENTADA ao lado da versão neutra,
+// passa por aqui. Medido: de 6 mutantes, estes testes matam os 4 que APAGAM o
+// conserto; os 2 que ACRESCENTAM afirmação sobrevivem. Contra esses, o que
+// vale é a leitura do diff — não finja que o verde cobre isso.
+test("SYSTEM não afirma incondicionalmente o que as extras carregam", () => {
+  assert.doesNotMatch(SYSTEM, /extras? (always|must) (carry|contain|hold)/i);
+  assert.doesNotMatch(SYSTEM, /which carry a scene/i);
+});
+
+// ── O CONSEQUENTE. Sem estes, dava pra APAGAR o conserto inteiro do #270 e o
+// arquivo continuava verde: as guardas acima só prendem a CONDIÇÃO das regras
+// (o "só se o aluno atribuir"), não a ORDEM que elas dão quando disparam.
+// Sete mutantes sobreviviam aqui; estes quatro testes os matam.
+test("SYSTEM manda PRESERVAR a atribuição — o conserto propriamente dito", () => {
+  assert.match(SYSTEM, /KEEP IT EXPLICIT in the output, naming the extra photo/);
+  assert.match(SYSTEM, /NEVER replace it with a generic description of your own/);
+  // os genéricos exatos que apareceram no lugar do escritório do Paulo
+  assert.match(SYSTEM, /um escritório moderno.*um cenário semelhante.*uma sala minimalista/);
+});
+
+test("SYSTEM mantém a regra de PRESERVAR O ORIGINAL", () => {
+  assert.match(SYSTEM, /PRESERVING THE ORIGINAL/);
+  assert.match(SYSTEM, /sem perder a originalidade/);
+  assert.match(SYSTEM, /Never swap it for an invented style adjective/);
+});
+
+test("a proibição é de ATRIBUIR, não de descrever cena (não pode contradizer)", () => {
+  // a regra que sobra pra 98% do tráfego tem que limitar atribuição...
+  assert.match(SYSTEM, /NEVER attribute anything to an extra photo unless the user's idea attributed it first/);
+  assert.match(SYSTEM, /This limits ATTRIBUTION only/);
+  // ...e NÃO pode proibir descrever cena, que é o trabalho normal da função
+  assert.match(SYSTEM, /You may describe pose, expression, wardrobe, action, scene, background/);
+  assert.match(SYSTEM, /If the idea is vague, keep the scene simple/);
+});
+
+test("a MENSAGEM manda preservar a atribuição, não só não inventar", () => {
+  const m = mensagemDoUsuario(IDEIA, 2);
+  assert.match(m, /if it attributes something to an extra photo, keep that attribution explicit/);
 });
 
 // ════════ MENSAGEM — o pedaço que varia por geração ════════

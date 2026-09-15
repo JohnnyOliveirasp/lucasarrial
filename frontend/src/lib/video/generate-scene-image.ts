@@ -30,10 +30,7 @@ export async function startSceneImage(args: {
   const { sceneId, promptPt, referenceUrls, resolution, creditsCost, callbackUrl } = args;
 
   // pt → en preservando a identidade da referência (mesmo motor do gerador).
-  // #270: passa QUANTAS referências entram. No Vídeo Vendas as últimas são as
-  // fotos do PRODUTO (`[...pessoa(3), ...produto(2)]` em videos/[id]/images),
-  // e sem o count o gerador de prompt apaga o produto da descrição da cena.
-  const en = await generateImagePrompt(promptPt, referenceUrls.length);
+  const en = await generateImagePrompt(promptPt);
   if (en === "__BLOCKED__") {
     await failSceneImage(sceneId, "Conteúdo bloqueado pela moderação.");
     return "blocked";
