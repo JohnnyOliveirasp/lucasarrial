@@ -880,7 +880,8 @@ export type VideoCloneRow = {
   error_message: string | null;
   /** Erro CRU do RunPod na falha (mig 90) — diagnóstico interno; o usuário vê error_message. */
   raw_error: string | null;
-  /** executionTime do RunPod em segundos, gravado na falha (mig 90). */
+  /** executionTime do RunPod em segundos (mig 90). Gravado na falha e,
+   *  desde #404, também no ready — sem o ready não dá pra medir a folga do teto. */
   elapsed_seconds: number | null;
   created_at: Timestamp;
 };
