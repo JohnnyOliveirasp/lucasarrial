@@ -35,6 +35,20 @@ export async function POST(request: NextRequest) {
     }
     return jsonOk({ text: t.text, duration_seconds: t.durationSeconds });
   } catch (e) {
+    // Incidente #251: este `catch` era MUDO e DESTRUÍA o erro do Whisper/R2 —
+    // o aluno ficava com a prévia girando pra sempre e não sobrava NADA no log
+    // pra descobrir por quê. O rastro deste PR FICA.
+    console.error("[video-clone/transcribe] falhou:", {
+      audio_key: audioKey,
+      user_id: auth.user_id,
+      erro: e instanceof Error ? (e.stack ?? e.message) : String(e),
+    });
+    // ⚠️ A MENSAGEM devolvida é a da main (`falhaDeAudio`), NÃO o texto genérico
+    // que este PR propunha. A main evoluiu depois que este PR foi aberto: o
+    // `falhaDeAudio` distingue 413 (>25 MB) e 400 (formato) e devolve frase
+    // ÚTIL pro aluno, enquanto "Tente novamente" mandaria repetir o que vai
+    // falhar igual. Ficam as duas metades boas: rastro no log daqui, mensagem
+    // da main. (Caso valdirtrentotrg, 15/09 — MP4 de 60min.)
     return serverError(
       falhaDeAudio(e, { rota: "video-clone/transcribe", user: auth.user_id, audioKey }),
     );

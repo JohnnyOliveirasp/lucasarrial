@@ -148,6 +148,58 @@ export function CloneStudio({
     }
   }
 
+  /**
+   * PRÉVIA da transcrição do áudio enviado — e SÓ prévia. O vídeo é gerado a
+   * partir do `audio_key`, e o POST /video-clone transcreve de novo por conta
+   * própria; falhar aqui NÃO pode impedir ninguém de gerar.
+   *
+   * Incidente #251: os três desfechos (ok / resposta de erro / rede caiu) caíam
+   * todos em `text: null`, e a tela lê "sem texto" como "ainda transcrevendo" —
+   * daí o spinner eterno. Agora cada desfecho é explícito, e a falha vira uma
+   * mensagem com "tentar de novo" em vez de silêncio.
+   */
+  const transcreverPrevia = useCallback(
+    async (key: string) => {
+      // `prev.key === key` em todo patch: entre o envio e a resposta a pessoa
+      // pode ter trocado de áudio — sem a guarda, a resposta do antigo
+      // sobrescreve o novo (corrida que já existia e continua coberta).
+      const aplicar = (patch: { text?: string | null; textError?: string | null; seconds?: number }) =>
+        setAudio((prev) =>
+          prev && prev.kind === "upload" && prev.key === key ? { ...prev, ...patch } : prev,
+        );
+
+      // Volta pro estado "transcrevendo" — é o que faz o botão tentar de novo
+      // mostrar o spinner outra vez em lugar de continuar com o erro na tela.
+      aplicar({ text: null, textError: null });
+      try {
+        const res = await fetch("/api/v1/video-clone/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audio_key: key }),
+        });
+        const j = await res.json().catch(() => null);
+        if (!res.ok || !j) {
+          // A rota manda frases ÚTEIS (duração ilegível, áudio acima do teto):
+          // mostrar a dela ajuda mais que um genérico nosso. Corpo ilegível ou
+          // sem mensagem cai no fallback traduzido.
+          const doServidor = typeof j?.error?.message === "string" ? j.error.message.trim() : "";
+          aplicar({ text: null, textError: doServidor || t("errors.transcribeFailed") });
+          return;
+        }
+        aplicar({
+          text: (j.text as string)?.trim() || t("noSpeech"),
+          textError: null,
+          ...(typeof j.duration_seconds === "number" && j.duration_seconds > 0
+            ? { seconds: j.duration_seconds }
+            : {}),
+        });
+      } catch {
+        aplicar({ text: null, textError: t("errors.transcribeNetwork") });
+      }
+    },
+    [t],
+  );
+
   async function pickAudioFile(file: File) {
     setError(null);
     const seconds = await readAudioDuration(file);
@@ -168,28 +220,19 @@ export function CloneStudio({
     setUploading("audio");
     try {
       const key = await presignAndPut("audio", file);
-      setAudio({ kind: "upload", key, seconds, preview: URL.createObjectURL(file), label: file.name, text: null });
+      setAudio({
+        kind: "upload",
+        key,
+        seconds,
+        preview: URL.createObjectURL(file),
+        label: file.name,
+        text: null,
+        textError: null,
+      });
       // Transcreve em background pra pessoa VER o que o áudio fala (a duração
-      // do Whisper também é mais confiável que a do browser).
-      fetch("/api/v1/video-clone/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio_key: key }),
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((j) => {
-          if (!j) return;
-          setAudio((prev) =>
-            prev && prev.kind === "upload" && prev.key === key
-              ? {
-                  ...prev,
-                  text: (j.text as string)?.trim() || t("noSpeech"),
-                  seconds: typeof j.duration_seconds === "number" && j.duration_seconds > 0 ? j.duration_seconds : prev.seconds,
-                }
-              : prev,
-          );
-        })
-        .catch(() => {});
+      // do Whisper também é mais confiável que a do browser). Sem `await`: a
+      // prévia não segura o upload, e falhar nela não derruba este try/catch.
+      void transcreverPrevia(key);
     } catch (e) {
       setError(
         e instanceof UploadError
@@ -435,6 +478,9 @@ export function CloneStudio({
             onUploadClick={() => audInput.current?.click()}
             uploading={uploading === "audio"}
             maxSeconds={CLONE_MAX_AUDIO_SECONDS}
+            onRetryTranscription={
+              audio?.kind === "upload" ? () => void transcreverPrevia(audio.key) : undefined
+            }
           />
         </div>
       </div>
