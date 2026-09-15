@@ -129,6 +129,25 @@ export type SgpPedidoRow = {
   concluido_em?: string | null;
   concluido_por?: string | null;
   concluido_motivo?: string | null;
+  /**
+   * "Avisei o aluno" do time no /admin/sgp (migration 116, NÃO APLICADA).
+   * OPCIONAIS pelo mesmo motivo das anteriores.
+   *
+   * ⚠️ NÃO é `status === 'pronto'` e NÃO é `concluido_em`. `pronto` é o ROBÔ
+   * dizendo que GEROU; `concluido_em` é o time dizendo que não precisa mais
+   * mexer no caso; ISTO é alguém afirmando que o ALUNO FOI AVISADO de que o
+   * material está pronto — um fato sobre o mundo, não sobre a nossa fila.
+   * Confundir os dois primeiros foi o defeito que o recado 6 (15/09) expôs: a
+   * tela dizia "Entregue" e "Nada a fazer" para 82 pedidos sem ter ideia se
+   * alguém tinha falado com o aluno.
+   *
+   * Enquanto a 116 não entra, quem responde sozinho é
+   * `profiles.onboarding_ready_email_at` — ver lib/sgp/aviso.ts.
+   */
+  avisado_em?: string | null;
+  avisado_por?: string | null;
+  /** "e-mail", "WhatsApp"… Por onde o aluno foi avisado. */
+  avisado_canal?: string | null;
 };
 
 /** Só dígitos, com DDI. "+55 (11) 99999-8888" → "5511999998888". */

@@ -37,10 +37,14 @@ import type { SgpPedidoRow, SgpStatus } from "./types.ts";
 import { normalizarWhatsapp } from "./types.ts";
 import {
   ETAPA_HUMANA,
+  ETAPA_FILA_HUMANA,
+  ETAPA_NAO_INICIOU,
   SGP_PARADO_HORAS,
   SITUACAO_ROTULO,
   situacao,
   tempoHumano,
+  type AvisoEntrega,
+  type LinhaPainel,
   type SituacaoSgp,
 } from "./painel.ts";
 // A régua de acesso e a régua de "isto é dinheiro que entrou" vêm PRONTAS de
@@ -281,8 +285,12 @@ export type LinhaComprador = {
   /** Passou de 48h esperando e a bola está com ela ou com a gente. */
   parado: boolean;
   /**
-   * Chegou ao fim: material enviado e clone ENTREGUE pelo robô. Não precisa
-   * de contato.
+   * Chegou ao fim: o clone ficou pronto E o aluno foi avisado. Não precisa de
+   * contato.
+   *
+   * ⚠️ MUDOU EM 15/09 (recado 6): era `statusPedido === 'pronto'`, que só diz
+   * que o ROBÔ gerou. Agora exige o carimbo de aviso — ver `AvisoEntrega` em
+   * painel.ts, inclusive as duas coisas que o carimbo NÃO prova.
    *
    * ⚠️ NÃO confundir com `situacao === 'concluido'` (migration 110), que é o
    * TIME declarando que encerrou o ATENDIMENTO. Um pedido pode estar entregue
@@ -290,6 +298,11 @@ export type LinhaComprador = {
    * por isso os dois vivem em campos separados e com nomes diferentes.
    */
   entregue: boolean;
+  /**
+   * O clone foi GERADO e não há registro de que o aluno tenha sido avisado.
+   * É o buraco que o recado 6 (15/09) mandou parar de chamar de "entregue".
+   */
+  geradoSemAviso: boolean;
   /**
    * O que essa pessoa paga no FastCloner HOJE.
    *
@@ -363,6 +376,12 @@ export function montarComprador(
   pedido: SgpPedidoRow | null,
   agora: number,
   fastcloner: AssinaturaFastCloner | null = null,
+  /**
+   * O carimbo de aviso daquele pedido, quando a rota consultou (recado 6).
+   * `null` = sem registro OU não consultado — os dois viram "gerado, não
+   * entregue", que é o estado honesto de quem não sabe.
+   */
+  aviso: AvisoEntrega | null = null,
 ): LinhaComprador {
   const nome = pedido?.nome?.trim() || compra?.nome?.trim() || "(sem nome)";
   const email = pedido?.email?.trim() || compra?.email?.trim() || chave;
@@ -382,19 +401,29 @@ export function montarComprador(
   const referencia = pedido ? new Date(pedido.atualizado_em).getTime() : dataAquisicao ? new Date(dataAquisicao).getTime() : NaN;
   const esperandoMs = Number.isFinite(referencia) ? Math.max(0, agora - referencia) : 0;
 
-  const entregue = statusPedido === "pronto";
   // Sem pedido não há o que derivar: a pessoa pagou e nem começou. Isso é
   // AGUARDANDO, e o motivo é o próprio texto que a coluna Status já mostra.
   const sit = pedido
-    ? situacao(pedido, agora)
+    ? situacao(pedido, agora, aviso)
     : {
         codigo: "aguardando" as SituacaoSgp,
         rotulo: SITUACAO_ROTULO.aguardando,
         motivo: "Comprou e ainda não abriu o portal — é com essa pessoa que o time precisa falar.",
       };
+  // ⚠️ MUDOU NO RECADO 6 (15/09). Era `statusPedido === "pronto"`, ou seja: "o
+  // robô gerou" virava "entregue" sem ninguém perguntar se o aluno soube. Agora
+  // entregue exige o carimbo de aviso, e as duas abas continuam concordando
+  // porque as duas derivam do MESMO `situacao` de painel.ts.
+  const entregue = sit.codigo === "entregue";
+  /** Gerado e SEM registro de aviso: a pessoa pagou, o material existe, e pode não saber. */
+  const geradoSemAviso = sit.codigo === "pronto";
   // "Parado" é só quem ainda espera algo. Quem já recebeu o clone não é alarme,
   // e quem está no meio do processamento nosso também não é cobrança do time.
-  const esperandoAlguem = statusPedido === null || statusPedido !== "pronto";
+  //
+  // ⚠️ Gerado-sem-aviso VOLTOU a contar como quem espera, e é o ponto: antes ele
+  // saía do alarme por `status === 'pronto'`, e foi assim que três alunos
+  // ficaram com o clone pronto sem ninguém falar com eles.
+  const esperandoAlguem = !entregue;
   const parado = esperandoAlguem && esperandoMs > PARADO_MS;
 
   return {
@@ -415,6 +444,7 @@ export function montarComprador(
     esperandoTexto: Number.isFinite(referencia) ? tempoHumano(esperandoMs) : "—",
     parado,
     entregue,
+    geradoSemAviso,
     fastcloner,
   };
 }
@@ -442,8 +472,14 @@ export function montarCompradores(args: {
     entitlements: EntitlementFastClonerBruto[];
     cobrancas: CobrancaFastClonerBruta[];
   };
+  /**
+   * Carimbo de aviso POR ID DE PEDIDO (recado 6). Opcional: sem ele toda linha
+   * `pronto` vira "gerado, aviso não confirmado" — que é o estado honesto de
+   * quem não consultou, e nunca um "entregue" que ninguém mediu.
+   */
+  avisos?: Map<string, AvisoEntrega>;
 }): LinhaComprador[] {
-  const { compras, pedidos, agora, fastcloner } = args;
+  const { compras, pedidos, agora, fastcloner, avisos } = args;
 
   // 0) FastCloner por pessoa, na MESMA chave de e-mail do resto do módulo.
   //    (`chaveEmail` de novo, nunca uma segunda normalização — hoje isso já
@@ -499,9 +535,102 @@ export function montarCompradores(args: {
   const chaves = new Set<string>([...porCompra.keys(), ...porPedido.keys()]);
   const linhas: LinhaComprador[] = [];
   for (const k of chaves) {
-    linhas.push(montarComprador(k, porCompra.get(k) ?? null, escolherPedido(porPedido.get(k) ?? []), agora, assinaturaDe(k)));
+    const pedido = escolherPedido(porPedido.get(k) ?? []);
+    linhas.push(
+      montarComprador(
+        k,
+        porCompra.get(k) ?? null,
+        pedido,
+        agora,
+        assinaturaDe(k),
+        (pedido && avisos?.get(pedido.id)) ?? null,
+      ),
+    );
   }
   return linhas;
+}
+
+/* ---------------------------------------------------------------------------
+ * REQUISITO 4 DO RECADO 6 — quem comprou e nunca começou ENTRA NA FILA
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Uma linha da FILA DE TRABALHO para quem comprou e nunca abriu o portal.
+ *
+ * *"Hoje eles são invisíveis fora dos 267 pedidos — e são a maior fatia do
+ * funil. A aba 'Todos os compradores' já faz a UNIÃO compras+pedidos; reuse essa
+ * lógica, não escreva outra."* (Johnny, recado 6, 15/09)
+ *
+ * É literalmente o que esta função faz: ela NÃO consulta nada e NÃO recalcula
+ * nada. Recebe a `LinhaComprador` que `montarCompradores` já produziu — com o
+ * relógio que já conta desde a COMPRA, e o `parado` que já vem calculado de lá —
+ * e traduz para o formato da outra tabela. Se a régua da união mudar, esta linha
+ * muda junto, sozinha.
+ *
+ * ⚠️ POR QUE O `id` NÃO É UM UUID: não existe pedido, então não existe id de
+ * pedido. Inventar um faria os três botões de ação apontarem para
+ * `/api/v1/admin/sgp/<inventado>/cobranca` e devolverem 404 no clique. O
+ * prefixo `sem-pedido:` é deliberadamente impossível de confundir com um id
+ * real, e `naoIniciou` é o que manda a tela desligar os botões.
+ */
+export function linhaDeNaoIniciado(c: LinhaComprador): LinhaPainel {
+  return {
+    id: `sem-pedido:${c.chave}`,
+    nome: c.nome,
+    email: c.email,
+    whatsapp: c.celularDigitos ?? "—",
+    etapa: ETAPA_FILA_HUMANA[ETAPA_NAO_INICIOU],
+    status: ETAPA_NAO_INICIOU,
+    situacao: c.situacao,
+    situacaoRotulo: c.situacaoRotulo,
+    situacaoMotivo: c.situacaoMotivo,
+    situacaoPorBaixo: c.situacao,
+    naoIniciou: true,
+    avisado: false,
+    avisadoTexto: null,
+    avisadoEm: null,
+    relogioParado: false,
+    // Nada disto existe sem pedido: não há o que concluir, marcar ou cobrar
+    // porque não há linha em `sgp_pedidos` onde escrever.
+    concluido: false,
+    concluidoTexto: null,
+    concluidoMotivo: null,
+    conclusaoSuperada: false,
+    erroManualTexto: null,
+    erroManualMotivo: null,
+    // O relógio vem PRONTO da união (conta desde a compra — ver `montarComprador`).
+    paradoMs: c.esperandoMs,
+    paradoTexto: c.esperandoTexto,
+    parado: c.parado,
+    // Precisa de gente pelo mesmo critério do resto da fila: passou do prazo.
+    precisaAcao: c.parado,
+    silenciado: false,
+    cobradoTexto: null,
+    voltaAAvisarTexto: null,
+    foto: "—",
+    voz: "—",
+    enviadoEm: null,
+    erro: null,
+    oQueFazer: c.celularDigitos
+      ? `Comprou há ${c.esperandoTexto} e NUNCA abriu o portal. Chame no WhatsApp e ajude a começar o cadastro.`
+      : `Comprou há ${c.esperandoTexto} e NUNCA abriu o portal. Não temos telefone dele — chame pelo e-mail.`,
+  };
+}
+
+/**
+ * A fila de trabalho COMPLETA: os pedidos mais quem nunca começou.
+ *
+ * Fica aqui e não em painel.ts porque painel.ts não pode importar compradores.ts
+ * (compradores.ts já importa painel.ts — seria um ciclo).
+ */
+export function filaComNaoIniciados(
+  pedidos: LinhaPainel[],
+  compradores: LinhaComprador[],
+): LinhaPainel[] {
+  const naoIniciaram = compradores
+    .filter((c) => c.statusPedido === null)
+    .map((c) => linhaDeNaoIniciado(c));
+  return [...pedidos, ...naoIniciaram];
 }
 
 /**
@@ -529,8 +658,10 @@ export type ResumoCompradores = {
   naoComecaram: number;
   /** Começaram o portal (em qualquer etapa, inclusive entregue). */
   comecaram: number;
-  /** Entregues. */
+  /** Entregues — clone pronto E aluno avisado (recado 6). */
   entregues: number;
+  /** Clone gerado SEM registro de aviso. O buraco que o recado 6 expôs. */
+  geradosSemAviso: number;
   /** Estão no portal sem compra registrada — a data de aquisição fica vazia. */
   semCompraRegistrada: number;
   /** Esperando há mais de 48h e ainda não receberam. */
@@ -552,11 +683,18 @@ export type ResumoCompradores = {
 };
 
 export function resumirCompradores(linhas: LinhaComprador[]): ResumoCompradores {
-  const situacoes: Record<SituacaoSgp, number> = { concluido: 0, erro: 0, aguardando: 0, pronto: 0 };
+  const situacoes: Record<SituacaoSgp, number> = {
+    concluido: 0,
+    erro: 0,
+    entregue: 0,
+    aguardando: 0,
+    pronto: 0,
+  };
   for (const l of linhas) situacoes[l.situacao] += 1;
   return {
     total: linhas.length,
     situacoes,
+    geradosSemAviso: linhas.filter((l) => l.geradoSemAviso).length,
     naoComecaram: linhas.filter((l) => l.statusPedido === null).length,
     comecaram: linhas.filter((l) => l.statusPedido !== null).length,
     entregues: linhas.filter((l) => l.entregue).length,
