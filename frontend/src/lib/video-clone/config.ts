@@ -86,16 +86,60 @@ export function cloneCreditsCost(tier: CloneTier, seconds: number): number {
 }
 
 /**
- * Teto de execução do job no RunPod (policy.executionTimeout), dimensionado
- * pro PIOR caso medido nos logs de 2026-07-12: worker L40S frio ≈ 10min só
- * carregando modelos + V1 480p ≈ 2,5min por janela de ~72 frames (7 steps ×
- * ~19,5s/step). O default do endpoint (15min) matava QUALQUER áudio >20s no
- * V1 — e até jobs de 11s quando caíam num L40S frio. O teto é rede de
- * segurança, não meta — job saudável termina bem antes.
+ * Custo FIXO do job (carregar modelos no worker frio + fila), em segundos, que
+ * o teto precisa cobrir ANTES de qualquer compute. Separado de
+ * `cloneExecutionTimeoutMs` só pra poder ser medido contra produção no teste.
+ *
+ * ERA 20min, dimensionado em 2026-07-12 contra um cold start medido de ~10min
+ * (2× de margem). REMEDIDO EM PRODUÇÃO 15/09 (#404) e a margem tinha sumido:
+ * decompondo `elapsed_seconds - 30*ceil(audio)` nos jobs com tempo gravado,
+ *
+ *   status ready  (32 jobs) → fixo consumido vai até 1199,4s
+ *   status failed  (9 jobs) → fixo consumido entre 1202,8s e 1212,0s
+ *
+ * ou seja: o maior custo fixo de um job que DEU CERTO (1199,4s) e o menor de um
+ * job MORTO (1202,8s) estão a 3,4 segundos um do outro. Não são duas
+ * populações — é uma só, cortada por uma linha desenhada em 1200s. Um job
+ * entregou com **0,568s de sobra** (77,65s de áudio, 3539,432s de 3540s).
+ *
+ * É isso que separa TETO APERTADO de WORKER PENDURADO, a pergunta que o #404
+ * não conseguia responder: job pendurado não entrega a 99,95% do teto — ele
+ * não entrega. E o contraste com o apagão de 05/09 fecha a leitura: aquelas 24
+ * falhas morreram com 0,1%–2,8% do teto (1s a 64s), que é crash, classe outra.
+ * Entre 2,8% e 100% não existe nada. Ninguém morre no meio.
+ *
+ * ⚠️ A distribuição dos SUCESSOS está CENSURADA exatamente em 1200s: job que
+ * precisava de mais nunca virou `ready` pra ser medido. Logo 1199,4s é PISO do
+ * que job saudável consome, não teto. Por isso 40min aqui é "restaura os 2× de
+ * margem do desenho original contra a medição de hoje", não "40min basta" —
+ * isso ninguém sabe ainda. Agora que `ready` grava `elapsed_seconds` (dcc6653),
+ * uma semana nesta régua mostra a cauda de verdade. Reveja com o dado.
+ */
+export const CLONE_FIXED_OVERHEAD_SECONDS = 40 * 60;
+
+/**
+ * Maior custo fixo já observado num job que ENTREGOU, em segundos (produção,
+ * 15/09, #404). É a régua externa contra a qual o overhead acima é testado —
+ * mexeu num, o teste cobra o outro.
+ */
+export const CLONE_FIXED_OVERHEAD_MEDIDO_EM_SUCESSO = 1199.4;
+
+/**
+ * Teto de execução do job no RunPod (policy.executionTimeout). Rede de
+ * segurança, não meta — job saudável termina antes.
+ *
+ * Duas parcelas, e elas NÃO são intercambiáveis:
+ *   - fixa (`CLONE_FIXED_OVERHEAD_SECONDS`): cold start + fila. Não escala com
+ *     o áudio, e é a que estourou no #404;
+ *   - por segundo de áudio: o compute de fato. Medida em 15/09 num job que
+ *     raspou o teto (77,65s áudio, ~2339s de compute → **30,1 s/s**), ou seja
+ *     os 30 abaixo continuam calibrados. NÃO foram mexidos de propósito: o
+ *     #404 é um defeito na parcela FIXA, e mexer nas duas de uma vez faria a
+ *     próxima medição não saber a qual atribuir o resultado.
  */
 export function cloneExecutionTimeoutMs(tier: CloneTier, seconds: number): number {
   const billed = Math.max(CLONE_MIN_BILLED_SECONDS, Math.ceil(seconds));
   // Segundos de GPU por segundo de áudio, com folga pra GPU mais lenta da fila.
   const perAudioSecond = tier.flow === "v1" ? 60 : 30;
-  return (20 * 60 + billed * perAudioSecond) * 1000;
+  return (CLONE_FIXED_OVERHEAD_SECONDS + billed * perAudioSecond) * 1000;
 }
