@@ -17,7 +17,14 @@ import { getAdmin } from "@/lib/db/admin";
 import { agentProvider } from "@/lib/agent/provider";
 import { wahaLidToPhone } from "@/lib/agent/waha";
 import type { AgentChatRow, ProfileRow } from "@/lib/db/types";
-import { janelaGarantia, type EventoCompra } from "@/lib/agent/garantia";
+import {
+  janelaGarantia,
+  janelasPorProduto,
+  blocoGarantiaMultiProduto,
+  diaBR,
+  GARANTIA_ESCALAR,
+  type EventoCompra,
+} from "@/lib/agent/garantia";
 import { qaVeredito, AVISO_QA_NAO_PROVA } from "@/lib/generations/qa-veredito";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
@@ -130,9 +137,6 @@ function jobLines(lines: JobLine[]): string {
     .join("\n");
 }
 
-const diaBR = (d: Date) =>
-  d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" });
-
 /**
  * A linha da GARANTIA, já CALCULADA — não a data crua.
  *
@@ -171,9 +175,10 @@ const diaBR = (d: Date) =>
  * de reserva estão em `garantia.ts`, junto da função pura e dos testes dela.
  * Aqui ficou só a consulta e o texto.
  */
-export const GARANTIA_ESCALAR =
-  `GARANTIA HOTMART: NÃO foi possível confirmar a janela de garantia deste e-mail. ` +
-  `NÃO afirme nada sobre prazo de garantia e escale pro humano.`;
+// A constante e o texto do multi-produto vivem em `garantia.ts` (sem import de
+// banco), que é o único jeito de TESTAR a string que chega no prompt. Re-exporto
+// daqui porque este era o endereço dela desde o #198.
+export { GARANTIA_ESCALAR };
 
 async function linhaGarantiaHotmart(email: string | null): Promise<string> {
   if (!email) return GARANTIA_ESCALAR;
@@ -188,6 +193,19 @@ async function linhaGarantiaHotmart(email: string | null): Promise<string> {
     if (error || !data?.length) return GARANTIA_ESCALAR;
 
     const agora = new Date();
+
+    // ── 2+ PRODUTOS: uma linha POR produto (incidente #265, falso positivo da
+    // Evelyn, 14/09). Com UMA linha sem dono, a Fast atribui a data ao produto
+    // que o aluno perguntou — com 2+ compras é erro garantido, não risco.
+    // Medido em 15/09: 36 alunos têm compras de 2+ produtos DIFERENTES (26 deles
+    // misturando produto pago com adesão de R$ 0, que é a forma exata do caso da
+    // Evelyn). Os "237 com 2+ janelas" da primeira medição contavam RENOVAÇÃO do
+    // mesmo produto, que é política do Johnny e não passa por aqui.
+    const porProduto = janelasPorProduto(data as EventoCompra[], agora);
+    const bloco = blocoGarantiaMultiProduto(porProduto, agora);
+    if (bloco) return bloco;
+
+    // Um produto só (ou nenhuma janela confirmada): caminho de sempre, intacto.
     const j = janelaGarantia(data as EventoCompra[], agora);
     if (!j) return GARANTIA_ESCALAR;
 
