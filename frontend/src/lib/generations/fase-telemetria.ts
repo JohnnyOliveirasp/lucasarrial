@@ -14,8 +14,23 @@
  *
  * Segurança: o token é HMAC-SHA256(FASE_TELEMETRIA_SECRET, generationId) —
  * por-job, mesmo modelo de confiança das presigned URLs que já viajam no
- * input. Sem a env FASE_TELEMETRIA_SECRET a feature fica DESLIGADA em
- * silêncio (o input não ganha as chaves e o worker não posta nada).
+ * input.
+ *
+ * ⚠️ O SILÊNCIO JÁ CUSTOU UMA RONDA (28/08, chamado #15). Sem a env
+ * FASE_TELEMETRIA_SECRET a feature fica desligada, e até aqui ela ficava
+ * desligada SEM DIZER NADA: o código foi mergeado em 25/08 (b9bc646/1c72d77),
+ * ninguém setou a env, e durante 4 dias o app seguiu injetando `{}` no input
+ * enquanto todo mundo achava que a instrumentação estava no ar. Medido em
+ * 28/08: `qa.fase_corrente` presente em **0 de 322** gerações de 3 dias
+ * (a coluna `qa` em si estava preenchida em 259 — não era a coluna, era a
+ * fase que nunca chegava). Uma falha por timeout do Victor às 18:16Z passou
+ * por aqui e morreu sem dizer a fase, que é exatamente o que esta feature
+ * existe pra evitar.
+ *
+ * Por isso `faseTelemetriaMotivoDesligada()` existe: desligado continua sendo
+ * o default seguro, mas agora ele é AUDÍVEL — quem chama loga o motivo com o
+ * nome da env que falta, uma vez por processo. Feature de telemetria que
+ * falha em silêncio não é telemetria, é a ilusão dela.
  *
  * Tudo aqui é telemetria: nenhum caminho pode derrubar submit, webhook ou
  * estorno.
@@ -34,14 +49,56 @@ export function faseTelemetriaToken(generationId: string): string | null {
   return createHmac("sha256", s).update(generationId).digest("hex");
 }
 
+/** Base pública do app, ou null. Mesma precedência do `webhookUrlFor` do
+ * RunPod (`lib/runpod/client.ts:183`) — de propósito: o webhook de conclusão
+ * comprovadamente chega em produção (medido 28/08: 28 de 32 falhas em 10 dias
+ * entraram pelo webhook cru, só 4 pelo poll), então essa precedência resolve
+ * pra uma URL alcançável no ambiente real. Não mexer nela aqui sem mexer lá. */
+function baseUrl(): string | null {
+  return process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || null;
+}
+
+/**
+ * Por que a telemetria de fase está desligada, ou `null` quando está ligada.
+ *
+ * Existe para que o estado OFF seja audível (ver o cabeçalho do arquivo).
+ * É pura e sem dependência de logger de propósito: o arquivo roda sob
+ * `node --test` com type-stripping, e importar `@/lib/logger/server` aqui
+ * quebraria o teste pelo alias `@/`. Quem chama é que loga.
+ *
+ * O motivo nomeia a ENV que falta, porque "telemetria desligada" sem o nome
+ * da variável obriga quem lê o log a vir ler este arquivo pra agir.
+ */
+export function faseTelemetriaMotivoDesligada(): string | null {
+  try {
+    const temSecret = !!secret();
+    const temBase = !!baseUrl();
+    if (temSecret && temBase) return null;
+    if (!temSecret && !temBase) {
+      return "FASE_TELEMETRIA_SECRET (ausente ou <16 chars) e NEXT_PUBLIC_SITE_URL/SITE_URL ausentes";
+    }
+    if (!temSecret) return "FASE_TELEMETRIA_SECRET ausente ou com menos de 16 chars";
+    return "NEXT_PUBLIC_SITE_URL/SITE_URL ausentes — sem destino pro heartbeat";
+  } catch {
+    return "erro ao ler as envs da telemetria de fase";
+  }
+}
+
 /**
  * Chaves extras pro input do job de inferência. `{}` quando a feature está
  * desligada — o input fica idêntico ao de hoje e o worker não posta nada.
+ *
+ * ⚠️ O worker DESCARTA a config se a url não começar com `https://`
+ * (`runpod-worker/worker_log.py:_fase_cfg_from_input`), e descarta em
+ * silêncio. Logo: `{}` aqui e uma base `http://` lá dão no mesmo resultado
+ * (zero fase gravada) por dois motivos diferentes. `faseTelemetriaMotivoDesligada`
+ * cobre o primeiro; o segundo está anotado aqui pra ninguém perder a próxima
+ * meia-hora com ele.
  */
 export function faseTelemetriaInput(generationId: string): Record<string, string> {
   try {
     const token = faseTelemetriaToken(generationId);
-    const base = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
+    const base = baseUrl();
     if (!token || !base) return {};
     return {
       fase_url: `${base.replace(/\/$/, "")}/api/v1/webhooks/runpod-fase`,
