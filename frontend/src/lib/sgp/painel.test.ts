@@ -101,6 +101,9 @@ test("dentro das 48h no wizard não vira ação — não se cobra quem acabou de
 });
 
 test("entregue há muito tempo NÃO é 'parado' — a régua só vale pro wizard", () => {
+  // ⚠️ 15/09 (recado 6): "entregue" deixou de sair de `status = 'pronto'` e passou
+  // a exigir o carimbo de aviso ao aluno. Este teste ganhou o carimbo; o caso SEM
+  // carimbo virou o teste logo abaixo, com o resultado oposto — que é o conserto.
   const l = montarLinha(
     pedido({
       status: "pronto",
@@ -110,12 +113,30 @@ test("entregue há muito tempo NÃO é 'parado' — a régua só vale pro wizard
       voz_pronta_em: new Date(AGORA - 30 * 24 * H).toISOString(),
     }),
     AGORA,
+    undefined,
+    { em: new Date(AGORA - 29 * 24 * H).toISOString(), canal: "e-mail", por: "o sistema" },
   );
   assert.equal(l.parado, false);
   assert.equal(l.precisaAcao, false);
-  assert.equal(l.oQueFazer, "Nada a fazer. Já foi entregue.");
+  assert.equal(l.situacao, "entregue");
+  assert.match(l.oQueFazer, /^Nada a fazer\./);
   assert.equal(l.foto, "ok");
   assert.equal(l.voz, "ok");
+});
+
+test("pronto SEM carimbo de aviso NÃO diz 'nada a fazer' — a regressão do recado 6", () => {
+  const l = montarLinha(
+    pedido({
+      status: "pronto",
+      atualizado_em: new Date(AGORA - 30 * 24 * H).toISOString(),
+      enviado_em: new Date(AGORA - 30 * 24 * H).toISOString(),
+    }),
+    AGORA,
+  );
+  assert.equal(l.situacao, "pronto");
+  assert.equal(l.situacaoRotulo, "GERADO");
+  assert.match(l.oQueFazer, /AVISAR O ALUNO/);
+  assert.doesNotMatch(l.oQueFazer, /Nada a fazer/);
 });
 
 test("falhou vira ação sem prometer prazo (regra do Johnny/Lucas)", () => {
@@ -520,11 +541,18 @@ test("o resumo conta os três buckets e eles fecham com o total", () => {
     montarLinha(pedido({ id: "d", status: "falhou", erro: "x" }), AGORA),
   ];
   const r = resumir(linhas);
-  assert.deepEqual(r.situacoes, { concluido: 0, pronto: 1, aguardando: 2, erro: 1 });
+  // `pronto: 1` = o pedido gerado SEM carimbo de aviso (montado sem `aviso`).
+  // ENTREGUE é bucket próprio desde 15/09 e aqui fica vazio de propósito.
+  assert.deepEqual(r.situacoes, { concluido: 0, entregue: 0, pronto: 1, aguardando: 2, erro: 1 });
   assert.equal(
-    r.situacoes.concluido + r.situacoes.pronto + r.situacoes.aguardando + r.situacoes.erro,
+    r.situacoes.concluido +
+      r.situacoes.entregue +
+      r.situacoes.pronto +
+      r.situacoes.aguardando +
+      r.situacoes.erro,
     r.total,
   );
+  assert.equal(r.geradosSemAviso, 1);
 });
 
 // --- degradação sem a migration (lib/sgp/cobranca.ts) ------------------------
@@ -790,9 +818,19 @@ test("situacaoPorBaixo denuncia quem foi encerrado sem ter recebido o clone", ()
   assert.equal(semEntrega.situacao, "concluido");
   assert.equal(semEntrega.situacaoPorBaixo, "aguardando");
 
-  const comEntrega = montarLinha(concluido({ status: "pronto" }), AGORA);
+  // ⚠️ 15/09 (recado 6): "recebeu" passou a exigir o carimbo de aviso. Sem ele,
+  // um concluído em cima de pedido `pronto` É pendência — o clone existe e o
+  // aluno pode nunca ter sabido. Por isso o caso com entrega leva o carimbo.
+  const comEntrega = montarLinha(concluido({ status: "pronto" }), AGORA, undefined, {
+    em: new Date(AGORA - 1 * H).toISOString(),
+    canal: "e-mail",
+    por: "o sistema",
+  });
   assert.equal(comEntrega.situacao, "concluido");
-  assert.equal(comEntrega.situacaoPorBaixo, "pronto");
+  assert.equal(comEntrega.situacaoPorBaixo, "entregue");
+
+  const geradoSemAviso = montarLinha(concluido({ status: "pronto" }), AGORA);
+  assert.equal(geradoSemAviso.situacaoPorBaixo, "pronto", "gerado sem aviso NÃO é entrega");
 
   // E o contador que torna a decisão de precedência auditável.
   const r = resumir([semEntrega, comEntrega]);
@@ -963,12 +1001,24 @@ test("o resumo conta os QUATRO buckets e eles fecham com o total", () => {
     montarLinha(pedido({ id: "b", status: "foto" }), AGORA),
     montarLinha(pedido({ id: "c", status: "falhou", erro: "x" }), AGORA),
     montarLinha({ ...concluido({ status: "foto" }), id: "d" }, AGORA),
-    montarLinha({ ...concluido({ status: "pronto" }), id: "e" }, AGORA),
+    // "e" leva o carimbo de aviso: desde 15/09 é ele, e não `status = 'pronto'`,
+    // que faz um concluído NÃO contar como pendência. Sem o carimbo este caso
+    // viraria o segundo `concluidosComPendencia` — e corretamente, porque o
+    // aluno poderia nunca ter sabido que o clone dele existe.
+    montarLinha({ ...concluido({ status: "pronto" }), id: "e" }, AGORA, undefined, {
+      em: new Date(AGORA - 1 * H).toISOString(),
+      canal: "e-mail",
+      por: "o sistema",
+    }),
   ];
   const r = resumir(linhas);
-  assert.deepEqual(r.situacoes, { concluido: 2, pronto: 1, aguardando: 1, erro: 1 });
+  assert.deepEqual(r.situacoes, { concluido: 2, entregue: 0, pronto: 1, aguardando: 1, erro: 1 });
   assert.equal(
-    r.situacoes.concluido + r.situacoes.pronto + r.situacoes.aguardando + r.situacoes.erro,
+    r.situacoes.concluido +
+      r.situacoes.entregue +
+      r.situacoes.pronto +
+      r.situacoes.aguardando +
+      r.situacoes.erro,
     r.total,
   );
   assert.equal(r.concluidos, 2);
