@@ -43,7 +43,39 @@ export async function finalizeVideoClone(args: {
       .eq("id", args.cloneId)
       .in("status", ["pending", "generating"])
       .select("id");
-    return { applied: !!data && data.length > 0 };
+    const applied = !!data && data.length > 0;
+    // ── Duração do job que DEU CERTO (#404) ──────────────────────────────
+    // Sem isto a casa só sabe quanto tempo levou o job que FRACASSOU (30d:
+    // 1.986 ready com 0 elapsed_seconds, contra 32 de 35 failed), e aí não dá
+    // pra responder "quão perto do teto roda um job saudável?" — a única
+    // pergunta que separa TETO APERTADO de WORKER PENDURADO quando o
+    // executionTimeout derruba aluno. O número já chega aqui de graça: os três
+    // chamadores passam executionTimeMs também no COMPLETED.
+    // Só o claimer escreve (dentro do applied): o gate acima é que decide quem
+    // transiciona, e o poll da página, o webhook e o sweep disputam a mesma row.
+    // UPDATE separado e best-effort, pelo mesmo motivo do ramo de falha abaixo:
+    // telemetria nunca pode derrubar a transição pra ready — o aluno já tem o
+    // MP4 no R2 e é isso que a row precisa refletir.
+    if (applied && typeof args.executionTimeMs === "number") {
+      try {
+        const { error } = await admin
+          .from("video_clones")
+          .update({ elapsed_seconds: args.executionTimeMs / 1000 } as never) // RunPod manda em ms
+          .eq("id", args.cloneId);
+        if (error) {
+          logger.warn("api", "video_clone.elapsed.write_failed", {
+            cloneId: args.cloneId,
+            error: error.message,
+          });
+        }
+      } catch (e) {
+        logger.warn("api", "video_clone.elapsed.write_failed", {
+          cloneId: args.cloneId,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+    return { applied };
   }
 
   if (!["FAILED", "CANCELLED", "TIMED_OUT"].includes(args.runpodStatus)) {
