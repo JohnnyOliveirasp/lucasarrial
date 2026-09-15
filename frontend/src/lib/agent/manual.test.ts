@@ -169,3 +169,187 @@ test("a data de hoje vai junto no system prompt (#323)", () => {
     "buildAgentSystem parou de embutir a data de hoje — a Fast volta a ficar cega pro calendário",
   );
 });
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * #392 / #270 (15/09) — o Gerador de Imagem.
+ *
+ * O buraco: o manual dizia só "envia uma foto de referência" e parava. A Fast
+ * preencheu o resto sozinha e preencheu AO CONTRÁRIO, duas vezes em 3 dias,
+ * com pagante na frente: "não edita fotos que você já tem" (12/09, #270) e "a
+ * foto é só pra inspirar" (14/09, #392).
+ *
+ * ⚠️ POR QUE ESTES TESTES LEEM O pt-BR.json E A ROTA, e não só o manual.
+ * A 1ª versão deles casava `/até 15 fotos/` e `/Escolher em Imagens de
+ * Referência/` só contra o próprio `manual.ts`. A revisão adversarial provou
+ * por mutação que isso é tautologia: renomeando o botão no `pt-BR.json` e
+ * baixando `MAX_REFERENCE_IMAGES` de 15 pra 8, os 13 testes seguiam VERDES. O
+ * manual repetia a si mesmo e nada o prendia à realidade. Agora o número vem
+ * da ROTA e os nomes de botão vêm da UI — se a tela mudar e o manual não, cai
+ * aqui, que é o único lugar onde ainda dá pra consertar de graça.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const PT_BR = readFileSync(
+  fileURLToPath(new URL("../../../messages/pt-BR.json", import.meta.url)),
+  "utf8",
+);
+const ROTA_IMAGENS = readFileSync(
+  fileURLToPath(new URL("../../app/api/v1/images/generate/route.ts", import.meta.url)),
+  "utf8",
+);
+
+/** Lê um rótulo da UI pelo nome da chave, pra comparar com o que o manual diz. */
+function rotuloDaUI(chave: string): string {
+  const m = PT_BR.match(new RegExp(`"${chave}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+  assert.ok(m, `a chave "${chave}" sumiu do pt-BR.json — a UI mudou e o manual não sabe`);
+  return JSON.parse(`"${m![1]}"`);
+}
+
+/** A seção do Gerador de Imagem, isolada do resto do manual. */
+function secaoDoGerador(): string {
+  const inicio = FONTE.indexOf("### Imagens → Gerador de Imagem");
+  assert.notEqual(
+    inicio,
+    -1,
+    "a seção do Gerador de Imagem sumiu ou foi renomeada — se renomear de propósito, ajuste este teste junto",
+  );
+  const fim = FONTE.indexOf("### Imagens → Animar imagem", inicio);
+  assert.notEqual(fim, -1, "a seção seguinte (Animar imagem) sumiu");
+  return FONTE.slice(inicio, fim);
+}
+
+test("o manual diz que o Gerador é imagem→imagem e que a foto enviada é a BASE (#392)", () => {
+  const secao = secaoDoGerador();
+  assert.match(
+    secao,
+    /IMAGEM → IMAGEM/,
+    "sem dizer que é imagem→imagem, a Fast volta a tratar o Gerador como texto→imagem",
+  );
+  assert.match(
+    secao,
+    /é a BASE/,
+    "a frase que separa 'base' de 'inspiração' é o conserto — é ela que responde a pergunta do aluno",
+  );
+  // E o fato tem que continuar VERDADE na rota, senão o manual vira mentira nova.
+  assert.match(
+    ROTA_IMAGENS,
+    /image-to-image/,
+    "a rota deixou de ser image-to-image: o manual agora está errado e precisa mudar junto",
+  );
+});
+
+test("o manual PROÍBE nominalmente as três frases que queimaram os dois alunos (#270, #392)", () => {
+  const secao = secaoDoGerador();
+  assert.match(secao, /NUNCA diga/, "o guard sumiu");
+  for (const frase of [/cria do zero/, /não edita fotos que você já/, /só pra inspirar/]) {
+    assert.match(
+      secao,
+      frase,
+      `a proibição de ${frase} saiu do manual — foi uma destas frases que a Fast disse a um pagante`,
+    );
+  }
+});
+
+test("o teto de fotos do manual é o MESMO da rota que recusa a geração (#392)", () => {
+  const m = ROTA_IMAGENS.match(/MAX_REFERENCE_IMAGES\s*=\s*(\d+)/);
+  assert.ok(m, "MAX_REFERENCE_IMAGES sumiu da rota");
+  assert.match(
+    secaoDoGerador(),
+    new RegExp(`até ${m![1]} fotos`),
+    `a rota recusa acima de ${m![1]} fotos e o manual promete outro número — a Fast autoriza o que o servidor rejeita`,
+  );
+  // O peso é o teto que a CONTAGEM sozinha não pega: foi o #199 (aluno cobrado
+  // e estornado 3x com 14 fotos / 340 MB).
+  assert.ok(
+    /MAX_REFERENCE_BYTES\s*=\s*150\s*\*/.test(ROTA_IMAGENS),
+    "o teto de peso mudou na rota — ajuste os 150 MB do manual junto",
+  );
+  assert.match(secaoDoGerador(), /150 MB/, "sem o teto de peso a Fast autoriza o payload do #199");
+});
+
+test("o manual nomeia os DOIS botões do caminho das extras, com o nome que está na tela (#392)", () => {
+  const secao = secaoDoGerador();
+  // "Escolher em Imagens de Referência" só ROLA até a aba; quem adiciona de
+  // verdade é "Adicionar como extra", em cada foto. Parar no primeiro botão é o
+  // #e6c53db1: o aluno clica no botão óbvio e nada visível acontece.
+  // O manual é texto quebrado em ~76 colunas, então o rótulo da UI pode estar
+  // partido no meio por uma quebra de linha + recuo. Comparar cru dá falso
+  // NEGATIVO (foi o que aconteceu na 1ª rodada deste teste): normaliza os dois.
+  const semQuebra = secao.replace(/\s+/g, " ");
+  for (const chave of ["extrasPick", "addExtra", "extrasLabel"]) {
+    const rotulo = rotuloDaUI(chave).replace(/\s+/g, " ");
+    assert.ok(
+      semQuebra.includes(rotulo),
+      `o manual não usa o texto exato de "${chave}" ("${rotulo}") — o aluno procura na tela pelo nome, não pela ideia`,
+    );
+  }
+  assert.match(
+    secao,
+    /só\s+LEVA até a aba/,
+    "sem dizer que o primeiro botão só navega, o manual manda o aluno parar no meio do caminho",
+  );
+});
+
+test("o manual não repete o falso negativo do #392 sobre a foto do quadro principal", () => {
+  const secao = secaoDoGerador();
+  // image-studio.tsx: `if (!fixedRef && primeira) persistFixedRef(primeira)` —
+  // com o quadro VAZIO a primeira foto subida VIRA a principal e ENTRA na
+  // geração. Dizer, sem essa ressalva, que "subir foto no quadro só salva" é o
+  // mesmo defeito que este PR conserta, virado do avesso.
+  assert.match(
+    secao,
+    /se ele está VAZIO, a primeira foto que o aluno subir\s*\n?\s*vira a principal/,
+    "voltou a afirmar que a foto do quadro não entra na geração — falso quando o quadro está vazio",
+  );
+  assert.match(
+    secao,
+    /Não diga a ninguém que a foto do quadro não é usada/,
+    "o guard explícito contra o falso negativo sumiu",
+  );
+});
+
+test("o manual manda dizer no prompt o que vem de cada foto, e reler o prompt automático (#270)", () => {
+  const secao = secaoDoGerador();
+  assert.match(
+    secao,
+    /DIZER NO PROMPT o\s*\n?\s*que vem de cada foto/,
+    "é a única orientação que faz a atribuição por foto funcionar — sem ela a IA monta cenário genérico",
+  );
+  assert.match(
+    secao,
+    /EDITÁVEL e é o texto final/,
+    "o aluno acha que a IA obedece a ideia que ele digitou; ela obedece o prompt gerado",
+  );
+});
+
+test("o manual NÃO afirma o que existe dentro das fotos extras (#270, a armadilha 117× maior)", () => {
+  // O PR #297 mediu: 2.583 de 2.626 gerações com 2+ fotos (98%, 792 alunos) NÃO
+  // atribuem nada às extras — a moda é lote de selfie. Afirmar que as extras
+  // trazem cenário/objeto/logo faria a Fast mandar 792 alunos inventarem móvel.
+  //
+  // A 1ª versão deste teste só checava a PRESENÇA da ressalva, e a revisão
+  // adversarial provou que dava pra inserir "as extras SEMPRE carregam um
+  // cenário" mantendo a ressalva e os 13 testes seguiam verdes. Agora o teste
+  // proíbe a forma afirmativa, que é o que o nome dele sempre prometeu.
+  const secao = secaoDoGerador();
+  assert.match(
+    secao,
+    /Não afirme qual dos dois é/,
+    "sem esta ressalva o manual repete, do lado da Fast, o defeito ao contrário que o PR #297 evitou",
+  );
+  for (const afirmativa of [
+    /extras?\s+(sempre|carregam|trazem|têm|contêm)/i,
+    /as extras são o cenário/i,
+  ]) {
+    assert.doesNotMatch(
+      secao,
+      afirmativa,
+      `o manual passou a AFIRMAR o conteúdo das extras (${afirmativa}) — é o defeito do #270 ao contrário, e 117× maior`,
+    );
+  }
+  // E não empurre atribuição pra quem não pediu: é o caso de 98%.
+  assert.match(
+    secao,
+    /Não empurre atribuição pra quem não pediu/,
+    "o guard que protege os 98% que só mandam selfie sumiu",
+  );
+});
