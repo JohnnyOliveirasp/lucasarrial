@@ -18,6 +18,7 @@ import {
   type MontageOutput,
 } from "@/lib/studio/finalize";
 import { syncStudioScene } from "@/lib/studio/scenes";
+import { emLotes } from "@/lib/studio/lotes";
 import { syncFaceSegments } from "@/lib/studio/face";
 import { advanceMachine, type MachineProject } from "@/lib/studio/machine";
 import { sentencesFromWords } from "@/lib/studio/scene-planner";
@@ -29,6 +30,13 @@ import type {
 } from "@/lib/db/types";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+/**
+ * #358: teto de cenas sincronizadas EM PARALELO por tick do poll. 4 é o número
+ * que segura a fila do Kie sem tornar o poll lento — com 48 cenas são 12
+ * rodadas de 4, e cada rodada é um `recordInfo` curto por cena.
+ */
+const TETO_SYNC_CENAS = 4;
 
 const SELECT =
   "id, user_id, name, status, kind, raw_audio_path, raw_video_path, edited_video_path, clean_audio_path, duration_raw_seconds, duration_clean_seconds, kept_takes, removed_takes, transcript_words, edit_report, runpod_job_id, error_message, montage_status, montage_job_id, video_path, montage_error, montage_report, scenes_status, scene_plan, face_status, face_image_path, face_segments, created_at, auto_pilot, machine_step, machine_job_id, machine_voice_id, machine_music_key, script_text";
@@ -128,7 +136,14 @@ export async function GET(request: NextRequest, ctx: Ctx) {
 
     if (current.scenes_status === "generating") {
       const pending = sceneRows.filter((s) => s.status === "generating_still" || s.status === "animating");
-      await Promise.all(pending.map((s) => syncStudioScene(s).catch(() => {})));
+      // #358: em LOTES, nunca tudo de uma vez. Antes era um `Promise.all` sobre
+      // `pending` inteiro — e `pending` é TODA cena pendente do projeto, sem
+      // teto. Medido em produção 11/09: projeto de 48 cenas disparava até 48
+      // chamadas simultâneas ao Kie POR TICK do poll, e é essa rajada que
+      // produz o 429. A retentativa do #240 ameniza, não remove: 48 chamadas
+      // paralelas retentando continuam sendo uma rajada. O `.catch(() => {})`
+      // por cena segue igual — cena que falha não derruba as outras.
+      await emLotes(pending, TETO_SYNC_CENAS, (s) => syncStudioScene(s).catch(() => {}));
       if (pending.length > 0) {
         const { data: fresh } = await admin
           .from("studio_scenes")
