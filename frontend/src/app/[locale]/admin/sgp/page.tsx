@@ -120,6 +120,13 @@ export default function SgpPage() {
   const [abertoErro, setAbertoErro] = useState<string | null>(null);
   const [rascunhoErro, setRascunhoErro] = useState<Record<string, string>>({});
 
+  /**
+   * Pill clicada = FILTRO da lista. Nunca move o aluno de etapa: filtrar é
+   * reversível, mexer no estado real brigaria com o robô (decisão do Lucas).
+   * `situacao` casa com LinhaPainel.situacao; `etapa` casa com LinhaPainel.status.
+   */
+  const [filtro, setFiltro] = useState<{ tipo: "situacao" | "etapa"; valor: string } | null>(null);
+
   const [aba, setAba] = useState<Aba>("fila");
   const [compradores, setCompradores] = useState<LinhaComprador[] | null>(null);
   const [resumoTodos, setResumoTodos] = useState<ResumoCompradores | null>(null);
@@ -259,6 +266,24 @@ export default function SgpPage() {
 
   const silencioHoras = cobranca?.silencioHoras ?? SGP_PARADO_HORAS;
 
+  /** Clicar na pill já ligada DESLIGA o filtro — sem isso não há como voltar atrás. */
+  function alternarFiltro(tipo: "situacao" | "etapa", valor: string) {
+    setFiltro((f) => (f && f.tipo === tipo && f.valor === valor ? null : { tipo, valor }));
+  }
+
+  /**
+   * O filtro é só de LEITURA, em cima do que já veio: não refaz busca e não
+   * altera nada no banco. Some da tela, não some do mundo.
+   */
+  const visiveis = filtro
+    ? pedidos.filter((p) => (filtro.tipo === "situacao" ? p.situacao === filtro.valor : p.status === filtro.valor))
+    : pedidos;
+
+  const rotuloDoFiltro =
+    filtro?.tipo === "situacao"
+      ? filtro.valor.toUpperCase()
+      : (resumo?.porEtapa.find((e) => e.status === filtro?.valor)?.etapa ?? filtro?.valor ?? "");
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -324,10 +349,26 @@ export default function SgpPage() {
           estão gravando o áudio?". */}
       {resumo && resumo.total > 0 && (
         <div className="flex flex-wrap gap-2">
-          <Contador rotulo="Total" n={resumo.total} />
-          <Contador rotulo="PRONTO" n={resumo.situacoes.pronto} />
-          <Contador rotulo="AGUARDANDO" n={resumo.situacoes.aguardando} />
-          <Contador rotulo="ERRO" n={resumo.situacoes.erro} />
+          {/* "Total" é o limpar-filtro: é onde a mão vai quando quer tudo de volta. */}
+          <Contador rotulo="Total" n={resumo.total} ativo={filtro === null} onClick={() => setFiltro(null)} />
+          <Contador
+            rotulo="PRONTO"
+            n={resumo.situacoes.pronto}
+            ativo={filtro?.tipo === "situacao" && filtro.valor === "pronto"}
+            onClick={() => alternarFiltro("situacao", "pronto")}
+          />
+          <Contador
+            rotulo="AGUARDANDO"
+            n={resumo.situacoes.aguardando}
+            ativo={filtro?.tipo === "situacao" && filtro.valor === "aguardando"}
+            onClick={() => alternarFiltro("situacao", "aguardando")}
+          />
+          <Contador
+            rotulo="ERRO"
+            n={resumo.situacoes.erro}
+            ativo={filtro?.tipo === "situacao" && filtro.valor === "erro"}
+            onClick={() => alternarFiltro("situacao", "erro")}
+          />
         </div>
       )}
 
@@ -335,8 +376,32 @@ export default function SgpPage() {
       {resumo && resumo.total > 0 && (
         <div className="flex flex-wrap gap-2">
           {resumo.porEtapa.map((e) => (
-            <Contador key={e.status} rotulo={e.etapa} n={e.n} />
+            <Contador
+              key={e.status}
+              rotulo={e.etapa}
+              n={e.n}
+              ativo={filtro?.tipo === "etapa" && filtro.valor === e.status}
+              onClick={() => alternarFiltro("etapa", e.status)}
+            />
           ))}
+        </div>
+      )}
+
+      {/* Filtro ligado precisa DIZER que está ligado: sem isto, "sumiram alunos"
+          vira chamado. Mostra o que está filtrando e como sair num clique. */}
+      {filtro && (
+        <div className="flex flex-wrap items-center gap-2 text-[13px] text-[var(--body)]">
+          <span>
+            Mostrando <strong>{visiveis.length}</strong> de {pedidos.length} — filtrado por{" "}
+            <strong>{rotuloDoFiltro}</strong>.
+          </span>
+          <button
+            type="button"
+            onClick={() => setFiltro(null)}
+            className="rounded-[var(--radius-full)] border border-[var(--hairline-strong)] px-3 py-1 text-[12px] text-[var(--ink)] transition-colors hover:border-[var(--hairline-bright)]"
+          >
+            limpar filtro ✕
+          </button>
         </div>
       )}
 
@@ -349,23 +414,37 @@ export default function SgpPage() {
       <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
         {loading ? (
           <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">carregando…</div>
-        ) : pedidos.length === 0 ? (
+        ) : visiveis.length === 0 ? (
           <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">
-            nenhum pedido de SGP ainda
+            {filtro ? "nenhum aluno neste filtro" : "nenhum pedido de SGP ainda"}
           </div>
         ) : (
+          /**
+           * ORDEM DAS COLUNAS = ORDEM DO TRABALHO, e isso é um conserto, não gosto.
+           * Antes: Cobrança e Marcar erro eram a 8ª e a 9ª coluna, depois de "O que
+           * fazer" (prosa longa). Numa tela de ~1240px só entravam as 7 primeiras,
+           * então os dois ÚNICOS botões da tela ficavam fora do campo de visão e o
+           * time não conseguia clicar — reclamado 3x pelo Lucas.
+           * Agora vêm logo depois de quem-é/como-falar, e a prosa foi pro fim.
+           *
+           * O `min-w-[1500px]` fica como está DE PROPÓSITO: medido, não é ele que
+           * corta a tela. A tabela renderiza com ~1780px porque quem manda é a soma
+           * dos `min-content` das 13 colunas, então baixar o min-w não move um
+           * pixel. (Medição do PR #281, confirmada aqui: com min-w 1200 a tabela
+           * seguiu em 1773px.) Mexer nele só criaria conflito à toa com o #277.
+           */
           <table className="w-full min-w-[1500px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
                 <Th>Nome</Th>
                 <Th>Situação</Th>
-                <Th>E-mail</Th>
-                <Th>WhatsApp</Th>
-                <Th>Etapa atual</Th>
                 <Th>Parado há</Th>
-                <Th>O que fazer</Th>
+                <Th>WhatsApp</Th>
                 <Th>Cobrança</Th>
                 <Th>Marcar erro</Th>
+                <Th>Etapa atual</Th>
+                <Th>E-mail</Th>
+                <Th>O que fazer</Th>
                 <Th>Foto</Th>
                 <Th>Voz</Th>
                 <Th>Enviado em</Th>
@@ -373,7 +452,7 @@ export default function SgpPage() {
               </tr>
             </thead>
             <tbody>
-              {pedidos.map((p) => (
+              {visiveis.map((p) => (
                 <tr
                   key={p.id}
                   className={`border-t border-[var(--hairline)] align-top ${
@@ -386,7 +465,10 @@ export default function SgpPage() {
                         : "bg-[var(--surface-card)]"
                   }`}
                 >
-                  <Td className="font-medium text-[var(--ink)]">
+                  {/* min-w: sem ele o nome é a primeira coluna a ser espremida e
+                      "Stella Maris Gomes Pereira Pontes Pinheiro" vira 6 linhas,
+                      inflando a altura da linha inteira. */}
+                  <Td className="min-w-[190px] font-medium text-[var(--ink)]">
                     {p.parado && (
                       <span className="mr-1.5 inline-block align-middle text-[var(--status-error)]">●</span>
                     )}
@@ -399,11 +481,6 @@ export default function SgpPage() {
                       motivo={p.situacaoMotivo}
                     />
                   </Td>
-                  <Td className="font-mono text-[11px] text-[var(--mute)]">{p.email}</Td>
-                  <Td className="font-mono text-[11px] text-[var(--mute)]">
-                    {p.whatsapp === "—" ? "—" : telefoneLegivel(p.whatsapp)}
-                  </Td>
-                  <Td>{p.etapa}</Td>
                   <Td
                     className={`font-mono text-[11px] tabular-nums ${
                       p.parado ? "font-semibold text-[var(--status-error)]" : "text-[var(--mute)]"
@@ -411,8 +488,9 @@ export default function SgpPage() {
                   >
                     {p.paradoTexto}
                   </Td>
-                  {/* A coluna que o time realmente lê. */}
-                  <Td className="max-w-[300px] text-[var(--body)]">{p.oQueFazer}</Td>
+                  <Td className="whitespace-nowrap font-mono text-[11px] text-[var(--mute)]">
+                    {p.whatsapp === "—" ? "—" : telefoneLegivel(p.whatsapp)}
+                  </Td>
                   <Td className="min-w-[190px]">
                     <CelulaCobranca
                       linha={p}
@@ -436,6 +514,12 @@ export default function SgpPage() {
                       onDesfazer={() => marcarErro(p.id, false)}
                     />
                   </Td>
+                  <Td>{p.etapa}</Td>
+                  <Td className="font-mono text-[11px] text-[var(--mute)]">{p.email}</Td>
+                  {/* Prosa longa: foi pro fim porque era ela que empurrava os botões
+                      pra fora da tela. Texto inteiro preservado (o time lê), só
+                      mais estreito — era o que mais esticava a tabela. */}
+                  <Td className="w-[240px] min-w-[240px] text-[var(--body)]">{p.oQueFazer}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{p.foto}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{p.voz}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{dt(p.enviadoEm)}</Td>
@@ -948,12 +1032,49 @@ function CelulaFastCloner({ a }: { a: AssinaturaFastCloner | null }) {
   );
 }
 
-function Contador({ rotulo, n }: { rotulo: string; n: number }) {
-  return (
-    <span className="inline-flex items-center gap-2 rounded-[var(--radius-full)] border border-[var(--hairline-strong)] px-3 py-1">
-      <span className="text-[12px] text-[var(--mute)]">{rotulo}</span>
+/**
+ * Pill de contagem. Com `onClick` ela é um BOTÃO de verdade (`<button>`), não um
+ * `<span>` com handler: assim pega teclado, foco e leitor de tela de graça.
+ *
+ * O estado ligado precisa ser óbvio à distância — o Lucas relatou 3x que "não dá
+ * pra clicar", e parte disso era não haver NADA na tela dizendo que a pill era
+ * clicável. Daí o hover, o cursor e a borda acesa no estado ativo.
+ */
+function Contador({
+  rotulo,
+  n,
+  ativo = false,
+  onClick,
+}: {
+  rotulo: string;
+  n: number;
+  ativo?: boolean;
+  onClick?: () => void;
+}) {
+  const miolo = (
+    <>
+      <span className={`text-[12px] ${ativo ? "text-[var(--ink)]" : "text-[var(--mute)]"}`}>{rotulo}</span>
       <span className="font-mono text-[12px] tabular-nums text-[var(--ink)]">{n}</span>
-    </span>
+    </>
+  );
+  const base = "inline-flex items-center gap-2 rounded-[var(--radius-full)] border px-3 py-1";
+
+  if (!onClick) {
+    return <span className={`${base} border-[var(--hairline-strong)]`}>{miolo}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={ativo}
+      className={`${base} cursor-pointer transition-colors ${
+        ativo
+          ? "border-[var(--hairline-bright)] bg-[var(--surface-deep)]"
+          : "border-[var(--hairline-strong)] hover:border-[var(--hairline-bright)]"
+      }`}
+    >
+      {miolo}
+    </button>
   );
 }
 
