@@ -17,12 +17,14 @@ import {
 } from "@/lib/llm/moderate-image-prompt";
 
 const IDEA_MAX = 1000;
+/** Mesmo teto do `MAX_REFERENCE_IMAGES` da rota de gerar imagem. */
+const REFS_MAX = 15;
 
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
 
-  let body: { idea?: string };
+  let body: { idea?: string; refs?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -33,11 +35,19 @@ export async function POST(request: NextRequest) {
   if (!idea) return badRequest("Descreva sua ideia primeiro");
   if (idea.length > IDEA_MAX) return badRequest(`Ideia muito longa (máx ${IDEA_MAX}).`);
 
+  // #270: quantas fotos entram na geração. Campo NOVO e opcional — cliente
+  // velho (ou qualquer coisa que não mande) cai no comportamento de sempre.
+  // Vem do navegador, então não se confia: número finito, inteiro e no teto.
+  const refs =
+    typeof body.refs === "number" && Number.isFinite(body.refs)
+      ? Math.min(Math.max(Math.trunc(body.refs), 0), REFS_MAX)
+      : undefined;
+
   // Segurança: barra a ideia antes de gastar a LLM com conteúdo proibido.
   const mod = await moderateImagePrompt(idea);
   if (!mod.allowed) return jsonError("content_blocked", CONTENT_BLOCKED_MESSAGE, 400);
 
-  const prompt = await generateImagePrompt(idea);
+  const prompt = await generateImagePrompt(idea, refs);
   // Sentinela do system prompt (recusou conteúdo proibido).
   if (prompt.trim() === "__BLOCKED__") {
     return jsonError("content_blocked", CONTENT_BLOCKED_MESSAGE, 400);
