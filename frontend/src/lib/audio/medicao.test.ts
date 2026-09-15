@@ -77,12 +77,88 @@ test("enquanto AINDA mede, não acusa bloqueio por falha", () => {
 test("acima do teto reprova mesmo com tudo medido", () => {
   const r = resumirMedicao([{ duracao: 61 * 60 }], MIN, MAX);
   assert.equal(r.acimaDoMaximo, true);
-  assert.equal(r.atingeMinimo, false);
+  assert.equal(r.podeEnviar, false, "o teto continua bloqueando o envio");
+  // Mudou de propósito (#253/#287): `atingeMinimo` fala SÓ do mínimo. 61min
+  // atingem o mínimo — quem reprova aqui é o teto, e dizer "não atingiu o
+  // mínimo" era a mentira que fazia a tela imprimir "Faltam: 00:00".
+  assert.equal(r.atingeMinimo, true);
 });
 
 test("faltam reflete só o que foi medido", () => {
   const r = resumirMedicao([{ duracao: 15 * 60 }, { duracao: null, falha: "timeout" }], MIN, MAX);
   assert.equal(r.faltam, 5 * 60);
+});
+
+// ── O caso do acalbamonte (#253 / #287): passar do teto ────────────────────
+// Ele somou mais de 60min, o botão morreu e o medidor dizia "Faltam: 00:00"
+// com a barra CHEIA. Três estados (abaixo/ok/acima) espremidos em um booleano:
+// o "acima" saía como `false` de `atingeMinimo`, e a tela explicava o EXCESSO
+// com a frase da FALTA. Dois dias travado, aluno pagante.
+
+test("caso normal (30min): pode enviar, nada faltando, nada sobrando", () => {
+  const r = resumirMedicao([{ duracao: 30 * 60 }], MIN, MAX);
+  assert.equal(r.estado, "ok");
+  assert.equal(r.podeEnviar, true);
+  assert.equal(r.faltam, 0);
+  assert.equal(r.excedente, 0);
+  assert.equal(r.acimaDoMaximo, false);
+});
+
+test("LIMITE: exatamente 3600s ainda passa — a regra é `>`, não `>=`", () => {
+  const r = resumirMedicao([{ duracao: MAX }], MIN, MAX);
+  assert.equal(r.acimaDoMaximo, false, "60min cravados NÃO estão acima do teto");
+  assert.equal(r.estado, "ok");
+  assert.equal(r.podeEnviar, true);
+  assert.equal(r.excedente, 0);
+});
+
+test("3601s bloqueia, reporta 1s de EXCEDENTE e NÃO diz que falta algo", () => {
+  const r = resumirMedicao([{ duracao: MAX + 1 }], MIN, MAX);
+  assert.equal(r.acimaDoMaximo, true);
+  assert.equal(r.podeEnviar, false, "o teto continua bloqueando (worker estoura em 79min)");
+  assert.equal(r.excedente, 1, "é isto que a tela mostra em vez de 'Faltam: 00:00'");
+  assert.equal(r.faltam, 0);
+  assert.equal(
+    r.estado,
+    "acima",
+    "o estado é o que impede a tela de explicar excesso com a frase da falta",
+  );
+});
+
+test("acima do teto NÃO culpa o arquivo ilegível pelo botão morto", () => {
+  const r = resumirMedicao(
+    [{ duracao: 70 * 60 }, { duracao: null, falha: "timeout" }],
+    MIN,
+    MAX,
+  );
+  assert.equal(r.podeEnviar, false);
+  assert.equal(
+    r.bloqueadoPorFalha,
+    false,
+    "quem mata o botão aqui é o excesso; culpar a falha mandaria o aluno consertar a coisa errada",
+  );
+});
+
+test("abaixo do mínimo continua sendo 'abaixo', sem excedente", () => {
+  const r = resumirMedicao([{ duracao: 10 * 60 }], MIN, MAX);
+  assert.equal(r.estado, "abaixo");
+  assert.equal(r.podeEnviar, false);
+  assert.equal(r.faltam, 10 * 60);
+  assert.equal(r.excedente, 0);
+});
+
+test("os três estados do total são mutuamente exclusivos e cobrem a régua", () => {
+  // Uma varredura da régua inteira: em todo ponto, exatamente um desfecho, e
+  // `podeEnviar` só é verdade em "ok". Trava a regressão de colapsar dois
+  // estados no mesmo booleano de novo.
+  for (let t = 0; t <= MAX + 120; t += 30) {
+    const r = resumirMedicao([{ duracao: t }], MIN, MAX);
+    const esperado = t > MAX ? "acima" : t >= MIN ? "ok" : "abaixo";
+    assert.equal(r.estado, esperado, `total ${t}s`);
+    assert.equal(r.podeEnviar, esperado === "ok", `podeEnviar em ${t}s`);
+    // O invariante que o aluno lê: nunca "faltam" e "sobram" ao mesmo tempo.
+    assert.ok(r.faltam === 0 || r.excedente === 0, `faltam e excedente juntos em ${t}s`);
+  }
 });
 
 test("todo motivo tem chave de tradução (nenhum cai em undefined)", () => {
