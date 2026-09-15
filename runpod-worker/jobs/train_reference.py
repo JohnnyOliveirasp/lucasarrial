@@ -59,6 +59,24 @@ class Referencia:
     clip: Path | None = None
     candidatas: list = field(default_factory=list)   # ranking p/ o QA da amostra
     cura: CuraTranscricao | None = None   # COMO o transcript acima foi produzido
+    # POR QUAL CAMINHO o clipe acima foi cortado (incidente 89473013):
+    # snap_ok | snap_unavailable | time_retry | fallback. Acompanha SEMPRE o
+    # clipe que ficou de pe — inclusive quando o QA promove outra candidata.
+    # ⚠️ Telemetria causal, NAO detector de defeito: corte seco nao prediz voz
+    # ruim (amostra de 50 medida em 12/09: seco->diverge 18 / seco->ok 18).
+    cut_mode: str | None = None
+
+
+def _desempacotar_candidata(cand) -> "tuple[Path, str, str | None]":
+    """(clip, transcript, cut_mode) de uma candidata do seletor.
+
+    Tolera a forma ANTIGA de 2 itens (`(clip, texto)`), que ainda sai de stub de
+    teste e de chamador nao atualizado: modo ausente vira `None` — "nao da pra
+    saber" — em vez de um palpite.
+    """
+    clip, texto = cand[0], cand[1]
+    modo = cand[2] if len(cand) > 2 else None
+    return clip, texto, modo
 
 
 def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
@@ -111,15 +129,16 @@ def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
         _log("error", "train.reference.transcribe_failed", detail=ref.error)
         return ref
 
-    clip, transcript = escolhida
+    clip, transcript, cut_mode = _desempacotar_candidata(escolhida)
     cura = transcricao_fiel(clip, transcript, whisper_model, language)
     upload_file_to_presigned_url(clip, reference_upload_url, content_type="audio/wav")
     ref.uploaded = True
     ref.transcript = cura.texto
     ref.cura = cura
     ref.clip = clip          # reusada na amostra pos-treino
+    ref.cut_mode = cut_mode  # por qual caminho ESTE clipe foi cortado
     _log("info", "train.reference.done", seconds=REFERENCE_SECONDS,
-         transcript_len=len(cura.texto), cura_ramo=cura.ramo)
+         transcript_len=len(cura.texto), cura_ramo=cura.ramo, cut_mode=cut_mode)
     return ref
 
 
@@ -321,7 +340,8 @@ def gerar_amostra_com_qa(inp: dict, dirs, ref: Referencia, lora_path: Path,
         candidatas = (ref.candidatas[:SAMPLE_QA_MAX_ATTEMPTS]
                       if ref.candidatas else [(ref.clip, ref.transcript)])
 
-        for tentativa, (clip, texto) in enumerate(candidatas):
+        for tentativa, candidata in enumerate(candidatas):
+            clip, texto, cut_mode = _desempacotar_candidata(candidata)
             # `texto` e' o transcript CRU do seletor; o que vai pro banco — e que
             # o aluno usa em TODA geracao dali pra frente — e' o CURADO. O QA tem
             # que medir o par (audio, texto) que realmente vai ao ar: `ref_text`.
@@ -337,9 +357,13 @@ def gerar_amostra_com_qa(inp: dict, dirs, ref: Referencia, lora_path: Path,
                 # tem que descrever a referencia que ficou de pe, nao a descartada.
                 cura = transcricao_fiel(clip, texto, whisper_model, language)
                 ref.clip, ref.transcript, ref.cura = clip, cura.texto, cura
+                # O cut_mode descreve o CLIPE, entao ele troca junto com o
+                # clipe: deixar o da candidata 0 aqui faria a telemetria falar
+                # de um audio que foi descartado.
+                ref.cut_mode = cut_mode
                 ref_text = cura.texto
                 _log("info", "train.sample.qa.ref_swapped", attempt=tentativa,
-                     cura_ramo=cura.ramo)
+                     cura_ramo=cura.ramo, cut_mode=cut_mode)
             else:
                 # Candidata NAO promovida (sem URL de referencia): nao ha cura
                 # deste clipe, e a da anterior descreve OUTRO audio. Fica o cru.

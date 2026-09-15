@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
-from typing import Callable
+from typing import Callable, NamedTuple
 
 import soundfile as sf
 
@@ -219,6 +219,41 @@ _SNAP_DISCARD = "discard"          # ficou curto demais / sem palavra inteira ->
 _SNAP_UNAVAILABLE = "unavailable"  # sem words (erro/modelo antigo) -> corte por tempo de hoje
 
 
+# ── POR QUAL CAMINHO A REFERENCIA FOI CORTADA (incidente 89473013) ──────────
+# Tres caminhos deste arquivo cortam por TEMPO seco em vez de fronteira de
+# palavra, e ate aqui nenhum deixava rastro: depois do treino nao dava pra
+# dizer qual deles a voz tinha tomado, e cada ronda re-investigava do zero.
+# Estes quatro valores sao a resposta.
+#
+# ⚠️ ISTO E TELEMETRIA CAUSAL, NAO E DETECTOR DE VOZ QUEBRADA. Medido em
+# 12/09 numa amostra de 50 vozes: corte seco -> diverge 18 / ok 18. METADE das
+# vozes cortadas a seco esta BOA, entao o campo NAO prediz defeito. Ele nao
+# deve virar alerta, bloqueio, marca de "voz suspeita" nem gatilho de cura —
+# serve so pra responder "por qual caminho essa voz passou".
+CUT_SNAP_OK = "snap_ok"                    # recortado em FRONTEIRA DE PALAVRA (o caminho bom)
+CUT_SNAP_UNAVAILABLE = "snap_unavailable"  # nivel 1: whisper de palavras falhou/veio vazio
+                                           # NESTA candidata -> corte por tempo.
+                                           # Tambem cobre o chamador que nao passa
+                                           # transcribe_words_fn (words indisponiveis
+                                           # por ausencia, que e o mesmo fato).
+CUT_TIME_RETRY = "time_retry"              # nivel 2: TODAS as candidatas morreram no snap
+                                           # -> o laco inteiro refez por tempo
+CUT_FALLBACK = "fallback"                  # nivel 3: ref_fallback.wav, primeiros
+                                           # ref_seconds do 1o arquivo a partir de 0.0
+
+
+class RefCandidate(NamedTuple):
+    """Candidata a referencia + COMO ela foi cortada.
+
+    Era `tuple[Path, str]`. Continua indexavel ([0]=clip, [1]=transcript), mas
+    desempacotar em DOIS nomes agora levanta ValueError — os consumidores usam
+    os campos por nome (`.clip`, `.transcript`, `.cut_mode`).
+    """
+    clip: Path
+    transcript: str
+    cut_mode: str
+
+
 def _cut_snapped_candidate(
     primary: Path,
     clip: Path,
@@ -309,7 +344,7 @@ def select_reference_candidates(
     max_candidates: int = 6,
     log: Callable[..., None] = lambda **k: None,
     transcribe_words_fn: "Callable[[Path], list | None] | None" = None,
-) -> "list[tuple[Path, str]]":
+) -> "list[RefCandidate]":
     """Como select_reference_clip, mas devolve TODAS as candidatas válidas
     RANQUEADAS (melhor primeiro). Usado pelo QA pós-treino: se a amostra sair
     contaminada com a 1ª referência, o handler tenta a 2ª, a 3ª…
@@ -317,6 +352,10 @@ def select_reference_candidates(
     Com `transcribe_words_fn` (palavras com .start/.end/.word), cada candidata
     é recortada em FRONTEIRA DE PALAVRA em vez de tempo arbitrário — ver
     _cut_snapped_candidate. Sem words disponíveis, cai no corte por tempo.
+
+    Cada candidata volta como `RefCandidate(clip, transcript, cut_mode)`, onde
+    `cut_mode` diz POR QUAL dos quatro caminhos aquele clipe foi cortado —
+    telemetria causal, nunca detector de defeito (ver CUT_* acima).
     """
     files = [f for f in norm_files if f and f.exists()]
     if not files:
@@ -329,11 +368,15 @@ def select_reference_candidates(
     def _rank_pass(
         words_fn: "Callable[[Path], list | None] | None",
         name_suffix: str = "",
-    ) -> "list[tuple[float, Path, str]]":
-        ranked: "list[tuple[float, Path, str]]" = []
+        modo_tempo: str = CUT_SNAP_UNAVAILABLE,
+    ) -> "list[tuple[float, RefCandidate]]":
+        """`modo_tempo`: que caminho o corte por TEMPO representa NESTA passada —
+        nivel 1 (snap indisponivel nesta candidata) ou nivel 2 (retry global)."""
+        ranked: "list[tuple[float, RefCandidate]]" = []
         for i, off in enumerate(offsets):
             clip = work_dir / f"ref_cand_{i}_{int(off)}s{name_suffix}.wav"
             transcript: "str | None" = None
+            cut_mode = modo_tempo
             if words_fn is not None:
                 status, snapped = _cut_snapped_candidate(
                     primary, clip, off, ref_seconds, duration,
@@ -343,7 +386,9 @@ def select_reference_candidates(
                     continue  # curta demais / sem palavra inteira: proxima candidata
                 if status == _SNAP_OK:
                     transcript = snapped
-                # _SNAP_UNAVAILABLE: cai no corte por tempo abaixo (fallback).
+                    cut_mode = CUT_SNAP_OK
+                # _SNAP_UNAVAILABLE: cai no corte por tempo abaixo (fallback),
+                # e o cut_mode fica em `modo_tempo` — o caminho seco.
             if transcript is None:
                 if not _slice_window(primary, clip, off, ref_seconds):
                     log(level="error", event="reference.candidate.slice_failed", offset=off)
@@ -354,8 +399,8 @@ def select_reference_candidates(
                 continue
             score = score_reference_transcript(transcript, language=language)
             log(level="info", event="reference.candidate", offset=off, score=score,
-                transcript_len=len(transcript))
-            ranked.append((score, clip, transcript))
+                transcript_len=len(transcript), cut_mode=cut_mode)
+            ranked.append((score, RefCandidate(clip, transcript, cut_mode)))
         return ranked
 
     scored = _rank_pass(transcribe_words_fn)
@@ -365,21 +410,23 @@ def select_reference_candidates(
         # o treino: refaz o laco inteiro com o corte por TEMPO da main.
         log(level="warning", event="reference.snap.all_discarded_time_retry",
             candidates=len(offsets))
-        scored = _rank_pass(None, name_suffix="_time")
+        scored = _rank_pass(None, name_suffix="_time", modo_tempo=CUT_TIME_RETRY)
 
     if scored:
         scored.sort(key=lambda t: t[0])
         log(level="info", event="reference.selected", source=primary.name,
-            score=scored[0][0], seconds=ref_seconds, candidates=len(scored))
-        return [(clip, transcript) for _, clip, transcript in scored]
+            score=scored[0][0], seconds=ref_seconds, candidates=len(scored),
+            cut_mode=scored[0][1].cut_mode)
+        return [cand for _, cand in scored]
 
     # Fallback: primeiros ref_seconds do 1o arquivo (melhor que nada).
     fb = work_dir / "ref_fallback.wav"
     if _slice_window(files[0], fb, 0.0, ref_seconds):
         transcript = (transcribe_fn(fb) or "").strip()
         if transcript:
-            log(level="info", event="reference.fallback", source=files[0].name)
-            return [(fb, transcript)]
+            log(level="info", event="reference.fallback", source=files[0].name,
+                cut_mode=CUT_FALLBACK)
+            return [RefCandidate(fb, transcript, CUT_FALLBACK)]
     return []
 
 
@@ -391,8 +438,12 @@ def select_reference_clip(
     language: str = "pt",
     max_candidates: int = 6,
     log: Callable[..., None] = lambda **k: None,
-) -> "tuple[Path, str] | None":
-    """Escolhe a melhor janela de `ref_seconds` (compat: 1ª do ranking)."""
+) -> "RefCandidate | None":
+    """Escolhe a melhor janela de `ref_seconds` (compat: 1ª do ranking).
+
+    Sem `transcribe_words_fn` este caminho NUNCA corta em fronteira de palavra,
+    então o `cut_mode` da candidata sai sempre `snap_unavailable`.
+    """
     ranked = select_reference_candidates(
         norm_files, work_dir, ref_seconds, transcribe_fn,
         language=language, max_candidates=max_candidates, log=log,

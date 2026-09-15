@@ -1,0 +1,80 @@
+-- ============================================================================
+-- 108 — por qual CAMINHO a referência da voz foi cortada (incidente 89473013)
+--
+-- POR QUE: runpod-worker/voice_pipeline/reference.py tem TRÊS caminhos que
+-- cortam a referência por TEMPO seco em vez de fronteira de palavra, e nenhum
+-- deixava rastro. Depois do treino era impossível dizer qual deles a voz tinha
+-- tomado, e cada ronda re-investigava do zero. Os três, com a linha onde moram:
+--
+--   nível 1  ~346-351  _SNAP_UNAVAILABLE — o whisper de palavras falhou ou
+--                      veio vazio NESTA candidata → cai no corte por tempo
+--   nível 2   362-368  todas as candidatas morreram no snap → o laço inteiro
+--                      é refeito com o corte por tempo
+--   nível 3   377-382  ref_fallback.wav — primeiros REFERENCE_SECONDS do 1º
+--                      arquivo a partir de 0.0, último recurso
+--
+--   reference_cut_mode = qual caminho rodou de fato:
+--                        snap_ok          · recortado em FRONTEIRA DE PALAVRA
+--                                           (o caminho bom, via word_timestamps)
+--                        snap_unavailable · nível 1, corte por tempo
+--                        time_retry       · nível 2, corte por tempo
+--                        fallback         · nível 3, ref_fallback.wav
+--
+-- ⚠️⚠️ ISTO É TELEMETRIA CAUSAL, NÃO É DETECTOR DE VOZ QUEBRADA. ⚠️⚠️
+-- Medido em 12/09 numa amostra de 50 vozes, comparando a referência contra o
+-- áudio: corte seco → diverge 18 / ok 18. METADE das vozes cortadas a seco está
+-- BOA, ou seja, o campo NÃO prediz defeito. Consequência prática, e é ordem:
+--   • NÃO criar alerta em cima dele;
+--   • NÃO criar bloqueio / gate de treino;
+--   • NÃO marcar voz como "suspeita" por causa dele;
+--   • NÃO acionar cura automática por causa dele.
+-- Ele responde UMA pergunta — "por qual caminho essa voz passou?" — e nada
+-- mais. Quem quiser ligar isso num alarme precisa primeiro de uma medição que
+-- mostre poder preditivo, que hoje NÃO existe.
+-- (A amostra de 50 é ESTRATIFICADA por polos: 18/18 não extrapola direto pra
+-- população. O que ela derruba é a hipótese "seco ⇒ defeito", que é o que
+-- importa aqui.)
+--
+-- POR QUE EM voices E NÃO EM training_jobs (a mig 96 fez o contrário — de
+-- propósito, e vale explicar a diferença): a mig 96 guardou a CURA em
+-- training_jobs porque a cura é um evento daquela rodada (o par antes/depois
+-- de um treino específico); gravar em `voices` apagaria o histórico justo no
+-- retreino. `reference_cut_mode` é outra coisa: ele descreve o ARTEFATO que
+-- está de pé agora — o clipe em voices.reference_audio_path e o texto em
+-- voices.reference_transcript. Tem exatamente o mesmo ciclo de vida que essas
+-- duas colunas: no retreino a referência é SUBSTITUÍDA no R2, e o modo tem que
+-- ser substituído junto, senão passa a descrever um áudio que não existe mais.
+-- Ficar em `voices` também é o que permite a varredura que originou o card
+-- (comparar referência × áudio por voz).
+-- ⚠️ O efeito colateral é real e está assumido: o histórico por rodada NÃO é
+-- guardado. "Que caminho o 2º treino desta voz tomou?" não tem resposta depois
+-- de um 3º treino. Se isso passar a importar, a coluna irmã em training_jobs é
+-- aditiva e pode entrar depois — não é decisão que esta migration tranca.
+--
+-- Preenchida em UPDATE separado e best-effort (finalize-training.ts,
+-- registrarModoDeCorte), mesmo padrão das migs 90 e 96: se esta migration não
+-- estiver aplicada, a telemetria falha sozinha, o log `voice.train.cut_mode` já
+-- guardou o dado, e a finalização do treino (voz → ready, estorno, amostra)
+-- segue intacta. Observabilidade não pode quebrar o produto.
+--
+-- ⚠️ Só grava treino NOVO. Vozes antigas ficam NULAS — nulo aqui significa
+-- "treinada por worker anterior a este build, não dá pra saber", e NÃO "cortada
+-- a seco". Não tratar nulo como falha nem como snap_ok em varredura.
+-- ============================================================================
+
+alter table public.voices
+  add column if not exists reference_cut_mode text;
+
+comment on column public.voices.reference_cut_mode is
+  'Por qual caminho a referencia vigente foi cortada: snap_ok | snap_unavailable | time_retry | fallback. TELEMETRIA CAUSAL, NAO detector de defeito (amostra de 50 em 12/09: seco->diverge 18 / seco->ok 18, metade das secas esta boa) - nao virar alerta, bloqueio, marca de suspeita nem cura automatica. Nulo = treino anterior a mig 108, nao "cortada a seco". Incidente 89473013.';
+
+-- Varredura típica ("quantas vozes passaram por cada caminho?"):
+--
+--   select coalesce(reference_cut_mode, '(sem telemetria)') as caminho, count(*)
+--     from public.voices
+--    where status = 'ready'
+--    group by 1
+--    order by 2 desc;
+--
+-- Sem índice de propósito: `voices` é pequena e a consulta é de investigação,
+-- não de caminho quente.

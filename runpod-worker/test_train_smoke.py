@@ -249,6 +249,50 @@ class AmostraTest(TrainBase):
         self.assertEqual(r["sample_qa"], "retried_passed")
         self.assertEqual(r["reference_transcript"], "transcricao.")  # 2a passada no clipe promovido
 
+    def test_cut_mode_segue_a_referencia_PROMOVIDA(self):
+        # Incidente 89473013: `reference_cut_mode` descreve o CLIPE que ficou de
+        # pe. Quando o QA reprova a 1a candidata e promove a 2a, a referencia
+        # oficial troca — e o modo tem que trocar junto, senao a telemetria fala
+        # de um audio que foi DESCARTADO.
+        #
+        # As duas candidatas saem por caminhos DIFERENTES de proposito: se o
+        # codigo carimbasse o modo da candidata 0, o teste passaria com
+        # "snap_ok" e a mentira nao apareceria.
+        def cands(norm_files, work_dir, **k):
+            return [
+                (_toca(Path(work_dir) / "c0.wav"), "primeira.", "snap_ok"),
+                (_toca(Path(work_dir) / "c1.wav"), "segunda.", "time_retry"),
+            ]
+
+        notas = iter([0.10, 0.95])   # 1a reprova, 2a passa -> promove a 2a
+        with mock.patch.dict(sys.modules["voice_pipeline"].__dict__,
+                             {"select_reference_candidates": cands}), \
+             mock.patch.object(tref, "sample_qa_similarity",
+                               side_effect=lambda *a, **k: next(notas)):
+            r = train.handle_train(_job(sample_upload_url="https://r2/s.wav?sig=x",
+                                        reference_upload_url="https://r2/ref.wav?sig=x"))
+        self.assertEqual(r["sample_qa"], "retried_passed")
+        self.assertEqual(r["reference_cut_mode"], "time_retry")
+
+    def test_cut_mode_da_candidata_escolhida_chega_no_payload(self):
+        # Sem troca de referencia: fica o modo da candidata 0.
+        def cands(norm_files, work_dir, **k):
+            return [(_toca(Path(work_dir) / "c0.wav"), "primeira.", "fallback")]
+
+        with mock.patch.dict(sys.modules["voice_pipeline"].__dict__,
+                             {"select_reference_candidates": cands}):
+            r = train.handle_train(_job(reference_upload_url="https://r2/ref.wav?sig=x"))
+        self.assertTrue(r["reference_uploaded"])
+        self.assertEqual(r["reference_cut_mode"], "fallback")
+
+    def test_seletor_antigo_sem_modo_nao_inventa_valor(self):
+        # O stub global devolve a forma ANTIGA de 2 itens. Modo desconhecido tem
+        # que sair None ("nao da pra saber"), NUNCA um palpite tipo "snap_ok" —
+        # e o treino segue normal.
+        r = train.handle_train(_job(reference_upload_url="https://r2/ref.wav?sig=x"))
+        self.assertTrue(r["reference_uploaded"])
+        self.assertIsNone(r["reference_cut_mode"])
+
     def test_todas_reprovando_marca_failed_sem_derrubar(self):
         with mock.patch.object(tref, "sample_qa_similarity", return_value=0.10):
             r = train.handle_train(_job(sample_upload_url="https://r2/s.wav?sig=x",

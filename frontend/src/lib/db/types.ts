@@ -87,6 +87,14 @@ export type VoiceRow = {
   lora_path: string | null;
   reference_audio_path: string | null;
   reference_transcript: string | null;
+  /**
+   * Por qual caminho a referência VIGENTE (as duas colunas acima) foi cortada —
+   * snap_ok | snap_unavailable | time_retry | fallback. Mig 108, incidente
+   * 89473013. ⚠️ Telemetria causal, NÃO detector de defeito: corte seco não
+   * prediz voz ruim (amostra de 50 em 12/09: seco → diverge 18 / ok 18).
+   * Nulo = treino anterior à mig 108, e NÃO "cortada a seco".
+   */
+  reference_cut_mode: string | null;
   lora_alpha: number | null;
   tts_silence_ms: number | null;
   tts_crossfade_ms: number | null;
