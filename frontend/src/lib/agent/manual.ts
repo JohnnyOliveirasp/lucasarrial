@@ -38,6 +38,26 @@ import { blocoHoje } from "@/lib/agent/hoje";
 // que o #178 nasceu. Por isso aqui a ordem é PERGUNTAR ao aluno, não "conferir".
 // O guard do modo continua com o defeito (só o tier resolveria, e isso é patch
 // de account.ts, não de texto): anotado no #99 pra virar chamado próprio.
+// #392 / #270 (15/09): o bullet do Gerador de Imagem dizia só "envia uma foto de
+// referência" e PARAVA aí. Não dizia o fato que manda na ferramenta — ela é
+// IMAGEM→IMAGEM (`gpt-image-2-image-to-image`, images/generate/route.ts:4), a
+// foto enviada é a BASE — nem que existem FOTOS EXTRAS. Buraco no manual vira
+// invenção, igual ao #178: a Fast preencheu sozinha, e preencheu ao contrário.
+// Duas vezes em três dias, com aluno pagante na frente:
+//   12/09 23:42Z, Paulo (#270): "isso NÃO é o que o Gerador de Imagem faz — ele
+//     cria imagens novas do zero a partir de prompts, não edita fotos que você
+//     já tem". Ele tinha editado a foto do escritório dele com sucesso 16 min
+//     ANTES (image_generations 23:26Z e 13/09 00:04Z, as duas `ready`).
+//   14/09 14:27Z, Vanderley (#392): "no Gerador de Imagem você NÃO SOBE imagens
+//     prontas (...) a foto é só pra inspirar". Ele fez 1 geração e não voltou.
+// Medido em help_messages: 2.934 mensagens da Fast, 2 com esta negação, 2
+// alunos, ambos pagantes, ambos em 3 dias. É pouco em percentual e é 100% dos
+// alunos que fizeram a pergunta — ninguém perguntou isso e ouviu a verdade.
+// O bullet do Animar imagem já tinha o guard ("NUNCA diga que a plataforma não
+// faz gesto"), escrito depois do mesmo tipo de estrago; o do Gerador não tinha.
+// Agora tem. Os números vêm do código: MAX_REFERENCE_IMAGES = 15
+// (images/generate/route.ts:57) e o texto das extras é o `extrasHelp` da UI
+// (messages/pt-BR.json:482) — não invente outro número nem outra tela.
 const tierPorId = (id: string) => CLONE_TIERS.find((t) => t.id === id);
 const CLONE_PADRAO = tierPorId("480p-v3");
 const CLONE_TURBO = tierPorId("480p-v2");
@@ -221,8 +241,50 @@ Menu principal do app: Dashboard · Vozes · Vídeos · Imagens.
 
 ### Imagens → Gerador de Imagem
 - Custo por resolução: 1K = 525 · 2K = 960 · 4K = 1.320 créditos.
-- Como: /app/images → envia uma foto de referência → a IA sugere ideia e
-  prompt (dá pra editar) → escolhe proporção e resolução → Gerar.
+- Como: /app/images → envia uma foto de referência → o ALUNO escreve a ideia
+  (campo "Sua ideia", opcional) e a IA gera o PROMPT a partir dela (dá pra
+  editar) → escolhe proporção e resolução → Gerar. A IA não sugere a ideia.
+- É IMAGEM → IMAGEM, e este é o fato que mais gera dúvida: a foto que o aluno
+  envia é a BASE da imagem, não uma "inspiração". Por isso ELE PODE, SIM,
+  partir de uma foto real que já tem (o escritório dele, o produto dele) e
+  pedir uma mudança: "retire a chave do carro da mesa, não mude mais nada".
+- NUNCA diga que o Gerador "cria do zero", que "não edita fotos que você já
+  tem" ou que "a foto é só pra inspirar". É falso, e já foi dito a dois alunos
+  pagantes (#270 e #392). Quem pergunta "dá pra editar minha foto?" ouve SIM,
+  seguido do como.
+- FOTOS EXTRAS: cabem até 15 fotos NUMA geração (a principal + 14), somando no
+  máximo 150 MB — acima disso a geração é recusada (#199), então mande reduzir
+  a quantidade ou o peso, nunca prometa que "quanto mais melhor".
+- O CAMINHO COMPLETO das extras, e ele tem um passo a mais do que parece: na
+  tela de gerar, abaixo da foto principal, "Fotos extras (opcional) — combine
+  outra foto nesta geração" → botão "Escolher em Imagens de Referência" (ele só
+  LEVA até a aba) → **na aba, em cada foto, o botão "Adicionar como extra"** —
+  é ESSE que põe a foto na geração. Parar no botão anterior é o erro que o
+  aluno comete, e dizer só "escolha ali" reencena o #e6c53db1.
+- Quadro da foto PRINCIPAL: se ele está VAZIO, a primeira foto que o aluno subir
+  vira a principal e entra na geração. Se JÁ TEM foto, subir mais fotos só as
+  salva em Imagens de Referência — elas não entram sozinhas, precisam do
+  "Adicionar como extra". Não diga a ninguém que a foto do quadro não é usada.
+- VOCÊ NÃO VÊ A TELA DELE. Os dois casos do item acima dão resultados OPOSTOS e
+  a diferença está em qual controle ele usou — que você não tem como saber pela
+  conversa. Então não DEDUZA se a foto que ele subiu entrou ou não: PERGUNTE. O
+  próprio app escreve em português o que vai entrar ("Nesta geração entram a
+  foto principal do quadro e N fotos extras"), num aviso que aparece quando ele
+  JÁ TEM foto no quadro principal E tem outras salvas fora dele. Não prometa que
+  esse aviso está na tela: pergunte se ele o está vendo e o que está escrito
+  nele. Responda em cima do que ele ler, não em cima do que você imaginou.
+- As extras servem pra DUAS coisas — mais ângulos da MESMA pessoa (aumenta a
+  semelhança) OU trazer uma foto diferente pra compor a cena (um cenário, um
+  ambiente, um objeto, uma roupa). Não afirme qual dos dois é: quem decide é o
+  aluno.
+- QUANDO o aluno quiser algo de uma foto específica, oriente a DIZER NO PROMPT o
+  que vem de cada foto ("eu no escritório da foto extra", "segurando o produto
+  da foto extra") — sem isso a atribuição se perde e sai um cenário genérico,
+  que foi a queixa do #270. Se ele NÃO disser nada, a IA trata as extras como
+  mais ângulos da mesma pessoa, e isso está CERTO: é o caso da grande maioria
+  (lote de selfie). Não empurre atribuição pra quem não pediu.
+- O prompt do botão "gerar prompt automático" é EDITÁVEL e é o texto final que
+  a IA obedece, não a ideia digitada antes. Oriente a reler antes de gerar.
 - Tem moderação automática de conteúdo (fotos reais não podem virar conteúdo
   sexual/violento). 4K não sai em formato quadrado (1:1) nem no automático.
 
