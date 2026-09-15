@@ -24,6 +24,7 @@ import { dispararTreinoOnboarding } from "@/lib/onboarding/treino";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { buildRawAudioKey } from "@/lib/r2/presigned";
+import { camposDoPerfil, type PerfilAtual } from "./identidade-pure";
 import { registrarFalhaDeClaim } from "./reconciliacao";
 import { atualizarSessao } from "./sessao";
 import { SGP_AUDIO_MIN_SEGUNDOS, SGP_FOTOS_MIN, type SgpPedidoRow } from "./types";
@@ -52,6 +53,16 @@ async function acharUsuarioPorEmail(email: string): Promise<string | null> {
     if (!lista?.users?.length || lista.users.length < 1000) break;
   }
   return null;
+}
+
+/** O perfil de hoje, ou `null` se o usuário do `auth` ainda não tem linha. */
+async function perfilDeHoje(userId: string): Promise<PerfilAtual | null> {
+  const { data } = await getAdmin()
+    .from("profiles" as never)
+    .select("display_name, whatsapp")
+    .eq("id", userId)
+    .maybeSingle();
+  return data ? (data as PerfilAtual) : null;
 }
 
 /**
@@ -85,10 +96,29 @@ export async function enviarPedido(pedido: SgpPedidoRow, senha: string | null): 
     if (error || !data.user) throw new Error(error?.message ?? "não consegui criar a sua conta");
     userId = data.user.id;
   }
+  /**
+   * PERFIL — preencher sim, sobrescrever não (#377).
+   *
+   * Este upsert ficava FORA do `if (!userId)` acima, então quem já era cliente
+   * do FastCloner tinha o `display_name` da casa trocado pelo que digitou no
+   * wizard. Agora o que já está preenchido é preservado: a regra mora em
+   * `camposDoPerfil`, e campo ausente = coluna não tocada.
+   *
+   * O SELECT extra só acontece para conta PRÉ-EXISTENTE — conta recém-criada
+   * não tem nada a preservar e segue exatamente como antes, sem ida a mais.
+   */
+  const atual = contaCriada ? null : await perfilDeHoje(userId);
   const { error: perfilErr } = await admin
     .from("profiles" as never)
     .upsert(
-      { id: userId, email, display_name: pedido.nome, whatsapp: pedido.whatsapp } as never,
+      camposDoPerfil({
+        userId,
+        email,
+        contaCriada,
+        nome: pedido.nome,
+        whatsapp: pedido.whatsapp,
+        atual,
+      }) as never,
       { onConflict: "id" },
     );
   if (perfilErr) throw new Error(perfilErr.message);
