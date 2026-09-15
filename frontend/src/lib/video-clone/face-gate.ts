@@ -21,14 +21,40 @@ Answer ONLY a JSON object: {"frontal": true|false, "mouth_visible": true|false, 
 
 type Block = { type: string; text?: string };
 
+/**
+ * POR QUE o gate deixou passar sem olhar (#372). Antes era só `skipped: true`,
+ * o que juntava três coisas muito diferentes num booleano: escolha nossa,
+ * configuração faltando e detector caído. A distinção importa porque só as
+ * duas últimas são CEGUEIRA — e cegueira é o que precisa virar linha na
+ * `face_gate_recusas`.
+ *
+ * `presign_falhou` não nasce aqui: é da rota, que nem chega a chamar esta
+ * função quando não consegue a URL assinada. Mora no tipo porque é a mesma
+ * classe de evento e o rastro trata os três igual.
+ */
+export type FaceGateSkip =
+  /** `VIDEO_CLONE_FACE_GATE=0`. Desligamos de propósito. */
+  | "desligado"
+  /** Sem `ANTHROPIC_API_KEY`. Não é escolha: é configuração faltando. */
+  | "sem_api_key"
+  /** A visão foi chamada e não respondeu direito (HTTP, timeout, JSON torto). */
+  | "falha_tecnica"
+  /** A rota não conseguiu a URL assinada da imagem — a visão nem foi chamada. */
+  | "presign_falhou";
+
 export type FaceGateResult =
-  | { ok: true; skipped?: boolean }
+  /**
+   * `skipped` ausente = a visão OLHOU e aprovou. `skipped` presente = NINGUÉM
+   * olhou e o fail-open deixou passar. Os dois são `ok: true` pro fluxo, mas
+   * só o primeiro é uma aprovação de verdade.
+   */
+  | { ok: true; skipped?: FaceGateSkip; erro?: string }
   | { ok: false; reason: string };
 
 export async function checkFrontalFace(imageUrl: string): Promise<FaceGateResult> {
-  if (process.env.VIDEO_CLONE_FACE_GATE === "0") return { ok: true, skipped: true };
+  if (process.env.VIDEO_CLONE_FACE_GATE === "0") return { ok: true, skipped: "desligado" };
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return { ok: true, skipped: true };
+  if (!apiKey) return { ok: true, skipped: "sem_api_key" };
 
   try {
     const controller = new AbortController();
@@ -66,8 +92,12 @@ export async function checkFrontalFace(imageUrl: string): Promise<FaceGateResult
       : "a boca não está visível");
     return { ok: false, reason };
   } catch (e) {
-    console.error("[video-clone/face-gate] visão falhou (fail-open):", e instanceof Error ? e.message : e);
-    return { ok: true, skipped: true };
+    const erro = e instanceof Error ? e.message : String(e);
+    console.error("[video-clone/face-gate] visão falhou (fail-open):", erro);
+    // `erro` sobe junto pro rastro: "falha_tecnica" sozinho não distingue
+    // timeout de 429 de JSON torto, e é essa distinção que diz se vale
+    // retentar ou se o modelo mudou de comportamento.
+    return { ok: true, skipped: "falha_tecnica", erro };
   }
 }
 
