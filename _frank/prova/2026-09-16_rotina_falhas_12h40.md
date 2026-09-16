@@ -59,7 +59,12 @@ agora está medido em vez de presumido.
 
 ---
 
-## 2. 🔴 O detector deste cartão acusaria trial não pago — 50% de falso positivo
+## 2. ❌ RETRATADO — "o detector acusaria trial não pago" era MEU ERRO
+
+> **Esta seção inteira está errada e fica aqui só para o histórico. Leia a §2-B
+> logo abaixo, que é a medição certa.** Eu publiquei este número no grupo antes
+> de fechar a apuração, e tive que corrigir 40 minutos depois. O que segue é o
+> que eu escrevi; a refutação vem em seguida.
 
 Fui olhar **por que** nunca disparou e achei o contrário: ele dispararia errado.
 
@@ -108,6 +113,71 @@ Card pro coder: **`65056482`**, escopo estreito (só a condição de pagamento,
 importando o `eventoEhPagamento` que já existe — nada de segunda cópia da
 régua), com exigência de teste dos **dois** lados. **Não fechei por card
 criado:** card criado não é código em produção, e só a main deploya.
+
+---
+
+## 2-B. ✅ A medição certa: a condição de pagamento JÁ EXISTE. Eu errei.
+
+**A terceira condição não falta.** Ela não está em `orfasQueSobraram()`
+(`sgp/reconciliacao.ts`), que é onde eu olhei — está uma camada abaixo, em
+`diagnosticarClaim()` (`sgp/reconciliacao-pure.ts`), cuja **primeira linha** é:
+
+```ts
+const pagas = e.orfas.filter((o) => entitlementFoiPago(o.raw_event));
+if (!pagas.length && !erro) return null;
+```
+
+**Como eu errei.** Li `reconciliacao.ts` e parei ali. O cabeçalho **daquele mesmo
+arquivo** diz, na terceira linha: *"A decisão (o que é falha, o que escrever)
+mora em `reconciliacao-pure.ts`. Aqui fica só o I/O"*. O arquivo me disse onde
+estava a decisão e eu não segui o ponteiro. **Medi o primeiro estágio de um
+pipeline de dois e tratei o resultado do estágio 1 como saída do sistema.**
+
+Medição refeita por mim, com script próprio, não herdada:
+
+| etapa | passam |
+|---|---|
+| órfãs `user_id IS NULL` | 93 |
+| A) as 2 condições de `orfasQueSobraram` | **22** ← meu número, certo |
+| B) + `entitlementFoiPago` — **o que realmente abre chamado** | **7** |
+
+Os 7 são pagamento de verdade, todos `COMPLETED`: `ezwaymotors` (20),
+`scandovieri41` (97), `josephgois` (97), `caplastica` (97), `isaias.enf` (97),
+`herysilva.27` (22), `rodrigo.limas.1978` (97).
+
+E os 3 que apresentei como **prova** do falso positivo — `paulosbs1604`,
+`neto_rocha`, `gabrielalouly` — têm `raw_event` com **valor = 0**, logo
+`entitlementFoiPago` devolve `false` e eles **já são silenciosos hoje**. A minha
+própria prova, lida até o fim, refutava a minha tese.
+
+**Efeito de ter implementado o que pedi: zero.** 7 chamados antes, 7 depois, mais
+uma consulta ao Supabase por criação de conta, dentro do caminho que o aluno
+espera na tela.
+
+**Quem pegou o erro: o coder** (card `65056482`). Mediu a produção antes de
+escrever código, viu que a premissa não sobrevivia e **recusou abrir o PR**,
+reportando com prova. Se tivesse obedecido o cartão, teria subido código inútil
+no caminho de criação de conta do aluno com a minha assinatura em cima. Conferi
+a refutação por conta própria antes de aceitar: os três números (93 / 22 / 7)
+batem. **Nenhuma linha foi para produção.**
+
+**O único achado que sobrevive corre para o outro lado — é falso NEGATIVO.**
+4 órfãs (`jkakorio`, `zambiasitiago`, `alexmultiliverpool`, `tisse.sa`) dão
+`entitlementFoiPago=false` por **ausência de payload**, não de pagamento:
+conferi que o `raw_event` delas não tem a chave `purchase` (é payload de
+`SUBSCRIPTION_CANCELLATION` — `product`, `subscriber`, `subscription`,
+`date_next_charge`, `cancellation_date`, `actual_recurrence_value`). Pagaram,
+estão `canceled` com janela futura. **Não vira conserto agora**, e digo por quê
+pra ninguém redescobrir: (a) as 4 **não têm conta**, e este detector só roda na
+criação de conta pelo `/sgp` — ele nunca as veria; (b) `tisse.sa` e `jkakorio`
+já estão nomeados no comentário de `acesso-regra.ts` como pagantes sem conta
+tratados pelo sweeper `orphan-outreach`.
+
+**A lição.** Quando um arquivo diz no cabeçalho onde mora a decisão, vá até lá
+antes de afirmar que a decisão não existe. E eu violei a minha própria regra:
+publiquei o número no grupo **antes** de fechar a apuração. Nas rondas boas desta
+semana eu matei a hipótese antes de publicar; nesta não matei, e o grupo recebeu
+um "50% de alarme falso" que não existe. Corrigido no grupo e no incidente.
 
 ---
 
@@ -179,22 +249,27 @@ ENDEREÇO" não é "nunca pagou"*. O que está medido é a **forma**, não o val
 
 ## Fim de ronda
 
-- `#282` (`03e7b34b`): **continua investigating**, com as pernas nomeadas — (a) o
-  PR do card `65056482` em produção; (b) a medição de dinheiro dos 321; (c) o
-  `reconcileUserEntitlements` que não checa o `error` do UPDATE (apontado em
-  07/09, ainda de pé).
+- `#282` (`03e7b34b`): **continua investigating**. Pernas que sobram: (a) a
+  medição de dinheiro dos 321 do lote de 04/09; (b) o `reconcileUserEntitlements`
+  que não checa o `error` do UPDATE (apontado em 07/09, ainda de pé). A perna
+  (c) que eu abri hoje **não existe** — ver §2-B.
 - **Pergunta de 8 dias respondida:** o ramo do detector nunca disparou porque
   não havia o que relatar — 73 envios, 0 órfãs, com 3 controles.
-- **Defeito novo achado e provado:** 11 de 22 órfãs (50%) virariam chamado falso
-  de "compra paga sem dono". Card no coder, **não mergeado por mim**.
+- 🔴 **O "defeito novo" que eu anunciei era erro MEU.** A condição de pagamento
+  já existe, em `reconciliacao-pure.ts`. O número certo é 22 → **7**, e os 7 são
+  pagantes de verdade. Publiquei o errado no grupo e corrigi 40 min depois.
+  **Nenhuma linha foi para produção** — o coder mediu antes de codar e recusou o
+  PR. Ver §2-B.
 - **Aluno avisado: 1** (Paulo, uid 2505 confirmado). **E-mail em massa: nenhum.**
 - **Crédito devolvido: nenhum** — nenhum crédito era devido neste cartão.
-- **Código novo em produção: nenhum.** Nenhum PR mergeado por mim nesta ronda.
+- **Código novo em produção: nenhum.** Nenhum PR mergeado nem aberto nesta ronda.
 - **GPU gasta: nenhuma. Migration aplicada: nenhuma. Assinatura/acesso/plano
   mexidos: nenhum.** Não vinculei nem o entitlement do Paulo — é trial não pago,
   e adotá-lo daria `plan=pro` a quem não pagou.
-- Números que eu **matei** antes de publicar: *"o link de recovery vencido é o
-  que trava o lote"* (§4) e *"o detector nunca rodou"* (§1 — rodou 73 vezes).
+- Números que eu **matei antes** de publicar: *"o link de recovery vencido trava
+  o lote"* (§4) e *"o detector nunca rodou"* (§1 — rodou 73 vezes).
+- Número que eu **NÃO matei a tempo** e tive que retratar: *"50% de falso
+  positivo no detector"* (§2 → §2-B). É a falha desta ronda.
 - Número que **não é meu pra resolver**: o dinheiro dos 321 do lote de 04/09 —
   precisa de amostragem contra a Hotmart viva.
 - `#11`, `#15`, `#99`, `#223`, `#226`, `#234`, `#246`, `#249`, `#250`, `#263`,
