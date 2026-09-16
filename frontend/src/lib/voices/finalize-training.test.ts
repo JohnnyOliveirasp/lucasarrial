@@ -168,10 +168,74 @@ test("escalateStuckUser continua DEPOIS do estorno (a régua de rajada conta o e
 test("o chamado nasce com a MESMA assinatura que a varredura daria", () => {
   // Chave própria (por voz/por job) = dois chamados para uma falha só, que é
   // o racha que o #410 acabou de curar.
-  assert.match(FONTE, /signature: errorSignature\("training", args\.rawError\)/);
+  //
+  // ⚠️ DESDE 16/09 A ASSINATURA DEPENDE TAMBÉM DO DIAGNÓSTICO (`args.diag`).
+  // O `rawError` desta falha é literalmente "trainer failed"; quem decide se
+  // ela é OOM de GPU é o stderr do trainer. Passar o diag SÓ de um dos lados é
+  // PIOR que não passar de nenhum: o chamado aberto aqui nasceria em
+  // `training:infra_gpu:cuda-oom` e a varredura, depois, procuraria
+  // `training:bug:trainer failed` para a MESMA falha — dois chamados, o racha
+  // de volta. A simetria dos dois lados está travada logo abaixo.
+  assert.match(FONTE, /signature: errorSignature\("training", args\.rawError, args\.diag\)/);
   assert.match(FONTE, /kind: "training"/);
-  assert.match(FONTE, /cause: classifyCause\(args\.rawError\)/);
+  assert.match(FONTE, /const cause = classifyCause\(args\.rawError, args\.diag\)/);
   assert.match(FONTE, /categoria: "tecnico"/);
+  assert.match(FONTE, /title: incidentTitle\("training", args\.rawError, args\.diag\)/);
+});
+
+test("o diag do chamado vem do `out` em memória, não de uma leitura de volta", () => {
+  // `registrarSaidaDoTrainer` acaba de gravar ESTA MESMA string em
+  // training_jobs.trainer_stderr. Reler do banco aqui criaria uma corrida com
+  // a própria escrita e um modo de falha novo (leitura falha → o chamado nasce
+  // cego e a falha volta pro guarda-chuva #11) sem ganhar nada.
+  assert.match(FONTE, /stderr: typeof out\.stderr_tail === "string" \? out\.stderr_tail : null/);
+  assert.match(FONTE, /typeof out\.trainer_returncode === "number"/);
+});
+
+test("os DOIS lados classificam com o diagnóstico — senão o chamado racha em dois", () => {
+  // A simetria de que o teste acima depende. Se o ingest parar de passar o
+  // diag, a varredura volta a mandar toda falha de trainer para
+  // `training:bug:trainer failed` (o #11, "investigating" desde 21/07)
+  // enquanto o finalize abre em `training:infra_gpu:cuda-oom`.
+  const INGEST = readFileSync(
+    join(import.meta.dirname, "..", "incidents", "ingest.ts"),
+    "utf8",
+  );
+  assert.match(INGEST, /const diag = diagnosticos\.get\(f\.id\)/);
+  assert.match(INGEST, /errorSignature\(f\.kind, error, diag\)/);
+  assert.match(INGEST, /classifyCause\(error, diag\)/);
+  assert.match(INGEST, /incidentTitle\(f\.kind, error, diag\)/);
+  // E a leitura que alimenta esse diag precisa continuar existindo.
+  assert.match(INGEST, /trainer_stderr/);
+  assert.match(INGEST, /trainer_returncode/);
+});
+
+test("a leitura do diagnóstico NÃO pode derrubar a varredura inteira", () => {
+  // Assimetria proposital com a guarda do dedupe (que dá throw): lá, seguir
+  // sem o Set RECONTA falha já contada. Aqui, seguir sem o mapa classifica
+  // como o código classificava ontem — falhar aberto é o comportamento antigo,
+  // e derrubar a sync por causa de um enriquecimento seria trocar um defeito
+  // por um pior.
+  const INGEST = readFileSync(
+    join(import.meta.dirname, "..", "incidents", "ingest.ts"),
+    "utf8",
+  );
+  const inicio = INGEST.indexOf("async function diagnosticosDoTrainer");
+  const fim = INGEST.indexOf("export async function syncIncidentsFromFailures");
+  assert.ok(inicio > 0 && fim > inicio, "sumiu a função do diagnóstico");
+  const bloco = INGEST.slice(inicio, fim);
+  assert.match(bloco, /catch \(e\)/, "a leitura do diagnóstico ficou sem catch");
+  assert.match(
+    bloco,
+    /logger\.warn\(/,
+    "a falha da leitura do diagnóstico virou silêncio — tem que deixar rastro",
+  );
+  assert.ok(
+    !/\[incidents\.sync\] guarda/.test(bloco),
+    "a leitura do diagnóstico passou a abortar a varredura como a guarda do dedupe",
+  );
+  // E o bloco de 200 continua: o .in() do PostgREST corta em 1000 EM SILÊNCIO.
+  assert.match(bloco, /CHUNK = 200/);
 });
 
 test("o ingest IMPORTA o prefixo da mensagem, não repete a string", () => {
