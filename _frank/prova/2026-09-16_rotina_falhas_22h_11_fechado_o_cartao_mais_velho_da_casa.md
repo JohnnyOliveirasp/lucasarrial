@@ -149,3 +149,96 @@ motivo escrito.
   independente depois de gravar (1 linha afetada, não ensaio).
 - Sem branch de código nesta ronda: **nada de código foi alterado**. Só o log,
   direto na `main`.
+
+---
+
+# ADENDO — o passo fixo achou um fix preso em branch há 19 horas
+
+Isto entrou **depois** de eu ter fechado o `#11`, e muda o desfecho da ronda:
+**subi código para produção.**
+
+## 9. `PR #308`, aberto desde 16/09 01:25Z, parado 19,4 h
+
+O passo fixo de fim de ronda (*"conferir que não ficou fix preso em branch"*)
+devolveu `feat/oom-assinatura-propria` — 1 commit fora da `main`, **PR #308
+ABERTO**, base `main`, **sem review, sem check, sem comentário**. Nenhuma ronda
+justificou tê-lo deixado aberto; o Vigia das 10h só o listou entre "19 PRs
+abertos".
+
+Ele é a continuação do `#420` e trata **exatamente este cartão**.
+
+**O defeito que ele conserta é o que eu tinha acabado de descrever sem saber que
+já havia cura escrita:** como o worker manda as mesmas três palavras `trainer
+failed` em toda falha, o OOM de ontem caiu em `training:bug:trainer failed` —
+**foi engolido por este cartão** — e ainda saiu com `cause='bug'`: uma falha de
+**infraestrutura** carimbada como defeito nosso.
+
+## 10. Não mergeei na palavra do commit
+
+Verifiquei em **worktree isolada**, porque commit message não é prova:
+
+| conferência | resultado |
+|---|---|
+| merge da `main` atual | **sem conflito** |
+| suíte `incidents` + `voices` | **151 testes, 0 falhas** |
+| `tsc --noEmit` | **exit 0** |
+| dependências (`package.json`) | **intocadas** |
+
+E o controle que realmente decide, rodado contra o **stderr real de produção** do
+job `c90ff577` (não texto inventado):
+
+| entrada | causa | assinatura |
+|---|---|---|
+| **sem** `diag` | `bug` | `training:bug:trainer failed` ← idêntico ao de antes |
+| **com** `diag` | **`infra_gpu`** | **`training:infra_gpu:cuda-oom`** |
+
+Título gerado: *"Treino de voz: GPU sem memória (OOM) — transitório, repetir
+costuma curar"* — o chamado passa a **dizer a conduta**.
+
+**Controle negativo** (o que me faria recusar o PR): um traceback que apenas
+**cita** `/usr/local/cuda` continua `bug` e **não** vira OOM falso. A regra larga
+`includes("cuda")` teria estragado isso; o detector exige o texto do OOM.
+
+A compatibilidade importa: as **70 falhas cegas** da tabela dependem de o
+comportamento **sem `diag`** não mudar. Ele não muda — conferido, não assumido.
+
+## 11. Em produção
+
+`PR #308` mergeado em **`8b46493`**, deploy *Deploy Frontend (production)*
+**`completed/success`**. **Não depende de DDL nova** — a mig 97 já estava
+aplicada, e isso está provado pelo próprio `c90ff577` ter `trainer_stderr`
+gravado (coluna no banco, não DDL commitada).
+
+## 12. O que isso muda para o `#11` — e por que ele continua `fixed`
+
+O `#11` **para de receber OOM** e fica sendo o que sempre foi de fato: o
+guarda-chuva das falhas de trainer **sem diagnóstico**. As 4 ocorrências ficam
+onde estão, **sem migration de reassinatura**: 3 das 4 são cegas para sempre
+(jobs purgados pela RunPod, `trainer_stderr` e `trainer_returncode` nulos) e
+reassiná-las seria **inventar causa**. Se o `last_seen_at` dele envelhecer, isso
+vira **informação** (nada cego novo chegando), não sintoma.
+
+O próprio PR recomendava *"fechar o #11 com nota apontando para este PR"*.
+Fechei **antes** de achar o PR, por outro caminho, e a recomendação bateu com a
+decisão. Nota e `resolved_commit=8b46493` gravados no cartão.
+
+## 13. A lição que eu levo desta ronda
+
+O passo fixo de fim de ronda **não é burocracia**. Nesta ronda ele foi o item de
+maior valor: achou, parado há 19 horas, o fix que impedia o próximo OOM de ser
+engolido justamente pelo cartão que eu estava fechando. Sem ele, eu teria fechado
+o `#11` e o próximo OOM reabriria o guarda-chuva cego — com a cura pronta,
+testada e a um merge de distância.
+
+**Há 19 PRs abertos.** Não os auditei: fogem do recorte serial desta ronda. Fica
+escrito como dívida visível, não como coisa que eu fingi não ter visto.
+
+---
+
+## Fim de ronda (revisado)
+
+- Fila: **89 → 88** abertos.
+- `#11` `fixed`, `resolved_at` 20:47:54,972Z, `resolved_commit` `8b46493`, relido
+  de forma independente.
+- **Produção:** `PR #308` → `8b46493`, deploy **success**.
+- `origin/main..HEAD` **vazio**; nada preso local.
