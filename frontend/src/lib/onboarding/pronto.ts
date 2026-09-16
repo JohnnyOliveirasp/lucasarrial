@@ -12,7 +12,11 @@ import { sendSupportMail } from "@/lib/agent/mail-smtp";
 import { hasActiveAccess } from "@/lib/credits/access";
 import { ONBOARDING_VOICE_NAME } from "./import";
 import { desfechoOnboarding } from "./desfecho-pure";
-import { avisoOkMasAssine } from "./avisos";
+// #435: o parágrafo da senha mora no `avisos.ts` (que é o módulo de baixo —
+// `pronto.ts` já importa dele) pra que os TRÊS caminhos de fim de onboarding
+// usem o MESMO texto. Cópia da regra em dois arquivos foi exatamente o que
+// abriu o vão do #351; aqui não se repete.
+import { avisoOkMasAssine, PARAGRAFO_SENHA } from "./avisos";
 import { registrarAviso } from "./registrar-aviso";
 
 type Admin = SupabaseClient<Database>;
@@ -27,6 +31,8 @@ Se preferir, volte às aulas da Fábrica de Conteúdo Invisível — a Aula 7 mo
 
 Acesse: https://fastcloner.com/login
 
+${PARAGRAFO_SENHA}
+
 — Equipe FastCloner`;
 
 // #189: assinante ativo cuja voz ficou pronta mas NENHUMA imagem entrou. Dizer
@@ -39,6 +45,8 @@ Já configuramos a sua voz na FastCloner e testamos: está funcionando. Você j�
 A parte de IMAGEM ainda não foi feita: as suas fotos não chegaram até nós. É só responder este e-mail com as fotos que a gente termina a configuração — você não precisa refazer mais nada.
 
 Acesse: https://fastcloner.com/login
+
+${PARAGRAFO_SENHA}
 
 — Equipe FastCloner`;
 
