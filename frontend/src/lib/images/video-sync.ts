@@ -79,13 +79,32 @@ export async function finalizeImageVideo(
  * do despacho (que é o que põe a row em pending), então falha pré-despacho
  * cai no fallback sem estorno (nada foi cobrado).
  */
-export async function failImageVideo(imageId: string, message: string): Promise<void> {
+export async function failImageVideo(imageId: string, rawMessage: string): Promise<void> {
   const admin = getAdmin();
-  const friendly = message.slice(0, 500);
+  /**
+   * DUAS MENSAGENS, e elas NÃO podem ser a mesma (medido no #423, 16/09).
+   *
+   * Antes esta função recebia UMA string e usava nos dois destinos: em
+   * `video_error` (o que o ALUNO lê) e em `rawError` do handleTechFailure (o
+   * que vira `sample_error` do chamado). Como os dois chamadores já traduziam
+   * com `friendlyKieError()` ANTES de chamar, o chamado nascia com a frase do
+   * aluno — "O provedor de vídeo teve um erro temporário" — em vez do erro do
+   * provedor. Todas as outras rajadas carregam string crua (`executionTimeout
+   * exceeded`, `code=429`, `no_speech`); a de Animar Imagem carregava a nossa
+   * própria frase de conforto, e o chamado nascia ininvestigável.
+   *
+   * Agora a tradução acontece SÓ AQUI: entra cru, sai cru pro diagnóstico e
+   * amigável pro aluno. Os chamadores NÃO devem pré-traduzir.
+   */
+  const friendly = friendlyKieError(rawMessage).slice(0, 500);
+  const raw = rawMessage.slice(0, 1000);
 
   const { data: claimed } = await admin
     .from("image_generations")
-    .update({ video_status: "failed", video_error: friendly })
+    // `kie_raw_error` também na perna de VÍDEO. Antes só finalize.ts:86 (perna
+    // de imagem) escrevia essa coluna, então numa falha de vídeo ela ficava
+    // nula — ou, pior, guardava o erro de uma falha de imagem anterior.
+    .update({ video_status: "failed", video_error: friendly, kie_raw_error: raw })
     .eq("id", imageId)
     .in("video_status", ["pending", "generating"])
     .select("id, user_id");
@@ -93,7 +112,7 @@ export async function failImageVideo(imageId: string, message: string): Promise<
   if (!row) {
     await admin
       .from("image_generations")
-      .update({ video_status: "failed", video_error: friendly })
+      .update({ video_status: "failed", video_error: friendly, kie_raw_error: raw })
       .eq("id", imageId);
     return;
   }
@@ -102,7 +121,10 @@ export async function failImageVideo(imageId: string, message: string): Promise<
     feature: "Animar Imagem (Kie)",
     userId: row.user_id,
     refId: imageId,
-    rawError: message,
+    // CRU, não o `friendly`. É esta string que vira `sample_error` do chamado —
+    // é por ela que quem investiga descobre se foi 429, timeout ou recusa de
+    // conteúdo. A frase de conforto vai pro aluno, nunca pro diagnóstico.
+    rawError: rawMessage,
     debitRefType: "image_video",
     refundRefType: "image_video_refund",
   });
@@ -189,7 +211,7 @@ export async function syncImageVideo(
 
   if (info.state === "fail") {
     if (await tryVideoFallback(imageId)) return;
-    await failImageVideo(imageId, friendlyKieError(info.failMsg || info.failCode || "geração falhou"));
+    await failImageVideo(imageId, info.failMsg || info.failCode || "geração falhou");
     return;
   }
 

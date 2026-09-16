@@ -11,7 +11,7 @@ import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } fr
 import { getAdmin } from "@/lib/db/admin";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { getBalance, debitCredits } from "@/lib/credits/service";
-import { kieCreateVideoTask, kieCallbackUrl, friendlyKieError } from "@/lib/kie/client";
+import { kieCreateVideoTask, kieCallbackUrl } from "@/lib/kie/client";
 import {
   getTier,
   getVideoFallback,
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       usedModel = fb.kieModel;
       console.warn(`[images/video] fallback ${fb.kieModel} assumiu (titular: ${raw.slice(0, 200)})`);
     } catch {
-      await failImageVideo(id, friendlyKieError(raw));
+      await failImageVideo(id, raw);
       if (isProviderCreditError(raw)) {
         return jsonError(
           "provider_unavailable",
