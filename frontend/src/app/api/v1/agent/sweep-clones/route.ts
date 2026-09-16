@@ -22,6 +22,10 @@ import { rescueStuckVoiceUploads } from "@/lib/voices/rescue-stuck-uploads";
 import { lembrarVozesParadas, type LembreteSummary } from "@/lib/voices/lembrete-treino-sweep";
 import { expireTrialCredits, type TrialExpirySummary } from "@/lib/credits/trial-expiry";
 import { sweepStuckImageGenerations, type ImageSweepSummary } from "@/lib/images/sweep-stuck";
+import {
+  varrerConclusaoAutomatica,
+  type ConclusaoAutomaticaSumario,
+} from "@/lib/sgp/conclusao-sweep";
 
 const STUCK_AFTER_MS = 10 * 60 * 1000; // só olha o que está preso há 10min+
 const NO_JOB_FAIL_MS = 60 * 60 * 1000; // sem job id há 1h = órfão de verdade
@@ -194,6 +198,22 @@ export async function POST(request: NextRequest) {
     console.error("[sweep-clones] sweep de imagens falhou:", e instanceof Error ? e.message : e);
   }
 
+  // SGP: fechamento automático do atendimento 7 dias após a ENTREGA (recado 6,
+  // requisito 5). NASCE EM ENSAIO — sem `SGP_CONCLUSAO_AUTOMATICA=1` ele conta e
+  // relata sem gravar nada, que é como se mede o impacto antes de ligar.
+  // Best-effort: nunca derruba o sweep de clones.
+  let sgpConclusao: ConclusaoAutomaticaSumario | null = null;
+  try {
+    sgpConclusao = await varrerConclusaoAutomatica(admin);
+    // No ensaio o log só aparece quando há algo a dizer; ligado, sempre que
+    // escreveu ou errou. Teto batido (`adiados`) é sempre notícia.
+    if (sgpConclusao.elegiveis > 0 || sgpConclusao.erros > 0 || sgpConclusao.adiados > 0) {
+      console.log("[sweep-clones] sgp conclusão automática", JSON.stringify(sgpConclusao));
+    }
+  } catch (e) {
+    console.error("[sweep-clones] conclusão automática do SGP falhou:", e instanceof Error ? e.message : e);
+  }
+
   const summary = { checked: (stuck ?? []).length, ready, failed_refunded: failed, still_running: running, errors };
   if (summary.checked > 0) console.log("[sweep-clones]", JSON.stringify(summary));
   return jsonOk({
@@ -204,5 +224,6 @@ export async function POST(request: NextRequest) {
     trial_expiry: trialExpiry,
     image_sweep: imageSweep,
     studio_scenes: studioScenes,
+    sgp_conclusao_automatica: sgpConclusao,
   });
 }

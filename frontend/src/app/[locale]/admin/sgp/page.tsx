@@ -1735,7 +1735,17 @@ function CelulaConcluir({
   if (linha.concluido) {
     return (
       <div className="flex flex-col gap-1">
-        <span className="inline-flex items-start gap-1.5 text-[12px] text-[var(--ink)]">
+        {/* ⚠️ `max-w-[200px]` entrou em 16/09, e NÃO é cosmético: esta era a
+            ÚNICA linha da célula sem teto de largura (o motivo e o aviso logo
+            abaixo já tinham o mesmo). Sem ele a coluna cresce até caber o texto
+            mais longo — hoje um e-mail comprido de atendente — e é assim que a
+            tabela empurra as colunas de ação pra fora da viewport de 1267px,
+            que é a largura real de uso e que já foi reclamada três vezes.
+            MEDIDO em Chrome headless a 1267px: sem o teto a tabela sai com
+            2284px e a borda direita da coluna "Atendimento" cai em x=1367; com
+            o teto, 2237px e x=1320 — 47px devolvidos. Com ele a largura fica
+            limitada POR CONSTRUÇÃO: o texto quebra de linha, a tabela não anda. */}
+        <span className="inline-flex max-w-[200px] items-start gap-1.5 text-[12px] leading-snug text-[var(--ink)]">
           <CheckCheck className="mt-0.5 size-3.5 shrink-0" />
           {linha.concluidoTexto}
         </span>
