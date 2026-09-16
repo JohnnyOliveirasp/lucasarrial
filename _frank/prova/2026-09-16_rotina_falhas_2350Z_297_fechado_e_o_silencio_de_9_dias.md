@@ -142,3 +142,28 @@ Não subi código, não abri PR, não apliquei migration, não gastei GPU, não 
 em crédito/acesso/assinatura/entitlement, não mandei WhatsApp, não liguei, não
 li nem reprocessei nada da planilha (ordem de 29/08) e não toquei em e-mail não
 lido.
+
+---
+
+## Adendo — passo fixo de fim de ronda
+
+**Nada meu preso:** `git log origin/main..HEAD` **vazio** após o push
+(`7cd3c38..9055ccd`). Esta ronda não produziu código — nenhum fix de aluno pode
+estar preso em branch, porque não abri branch nem PR.
+
+**Ressalva sobre o `git rev-list main..<branch>`:** ele acusa ~40 branches com
+"1 commit fora da main". Isso é **ruído da régua**, não fix perdido: PR mergeado
+por squash deixa o commit original do branch fora da linhagem da main pra
+sempre. Quem ler essa saída como "40 fixes presos" vai perder tempo. O sinal
+honesto pra esta pergunta é a lista de **PR aberto**, não a de branch local.
+
+**O que a lista de PR aberto mostra, e eu não tratei:** **20 PRs abertos**, o
+mais velho de **19/08** (#9, #11, #15, #20 — todos de agosto). Dois são de hoje
+e pertencem a cartões de outras rondas: **#316** (19:51Z, #290) e **#317**
+(20:36Z, #433). **Não mergeei nenhum**, e é decisão, não esquecimento: a regra 8
+manda levar **um** item ao fim, e a lição de 22h (PR #308 preso 19h) é que PR se
+merga **depois de verificar**, nunca em lote no fim da ronda. Além disso o
+`ordens/README.md` nomeia branches que **derrubariam fix em produção** se
+mergeados no escuro (`feat/onedrive-401`, `feat/fix-image-upload-retry`, os dois
+da cura de referência). Fila de PR envelhecendo é candidato a cartão próprio,
+com verificação um a um.
