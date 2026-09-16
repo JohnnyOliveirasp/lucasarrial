@@ -186,6 +186,30 @@ export function ehTimeoutDeExecucao(rawError: string): boolean {
  *   "RunPod FAILED: qa_coverage: ..." (caminho do poll)
  * Casar pelo prefixo é seguro: não existe outro erro que o use.
  *
+ * 16/09 (#433, df216867 — assinatura `generation:unknown:system error.`, CLASSE
+ * NOVA): entrou "system error", o erro genérico do próprio RunPod — irmão do
+ * "internalerror" que já estava nesta lista. Medido antes de entrar, pelo mesmo
+ * critério do qa_coverage: o MESMO texto, byte a byte, falha E dá certo.
+ *   - Tânia (voz 1e3a2209, texto md5 cb007dbc3158, 1.350 chars), 4 tentativas:
+ *     19:28:44 failed "System error." · 19:40:38 **READY em 170s** · 19:47:08
+ *     failed · 19:51:42 failed.
+ *   - Mariana (voz 0c809b14, texto md5 6cdaf4bb2317, 1.141 chars):
+ *     19:24:37 failed "System error." · 20:24:43 **READY em 184s**.
+ *   Duas alunas, dois textos, duas vozes: não é defeito de entrada, é sorteio da
+ *   plataforma. Sem isto cada tentativa cobra e estorna — a Tânia foi cobrada e
+ *   estornada 3× em 23 minutos, contra a ordem de 29/08 ("se falhar, gerar de
+ *   novo e não cobrar").
+ *   Casar por "system error" cobre as duas variantes gravadas no banco:
+ *   "System error." (webhook) e "RunPod FAILED: System error." (poll).
+ *
+ *   ⚠️ RISCO CONHECIDO, ASSUMIDO: "System error." é GENÉRICO e pode estar
+ *   escondendo um OOM — o RunPod não diz. O que segura o prejuízo é o reenvio
+ *   ser limitado a 1 (`request_attempts`): no pior caso o aluno espera uma vez a
+ *   mais, sem cobrança dobrada. NÃO REMOVA esse limite enquanto esta entrada
+ *   estiver na lista, senão um OOM vira laço. Se aparecer medição mostrando que
+ *   "system error" repete o mesmo defeito, o certo é tirar daqui, não afrouxar
+ *   o limite.
+ *
  * ⚠️ Continua FORA: OOM/CUDA, erro de modelo e áudio inválido/corrompido —
  * repetir só faria o aluno esperar em dobro pelo mesmo erro. A fronteira é
  * fina de propósito: "áudio que não cobre o texto porque o modelo sorteou
@@ -204,6 +228,7 @@ const TRANSITORIAS = [
   "504 gateway",
   "internalerror",
   "qa_coverage",
+  "system error",
 ];
 
 export function ehFalhaTransitoria(rawError: string): boolean {
