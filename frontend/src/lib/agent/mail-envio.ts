@@ -45,6 +45,23 @@ export type OrigemEnvio =
   | "orfao-convite"
   /** campanha de recuperação */
   | "winback"
+  /**
+   * E-mail escrito À MÃO pela ronda, pelo `_frank/ferramentas/enviar_email.cjs`.
+   *
+   * Não passa pelo `sendSupportMail` — sai de um script, direto no SMTP — e por
+   * isso ficava FORA desta tabela. Medido em 16/09 no `#101`: o Luciano tem duas
+   * linhas aqui, as duas de `fast-resposta` (15/09), e a carta que a ronda
+   * mandou pra ele em 16/09 01:55Z (Enviados uid 2494) não tem linha nenhuma.
+   * Mesmo aluno, mesma caixa, um caminho registrado e o outro invisível.
+   *
+   * O buraco não é de escrituração: `contato-ficha.ts` calcula TENTATIVAS e
+   * PRÓXIMO PASSO lendo esta tabela. E-mail da ronda que não aparece aqui faz a
+   * ficha dizer "ninguém tentou" depois de alguém ter tentado — que é como
+   * nascem as quatro ordens de reenvio descritas no cabeçalho do
+   * `ficha_bounce.cjs`. E se essa carta quicar, o `marcarNaoEntregue` não acha
+   * linha pra carimbar e o aluno segue contado como avisado.
+   */
+  | "ronda-manual"
   /** chamador não informou */
   | "desconhecida";
 
