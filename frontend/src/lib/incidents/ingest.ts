@@ -12,6 +12,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { classifyCause, errorSignature, incidentTitle } from "./classify";
 import { inserirChamadoUnico } from "./gravar";
 import { logger } from "@/lib/logger/server";
+import { PREFIXO_FALHA_TECNICA } from "@/lib/voices/falha-de-treino";
 
 type RawFailure = {
   kind: string;
@@ -65,9 +66,14 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
     // `voices` traz a mensagem AMIGÁVEL genérica, sem diagnóstico — e a MESMA
     // falha sempre existe CRUA em training_jobs (kind training). Agrupar pela
     // amigável fundia causas diferentes num incidente eterno. Pula a duplicata.
-    .filter(
-      (f) => !(f.error ?? "").startsWith("Tivemos um problema técnico durante o treinamento"),
-    )
+    //
+    // ⚠️ O prefixo é IMPORTADO de quem escreve a mensagem (`falha-de-treino.ts`),
+    // não repetido aqui: em 15/09 a mensagem passou a variar por desfecho
+    // (estornado × não cobrado × chamado aberto ou não) e, com a string copiada,
+    // qualquer variante nova deixaria de casar em silêncio — o guarda-chuva
+    // f830fd4e voltaria pela porta de trás. Com o import, só a ABERTURA precisa
+    // ser estável, e ela é travada por teste nos dois lados.
+    .filter((f) => !(f.error ?? "").startsWith(PREFIXO_FALHA_TECNICA))
     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
   for (const f of pending) {

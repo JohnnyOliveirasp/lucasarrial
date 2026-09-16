@@ -110,3 +110,98 @@ test("os logs do trainer são truncados em 8000 chars, pelo FIM", () => {
   assert.match(FONTE, /stderr\.slice\(-MAX_TRAINER_LOG_CHARS\)/);
   assert.match(FONTE, /stdout\.slice\(-MAX_TRAINER_LOG_CHARS\)/);
 });
+
+/**
+ * ── Tripwires do conserto de 15/09 (caso ricardoolito) ───────────────────
+ * O comportamento tem teste próprio e de verdade em `falha-de-treino.test.ts`
+ * (módulo puro). O que fica aqui é o mesmo tipo de trava dos testes acima: a
+ * DECISÃO ESTRUTURAL que um refactor bem intencionado desfaz sem perceber.
+ */
+
+test("o desfecho (estorno + chamado) é apurado ANTES da mensagem do aluno", () => {
+  const posEstorno = FONTE.indexOf("const temDebito = await houveDebitoDeTreino");
+  const posChamado = FONTE.indexOf("chamado = await abrirChamadoDaFalhaTecnica");
+  const posMensagem = FONTE.indexOf("const errorMessage = success");
+  assert.ok(posEstorno > 0 && posChamado > 0 && posMensagem > 0, "sumiu alguma das três etapas");
+  assert.ok(
+    posEstorno < posMensagem,
+    "a mensagem voltou a ser montada antes de saber se houve estorno — foi assim que ela " +
+      "afirmou devolução numa voz sem nenhuma linha de débito",
+  );
+  assert.ok(
+    posChamado < posMensagem,
+    "a mensagem voltou a ser montada antes de abrir o chamado — sem o número dele, " +
+      '"nossa equipe já está com ele" é promessa sem lastro',
+  );
+});
+
+test("a mensagem do aluno não afirma estorno nem equipe por texto fixo", () => {
+  // As duas frases do defeito, exatamente como estavam.
+  assert.ok(
+    !FONTE.includes("Seus créditos foram devolvidos automaticamente"),
+    "a frase fixa de estorno voltou ao fonte",
+  );
+  assert.ok(
+    !FONTE.includes("nossa equipe já foi notificada"),
+    "a frase fixa de equipe notificada voltou ao fonte",
+  );
+});
+
+test("o estorno continua decidido pelo EXTRATO, não por quem é o aluno", () => {
+  // A simetria de 17/08 (onboarding-cobranca.ts): sem linha de débito para
+  // esta voz, não há o que estornar. Trocar isto por bypassesBilling sozinho
+  // devolve 10.000 créditos REAIS a quem nunca pagou.
+  assert.match(FONTE, /deveEstornarTreino\(\{\s*bypass: bypassesBilling\(userEmail\),\s*temDebito,/);
+});
+
+test("escalateStuckUser continua DEPOIS do estorno (a régua de rajada conta o estorno)", () => {
+  const posEstorno = FONTE.indexOf('refType: "voice_train_refund"');
+  const posEscalate = FONTE.indexOf("await escalateStuckUser(");
+  assert.ok(posEstorno > 0 && posEscalate > 0, "sumiu o estorno ou o escalate");
+  assert.ok(
+    posEstorno < posEscalate,
+    "escalateStuckUser subiu para antes do estorno: ele conta credit_transactions de " +
+      "ref_type voice_train_refund na janela, então a falha de agora deixaria de contar",
+  );
+});
+
+test("o chamado nasce com a MESMA assinatura que a varredura daria", () => {
+  // Chave própria (por voz/por job) = dois chamados para uma falha só, que é
+  // o racha que o #410 acabou de curar.
+  assert.match(FONTE, /signature: errorSignature\("training", args\.rawError\)/);
+  assert.match(FONTE, /kind: "training"/);
+  assert.match(FONTE, /cause: classifyCause\(args\.rawError\)/);
+  assert.match(FONTE, /categoria: "tecnico"/);
+});
+
+test("o ingest IMPORTA o prefixo da mensagem, não repete a string", () => {
+  const INGEST = readFileSync(
+    join(import.meta.dirname, "..", "incidents", "ingest.ts"),
+    "utf8",
+  );
+  assert.match(
+    INGEST,
+    /import \{ PREFIXO_FALHA_TECNICA \} from "@\/lib\/voices\/falha-de-treino"/,
+    "o ingest parou de importar o prefixo",
+  );
+  assert.match(
+    INGEST,
+    /startsWith\(PREFIXO_FALHA_TECNICA\)/,
+    "o filtro do ingest voltou a usar string literal — variante nova de mensagem " +
+      "deixaria de casar em silêncio e o guarda-chuva f830fd4e voltaria",
+  );
+  assert.ok(
+    !INGEST.includes('startsWith("Tivemos um problema'),
+    "voltou a cópia literal do prefixo dentro do ingest",
+  );
+});
+
+test("a abertura da mensagem técnica é a que o ingest filtra", () => {
+  const PURO = readFileSync(join(import.meta.dirname, "falha-de-treino.ts"), "utf8");
+  assert.match(
+    PURO,
+    /export const PREFIXO_FALHA_TECNICA = "Tivemos um problema técnico durante o treinamento";/,
+    "a abertura mudou: o ingest passa a ingerir a mensagem amigável da tabela voices e " +
+      "funde causas diferentes num incidente eterno (guarda-chuva f830fd4e)",
+  );
+});

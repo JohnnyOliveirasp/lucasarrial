@@ -17,6 +17,14 @@ import { bypassesBilling } from "@/lib/credits/access";
 import { escalateStuckUser } from "@/lib/support/failure-alert";
 import type { VoiceStatus, VoiceUpdate } from "@/lib/db/types";
 import { mensagemFalaLimpaInsuficiente } from "@/lib/voices/regua-audio";
+import {
+  type DesfechoCredito,
+  desfechoDoCredito,
+  falhaEhNossa,
+  mensagemFalhaTecnica,
+} from "@/lib/voices/falha-de-treino";
+import { abrirChamadoReportado } from "@/lib/incidents/reportar";
+import { classifyCause, errorSignature, incidentTitle } from "@/lib/incidents/classify";
 
 const SUPPORT_EMAIL = "suporte@fastcloner.com";
 
@@ -144,7 +152,28 @@ function isCorruptFileError(error: string | null | undefined): boolean {
   );
 }
 
-function friendlyTrainError(out: TrainOutput, rawError: string): string {
+/**
+ * Mensagem do ALUNO. O ramo técnico não mora mais aqui: ele depende de
+ * desfechos que só existem depois de olhar o extrato e abrir o chamado, e
+ * texto que afirma estorno/equipe sem esses dados foi exatamente o defeito de
+ * 15/09 (ver `falha-de-treino.ts`). Quem chama passa o ramo técnico pronto em
+ * `mensagemTecnica`.
+ *
+ * ⚠️ O ramo de ARQUIVO CORROMPIDO abaixo tem o MESMO defeito ("Seus créditos
+ * foram devolvidos" é fixo, e é falso pra quem veio do SGP), e NÃO foi
+ * consertado aqui de propósito. Diferente do técnico, esta mensagem não é
+ * filtrada pelo `ingest.ts`: ela é ingerida pela tabela `voices` e a
+ * assinatura do incidente sai de `errorSignature`, cujo `head` são os
+ * primeiros 120 caracteres normalizados — e a frase do crédito começa no
+ * caractere ~103, ou seja, DENTRO do head. Qualquer redação nova quebraria a
+ * assinatura e abriria um guarda-chuva novo, deixando o antigo órfão. Fica
+ * relatado, não remendado às cegas.
+ */
+function friendlyTrainError(
+  out: TrainOutput,
+  rawError: string,
+  mensagemTecnica: string,
+): string {
   if (isCorruptFileError(out.error) || isCorruptFileError(rawError)) {
     return (
       "Um dos arquivos enviados chegou corrompido ou incompleto — o envio pode ter sido " +
@@ -162,12 +191,77 @@ function friendlyTrainError(out: TrainOutput, rawError: string): string {
     // régua, não aqui — era a duplicação que deixava os dois lados divergirem.
     return mensagemFalaLimpaInsuficiente(out.useful_seconds, out.min_required_seconds);
   }
-  // Falha técnica: culpa NOSSA, não do usuário — o estorno é automático.
-  return (
-    "Tivemos um problema técnico durante o treinamento — não foi culpa sua. " +
-    "Seus créditos foram devolvidos automaticamente e nossa equipe já foi notificada. " +
-    "Por favor, tente treinar novamente."
-  );
+  // Falha técnica: culpa NOSSA. O texto vem pronto de quem apurou o desfecho.
+  return mensagemTecnica;
+}
+
+/**
+ * Falha TÉCNICA vira CHAMADO de verdade, não só e-mail.
+ *
+ * Por que isto existe (15/09, caso ricardoolito): a mensagem dizia "nossa
+ * equipe já foi notificada" e o único aviso era o `sendEmail` best-effort
+ * logo abaixo. E-mail que falha em silêncio não deixa NADA para trás, e
+ * ninguém ficava sabendo. Agora a frase só pode ser dita se este chamado
+ * existir — e quem decide isso é o número que esta função devolve.
+ *
+ * ⚠️ A ASSINATURA É DE PROPÓSITO A MESMA QUE O `ingest.ts` DARIA.
+ * A varredura de falhas já transforma este mesmo treino (visto por
+ * `training_jobs`) num incidente `errorSignature("training", erro)`. Abrir
+ * aqui com chave própria — por voz ou por job — significaria DOIS chamados
+ * para uma falha só, e foi o tipo de racha que o #410 acabou de curar. Com a
+ * chave idêntica, quem chegar depois soma ocorrência no mesmo chamado. Pelo
+ * mesmo motivo o `kind`/`cause` vão explícitos: o registro precisa ser
+ * indistinguível do que a varredura escreveria.
+ *
+ * ⚠️ ONDE MORA O TRACEBACK, e isto vai na descrição porque quase se perdeu:
+ * `training_jobs.trainer_stderr` (migration 97, aplicada) — NÃO é em `voices`
+ * e NÃO se chama `stdout_tail`. No caso medido o job do RunPod já devolvia 404
+ * quando fomos olhar (o RunPod purga em horas); sem essa coluna a causa raiz
+ * (`torch.OutOfMemoryError: CUDA out of memory`, GPU disputada com outro
+ * processo) teria sumido.
+ */
+async function abrirChamadoDaFalhaTecnica(args: {
+  userId: string;
+  userEmail: string | null;
+  voiceId: string;
+  runpodJobId: string;
+  runpodStatus: string;
+  rawError: string;
+}): Promise<number | null> {
+  try {
+    return await abrirChamadoReportado({
+      signature: errorSignature("training", args.rawError),
+      kind: "training",
+      cause: classifyCause(args.rawError),
+      categoria: "tecnico",
+      title: incidentTitle("training", args.rawError),
+      description: [
+        `Treino de voz falhou por erro TÉCNICO (não é material do aluno).`,
+        ``,
+        `voice_id: ${args.voiceId}`,
+        `user_id: ${args.userId}`,
+        `e-mail: ${args.userEmail ?? "(não encontrado em profiles)"}`,
+        `runpod_job_id: ${args.runpodJobId} (${args.runpodStatus})`,
+        ``,
+        `Traceback completo: training_jobs.trainer_stderr / trainer_stdout,`,
+        `pelo runpod_job_id acima. O job do RunPod expira em poucas horas —`,
+        `depois disso essas colunas são a única cópia.`,
+      ].join("\n"),
+      reportedBy: "treino-falho",
+      affectedEmails: args.userEmail ? [args.userEmail] : [],
+      sampleError: args.rawError,
+    });
+  } catch (e) {
+    // Chamado é registro: não pode derrubar a finalização do treino. Mas o
+    // aluno também não pode ouvir "equipe acionada" por causa disto — por
+    // isso devolvemos null, e a mensagem se ajusta sozinha.
+    logger.warn("api", "voice.train.chamado_nao_abriu", {
+      voiceId: args.voiceId,
+      runpodJobId: args.runpodJobId,
+      erro: e instanceof Error ? e.message : String(e),
+    });
+    return null;
+  }
 }
 
 /** Alerta interno: falha TÉCNICA de treino vai pro suporte na hora. Best-effort. */
@@ -178,9 +272,22 @@ async function alertSupportTrainFailure(args: {
   runpodJobId: string;
   runpodStatus: string;
   rawError: string;
-  refunded: boolean;
+  /** O MESMO desfecho que decidiu a mensagem do aluno — nada de booleano. */
+  credito: DesfechoCredito;
+  chamado: number | null;
+  mensagemAoAluno: string;
 }): Promise<void> {
   const userEmail = args.userEmail ?? "(sem e-mail)";
+  // ⚠️ O e-mail mentia pro suporte pelo mesmo motivo que a tela mentia pro
+  // aluno: `refunded` nascia `!billed`, então "não foi cobrado" chegava aqui
+  // como "estorno aplicado automaticamente" — e o suporte lia que 10.000
+  // créditos tinham voltado para alguém que nunca pagou nada.
+  const linhaCredito: Record<DesfechoCredito, string> = {
+    nao_cobrado:
+      "não houve cobrança para esta voz (SGP ou equipe) — nada a estornar, e nada foi creditado",
+    estornado: `${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos devolvidos automaticamente`,
+    estorno_falhou: `FALHOU — aplicar ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos manualmente!`,
+  };
   await sendEmail({
     to: SUPPORT_EMAIL,
     subject: `⚠️ Falha técnica no treino de voz — ${userEmail}`,
@@ -191,9 +298,12 @@ async function alertSupportTrainFailure(args: {
       `<li><strong>Voz:</strong> ${args.voiceId}</li>` +
       `<li><strong>Job RunPod:</strong> ${args.runpodJobId} (${escapeHtml(args.runpodStatus)})</li>` +
       `<li><strong>Erro:</strong> <code>${escapeHtml(args.rawError.slice(0, 500))}</code></li>` +
-      `<li><strong>Estorno de ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos:</strong> ${args.refunded ? "aplicado automaticamente" : "FALHOU — aplicar manualmente!"}</li>` +
+      `<li><strong>Crédito:</strong> ${escapeHtml(linhaCredito[args.credito])}</li>` +
+      `<li><strong>Chamado:</strong> ${args.chamado !== null ? `#${args.chamado}` : "NÃO ABRIU — este e-mail é o único registro"}</li>` +
       `</ul>` +
-      `<p>O usuário viu uma mensagem amigável avisando do estorno. Detalhes completos no /admin.</p>`,
+      `<p>Traceback completo em <code>training_jobs.trainer_stderr</code> pelo runpod_job_id acima ` +
+      `(o job do RunPod expira em poucas horas; depois disso a coluna é a única cópia).</p>` +
+      `<p>O aluno leu exatamente isto: <em>${escapeHtml(args.mensagemAoAluno)}</em></p>`,
   });
 }
 
@@ -417,7 +527,6 @@ export async function finalizeTraining(args: {
   const rawError = out.error || args.runpodError || `RunPod ${runpodStatus}`;
   // Admin vê o erro CRU (diagnóstico); o usuário vê a versão amigável.
   const adminError = success ? null : rawError.slice(0, 500);
-  const errorMessage = success ? null : friendlyTrainError(out, rawError);
 
   // ── Gate idempotente: só UM caminho (webhook OU poll) finaliza ──────────
   const { data: claimed } = await admin
@@ -442,6 +551,81 @@ export async function finalizeTraining(args: {
 
   // ── stderr/stdout do trainer quando o subprocess morre (incidente #11) ────
   await registrarSaidaDoTrainer(runpodJobId, voiceId, out);
+
+  /**
+   * ── DESFECHO DA FALHA, ANTES DE ESCREVER A MENSAGEM ──────────────────────
+   *
+   * Vem aqui, e não depois do update da voz, por um motivo só: a mensagem que
+   * o aluno lê PRECISA depender do que realmente aconteceu com o dinheiro e
+   * com o chamado. Enquanto o texto era fixo, a ordem não importava — e era
+   * exatamente por isso que ele podia mentir (caso ricardoolito, 15/09:
+   * "seus créditos foram devolvidos" numa voz sem uma única linha de débito).
+   *
+   * O estorno continua sendo decidido pelo EXTRATO (`houveDebitoDeTreino` por
+   * ref_id/ref_type), não por inferência sobre quem é o aluno — a simetria de
+   * 17/08 documentada em `onboarding-cobranca.ts` segue intacta.
+   *
+   * ⚠️ `escalateStuckUser` continua DEPOIS de tudo, de propósito: ele conta
+   * `credit_transactions` com ref_type `voice_train_refund` na janela, então
+   * precisa do estorno desta falha já gravado para a régua de rajada fechar.
+   */
+  let userEmail: string | null = null;
+  let credito: DesfechoCredito = "nao_cobrado";
+  let chamado: number | null = null;
+  let falhaNossa = false;
+
+  if (!success) {
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("email")
+      .eq("id", userId)
+      .maybeSingle();
+    userEmail = (profile as { email?: string } | null)?.email ?? null;
+
+    const temDebito = await houveDebitoDeTreino(userId, voiceId);
+    const billed = deveEstornarTreino({
+      bypass: bypassesBilling(userEmail),
+      temDebito,
+    });
+
+    let estornoOk = false;
+    if (billed) {
+      const r = await addExtraCredits({
+        userId,
+        amount: TRAINING_CREDIT_COST,
+        refType: "voice_train_refund",
+        refId: voiceId,
+      });
+      estornoOk = r.ok;
+    }
+    credito = desfechoDoCredito({ billed, estornoOk });
+
+    falhaNossa = falhaEhNossa({
+      erroDeDataset: isDatasetError(out.error) || isDatasetError(rawError),
+      arquivoCorrompido: isCorruptFileError(out.error) || isCorruptFileError(rawError),
+    });
+
+    // O chamado nasce ANTES da mensagem porque é ele que dá à frase "nossa
+    // equipe já está com ele" o direito de existir.
+    if (falhaNossa) {
+      chamado = await abrirChamadoDaFalhaTecnica({
+        userId,
+        userEmail,
+        voiceId,
+        runpodJobId,
+        runpodStatus,
+        rawError,
+      });
+    }
+  }
+
+  const errorMessage = success
+    ? null
+    : friendlyTrainError(
+        out,
+        rawError,
+        mensagemFalhaTecnica({ credito, chamado, custoCreditos: TRAINING_CREDIT_COST }),
+      );
 
   // ── Voz ─────────────────────────────────────────────────────────────────
   const update: VoiceUpdate = {
@@ -506,49 +690,14 @@ export async function finalizeTraining(args: {
     await registrarModoDeCorte(runpodJobId, voiceId, out);
   }
 
-  // ── Estorno em QUALQUER falha (dataset OU técnica): usuário não recebeu ──
-  // nada, não paga nada. Só quem foi COBRADO de verdade.
-  // Idempotente via gate acima (só um caminho chega aqui por job).
-  //
-  // ⚠️ A pergunta certa é "SAIU dinheiro?", não "esse aluno costuma pagar?".
-  // Antes isto era `!bypassesBilling(email)` — uma INFERÊNCIA. Ela valia
-  // enquanto todo treino não-equipe debitava. Com o onboarding do SGP parando
-  // de debitar (`lib/credits/onboarding-cobranca.ts`), a inferência passaria a
-  // devolver 10.000 créditos REAIS a quem nunca foi cobrado — exatamente o bug
-  // que o Johnny corrigiu em 17/08, voltando pela porta nova. Agora olhamos o
-  // extrato: sem linha de débito para esta voz, não há o que estornar.
+  // ── Avisos da falha ──────────────────────────────────────────────────────
+  // O ESTORNO e o CHAMADO já rodaram lá em cima (a mensagem do aluno depende
+  // dos dois). Aqui sobra só o que é aviso, e que por isso pode — e deve —
+  // acontecer depois da voz já estar gravada como `failed`.
   if (!success) {
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("email")
-      .eq("id", userId)
-      .maybeSingle();
-    const userEmail = (profile as { email?: string } | null)?.email ?? null;
-    const temDebito = await houveDebitoDeTreino(userId, voiceId);
-    const billed = deveEstornarTreino({
-      bypass: bypassesBilling(userEmail),
-      temDebito,
-    });
-
-    let refunded = !billed; // não cobrado = nada a devolver
-    if (billed) {
-      const r = await addExtraCredits({
-        userId,
-        amount: TRAINING_CREDIT_COST,
-        refType: "voice_train_refund",
-        refId: voiceId,
-      });
-      refunded = r.ok;
-    }
-
     // Falha técnica → alerta imediato pro suporte (best-effort). Erro de
     // dataset/arquivo do usuário não é pager — o incidente da aba Falhas cobre.
-    const userSideError =
-      isDatasetError(out.error) ||
-      isDatasetError(rawError) ||
-      isCorruptFileError(out.error) ||
-      isCorruptFileError(rawError);
-    if (!userSideError) {
+    if (falhaNossa) {
       await alertSupportTrainFailure({
         userId,
         userEmail,
@@ -556,7 +705,9 @@ export async function finalizeTraining(args: {
         runpodJobId,
         runpodStatus,
         rawError,
-        refunded,
+        credito,
+        chamado,
+        mensagemAoAluno: errorMessage ?? "",
       });
     } else {
       // Erro "do usuário" NÃO é pager na 1ª vez — mas quem repete e continua

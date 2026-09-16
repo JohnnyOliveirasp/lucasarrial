@@ -42,6 +42,19 @@ export type ChamadoReportado = {
    * quem abre por falha de sistema (burst-rule, sync) manda "tecnico".
    */
   categoria?: "tecnico" | "atendimento";
+  /**
+   * `kind`/`cause` do incidente. O padrão ("reported"/"reported") descreve a
+   * porta: alguém RELATOU. Ambos são sobrescritíveis desde 15/09 porque o
+   * treino de voz passou a abrir chamado daqui por falha NOSSA, e ele nasce
+   * com a MESMA assinatura que `ingest.ts` daria àquela falha (errorSignature)
+   * — de propósito, pra varredura somar ocorrência no chamado que já existe em
+   * vez de abrir um segundo. Se o kind/cause também não viessem, o mesmo
+   * incidente ficaria gravado como "relatado por gente" sob uma assinatura
+   * `training:infra_gpu:…`, e o quadro passaria a mentir sobre a origem.
+   * Campos de CRIAÇÃO: o caminho de dedupe não os toca (nem os outros).
+   */
+  kind?: string;
+  cause?: string;
 };
 
 type ChamadoExistente = {
@@ -212,8 +225,8 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
   }
 
   const criado = await inserirChamadoUnico(admin, {
-      kind: "reported",
-      cause: "reported",
+      kind: c.kind ?? "reported",
+      cause: c.cause ?? "reported",
       status: "open",
       signature: c.signature,
       title: c.title.slice(0, 120),
