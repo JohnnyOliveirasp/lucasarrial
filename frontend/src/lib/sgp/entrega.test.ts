@@ -5,9 +5,11 @@
  *  1. `status = 'pronto'` SEM registro de aviso NÃO pode dizer "nada a fazer" —
  *     foi o que deixou franklindfreis, biatupi e andreviana com o clone pronto
  *     sem saber, um deles por 8 dias, com a tela dizendo "Entregue" o tempo todo;
- *  2. com o carimbo, a linha vira ENTREGUE e o "parado há" PARA de contar;
+ *  2. com o carimbo DE GENTE, a linha vira ENTREGUE e o "parado há" PARA de contar;
  *  3. quem comprou e nunca abriu o portal APARECE na fila de trabalho;
- *  4. a régua dos 7 dias só corre depois da ENTREGA, e reclamação a trava;
+ *  4. o carimbo do SISTEMA sozinho NUNCA vira ENTREGUE — é AVISO NÃO CONFIRMADO,
+ *     que é o "pronto, aviso não confirmado" que o recado 6 pediu para os 84
+ *     (correção do gerente, 16/09);
  *  5. o carimbo nunca é herdado de outro ciclo do mesmo aluno.
  *
  * Rodar (Node ≥ 22.18, type-stripping nativo):
@@ -72,11 +74,25 @@ function pedido(over: Partial<SgpPedidoRow> = {}): SgpPedidoRow {
   };
 }
 
-/** O carimbo do sistema, como `lib/sgp/aviso.ts` o monta. */
+/**
+ * O carimbo do SISTEMA (`profiles.onboarding_ready_email_at`), como
+ * `lib/sgp/aviso.ts` o monta. Prova que um e-mail SAIU — não prova entrega.
+ */
 const avisoEm = (ms: number): AvisoEntrega => ({
   em: new Date(ms).toISOString(),
   canal: "e-mail",
   por: "o sistema",
+});
+
+/**
+ * O carimbo de GENTE (migration 116): alguém do time clicou "Avisei o aluno".
+ * É o ÚNICO que promove a linha a ENTREGUE — ver "O SEXTO RÓTULO" em painel.ts.
+ */
+const avisoDoTime = (ms: number): AvisoEntrega => ({
+  em: new Date(ms).toISOString(),
+  canal: "WhatsApp",
+  por: "atendente@fast.com",
+  fonte: "time",
 });
 
 /* ===========================================================================
@@ -107,7 +123,7 @@ test("pronto sem aviso CONTINUA pedindo ação: não pode sumir no fim da fila",
     pedido({ id: "com" }),
     AGORA,
     undefined,
-    avisoEm(AGORA - 9 * D),
+    avisoDoTime(AGORA - 9 * D),
   );
   const [primeiro] = ordenar([comAviso, semAviso]);
   assert.equal(primeiro.id, "sem", "quem não foi avisado vem antes de quem já foi");
@@ -119,7 +135,7 @@ test("pronto sem aviso CONTINUA pedindo ação: não pode sumir no fim da fila",
 
 test("com carimbo vira ENTREGUE e o 'parado há' PARA de contar", () => {
   const p = pedido({ atualizado_em: new Date(AGORA - 10 * D).toISOString() });
-  const aviso = avisoEm(AGORA - 8 * D); // avisado 2 dias depois da última mexida
+  const aviso = avisoDoTime(AGORA - 8 * D); // avisado 2 dias depois da última mexida
 
   const l = montarLinha(p, AGORA, undefined, aviso);
 
@@ -136,7 +152,7 @@ test("com carimbo vira ENTREGUE e o 'parado há' PARA de contar", () => {
 
 test("o relógio congelado NÃO envelhece: um dia depois, o mesmo número", () => {
   const p = pedido({ atualizado_em: new Date(AGORA - 10 * D).toISOString() });
-  const aviso = avisoEm(AGORA - 8 * D);
+  const aviso = avisoDoTime(AGORA - 8 * D);
 
   const hoje = montarLinha(p, AGORA, undefined, aviso);
   const amanha = montarLinha(p, AGORA + 1 * D, undefined, aviso);
@@ -150,7 +166,7 @@ test("o relógio congelado NÃO envelhece: um dia depois, o mesmo número", () =
 
 test("aviso ANTERIOR à última mexida do pedido não vira 'parado há' negativo", () => {
   const p = pedido({ atualizado_em: new Date(AGORA - 2 * D).toISOString() });
-  const l = montarLinha(p, AGORA, undefined, avisoEm(AGORA - 5 * D));
+  const l = montarLinha(p, AGORA, undefined, avisoDoTime(AGORA - 5 * D));
   assert.ok(l.paradoMs >= 0);
   assert.equal(l.paradoTexto, "0min");
 });
@@ -300,7 +316,7 @@ test("comprador sem pedido NÃO afirma entrega nem oferece botão de pedido", ()
 
 test("as duas abas concordam: a mesma pessoa é ENTREGUE nas duas, ou GERADO nas duas", () => {
   const p = pedido();
-  const aviso = avisoEm(AGORA - 9 * D);
+  const aviso = avisoDoTime(AGORA - 9 * D);
 
   const daFila = montarLinha(p, AGORA, undefined, aviso);
   const [daPlanilha] = montarCompradores({
@@ -324,76 +340,6 @@ test("as duas abas concordam: a mesma pessoa é ENTREGUE nas duas, ou GERADO nas
   assert.equal(planilhaSem.situacao, "pronto");
   assert.equal(planilhaSem.entregue, false);
   assert.equal(planilhaSem.geradoSemAviso, true);
-});
-
-/* ===========================================================================
- * 6) OS 7 DIAS — a régua existe, testada, e NÃO está ligada em lugar nenhum
- * ========================================================================= */
-
-test("7 dias após ENTREGUE sem reclamação: conclui", () => {
-  const aviso = lerAviso(pedido(), avisoEm(AGORA - 8 * D), AGORA);
-  assert.ok(aviso, "o fixture tem que produzir um aviso válido");
-  const v = conclusaoAutomatica(pedido(), aviso, AGORA);
-  assert.equal(v.conclui, true);
-  assert.match(v.motivo, new RegExp(`${SGP_CONCLUSAO_AUTOMATICA_DIAS} dias`));
-});
-
-test("antes dos 7 dias NÃO conclui, e diz quanto falta", () => {
-  const aviso = lerAviso(pedido(), avisoEm(AGORA - 3 * D), AGORA);
-  const v = conclusaoAutomatica(pedido(), aviso, AGORA);
-  assert.equal(v.conclui, false);
-  assert.match(v.motivo, /fecha sozinho em 4 dias/);
-});
-
-test("com RECLAMAÇÃO no meio NÃO conclui, mesmo passados os 7 dias", () => {
-  // 9 dias: DEPOIS do `enviado_em` do fixture (11 dias) — senão `lerAviso` o
-  // descarta como aviso de outro ciclo, que é justamente a guarda que existe.
-  const aviso = lerAviso(pedido(), avisoEm(AGORA - 9 * D), AGORA);
-  assert.ok(aviso, "o fixture tem que produzir um aviso válido");
-
-  // (a) o time marcou erro na mão
-  const marcado = conclusaoAutomatica(
-    pedido({ erro_manual_em: new Date(AGORA - 2 * D).toISOString() }),
-    aviso,
-    AGORA,
-  );
-  assert.equal(marcado.conclui, false);
-  assert.match(marcado.motivo, /marcou um erro/);
-
-  // (b) o sistema carimbou falha (inclusive parcial, com o pedido ainda pronto)
-  const comErro = conclusaoAutomatica(pedido({ erro: "voz falhou" }), aviso, AGORA);
-  assert.equal(comErro.conclui, false);
-  assert.match(comErro.motivo, /voz falhou/);
-
-  // (c) o pedido saiu de pronto
-  const falhou = conclusaoAutomatica(pedido({ status: "falhou" }), aviso, AGORA);
-  assert.equal(falhou.conclui, false);
-});
-
-test("sem aviso o prazo dos 7 dias NEM COMEÇA — nunca arquiva quem não foi avisado", () => {
-  // O pedido está pronto há 20 dias. Sem o corte, "7 dias depois de pronto"
-  // fecharia sozinho o caso de alguém que nunca soube que o clone existe.
-  const v = conclusaoAutomatica(
-    pedido({ atualizado_em: new Date(AGORA - 20 * D).toISOString() }),
-    null,
-    AGORA,
-  );
-  assert.equal(v.conclui, false);
-  assert.match(v.motivo, /O prazo nem começou/);
-});
-
-test("quem já foi concluído por gente não é reconcluído pela régua automática", () => {
-  // 9 dias: DEPOIS do `enviado_em` do fixture (11 dias) — senão `lerAviso` o
-  // descarta como aviso de outro ciclo, que é justamente a guarda que existe.
-  const aviso = lerAviso(pedido(), avisoEm(AGORA - 9 * D), AGORA);
-  assert.ok(aviso, "o fixture tem que produzir um aviso válido");
-  const v = conclusaoAutomatica(
-    pedido({ concluido_em: new Date(AGORA - 1 * D).toISOString() }),
-    aviso,
-    AGORA,
-  );
-  assert.equal(v.conclui, false);
-  assert.match(v.motivo, /já foi concluído/);
 });
 
 /* ===========================================================================
@@ -426,7 +372,7 @@ test("o contador de auditoria conta concluído-sem-entrega usando o corte novo",
     pedido({ id: "b", concluido_em: new Date(AGORA - 1 * D).toISOString() }),
     AGORA,
     undefined,
-    avisoEm(AGORA - 9 * D),
+    avisoDoTime(AGORA - 9 * D),
   );
   const r = resumir([concluidoSemAviso, concluidoEntregue]);
   assert.equal(r.concluidos, 2);
@@ -534,4 +480,163 @@ test("sem a migration 116 a fila continua de pé e os outros grupos sobrevivem",
   assert.equal(r.error, null, "a tela do time não cai");
   assert.equal(r.disponivel.aviso, false, "só o registro de aviso fica indisponível");
   assert.equal(r.disponivel.cobranca, true);
+});
+
+/* ===========================================================================
+ * 8) OS 84 ANTIGOS — carimbo do SISTEMA nunca é, sozinho, ENTREGUE
+ *
+ * O recado 6 foi taxativo: "NAO carimbe retroativo nos 84 (...) Eles ficam num
+ * estado explicito tipo 'pronto, aviso nao confirmado'". A primeira versão desta
+ * mudança lia `profiles.onboarding_ready_email_at` e promovia 81 dos 82 direto a
+ * ENTREGUE. Estes testes são a trava pra isso não voltar.
+ * ========================================================================= */
+
+test("carimbo SÓ do sistema não é ENTREGUE: vira AVISO NÃO CONFIRMADO", () => {
+  const l = montarLinha(pedido(), AGORA, undefined, avisoEm(AGORA - 9 * D));
+
+  assert.equal(l.situacao, "aviso_nao_confirmado");
+  assert.equal(l.situacaoRotulo, "AVISO NÃO CONFIRMADO");
+  assert.notEqual(l.situacao, "entregue", "o e-mail automático não afirma entrega");
+});
+
+test("o estado dos 84 NUNCA diz 'nada a fazer' — ele manda CONFIRMAR", () => {
+  const l = montarLinha(pedido(), AGORA, undefined, avisoEm(AGORA - 9 * D));
+
+  // A regressão exata do recado 6, agora pelo outro caminho.
+  assert.doesNotMatch(l.oQueFazer, /Nada a fazer/);
+  assert.match(l.oQueFazer, /CONFIRMAR COM O ALUNO/);
+  // E a tela diz POR QUE não basta: envio não é leitura.
+  assert.match(l.situacaoMotivo, /NINGUÉM confirmou/);
+});
+
+test("franklindfreis: TEM o carimbo automático e mesmo assim não conta como entregue", () => {
+  // O caso real que o recado 6 cita como "teve o clone pronto e NÃO SOUBE".
+  // Carimbo de 13/09 01:43, seis minutos depois do envio do pedido — e ele
+  // continuou sem saber, porque não tinha acesso vivo. Se esta linha voltar a
+  // ser ENTREGUE, a tela voltou a mentir exatamente sobre quem originou o recado.
+  const p = pedido({
+    id: "franklindfreis",
+    enviado_em: new Date("2026-09-13T01:37:00Z").toISOString(),
+  });
+  const carimbo = avisoEm(new Date("2026-09-13T01:43:00Z").getTime());
+
+  const l = montarLinha(p, AGORA, undefined, carimbo);
+  assert.notEqual(l.situacao, "entregue");
+  assert.equal(l.situacao, "aviso_nao_confirmado");
+});
+
+test("o relógio NÃO congela com carimbo só do sistema — o caso segue envelhecendo", () => {
+  // Congelar tiraria o caso do topo da fila usando como prova justamente o
+  // carimbo que não prova nada. Quem não foi confirmado está esperando agora.
+  const p = pedido({ atualizado_em: new Date(AGORA - 10 * D).toISOString() });
+  const aviso = avisoEm(AGORA - 8 * D);
+
+  const hoje = montarLinha(p, AGORA, undefined, aviso);
+  const amanha = montarLinha(p, AGORA + 1 * D, undefined, aviso);
+
+  assert.equal(hoje.relogioParado, false);
+  assert.ok(amanha.paradoMs > hoje.paradoMs, "não confirmado tem que continuar contando");
+});
+
+test("o clique do time PROMOVE a linha: mesmo pedido, de não-confirmado a ENTREGUE", () => {
+  const p = pedido();
+
+  const antes = montarLinha(p, AGORA, undefined, avisoEm(AGORA - 9 * D));
+  const depois = montarLinha(p, AGORA, undefined, avisoDoTime(AGORA - 1 * D));
+
+  assert.equal(antes.situacao, "aviso_nao_confirmado");
+  assert.equal(depois.situacao, "entregue");
+  assert.equal(depois.avisadoPeloTime, true);
+  assert.equal(antes.avisadoPeloTime, false);
+});
+
+test("os 84 aparecem num contador PRÓPRIO, sem sujar entregue nem gerado", () => {
+  const linhas = [
+    // 2 com carimbo só do sistema (o retrato dos 84)
+    montarLinha(pedido({ id: "a" }), AGORA, undefined, avisoEm(AGORA - 9 * D)),
+    montarLinha(pedido({ id: "b" }), AGORA, undefined, avisoEm(AGORA - 9 * D)),
+    // 1 sem carimbo nenhum
+    montarLinha(pedido({ id: "c" }), AGORA, undefined, null),
+    // 1 confirmado por gente
+    montarLinha(pedido({ id: "d" }), AGORA, undefined, avisoDoTime(AGORA - 9 * D)),
+  ];
+  const r = resumir(linhas);
+
+  assert.equal(r.situacoes.aviso_nao_confirmado, 2);
+  assert.equal(r.situacoes.entregue, 1, "só o carimbo de gente conta como entregue");
+  assert.equal(r.situacoes.pronto, 1);
+});
+
+test("concluir um caso NÃO CONFIRMADO ainda conta como pendência na auditoria", () => {
+  // `situacaoPorBaixo !== "entregue"`: encerrar o atendimento de quem só tem o
+  // e-mail automático não pode limpar o número que existe pra flagrar isso.
+  const l = montarLinha(
+    pedido({ concluido_em: new Date(AGORA - 1 * H).toISOString() }),
+    AGORA,
+    undefined,
+    avisoEm(AGORA - 9 * D),
+  );
+  assert.equal(l.concluido, true);
+  assert.equal(l.situacaoPorBaixo, "aviso_nao_confirmado");
+  assert.equal(resumir([l]).concluidosComPendencia, 1);
+});
+
+/* ===========================================================================
+ * 9) A REGUA DOS 7 DIAS — restaurada (é do reenvio 2/2, PR #307) e APERTADA
+ *
+ * `conclusaoAutomatica` NÃO é código morto: o PR #307 (`conclusao-sweep.ts`) a
+ * importa e é ele quem a liga, com flag desligada por padrão. Removê-la daqui
+ * quebraria um PR aberto e MERGEABLE — então ela fica, e ganha a guarda que o
+ * corte do sexto rótulo exige.
+ * ========================================================================= */
+
+test("7 dias após ENTREGA CONFIRMADA e sem reclamação: conclui", () => {
+  const v = conclusaoAutomatica(pedido(), lerAviso(pedido(), avisoDoTime(AGORA - 8 * D), AGORA), AGORA);
+  assert.equal(v.conclui, true);
+  assert.match(v.motivo, new RegExp(`${SGP_CONCLUSAO_AUTOMATICA_DIAS} dias`));
+});
+
+test("antes dos 7 dias NÃO conclui, e diz quanto falta", () => {
+  const v = conclusaoAutomatica(pedido(), lerAviso(pedido(), avisoDoTime(AGORA - 2 * D), AGORA), AGORA);
+  assert.equal(v.conclui, false);
+  assert.match(v.motivo, /fecha sozinho em/);
+});
+
+test("sem aviso nenhum o prazo NEM COMEÇA — nunca arquiva quem não foi avisado", () => {
+  const v = conclusaoAutomatica(pedido(), null, AGORA);
+  assert.equal(v.conclui, false);
+  assert.match(v.motivo, /nem começou/);
+});
+
+test("REGRESSÃO: carimbo só do sistema NÃO faz o prazo dos 7 dias correr", () => {
+  // Sem esta guarda o fechamento automático do #307 arquivaria sozinho, em 7
+  // dias e em silêncio, justamente a classe do franklindfreis — que TEM o
+  // carimbo automático e mesmo assim não soube do clone.
+  // 9 dias: passou dos 7, e é DEPOIS de `enviado_em` (AGORA-11d) pra não cair
+  // na guarda de "aviso de outro ciclo" — o que testaria outra coisa.
+  const antigo = avisoEm(AGORA - 9 * D);
+  const v = conclusaoAutomatica(pedido(), lerAviso(pedido(), antigo, AGORA), AGORA);
+
+  assert.equal(v.conclui, false, "e-mail automático não pode fechar caso sozinho");
+  assert.match(v.motivo, /ninguém confirmou/);
+});
+
+test("com RECLAMAÇÃO no meio NÃO conclui, mesmo passados os 7 dias", () => {
+  const aviso = lerAviso(pedido(), avisoDoTime(AGORA - 8 * D), AGORA);
+  assert.equal(conclusaoAutomatica(pedido({ erro: "voz falhou" }), aviso, AGORA).conclui, false);
+  assert.equal(
+    conclusaoAutomatica(pedido({ erro_manual_em: new Date(AGORA - 1 * H).toISOString() }), aviso, AGORA)
+      .conclui,
+    false,
+  );
+});
+
+test("quem já foi concluído por gente não é reconcluído pela régua automática", () => {
+  const v = conclusaoAutomatica(
+    pedido({ concluido_em: new Date(AGORA - 1 * D).toISOString() }),
+    lerAviso(pedido(), avisoDoTime(AGORA - 8 * D), AGORA),
+    AGORA,
+  );
+  assert.equal(v.conclui, false);
+  assert.match(v.motivo, /já foi concluído/);
 });

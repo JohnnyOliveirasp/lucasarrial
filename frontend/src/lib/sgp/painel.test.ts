@@ -114,7 +114,13 @@ test("entregue há muito tempo NÃO é 'parado' — a régua só vale pro wizard
     }),
     AGORA,
     undefined,
-    { em: new Date(AGORA - 29 * 24 * H).toISOString(), canal: "e-mail", por: "o sistema" },
+    // `fonte: "time"` desde 16/09: só o carimbo de GENTE afirma entrega.
+    {
+      em: new Date(AGORA - 29 * 24 * H).toISOString(),
+      canal: "WhatsApp",
+      por: "atendente@fast.com",
+      fonte: "time",
+    },
   );
   assert.equal(l.parado, false);
   assert.equal(l.precisaAcao, false);
@@ -543,7 +549,14 @@ test("o resumo conta os três buckets e eles fecham com o total", () => {
   const r = resumir(linhas);
   // `pronto: 1` = o pedido gerado SEM carimbo de aviso (montado sem `aviso`).
   // ENTREGUE é bucket próprio desde 15/09 e aqui fica vazio de propósito.
-  assert.deepEqual(r.situacoes, { concluido: 0, entregue: 0, pronto: 1, aguardando: 2, erro: 1 });
+  assert.deepEqual(r.situacoes, {
+    concluido: 0,
+    entregue: 0,
+    aviso_nao_confirmado: 0,
+    pronto: 1,
+    aguardando: 2,
+    erro: 1,
+  });
   assert.equal(
     r.situacoes.concluido +
       r.situacoes.entregue +
@@ -823,8 +836,10 @@ test("situacaoPorBaixo denuncia quem foi encerrado sem ter recebido o clone", ()
   // aluno pode nunca ter sabido. Por isso o caso com entrega leva o carimbo.
   const comEntrega = montarLinha(concluido({ status: "pronto" }), AGORA, undefined, {
     em: new Date(AGORA - 1 * H).toISOString(),
-    canal: "e-mail",
-    por: "o sistema",
+    canal: "WhatsApp",
+    por: "atendente@fast.com",
+    // Desde 16/09 só o carimbo de GENTE tira o caso de pendência.
+    fonte: "time",
   });
   assert.equal(comEntrega.situacao, "concluido");
   assert.equal(comEntrega.situacaoPorBaixo, "entregue");
@@ -1007,12 +1022,20 @@ test("o resumo conta os QUATRO buckets e eles fecham com o total", () => {
     // aluno poderia nunca ter sabido que o clone dele existe.
     montarLinha({ ...concluido({ status: "pronto" }), id: "e" }, AGORA, undefined, {
       em: new Date(AGORA - 1 * H).toISOString(),
-      canal: "e-mail",
-      por: "o sistema",
+      canal: "WhatsApp",
+      por: "atendente@fast.com",
+      fonte: "time",
     }),
   ];
   const r = resumir(linhas);
-  assert.deepEqual(r.situacoes, { concluido: 2, entregue: 0, pronto: 1, aguardando: 1, erro: 1 });
+  assert.deepEqual(r.situacoes, {
+    concluido: 2,
+    entregue: 0,
+    aviso_nao_confirmado: 0,
+    pronto: 1,
+    aguardando: 1,
+    erro: 1,
+  });
   assert.equal(
     r.situacoes.concluido +
       r.situacoes.entregue +

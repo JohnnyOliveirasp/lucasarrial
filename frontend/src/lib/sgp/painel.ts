@@ -128,8 +128,35 @@ const FALTA_NO_WIZARD: Record<string, string> = {
  * `status = 'pronto'` — que não sabe nada sobre o aluno. Agora são duas:
  * `pronto` ficou com o significado honesto (gerado, aviso não confirmado) e
  * `entregue` é o que exige o carimbo. Ver `AvisoEntrega` para de onde ele sai.
+ *
+ * ── O SEXTO RÓTULO (correção do gerente, 16/09) ─────────────────────────────
+ * O recado 6 mandou, em caixa alta, que os 84 pedidos em `pronto` NÃO fossem
+ * carimbados como entregues, e que ficassem num *"estado explícito tipo 'pronto,
+ * aviso não confirmado'"*. A primeira versão desta mudança leu
+ * `profiles.onboarding_ready_email_at` e promoveu 81 dos 82 direto a ENTREGUE,
+ * automaticamente, sem nenhuma confirmação humana. Isso furava o pedido por um
+ * motivo que a própria medição provava:
+ *
+ *   42 dos 81 "avisados" NÃO tinham acesso vivo — e entre eles está o
+ *   `franklindfreis`, que é UM DOS TRÊS NOMES que o recado 6 cita como "teve o
+ *   clone pronto e NÃO SOUBE". Ou seja, a régua automática classificava como
+ *   ENTREGUE exatamente o aluno cuja história motivou o recado.
+ *
+ * Então o carimbo do sistema não some (é informação real e útil), mas ele NÃO
+ * afirma entrega sozinho: ele coloca a linha em AVISO NÃO CONFIRMADO, que é uma
+ * PENDÊNCIA com uma pista — "o e-mail automático saiu em tal dia; confirme com o
+ * aluno e registre". Só o carimbo de GENTE (migration 116, o clique "Avisei o
+ * aluno") promove a linha a ENTREGUE, porque só ele é alguém afirmando que
+ * falou com o aluno.
  */
-export const SITUACOES = ["concluido", "erro", "entregue", "aguardando", "pronto"] as const;
+export const SITUACOES = [
+  "concluido",
+  "erro",
+  "entregue",
+  "aviso_nao_confirmado",
+  "aguardando",
+  "pronto",
+] as const;
 export type SituacaoSgp = (typeof SITUACOES)[number];
 
 /** Em caixa alta porque é etiqueta de planilha, não frase. */
@@ -137,6 +164,10 @@ export const SITUACAO_ROTULO: Record<SituacaoSgp, string> = {
   concluido: "CONCLUÍDO",
   erro: "ERRO",
   entregue: "ENTREGUE",
+  // Nem GERADO (que seria esconder que o e-mail saiu) nem ENTREGUE (que seria
+  // afirmar o que ninguém confirmou). É o meio-termo honesto: sabemos que algo
+  // saiu, não sabemos se chegou em alguém.
+  aviso_nao_confirmado: "AVISO NÃO CONFIRMADO",
   aguardando: "AGUARDANDO",
   // "GERADO" e não "PRONTO": a palavra antiga é exatamente a que o time lia como
   // "acabou, não preciso mexer". Trocar o rótulo junto com o significado é o que
@@ -433,12 +464,26 @@ export function situacaoDoPedido(
   if (p.status === "pronto") {
     // O CORTE DO RECADO 6. Gerado é fila nossa; entregue é fato sobre o aluno.
     const a = lerAviso(p, aviso, agora);
-    if (a) {
+    // ⚠️ SÓ O CARIMBO DE GENTE AFIRMA ENTREGA (correção do gerente, 16/09).
+    // O carimbo do sistema prova que um e-mail SAIU, não que alguém falou com o
+    // aluno — e medido em 15/09, 42 dos 81 que o têm não conseguiam nem acessar
+    // a plataforma. Ver o bloco "O SEXTO RÓTULO" em `SITUACOES`.
+    if (a?.fonte === "time") {
       return {
         codigo: "entregue",
         rotulo: SITUACAO_ROTULO.entregue,
         // "Avisamos", nunca "ele sabe": ver a ressalva 1 em `AvisoEntrega`.
         motivo: `O clone ficou pronto e o aluno foi avisado — ${avisoTexto(a)}.`,
+      };
+    }
+    if (a) {
+      return {
+        codigo: "aviso_nao_confirmado",
+        rotulo: SITUACAO_ROTULO.aviso_nao_confirmado,
+        motivo:
+          `O clone ficou pronto e o e-mail automático saiu (${avisoTexto(a)}), mas NINGUÉM ` +
+          `confirmou que o aluno soube. Envio não é leitura, e não prova nem que ele consegue ` +
+          `acessar. Fale com o aluno e registre aqui — aí vira ENTREGUE.`,
       };
     }
     return {
@@ -715,7 +760,11 @@ export function oQueFazer(
    */
   aviso: Aviso | null = null,
 ): string {
-  const entregue = p.status === "pronto" ? aviso : null;
+  // ⚠️ `fonte === "time"` e não `!!aviso` (correção do gerente, 16/09): o carimbo
+  // automático NÃO autoriza a frase "nada a fazer". Ver "O SEXTO RÓTULO".
+  const entregue = p.status === "pronto" && aviso?.fonte === "time" ? aviso : null;
+  /** Saiu o e-mail automático, mas ninguém confirmou com o aluno. */
+  const avisoNaoConfirmado = p.status === "pronto" && !entregue ? aviso : null;
   // Conclusão viva manda em tudo: o time já decidiu que não precisa mexer.
   // Mas a frase NÃO pode parar em "nada a fazer" quando o aluno pagou e não
   // recebeu — aí ela diz as duas coisas, porque as duas são verdade.
@@ -760,6 +809,15 @@ export function oQueFazer(
     // (franklindfreis, biatupi, andreviana) tinham o clone pronto, e a tela
     // dizia "nada a fazer" o tempo todo.
     if (entregue) return `Nada a fazer. O clone foi entregue e o aluno ${avisoTexto(entregue)}.`;
+    if (avisoNaoConfirmado) {
+      // NÃO é "nada a fazer": o e-mail automático ter saído é uma PISTA, não uma
+      // entrega. franklindfreis tinha este carimbo e mesmo assim não soube.
+      return (
+        `CONFIRMAR COM O ALUNO: o clone está pronto e o e-mail automático ${avisoTexto(avisoNaoConfirmado)}, ` +
+        `mas ninguém confirmou que ele soube — e o e-mail automático não prova nem que ele consegue ` +
+        `acessar a plataforma. Chame no WhatsApp, confirme, e registre aqui que avisou.`
+      );
+    }
     return (
       "AVISAR O ALUNO: o clone dele está pronto e não há registro de que alguém tenha avisado. " +
       "Chame no WhatsApp ou mande o e-mail, e registre aqui que avisou — enquanto não registrar, " +
@@ -829,10 +887,15 @@ export function montarLinha(
   // deixa de fazer é CRESCER — que era o que empurrava entrega de 30 dias atrás
   // pro topo da fila de quem precisa de gente.
   //
-  // ⚠️ Só congela com o carimbo na mão. `pronto` SEM aviso continua contando, e
-  // tem que continuar: aquele aluno está esperando notícia nossa agora mesmo.
-  const relogioParado = !!aviso;
-  const fimDaContagem = aviso ? Math.min(agora, new Date(aviso.em).getTime()) : agora;
+  // ⚠️ Só congela com o carimbo DE GENTE na mão (apertado em 16/09 junto com o
+  // corte do sexto rótulo). `pronto` sem aviso — e agora também `pronto` com
+  // apenas o carimbo automático — continua contando, e tem que continuar:
+  // aqueles alunos estão esperando notícia nossa agora mesmo. Congelar o relógio
+  // de um caso NÃO CONFIRMADO seria tirá-lo do topo da fila usando como prova
+  // exatamente o carimbo que não prova nada.
+  const confirmado = aviso?.fonte === "time" ? aviso : null;
+  const relogioParado = !!confirmado;
+  const fimDaContagem = confirmado ? Math.min(agora, new Date(confirmado.em).getTime()) : agora;
   const paradoMs = Math.max(0, fimDaContagem - new Date(p.atualizado_em).getTime());
 
   // Travado no wizard há +48h. Isto NÃO depende da cobrança: o aluno está
@@ -980,6 +1043,7 @@ export function resumir(linhas: LinhaPainel[]): ResumoPainel {
     concluido: 0,
     erro: 0,
     entregue: 0,
+    aviso_nao_confirmado: 0,
     aguardando: 0,
     pronto: 0,
   };
@@ -1063,6 +1127,22 @@ export function conclusaoAutomatica(
     return {
       conclui: false,
       motivo: "O clone foi gerado, mas não há registro de aviso ao aluno. O prazo nem começou.",
+    };
+  }
+  if (aviso.fonte !== "time") {
+    // ⚠️ APERTADO EM 16/09, junto com o corte do sexto rótulo. O carimbo
+    // automático prova que um e-mail SAIU, não que o aluno soube — e 42 dos 81
+    // que o têm não conseguiam nem acessar a plataforma. Deixar o prazo correr
+    // em cima dele faria o fechamento automático (PR #307) arquivar sozinho, em
+    // 7 dias e em silêncio, exatamente a classe de caso que o recado 6 veio
+    // expor: o `franklindfreis` TEM este carimbo e mesmo assim não soube.
+    // O prazo só corre depois que alguém confirmou — o mesmo carimbo que a tela
+    // exige pra dizer ENTREGUE.
+    return {
+      conclui: false,
+      motivo:
+        "O e-mail automático saiu, mas ninguém confirmou que o aluno soube. " +
+        "O prazo só começa depois que alguém do time registrar o aviso.",
     };
   }
   if (p.erro_manual_em) {
