@@ -22,6 +22,7 @@ import { getAdmin } from "@/lib/db/admin";
 import type { SgpPedidoRow } from "@/lib/sgp/types";
 import { montarLinha, ordenar, resumir } from "@/lib/sgp/painel";
 import {
+  COLUNAS_AVISO,
   COLUNAS_COBRANCA,
   COLUNAS_CONCLUSAO,
   COLUNAS_ERRO_MANUAL,
@@ -29,7 +30,7 @@ import {
   silencioHorasConfigurado,
   silencioMsConfigurado,
 } from "@/lib/sgp/cobranca";
-import { COLUNAS_AVISO, buscarAvisos } from "@/lib/sgp/aviso";
+import { buscarAvisos } from "@/lib/sgp/aviso";
 
 export const dynamic = "force-dynamic";
 

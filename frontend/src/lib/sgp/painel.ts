@@ -203,6 +203,34 @@ export type Situacao = {
  * porque o carimbo do futuro (migration 116, `avisado_em`) é um clique de
  * gente: aí `por` é o e-mail de quem avisou e `canal` pode ser WhatsApp.
  */
+/**
+ * Por onde o time pode ter avisado o aluno.
+ *
+ * Fica NESTE módulo (puro) porque os dois lados precisam da MESMA lista: o botão
+ * que oferece as opções e a rota que decide o que aceita gravar. Duas listas
+ * viram uma divergência — o botão oferecendo um canal que a rota recusa.
+ *
+ * ⚠️ Lista FECHADA de propósito. O canal é o que torna o carimbo auditável ("foi
+ * por WhatsApp, e WhatsApp a gente sabe que chega"), e texto livre aqui viraria
+ * "zap", "whats", "msg" — três nomes pro mesmo canal e nenhuma contagem possível.
+ */
+export const SGP_CANAIS_AVISO = ["WhatsApp", "e-mail", "ligação", "outro"] as const;
+export type CanalAviso = (typeof SGP_CANAIS_AVISO)[number];
+
+/**
+ * O canal veio da lista? É a guarda que a rota roda ANTES de gravar.
+ *
+ * Recusar é melhor que aceitar qualquer coisa: `avisado_canal` é texto no banco
+ * (sem constraint, porque a migration não cria nenhuma), então quem defende o
+ * conteúdo dessa coluna é esta função. Sem ela, um corpo de requisição torto
+ * grava lixo que a tela depois mostra como se fosse canal de verdade.
+ */
+export function canalValido(bruto: unknown): CanalAviso | null {
+  if (typeof bruto !== "string") return null;
+  const limpo = bruto.trim();
+  return (SGP_CANAIS_AVISO as readonly string[]).includes(limpo) ? (limpo as CanalAviso) : null;
+}
+
 export type AvisoEntrega = {
   /** ISO de quando o aviso saiu. */
   em: string;
@@ -210,6 +238,19 @@ export type AvisoEntrega = {
   canal: string;
   /** Quem avisou. "o sistema" para o e-mail automático; e-mail de gente quando é clique. */
   por: string;
+  /**
+   * De QUAL das duas fontes veio o carimbo (ver lib/sgp/aviso.ts).
+   *
+   * Existe por uma razão só, e é de tela: "desfazer" só pode aparecer no carimbo
+   * do TIME, que é o único que dá pra apagar. Oferecer desfazer no carimbo do
+   * SISTEMA seria um botão que limpa colunas vazias e não muda nada — o
+   * atendente clicaria, a linha continuaria ENTREGUE, e ele concluiria que a
+   * tela está quebrada.
+   *
+   * AUSENTE = trate como "sistema". É o default conservador: na dúvida a tela
+   * não oferece um desfazer que pode não funcionar.
+   */
+  fonte?: "time" | "sistema";
 };
 
 /** O aviso já interpretado, com o tempo pronto pra tela. */
@@ -247,6 +288,8 @@ export function lerAviso(
     em: aviso.em,
     canal: aviso.canal?.trim() || "e-mail",
     por: aviso.por?.trim() || "o sistema",
+    // Na dúvida, "sistema": é o que NÃO oferece desfazer (ver `AvisoEntrega`).
+    fonte: aviso.fonte === "time" ? "time" : "sistema",
     // Relógio adiantado do banco não pode virar tempo negativo na tela.
     desdeMs: Math.max(0, agora - em),
   };
@@ -529,6 +572,11 @@ export type LinhaPainel = {
   avisadoTexto: string | null;
   /** ISO do aviso. `null` = sem registro. */
   avisadoEm: string | null;
+  /**
+   * O carimbo veio de um clique do TIME (e não do e-mail automático) — logo dá
+   * pra desfazer. Ver a justificativa em `AvisoEntrega.fonte`.
+   */
+  avisadoPeloTime: boolean;
   /** O "parado há" congelou porque o caso foi entregue (requisito 3). */
   relogioParado: boolean;
   /** O time declarou o atendimento encerrado E o pedido não andou depois. */
@@ -820,6 +868,7 @@ export function montarLinha(
     avisado: !!aviso,
     avisadoTexto: aviso ? avisoTexto(aviso) : null,
     avisadoEm: aviso?.em ?? null,
+    avisadoPeloTime: aviso?.fonte === "time",
     relogioParado,
     concluido,
     concluidoTexto: fim

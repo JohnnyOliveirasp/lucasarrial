@@ -57,6 +57,7 @@ import { filtrarBusca } from "@/lib/sgp/busca";
 import type { SgpGeracoes } from "@/lib/sgp/geracoes";
 import { videoLegivel, vozLegivel } from "@/lib/sgp/geracoes-pure";
 import {
+  SGP_CANAIS_AVISO,
   SGP_PARADO_HORAS,
   ordenar,
   resumir,
@@ -194,6 +195,14 @@ export default function SgpPage() {
   const [expandido, setExpandido] = useState<string | null>(null);
   const [geracoes, setGeracoes] = useState<Record<string, EstadoGeracoes>>({});
 
+  /**
+   * "Avisei o aluno" (migration 116). Só um par: aqui não há rascunho de texto
+   * livre pra proteger do refresh — o canal é uma escolha de lista (ver
+   * `SGP_CANAIS_AVISO`), e escolha não se perde no meio de uma frase.
+   */
+  const [avisoOk, setAvisoOk] = useState(false);
+  const [abertoAviso, setAbertoAviso] = useState<string | null>(null);
+
   /** Mesmo trio pro "Concluir atendimento" (migration 110), e pelo mesmo motivo:
    *  o rascunho tem que atravessar o refresh de 30s sem sumir do meio da frase. */
   const [conclusaoOk, setConclusaoOk] = useState(false);
@@ -216,6 +225,7 @@ export default function SgpPage() {
         setCobranca(json.cobranca ?? null);
         setErroManualOk(!!json.erroManual?.disponivel);
         setConclusaoOk(!!json.conclusao?.disponivel);
+        setAvisoOk(!!json.aviso?.disponivel);
         setErro(null);
       } else {
         setErro(json?.error?.message || "Não consegui carregar a fila.");
@@ -391,6 +401,42 @@ export default function SgpPage() {
       }
     },
     [load, rascunhoConcluir],
+  );
+
+  /**
+   * Registra (ou desfaz) o aviso ao aluno. Mesma forma das outras três — mesmo
+   * `salvando`, mesmo reload, mesmo lugar de mensagem.
+   *
+   * ⚠️ ISTO NÃO MANDA MENSAGEM NENHUMA. É o registro de um aviso que a pessoa
+   * já deu, pelo canal dela. O sistema não fala com aluno sozinho, e o nome do
+   * botão é a única coisa aqui que poderia sugerir o contrário — por isso a
+   * tela escreve isso embaixo da tabela, e não só neste comentário.
+   */
+  const marcarAviso = useCallback(
+    async (id: string, canal: string | null) => {
+      setSalvando(id);
+      try {
+        const res = await fetch(`/api/v1/admin/sgp/${id}/aviso`, {
+          method: canal ? "POST" : "DELETE",
+          ...(canal
+            ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ canal }) }
+            : {}),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          setErro(json?.error?.message || "Não consegui registrar o aviso.");
+          return;
+        }
+        setErro(null);
+        setAbertoAviso(null);
+        await load();
+      } catch {
+        setErro("Não consegui registrar o aviso.");
+      } finally {
+        setSalvando(null);
+      }
+    },
+    [load],
   );
 
   /**
@@ -741,7 +787,9 @@ export default function SgpPage() {
                 <Th>Situação</Th>
                 <Th>Parado há</Th>
                 <Th>WhatsApp</Th>
-                <Th>Cobrança</Th>
+                {/* Era "Cobrança". Virou o guarda-chuva das duas conversas com o
+                    aluno: cobrar quem travou e avisar quem já tem o clone. */}
+                <Th>Contato com o aluno</Th>
                 <Th>Marcar erro</Th>
                 <Th>Atendimento</Th>
                 <Th>Etapa atual</Th>
@@ -856,11 +904,24 @@ export default function SgpPage() {
                     </Td>
                   ) : (
                     <>
+                  {/* ⚠️ UMA COLUNA SÓ pras duas conversas com o aluno, e isso é
+                      medida, não economia de espaço: a tabela já sai em ~1780px
+                      e os botões de ação só cabem na tela porque estão nas
+                      primeiras colunas (defeito reclamado 3x pelo Lucas). Uma
+                      15ª coluna empurraria "Atendimento" pra fora da viewport.
+                      Elas nunca disputam a mesma linha: "Já cobrei" só aparece
+                      pra quem está travado no wizard, "Avisei" só pra quem já
+                      tem clone gerado — e um pedido nunca está nos dois. */}
                   <Td className="min-w-[190px]">
-                    <CelulaCobranca
+                    <CelulaContato
                       linha={p}
                       disponivel={cobranca?.disponivel ?? false}
+                      avisoDisponivel={avisoOk}
                       salvando={salvando === p.id}
+                      abertoAviso={abertoAviso === p.id}
+                      onAbrirAviso={() => setAbertoAviso(p.id)}
+                      onFecharAviso={() => setAbertoAviso(null)}
+                      onAvisar={(canal) => marcarAviso(p.id, canal)}
                       onMarcar={() => marcarCobranca(p.id, true)}
                       onDesfazer={() => marcarCobranca(p.id, false)}
                     />
@@ -1273,6 +1334,178 @@ function SecaoGerados({
         {nota ? <span className="ml-2 normal-case tracking-normal">({nota})</span> : null}
       </span>
       {children}
+    </div>
+  );
+}
+
+/**
+ * A coluna "Contato com o aluno": as DUAS conversas que o time tem com ele, na
+ * mesma célula porque nunca acontecem ao mesmo tempo.
+ *
+ *  · o aluno travou no wizard  → "Já cobrei"      (migration 106)
+ *  · o clone dele ficou pronto → "Avisei o aluno" (migration 116, recado 6)
+ *
+ * Um pedido está no wizard OU já foi gerado, nunca nos dois — então dividir a
+ * célula não esconde nada. O que se ganha é a tabela não crescer uma 15ª coluna:
+ * ela já sai em ~1780px e foi preciso mover os botões pras primeiras colunas
+ * pra caberem na tela (defeito reclamado 3x pelo Lucas). Coluna nova empurraria
+ * "Atendimento" pra fora da viewport de novo.
+ */
+function CelulaContato({
+  linha,
+  disponivel,
+  avisoDisponivel,
+  salvando,
+  abertoAviso,
+  onAbrirAviso,
+  onFecharAviso,
+  onAvisar,
+  onMarcar,
+  onDesfazer,
+}: {
+  linha: LinhaPainel;
+  disponivel: boolean;
+  avisoDisponivel: boolean;
+  salvando: boolean;
+  abertoAviso: boolean;
+  onAbrirAviso: () => void;
+  onFecharAviso: () => void;
+  /** `null` = desfazer. */
+  onAvisar: (canal: string | null) => void;
+  onMarcar: () => void;
+  onDesfazer: () => void;
+}) {
+  // Clone gerado: a conversa aqui é "o aluno sabe?", não "já cobrou?".
+  if (linha.status === "pronto") {
+    return (
+      <CelulaAviso
+        linha={linha}
+        disponivel={avisoDisponivel}
+        salvando={salvando}
+        aberto={abertoAviso}
+        onAbrir={onAbrirAviso}
+        onFechar={onFecharAviso}
+        onAvisar={onAvisar}
+      />
+    );
+  }
+  return (
+    <CelulaCobranca
+      linha={linha}
+      disponivel={disponivel}
+      salvando={salvando}
+      onMarcar={onMarcar}
+      onDesfazer={onDesfazer}
+    />
+  );
+}
+
+/**
+ * "Avisei o aluno" (recado 6, 15/09). Quatro estados:
+ *
+ *  - já há registro de aviso   → quem avisou, quando e por qual canal;
+ *  - sem registro, migration ok → o botão, que pergunta POR ONDE antes de gravar;
+ *  - sem registro, sem migration → diz que não dá pra registrar, sem sumir com
+ *    a pendência (a linha continua em GERADO e continua pedindo o aviso);
+ *  - registro do SISTEMA → sem "desfazer", porque não há o que desfazer.
+ *
+ * ⚠️ O BOTÃO NÃO MANDA MENSAGEM. Ele REGISTRA um aviso que a pessoa já deu pelo
+ * canal dela. É o mesmo princípio do "Já cobrei", e a regra do SGP inteiro: o
+ * sistema não fala com aluno sozinho.
+ *
+ * ⚠️ O CANAL É OBRIGATÓRIO, e por isso o clique abre a escolha em vez de gravar
+ * direto. "Avisado" sem dizer por onde é quase tão vago quanto o "Entregue" que
+ * este PR aposentou — WhatsApp e e-mail têm chances de chegar muito diferentes,
+ * e sem essa coluna não dá pra auditar nada depois.
+ */
+function CelulaAviso({
+  linha,
+  disponivel,
+  salvando,
+  aberto,
+  onAbrir,
+  onFechar,
+  onAvisar,
+}: {
+  linha: LinhaPainel;
+  disponivel: boolean;
+  salvando: boolean;
+  aberto: boolean;
+  onAbrir: () => void;
+  onFechar: () => void;
+  onAvisar: (canal: string | null) => void;
+}) {
+  if (linha.avisado) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="inline-flex items-start gap-1.5 text-[12px] text-[var(--body)]">
+          <CheckCheck className="mt-[2px] size-3.5 shrink-0 text-[var(--status-online)]" />
+          {linha.avisadoTexto}
+        </span>
+        {/* Só o carimbo do TIME tem desfazer: o do sistema é o e-mail automático,
+            e "desfazer" ali limparia colunas vazias sem mudar a linha. */}
+        {linha.avisadoPeloTime && disponivel && (
+          <button
+            type="button"
+            onClick={() => onAvisar(null)}
+            disabled={salvando}
+            className="inline-flex w-fit items-center gap-1 text-[11px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)] disabled:opacity-50"
+          >
+            <Undo2 className="size-3" />
+            {salvando ? "desfazendo…" : "desfazer"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (!disponivel) {
+    // A pendência NÃO some junto com o botão: a linha segue em GERADO, o banner
+    // segue contando, e o atendente fica sabendo que o aviso é dele mesmo assim.
+    return (
+      <span className="text-[11px] text-[var(--ash)]">
+        avise o aluno — o registro do aviso ainda não está liberado
+      </span>
+    );
+  }
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={onAbrir}
+        disabled={salvando}
+        className="rounded-[var(--radius)] border border-[var(--status-warn)]/50 px-2.5 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--surface-deep)] disabled:opacity-50"
+      >
+        Avisei o aluno
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[11px] text-[var(--mute)]">Por onde você avisou?</span>
+      <div className="flex flex-wrap gap-1">
+        {SGP_CANAIS_AVISO.map((canal) => (
+          <button
+            key={canal}
+            type="button"
+            onClick={() => onAvisar(canal)}
+            disabled={salvando}
+            className="rounded-[var(--radius)] border border-[var(--hairline-strong)] px-2 py-1 text-[11px] text-[var(--ink)] transition-colors hover:bg-[var(--surface-deep)] disabled:opacity-50"
+          >
+            {canal}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onFechar}
+        disabled={salvando}
+        className="w-fit text-[11px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)] disabled:opacity-50"
+      >
+        {salvando ? "registrando…" : "cancelar"}
+      </button>
     </div>
   );
 }

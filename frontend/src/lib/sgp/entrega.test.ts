@@ -16,7 +16,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  SGP_CANAIS_AVISO,
   SGP_CONCLUSAO_AUTOMATICA_DIAS,
+  canalValido,
   conclusaoAutomatica,
   lerAviso,
   montarLinha,
@@ -26,6 +28,7 @@ import {
   type AvisoEntrega,
 } from "./painel.ts";
 import { avisoDoPedido } from "./aviso.ts";
+import { COLUNAS_AVISO, colunaAvisoAusente, criarFilaComFallback } from "./cobranca.ts";
 import {
   filaComNaoIniciados,
   montarCompradores,
@@ -428,4 +431,107 @@ test("o contador de auditoria conta concluído-sem-entrega usando o corte novo",
   const r = resumir([concluidoSemAviso, concluidoEntregue]);
   assert.equal(r.concluidos, 2);
   assert.equal(r.concluidosComPendencia, 1, "só o que não foi avisado conta como pendência");
+});
+
+/* ===========================================================================
+ * 6) O CARIMBO DO TIME — o caminho de ESCRITA (rota [id]/aviso)
+ *
+ * Sem estes, a 116 cria três colunas que ninguém consegue escrever e a frase
+ * "registre aqui que avisou" manda o atendente fazer algo que a tela não
+ * oferece. É o mesmo defeito do "Nada a fazer. Já foi entregue", uma casa
+ * adiante: prometer na tela uma coisa que o sistema não faz.
+ * ========================================================================= */
+
+test("o carimbo do TIME ganha do automático e diz por qual canal foi", () => {
+  const p = pedido({
+    avisado_em: new Date(AGORA - 2 * D).toISOString(),
+    avisado_por: "suporte@x.com",
+    avisado_canal: "WhatsApp",
+  });
+  // Mesmo com o e-mail automático tendo saído, quem manda é o clique de gente:
+  // ele é sobre ESTE pedido e sabe o canal real.
+  const a = avisoDoPedido(p, new Date(AGORA - 9 * D).toISOString());
+  assert.equal(a?.canal, "WhatsApp");
+  assert.equal(a?.por, "suporte@x.com");
+  assert.equal(a?.fonte, "time");
+
+  const l = montarLinha(p, AGORA, undefined, a);
+  assert.equal(l.situacao, "entregue");
+  assert.equal(l.avisadoPeloTime, true, "é o que libera o 'desfazer' na tela");
+  assert.match(l.avisadoTexto ?? "", /WhatsApp/);
+  assert.match(l.oQueFazer, /Nada a fazer/);
+});
+
+test("o carimbo do SISTEMA não se oferece pra ser desfeito", () => {
+  // Desfazer aqui limparia `avisado_*`, que está vazio: a linha continuaria
+  // ENTREGUE e o atendente concluiria que a tela está quebrada.
+  const a = avisoDoPedido(pedido(), new Date(AGORA - 3 * D).toISOString());
+  assert.equal(a?.fonte, "sistema");
+  assert.equal(a?.por, "o sistema");
+  const l = montarLinha(pedido(), AGORA, undefined, a);
+  assert.equal(l.avisado, true);
+  assert.equal(l.avisadoPeloTime, false);
+});
+
+test("fonte ausente é tratada como SISTEMA — na dúvida, não oferece desfazer", () => {
+  const cru = { em: new Date(AGORA - 1 * D).toISOString(), canal: "e-mail", por: "x" };
+  assert.equal(lerAviso(pedido(), cru, AGORA)?.fonte, "sistema");
+  assert.equal(montarLinha(pedido(), AGORA, undefined, cru).avisadoPeloTime, false);
+});
+
+test("o canal é uma lista fechada: a rota recusa qualquer outra coisa", () => {
+  for (const bom of SGP_CANAIS_AVISO) assert.equal(canalValido(bom), bom);
+  assert.equal(canalValido("  WhatsApp  "), "WhatsApp", "espaço sobrando não recusa o atendente");
+  // O que a lista existe pra barrar: três nomes pro mesmo canal, e lixo.
+  assert.equal(canalValido("zap"), null);
+  assert.equal(canalValido("whatsapp"), null, "a lista é o que a tela oferece, não variação livre");
+  assert.equal(canalValido(""), null);
+  assert.equal(canalValido(null), null);
+  assert.equal(canalValido(42), null);
+  assert.equal(canalValido({ canal: "WhatsApp" }), null);
+});
+
+test("coluna de aviso ausente é reconhecida, e erro de verdade não é engolido", () => {
+  // A forma do erro do PostgREST quando a 116 não foi aplicada.
+  const real = { code: "42703", message: "column sgp_pedidos.avisado_em does not exist" };
+  assert.equal(colunaAvisoAusente(real), true);
+  // Rede de segurança por MENSAGEM, pro caso do PostgREST engolir o código
+  // (acontece em erro de schema cache), ancorada no nosso nome de coluna.
+  assert.equal(
+    colunaAvisoAusente({ message: "column sgp_pedidos.avisado_em does not exist" }),
+    true,
+  );
+  assert.equal(colunaAvisoAusente({ message: 'relation "outra" does not exist' }), false);
+  assert.equal(colunaAvisoAusente({ code: "23505", message: "duplicate key" }), false);
+  // E a separação por NOME (a que o fallback de leitura usa) não confunde grupos.
+  assert.equal(colunaAvisoAusente({ message: "column concluido_em does not exist" }), false);
+});
+
+test("sem a migration 116 a fila continua de pé e os outros grupos sobrevivem", async () => {
+  const buscar = criarFilaComFallback<{ id: string }>(
+    async (colunas) => {
+      if (colunas.includes("avisado_em")) {
+        // ⚠️ ERRO SEM `code`, DE PROPÓSITO: com o 42703 o `colunaAusente`
+        // curto-circuita e este teste passaria mesmo com a regra quebrada. Sem
+        // o código, quem decide é o casamento por NOME contra `COLUNAS_OPCIONAIS`
+        // — e é exatamente ele que exige `COLUNAS_AVISO` dentro daquela lista em
+        // cobranca.ts. Fora de lá, o fallback não derruba o grupo e a tela
+        // inteira do time de suporte cai por causa de uma coluna acessória.
+        return {
+          data: null,
+          error: { message: "column sgp_pedidos.avisado_em does not exist" },
+        };
+      }
+      return { data: [{ id: "1" }], error: null };
+    },
+    ["id"],
+    [
+      { nome: "cobranca", colunas: ["cobrado_em"] },
+      { nome: "aviso", colunas: [...COLUNAS_AVISO] },
+    ],
+  );
+  const r = await buscar();
+  assert.equal(r.error, null, "a tela do time não cai");
+  assert.equal(r.disponivel.aviso, false, "só o registro de aviso fica indisponível");
+  assert.equal(r.disponivel.cobranca, true);
 });

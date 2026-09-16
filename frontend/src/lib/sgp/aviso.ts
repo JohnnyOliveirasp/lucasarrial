@@ -32,8 +32,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AvisoEntrega } from "./painel.ts";
 import type { SgpPedidoRow } from "./types.ts";
 
-/** As colunas da migration 116 ("avisei o aluno"). Ausentes até ela ser aplicada. */
-export const COLUNAS_AVISO = ["avisado_em", "avisado_por", "avisado_canal"] as const;
+/**
+ * ⚠️ `COLUNAS_AVISO` NÃO mora aqui: mora em `cobranca.ts`, junto das listas das
+ * migrations 106/109/110, porque é de lá que sai o `COLUNAS_OPCIONAIS` que
+ * reconhece "essa coluna ainda não existe". Uma lista destas fora daquele
+ * conjunto é uma coluna que o fallback não sabe derrubar.
+ */
 
 /**
  * Junta as duas fontes num aviso só, com a precedência documentada acima.
@@ -51,6 +55,8 @@ export function avisoDoPedido(
       em: p.avisado_em,
       canal: p.avisado_canal?.trim() || "registrado pelo time",
       por: p.avisado_por?.trim() || "alguém do time",
+      // Clique de gente: é o único carimbo que a tela pode oferecer pra desfazer.
+      fonte: "time",
     };
   }
   if (carimboDoPerfil) {
@@ -60,6 +66,9 @@ export function avisoDoPedido(
       // "o sistema" e não um nome de pessoa: este e-mail sai sozinho, e atribuí-lo
       // a alguém do time seria dar crédito por um trabalho que ninguém fez.
       por: "o sistema",
+      // Não há o que desfazer: quem escreveu isto foi `lib/onboarding/pronto.ts`,
+      // e apagar `avisado_*` (que está vazio) não mudaria esta linha.
+      fonte: "sistema",
     };
   }
   return null;

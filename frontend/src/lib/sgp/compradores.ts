@@ -589,6 +589,9 @@ export function linhaDeNaoIniciado(c: LinhaComprador): LinhaPainel {
     avisado: false,
     avisadoTexto: null,
     avisadoEm: null,
+    // Não há clone gerado, logo não há aviso de entrega pra registrar nem pra
+    // desfazer — a tela nem chega a oferecer o botão nestas linhas.
+    avisadoPeloTime: false,
     relogioParado: false,
     // Nada disto existe sem pedido: não há o que concluir, marcar ou cobrar
     // porque não há linha em `sgp_pedidos` onde escrever.
