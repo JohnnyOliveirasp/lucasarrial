@@ -39,7 +39,7 @@
  * calculada fora daqui — nesta tela é só desenho.
  */
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCheck,
@@ -57,12 +57,16 @@ import { filtrarBusca } from "@/lib/sgp/busca";
 import type { SgpGeracoes } from "@/lib/sgp/geracoes";
 import { videoLegivel, vozLegivel } from "@/lib/sgp/geracoes-pure";
 import {
+  SGP_CANAIS_AVISO,
   SGP_PARADO_HORAS,
+  ordenar,
+  resumir,
   type LinhaPainel,
   type ResumoPainel,
   type SituacaoSgp,
 } from "@/lib/sgp/painel";
 import {
+  filaComNaoIniciados,
   telefoneLegivel,
   type AssinaturaFastCloner,
   type LinhaComprador,
@@ -89,7 +93,14 @@ const CORES_SITUACAO: Record<SituacaoSgp, string> = {
   // comemoração (o aluno pode não ter recebido nada) nem alarme.
   concluido:
     "border-[var(--ink)]/25 bg-[var(--ink)]/[0.06] text-[var(--ink)]",
-  pronto: "border-[var(--status-online)]/40 bg-[var(--status-online)]/10 text-[var(--status-online)]",
+  // ENTREGUE é o único VERDE agora, e isso é o ponto do recado 6 (15/09): verde
+  // significa "acabou de verdade — o clone ficou pronto E o aluno foi avisado".
+  entregue:
+    "border-[var(--status-online)]/40 bg-[var(--status-online)]/10 text-[var(--status-online)]",
+  // GERADO (antigo PRONTO) virou AMARELO porque virou PENDÊNCIA: o material
+  // existe e o aluno pode não saber. Deixá-lo verde manteria a tela dizendo
+  // "acabou" exatamente nos 82 casos que o recado veio corrigir.
+  pronto: "border-[var(--status-warn)]/40 bg-[var(--status-warn)]/10 text-[var(--status-warn)]",
   aguardando: "border-[var(--hairline-strong)] bg-[var(--surface-deep)] text-[var(--mute)]",
   erro: "border-[var(--status-error)]/40 bg-[var(--status-error)]/10 text-[var(--status-error)]",
 };
@@ -184,6 +195,14 @@ export default function SgpPage() {
   const [expandido, setExpandido] = useState<string | null>(null);
   const [geracoes, setGeracoes] = useState<Record<string, EstadoGeracoes>>({});
 
+  /**
+   * "Avisei o aluno" (migration 116). Só um par: aqui não há rascunho de texto
+   * livre pra proteger do refresh — o canal é uma escolha de lista (ver
+   * `SGP_CANAIS_AVISO`), e escolha não se perde no meio de uma frase.
+   */
+  const [avisoOk, setAvisoOk] = useState(false);
+  const [abertoAviso, setAbertoAviso] = useState<string | null>(null);
+
   /** Mesmo trio pro "Concluir atendimento" (migration 110), e pelo mesmo motivo:
    *  o rascunho tem que atravessar o refresh de 30s sem sumir do meio da frase. */
   const [conclusaoOk, setConclusaoOk] = useState(false);
@@ -206,6 +225,7 @@ export default function SgpPage() {
         setCobranca(json.cobranca ?? null);
         setErroManualOk(!!json.erroManual?.disponivel);
         setConclusaoOk(!!json.conclusao?.disponivel);
+        setAvisoOk(!!json.aviso?.disponivel);
         setErro(null);
       } else {
         setErro(json?.error?.message || "Não consegui carregar a fila.");
@@ -258,9 +278,23 @@ export default function SgpPage() {
     }
   }, []);
 
+  /**
+   * ⚠️ MUDOU EM 15/09 (requisito 4 do recado 6): a lista de compradores passa a
+   * carregar em QUALQUER aba, e não só ao abrir a segunda.
+   *
+   * Motivo: quem comprou e nunca abriu o portal tem que aparecer na FILA DE
+   * TRABALHO (*"hoje eles são invisíveis fora dos 267 pedidos — e são a maior
+   * fatia do funil"*), e essa gente só existe na união compras+pedidos que esta
+   * consulta faz.
+   *
+   * O que NÃO mudou, e é o que protege o banco: ela continua FORA do polling de
+   * 30s. É uma varredura por CARREGAMENTO DE PÁGINA, não a cada meio minuto —
+   * exatamente o mesmo custo que já se pagava quando o time clicava na outra
+   * aba, só que agora ele é pago mesmo que ninguém clique.
+   */
   useEffect(() => {
-    if (aba === "todos" && compradores === null && !carregandoTodos) void carregarTodos();
-  }, [aba, compradores, carregandoTodos, carregarTodos]);
+    if (compradores === null && !carregandoTodos) void carregarTodos();
+  }, [compradores, carregandoTodos, carregarTodos]);
 
   /** Marca ou desfaz a cobrança e recarrega — a régua toda é recalculada no servidor. */
   const marcarCobranca = useCallback(
@@ -370,6 +404,42 @@ export default function SgpPage() {
   );
 
   /**
+   * Registra (ou desfaz) o aviso ao aluno. Mesma forma das outras três — mesmo
+   * `salvando`, mesmo reload, mesmo lugar de mensagem.
+   *
+   * ⚠️ ISTO NÃO MANDA MENSAGEM NENHUMA. É o registro de um aviso que a pessoa
+   * já deu, pelo canal dela. O sistema não fala com aluno sozinho, e o nome do
+   * botão é a única coisa aqui que poderia sugerir o contrário — por isso a
+   * tela escreve isso embaixo da tabela, e não só neste comentário.
+   */
+  const marcarAviso = useCallback(
+    async (id: string, canal: string | null) => {
+      setSalvando(id);
+      try {
+        const res = await fetch(`/api/v1/admin/sgp/${id}/aviso`, {
+          method: canal ? "POST" : "DELETE",
+          ...(canal
+            ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ canal }) }
+            : {}),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          setErro(json?.error?.message || "Não consegui registrar o aviso.");
+          return;
+        }
+        setErro(null);
+        setAbertoAviso(null);
+        await load();
+      } catch {
+        setErro("Não consegui registrar o aviso.");
+      } finally {
+        setSalvando(null);
+      }
+    },
+    [load],
+  );
+
+  /**
    * Busca o que já foi gerado pra UMA linha. Só sob clique (ver o comentário do
    * estado): nunca entra no polling de 30s.
    */
@@ -425,9 +495,33 @@ export default function SgpPage() {
    * o time filtra por ERRO e procura o aluno dentro daquele recorte. A régua de
    * quem casa mora em lib/sgp/busca.ts, testada lá.
    */
+  /**
+   * A FILA COMPLETA: os pedidos mais quem comprou e nunca começou (requisito 4).
+   *
+   * A união é feita pela MESMA função da outra aba (`filaComNaoIniciados` chama
+   * o resultado de `montarCompradores`), como o recado pediu em caixa alta:
+   * *"reuse essa lógica, não escreva outra"*. Aqui não há régua nenhuma — só a
+   * junção e a reordenação, as duas de lib/sgp.
+   *
+   * Enquanto os compradores não chegaram, a fila é só os pedidos: a tela nasce
+   * útil em vez de esperar a consulta pesada pra mostrar qualquer coisa.
+   */
+  const fila = useMemo(
+    () => (compradores ? ordenar(filaComNaoIniciados(pedidos, compradores)) : pedidos),
+    [pedidos, compradores],
+  );
+  // Os contadores do topo têm que contar a fila que está NA TELA. Usar o resumo
+  // do servidor aqui faria o cabeçalho dizer 267 enquanto a tabela mostra a base
+  // inteira — e um contador que não bate com a lista embaixo dele é pior que
+  // contador nenhum. É a mesma função pura que a rota usa.
+  const resumoVisivel = useMemo(
+    () => (compradores ? resumir(fila) : resumo),
+    [compradores, fila, resumo],
+  );
+
   const porPill = filtro
-    ? pedidos.filter((p) => (filtro.tipo === "situacao" ? p.situacao === filtro.valor : p.status === filtro.valor))
-    : pedidos;
+    ? fila.filter((p) => (filtro.tipo === "situacao" ? p.situacao === filtro.valor : p.status === filtro.valor))
+    : fila;
 
   const visiveis = filtrarBusca(busca, porPill, (p) => ({
     nome: p.nome,
@@ -439,7 +533,7 @@ export default function SgpPage() {
   const rotuloDoFiltro =
     filtro?.tipo === "situacao"
       ? filtro.valor.toUpperCase()
-      : (resumo?.porEtapa.find((e) => e.status === filtro?.valor)?.etapa ?? filtro?.valor ?? "");
+      : (resumoVisivel?.porEtapa.find((e) => e.status === filtro?.valor)?.etapa ?? filtro?.valor ?? "");
 
   return (
     <div className="flex flex-col gap-6">
@@ -457,7 +551,7 @@ export default function SgpPage() {
       {/* As duas leituras da mesma operação: o que fazer HOJE × com quem falar. */}
       <div className="flex gap-1 border-b border-[var(--hairline-strong)]">
         <BotaoAba ativa={aba === "fila"} onClick={() => setAba("fila")}>
-          Fila de trabalho{resumo ? ` (${resumo.total})` : ""}
+          Fila de trabalho{resumoVisivel ? ` (${resumoVisivel.total})` : ""}
         </BotaoAba>
         <BotaoAba ativa={aba === "todos"} onClick={() => setAba("todos")}>
           Todos os compradores{resumoTodos ? ` (${resumoTodos.total})` : ""}
@@ -477,71 +571,105 @@ export default function SgpPage() {
       {/* Banner: a única pergunta que importa de longe. */}
       <div
         className={`flex items-center gap-3 rounded-[var(--radius-lg)] border px-4 py-3.5 ${
-          resumo?.parados
+          resumoVisivel?.parados
             ? "border-[var(--status-error)]/40 bg-[var(--status-error)]/5"
             : "border-[var(--status-online)]/30 bg-[var(--status-online)]/5"
         }`}
       >
-        {resumo?.parados ? (
+        {resumoVisivel?.parados ? (
           <AlertTriangle className="size-5 shrink-0 text-[var(--status-error)]" />
         ) : (
           <CheckCircle2 className="size-5 shrink-0 text-[var(--status-online)]" />
         )}
         <span className="text-[14px] text-[var(--ink)]">
-          {resumo?.parados
-            ? `${resumo.parados} aluno(s) parados há mais de ${SGP_PARADO_HORAS}h — precisam ser cobrados`
+          {resumoVisivel?.parados
+            ? `${resumoVisivel.parados} aluno(s) parados há mais de ${SGP_PARADO_HORAS}h — precisam ser cobrados`
             : "Ninguém parado. Nada precisando de cobrança ✅"}
           {/* Cobrado NÃO é resolvido: continua contado à parte, à vista. */}
-          {resumo?.cobrados ? (
+          {resumoVisivel?.cobrados ? (
             <span className="text-[var(--mute)]">
               {" "}
-              · {resumo.cobrados} já cobrado(s), esperando o aluno responder
+              · {resumoVisivel.cobrados} já cobrado(s), esperando o aluno responder
             </span>
           ) : null}
           {/* Concluído tira a linha do vermelho PARA SEMPRE (não é um timer como
               o "já cobrei"), então o número fica à vista — e, principalmente, o
               recorte de quem foi encerrado SEM ter recebido o produto. É o
               contador que mantém a decisão de precedência auditável. */}
-          {resumo?.concluidos ? (
+          {resumoVisivel?.concluidos ? (
             <span className="text-[var(--mute)]">
               {" "}
-              · {resumo.concluidos} atendimento(s) concluído(s)
-              {resumo.concluidosComPendencia
-                ? `, sendo ${resumo.concluidosComPendencia} de gente que ainda não recebeu o clone`
+              · {resumoVisivel.concluidos} atendimento(s) concluído(s)
+              {resumoVisivel.concluidosComPendencia
+                ? `, sendo ${resumoVisivel.concluidosComPendencia} de gente que ainda não recebeu o clone`
                 : ""}
             </span>
           ) : null}
         </span>
       </div>
 
+      {/* ⚠️ O BANNER QUE O RECADO 6 EXISTE PRA CRIAR (15/09).
+          Clone gerado e sem registro de aviso é gente que pagou, cujo material
+          está pronto, e que pode não saber. Era invisível: a tela chamava todos
+          eles de "Entregue" e escrevia "Nada a fazer". Fica em banner próprio, e
+          não numa pill no meio das outras, porque é a ÚNICA pendência da tela
+          que não grita sozinha — o aluno não reclama do que ele não sabe que
+          existe. */}
+      {resumoVisivel && resumoVisivel.geradosSemAviso > 0 && (
+        <div className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--status-warn)]/40 bg-[var(--status-warn)]/5 px-4 py-3.5">
+          <MessageCircle className="size-5 shrink-0 text-[var(--status-warn)]" />
+          <span className="text-[14px] text-[var(--ink)]">
+            <strong>{resumoVisivel.geradosSemAviso}</strong> clone(s) prontos SEM registro de aviso
+            ao aluno — o material existe e ele pode não saber.{" "}
+            <button
+              type="button"
+              onClick={() => alternarFiltro("situacao", "pronto")}
+              className="underline underline-offset-2 transition-colors hover:text-[var(--status-warn)]"
+            >
+              ver quem é
+            </button>
+          </span>
+        </div>
+      )}
+
       {/* Os três buckets da planilha primeiro, a etapa detalhada depois: é a
           ordem em que o time lê — "quantos estão quebrados?" antes de "quantos
           estão gravando o áudio?". */}
-      {resumo && resumo.total > 0 && (
+      {resumoVisivel && resumoVisivel.total > 0 && (
         <div className="flex flex-wrap gap-2">
           {/* "Total" é o limpar-filtro: é onde a mão vai quando quer tudo de volta. */}
-          <Contador rotulo="Total" n={resumo.total} ativo={filtro === null} onClick={() => setFiltro(null)} />
+          <Contador rotulo="Total" n={resumoVisivel.total} ativo={filtro === null} onClick={() => setFiltro(null)} />
           <Contador
             rotulo="CONCLUÍDO"
-            n={resumo.situacoes.concluido}
+            n={resumoVisivel.situacoes.concluido}
             ativo={filtro?.tipo === "situacao" && filtro.valor === "concluido"}
             onClick={() => alternarFiltro("situacao", "concluido")}
           />
+          {/* ENTREGUE e GERADO são DOIS contadores desde 15/09 (recado 6), e é o
+              ponto inteiro da mudança: antes os dois eram o mesmo "PRONTO", e
+              por isso 82 pedidos eram contados como entregues sem que ninguém
+              soubesse se o aluno tinha sido avisado. */}
           <Contador
-            rotulo="PRONTO"
-            n={resumo.situacoes.pronto}
+            rotulo="ENTREGUE"
+            n={resumoVisivel.situacoes.entregue}
+            ativo={filtro?.tipo === "situacao" && filtro.valor === "entregue"}
+            onClick={() => alternarFiltro("situacao", "entregue")}
+          />
+          <Contador
+            rotulo="GERADO"
+            n={resumoVisivel.situacoes.pronto}
             ativo={filtro?.tipo === "situacao" && filtro.valor === "pronto"}
             onClick={() => alternarFiltro("situacao", "pronto")}
           />
           <Contador
             rotulo="AGUARDANDO"
-            n={resumo.situacoes.aguardando}
+            n={resumoVisivel.situacoes.aguardando}
             ativo={filtro?.tipo === "situacao" && filtro.valor === "aguardando"}
             onClick={() => alternarFiltro("situacao", "aguardando")}
           />
           <Contador
             rotulo="ERRO"
-            n={resumo.situacoes.erro}
+            n={resumoVisivel.situacoes.erro}
             ativo={filtro?.tipo === "situacao" && filtro.valor === "erro"}
             onClick={() => alternarFiltro("situacao", "erro")}
           />
@@ -549,9 +677,9 @@ export default function SgpPage() {
       )}
 
       {/* Contadores por etapa. */}
-      {resumo && resumo.total > 0 && (
+      {resumoVisivel && resumoVisivel.total > 0 && (
         <div className="flex flex-wrap gap-2">
-          {resumo.porEtapa.map((e) => (
+          {resumoVisivel.porEtapa.map((e) => (
             <Contador
               key={e.status}
               rotulo={e.etapa}
@@ -659,7 +787,9 @@ export default function SgpPage() {
                 <Th>Situação</Th>
                 <Th>Parado há</Th>
                 <Th>WhatsApp</Th>
-                <Th>Cobrança</Th>
+                {/* Era "Cobrança". Virou o guarda-chuva das duas conversas com o
+                    aluno: cobrar quem travou e avisar quem já tem o clone. */}
+                <Th>Contato com o aluno</Th>
                 <Th>Marcar erro</Th>
                 <Th>Atendimento</Th>
                 <Th>Etapa atual</Th>
@@ -700,6 +830,19 @@ export default function SgpPage() {
                       ação. Ele é o próprio NOME (alvo grande, e o nome é onde a
                       mão já vai), com a seta como aviso de que abre. */}
                   <Td className="min-w-[190px] font-medium text-[var(--ink)]">
+                    {/* Sem pedido não há nada gerado pra abrir: o nome deixa de
+                        ser botão em vez de abrir um painel que só diria "erro". */}
+                    {p.naoIniciou ? (
+                      <span className="flex w-full items-start gap-1">
+                        <span className="mt-[3px] size-3.5 shrink-0" aria-hidden />
+                        <span>
+                          {p.parado && (
+                            <span className="mr-1.5 inline-block align-middle text-[var(--status-error)]">●</span>
+                          )}
+                          {p.nome}
+                        </span>
+                      </span>
+                    ) : (
                     <button
                       type="button"
                       onClick={() => alternarGeracoes(p.id)}
@@ -719,6 +862,7 @@ export default function SgpPage() {
                         {p.nome}
                       </span>
                     </button>
+                    )}
                   </Td>
                   <Td className="min-w-[180px]">
                     <Etiqueta
@@ -727,21 +871,57 @@ export default function SgpPage() {
                       motivo={p.situacaoMotivo}
                     />
                   </Td>
+                  {/* REQUISITO 3 DO RECADO 6: entregue PARA DE CONTAR. O número
+                      não some (ele diz quanto tempo o caso ficou parado ANTES do
+                      aviso, que aconteceu de verdade) — ele só congela, e a tela
+                      diz que congelou pra ninguém ler como "ainda esperando". */}
                   <Td
                     className={`font-mono text-[11px] tabular-nums ${
-                      p.parado ? "font-semibold text-[var(--status-error)]" : "text-[var(--mute)]"
+                      p.parado
+                        ? "font-semibold text-[var(--status-error)]"
+                        : p.relogioParado
+                          ? "text-[var(--ash)]"
+                          : "text-[var(--mute)]"
                     }`}
                   >
-                    {p.paradoTexto}
+                    {p.relogioParado ? (
+                      <span title={p.avisadoTexto ?? undefined}>parou em {p.paradoTexto}</span>
+                    ) : (
+                      p.paradoTexto
+                    )}
                   </Td>
                   <Td className="whitespace-nowrap font-mono text-[11px] text-[var(--mute)]">
                     {p.whatsapp === "—" ? "—" : telefoneLegivel(p.whatsapp)}
                   </Td>
+                  {/* ⚠️ Linha de quem NUNCA COMEÇOU não tem pedido, logo não tem
+                      onde escrever: os três botões viram um aviso só. Oferecer o
+                      clique daria 404 em `/api/v1/admin/sgp/<sem-pedido>/…`, que
+                      é pior que não oferecer — o time clicaria, veria erro
+                      vermelho e perderia a confiança na tela inteira. */}
+                  {p.naoIniciou ? (
+                    <Td className="min-w-[190px] text-[12px] text-[var(--ash)]" colSpan={3}>
+                      Ainda não há pedido pra marcar — esta pessoa comprou e nunca abriu o portal.
+                    </Td>
+                  ) : (
+                    <>
+                  {/* ⚠️ UMA COLUNA SÓ pras duas conversas com o aluno, e isso é
+                      medida, não economia de espaço: a tabela já sai em ~1780px
+                      e os botões de ação só cabem na tela porque estão nas
+                      primeiras colunas (defeito reclamado 3x pelo Lucas). Uma
+                      15ª coluna empurraria "Atendimento" pra fora da viewport.
+                      Elas nunca disputam a mesma linha: "Já cobrei" só aparece
+                      pra quem está travado no wizard, "Avisei" só pra quem já
+                      tem clone gerado — e um pedido nunca está nos dois. */}
                   <Td className="min-w-[190px]">
-                    <CelulaCobranca
+                    <CelulaContato
                       linha={p}
                       disponivel={cobranca?.disponivel ?? false}
+                      avisoDisponivel={avisoOk}
                       salvando={salvando === p.id}
+                      abertoAviso={abertoAviso === p.id}
+                      onAbrirAviso={() => setAbertoAviso(p.id)}
+                      onFecharAviso={() => setAbertoAviso(null)}
+                      onAvisar={(canal) => marcarAviso(p.id, canal)}
                       onMarcar={() => marcarCobranca(p.id, true)}
                       onDesfazer={() => marcarCobranca(p.id, false)}
                     />
@@ -776,6 +956,8 @@ export default function SgpPage() {
                       onDesfazer={() => marcarConclusao(p.id, false)}
                     />
                   </Td>
+                    </>
+                  )}
                   <Td>{p.etapa}</Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{p.email}</Td>
                   {/* Prosa longa: foi pro fim porque era ela que empurrava os botões
@@ -1157,6 +1339,178 @@ function SecaoGerados({
 }
 
 /**
+ * A coluna "Contato com o aluno": as DUAS conversas que o time tem com ele, na
+ * mesma célula porque nunca acontecem ao mesmo tempo.
+ *
+ *  · o aluno travou no wizard  → "Já cobrei"      (migration 106)
+ *  · o clone dele ficou pronto → "Avisei o aluno" (migration 116, recado 6)
+ *
+ * Um pedido está no wizard OU já foi gerado, nunca nos dois — então dividir a
+ * célula não esconde nada. O que se ganha é a tabela não crescer uma 15ª coluna:
+ * ela já sai em ~1780px e foi preciso mover os botões pras primeiras colunas
+ * pra caberem na tela (defeito reclamado 3x pelo Lucas). Coluna nova empurraria
+ * "Atendimento" pra fora da viewport de novo.
+ */
+function CelulaContato({
+  linha,
+  disponivel,
+  avisoDisponivel,
+  salvando,
+  abertoAviso,
+  onAbrirAviso,
+  onFecharAviso,
+  onAvisar,
+  onMarcar,
+  onDesfazer,
+}: {
+  linha: LinhaPainel;
+  disponivel: boolean;
+  avisoDisponivel: boolean;
+  salvando: boolean;
+  abertoAviso: boolean;
+  onAbrirAviso: () => void;
+  onFecharAviso: () => void;
+  /** `null` = desfazer. */
+  onAvisar: (canal: string | null) => void;
+  onMarcar: () => void;
+  onDesfazer: () => void;
+}) {
+  // Clone gerado: a conversa aqui é "o aluno sabe?", não "já cobrou?".
+  if (linha.status === "pronto") {
+    return (
+      <CelulaAviso
+        linha={linha}
+        disponivel={avisoDisponivel}
+        salvando={salvando}
+        aberto={abertoAviso}
+        onAbrir={onAbrirAviso}
+        onFechar={onFecharAviso}
+        onAvisar={onAvisar}
+      />
+    );
+  }
+  return (
+    <CelulaCobranca
+      linha={linha}
+      disponivel={disponivel}
+      salvando={salvando}
+      onMarcar={onMarcar}
+      onDesfazer={onDesfazer}
+    />
+  );
+}
+
+/**
+ * "Avisei o aluno" (recado 6, 15/09). Quatro estados:
+ *
+ *  - já há registro de aviso   → quem avisou, quando e por qual canal;
+ *  - sem registro, migration ok → o botão, que pergunta POR ONDE antes de gravar;
+ *  - sem registro, sem migration → diz que não dá pra registrar, sem sumir com
+ *    a pendência (a linha continua em GERADO e continua pedindo o aviso);
+ *  - registro do SISTEMA → sem "desfazer", porque não há o que desfazer.
+ *
+ * ⚠️ O BOTÃO NÃO MANDA MENSAGEM. Ele REGISTRA um aviso que a pessoa já deu pelo
+ * canal dela. É o mesmo princípio do "Já cobrei", e a regra do SGP inteiro: o
+ * sistema não fala com aluno sozinho.
+ *
+ * ⚠️ O CANAL É OBRIGATÓRIO, e por isso o clique abre a escolha em vez de gravar
+ * direto. "Avisado" sem dizer por onde é quase tão vago quanto o "Entregue" que
+ * este PR aposentou — WhatsApp e e-mail têm chances de chegar muito diferentes,
+ * e sem essa coluna não dá pra auditar nada depois.
+ */
+function CelulaAviso({
+  linha,
+  disponivel,
+  salvando,
+  aberto,
+  onAbrir,
+  onFechar,
+  onAvisar,
+}: {
+  linha: LinhaPainel;
+  disponivel: boolean;
+  salvando: boolean;
+  aberto: boolean;
+  onAbrir: () => void;
+  onFechar: () => void;
+  onAvisar: (canal: string | null) => void;
+}) {
+  if (linha.avisado) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="inline-flex items-start gap-1.5 text-[12px] text-[var(--body)]">
+          <CheckCheck className="mt-[2px] size-3.5 shrink-0 text-[var(--status-online)]" />
+          {linha.avisadoTexto}
+        </span>
+        {/* Só o carimbo do TIME tem desfazer: o do sistema é o e-mail automático,
+            e "desfazer" ali limparia colunas vazias sem mudar a linha. */}
+        {linha.avisadoPeloTime && disponivel && (
+          <button
+            type="button"
+            onClick={() => onAvisar(null)}
+            disabled={salvando}
+            className="inline-flex w-fit items-center gap-1 text-[11px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)] disabled:opacity-50"
+          >
+            <Undo2 className="size-3" />
+            {salvando ? "desfazendo…" : "desfazer"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  if (!disponivel) {
+    // A pendência NÃO some junto com o botão: a linha segue em GERADO, o banner
+    // segue contando, e o atendente fica sabendo que o aviso é dele mesmo assim.
+    return (
+      <span className="text-[11px] text-[var(--ash)]">
+        avise o aluno — o registro do aviso ainda não está liberado
+      </span>
+    );
+  }
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={onAbrir}
+        disabled={salvando}
+        className="rounded-[var(--radius)] border border-[var(--status-warn)]/50 px-2.5 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--surface-deep)] disabled:opacity-50"
+      >
+        Avisei o aluno
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[11px] text-[var(--mute)]">Por onde você avisou?</span>
+      <div className="flex flex-wrap gap-1">
+        {SGP_CANAIS_AVISO.map((canal) => (
+          <button
+            key={canal}
+            type="button"
+            onClick={() => onAvisar(canal)}
+            disabled={salvando}
+            className="rounded-[var(--radius)] border border-[var(--hairline-strong)] px-2 py-1 text-[11px] text-[var(--ink)] transition-colors hover:bg-[var(--surface-deep)] disabled:opacity-50"
+          >
+            {canal}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onFechar}
+        disabled={salvando}
+        className="w-fit text-[11px] text-[var(--mute)] underline underline-offset-2 hover:text-[var(--ink)] disabled:opacity-50"
+      >
+        {salvando ? "registrando…" : "cancelar"}
+      </button>
+    </div>
+  );
+}
+
+/**
  * A célula de cobrança. Três estados, e nenhum deles esconde a linha:
  *  - já cobrado e dentro da janela → quem cobrou, quando, e quando volta a avisar;
  *  - parado sem cobrança → o botão;
@@ -1391,8 +1745,11 @@ function CelulaConcluir({
           </span>
         )}
         {/* O aviso que impede a etiqueta de virar tampa: encerrado NÃO quer
-            dizer entregue, e quando não foi entregue isso fica escrito. */}
-        {linha.situacaoPorBaixo !== "pronto" && (
+            dizer entregue, e quando não foi entregue isso fica escrito.
+            ⚠️ `!== "entregue"` desde 15/09: com o corte do recado 6, "pronto"
+            passou a significar GERADO SEM AVISO — que é justamente uma pendência.
+            Manter a comparação antiga faria este aviso calar no caso novo. */}
+        {linha.situacaoPorBaixo !== "entregue" && (
           <span className="max-w-[200px] text-[11px] leading-snug text-[var(--status-warn)]">
             o aluno não recebeu o clone
           </span>
@@ -1539,7 +1896,10 @@ function AbaCompradores({
       {resumo && (
         <div className="flex flex-wrap gap-2">
           <Contador rotulo="CONCLUÍDO" n={resumo.situacoes.concluido} />
-          <Contador rotulo="PRONTO" n={resumo.situacoes.pronto} />
+          {/* Os mesmos dois buckets da outra aba (recado 6): as duas nunca podem
+              discordar sobre o mesmo aluno, e as duas leem o mesmo `situacao`. */}
+          <Contador rotulo="ENTREGUE" n={resumo.situacoes.entregue} />
+          <Contador rotulo="GERADO" n={resumo.situacoes.pronto} />
           <Contador rotulo="AGUARDANDO" n={resumo.situacoes.aguardando} />
           <Contador rotulo="ERRO" n={resumo.situacoes.erro} />
         </div>
@@ -1815,6 +2175,19 @@ function Th({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-3 py-3 text-[13px] ${className}`}>{children}</td>;
+function Td({
+  children,
+  className = "",
+  colSpan,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  /** Usado pelas linhas de "Não iniciou", que fundem as 3 células de ação. */
+  colSpan?: number;
+}) {
+  return (
+    <td colSpan={colSpan} className={`px-3 py-3 text-[13px] ${className}`}>
+      {children}
+    </td>
+  );
 }

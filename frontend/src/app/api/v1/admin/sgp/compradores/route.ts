@@ -60,6 +60,7 @@ import {
   type EntitlementFastClonerBruto,
 } from "@/lib/sgp/compradores";
 import { COLUNAS_ERRO_MANUAL, colunaErroManualAusente } from "@/lib/sgp/cobranca";
+import { buscarAvisos } from "@/lib/sgp/aviso";
 import type { SgpPedidoRow } from "@/lib/sgp/types";
 
 export const dynamic = "force-dynamic";
@@ -71,7 +72,8 @@ export const dynamic = "force-dynamic";
  * AGUARDANDO para um pedido que o sistema já marcou como quebrado, e as duas
  * abas da MESMA tela discordariam sobre o mesmo aluno.
  */
-const COLUNAS_PEDIDO = "id, nome, email, whatsapp, status, criado_em, atualizado_em, enviado_em, erro";
+const COLUNAS_PEDIDO =
+  "id, nome, email, whatsapp, status, criado_em, atualizado_em, enviado_em, erro, user_id";
 
 type EventoLinha = { payload: unknown; received_at: string };
 
@@ -190,12 +192,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // O carimbo de aviso (recado 6). Tem que ser lido AQUI também, e não só na
+    // fila: as duas abas derivam a SITUAÇÃO da mesma função, então sem ele esta
+    // aba chamaria de GERADO o mesmo aluno que a outra chama de ENTREGUE — e
+    // "duas abas da mesma tela discordando sobre o mesmo aluno" é justamente o
+    // que o cabeçalho de `LinhaComprador.situacao` proíbe.
+    const avisos = await buscarAvisos(admin, pedidos ?? []);
+
     const linhas = ordenarCompradores(
       montarCompradores({
         compras,
         pedidos: pedidos ?? [],
         agora: Date.now(),
         fastcloner: { entitlements: entitlements ?? [], cobrancas: cobrancasFastCloner },
+        avisos,
       }),
     );
 

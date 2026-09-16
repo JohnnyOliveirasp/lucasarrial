@@ -48,7 +48,16 @@ export function noWizard(status: SgpStatus): boolean {
   return (SGP_PASSOS as readonly string[]).includes(status);
 }
 
-/** Em que pé está — em português de gente, não de banco. */
+/**
+ * Em que pé está — em português de gente, não de banco.
+ *
+ * ⚠️ `pronto` DIZIA "Entregue" (recado 6 do Johnny, 15/09). Não dizia mais.
+ * `status = 'pronto'` é uma afirmação sobre a NOSSA FILA — o robô gerou —, e
+ * "entregue" é uma afirmação sobre o MUNDO: o aluno foi avisado e sabe. As duas
+ * não são a mesma coisa, e confundi-las custou três alunos esta semana. A etapa
+ * volta a dizer só o que o banco sabe; quem afirma entrega é a SITUAÇÃO, que
+ * tem o carimbo do aviso na mão (ver `AvisoEntrega`).
+ */
 export const ETAPA_HUMANA: Record<SgpStatus, string> = {
   dados: "Preenchendo o cadastro",
   foto: "Enviando as fotos",
@@ -56,8 +65,26 @@ export const ETAPA_HUMANA: Record<SgpStatus, string> = {
   revisao: "Conferindo antes de enviar",
   enviado: "Enviado, na fila",
   processando: "Estamos gerando",
-  pronto: "Entregue",
+  pronto: "Clone gerado",
   falhou: "Deu erro",
+};
+
+/**
+ * A etapa de quem COMPROU E NUNCA ABRIU O PORTAL (requisito 4 do recado 6).
+ *
+ * Não é um `SgpStatus` porque não é um estado de `sgp_pedidos`: essa gente não
+ * tem linha lá. Ela existe pela UNIÃO compras ∪ pedidos que a aba "Todos os
+ * compradores" já fazia — e é a maior fatia do funil (medido 15/09: 267 pedidos
+ * contra a base inteira de compradores). Até aqui ela era invisível na fila de
+ * trabalho, que é a tela que o time olha todo dia.
+ */
+export const ETAPA_NAO_INICIOU = "nao_iniciou" as const;
+export type EtapaFila = SgpStatus | typeof ETAPA_NAO_INICIOU;
+
+/** `ETAPA_HUMANA` mais a etapa que não vem de `sgp_pedidos`. */
+export const ETAPA_FILA_HUMANA: Record<EtapaFila, string> = {
+  ...ETAPA_HUMANA,
+  [ETAPA_NAO_INICIOU]: "Não iniciou",
 };
 
 /** O que ainda falta o ALUNO fazer, para a frase de cobrança. */
@@ -94,16 +121,27 @@ const FALTA_NO_WIZARD: Record<string, string> = {
  * === 'pronto'`), e derivado responde outra pergunta: "o robô entregou", não
  * "alguém ainda precisa mexer nisto". A precedência entre os quatro está
  * justificada inteira em `situacao`, logo abaixo.
+ *
+ * ── O QUINTO RÓTULO (Johnny, recado 6 de 15/09) ─────────────────────────────
+ * *"PRONTO = o sistema gerou. ENTREGUE = o ALUNO FOI AVISADO."* Até aqui os dois
+ * eram a MESMA etiqueta, e a tela afirmava entrega para 82 pedidos com base em
+ * `status = 'pronto'` — que não sabe nada sobre o aluno. Agora são duas:
+ * `pronto` ficou com o significado honesto (gerado, aviso não confirmado) e
+ * `entregue` é o que exige o carimbo. Ver `AvisoEntrega` para de onde ele sai.
  */
-export const SITUACOES = ["concluido", "erro", "aguardando", "pronto"] as const;
+export const SITUACOES = ["concluido", "erro", "entregue", "aguardando", "pronto"] as const;
 export type SituacaoSgp = (typeof SITUACOES)[number];
 
 /** Em caixa alta porque é etiqueta de planilha, não frase. */
 export const SITUACAO_ROTULO: Record<SituacaoSgp, string> = {
   concluido: "CONCLUÍDO",
   erro: "ERRO",
+  entregue: "ENTREGUE",
   aguardando: "AGUARDANDO",
-  pronto: "PRONTO",
+  // "GERADO" e não "PRONTO": a palavra antiga é exatamente a que o time lia como
+  // "acabou, não preciso mexer". Trocar o rótulo junto com o significado é o que
+  // impede a mudança de passar despercebida na tela de quem trabalha nela.
+  pronto: "GERADO",
 };
 
 export type Situacao = {
@@ -112,6 +150,155 @@ export type Situacao = {
   /** Uma linha dizendo POR QUE está nesse estado. Sem jargão, como o resto. */
   motivo: string;
 };
+
+/* ---------------------------------------------------------------------------
+ * O AVISO DE ENTREGA — a prova de que o ALUNO FOI AVISADO
+ * ------------------------------------------------------------------------- */
+
+/**
+ * *"ENTREGUE = o ALUNO FOI AVISADO. Não basta renomear rótulo: 'entregue'
+ * precisa de um carimbo próprio (quando, por qual canal), porque ele afirma um
+ * fato sobre o mundo, não sobre a nossa fila."* (Johnny, recado 6, 15/09)
+ *
+ * ── DE ONDE SAI O CARIMBO, e por que ele NÃO é retroativo ───────────────────
+ * O recado mandava, em caixa alta, NÃO carimbar "entregue" nos 82 pedidos que
+ * hoje estão `pronto`, porque `emails_enviados` só registra desde 14/09 14:06 e
+ * zero ali seria zero CEGO. Isso está certo sobre `emails_enviados` — e também
+ * sobre `avisos_enviados`, que eu medi e começa no MESMO instante
+ * (2026-09-14T14:06:33Z, primeira linha). Mas existe um terceiro carimbo, mais
+ * velho, que ninguém tinha olhado:
+ *
+ *   `profiles.onboarding_ready_email_at` — escrito por
+ *   `lib/onboarding/pronto.ts › verificarOnboardingPronto` como CLAIM ATÔMICO
+ *   antes de mandar o e-mail "Sua plataforma está pronta", e DEVOLVIDO A NULO
+ *   quando o envio estoura. É o mesmo evento que vira `status = 'pronto'` no
+ *   SGP: os dois leem `statusOnboarding`.
+ *
+ * MEDIDO NO BANCO VIVO EM 15/09, não suposto:
+ *   · 267 pedidos; 82 em `pronto`;
+ *   · 81 dos 82 têm `onboarding_ready_email_at` preenchido;
+ *   · o único sem é `frank-teste-enviado@fastcloner.invalid`, linha de teste
+ *     interno com `enviado_em` nulo;
+ *   · os carimbos vão de 2026-08-29T23:24Z a 2026-09-15T13:05Z — cobrem a vida
+ *     inteira do SGP, então NÃO são cegos como os das outras duas tabelas.
+ *
+ * Ou seja: ler este carimbo não é carimbar retroativamente, é LER um registro
+ * que já existia. Quem não tem carimbo continua em `pronto` (GERADO), que é o
+ * "pronto, aviso não confirmado" que o recado pediu.
+ *
+ * ⚠️ O QUE ESTE CARIMBO **NÃO** PROVA, e a tela nunca pode dizer que prova:
+ *  1. NÃO prova que o aluno LEU. Prova que o envio não estourou — e o 250 do
+ *     SMTP é aceite na fila, não entrega. O rótulo afirma "avisamos", nunca
+ *     "ele sabe".
+ *  2. NÃO prova que o aluno CONSEGUE ACESSAR. Quando a conta não tem acesso
+ *     vivo, o e-mail que sai é o "seus arquivos estão ok, ASSINE pra acessar"
+ *     (`avisoOkMasAssine`). Medido em 15/09: 42 dos 81 avisados NÃO têm acesso
+ *     vivo hoje — entre eles o `franklindfreis` que o recado cita como "ficou
+ *     sem saber". Ele FOI avisado (carimbo 13/09 01:43, seis minutos depois do
+ *     envio do pedido); o que ele não tinha era acesso. Isso é um TERCEIRO
+ *     estado (ACESSÍVEL), e está de fora deste PR de propósito — ver o pedido
+ *     de go/no-go na descrição.
+ *
+ * `por` e `canal` existem porque o recado pediu "quando, por qual canal", e
+ * porque o carimbo do futuro (migration 116, `avisado_em`) é um clique de
+ * gente: aí `por` é o e-mail de quem avisou e `canal` pode ser WhatsApp.
+ */
+/**
+ * Por onde o time pode ter avisado o aluno.
+ *
+ * Fica NESTE módulo (puro) porque os dois lados precisam da MESMA lista: o botão
+ * que oferece as opções e a rota que decide o que aceita gravar. Duas listas
+ * viram uma divergência — o botão oferecendo um canal que a rota recusa.
+ *
+ * ⚠️ Lista FECHADA de propósito. O canal é o que torna o carimbo auditável ("foi
+ * por WhatsApp, e WhatsApp a gente sabe que chega"), e texto livre aqui viraria
+ * "zap", "whats", "msg" — três nomes pro mesmo canal e nenhuma contagem possível.
+ */
+export const SGP_CANAIS_AVISO = ["WhatsApp", "e-mail", "ligação", "outro"] as const;
+export type CanalAviso = (typeof SGP_CANAIS_AVISO)[number];
+
+/**
+ * O canal veio da lista? É a guarda que a rota roda ANTES de gravar.
+ *
+ * Recusar é melhor que aceitar qualquer coisa: `avisado_canal` é texto no banco
+ * (sem constraint, porque a migration não cria nenhuma), então quem defende o
+ * conteúdo dessa coluna é esta função. Sem ela, um corpo de requisição torto
+ * grava lixo que a tela depois mostra como se fosse canal de verdade.
+ */
+export function canalValido(bruto: unknown): CanalAviso | null {
+  if (typeof bruto !== "string") return null;
+  const limpo = bruto.trim();
+  return (SGP_CANAIS_AVISO as readonly string[]).includes(limpo) ? (limpo as CanalAviso) : null;
+}
+
+export type AvisoEntrega = {
+  /** ISO de quando o aviso saiu. */
+  em: string;
+  /** "e-mail", "WhatsApp"… — por onde o aluno foi avisado. */
+  canal: string;
+  /** Quem avisou. "o sistema" para o e-mail automático; e-mail de gente quando é clique. */
+  por: string;
+  /**
+   * De QUAL das duas fontes veio o carimbo (ver lib/sgp/aviso.ts).
+   *
+   * Existe por uma razão só, e é de tela: "desfazer" só pode aparecer no carimbo
+   * do TIME, que é o único que dá pra apagar. Oferecer desfazer no carimbo do
+   * SISTEMA seria um botão que limpa colunas vazias e não muda nada — o
+   * atendente clicaria, a linha continuaria ENTREGUE, e ele concluiria que a
+   * tela está quebrada.
+   *
+   * AUSENTE = trate como "sistema". É o default conservador: na dúvida a tela
+   * não oferece um desfazer que pode não funcionar.
+   */
+  fonte?: "time" | "sistema";
+};
+
+/** O aviso já interpretado, com o tempo pronto pra tela. */
+export type Aviso = AvisoEntrega & { desdeMs: number };
+
+/**
+ * Lê o aviso de entrega da linha. Devolve `null` quando ele não vale.
+ *
+ * Três motivos pra não valer, e o terceiro é o que impede o carimbo de mentir:
+ *  1. ninguém avisou (ou a rota não consultou a fonte — os dois viram GERADO,
+ *     que é o estado honesto de "não sei");
+ *  2. a data veio ilegível — dado torto nunca pode virar afirmação de entrega;
+ *  3. O AVISO É DE OUTRO CICLO. Se ele saiu ANTES de o aluno enviar este
+ *     material, ele não pode ser sobre este pedido: `onboarding_ready_email_at`
+ *     é por USUÁRIO, e um aluno que refaz o SGP herdaria o carimbo do ciclo
+ *     anterior, virando "entregue" sem nunca ter sido avisado da segunda vez.
+ *     Medido em 15/09: isto não reclassifica ninguém hoje (zero dos 81 casos
+ *     têm carimbo anterior ao `enviado_em`) — a guarda existe pro dia em que
+ *     tiver, que é justamente o dia em que ninguém estaria olhando.
+ */
+export function lerAviso(
+  p: SgpPedidoRow,
+  aviso: AvisoEntrega | null | undefined,
+  agora: number,
+): Aviso | null {
+  if (!aviso?.em) return null;
+  const em = new Date(aviso.em).getTime();
+  if (!Number.isFinite(em)) return null;
+
+  // O marco do ciclo: o envio do material. Sem envio, a criação do pedido.
+  const marco = new Date(p.enviado_em ?? p.criado_em).getTime();
+  if (Number.isFinite(marco) && em < marco) return null;
+
+  return {
+    em: aviso.em,
+    canal: aviso.canal?.trim() || "e-mail",
+    por: aviso.por?.trim() || "o sistema",
+    // Na dúvida, "sistema": é o que NÃO oferece desfazer (ver `AvisoEntrega`).
+    fonte: aviso.fonte === "time" ? "time" : "sistema",
+    // Relógio adiantado do banco não pode virar tempo negativo na tela.
+    desdeMs: Math.max(0, agora - em),
+  };
+}
+
+/** "…avisado há 2 dias por e-mail (o sistema)" — a frase que vai pra tela. */
+function avisoTexto(a: Aviso): string {
+  return `avisado há ${tempoHumano(a.desdeMs)} por ${a.canal} (${a.por})`;
+}
 
 /** A marca de "deu erro" que alguém do time botou na mão (migration 109). */
 export type ErroManual = {
@@ -209,7 +396,11 @@ export function lerConclusao(p: SgpPedidoRow, agora: number): Conclusao | null {
  * o pedido do Lucas proíbe ("se sumir, a gente perde de vista quem pagou e não
  * recebeu").
  */
-export function situacaoDoPedido(p: SgpPedidoRow, agora: number = Date.now()): Situacao {
+export function situacaoDoPedido(
+  p: SgpPedidoRow,
+  agora: number = Date.now(),
+  aviso: AvisoEntrega | null = null,
+): Situacao {
   const manual = lerErroManual(p, agora);
   if (manual) {
     const quem = `marcado pelo time há ${tempoHumano(manual.desdeMs)} (${manual.por})`;
@@ -240,7 +431,25 @@ export function situacaoDoPedido(p: SgpPedidoRow, agora: number = Date.now()): S
   }
 
   if (p.status === "pronto") {
-    return { codigo: "pronto", rotulo: SITUACAO_ROTULO.pronto, motivo: "Entregue." };
+    // O CORTE DO RECADO 6. Gerado é fila nossa; entregue é fato sobre o aluno.
+    const a = lerAviso(p, aviso, agora);
+    if (a) {
+      return {
+        codigo: "entregue",
+        rotulo: SITUACAO_ROTULO.entregue,
+        // "Avisamos", nunca "ele sabe": ver a ressalva 1 em `AvisoEntrega`.
+        motivo: `O clone ficou pronto e o aluno foi avisado — ${avisoTexto(a)}.`,
+      };
+    }
+    return {
+      codigo: "pronto",
+      rotulo: SITUACAO_ROTULO.pronto,
+      // A frase diz a verdade inteira, inclusive a parte que não sabemos. Era
+      // exatamente o "Entregue." de uma palavra que escondia isso.
+      motivo:
+        "O clone ficou pronto, mas NÃO há registro de que o aluno tenha sido avisado. " +
+        "Pode ser que alguém tenha avisado por fora e não tenha ficado registrado — o que não dá pra fazer é supor que sim.",
+    };
   }
 
   if (p.status === "processando") {
@@ -304,8 +513,12 @@ export function situacaoDoPedido(p: SgpPedidoRow, agora: number = Date.now()): S
  *     (o gatilho da 110 garante que concluir não zera o relógio);
  *  d) a conclusão é SUPERADA se o pedido andar depois dela — ver `lerConclusao`.
  */
-export function situacao(p: SgpPedidoRow, agora: number = Date.now()): Situacao {
-  const porBaixo = situacaoDoPedido(p, agora);
+export function situacao(
+  p: SgpPedidoRow,
+  agora: number = Date.now(),
+  aviso: AvisoEntrega | null = null,
+): Situacao {
+  const porBaixo = situacaoDoPedido(p, agora, aviso);
   const fim = lerConclusao(p, agora);
   if (!fim || fim.superada) return porBaixo;
 
@@ -328,7 +541,11 @@ export type LinhaPainel = {
   whatsapp: string;
   /** Rótulo da etapa, já em linguagem de gente. */
   etapa: string;
-  status: SgpStatus;
+  /**
+   * ⚠️ Passou de `SgpStatus` para `EtapaFila`: a fila agora tem linhas que NÃO
+   * são pedidos (quem comprou e nunca começou — requisito 4). Ver `naoIniciou`.
+   */
+  status: EtapaFila;
   /** CONCLUÍDO / ERRO / PRONTO / AGUARDANDO — a etiqueta de planilha. */
   situacao: SituacaoSgp;
   situacaoRotulo: string;
@@ -339,6 +556,29 @@ export type LinhaPainel = {
    * estado real de quem pagou e não recebeu — ver a trava (b) em `situacao`.
    */
   situacaoPorBaixo: SituacaoSgp;
+  /**
+   * Esta linha NÃO é um pedido: é alguém que comprou e nunca abriu o portal
+   * (requisito 4 do recado 6). `id` não é id de `sgp_pedidos` e os botões de
+   * ação (cobrança, marcar erro, concluir) não têm onde escrever — a tela os
+   * desliga nestas linhas em vez de oferecer um clique que daria 404.
+   */
+  naoIniciou: boolean;
+  /**
+   * Há registro de que o ALUNO FOI AVISADO de que o clone ficou pronto.
+   * ⚠️ "avisamos", não "ele sabe" — ver as duas ressalvas em `AvisoEntrega`.
+   */
+  avisado: boolean;
+  /** "avisado há 2 dias por e-mail (o sistema)". `null` = sem registro de aviso. */
+  avisadoTexto: string | null;
+  /** ISO do aviso. `null` = sem registro. */
+  avisadoEm: string | null;
+  /**
+   * O carimbo veio de um clique do TIME (e não do e-mail automático) — logo dá
+   * pra desfazer. Ver a justificativa em `AvisoEntrega.fonte`.
+   */
+  avisadoPeloTime: boolean;
+  /** O "parado há" congelou porque o caso foi entregue (requisito 3). */
+  relogioParado: boolean;
   /** O time declarou o atendimento encerrado E o pedido não andou depois. */
   concluido: boolean;
   /** "concluído há 3h por fulano@x.com", pra tela. `null` = ninguém concluiu. */
@@ -469,7 +709,13 @@ export function oQueFazer(
   paradoMs: number,
   cobranca: Cobranca | null = null,
   conclusao: Conclusao | null = null,
+  /**
+   * O aviso JÁ LIDO por `lerAviso` — nunca o cru. Este módulo é puro e não tem
+   * relógio próprio; `lerAviso` precisa de `agora` e quem o tem é `montarLinha`.
+   */
+  aviso: Aviso | null = null,
 ): string {
+  const entregue = p.status === "pronto" ? aviso : null;
   // Conclusão viva manda em tudo: o time já decidiu que não precisa mexer.
   // Mas a frase NÃO pode parar em "nada a fazer" quando o aluno pagou e não
   // recebeu — aí ela diz as duas coisas, porque as duas são verdade.
@@ -477,7 +723,16 @@ export function oQueFazer(
     const quem = `${conclusao.por} concluiu este atendimento há ${tempoHumano(conclusao.desdeMs)}`;
     const porque = conclusao.motivo ? ` (“${conclusao.motivo}”)` : "";
     const base = `Nada a fazer: ${quem}${porque}.`;
-    if (p.status === "pronto" && !p.erro?.trim()) return base;
+    if (p.status === "pronto" && !p.erro?.trim()) {
+      if (entregue) return base;
+      // Encerrar o atendimento não avisa ninguém. Sem o carimbo, o time fechou
+      // um caso cujo aluno pode nunca ter sabido que o clone dele existe — e
+      // essa é uma frase que precisa aparecer, não sumir sob "nada a fazer".
+      return (
+        `${base} Atenção: o clone foi GERADO, mas não há registro de que o aluno tenha ` +
+        `sido avisado. Se ninguém avisou, ele não sabe que o material está pronto.`
+      );
+    }
     return (
       `${base} Atenção: o clone dele NÃO chegou a ser entregue — o pedido parou em ` +
       `"${ETAPA_HUMANA[p.status] ?? p.status}". A linha fica aqui pra ninguém ` +
@@ -487,15 +742,30 @@ export function oQueFazer(
   if (conclusao?.superada) {
     // Não esconde a decisão anterior, mas também não deixa ela calar a tela: o
     // pedido andou depois, então o caso pode ter reaberto sozinho.
-    const aviso =
+    // (Renomeado de `aviso` para `alerta` em 15/09: `aviso` agora é o carimbo de
+    // entrega, e duas coisas diferentes com o mesmo nome no mesmo escopo é como
+    // se perde uma delas numa refatoração futura.)
+    const alerta =
       `${conclusao.por} já tinha concluído este atendimento, mas o aluno mexeu depois ` +
       `— confira se o caso reabriu. `;
-    return aviso + oQueFazer(p, paradoMs, cobranca, null);
+    return alerta + oQueFazer(p, paradoMs, cobranca, null, aviso);
   }
   if (p.status === "falhou") {
     return "Deu erro no sistema. O time técnico já é acionado automaticamente — avise o aluno que estamos resolvendo e NÃO prometa prazo.";
   }
-  if (p.status === "pronto") return "Nada a fazer. Já foi entregue.";
+  if (p.status === "pronto") {
+    // ⚠️ AQUI MORAVA "Nada a fazer. Já foi entregue." — a frase que o recado 6
+    // chama pelo nome. Ela dizia que o trabalho acabou baseada em `status`, que
+    // não sabe se alguém falou com o aluno. Três alunos desta semana
+    // (franklindfreis, biatupi, andreviana) tinham o clone pronto, e a tela
+    // dizia "nada a fazer" o tempo todo.
+    if (entregue) return `Nada a fazer. O clone foi entregue e o aluno ${avisoTexto(entregue)}.`;
+    return (
+      "AVISAR O ALUNO: o clone dele está pronto e não há registro de que alguém tenha avisado. " +
+      "Chame no WhatsApp ou mande o e-mail, e registre aqui que avisou — enquanto não registrar, " +
+      "esta linha continua pedindo isto."
+    );
+  }
   if (p.status === "processando") {
     return paradoMs > PARADO_MS
       ? "Está gerando há mais de 2 dias, o que é tempo demais. Avise o time técnico."
@@ -541,13 +811,29 @@ export function montarLinha(
   p: SgpPedidoRow,
   agora: number,
   silencioMs: number = SGP_COBRANCA_SILENCIO_MS,
+  avisoBruto: AvisoEntrega | null = null,
 ): LinhaPainel {
-  const paradoMs = agora - new Date(p.atualizado_em).getTime();
   const cobranca = lerCobranca(p, agora, silencioMs);
-  const sit = situacao(p, agora);
+  const aviso = lerAviso(p, avisoBruto, agora);
+  const sit = situacao(p, agora, avisoBruto);
   const erroManual = lerErroManual(p, agora);
   const fim = lerConclusao(p, agora);
   const concluido = !!fim && !fim.superada;
+
+  // ── REQUISITO 3 DO RECADO 6: "'PARADO HÁ' PARA DE CONTAR quando entregue.
+  //    Hoje um pedido entregue segue envelhecendo e polui a fila." ───────────
+  //
+  // O relógio para no INSTANTE DO AVISO, não em `agora`. Ele não é zerado: um
+  // pedido que ficou 3 dias parado antes de alguém avisar continua mostrando 3
+  // dias, porque isso aconteceu de verdade e some se a gente zerar. O que ele
+  // deixa de fazer é CRESCER — que era o que empurrava entrega de 30 dias atrás
+  // pro topo da fila de quem precisa de gente.
+  //
+  // ⚠️ Só congela com o carimbo na mão. `pronto` SEM aviso continua contando, e
+  // tem que continuar: aquele aluno está esperando notícia nossa agora mesmo.
+  const relogioParado = !!aviso;
+  const fimDaContagem = aviso ? Math.min(agora, new Date(aviso.em).getTime()) : agora;
+  const paradoMs = Math.max(0, fimDaContagem - new Date(p.atualizado_em).getTime());
 
   // Travado no wizard há +48h. Isto NÃO depende da cobrança: o aluno está
   // parado do mesmo jeito, e é o que a linha continua mostrando na tela.
@@ -577,7 +863,13 @@ export function montarLinha(
     situacao: sit.codigo,
     situacaoRotulo: sit.rotulo,
     situacaoMotivo: sit.motivo,
-    situacaoPorBaixo: situacaoDoPedido(p, agora).codigo,
+    situacaoPorBaixo: situacaoDoPedido(p, agora, avisoBruto).codigo,
+    naoIniciou: false,
+    avisado: !!aviso,
+    avisadoTexto: aviso ? avisoTexto(aviso) : null,
+    avisadoEm: aviso?.em ?? null,
+    avisadoPeloTime: aviso?.fonte === "time",
+    relogioParado,
     concluido,
     concluidoTexto: fim
       ? `concluído há ${tempoHumano(fim.desdeMs)} por ${fim.por}` +
@@ -601,7 +893,7 @@ export function montarLinha(
     voz: colunaVoz(p),
     enviadoEm: p.enviado_em,
     erro: p.erro,
-    oQueFazer: oQueFazer(p, paradoMs, cobranca, fim),
+    oQueFazer: oQueFazer(p, paradoMs, cobranca, fim, aviso),
   };
 }
 
@@ -626,6 +918,18 @@ export function ordenar(linhas: LinhaPainel[]): LinhaPainel[] {
     // é "mais tempo parado primeiro", e caso encerrado nunca mais anda. Ele
     // continua na tabela; só não ocupa o lugar de quem ainda pode precisar.
     if (a.concluido !== b.concluido) return a.concluido ? 1 : -1;
+    // 4º degrau (15/09, recado 6): ENTREGUE também vai pro fim, e pelo mesmo
+    // motivo do degrau anterior. Congelar o "parado há" (requisito 3) já impede
+    // a entrega de ENVELHECER, mas não impede que ela tenha congelado num número
+    // grande — um pedido que ficou 5 dias parado antes de alguém avisar guarda
+    // "5 dias" pra sempre e subiria na frente de um aluno que entrou ontem.
+    //
+    // ⚠️ Só ENTREGUE desce. `pronto` (gerado sem aviso) NÃO: aquele aluno está
+    // esperando notícia nossa, e enterrá-lo no fim da fila é literalmente o
+    // defeito que este PR veio consertar.
+    const entregueA = a.situacao === "entregue";
+    const entregueB = b.situacao === "entregue";
+    if (entregueA !== entregueB) return entregueA ? 1 : -1;
     return b.paradoMs - a.paradoMs;
   });
 }
@@ -657,25 +961,129 @@ export type ResumoPainel = {
    * pronto, esperando ou quebrado" — e é esta a leitura de longe.
    */
   situacoes: Record<SituacaoSgp, number>;
-  porEtapa: Array<{ status: SgpStatus; etapa: string; n: number }>;
+  /**
+   * ⚠️ O CONTADOR QUE O RECADO 6 EXISTE PRA CRIAR. Clones gerados sem registro
+   * de aviso — gente que pagou, cujo material está pronto, e que pode não saber
+   * disso. Era zero-visível: a tela chamava todos eles de "Entregue".
+   */
+  geradosSemAviso: number;
+  /** Compraram e nunca abriram o portal (requisito 4). */
+  naoIniciaram: number;
+  porEtapa: Array<{ status: EtapaFila; etapa: string; n: number }>;
 };
 
 /** Contadores do topo: quantos em cada etapa e quantos parados há +48h. */
 export function resumir(linhas: LinhaPainel[]): ResumoPainel {
-  const contagem = new Map<SgpStatus, number>();
+  const contagem = new Map<EtapaFila, number>();
   for (const l of linhas) contagem.set(l.status, (contagem.get(l.status) ?? 0) + 1);
-  const situacoes: Record<SituacaoSgp, number> = { concluido: 0, erro: 0, aguardando: 0, pronto: 0 };
+  const situacoes: Record<SituacaoSgp, number> = {
+    concluido: 0,
+    erro: 0,
+    entregue: 0,
+    aguardando: 0,
+    pronto: 0,
+  };
   for (const l of linhas) situacoes[l.situacao] += 1;
   return {
     total: linhas.length,
     parados: linhas.filter((l) => l.parado).length,
     cobrados: linhas.filter((l) => l.silenciado).length,
     concluidos: linhas.filter((l) => l.concluido).length,
-    concluidosComPendencia: linhas.filter((l) => l.concluido && l.situacaoPorBaixo !== "pronto")
+    // `!== "entregue"` e não `!== "pronto"`: com o corte novo, "pronto" passou a
+    // significar GERADO SEM AVISO, que é exatamente uma pendência. Deixar a
+    // comparação antiga aqui faria o contador de auditoria parar de contar
+    // justamente o caso que o recado 6 veio expor.
+    concluidosComPendencia: linhas.filter((l) => l.concluido && l.situacaoPorBaixo !== "entregue")
       .length,
     situacoes,
-    porEtapa: (Object.keys(ETAPA_HUMANA) as SgpStatus[])
+    geradosSemAviso: linhas.filter((l) => l.status === "pronto" && !l.avisado).length,
+    naoIniciaram: linhas.filter((l) => l.naoIniciou).length,
+    porEtapa: (Object.keys(ETAPA_FILA_HUMANA) as EtapaFila[])
       .filter((s) => contagem.has(s))
-      .map((s) => ({ status: s, etapa: ETAPA_HUMANA[s], n: contagem.get(s) ?? 0 })),
+      .map((s) => ({ status: s, etapa: ETAPA_FILA_HUMANA[s], n: contagem.get(s) ?? 0 })),
+  };
+}
+
+/* ---------------------------------------------------------------------------
+ * REQUISITO 5 — "Concluir atendimento automático 7 dias após ENTREGUE sem
+ * reclamação". A DECISÃO, e SÓ a decisão.
+ * ------------------------------------------------------------------------- */
+
+/** Quanto tempo depois do aviso um caso entregue e quieto pode fechar sozinho. */
+export const SGP_CONCLUSAO_AUTOMATICA_DIAS = 7;
+const CONCLUSAO_AUTOMATICA_MS = SGP_CONCLUSAO_AUTOMATICA_DIAS * 24 * 60 * 60 * 1000;
+
+export type VeredictoConclusao = {
+  conclui: boolean;
+  /** POR QUE — a mesma exigência do resto da tela: nunca um booleano mudo. */
+  motivo: string;
+};
+
+/**
+ * Este pedido pode ser concluído sozinho?
+ *
+ * ⚠️ FUNÇÃO PURA E NÃO LIGADA A NADA, de propósito. Ela DECIDE e não ESCREVE:
+ * não há rota, cron ou sweeper chamando ela neste PR. Concluir automaticamente
+ * é uma ação irreversível do ponto de vista do time (o caso sai do radar), e ela
+ * depende da definição final de "entregue" — que tem uma perna em aberto (o
+ * estado ACESSÍVEL; ver a ressalva 2 em `AvisoEntrega` e o pedido de go/no-go na
+ * descrição do PR). Então a régua fica aqui, testada, pronta pra ser ligada com
+ * uma linha no dia em que o Johnny disser "pode".
+ *
+ * ── O QUE CONTA COMO "RECLAMAÇÃO", e a honestidade sobre o que NÃO conta ────
+ * Conta o que é AUDITÁVEL e já existe hoje:
+ *  · `erro_manual_em` — o time marcou um problema (não vence, então qualquer
+ *    marca viva basta);
+ *  · `erro` — o sistema carimbou uma falha, mesmo parcial;
+ *  · o pedido saiu de `pronto` (voltou a `falhou`, por exemplo).
+ *
+ * NÃO conta — e isto é um limite real, não um detalhe — a reclamação que chegou
+ * por WhatsApp, por e-mail ou por telefone e que ninguém registrou no painel.
+ * Pra essa, este algoritmo é cego. É o argumento mais forte a favor de o
+ * fechamento automático ser opt-in e reversível quando for ligado.
+ */
+export function conclusaoAutomatica(
+  p: SgpPedidoRow,
+  aviso: Aviso | null,
+  agora: number,
+): VeredictoConclusao {
+  if (p.concluido_em) {
+    return { conclui: false, motivo: "O atendimento já foi concluído por alguém do time." };
+  }
+  if (p.status !== "pronto") {
+    return {
+      conclui: false,
+      motivo: `O pedido não está pronto — está em "${ETAPA_HUMANA[p.status] ?? p.status}".`,
+    };
+  }
+  if (!aviso) {
+    // O ponto inteiro do recado 6: o relógio dos 7 dias começa na ENTREGA, não
+    // na geração. Sem aviso não há entrega, então não há relógio nenhum correndo
+    // — e fechar aqui seria arquivar em silêncio quem nunca foi avisado.
+    return {
+      conclui: false,
+      motivo: "O clone foi gerado, mas não há registro de aviso ao aluno. O prazo nem começou.",
+    };
+  }
+  if (p.erro_manual_em) {
+    return { conclui: false, motivo: "O time marcou um erro neste pedido — alguém precisa olhar." };
+  }
+  if (p.erro?.trim()) {
+    return { conclui: false, motivo: `O sistema registrou uma falha: ${p.erro.trim()}` };
+  }
+
+  const desde = Math.max(0, agora - new Date(aviso.em).getTime());
+  if (desde < CONCLUSAO_AUTOMATICA_MS) {
+    const falta = CONCLUSAO_AUTOMATICA_MS - desde;
+    return {
+      conclui: false,
+      motivo: `Entregue há ${tempoHumano(desde)}; fecha sozinho em ${tempoHumano(falta)} se ninguém reclamar.`,
+    };
+  }
+  return {
+    conclui: true,
+    motivo:
+      `Entregue há ${tempoHumano(desde)} (mais de ${SGP_CONCLUSAO_AUTOMATICA_DIAS} dias) ` +
+      `e ninguém registrou reclamação.`,
   };
 }

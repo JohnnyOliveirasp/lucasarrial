@@ -21,8 +21,26 @@ export const COLUNAS_ERRO_MANUAL = ["erro_manual_em", "erro_manual_por", "erro_m
 /** As colunas da migration 110 ("concluir atendimento"). Mesmo regime. */
 export const COLUNAS_CONCLUSAO = ["concluido_em", "concluido_por", "concluido_motivo"] as const;
 
+/**
+ * As colunas da migration 116 ("avisei o aluno"). Mesmo regime.
+ *
+ * ⚠️ MORAM AQUI, e não em aviso.ts, por um motivo que não é organização: é esta
+ * lista que `COLUNAS_OPCIONAIS` usa pra decidir se um erro do PostgREST é
+ * "coluna ainda não existe". Ficando de fora dela, um 42703 sobre `avisado_em`
+ * que chegasse SEM o código (acontece em erro de schema cache, é o caso que a
+ * rede de segurança por mensagem existe pra cobrir) não seria reconhecido — e o
+ * fallback deixaria de cair, derrubando a tela inteira do time de suporte por
+ * causa de uma coluna acessória.
+ */
+export const COLUNAS_AVISO = ["avisado_em", "avisado_por", "avisado_canal"] as const;
+
 /** Todas as colunas que podem não existir ainda, pra decidir se um erro é disso. */
-const COLUNAS_OPCIONAIS = [...COLUNAS_COBRANCA, ...COLUNAS_ERRO_MANUAL, ...COLUNAS_CONCLUSAO];
+const COLUNAS_OPCIONAIS = [
+  ...COLUNAS_COBRANCA,
+  ...COLUNAS_ERRO_MANUAL,
+  ...COLUNAS_CONCLUSAO,
+  ...COLUNAS_AVISO,
+];
 
 /**
  * O erro do Postgres é "coluna não existe"?
@@ -56,6 +74,10 @@ export function colunaErroManualAusente(error: unknown): boolean {
 
 export function colunaConclusaoAusente(error: unknown): boolean {
   return colunaAusente(error, COLUNAS_CONCLUSAO);
+}
+
+export function colunaAvisoAusente(error: unknown): boolean {
+  return colunaAusente(error, COLUNAS_AVISO);
 }
 
 /**

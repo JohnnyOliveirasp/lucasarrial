@@ -179,14 +179,40 @@ test("comprou há menos de 48h ainda não é 'parado'", () => {
   assert.equal(linha.parado, false);
 });
 
-test("quem já recebeu o clone nunca conta como parado, por mais antigo que seja", () => {
+test("quem já recebeu o clone E FOI AVISADO nunca conta como parado, por mais antigo que seja", () => {
+  const p = pedido({
+    email: "entregue@x.com",
+    status: "pronto",
+    // `criado_em`/`enviado_em` coerentes com a idade do pedido: `lerAviso`
+    // descarta carimbo ANTERIOR ao envio (seria aviso de outro ciclo).
+    criado_em: iso(AGORA - 62 * 24 * H),
+    enviado_em: iso(AGORA - 61 * 24 * H),
+    atualizado_em: iso(AGORA - 60 * 24 * H),
+  });
+  const [linha] = montarCompradores({
+    compras: [compra({ email: "entregue@x.com", recebidoEm: iso(AGORA - 90 * 24 * H) })],
+    pedidos: [p],
+    agora: AGORA,
+    // ⚠️ O CARIMBO PASSOU A SER OBRIGATÓRIO EM 15/09 (recado 6). Antes este
+    // teste passava só com `status = 'pronto'` — e era exatamente essa regra que
+    // fazia a tela chamar de "entregue" quem ninguém tinha avisado.
+    avisos: new Map([[p.id, { em: iso(AGORA - 59 * 24 * H), canal: "e-mail", por: "o sistema" }]]),
+  });
+  assert.equal(linha.entregue, true);
+  assert.equal(linha.parado, false);
+});
+
+test("pronto SEM aviso volta a contar como parado — é gente que pagou e pode não saber", () => {
+  // O contraponto do teste acima, e o caso real do recado 6: o MESMO pedido, sem
+  // o carimbo. Ele não pode sair do radar do time só porque o robô terminou.
   const [linha] = montarCompradores({
     compras: [compra({ email: "entregue@x.com", recebidoEm: iso(AGORA - 90 * 24 * H) })],
     pedidos: [pedido({ email: "entregue@x.com", status: "pronto", atualizado_em: iso(AGORA - 60 * 24 * H) })],
     agora: AGORA,
   });
-  assert.equal(linha.entregue, true);
-  assert.equal(linha.parado, false);
+  assert.equal(linha.entregue, false);
+  assert.equal(linha.geradoSemAviso, true);
+  assert.equal(linha.parado, true);
 });
 
 // ───────────────────── pessoa com dois pedidos ─────────────────────
@@ -322,6 +348,13 @@ test("o status é português de gente, nunca o enum cru do banco", () => {
 });
 
 test("ordem: quem espera há mais tempo primeiro, entregues no fim", () => {
+  const entregue = pedido({
+    email: "entregue@x.com",
+    status: "pronto",
+    criado_em: iso(AGORA - 52 * 24 * H),
+    enviado_em: iso(AGORA - 51 * 24 * H),
+    atualizado_em: iso(AGORA - 50 * 24 * H),
+  });
   const linhas = ordenarCompradores(
     montarCompradores({
       compras: [
@@ -329,11 +362,31 @@ test("ordem: quem espera há mais tempo primeiro, entregues no fim", () => {
         compra({ email: "antigo@x.com", recebidoEm: iso(AGORA - 20 * 24 * H) }),
         compra({ email: "entregue@x.com", recebidoEm: iso(AGORA - 60 * 24 * H) }),
       ],
-      pedidos: [pedido({ email: "entregue@x.com", status: "pronto", atualizado_em: iso(AGORA - 50 * 24 * H) })],
+      pedidos: [entregue],
       agora: AGORA,
+      // Desde 15/09 é o CARIMBO que manda alguém pro fim da lista, não o status.
+      avisos: new Map([[entregue.id, { em: iso(AGORA - 49 * 24 * H), canal: "e-mail", por: "o sistema" }]]),
     }),
   );
   assert.deepEqual(linhas.map((l) => l.chave), ["antigo@x.com", "recente@x.com", "entregue@x.com"]);
+});
+
+test("ordem: pronto SEM aviso NÃO vai pro fim — ele é o mais urgente da lista", () => {
+  // Sem esta regra, o recado 6 continuaria acontecendo: o aluno cujo clone ficou
+  // pronto e que ninguém avisou era jogado pro fim da lista por "já entregou".
+  const linhas = ordenarCompradores(
+    montarCompradores({
+      compras: [
+        compra({ email: "recente@x.com", recebidoEm: iso(AGORA - 3 * 24 * H) }),
+        compra({ email: "semaviso@x.com", recebidoEm: iso(AGORA - 60 * 24 * H) }),
+      ],
+      pedidos: [
+        pedido({ email: "semaviso@x.com", status: "pronto", atualizado_em: iso(AGORA - 50 * 24 * H) }),
+      ],
+      agora: AGORA,
+    }),
+  );
+  assert.deepEqual(linhas.map((l) => l.chave), ["semaviso@x.com", "recente@x.com"]);
 });
 
 test("o resumo bate com a forma real do funil (90 sem começar de 103)", () => {
