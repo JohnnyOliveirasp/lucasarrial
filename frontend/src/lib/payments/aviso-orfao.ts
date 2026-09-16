@@ -66,6 +66,13 @@ export type RegistroAviso = {
   buyerEmail: string;
   /** canais que ACEITARAM o aviso (telegram / email); vazio = ninguém recebeu */
   canais: string[];
+  /**
+   * Transações que já TENTARAM avisar, mesmo sem ninguém receber. É o freio de
+   * rajada: enquanto `canais` estiver vazio, uma cobrança NOVA tem direito a
+   * uma tentativa nova, mas o reenvio do MESMO evento pela Hotmart não.
+   * Ausente nos registros gravados antes de 16/09 — o código trata como [].
+   */
+  tentativas?: string[];
 };
 
 /** Estado persistido em `agent_state` (sem migration), chaveado por entitlement. */
@@ -222,10 +229,23 @@ export function escapar(s: string): string {
  * canais → grava o estado com o resultado de cada canal. O durável primeiro
  * porque foi justamente o canal volátil que falhou calado no #239.
  *
- * Marca como avisado mesmo se TODOS os canais falharem — senão a Hotmart
- * reenviando o evento viraria uma rajada de tentativas. O que denuncia a falha
- * é `canais: []` no retorno e no estado, que o chamador registra em
- * `payment_events.error`.
+ * Se TODOS os canais falharem, o aviso NÃO é dado por encerrado: `canais: []`
+ * fica gravado e a próxima COBRANÇA tem direito a uma tentativa nova. O freio
+ * de rajada que isso exige é `tentativas`, por transação — a Hotmart reenviando
+ * o MESMO evento não gera aviso novo, mas uma renovação nova gera.
+ *
+ * ⚠️ POR QUE MUDOU (medido em 16/09, incidente #305 / 54c14038). Antes, o
+ * registro era gravado mesmo com `canais: []` e a checagem de idempotência só
+ * olhava a EXISTÊNCIA da chave — então um aviso que não chegou a NINGUÉM
+ * silenciava o assinante para sempre, e nenhuma cobrança seguinte reabria o
+ * assunto. Não é hipótese: no `orphan_alerts` de produção, 3 dos 19 registros
+ * estavam com `canais: []`, e um deles (GGMWWE5Q, scandovieri41@hotmail.com)
+ * era pagante de R$ 97 × 2 ciclos, `user_id` NULL, assinatura ativa e renovando
+ * — invisível para o webhook desde 03/09. Ele só foi atendido porque um humano
+ * tropeçou nele; o canal automático nunca mais falaria dele.
+ *
+ * O `canais: []` continua sendo o que denuncia a falha no retorno e no estado,
+ * e o chamador segue registrando em `payment_events.error`.
  */
 export async function avisarCompraOrfa(
   d: CompraOrfa,
@@ -246,7 +266,19 @@ export async function avisarCompraOrfa(
 
   const chave = chaveDoAviso(d);
   const estado = await io.ler();
-  if (estado[chave]) return { avisou: false, motivo: "ja_avisado", canais: estado[chave].canais };
+  const anterior = estado[chave];
+  const transacao = (d.transaction ?? "").trim();
+
+  if (anterior) {
+    const alguemRecebeu = (anterior.canais?.length ?? 0) > 0;
+    // Sem número de transação não dá pra distinguir cobrança nova de reenvio do
+    // mesmo evento: aí o silêncio é mais barato que a rajada, e o comportamento
+    // antigo (suprimir) fica mantido de propósito.
+    const jaTentouEstaCobranca = !transacao || (anterior.tentativas ?? []).includes(transacao);
+    if (alguemRecebeu || jaTentouEstaCobranca) {
+      return { avisou: false, motivo: "ja_avisado", canais: anterior.canais ?? [] };
+    }
+  }
 
   const aviso = montarAviso(d);
   await canais.registrar(chave, aviso, d);
@@ -255,7 +287,18 @@ export async function avisarCompraOrfa(
   if (await canais.telegram(aviso.texto)) entregues.push("telegram");
   if (await canais.email(aviso.assunto, aviso.html)) entregues.push("email");
 
-  estado[chave] = { at: agoraIso, buyerEmail: d.buyerEmail, canais: entregues };
+  // Teto de 20: a lista existe pra frear rajada, não pra virar histórico. Sem
+  // teto, um assinante com canal quebrado por meses engordaria o registro sem
+  // limite dentro de UMA linha de agent_state.
+  const tentativas = [...(anterior?.tentativas ?? [])];
+  if (transacao && !tentativas.includes(transacao)) tentativas.push(transacao);
+
+  estado[chave] = {
+    at: agoraIso,
+    buyerEmail: d.buyerEmail,
+    canais: entregues,
+    ...(tentativas.length ? { tentativas: tentativas.slice(-20) } : {}),
+  };
   await io.gravar(estado);
 
   return { avisou: true, motivo: "enviado", canais: entregues };

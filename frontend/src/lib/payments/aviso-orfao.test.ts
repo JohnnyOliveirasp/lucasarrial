@@ -121,6 +121,9 @@ test("aprovação sem conta: avisa, e o aviso vai por TODOS os canais", async ()
     at: AGORA,
     buyerEmail: "cachico3@hotmail.com",
     canais: ["telegram", "email"],
+    // desde 16/09 (#305): a transação tentada fica registrada, pra que um aviso
+    // que não chegue a ninguém possa ser retentado sem virar rajada
+    tentativas: ["HP2742616487"],
   });
 });
 
@@ -313,6 +316,82 @@ test("Telegram fora do ar: o e-mail ainda entrega e o estado diz qual canal foi"
   const { io } = estadoNaMemoria();
   const r = await avisarCompraOrfa(TIAGO, NOSSO_PRODUTO, io, canais, AGORA);
   assert.deepEqual(r.canais, ["email"]);
+});
+
+// ── 4-B. aviso que não chegou a NINGUÉM não pode silenciar o assinante ──────
+// Incidente #305 / 54c14038, medido em 16/09: 3 dos 19 registros vivos em
+// `orphan_alerts` estavam com `canais: []`, e um deles era PAGANTE órfão com a
+// assinatura renovando. Antes desta regra, nenhuma cobrança seguinte reabria o
+// caso — o webhook ficava mudo para sempre.
+
+test("ninguém recebeu: a PRÓXIMA cobrança tenta de novo (não silencia pra sempre)", async () => {
+  const mudos = canaisFalsos({ telegram: false, email: false });
+  const { io, ver } = estadoNaMemoria();
+
+  const primeiro = await avisarCompraOrfa(TIAGO, NOSSO_PRODUTO, io, mudos.canais, AGORA);
+  assert.deepEqual(primeiro.canais, []);
+  assert.deepEqual(ver()["PMB7RT7F"].tentativas, ["HP2742616487"]);
+
+  // a renovação do mês seguinte: MESMA assinatura, transação NOVA
+  const renovacao: CompraOrfa = { ...TIAGO, transaction: "HP9999999999" };
+  const vivos = canaisFalsos({ telegram: true, email: true });
+  const segundo = await avisarCompraOrfa(renovacao, NOSSO_PRODUTO, io, vivos.canais, AGORA);
+
+  assert.equal(segundo.avisou, true, "a cobrança nova tem direito a uma tentativa nova");
+  assert.equal(segundo.motivo, "enviado");
+  assert.deepEqual(segundo.canais, ["telegram", "email"]);
+  // e o durável é reescrito — era ele que faltava nos 12 casos sem recado
+  assert.equal(vivos.visto.duraveis.length, 1);
+  assert.deepEqual(ver()["PMB7RT7F"].tentativas, ["HP2742616487", "HP9999999999"]);
+});
+
+test("ninguém recebeu, mas é o MESMO evento reenviado pela Hotmart: não vira rajada", async () => {
+  const { canais, visto } = canaisFalsos({ telegram: false, email: false });
+  const { io } = estadoNaMemoria();
+
+  await avisarCompraOrfa(TIAGO, NOSSO_PRODUTO, io, canais, AGORA);
+  const reenvio = await avisarCompraOrfa(TIAGO, NOSSO_PRODUTO, io, canais, AGORA);
+
+  assert.equal(reenvio.avisou, false);
+  assert.equal(reenvio.motivo, "ja_avisado");
+  assert.equal(visto.telegram.length, 1, "o mesmo evento não dispara duas vezes");
+});
+
+test("alguém RECEBEU: a renovação seguinte continua muda (uma vez por entitlement)", async () => {
+  const { canais, visto } = canaisFalsos({ telegram: true, email: true });
+  const { io } = estadoNaMemoria();
+
+  await avisarCompraOrfa(TIAGO, NOSSO_PRODUTO, io, canais, AGORA);
+  const renovacao: CompraOrfa = { ...TIAGO, transaction: "HP9999999999" };
+  const segundo = await avisarCompraOrfa(renovacao, NOSSO_PRODUTO, io, canais, AGORA);
+
+  assert.equal(segundo.motivo, "ja_avisado");
+  assert.equal(visto.telegram.length, 1, "aviso entregue não se repete a cada ciclo");
+});
+
+test("registro ANTIGO (sem `tentativas`) com canais vazio: a cobrança nova reabre", async () => {
+  // Formato exato do que está gravado em produção hoje para GGMWWE5Q —
+  // gravado antes de 16/09, portanto sem o campo `tentativas`.
+  const { io } = estadoNaMemoria({
+    PMB7RT7F: { at: "2026-09-03T09:09:19.035Z", buyerEmail: "cachico3@hotmail.com", canais: [] },
+  });
+  const { canais } = canaisFalsos({ telegram: true, email: true });
+
+  const r = await avisarCompraOrfa(TIAGO, NOSSO_PRODUTO, io, canais, AGORA);
+
+  assert.equal(r.avisou, true, "estado legado não pode enterrar o pagante órfão");
+  assert.deepEqual(r.canais, ["telegram", "email"]);
+});
+
+test("sem número de transação e ninguém recebeu: mantém o silêncio (não dá pra frear rajada)", async () => {
+  const semTransacao: CompraOrfa = { ...TIAGO, transaction: null };
+  const { canais } = canaisFalsos({ telegram: false, email: false });
+  const { io } = estadoNaMemoria();
+
+  await avisarCompraOrfa(semTransacao, NOSSO_PRODUTO, io, canais, AGORA);
+  const de_novo = await avisarCompraOrfa(semTransacao, NOSSO_PRODUTO, io, canais, AGORA);
+
+  assert.equal(de_novo.motivo, "ja_avisado");
 });
 
 // ── 5. chave de idempotência e extratores ──────────────────────────────────
