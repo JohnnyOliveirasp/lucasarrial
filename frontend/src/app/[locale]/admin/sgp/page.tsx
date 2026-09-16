@@ -58,6 +58,7 @@ import type { SgpGeracoes } from "@/lib/sgp/geracoes";
 import { videoLegivel, vozLegivel } from "@/lib/sgp/geracoes-pure";
 import {
   SGP_PARADO_HORAS,
+  SITUACAO_ROTULO,
   ordenar,
   resumir,
   type LinhaPainel,
@@ -486,7 +487,11 @@ export default function SgpPage() {
 
   const rotuloDoFiltro =
     filtro?.tipo === "situacao"
-      ? filtro.valor.toUpperCase()
+      ? // ⚠️ O RÓTULO, não o código. Desde 15/09 os dois divergem: o código é
+        // `pronto` e o que o time lê na pill é GERADO. Deixar o `toUpperCase()`
+        // do código fazia a tela dizer "filtrado por PRONTO" logo abaixo de uma
+        // pill escrita GERADO — a mesma palavra ambígua que este PR veio matar.
+        (SITUACAO_ROTULO[filtro.valor as SituacaoSgp] ?? filtro.valor.toUpperCase())
       : (resumoVisivel?.porEtapa.find((e) => e.status === filtro?.valor)?.etapa ?? filtro?.valor ?? "");
 
   return (
@@ -536,9 +541,20 @@ export default function SgpPage() {
           <CheckCircle2 className="size-5 shrink-0 text-[var(--status-online)]" />
         )}
         <span className="text-[14px] text-[var(--ink)]">
+          {/* Os dois números SEPARADOS (15/09): "travou no meio do cadastro" e
+              "comprou e nunca começou" são trabalhos diferentes, com conversas
+              diferentes. Somados num número só, este banner saltou de ~137 pra
+              320 ao ligar o requisito 4 — e contador que triplica sem explicar
+              é contador que o time aprende a ignorar. */}
           {resumoVisivel?.parados
-            ? `${resumoVisivel.parados} aluno(s) parados há mais de ${SGP_PARADO_HORAS}h — precisam ser cobrados`
+            ? `${resumoVisivel.parados - resumoVisivel.paradosNaoIniciaram} aluno(s) travados no cadastro há mais de ${SGP_PARADO_HORAS}h — precisam ser cobrados`
             : "Ninguém parado. Nada precisando de cobrança ✅"}
+          {resumoVisivel?.paradosNaoIniciaram ? (
+            <span className="text-[var(--mute)]">
+              {" "}
+              · {resumoVisivel.paradosNaoIniciaram} compraram e NUNCA abriram o portal
+            </span>
+          ) : null}
           {/* Cobrado NÃO é resolvido: continua contado à parte, à vista. */}
           {resumoVisivel?.cobrados ? (
             <span className="text-[var(--mute)]">
@@ -936,12 +952,17 @@ export default function SgpPage() {
 
       <p className="text-[12px] text-[var(--ash)]">
         <strong>Situação</strong> é a leitura de planilha: <strong>CONCLUÍDO</strong> é o time dizendo
-        que encerrou o atendimento, <strong>PRONTO</strong> é entregue, <strong>ERRO</strong> é o que
-        alguém precisa olhar (o sistema falhou, falhou em parte, ou o time marcou na mão) e{" "}
+        que encerrou o atendimento, <strong>ENTREGUE</strong> é o clone pronto <em>e</em> o aluno
+        avisado, <strong>GERADO</strong> é o clone pronto <em>sem</em> registro de aviso — ou seja,
+        alguém que pagou, cujo material existe, e que pode não saber disso —, <strong>ERRO</strong> é o
+        que alguém precisa olhar (o sistema falhou, falhou em parte, ou o time marcou na mão) e{" "}
         <strong>AGUARDANDO</strong> é todo o resto — esperando o aluno, na fila ou gerando. A ordem de
-        prioridade é essa mesma: CONCLUÍDO ganha de ERRO, e ERRO ganha de PRONTO. Material entregue
+        prioridade é essa mesma: CONCLUÍDO ganha de ERRO, e ERRO ganha de ENTREGUE. Material entregue
         errado é um pedido pronto que precisa de gente; e um caso que o time já resolveu não pode
         continuar gritando para sempre só porque o sistema não sabe que foi resolvido.{" "}
+        <strong>GERADO não é entrega</strong>: enquanto ninguém avisar o aluno (e registrar), a linha
+        continua pedindo isso, e o &ldquo;parado há&rdquo; continua correndo. Assim que há registro de
+        aviso, a linha vira ENTREGUE e o relógio <strong>para</strong>.{" "}
         {conclusaoOk ? (
           <>
             Em <strong>Atendimento</strong> o time encerra o caso (aluno reembolsado, desistiu,

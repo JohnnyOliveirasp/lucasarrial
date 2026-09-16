@@ -920,6 +920,16 @@ export type ResumoPainel = {
   geradosSemAviso: number;
   /** Compraram e nunca abriram o portal (requisito 4). */
   naoIniciaram: number;
+  /**
+   * Dos parados, quantos NUNCA abriram o portal.
+   *
+   * Existe porque juntar as duas populações num contador só apaga a diferença
+   * entre dois trabalhos diferentes: "cobrar quem travou no meio do cadastro" e
+   * "falar com quem comprou e nunca começou". Medido em 15/09, ao ligar o
+   * requisito 4 o banner saltou de ~137 para 320 — e um número que triplica sem
+   * explicação é um número que o time aprende a ignorar.
+   */
+  paradosNaoIniciaram: number;
   porEtapa: Array<{ status: EtapaFila; etapa: string; n: number }>;
 };
 
@@ -949,6 +959,7 @@ export function resumir(linhas: LinhaPainel[]): ResumoPainel {
     situacoes,
     geradosSemAviso: linhas.filter((l) => l.status === "pronto" && !l.avisado).length,
     naoIniciaram: linhas.filter((l) => l.naoIniciou).length,
+    paradosNaoIniciaram: linhas.filter((l) => l.parado && l.naoIniciou).length,
     porEtapa: (Object.keys(ETAPA_FILA_HUMANA) as EtapaFila[])
       .filter((s) => contagem.has(s))
       .map((s) => ({ status: s, etapa: ETAPA_FILA_HUMANA[s], n: contagem.get(s) ?? 0 })),

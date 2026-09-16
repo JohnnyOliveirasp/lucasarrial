@@ -429,3 +429,22 @@ test("o contador de auditoria conta concluído-sem-entrega usando o corte novo",
   assert.equal(r.concluidos, 2);
   assert.equal(r.concluidosComPendencia, 1, "só o que não foi avisado conta como pendência");
 });
+
+test("o banner separa 'travou no cadastro' de 'nunca começou' — dois trabalhos, dois números", () => {
+  const compradores = montarCompradores({
+    compras: [
+      { email: "nunca@x.com", nome: "N", telefone: null, recebidoEm: new Date(AGORA - 9 * D).toISOString() },
+    ],
+    pedidos: [],
+    agora: AGORA,
+  });
+  const travadoNoWizard = montarLinha(
+    pedido({ id: "w", status: "foto", atualizado_em: new Date(AGORA - 9 * D).toISOString() }),
+    AGORA,
+  );
+  const r = resumir(filaComNaoIniciados([travadoNoWizard], compradores));
+
+  assert.equal(r.parados, 2, "os dois estão parados de verdade");
+  assert.equal(r.paradosNaoIniciaram, 1, "mas só um nunca abriu o portal");
+  assert.equal(r.parados - r.paradosNaoIniciaram, 1, "e só um é 'cobrar o cadastro'");
+});
