@@ -39,6 +39,8 @@ export default async function CreditsPage({
   const unlimited = bypassesBilling(email);
   // Assinatura ativa (equipe/allowlist conta como ativa). Só assinante compra avulso.
   const subscribed = hasActiveAccess(email, profile?.access_until ?? null, profile?.access_source ?? null);
+  /** O que a pessoa TEM. É isto que decide o que a tela mostra — não a assinatura. */
+  const total = subscription + extra;
 
   return (
     <div className="flex flex-col gap-12">
@@ -53,9 +55,16 @@ export default async function CreditsPage({
         </p>
       </header>
 
-      {/* Saldo: só faz sentido pra assinante/equipe. Não-assinante (0/0) só vê
-          o convite pra assinar abaixo. */}
-      {(unlimited || subscribed) && (
+      {/* Saldo aparece pra QUEM TEM SALDO, com assinatura ativa ou sem.
+          A premissa antiga ("não-assinante é 0/0") era falsa. Medido em 16/09:
+          417 contas sem assinatura vigente somam 37.230.222 créditos, e 102
+          delas são de gente que PAGOU. A tela escondia o saldo dessas pessoas e
+          ainda dizia "Assine para liberar seus créditos" — o oposto da regra da
+          casa (REGRA_FINAL_CREDITO, fechada pelo Johnny): quem pagou usa o que
+          tem ATÉ ACABAR, sem trava e sem confisco.
+          O motor sempre esteve certo: o portão real é SALDO, não assinatura
+          (voice-cloning/page.tsx: creditsTotal >= COST). Quem mentia era a TELA. */}
+      {(unlimited || subscribed || total > 0) && (
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
             <Stat
@@ -72,8 +81,8 @@ export default async function CreditsPage({
         </section>
       )}
 
-      {/* Sem assinatura: avulso é complemento do plano → convida a assinar. */}
-      {!unlimited && !subscribed && (
+      {/* Sem assinatura E SEM SALDO: aí sim, o convite de assinar é honesto. */}
+      {!unlimited && !subscribed && total === 0 && (
         <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
           <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
             Assine para liberar seus créditos
@@ -88,6 +97,32 @@ export default async function CreditsPage({
             className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
           >
             Assinar agora
+            <span aria-hidden>→</span>
+          </Link>
+        </section>
+      )}
+
+      {/* SEM assinatura vigente, MAS COM SALDO. Este caso não existia na tela, e
+          é o mais numeroso: 417 contas, 37.230.222 créditos (medido 16/09).
+          O que estas pessoas liam era "Assine para liberar seus créditos", como
+          se o saldo estivesse preso. Não está: o portão é saldo, e elas podem
+          gerar normalmente. Aqui o convite é pra RECEBER MAIS, nunca pra
+          destravar o que já é delas. */}
+      {!unlimited && !subscribed && total > 0 && (
+        <section className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6">
+          <h2 className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
+            Seus créditos continuam valendo
+          </h2>
+          <p className="max-w-xl text-sm text-[var(--mute)]">
+            Você pode usar o saldo que já tem até acabar — ele não expira e não
+            depende de assinatura. Com o plano ativo, você volta a receber
+            100.000 créditos novos todo mês.
+          </p>
+          <Link
+            href={`/${locale}/planos`}
+            className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
+          >
+            Ver planos
             <span aria-hidden>→</span>
           </Link>
         </section>
