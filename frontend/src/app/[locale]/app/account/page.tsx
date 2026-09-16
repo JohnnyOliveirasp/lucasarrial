@@ -29,7 +29,9 @@ export default async function AccountPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("email, display_name, avatar_url, access_until, access_source, plan")
+    .select(
+      "email, display_name, avatar_url, access_until, access_source, plan, credits_subscription, credits_extra",
+    )
     .eq("id", user.id)
     .single();
 
@@ -37,6 +39,9 @@ export default async function AccountPage({
   const displayName = profile?.display_name ?? email.split("@")[0];
   const team = bypassesBilling(email);
   const subscribed = hasActiveAccess(email, profile?.access_until ?? null, profile?.access_source ?? null);
+  /** O que a pessoa TEM. Mesma conta de voice-cloning/page.tsx e credits/page.tsx. */
+  const creditsTotal =
+    (profile?.credits_subscription ?? 0) + (profile?.credits_extra ?? 0);
   const accessUntil = profile?.access_until
     ? new Date(profile.access_until).toLocaleDateString("pt-BR")
     : null;
@@ -117,7 +122,16 @@ export default async function AccountPage({
             </div>
             <CancelSubscription />
           </div>
-        ) : (
+        ) : creditsTotal <= 0 ? (
+          /* Sem assinatura E SEM SALDO USÁVEL (zero OU negativo): aqui o convite
+             de assinar é honesto, porque de fato não há o que usar.
+             O `<= 0` não é defensivo, é o caso real: saldo negativo existe de
+             propósito (o onboarding grava débito com a nota "[onboarding: pode
+             ficar negativo]") e hoje são 12 contas, a pior em -10.525. Com
+             `=== 0` elas cairiam no ramo de baixo e leriam "Seus créditos
+             continuam valendo / use o saldo que já tem até acabar" — mentira,
+             porque saldo negativo não gera nada. Numa ternária encadeada algum
+             ramo TEM que pegar o negativo; o ramo honesto é o de assinar. */
           <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5">
             <p className="text-sm text-[var(--mute)]">
               Você não tem uma assinatura ativa. Assine para liberar a plataforma
@@ -128,6 +142,40 @@ export default async function AccountPage({
               className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
             >
               Assinar agora
+              <span aria-hidden>→</span>
+            </Link>
+          </div>
+        ) : (
+          /* SEM assinatura vigente, MAS COM SALDO. Este caso não existia nesta
+             tela, e ela era a última superfície que ainda mentia: dizia "Assine
+             para liberar a plataforma" a quem já podia gerar. A plataforma NÃO
+             está trancada — o portão do motor é SALDO, não assinatura
+             (voice-cloning/page.tsx: canTrain = team || creditsTotal >= COST),
+             e a regra da casa (REGRA_FINAL_CREDITO, fechada pelo Johnny em
+             20/08) é: parou de pagar, não recebe créditos NOVOS e usa os que
+             tem até acabar — sem trava e sem confisco.
+             credits/page.tsx já foi corrigida assim (commit 1acf147); aqui
+             reaproveitamos a mesma linguagem pra casa falar igual. O convite é
+             pra RECEBER MAIS, nunca pra "liberar" o que já é da pessoa. */
+          <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5">
+            <div className="flex flex-col gap-1">
+              <span className="font-sans text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
+                Seus créditos continuam valendo
+              </span>
+              <span className="text-[13px] text-[var(--mute)]">
+                Sem assinatura ativa no momento.
+              </span>
+            </div>
+            <p className="text-sm text-[var(--mute)]">
+              Você pode usar o saldo que já tem até acabar — ele não expira e não
+              depende de assinatura. Com o plano ativo, você volta a receber
+              100.000 créditos novos todo mês.
+            </p>
+            <Link
+              href={`/${locale}/planos`}
+              className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] font-sans text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98]"
+            >
+              Ver planos
               <span aria-hidden>→</span>
             </Link>
           </div>
