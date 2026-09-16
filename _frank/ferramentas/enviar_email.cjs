@@ -328,6 +328,67 @@ function registrarLocal(registro) {
   return destino;
 }
 
+/**
+ * Põe a carta da ronda no MESMO livro-caixa que o resto da casa usa
+ * (`emails_enviados`), com `origem = "ronda-manual"`.
+ *
+ * POR QUE EXISTE (#101, medido em 16/09). A tabela só se alimentava de dentro
+ * do `sendSupportMail`, e este script não passa por lá — fala SMTP na mão. Foi
+ * medido no Luciano: as duas mensagens que a Fast mandou pra ele em 15/09 estão
+ * registradas (`fast-resposta`), e a carta que a RONDA escreveu em 16/09 01:55Z
+ * (Enviados uid 2494) não deixou linha nenhuma. Mesmo aluno, mesma caixa, um
+ * caminho visível e o outro não.
+ *
+ * O dano não é de contabilidade, é de atendimento, e tem dois lados:
+ *   1. `contato-ficha.ts` calcula TENTATIVAS DE CONTATO e PRÓXIMO PASSO lendo
+ *      esta tabela. Carta da ronda ausente = ficha dizendo "ninguém tentou"
+ *      depois de alguém ter tentado. É assim que nascem as quatro ordens de
+ *      reenvio narradas no cabeçalho do `ficha_bounce.cjs`.
+ *   2. Se a carta QUICAR, o `marcarNaoEntregue` casa por Message-ID, não acha
+ *      linha, devolve `envio-nao-registrado` — e o aluno segue contado como
+ *      avisado sendo que a mensagem voltou. Aconteceu em 14/09 com o Anderson
+ *      (`andy.silvestre@icloud.com`, "4a tentativa", caixa-cheia): o bounce
+ *      está na caixa e não existe linha nenhuma pra carimbar.
+ *
+ * ⚠️ BEST-EFFORT, e nunca lança. O e-mail JÁ SAIU quando isto roda: a mesma
+ * regra do `registrarEnvio` do lado do app e do APPEND aqui embaixo — o aluno
+ * ser avisado importa mais que o registro do aviso, e transformar escrituração
+ * em "FALHOU" faria o operador reenviar e o aluno receber duas vezes.
+ *
+ * A LINHA NÃO É MONTADA AQUI: vem do `linhaDoEnvio` do `mail-envio.ts`, o mesmo
+ * que produção usa (type-stripping nativo do Node 22, como no `ficha_bounce.cjs`).
+ * Duas cópias da mesma regra é como elas divergem em silêncio.
+ */
+async function registrarEmEnviosDaCasa({ dest, assunto, messageId }) {
+  try {
+    const { linhaDoEnvio } = await import(
+      path.join(RAIZ, "frontend", "src", "lib", "agent", "mail-envio.ts")
+    );
+    const linha = linhaDoEnvio({ messageId, toEmail: dest, assunto, origem: "ronda-manual" });
+    if (!linha) {
+      console.error(`⚠️ e-mail ENVIADO, mas não virou linha em emails_enviados (chave inválida) → ${dest}`);
+      return;
+    }
+    const { supa } = require(path.join(__dirname, "_comum.cjs"));
+    // `user_id` é só conveniência de consulta e a FK é pra `auth.users`: se o
+    // aluno não tem perfil (lead, endereço com typo), fica nulo e a linha vale
+    // do mesmo jeito — o que casa com o bounce é o Message-ID.
+    const db = supa();
+    const { data: perfil } = await db.from("profiles").select("id").eq("email", linha.to_email).maybeSingle();
+    if (perfil?.id) linha.user_id = perfil.id;
+    const { error } = await db.from("emails_enviados").insert(linha);
+    if (error) {
+      console.error(`⚠️ e-mail ENVIADO, mas emails_enviados NÃO gravou: ${error.message}`);
+      console.error("   Um bounce desta carta não vai achar linha pra carimbar — confira à mão se voltar.");
+      return;
+    }
+    console.log(`📒 registrado em emails_enviados (origem ronda-manual) — bounce desta carta tem onde carimbar`);
+  } catch (e) {
+    console.error(`⚠️ e-mail ENVIADO, mas emails_enviados NÃO gravou: ${e.message}`);
+    console.error("   NÃO reenvie por causa disto: o aluno recebeu.");
+  }
+}
+
 /** Uma linha legível por envio anterior — é o que decide se cabe `--forcar`. */
 function descreverAnterior(a) {
   const quando = a.horas === null ? "data ilegível" : `${a.horas.toFixed(1)}h atrás`;
@@ -450,6 +511,14 @@ function descreverAnterior(a) {
     console.error(`⚠️ e-mail ENVIADO, mas o registro anti-duplicata NÃO gravou: ${e.message}`);
     console.error(`   A trava não vai barrar um reenvio deste aviso — confira à mão antes.`);
   }
+
+  // Registro em `emails_enviados` — ANTES do APPEND de propósito. O bounce
+  // volta rápido (o do guitaschetti voltou 2 min depois do envio, 14/09) e o
+  // `marcarNaoEntregue` casa por Message-ID: se a linha não existir quando a
+  // varredura ler o relatório, ele devolve `envio-nao-registrado` e o carimbo
+  // de "não chegou" se perde pra sempre. O APPEND leva segundos e pode falhar
+  // 3× (#210) — deixar esta gravação atrás dele é apostar a prova na sorte.
+  await registrarEmEnviosDaCasa({ dest, assunto, messageId });
 
   // O e-mail JÁ SAIU — daqui pra baixo é auditoria, nunca pode virar "FALHOU"
   // (o operador reenviaria e o aluno receberia duas vezes).
