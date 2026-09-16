@@ -8,8 +8,10 @@
  * Tabelas da mig 47 ainda não estão nos types gerados → casts `as never`
  * (mesmo padrão de help_messages/mig 42).
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAdmin } from "@/lib/db/admin";
 import { classifyCause, errorSignature, incidentTitle } from "./classify";
+import type { DiagnosticoTrainer } from "./diagnostico-trainer";
 import { inserirChamadoUnico } from "./gravar";
 import { logger } from "@/lib/logger/server";
 import { PREFIXO_FALHA_TECNICA } from "@/lib/voices/falha-de-treino";
@@ -31,6 +33,77 @@ type ExistingIncident = {
   affected_emails: string[] | null;
   agent_notes: AgentNote[] | null;
 };
+
+/**
+ * O DIAGNÓSTICO DO TRAINER PARA AS FALHAS DE TREINO — conserto de 16/09 (#11).
+ *
+ * `admin_failures()` entrega o campo `error` lendo `training_jobs.error_message`,
+ * e nesta família de falha esse campo é literalmente `trainer failed` — três
+ * palavras iguais em toda ocorrência. Classificar só por elas produziu, medido
+ * no banco vivo, exatamente um incidente: o #11 (`training:bug:trainer failed`,
+ * aberto 21/07, "investigating" há 56 dias, 4 ocorrências) — e a falha de GPU
+ * de 15/09 foi engolida por ele sem avisar ninguém, carimbada como BUG NOSSO.
+ *
+ * O diagnóstico existe, só não passava por aqui: mora nas colunas
+ * `training_jobs.trainer_stderr` / `trainer_returncode` (mig 97, aplicada).
+ * Uma leitura a mais, pelo `ref_id` que a própria falha já traz.
+ *
+ * DECISÕES, todas medidas:
+ *
+ *  · SÓ `kind === "training"`. É o único kind cujo `ref_id` é um
+ *    `training_jobs.id` (conferido: a ocorrência de 15/09 tem ref_id
+ *    `c90ff577…`, que é o id da linha, não o `runpod_job_id`). Falha de
+ *    `voice` aponta para a voz e não tem o que buscar aqui.
+ *
+ *  · ERRO DE LEITURA NÃO ABORTA A VARREDURA — ao contrário da guarda do dedupe
+ *    logo acima, que dá `throw`. A assimetria é o ponto: lá, seguir com o Set
+ *    vazio RECONTA falha já contada (estraga dado). Aqui, seguir com o mapa
+ *    vazio classifica exatamente como o código classificava ontem. Falhar
+ *    aberto é voltar ao comportamento antigo; derrubar a sync inteira por causa
+ *    de um enriquecimento seria trocar um defeito por um pior.
+ *
+ *  · BLOCOS DE 200, pelo mesmo motivo já documentado na guarda do dedupe: o
+ *    `.in()` do PostgREST devolve no máximo 1000 linhas EM SILÊNCIO (incidente
+ *    72a4c9db). Aqui o estrago seria mais quieto ainda — as falhas além do teto
+ *    voltariam a ser classificadas sem stderr e ninguém notaria.
+ */
+async function diagnosticosDoTrainer(
+  admin: SupabaseClient<never>,
+  pending: RawFailure[],
+): Promise<Map<string, DiagnosticoTrainer>> {
+  const mapa = new Map<string, DiagnosticoTrainer>();
+  const ids = pending.filter((f) => f.kind === "training" && f.id).map((f) => f.id);
+  if (!ids.length) return mapa;
+
+  const CHUNK = 200;
+  try {
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const { data, error } = await admin
+        .from("training_jobs" as never)
+        .select("id, trainer_stderr, trainer_returncode")
+        .in("id", ids.slice(i, i + CHUNK));
+      if (error) throw new Error(error.message);
+      for (const row of (data ?? []) as unknown as Array<{
+        id: string;
+        trainer_stderr: string | null;
+        trainer_returncode: number | null;
+      }>) {
+        mapa.set(row.id, {
+          stderr: row.trainer_stderr,
+          returncode: row.trainer_returncode,
+        });
+      }
+    }
+  } catch (e) {
+    // Fica com o que já carregou; o resto classifica como antes.
+    logger.warn("api", "incidents.sync.diagnostico_trainer_indisponivel", {
+      pedidos: ids.length,
+      carregados: mapa.size,
+      motivo: e instanceof Error ? e.message : String(e),
+    });
+  }
+  return mapa;
+}
 
 export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
   const admin = getAdmin();
@@ -76,9 +149,15 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
     .filter((f) => !(f.error ?? "").startsWith(PREFIXO_FALHA_TECNICA))
     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
+  // Uma só ida ao banco para todas as falhas de treino da rodada. Ver o
+  // cabeçalho de `diagnosticosDoTrainer`: sem isto, `trainer failed` é tudo
+  // que a classificação enxerga.
+  const diagnosticos = await diagnosticosDoTrainer(admin, pending);
+
   for (const f of pending) {
     const error = f.error ?? "";
-    const signature = errorSignature(f.kind, error);
+    const diag = diagnosticos.get(f.id);
+    const signature = errorSignature(f.kind, error, diag);
     // Erro do USUÁRIO (dataset ruim/arquivo sem áudio): o sistema já estorna
     // e explica na tela — regra do Johnny (17/08): fecha SOZINHO como
     // "ignored", em código, sem depender do Sentinela. A reincidência também
@@ -86,7 +165,7 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
     // importa (aluno travado repetindo falha SEM nenhuma voz pronta) tem
     // incidente PRÓPRIO via escalateStuckUser — a lição do chunking (08/08)
     // continua coberta por lá.
-    const userError = classifyCause(error) === "user_dataset";
+    const userError = classifyCause(error, diag) === "user_dataset";
     const { data: existingRaw } = await admin
       .from("incidents" as never)
       .select("id, status, occurrences, affected_emails, agent_notes")
@@ -129,11 +208,11 @@ export async function syncIncidentsFromFailures(limit = 200): Promise<number> {
           kind: f.kind === "voice" ? "training" : f.kind,
           // Sync de falhas do sistema: sempre fila TÉCNICA (mig 93).
           categoria: "tecnico",
-          cause: classifyCause(error),
+          cause: classifyCause(error, diag),
           // user_dataset já nasce fechado: estornado + explicado ao aluno.
           status: userError ? "ignored" : "open",
           signature,
-          title: incidentTitle(f.kind, error),
+          title: incidentTitle(f.kind, error, diag),
           occurrences: 1,
           affected_emails: f.email ? [f.email] : [],
           sample_error: error.slice(0, 1000) || null,

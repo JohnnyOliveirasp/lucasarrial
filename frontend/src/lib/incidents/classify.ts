@@ -2,7 +2,24 @@
  * Classificação automática de falhas → incidentes (aba Falhas do /admin).
  * Regras determinísticas em cima do texto do erro: causa + assinatura de
  * dedup (mesma causa raiz = mesmo incidente, mesmo com uuids/urls diferentes).
+ *
+ * ⚠️ DESDE 16/09 O TEXTO DO ERRO NÃO É MAIS A ÚNICA ENTRADA. As três funções
+ * públicas aceitam um `diag` OPCIONAL com o stderr do trainer, porque a falha
+ * de treino chega ao `error_message` como as três palavras `trainer failed`,
+ * iguais em toda falha — o diagnóstico de verdade mora em
+ * `training_jobs.trainer_stderr` (mig 97). O porquê, com os números medidos,
+ * está em `./diagnostico-trainer.ts`. Sem `diag`, tudo se comporta exatamente
+ * como antes: as 70 falhas cegas da tabela (pré-mig 97) dependem disso.
  */
+import {
+  ASSINATURA_CUDA_OOM,
+  type DiagnosticoTrainer,
+  ehCudaOom,
+  SUFIXO_CUDA_OOM,
+} from "./diagnostico-trainer";
+
+export type { DiagnosticoTrainer };
+export { ASSINATURA_CUDA_OOM, ehCudaOom };
 
 export type IncidentCause =
   | "user_dataset"
@@ -90,9 +107,13 @@ export function stripFaseSuffix(error: string): string {
   return (error || "").replace(/\s*\[fase:[^\]]*\]/gi, "").trim();
 }
 
-export function classifyCause(error: string): IncidentCause {
+export function classifyCause(error: string, diag?: DiagnosticoTrainer): IncidentCause {
   const e = stripRunpodWrapper(stripFaseSuffix(error)).toLowerCase();
-  if (!e) return "unknown";
+  // ⚠️ SEM `diag`, daqui pra baixo NADA muda. Falha cega (as 70 anteriores à
+  // mig 97) e caller antigo continuam caindo nas mesmas regras de sempre —
+  // inclusive `!e → unknown`, que precede o diagnóstico de propósito: erro
+  // vazio sem stderr não pode virar causa inventada.
+  if (!e && !ehCudaOom(diag?.stderr)) return "unknown";
   if (
     e.includes("insufficient_audio") ||
     e.includes("no usable speech") ||
@@ -107,6 +128,20 @@ export function classifyCause(error: string): IncidentCause {
   ) {
     return "user_dataset";
   }
+  /**
+   * OOM PROVADO PELO STDERR — a correção de 16/09 (incidente #11).
+   *
+   * Sem esta linha, `classifyCause("trainer failed")` cai lá embaixo na regra
+   * de `bug` e uma falha de INFRAESTRUTURA vira BUG NOSSO no quadro. Foi o que
+   * aconteceu com a falha de GPU do ricardoolito em 15/09.
+   *
+   * ⚠️ VEM DEPOIS de `user_dataset`, de propósito. Se um dia chegar uma falha
+   * que é, ao mesmo tempo, material impróprio do aluno E stderr com OOM, quem
+   * ganha é o material — é a causa acionável, e é o comportamento de hoje.
+   * Nunca foi observado (áudio ruim não chega a alocar na GPU); a ordem está
+   * escrita para não mudar semântica antiga sem medida que justifique.
+   */
+  if (ehCudaOom(diag?.stderr)) return "infra_gpu";
   if (e.includes("out of memory") || e.includes("outofmemoryerror") || e.includes("cuda")) {
     return "infra_gpu";
   }
@@ -129,10 +164,47 @@ export function classifyCause(error: string): IncidentCause {
 }
 
 /** Assinatura estável da causa raiz: tira uuids, urls, números e paths. */
-export function errorSignature(kind: string, error: string): string {
-  const cause = classifyCause(error);
+export function errorSignature(kind: string, error: string, diag?: DiagnosticoTrainer): string {
+  const cause = classifyCause(error, diag);
   // "voice" e "training" são a MESMA falha vista de duas tabelas — unifica.
   const k = kind === "voice" ? "training" : kind;
+  /**
+   * ── OOM SAI DO GUARDA-CHUVA `training:bug:trainer failed` ────────────────
+   *
+   * Chave CONSTANTE, sem head do erro. Dois motivos, nesta ordem:
+   *
+   * 1. O head não pode vir do stderr. O traceback muda a cada ocorrência
+   *    (bytes alocados, pid do processo vizinho, GiB livres, frames do torch),
+   *    então cada OOM abriria um incidente novo — a patologia que
+   *    `classify.test.ts` já documenta e que o head de 120 chars torna
+   *    inevitável. Nem a normalização numérica salva: os frames também mudam.
+   * 2. O head não pode vir do `error`. Ele é literalmente `trainer failed` em
+   *    TODA falha de trainer, e é por isso que o OOM de 15/09 foi engolido
+   *    pelo #11 (aberto 21/07, "investigating" há 56 dias, `last_seen_at`
+   *    carimbado pela própria falha de GPU que ninguém viu).
+   *
+   * ⚠️ ISTO ÓRFÃ O #11 PARA OOM, E É INTENCIONAL. O que acontece com as 4
+   * ocorrências históricas dele está decidido e escrito no PR: elas FICAM onde
+   * estão, sem migration de reassinatura. Três das quatro (21/07, 10/08,
+   * 27/08) são cegas — `trainer_stderr` e `trainer_returncode` nulos, o RunPod
+   * já purgou os jobs — e reassiná-las como OOM seria inventar causa para
+   * falha que ninguém pode mais diagnosticar (o erro do #410: "classe
+   * inventada é pior que chave velha"). A quarta (15/09) é OOM provado, mas já
+   * está contada em `incident_occurrences` e mover só ela racharia um
+   * incidente em dois. O #11 passa a ser o que sempre foi de fato: o
+   * guarda-chuva das falhas de trainer SEM diagnóstico.
+   *
+   * ⚠️ A GUARDA É `cause === "infra_gpu"`, NÃO só `ehCudaOom`. A primeira
+   * versão desta linha perguntava apenas pelo stderr e foi pega pelo teste
+   * "erro de dataset continua ganhando do diagnóstico": material impróprio do
+   * aluno + stderr com OOM produzia a chave inconsistente
+   * `training:user_dataset:cuda-oom` — uma assinatura de dataset com sufixo de
+   * GPU, que não é nenhum dos dois incidentes. Perguntar pela CAUSA DECIDIDA
+   * mantém `classifyCause` como o único lugar que arbitra precedência.
+   */
+  if (cause === "infra_gpu" && ehCudaOom(diag?.stderr)) {
+    return `${k}:${cause}:${SUFIXO_CUDA_OOM}`;
+  }
   // user_dataset: a CAUSA já é a raiz — o texto varia (erro cru do worker ×
   // mensagem amigável do voices.error_message desde fdcc75c) e duplicava o
   // incidente (acf8acd6 × 014bb108, gap achado pelo Vigia 23/07). Demais
@@ -154,10 +226,19 @@ export function errorSignature(kind: string, error: string): string {
   return `${k}:${cause}:${head}`;
 }
 
-export function incidentTitle(kind: string, error: string): string {
-  const cause = classifyCause(error);
+export function incidentTitle(kind: string, error: string, diag?: DiagnosticoTrainer): string {
+  const cause = classifyCause(error, diag);
   const k = KIND_LABELS[kind] ?? kind;
   const detail = stripRunpodWrapper(stripFaseSuffix(error)).split("\n")[0].slice(0, 80);
+  // O título é a única coisa que quem varre a fila lê antes de abrir. Se ele
+  // disser só "GPU sem memória", a pessoa vai procurar o que consertar no
+  // nosso código — e a conduta certa é repetir o treino. Cabe em 120 chars.
+  // Título NÃO entra na assinatura: mexer aqui não racha incidente nenhum.
+  // Guarda por CAUSA pelo mesmo motivo de `errorSignature` — quem arbitra
+  // precedência é `classifyCause`, não cada função por conta própria.
+  if (cause === "infra_gpu" && ehCudaOom(diag?.stderr)) {
+    return `${k}: GPU sem memória (OOM) — transitório, repetir costuma curar`;
+  }
   if (cause === "user_dataset") {
     return isCorruptFile(error)
       ? `${k}: arquivo enviado corrompido/incompleto`

@@ -3,7 +3,14 @@
  * ARMADILHA do incidente #11 ("trainer failed").
  *
  * Rodar (Node ≥ 22.18, type-stripping nativo):
- *   node --test src/lib/incidents/classify.test.ts
+ *   node --import ./test/alias-loader.mjs --test src/lib/incidents/classify.test.ts
+ *
+ * ⚠️ O `--import ./test/alias-loader.mjs` virou OBRIGATÓRIO em 16/09.
+ * `classify.ts` deixou de ser um módulo sem imports quando o diagnóstico do
+ * trainer passou a ser entrada da classificação (`./diagnostico-trainer`), e o
+ * ESM nativo do Node não resolve import relativo SEM extensão. O loader — que
+ * já existia para os testes de simulação — ensina isso ao runner. Nada muda em
+ * produção, onde quem resolve é o bundler do Next.
  *
  * CONTEXTO: em 27/08 passamos a persistir o stderr/stdout do trainer (scripts/97
  * + finalize-training.ts, registrarSaidaDoTrainer) porque o RunPod purga o job

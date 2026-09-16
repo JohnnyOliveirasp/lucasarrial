@@ -25,6 +25,11 @@ import {
 } from "@/lib/voices/falha-de-treino";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { classifyCause, errorSignature, incidentTitle } from "@/lib/incidents/classify";
+import {
+  type DiagnosticoTrainer,
+  ehCudaOom,
+  notaDeTransitoriedade,
+} from "@/lib/incidents/diagnostico-trainer";
 
 const SUPPORT_EMAIL = "suporte@fastcloner.com";
 
@@ -219,6 +224,20 @@ function friendlyTrainError(
  * quando fomos olhar (o RunPod purga em horas); sem essa coluna a causa raiz
  * (`torch.OutOfMemoryError: CUDA out of memory`, GPU disputada com outro
  * processo) teria sumido.
+ *
+ * ⚠️ O DIAGNÓSTICO ENTRA NA CLASSIFICAÇÃO (16/09, conserto do #11).
+ * Até aqui as três chamadas abaixo recebiam só `rawError`, que nesta falha é
+ * literalmente a string `trainer failed`. Resultado medido no banco vivo: a
+ * assinatura saía `training:bug:trainer failed`, que é o incidente #11 —
+ * aberto em 21/07, "investigating" há 56 dias, `last_seen_at` já carimbado
+ * pela própria falha de GPU de 15/09. O chamado nascia correto e morria
+ * invisível dentro de um guarda-chuva parado, e um OOM de INFRAESTRUTURA ia
+ * para o quadro carimbado como BUG NOSSO.
+ *
+ * O stderr NÃO precisa de ida ao banco aqui: ele já está em memória em
+ * `out.stderr_tail`, é a MESMA string que `registrarSaidaDoTrainer` (logo
+ * acima, na ordem de execução) grava em `training_jobs.trainer_stderr`. Ler de
+ * volta só criaria uma corrida com a própria escrita e um modo de falha novo.
  */
 async function abrirChamadoDaFalhaTecnica(args: {
   userId: string;
@@ -227,14 +246,21 @@ async function abrirChamadoDaFalhaTecnica(args: {
   runpodJobId: string;
   runpodStatus: string;
   rawError: string;
+  /** `out.stderr_tail` / `out.trainer_returncode`, ambos podem faltar. */
+  diag: DiagnosticoTrainer;
 }): Promise<number | null> {
+  // Uma causa só, arbitrada num lugar só. Perguntar `ehCudaOom` direto aqui
+  // repetiria a precedência que `classifyCause` já resolve (material do aluno
+  // ganha do diagnóstico) e deixaria a conduta do chamado divergir da causa.
+  const cause = classifyCause(args.rawError, args.diag);
+  const oom = cause === "infra_gpu" && ehCudaOom(args.diag.stderr);
   try {
     return await abrirChamadoReportado({
-      signature: errorSignature("training", args.rawError),
+      signature: errorSignature("training", args.rawError, args.diag),
       kind: "training",
-      cause: classifyCause(args.rawError),
+      cause,
       categoria: "tecnico",
-      title: incidentTitle("training", args.rawError),
+      title: incidentTitle("training", args.rawError, args.diag),
       description: [
         `Treino de voz falhou por erro TÉCNICO (não é material do aluno).`,
         ``,
@@ -243,6 +269,9 @@ async function abrirChamadoDaFalhaTecnica(args: {
         `e-mail: ${args.userEmail ?? "(não encontrado em profiles)"}`,
         `runpod_job_id: ${args.runpodJobId} (${args.runpodStatus})`,
         ``,
+        // Só quando o stderr PROVA o OOM. Sem prova, nada de conduta: falha
+        // cega não vira "tente de novo" por palpite.
+        ...(oom ? [notaDeTransitoriedade(args.diag), ``] : []),
         `Traceback completo: training_jobs.trainer_stderr / trainer_stdout,`,
         `pelo runpod_job_id acima. O job do RunPod expira em poucas horas —`,
         `depois disso essas colunas são a única cópia.`,
@@ -615,6 +644,13 @@ export async function finalizeTraining(args: {
         runpodJobId,
         runpodStatus,
         rawError,
+        // Mesmíssima fonte que `registrarSaidaDoTrainer` acabou de persistir em
+        // `training_jobs` — em memória, sem ida de volta ao banco.
+        diag: {
+          stderr: typeof out.stderr_tail === "string" ? out.stderr_tail : null,
+          returncode:
+            typeof out.trainer_returncode === "number" ? out.trainer_returncode : null,
+        },
       });
     }
   }
