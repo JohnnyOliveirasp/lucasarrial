@@ -28,6 +28,7 @@ import { logger } from "@/lib/logger/server";
 import { donoDoEntitlement } from "@/lib/payments/vinculo";
 import {
   entitlementDaPlataforma,
+  entitlementValeAcesso as valeAcesso,
   produtosDeCurso,
 } from "@/lib/payments/acesso-regra";
 import { decidirAcessoDoPerfil } from "@/lib/payments/entitlements-pure";
@@ -314,6 +315,58 @@ async function findUserIdByEmail(email: string): Promise<string | null> {
  * dentro da janela paga). A regra em si NAO mudou: é byte a byte a de antes.
  */
 export { entitlementValeAcesso } from "@/lib/payments/acesso-regra";
+
+/**
+ * "Este E-MAIL tem assinatura da plataforma valendo AGORA?" — pergunta pelo
+ * e-mail da COMPRA, não pelo cache do profile.
+ *
+ * POR QUE EXISTE (#290, perna irmã, medida em 16/09): quem decide qual e-mail
+ * final o aluno recebe é `hasActiveAccess`, que lê `profiles.access_until` —
+ * cache que só existe DEPOIS da reconciliação. No comprador que leva SGP +
+ * assinatura no MESMO checkout (order bump C1/C2 — o perfil dos 8 afetados do
+ * #290), o onboarding termina ANTES da reconciliação: o profile ainda diz
+ * `free` e a casa manda a carta "falta só o acesso — Assine aqui", com LINK DE
+ * CHECKOUT, pra quem acabou de comprar. É o #290 no caminho irmão, e neste a
+ * carta tem link de venda.
+ *
+ * ⚠️ NÃO usa `profiles.ja_pagou`: a coluna está SUSPENSA no README das ordens
+ * (medida em 25/08: `false` em 1.515 de 1.515 perfis) e leria "nunca pagou" pra
+ * todo mundo, fazendo este conserto nascer morto.
+ *
+ * A régua é a `entitlementValeAcesso` do próprio gate — não se copia regra de
+ * acesso aqui. A consulta gêmea vive em `sgp-boas-vindas-canal.ts`
+ * (`temAssinaturaFastclonerAtiva`, o fix 0b672b2 do #290, em produção): as duas
+ * chamam a MESMA regra de propósito, e ela foi mantida lá pra não mexer num
+ * conserto que já está no ar.
+ *
+ * Erro de leitura devolve `false`, NUNCA `true`: prometer plataforma a quem não
+ * tem é pior que repetir o aviso pra quem tem — e `false` é exatamente o
+ * comportamento de hoje, então nada regride se a consulta falhar.
+ */
+export async function temAssinaturaPlataformaPorEmail(
+  email: string | null | undefined,
+): Promise<boolean> {
+  const e = email?.trim().toLowerCase();
+  if (!e) return false;
+
+  const produto = process.env.HOTMART_PRODUCT_ID ?? "7851642";
+  const { data, error } = await getAdmin()
+    .from("entitlements")
+    .select("status, access_until")
+    .ilike("buyer_email", e)
+    .eq("product_code", produto);
+
+  if (error) {
+    logger.warn("api", "entitlements.assinatura_por_email.consulta_falhou", {
+      target: e,
+      erro: error.message,
+    });
+    return false;
+  }
+
+  const agoraIso = new Date().toISOString();
+  return (data ?? []).some((linha) => valeAcesso(linha, agoraIso));
+}
 
 /**
  * Recalcula o cache de acesso no profile a partir dos entitlements do usuário.
