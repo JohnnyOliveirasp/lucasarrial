@@ -19,7 +19,15 @@ export default async function SgpRevisaoPage({ params }: { params: Promise<{ loc
   setRequestLocale(locale);
   const pedido = await pedidoDaSessaoOuNull();
   if (!pedido?.email_verificado_at) redirect({ href: "/sgp", locale });
-  if (["processando", "pronto", "falhou"].includes(pedido!.status)) redirect({ href: "/app/sgp", locale });
+  // `enviado` entrou em 15/09: era o único status pós-envio fora desta lista E
+  // fora da lista do idempotente em /api/v1/sgp/enviar, então o aluno que já
+  // tinha enviado via a tela de revisão, clicava, e levava "Complete as etapas
+  // anteriores antes de enviar". A porta da rota (lib/sgp/porta-envio.ts) é
+  // quem garante de verdade; este redirect é a mitigação de UI, e as duas
+  // listas precisam concordar — foi a discordância delas que abriu o buraco.
+  if (["enviado", "processando", "pronto", "falhou"].includes(pedido!.status)) {
+    redirect({ href: "/app/sgp", locale });
+  }
 
   const t = await getTranslations({ locale, namespace: "sgp.revisao" });
   const bucket = imagesBucket();

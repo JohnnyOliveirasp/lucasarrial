@@ -130,6 +130,30 @@ export async function estadoDasEtapas(pedido: SgpPedidoRow): Promise<EtapasSgp> 
       },
       avisarAluno: avisoSgpFalhou,
       escalar: escalarNoGrupo,
+      // ── Livro-caixa do fracasso (migration 117) ──────────────────────────
+      // A limpeza do `erro` acima é certa e fica: pedido recuperado não pode
+      // exibir "suas fotos falharam" (#365). O que faltava era guardar o
+      // episódio ANTES de apagar. Sem isto, em 15/09 a base dizia que o SGP
+      // nunca falhou (268 pedidos, zero 'falhou', `erro` NULL em todos) no
+      // mesmo dia em que um pedido morreu por CUDA OOM.
+      //
+      // As duas escritas são best-effort por dentro de `processarTransicao`:
+      // a 117 pode não estar aplicada, e livro-caixa não derruba produção.
+      abrirEpisodio: async ({ pedidoId, motivo }) => {
+        await admin.from("sgp_fracassos" as never).insert({ pedido_id: pedidoId, motivo } as never);
+      },
+      // `is('recuperado_em', null)` é o que torna isto idempotente: pedido sem
+      // episódio aberto é no-op, e o índice único garante no máximo um aberto.
+      fecharEpisodio: async ({ pedidoId, recuperadoPara }) => {
+        await admin
+          .from("sgp_fracassos" as never)
+          .update({
+            recuperado_em: new Date().toISOString(),
+            recuperado_para: recuperadoPara,
+          } as never)
+          .eq("pedido_id", pedidoId)
+          .is("recuperado_em", null);
+      },
     },
   );
 

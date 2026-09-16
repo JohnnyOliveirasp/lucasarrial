@@ -35,6 +35,8 @@ function montarCena(pedido: PedidoFracassado = PEDIDO) {
   const statusEscritos: SgpStatus[] = [];
   /** O patch INTEIRO da recuperação — é nele que o `erro: null` tem que viajar. */
   const patches: Array<{ status: SgpStatus; erro: null }> = [];
+  /** A tabela `sgp_fracassos` (migration 117) — o HISTÓRICO, que nunca apaga. */
+  const livro: Array<{ pedidoId: string; motivo: string | null; recuperadoPara: SgpStatus | null }> = [];
   let tentativasDeCarimbo = 0;
 
   const deps: DepsTransicao = {
@@ -59,6 +61,20 @@ function montarCena(pedido: PedidoFracassado = PEDIDO) {
     escalar: async (erro) => {
       grupo.push({ email: erro.email, motivo: erro.motivo, dependeDoAluno: erro.dependeDoAluno });
     },
+    // O livro-caixa (migration 117). Imita a semântica REAL das duas escritas:
+    // `insert` na ida; na volta, `update ... is('recuperado_em', null)` — que é
+    // o que a torna idempotente, e o índice único é quem garante no máximo um
+    // episódio aberto por pedido.
+    abrirEpisodio: async ({ pedidoId, motivo }) => {
+      livro.push({ pedidoId, motivo, recuperadoPara: null });
+    },
+    fecharEpisodio: async ({ pedidoId, recuperadoPara }) => {
+      for (const ep of livro) {
+        if (ep.pedidoId === pedidoId && ep.recuperadoPara === null) {
+          ep.recuperadoPara = recuperadoPara;
+        }
+      }
+    },
   };
   // O pedido "relido do banco", como acontece no F5 seguinte.
   const relido = (): PedidoFracassado => ({ ...pedido, status: banco.status, erro: banco.erro });
@@ -69,6 +85,7 @@ function montarCena(pedido: PedidoFracassado = PEDIDO) {
     grupo,
     statusEscritos,
     patches,
+    livro,
     relido,
     tentativas: () => tentativasDeCarimbo,
   };
@@ -326,4 +343,127 @@ test("#365: pedido limpo e parado continua sem escrever nada", async () => {
   assert.equal(r, "sem_mudanca");
   assert.deepEqual(c.patches, []);
   assert.deepEqual(c.statusEscritos, []);
+});
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ * O LIVRO-CAIXA (migration 117) — a recuperação para de destruir a prova.
+ *
+ * O #365 está certo e fica: pedido recuperado não pode exibir "suas fotos
+ * falharam". O que faltava era GUARDAR o episódio antes de apagar. Sem isso, em
+ * 15/09 a base tinha 268 pedidos, ZERO em 'falhou' e `erro` NULL em todos — no
+ * mesmo dia em que um pedido morreu por CUDA OOM e foi recuperado à mão. A
+ * métrica de saúde mentia por construção.
+ *
+ * A régua que estes testes fixam: EXIBIÇÃO (`sgp_pedidos.erro`) continua sendo
+ * limpa; HISTÓRICO (`sgp_fracassos`) nunca é.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
+test("117: a recuperação limpa a TELA e preserva o HISTÓRICO", async () => {
+  const c = montarCena();
+
+  await processarTransicao(c.relido(), "falhou", MOTIVO_VELHO, c.deps);
+  assert.deepEqual(c.livro, [{ pedidoId: PEDIDO.id, motivo: MOTIVO_VELHO, recuperadoPara: null }]);
+
+  await processarTransicao(c.relido(), "pronto", null, c.deps);
+
+  // A tela do aluno: limpa, exatamente como o #365 exige.
+  assert.equal(c.banco.erro, null, "o aluno não pode ver o erro de ontem");
+  // A métrica: enxerga. Este era o buraco.
+  assert.deepEqual(c.livro, [
+    { pedidoId: PEDIDO.id, motivo: MOTIVO_VELHO, recuperadoPara: "pronto" },
+  ]);
+});
+
+test("117: cada episódio tem sua linha — falhar duas vezes não sobrescreve", async () => {
+  // É a razão de ser uma TABELA e não uma coluna: coluna guarda um valor, e o
+  // segundo fracasso apagaria o primeiro (a métrica voltaria a mentir, devagar).
+  const c = montarCena();
+
+  await processarTransicao(c.relido(), "falhou", MOTIVO_VELHO, c.deps);
+  await processarTransicao(c.relido(), "pronto", null, c.deps);
+  await processarTransicao(c.relido(), "falhou", MOTIVO_NOVO, c.deps);
+
+  assert.equal(c.livro.length, 2);
+  assert.deepEqual(c.livro.map((e) => e.motivo), [MOTIVO_VELHO, MOTIVO_NOVO]);
+  assert.deepEqual(c.livro.map((e) => e.recuperadoPara), ["pronto", null]);
+});
+
+test("117: quem PERDE a corrida não abre episódio duplicado", async () => {
+  // O cadeado do `status` (.neq('status','falhou')) também serve de cadeado do
+  // histórico: uma linha por episódio, sem coluna de trava própria.
+  const c = montarCena();
+  await processarTransicao(PEDIDO, "falhou", "falha geral", c.deps);
+  const r2 = await processarTransicao(PEDIDO, "falhou", "falha geral", c.deps);
+
+  assert.equal(r2, "ja_avisado");
+  assert.equal(c.livro.length, 1, "duas chamadas, UM episódio");
+});
+
+test("117: fracasso sem motivo registrado ainda vira linha", async () => {
+  // Saber QUE quebrou já vale, mesmo sem saber por quê — é o oposto de hoje,
+  // onde `erro` NULL na base inteira era lido como "nunca quebrou".
+  const c = montarCena();
+  await processarTransicao(c.relido(), "falhou", null, c.deps);
+  assert.deepEqual(c.livro, [{ pedidoId: PEDIDO.id, motivo: null, recuperadoPara: null }]);
+});
+
+test("117: erro pendurado em pedido já recuperado também fecha o episódio", async () => {
+  // O estado real do fe00d4e2: 'pronto' carregando erro velho. Esse caminho
+  // (`erro_limpo`, sem mudança de status) apagava o motivo sem registrar nada.
+  const c = montarCena({ ...PEDIDO, status: "pronto", erro: MOTIVO_VELHO });
+  c.livro.push({ pedidoId: PEDIDO.id, motivo: MOTIVO_VELHO, recuperadoPara: null });
+
+  const r = await processarTransicao(c.relido(), "pronto", null, c.deps);
+
+  assert.equal(r, "erro_limpo");
+  assert.equal(c.livro[0]!.recuperadoPara, "pronto");
+});
+
+test("117: o livro-caixa NÃO escreve a cada render", async () => {
+  const c = montarCena();
+  await processarTransicao(c.relido(), "falhou", MOTIVO_VELHO, c.deps);
+  await processarTransicao(c.relido(), "pronto", null, c.deps);
+  const depois = JSON.stringify(c.livro);
+
+  for (let i = 0; i < 10; i++) await processarTransicao(c.relido(), "pronto", null, c.deps);
+
+  assert.equal(JSON.stringify(c.livro), depois, "render não pode mexer no histórico");
+});
+
+test("117: livro-caixa que falha NÃO derruba a produção", async () => {
+  // A 117 pode não estar aplicada. Nesse caso o insert erra — e o aluno tem que
+  // continuar recebendo o e-mail e o pedido tem que continuar transitando.
+  // Livro-caixa que derruba a esteira é pior que livro-caixa nenhum.
+  const c = montarCena();
+  const quebrado: DepsTransicao = {
+    ...c.deps,
+    abrirEpisodio: async () => {
+      throw new Error('relation "public.sgp_fracassos" does not exist');
+    },
+    fecharEpisodio: async () => {
+      throw new Error('relation "public.sgp_fracassos" does not exist');
+    },
+  };
+
+  const r1 = await processarTransicao(PEDIDO, "falhou", MOTIVO_VELHO, quebrado);
+  assert.equal(r1, "avisou", "o aviso ao aluno não pode depender do livro-caixa");
+  assert.equal(c.emails.length, 1);
+
+  const r2 = await processarTransicao(c.relido(), "pronto", null, quebrado);
+  assert.equal(r2, "status_atualizado");
+  assert.equal(c.banco.erro, null, "a limpeza do #365 continua acontecendo");
+});
+
+test("117: deps sem livro-caixa seguem funcionando (compat)", async () => {
+  // As duas pernas são opcionais de propósito: chamador antigo não quebra.
+  const c = montarCena();
+  const semLivro: DepsTransicao = { ...c.deps };
+  delete semLivro.abrirEpisodio;
+  delete semLivro.fecharEpisodio;
+
+  assert.equal(await processarTransicao(PEDIDO, "falhou", MOTIVO_VELHO, semLivro), "avisou");
+  assert.equal(await processarTransicao(c.relido(), "pronto", null, semLivro), "status_atualizado");
+  assert.deepEqual(c.livro, []);
 });

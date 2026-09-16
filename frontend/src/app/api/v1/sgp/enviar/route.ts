@@ -6,6 +6,7 @@
 import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { enviarPedido } from "@/lib/sgp/processar";
+import { portaDoEnvio } from "@/lib/sgp/porta-envio";
 import { pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 
 export const maxDuration = 300;
@@ -23,10 +24,18 @@ export async function POST(request: NextRequest) {
   try {
     const pedido = await pedidoDaSessaoOuNull();
     if (!pedido) return badRequest("Comece pela tela de dados.");
-    if (["processando", "pronto"].includes(pedido.status)) {
+
+    // A régua (e o TEXTO que o aluno lê) mora em `lib/sgp/porta-envio.ts`, que
+    // tem teste. Aqui ficam só os fios. Duas mudanças de comportamento:
+    //   • `enviado` passou a contar como já-enviado. Era o buraco sem
+    //     mitigação: fila legítima levando "Complete as etapas anteriores".
+    //   • `falhou` deixou de mandar o aluno completar etapas que ele completou,
+    //     e o `erro` do pedido — que esta rota nem lia — passa junto.
+    const porta = portaDoEnvio(pedido.status, pedido.erro);
+    if (porta.acao === "ja_enviado") {
       return jsonOk({ ok: true, erros: [], jaEnviado: true, email: pedido.email, proximo: "/sgp/acompanhar" });
     }
-    if (pedido.status !== "revisao") return badRequest("Complete as etapas anteriores antes de enviar.");
+    if (porta.acao === "recusar") return badRequest(porta.mensagem);
 
     // A SESSÃO CONTINUA VIVA de propósito: o acompanhamento é a tela 5 do
     // wizard, sem login (Johnny 29/08).
