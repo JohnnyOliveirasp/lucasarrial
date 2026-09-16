@@ -122,9 +122,16 @@ export default async function AccountPage({
             </div>
             <CancelSubscription />
           </div>
-        ) : creditsTotal === 0 ? (
-          /* Sem assinatura E SEM SALDO: aqui o convite de assinar é honesto,
-             porque de fato não há o que usar. */
+        ) : creditsTotal <= 0 ? (
+          /* Sem assinatura E SEM SALDO USÁVEL (zero OU negativo): aqui o convite
+             de assinar é honesto, porque de fato não há o que usar.
+             O `<= 0` não é defensivo, é o caso real: saldo negativo existe de
+             propósito (o onboarding grava débito com a nota "[onboarding: pode
+             ficar negativo]") e hoje são 12 contas, a pior em -10.525. Com
+             `=== 0` elas cairiam no ramo de baixo e leriam "Seus créditos
+             continuam valendo / use o saldo que já tem até acabar" — mentira,
+             porque saldo negativo não gera nada. Numa ternária encadeada algum
+             ramo TEM que pegar o negativo; o ramo honesto é o de assinar. */
           <div className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-5">
             <p className="text-sm text-[var(--mute)]">
               Você não tem uma assinatura ativa. Assine para liberar a plataforma
