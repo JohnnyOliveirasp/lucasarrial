@@ -35,6 +35,45 @@ const ASSINAR_URL = "https://fastcloner.com/#planos";
 const ASSINATURA = "\n\n— Equipe FastCloner";
 
 /**
+ * #435 (16/09) — O PARÁGRAFO DA SENHA, e por que ele não é enfeite.
+ *
+ * A conta do aluno do SGP é criada PELA CASA (`auth.users` já nasce com
+ * `email_confirmed_at` preenchido no mesmo instante), então ele nunca escolheu
+ * senha nenhuma. Até hoje os TRÊS caminhos de fim de onboarding fechavam com
+ * "Acesse: /login" e mais nada (`pronto.ts` nos dois textos, e o
+ * `avisoOkMasAssine` aqui embaixo) — uma porta trancada, porque a única saída
+ * era o aluno adivinhar sozinho que precisava pedir "Esqueci a senha" de uma
+ * senha que nunca existiu.
+ *
+ * Medido em produção nesta ronda, e o contraste É o motivo desta mudança:
+ *   - 77 alunos pediram o reset POR CONTA PRÓPRIA → 46 entraram (59,7%);
+ *   - 536 contas receberam o e-mail de senha carimbado no INSTANTE da criação
+ *     (antes de existir qualquer motivo pra abrir aquilo) → 35 entraram (6,5%).
+ * Mesmo canal e mesmo remetente nos dois grupos. O que separa 59,7% de 6,5%
+ * não é entrega: é a casa gastar a chave numa hora em que ninguém está olhando
+ * e nunca mais dizer ao aluno que ele precisa criar uma senha.
+ *
+ * ⚠️ Eu cheguei a acusar o remetente do mailer (domínio da marca antiga, o
+ * mesmo "AI Clone Verse" citado no topo do `pronto.ts`) de ser a CAUSA, e
+ * ESTAVA ERRADO — os 59,7% refutam sozinhos. Fica registrado pra ninguém
+ * queimar outra ronda nessa pista: o remetente é questão de confiança de
+ * marca, não é o motivo de alguém estar travado do lado de fora.
+ *
+ * Por que /forgot-password e NÃO um link de recuperação embutido: o token do
+ * Supabase vale 1h, e este e-mail é lido quando o aluno pode, não quando a
+ * casa mandou. Link que expira no travesseiro recria o mesmo problema.
+ *
+ * O "não manda código" é correção de texto do #430: a Fast disse a uma aluna
+ * pagante pra esperar um CÓDIGO de verificação. O produto nunca mandou código
+ * — `forgot-password-form.tsx:29` dispara `resetPasswordForEmail`, que é LINK.
+ * Ela ficou esperando um número que não existe.
+ */
+export const CRIAR_SENHA_URL = "https://fastcloner.com/forgot-password";
+export const PARAGRAFO_SENHA = `Como fomos nós que criamos a sua conta, você ainda não tem uma senha — crie a sua aqui, leva menos de um minuto: ${CRIAR_SENHA_URL}
+
+Use o mesmo e-mail em que você recebeu esta mensagem. A plataforma não manda código de verificação: chega sempre um LINK pra você clicar.`;
+
+/**
  * Onde a Carol avisa a equipe: o GRUPO do suporte (jid em lib/support/grupo.ts,
  * um lugar só — já foi cópia em dois arquivos).
  *
@@ -251,7 +290,12 @@ export async function avisoOkMasAssine(
       `Para usar tudo isso — gerar vídeos, cenários e áudios com a sua voz — ` +
       `você precisa ativar a sua assinatura da plataforma.\n\n` +
       `Assine aqui: ${ASSINAR_URL}\n\n` +
-      `Assim que ativar, é só entrar em ${LOGIN_URL} e está tudo lá te esperando.`,
+      `Assim que ativar, é só entrar em ${LOGIN_URL} e está tudo lá te esperando.\n\n` +
+      // #435: este é o TERCEIRO caminho de fim de onboarding, e o mais cruel
+      // dos três — o aluno é mandado pra uma tela de login sem senha DEPOIS de
+      // já ter sido mandado pra um checkout. Sem este parágrafo, mesmo quem
+      // assina na hora continua do lado de fora.
+      PARAGRAFO_SENHA,
     "onboarding_ok_mas_assine",
     extra,
   );
