@@ -31,6 +31,7 @@ import { zeroSubscriptionCreditsOnRefund } from "@/lib/credits/refund";
 import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
 import { avisarCompraOrfa } from "@/lib/payments/aviso-orfao";
+import { eventoEhPagamento } from "@/lib/payments/acesso-regra";
 import { canaisDaCasa, estadoDosAvisos } from "@/lib/payments/aviso-orfao-canal";
 import { hottokValido, tokensEsperados } from "@/lib/payments/hottok";
 import {
@@ -315,6 +316,20 @@ async function processEvent(
       // `payment_events.error` (HTTP segue 200: reenvio da Hotmart não resolve).
       if (aviso.avisou && aviso.canais.length === 0) {
         avisoError = `compra órfã sem canal de aviso: ${buyerEmail} [${externalId}]`;
+      } else if (
+        !aviso.avisou &&
+        eventoEhPagamento({ valor: extractPurchaseValue(data), status: purchaseStatus || null })
+      ) {
+        // #305, 16/09: COMPRA PAGA, órfã, e NENHUM aviso novo. Antes isto era
+        // indistinguível de "tudo certo" — `motivo` era descartado e o `error`
+        // ficava NULL, exatamente como no UKC2COC2 (rodrigo.limas.1978@gmail.com,
+        // R$ 97 em 06/09). Cinco rondas tentaram apurar aquele silêncio e
+        // nenhuma conseguiu, porque o único dado que responderia a pergunta —
+        // QUAL motivo — não era gravado em lugar nenhum.
+        //
+        // Só PAGAMENTO entra aqui de propósito: trial de R$ 0 repetido encheria
+        // a coluna de ruído e faria o sinal parar de ser lido.
+        avisoError = `compra órfã paga sem aviso novo (motivo: ${aviso.motivo}): ${buyerEmail} [${externalId}]`;
       }
     }
     await setPendingPayment(buyerEmail, null); // pagou → limpa o pendente
