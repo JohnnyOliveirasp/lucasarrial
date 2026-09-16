@@ -14,6 +14,7 @@
  * quando uma aprovação chega sem conta correspondente.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { logger } from "@/lib/logger/server";
 import { reconcileUserEntitlements } from "@/lib/payments/entitlements";
 import { grantSubscriptionCredits } from "@/lib/credits/service";
 import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
@@ -39,11 +40,16 @@ export async function claimPurchasesOnLogin(userId: string, email: string): Prom
     await reconcileUserEntitlements(userId, email);
 
     // 2. Assinatura ativa cujo ciclo nunca foi creditado → concede agora.
-    const { data: ents } = await admin
+    const { data: ents, error: erroEnts } = await admin
       .from("entitlements")
       .select("external_id, status, access_until, raw_event")
       .eq("user_id", userId)
       .eq("status", "active");
+    // #282: sem checar, leitura que falha vira `ents = null`, o `?? []` abaixo
+    // vira "não tem assinatura ativa" e o resgate termina "com sucesso" sem
+    // creditar ninguém. Lançar aqui cai no catch deste mesmo arquivo: o login
+    // continua passando, mas agora existe rastro.
+    if (erroEnts) throw new Error(`leitura dos entitlements ativos: ${erroEnts.message}`);
     const nowIso = new Date().toISOString();
     for (const e of (ents ?? []) as {
       external_id: string;
@@ -60,7 +66,7 @@ export async function claimPurchasesOnLogin(userId: string, email: string): Prom
       // (chave=assinante) — crédito em dobro.
       const trx = transactionOf(e.raw_event);
       const chaves = [...new Set([trx, e.external_id].filter(Boolean))] as string[];
-      const { data: tx } = await admin
+      const { data: tx, error: erroTx } = await admin
         .from("credit_transactions")
         .select("id")
         .eq("user_id", userId)
@@ -68,6 +74,12 @@ export async function claimPurchasesOnLogin(userId: string, email: string): Prom
         .in("ref_id", chaves)
         .limit(1)
         .maybeSingle();
+      // ⚠️ ESTA é a checagem que não pode faltar (#282): consulta que erra volta
+      // `tx = null`, e `null` aqui significa "ainda não creditei" — o código
+      // seguiria direto para `grantSubscriptionCredits` e daria CRÉDITO EM
+      // DOBRO por causa de uma falha de leitura. A trava anti-crédito-duplo não
+      // pode ser desarmada por ignorância: sem resposta, não se credita.
+      if (erroTx) throw new Error(`leitura da trava anti-crédito-duplo: ${erroTx.message}`);
       if (tx) continue; // este ciclo/assinatura já foi creditado (fluxo normal)
       await grantSubscriptionCredits({
         userId,
@@ -77,7 +89,22 @@ export async function claimPurchasesOnLogin(userId: string, email: string): Prom
       });
       await applyPurchaseCampaignBonus(userId, e.external_id);
     }
-  } catch {
-    /* best-effort: login nunca pode falhar por causa do resgate */
+  } catch (err) {
+    /**
+     * Best-effort CONTINUA: o login nunca falha por causa do resgate, então a
+     * exceção não é relançada. O que acabou (#282) é ela ser INVISÍVEL.
+     *
+     * Este catch mudo é metade da razão de os 7 pagantes do lote de 04/09
+     * terem ficado em `plan=free` sem uma linha em lugar nenhum: quem foi
+     * investigar em 06/09 não tinha o que ler. `processar.ts` já registra o
+     * caso em que esta função volta NORMAL e mesmo assim não vincula nada
+     * (o modo de falha silencioso); aqui fica o outro modo, o da exceção.
+     */
+    logger.error("audit", "claim: resgate de compras no login falhou", {
+      userId,
+      email,
+      incidente: "#282",
+      message: err instanceof Error ? err.message : String(err),
+    });
   }
 }

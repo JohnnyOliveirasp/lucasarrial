@@ -12,20 +12,65 @@
  *
  * ⚠️ Órfã só NASCE órfã: o lookup por e-mail nunca DESVINCULA uma linha que já
  * tem dono (incidente #222 — ver a guarda em `grantAccess` e `vinculo.ts`).
+ *
+ * ⚠️ NENHUMA consulta daqui pode errar em silêncio (incidente #282). Até
+ * 16/09 as SETE chamadas ao banco deste arquivo descartavam o `error` — e no
+ * supabase-js consulta que ERRA volta com `data: null`. O pior caso não era
+ * "não fez nada": era `recomputeProfileAccess` lendo com erro, entendendo
+ * "este usuário não tem entitlement" e gravando `plan: "free"` no perfil de
+ * quem PAGOU. Erro de LEITURA revogava acesso, e o webhook registrava sucesso
+ * limpo por cima. Agora todo `error` passa por `exigirSucesso` (registra em
+ * `audit` e LANÇA), e a decisão de acesso mora em `entitlements-pure.ts`, sob
+ * teste, com uma saída explícita para "não sei" — que NÃO escreve nada.
  */
 import { getAdmin } from "@/lib/db/admin";
+import { logger } from "@/lib/logger/server";
 import { donoDoEntitlement } from "@/lib/payments/vinculo";
 import {
   entitlementDaPlataforma,
-  entitlementValeAcesso,
   produtosDeCurso,
 } from "@/lib/payments/acesso-regra";
+import { decidirAcessoDoPerfil } from "@/lib/payments/entitlements-pure";
 import type {
   EntitlementStatus,
   EntitlementUpdate,
   Json,
   PaymentProvider,
 } from "@/lib/db/types";
+
+/** O `error` do supabase-js, no mínimo que este arquivo precisa enxergar. */
+type ErroDeBanco = { message?: string | null; code?: string | null } | null;
+
+/**
+ * Erro de banco NUNCA passa batido: registra em `audit` (com o bastante pra
+ * achar a pessoa depois) e LANÇA.
+ *
+ * Por que lançar, e não só registrar: o único caller de verdade de
+ * `grantAccess`/`revokeAccess` é o webhook da Hotmart, que já trata exceção
+ * corretamente — grava o erro em `payment_events.error`, devolve 500, deixa
+ * `processed_at` NULL e reprocessa no reenvio (route.ts). Engolir aqui faria o
+ * evento ser marcado como PROCESSADO COM SUCESSO sem ter feito nada, que é
+ * exatamente como os casos do #282 sumiram. As duas operações são idempotentes,
+ * então reprocessar é seguro.
+ *
+ * Do lado do login, quem chama é `claimPurchasesOnLogin`, que captura tudo por
+ * fora (agora registrando) — o login continua não falhando por causa disto.
+ */
+function exigirSucesso(
+  operacao: string,
+  error: ErroDeBanco,
+  meta: Record<string, unknown>,
+): void {
+  if (!error) return;
+  const detalhe = error.message ?? "sem mensagem";
+  logger.error("audit", `entitlements: ${operacao} falhou`, {
+    ...meta,
+    incidente: "#282",
+    code: error.code ?? null,
+    message: detalhe,
+  });
+  throw new Error(`entitlements: ${operacao} falhou: ${detalhe}`);
+}
 
 type GrantInput = {
   provider: PaymentProvider;
@@ -67,16 +112,27 @@ export async function grantAccess(input: GrantInput): Promise<void> {
   const userIdDoEmail = await findUserIdByEmail(email);
   let userId = userIdDoEmail;
   if (!userIdDoEmail) {
-    const { data: atual } = await admin
+    const { data: atual, error } = await admin
       .from("entitlements")
       .select("user_id")
       .eq("provider", input.provider)
       .eq("external_id", input.externalId)
       .maybeSingle();
+    // ⚠️ É AQUI que o #222 voltaria pela porta do erro: consulta que falha
+    // devolve `atual = null`, `donoDoEntitlement(null, null)` devolve null, e o
+    // upsert abaixo gravaria `user_id: NULL` POR CIMA do dono — desligando a
+    // compra da conta por causa de um blip de rede. A guarda do #222 só protege
+    // contra o lookup VAZIO; ela não tem como distinguir "não tem dono" de
+    // "não consegui ler".
+    exigirSucesso("leitura do dono atual", error, {
+      provider: input.provider,
+      externalId: input.externalId,
+      buyerEmail: email,
+    });
     userId = donoDoEntitlement(userIdDoEmail, atual?.user_id ?? null);
   }
 
-  await admin.from("entitlements").upsert(
+  const { error: erroUpsert } = await admin.from("entitlements").upsert(
     {
       user_id: userId,
       buyer_email: email,
@@ -91,6 +147,14 @@ export async function grantAccess(input: GrantInput): Promise<void> {
     },
     { onConflict: "provider,external_id" },
   );
+  // Escrita que falha e não lança faz o webhook responder "granted" sem ter
+  // liberado nada — e a Hotmart nunca reenvia um evento que voltou 200.
+  exigirSucesso("gravação do entitlement", erroUpsert, {
+    provider: input.provider,
+    externalId: input.externalId,
+    buyerEmail: email,
+    userId,
+  });
 
   if (userId) await recomputeProfileAccess(userId);
 }
@@ -112,12 +176,25 @@ export type RevokeResult = {
  */
 export async function revokeAccess(input: RevokeInput): Promise<RevokeResult> {
   const admin = getAdmin();
-  const { data: existing } = await admin
+  const { data: existing, error } = await admin
     .from("entitlements")
     .select("id, user_id")
     .eq("provider", input.provider)
     .eq("external_id", input.externalId)
     .maybeSingle();
+
+  // ⚠️ #282: sem esta linha, "a consulta falhou" e "não existe entitlement com
+  // esse external_id" viravam a MESMA resposta (`found: false`) para o caller.
+  // O webhook então gravava "externalId não casa com nenhum entitlement" em
+  // `payment_events.error` — uma causa ERRADA, que manda o humano procurar
+  // defeito na extração do id — e devolvia 200, então a Hotmart nunca
+  // reenviava. Um estorno podia ficar sem revogar para sempre, com uma
+  // explicação plausível e falsa no lugar.
+  exigirSucesso("leitura do entitlement a revogar", error, {
+    provider: input.provider,
+    externalId: input.externalId,
+    status: input.status,
+  });
 
   if (!existing) return { found: false, userId: null }; // nenhum entitlement com esse external_id
 
@@ -129,7 +206,21 @@ export async function revokeAccess(input: RevokeInput): Promise<RevokeResult> {
   // só sobrescreve access_until quando o caller especifica (cancelamento recorrente).
   if (input.accessUntil !== undefined) patch.access_until = input.accessUntil;
 
-  await admin.from("entitlements").update(patch).eq("id", existing.id);
+  const { error: erroUpdate } = await admin
+    .from("entitlements")
+    .update(patch)
+    .eq("id", existing.id);
+  // Revogação que não gravou não pode devolver `found: true`: o caller usa esse
+  // true pra decidir zerar crédito de estorno (mig 108) e pra registrar
+  // "revoked" como sucesso.
+  exigirSucesso("gravação da revogação", erroUpdate, {
+    provider: input.provider,
+    externalId: input.externalId,
+    status: input.status,
+    entitlementId: existing.id,
+    userId: existing.user_id ?? null,
+  });
+
   if (existing.user_id) await recomputeProfileAccess(existing.user_id);
   return { found: true, userId: existing.user_id ?? null };
 }
@@ -160,11 +251,17 @@ export async function reconcileUserEntitlements(
   const admin = getAdmin();
   const e = email.trim().toLowerCase();
 
-  const { data: orfas } = await admin
+  const { data: orfas, error } = await admin
     .from("entitlements")
     .select("id, product_code")
     .is("user_id", null)
     .ilike("buyer_email", e);
+
+  // #282: leitura que falha devolve `orfas = null`, e o `?? []` abaixo
+  // transformava isso em "este e-mail não tem compra órfã" — que é justamente o
+  // modo de falha SILENCIOSO dos 7 pagantes do lote de 04/09 (a função voltava
+  // normal e simplesmente não vinculava nada).
+  exigirSucesso("leitura das órfãs do e-mail", error, { userId, email: e });
 
   const cursos = produtosDeCurso();
   const adotaveis = (orfas ?? [])
@@ -172,10 +269,18 @@ export async function reconcileUserEntitlements(
     .map((o) => o.id);
 
   if (adotaveis.length > 0) {
-    await admin
+    const { error: erroAdocao } = await admin
       .from("entitlements")
       .update({ user_id: userId, updated_at: new Date().toISOString() })
       .in("id", adotaveis);
+    // Sem isto, a adoção que falha é seguida de um `recomputeProfileAccess`
+    // que (corretamente) não acha nada e deixa o pagante em `free` — com a
+    // compra ainda órfã e ninguém sabendo. É o #282 de novo, um passo antes.
+    exigirSucesso("adoção das órfãs", erroAdocao, {
+      userId,
+      email: e,
+      entitlementIds: adotaveis,
+    });
   }
 
   await recomputeProfileAccess(userId);
@@ -184,11 +289,15 @@ export async function reconcileUserEntitlements(
 // ── helpers internos ────────────────────────────────────────────────────────
 
 async function findUserIdByEmail(email: string): Promise<string | null> {
-  const { data } = await getAdmin()
+  const { data, error } = await getAdmin()
     .from("profiles")
     .select("id")
     .ilike("email", email)
     .maybeSingle();
+  // NULL aqui é lido como "a compra não tem dono" e cria entitlement ÓRFÃO
+  // (que só um login futuro, ou um humano, religa). Se o NULL veio de uma
+  // consulta que falhou, a compra de quem TEM conta nasce órfã por engano.
+  exigirSucesso("busca do perfil pelo e-mail", error, { buyerEmail: email });
   return data?.id ?? null;
 }
 
@@ -210,47 +319,56 @@ export { entitlementValeAcesso } from "@/lib/payments/acesso-regra";
  * Recalcula o cache de acesso no profile a partir dos entitlements do usuário.
  * Tem acesso quem possui ≥1 entitlement 'active' não expirado
  * (access_until NULL = vitalício).
+ *
+ * ⚠️ ESTE ERA O PIOR CASO DO #282, e ele REBAIXAVA pagante. O `error` do SELECT
+ * era descartado; no supabase-js, consulta que erra volta `data: null`; o
+ * `(ents ?? [])` virava lista vazia; `active` virava undefined; e a função
+ * gravava `plan: "free", access_source: null, access_until: null` no perfil de
+ * quem tinha acabado de pagar — em silêncio, no meio de um webhook que
+ * respondia 200. Um blip de rede tirava o acesso de quem pagou.
+ *
+ * Agora quem decide é `decidirAcessoDoPerfil` (entitlements-pure.ts, sob
+ * teste), e ela tem uma saída `escrever: false` para "não sei": leitura que
+ * falha NÃO grava NADA em `profiles` — nem free, nem pro — e lança pra quem
+ * chamou registrar. Ausência de informação não é a informação "esta pessoa não
+ * tem acesso" (mesmo princípio do #222 em `vinculo.ts`).
+ *
+ * A regra de quem vale acesso, a ordenação e o desempate são byte a byte os de
+ * antes; só mudaram de casa pra poderem ser testados.
  */
 async function recomputeProfileAccess(userId: string): Promise<void> {
   const admin = getAdmin();
   const nowIso = new Date().toISOString();
 
-  const { data: ents } = await admin
+  const consulta = await admin
     .from("entitlements")
     .select("provider, status, access_until")
     .eq("user_id", userId);
 
-  const valeAcesso = (e: { status: string; access_until: string | null }) =>
-    entitlementValeAcesso(e, nowIso);
+  const decisao = decidirAcessoDoPerfil(consulta, nowIso);
+  if (!decisao.escrever) {
+    exigirSucesso("leitura dos entitlements do perfil", consulta.error, {
+      userId,
+      motivo: decisao.motivo,
+      efeito: "perfil NÃO foi tocado (acesso preservado)",
+    });
+    // `data: null` sem `error`: o supabase-js não produz esse par hoje, mas se
+    // produzir, abortar em silêncio ainda é melhor que rebaixar — e fica
+    // registrado.
+    logger.error("audit", "entitlements: recompute abortado sem erro do banco", {
+      userId,
+      incidente: "#282",
+      motivo: decisao.motivo,
+    });
+    throw new Error(`entitlements: recompute abortado (${decisao.motivo})`);
+  }
 
-  // Entre varios, o melhor: "active" ganha de "canceled"; empatado, a data mais
-  // longe (vitalicio = infinito). Sem isto, um entitlement velho poderia
-  // encurtar o acesso de quem tem outro mais novo.
-  const active = (ents ?? [])
-    .filter(valeAcesso)
-    .sort((a, b) => {
-      if (a.status !== b.status) return a.status === "active" ? -1 : 1;
-      const va = a.access_until === null ? Infinity : new Date(a.access_until).getTime();
-      const vb = b.access_until === null ? Infinity : new Date(b.access_until).getTime();
-      return vb - va;
-    })[0];
-
-  await admin
+  const { error: erroPerfil } = await admin
     .from("profiles")
-    .update(
-      active
-        ? {
-            plan: "pro",
-            access_source: active.provider,
-            access_until: active.access_until,
-            updated_at: nowIso,
-          }
-        : {
-            plan: "free",
-            access_source: null,
-            access_until: null,
-            updated_at: nowIso,
-          },
-    )
+    .update({ ...decisao.patch, updated_at: nowIso })
     .eq("id", userId);
+  exigirSucesso("gravação do acesso no perfil", erroPerfil, {
+    userId,
+    plan: decisao.patch.plan,
+  });
 }
