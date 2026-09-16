@@ -159,6 +159,56 @@ test("#52: OOM/CUDA, erro de modelo e áudio inválido continuam FORA do reenvio
   }
 });
 
+/**
+ * #433 (df216867, 16/09): "System error." é o erro genérico do próprio RunPod.
+ *
+ * Medido antes de entrar, mesmo critério do qa_coverage — o MESMO texto, byte a
+ * byte, falha E dá certo: Tânia (md5 cb007dbc3158, 1.350 chars) falhou 19:28:44,
+ * saiu READY em 170s às 19:40:38, e falhou de novo 19:47:08 e 19:51:42; Mariana
+ * (md5 6cdaf4bb2317, 1.141 chars) falhou 19:24:37 e saiu READY em 184s às
+ * 20:24:43. Duas alunas, dois textos, duas vozes.
+ *
+ * As DUAS variantes abaixo são as que existem no banco, e o casamento é em
+ * minúsculo porque `ehFalhaTransitoria` faz `toLowerCase()` antes — a string
+ * gravada vem capitalizada ("System error."), então trocar isto por um
+ * casamento sensível a caixa faz os dois casos pararem de disparar reenvio.
+ */
+test("#433: \"System error.\" do RunPod ganha reenvio nas DUAS variantes da string", () => {
+  assert.ok(
+    ehFalhaTransitoria("System error."),
+    "variante crua (webhook) deveria ser transitória",
+  );
+  assert.ok(
+    ehFalhaTransitoria("RunPod FAILED: System error."),
+    "variante prefixada (poll) deveria ser transitória",
+  );
+  // com o sufixo de fase que errorMessageComFase acrescenta
+  assert.ok(
+    ehFalhaTransitoria("RunPod FAILED: System error. [fase: tts_chunk 5/9]"),
+  );
+});
+
+/**
+ * CONTROLE do #433 — a entrada é genérica de propósito e PODE estar escondendo
+ * um OOM, mas isso não pode contaminar o que já estava fora. Se alguém alargar o
+ * casamento (pra "error" solto, por exemplo), estes asserts caem.
+ */
+test("#433: a entrada genérica não arrasta OOM/CUDA nem erro de modelo pro reenvio", () => {
+  for (const erro of [
+    "CUDA out of memory",
+    "RunPod FAILED: CUDA out of memory",
+    "torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00 GiB",
+    "Error loading model checkpoint",
+    "invalid audio file",
+  ]) {
+    assert.equal(
+      ehFalhaTransitoria(erro),
+      false,
+      `"${erro}" NÃO pode ganhar reenvio automático`,
+    );
+  }
+});
+
 test("#52: a classe transitória de 29/08 segue intacta (nada foi trocado por qa_coverage)", () => {
   assert.ok(ehFalhaTransitoria("RunPod FAILED: executionTimeout exceeded"));
   assert.ok(ehFalhaTransitoria("failed to download lora"));
