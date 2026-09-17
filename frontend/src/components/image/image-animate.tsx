@@ -68,6 +68,16 @@ export function ImageAnimatePanel({
     rootRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, []);
 
+  // Esc fecha o aviso (= cancelar). Fechar nunca destrói nada.
+  useEffect(() => {
+    if (!confirmandoSubstituir) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirmandoSubstituir(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmandoSubstituir]);
+
   // Poll enquanto gera — o GET sincroniza com o Kie (fallback do webhook).
   const poll = useCallback(async () => {
     try {
@@ -118,9 +128,11 @@ export function ImageAnimatePanel({
     }
   }
 
-  // Só pede confirmação quando existe vídeo pronto pra ser destruído.
+  // Só pede confirmação quando existe vídeo pronto pra ser destruído. Quem
+  // confirma é o botão DENTRO do aviso, nunca este — assim não há como
+  // substituir sem o aviso estar na tela.
   function aoClicarGerar() {
-    if (podeDestruirVideo && !confirmandoSubstituir) {
+    if (podeDestruirVideo) {
       setConfirmandoSubstituir(true);
       return;
     }
@@ -235,33 +247,6 @@ export function ImageAnimatePanel({
             </p>
           )}
 
-          {confirmandoSubstituir && selected && (
-            <div
-              role="alert"
-              className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-3"
-            >
-              <p className="text-sm font-medium text-[var(--status-error)]">{t("replaceWarnTitle")}</p>
-              <p className="text-[13px] text-[var(--ink)]">
-                {t("replaceWarnBody", { credits: selected.creditsPerClip })}
-              </p>
-              {!videoUrl && (
-                <p className="font-mono text-[11px] leading-relaxed tracking-wide text-[var(--status-error)]">
-                  {t("replaceNoDownload")}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {videoUrl && (
-                  <button type="button" onClick={downloadVideo} className={PILL}>
-                    <Download className="h-4 w-4" /> {t("downloadVideo")}
-                  </button>
-                )}
-                <button type="button" onClick={() => setConfirmandoSubstituir(false)} className={PILL}>
-                  {t("replaceCancel")}
-                </button>
-              </div>
-            </div>
-          )}
-
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="font-mono text-[11px] tracking-wide text-[var(--ash)]">
               {selected
@@ -278,14 +263,71 @@ export function ImageAnimatePanel({
               )}
               {submitting
                 ? t("sending")
-                : confirmandoSubstituir && selected
-                  ? `${t("replaceConfirm")} · ${selected.creditsPerClip} cr`
-                  : selected
-                    ? `${status === "ready" || status === "failed" ? t("regenerate") : t("animateBtn")} · ${selected.creditsPerClip} cr`
-                    : t("animateBtn")}
+                : selected
+                  ? `${status === "ready" || status === "failed" ? t("regenerate") : t("animateBtn")} · ${selected.creditsPerClip} cr`
+                  : t("animateBtn")}
             </button>
           </div>
         </>
+      )}
+
+      {/* Incidente #439 (2ª volta): o aviso era um bloco no meio do painel, logo
+          acima do botão. No mobile (390x844) o player + tiers + textarea comem a
+          tela inteira, então ao clicar "Gerar de novo" só o TÍTULO do aviso
+          raspava o rodapé — o corpo e os botões nasciam fora da viewport e o
+          aluno rolava direto pro botão e substituía o vídeo pago SEM LER. Agora
+          o aviso é `fixed inset-0`: ancorado na viewport, não no fluxo da
+          página, então não depende de onde o aluno está rolado nem de timing de
+          scroll. E o "Sim, substituir" mora DENTRO dele — não existe mais
+          caminho que confirme a destruição sem o aviso estar na tela. */}
+      {confirmandoSubstituir && selected && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="animate-replace-title"
+          onClick={() => setConfirmandoSubstituir(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col gap-3 overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] p-5"
+          >
+            <p
+              id="animate-replace-title"
+              className="font-sans text-base font-semibold text-[var(--status-error)]"
+            >
+              {t("replaceWarnTitle")}
+            </p>
+            <p className="text-[13px] leading-relaxed text-[var(--ink)]">
+              {t("replaceWarnBody", { credits: selected.creditsPerClip })}
+            </p>
+            {!videoUrl && (
+              <p className="font-mono text-[11px] leading-relaxed tracking-wide text-[var(--status-error)]">
+                {t("replaceNoDownload")}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2 pt-1">
+              {videoUrl && (
+                <button type="button" onClick={downloadVideo} className={PILL}>
+                  <Download className="h-4 w-4" /> {t("downloadVideo")}
+                </button>
+              )}
+              <button type="button" onClick={() => setConfirmandoSubstituir(false)} className={PILL}>
+                {t("replaceCancel")}
+              </button>
+              <button type="button" disabled={submitting} onClick={() => void submit()} className={PILL}>
+                {submitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                {submitting
+                  ? t("sending")
+                  : `${t("replaceConfirm")} · ${selected.creditsPerClip} cr`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <PaywallModal
