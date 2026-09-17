@@ -16,6 +16,12 @@ import { filterAudioFiles, gatherAudioFromDataTransfer } from "@/lib/audio/colle
 import { listClips, deleteClip, type StoredClip } from "@/lib/audio/clip-store";
 import { MAX_ARQUIVOS_TREINO } from "@/lib/audio/entrega-gravador";
 import {
+  NENHUMA_GRAVACAO,
+  resumirGravacoes,
+  somarGravacoes,
+  type FontesGravacao,
+} from "@/lib/audio/gravacoes-achadas";
+import {
   descontarDaMarca,
   lerMarcaGravacao,
   limparMarcaGravacao,
@@ -127,7 +133,20 @@ export function VoiceCreator() {
    */
   const [paradoMs, setParadoMs] = useState(0);
   const ultimoAvanco = useRef<number>(0);
-  const [recorderImport, setRecorderImport] = useState<{ count: number; skipped: number } | null>(null);
+  /**
+   * Gravações encontradas nesta visita, POR FONTE — IndexedDB, conta e
+   * celular no MESMO estado.
+   *
+   * 🐛 BUGFIX (caso João Soares, 16/09): isto era `recorderImport`, setado só
+   * pelo efeito do IndexedDB, e era ele que renderizava a única confirmação
+   * da tela. Como o Gravador apaga a cópia local assim que o upload pra conta
+   * confirma (voice-recorder.tsx:108-111), o aviso saía invertido: upload
+   * bem-sucedido → tela muda; upload falho → aviso verde. Agora as três
+   * fontes escrevem aqui e a régua (lib/audio/gravacoes-achadas.ts) soma.
+   */
+  const [gravacoesAchadas, setGravacoesAchadas] = useState<FontesGravacao>(NENHUMA_GRAVACAO);
+  /** Clipes que ficaram de fora por causa do teto de MAX_FILES arquivos. */
+  const [clipesDescartados, setClipesDescartados] = useState(0);
   /**
    * #235 (Alana): ler o Gravador podia falhar em silêncio (`catch(() => {})`)
    * e a tela abria um formulário MUDO — indistinguível de quem nunca gravou.
@@ -142,8 +161,6 @@ export function VoiceCreator() {
    * responder: o susto falso do #235 com o sinal trocado.
    */
   const [leituraServidor, setLeituraServidor] = useState<"lendo" | "ok" | "erro">("lendo");
-  /** Quantas gravações da conta entraram nesta visita. */
-  const [clipesDoServidor, setClipesDoServidor] = useState(0);
   /** Bilhete deixado pelo Gravador (localStorage, fora do IndexedDB). */
   const [marcaGravador, setMarcaGravador] = useState<MarcaGravacao | null>(null);
   /** Desfecho da importação dos takes do celular (R2). */
@@ -234,7 +251,8 @@ export function VoiceCreator() {
         });
       recorderClipIds.current = kept.map((c) => c.id);
       setFiles((prev) => mesclarSemRepetir(additions, prev));
-      setRecorderImport({ count: kept.length, skipped: clips.length - kept.length });
+      setGravacoesAchadas((p) => ({ ...p, navegador: kept.length }));
+      setClipesDescartados(clips.length - kept.length);
     })();
     // roda 1x no mount — os clipes vêm da página do Gravador
     return () => {
@@ -287,7 +305,7 @@ export function VoiceCreator() {
         }
       }
       if (!alive || additions.length === 0) return;
-      setClipesDoServidor(additions.length);
+      setGravacoesAchadas((p) => ({ ...p, conta: additions.length }));
       setFiles((prev) => mesclarSemRepetir(additions, prev));
     })();
     return () => { alive = false; };
@@ -362,7 +380,12 @@ export function VoiceCreator() {
           }
         }
         if (!alive) return;
-        if (additions.length > 0) setFiles((prev) => mesclarSemRepetir(additions, prev));
+        if (additions.length > 0) {
+          setFiles((prev) => mesclarSemRepetir(additions, prev));
+          // O sucesso desta fonte não marcava NADA — quem gravou só pelo
+          // celular chegava ao passo 01 sem uma palavra sobre os takes dele.
+          setGravacoesAchadas((p) => ({ ...p, celular: additions.length }));
+        }
         if (falhados > 0) setTakesCelular((p) => ({ ...p, falhados }));
       } catch { /* sem takes do celular — segue normal */ }
     })();
@@ -400,6 +423,21 @@ export function VoiceCreator() {
   // aqui foi o que fez a tela dizer "Faltam: 00:00" com o botão morto (#253).
   const podeEnviar = resumo.podeEnviar;
   const missing = resumo.faltam;
+
+  // O que a tela ACHOU de gravação do aluno, somando as três fontes. A régua
+  // vive em lib/audio/gravacoes-achadas.ts (pura e testada) justamente pra
+  // que o portão da confirmação não volte a depender de uma fonte só.
+  const achadas = useMemo(() => resumirGravacoes(gravacoesAchadas), [gravacoesAchadas]);
+  // Quanto tempo essas gravações somam — só elas, não os arquivos que o aluno
+  // escolheu no disco. É o número que o passo 01 mostra pra quem acabou de
+  // gravar, no lugar de repetir "mínimo 20 minutos" como se nada existisse.
+  const somaAchadas = useMemo(
+    () => somarGravacoes(files.map((f) => ({ id: f.id, duracao: f.duration }))),
+    [files],
+  );
+  // Enquanto qualquer uma das buscas está em curso, "não achei nada" ainda não
+  // é um desfecho — o passo 01 diz que está procurando em vez de calar.
+  const procurandoGravacoes = leituraClipes === "lendo" || leituraServidor === "lendo";
 
   // Quantos nomes de arquivo descartado mostramos por extenso na mensagem;
   // acima disso a mensagem viraria um parágrafo (pasta com dezenas de fotos).
@@ -721,6 +759,12 @@ export function VoiceCreator() {
         consent={consent}
         setConsent={setConsent}
         onNext={() => setStep("upload")}
+        gravacoes={{
+          procurando: procurandoGravacoes,
+          total: achadas.total,
+          segundos: somaAchadas.segundos,
+          semMedida: somaAchadas.semMedida,
+        }}
         t={t}
       />
     );
@@ -764,10 +808,13 @@ export function VoiceCreator() {
         querendo gravar no navegador ficava preso, perguntava pra Fast e ela
         mandava apertar um botão que não existe aqui. Agora a saída está na
         própria tela e não depende de ninguém responder.
-        Escondido quando o aluno já veio do Gravador (recorderImport), pra não
-        mandar de volta pra onde ele acabou de sair.
+        Escondido quando a tela ACHOU gravação do aluno (em qualquer uma das
+        três fontes), pra não mandar de volta pra onde ele acabou de sair.
+        Antes isto olhava só o IndexedDB: quem tinha subido tudo pra conta —
+        o caminho NORMAL desde 02/09 — via este convite justamente depois de
+        voltar do Gravador.
       */}
-      {!recorderImport && (
+      {!achadas.achou && (
         <Link
           href="/app/voice-cloning/script"
           className="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-2.5 text-sm text-[var(--ink)] transition-[background-color,border-color] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:border-[var(--hairline-strong)] hover:bg-[var(--surface-raised)]"
@@ -783,13 +830,19 @@ export function VoiceCreator() {
         </Link>
       )}
 
-      {recorderImport && (
+      {/*
+        A confirmação. Ela agora depende de ter achado em QUALQUER fonte e
+        mostra a SOMA das três — antes dependia do IndexedDB, que é a fonte
+        que some quando o upload dá certo (o defeito invertido do caso João
+        Soares, 16/09).
+      */}
+      {achadas.achou && (
         <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-2.5 text-sm text-[var(--ink)]">
           <Mic className="h-4 w-4 flex-shrink-0 text-[var(--status-online)]" />
           <span>
-            {tc("recorderImport.loaded", { count: recorderImport.count })}
-            {recorderImport.skipped > 0
-              ? ` ${tc("recorderImport.skipped", { skipped: recorderImport.skipped, max: MAX_FILES })}`
+            {tc("recorderImport.loaded", { count: achadas.total })}
+            {clipesDescartados > 0
+              ? ` ${tc("recorderImport.skipped", { skipped: clipesDescartados, max: MAX_FILES })}`
               : ""}
           </span>
         </p>
@@ -803,14 +856,14 @@ export function VoiceCreator() {
         vazia com bilhete de gravação existindo.
       */}
       {/*
-        ⚠️ `clipesDoServidor === 0` foi acrescentado no merge de 02/09: o texto
+        ⚠️ `achadas.fontes.conta === 0` foi acrescentado no merge de 02/09: o texto
         deste aviso manda o aluno voltar ao aparelho onde gravou e afirma que
         as gravações "não foram enviadas para nós". Depois que o Gravador
         passou a subir cada clipe pra CONTA isso deixou de ser verdade sempre —
         se as gravações vieram do servidor, a falha de leitura local é ruído e
         repetir esse texto seria mandar o aluno procurar o que já está aqui.
       */}
-      {leituraClipes === "erro" && clipesDoServidor === 0 && (
+      {leituraClipes === "erro" && achadas.fontes.conta === 0 && (
         <p
           role="alert"
           className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-2.5 text-sm leading-relaxed text-[var(--status-error)]"
@@ -841,7 +894,7 @@ export function VoiceCreator() {
       )}
 
       {/*
-        `!recorderImport` é o que separa PERDA de REMOÇÃO. Se a importação
+        `!achadas.achou` é o que separa PERDA de REMOÇÃO. Se a importação
         trouxe clipes nesta visita, o Gravador foi encontrado — uma lista vazia
         depois disso é obra do próprio aluno (removeu tudo para subir arquivos
         do disco), e acusá-lo de "gravação perdida" seria um susto falso numa
@@ -854,9 +907,8 @@ export function VoiceCreator() {
         acusaria "não encontrei suas gravações" no instante em que elas ainda
         estão vindo do servidor — o mesmo susto do #235, só que ao contrário.
       */}
-      {leituraClipes !== "lendo" &&
-        leituraServidor !== "lendo" &&
-        !recorderImport &&
+      {!procurandoGravacoes &&
+        !achadas.achou &&
         files.length === 0 &&
         (marcaGravador || leituraClipes === "erro") && (
         <div className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--status-warn)]/40 bg-[var(--surface-card)] px-3 py-3 text-sm leading-relaxed text-[var(--ink)]">
@@ -998,12 +1050,32 @@ export function VoiceCreator() {
 
 type TFn = (key: string, params?: Record<string, string | number>) => string;
 
+/**
+ * O que a tela já achou de gravação, do ponto de vista do passo 01.
+ * `procurando` existe porque as buscas são assíncronas: antes de terem
+ * desfecho, "não achei nada" não é verdade — e foi o silêncio nesse intervalo
+ * que fez o aluno ler o formulário em branco como "não salvou".
+ */
+type GravacoesNoPasso1 = {
+  procurando: boolean;
+  total: number;
+  segundos: number;
+  /**
+   * Gravações achadas que ainda não têm duração medida. Elas valem 0 no
+   * total, então enquanto houver alguma NÃO dá pra dizer "ainda faltam X" —
+   * seria desanimar o aluno com uma conta que está incompleta por nossa
+   * conta, não por falta de áudio dele.
+   */
+  semMedida: number;
+};
+
 function FormStep({
   name,
   setName,
   consent,
   setConsent,
   onNext,
+  gravacoes,
   t,
 }: {
   name: string;
@@ -1011,8 +1083,11 @@ function FormStep({
   consent: boolean;
   setConsent: (v: boolean) => void;
   onNext: () => void;
+  gravacoes: GravacoesNoPasso1;
   t: TFn;
 }) {
+  // Falta pro mínimo, contando SÓ o que já foi achado. Zero quando já deu.
+  const faltaPraMinimo = Math.max(0, MIN_DURATION_SECONDS - gravacoes.segundos);
   return (
     <form
       onSubmit={(e) => {
@@ -1021,6 +1096,43 @@ function FormStep({
       }}
       className="flex flex-col gap-6"
     >
+      {/*
+        🐛 BUGFIX (caso João Soares, 16/09): este passo reapresentava
+        "Requisitos: mínimo 20 minutos de fala" com o formulário em branco pra
+        quem ACABOU de gravar 23 min — sem uma palavra sobre as gravações
+        dele. Ele leu isso como "não salvou, comecei de novo", desistiu, e as
+        gravações estavam no nosso R2 o tempo todo. Agora o passo 01 conta o
+        que achou (as TRÊS fontes) antes de cobrar requisito.
+      */}
+      {gravacoes.procurando ? (
+        <p className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-2.5 text-sm text-[var(--mute)]">
+          <AudioLines className="h-4 w-4 flex-shrink-0 animate-pulse" />
+          <span>{t("recordingsFound.checking")}</span>
+        </p>
+      ) : gravacoes.total > 0 ? (
+        <div className="flex flex-col gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-bright)] bg-[var(--surface-elevated)] px-3 py-3 text-sm leading-relaxed text-[var(--ink)]">
+          <p className="flex items-start gap-2 font-medium">
+            <Mic className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--status-online)]" />
+            <span>
+              {t("recordingsFound.title", {
+                count: gravacoes.total,
+                duration: formatDuration(gravacoes.segundos),
+              })}
+            </span>
+          </p>
+          <p className="pl-6 text-[var(--mute)]">
+            {gravacoes.semMedida > 0
+              ? t("recordingsFound.measuring", { count: gravacoes.semMedida })
+              : faltaPraMinimo === 0
+                ? t("recordingsFound.ready")
+                : t("recordingsFound.short", {
+                    missing: formatDuration(faltaPraMinimo),
+                    min: Math.round(MIN_DURATION_SECONDS / 60),
+                  })}
+          </p>
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-1.5">
         <label
           htmlFor="voice-name"

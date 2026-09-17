@@ -116,6 +116,13 @@
       "eyebrow": "01 · Treinar voz",
       "title": "Nova voz",
       "subtitle": "Envie pelo menos 20 minutos de áudio seu falando. Mais é melhor.",
+      "recordingsFound": {
+        "checking": "Procurando as gravações que você já fez…",
+        "title": "{count, plural, one {Achei # gravação sua ({duration}) — ela já está aqui e entra neste treino.} other {Achei # gravações suas ({duration}) — elas já estão aqui e entram neste treino.}}",
+        "ready": "Você não precisa gravar de novo: dê um nome à voz, marque a declaração abaixo e continue.",
+        "measuring": "{count, plural, one {Ainda estou lendo a duração de # gravação} other {Ainda estou lendo a duração de # gravações}} — o total acima ainda pode subir.",
+        "short": "Ainda faltam {missing} para o mínimo de {min} min — dá pra continuar gravando no Gravador ou enviar arquivos na próxima tela."
+      },
       "recordInstead": {
         "text": "Não tem arquivo? Aqui é só envio — gravar é na tela Gravador.",
         "cta": "Abrir o Gravador"
