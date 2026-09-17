@@ -598,7 +598,7 @@ test("bounce truncado (só cabeçalhos) ainda entrega o destinatário pelo X-Fai
  * NÃO é "não achei". Confundir os dois marcaria chamado legítimo como fantasma
  * toda vez que o banco piscasse, e em silêncio.
  */
-import { decidirCadastro, notaDeObsoleto, veredictoDoCadastro, type Cadastro } from "./mail-bounce-cadastro.ts";
+import { decidirCadastro, notaDeObsoleto, veredictoDoCadastro, type Cadastro } from "./mail-bounce-cadastro-pure.ts";
 
 /** Porta falsa: responde o que o teste mandar, sem banco. */
 function cadastroFalso(r: { emSgp: boolean | null; emProfiles: boolean | null }): Cadastro {
