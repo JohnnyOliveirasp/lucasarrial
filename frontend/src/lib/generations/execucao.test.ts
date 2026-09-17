@@ -209,6 +209,91 @@ test("#433: a entrada genérica não arrasta OOM/CUDA nem erro de modelo pro ree
   }
 });
 
+/**
+ * #666a7685 / #e811cbc7 (17/09): "RunPod COMPLETED" ganha reenvio.
+ *
+ * Diferente das outras entradas, esta não é sustentada por estatística: o texto
+ * é o NOSSO fallback (`webhooks/runpod/route.ts:222-224`), e chegar nele com
+ * status COMPLETED significa, por construção, "a plataforma disse que o job deu
+ * certo e não veio arquivo" — falha de encanamento, nunca defeito do material do
+ * aluno.
+ *
+ * A medição bate (tabela inteira, 5.413 gerações): 6 ocorrências, 2 textos crus
+ * (md5 de `text_raw` fb836045d033 e d45e7c5bede6), 6 falhas → 3 sucessos com o
+ * MESMO texto cru; falhas em 10,3–14,2s contra sucessos em 182,6–223,1s (perfil
+ * de cold start). `request_attempts = 1` nas seis: ninguém ganhou reenvio.
+ *
+ * O casamento é em minúsculo porque `ehFalhaTransitoria` faz `toLowerCase()`
+ * antes — a string gravada vem capitalizada ("RunPod COMPLETED").
+ */
+test("#666a7685: \"RunPod COMPLETED\" (fallback nosso, job sem upload) ganha reenvio", () => {
+  assert.ok(
+    ehFalhaTransitoria("RunPod COMPLETED"),
+    "a string exata gravada pelo webhook deveria ser transitória",
+  );
+  // com o sufixo de fase que errorMessageComFase acrescenta
+  assert.ok(
+    ehFalhaTransitoria("RunPod COMPLETED [fase: tts_chunk 3/10]"),
+    "a variante com sufixo de fase deveria ser transitória",
+  );
+  // variante hipotética prefixada, caso o poll passe a gravar a mesma string
+  assert.ok(
+    ehFalhaTransitoria("RunPod FAILED: RunPod COMPLETED"),
+    "o casamento é por substring, então a variante prefixada também entra",
+  );
+});
+
+/**
+ * CONTROLE do #666a7685 — É O TESTE QUE IMPORTA NESTA MUDANÇA.
+ *
+ * O mesmo fallback `RunPod ${payload.status}` gera FAILED, CANCELLED e TIMED_OUT,
+ * e ESSES podem ser falha real. Só COMPLETED tem a propriedade de "a plataforma
+ * disse que deu certo". Se alguém encurtar o casamento pra "completed" solto ou
+ * "runpod" solto, estes asserts caem.
+ */
+test("#666a7685: a entrada não arrasta os OUTROS status do mesmo fallback", () => {
+  for (const erro of [
+    // os irmãos do fallback: podem ser falha REAL, não podem ganhar reenvio
+    // automático por causa desta entrada
+    "RunPod FAILED",
+    "RunPod CANCELLED",
+    "RunPod TIMED_OUT",
+    // "completed" solto não pode disparar
+    "job completed with errors",
+    "completed",
+    // o que o poll grava hoje em COMPLETED-sem-upload (buraco conhecido e
+    // deliberadamente NÃO coberto: "unknown" casaria erro alheio demais)
+    "unknown",
+  ]) {
+    assert.equal(
+      ehFalhaTransitoria(erro),
+      false,
+      `"${erro}" NÃO pode ganhar reenvio automático por causa de "runpod completed"`,
+    );
+  }
+});
+
+/**
+ * CONTROLE do #666a7685 — a fronteira antiga continua de pé. Se a entrada nova
+ * tivesse sido escrita larga, o OOM entraria por ela.
+ */
+test("#666a7685: OOM/CUDA, erro de modelo e áudio inválido continuam FORA", () => {
+  for (const erro of [
+    "CUDA out of memory",
+    "RunPod FAILED: CUDA out of memory",
+    "torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00 GiB",
+    "Error loading model checkpoint",
+    "invalid audio file",
+    "O áudio saiu incompleto (mais curto que o texto).",
+  ]) {
+    assert.equal(
+      ehFalhaTransitoria(erro),
+      false,
+      `"${erro}" NÃO pode ganhar reenvio automático`,
+    );
+  }
+});
+
 test("#52: a classe transitória de 29/08 segue intacta (nada foi trocado por qa_coverage)", () => {
   assert.ok(ehFalhaTransitoria("RunPod FAILED: executionTimeout exceeded"));
   assert.ok(ehFalhaTransitoria("failed to download lora"));

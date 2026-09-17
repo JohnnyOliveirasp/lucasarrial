@@ -210,6 +210,67 @@ export function ehTimeoutDeExecucao(rawError: string): boolean {
  *   "system error" repete o mesmo defeito, o certo é tirar daqui, não afrouxar
  *   o limite.
  *
+ * 17/09 (#666a7685 / #e811cbc7): entrou "runpod completed", e esta entrada é
+ * diferente de todas as outras — ela não depende de estatística, porque o
+ * texto do erro NÃO VEM DO RUNPOD. É o nosso próprio fallback em
+ * `webhooks/runpod/route.ts:222-224` (`out.error || payload.error || \`RunPod
+ * ${payload.status}\``). Chegar ali com status COMPLETED significa, por
+ * construção: sem `out.error`, sem `payload.error` e `out.uploaded` FALSY —
+ * ou seja a plataforma disse que o job DEU CERTO e não veio arquivo.
+ * Isso é categórico: se o RunPod reporta COMPLETED, o job não falhou por causa
+ * do material do aluno. COMPLETED sem upload é falha de encanamento, nunca
+ * defeito de entrada. O argumento independe do tamanho da amostra.
+ *
+ *   A medição sustenta (re-medida na tabela INTEIRA, 5.413 gerações, 17/09
+ *   ~21:00Z — são SEIS ocorrências, todas na voz 2b9211bb, todas de uma aluna):
+ *     texto cru md5 fb836045d033 (1.571 chars): 20:01:33 failed 12,72s ·
+ *       20:01:56 failed 12,74s · 20:02:20 **READY 217,86s**
+ *     texto cru md5 d45e7c5bede6 (1.521 chars): 20:24:53 failed 14,17s ·
+ *       20:25:57 failed 13,14s · 20:26:28 **READY 223,08s** · 20:32:01 failed
+ *       11,08s · 20:32:34 failed 10,29s · 20:32:59 **READY 182,63s**
+ *   Dois textos independentes, 6 falhas → 3 sucessos com o MESMO texto cru. A
+ *   assinatura de tempo é gritante: falhas entre 10,3s e 14,2s contra sucessos
+ *   entre 182,6s e 223,1s (13× a 22×). O comentário de route.ts:225-229 diz que
+ *   tempo baixo = COLD START e tempo alto = hang: estas falhas morrem no cold
+ *   start, ANTES de trabalhar — não dá tempo de o conteúdo do texto importar.
+ *   `request_attempts = 1` nas SEIS: nenhuma ganhou reenvio, porque a string não
+ *   casava com nada desta lista. Quem reclicou foi a aluna, 6 vezes.
+ *   CONTROLE que prova que o mecanismo funciona quando a string casa: a falha de
+ *   qa_coverage da MESMA aluna às 20:18:54 está com `request_attempts = 2`.
+ *
+ *   ⚠️ ARMADILHA DE MEDIÇÃO, caí nela: medir por md5 de `text_normalized` dá
+ *   SEIS hashes distintos e faz parecer que os textos eram diferentes (o que
+ *   derrubaria o argumento do "mesmo texto"). A normalização NÃO é determinística
+ *   — o mesmo `text_raw` de 1.571 chars virou normalizado de 1.585, 1.588 e
+ *   1.581 chars em três tentativas. Quem for reconferir isto mede md5 de
+ *   **`text_raw`**, não de `text_normalized`.
+ *
+ *   ⚠️ RESSALVA HONESTA: é 1 aluna, 1 voz, 1 dia. O que sustenta a entrada é o
+ *   argumento categórico acima, NÃO o tamanho da amostra.
+ *
+ *   ⚠️ CASE POR "runpod completed", NUNCA por "completed" solto nem "runpod"
+ *   solto. O mesmo fallback gera `RunPod FAILED`, `RunPod CANCELLED` e
+ *   `RunPod TIMED_OUT`, e ESSES podem ser falha real — só COMPLETED tem a
+ *   propriedade de "a plataforma disse que deu certo". Conferido no banco: as 6
+ *   linhas gravadas com "RunPod FAILED: ..." são invólucro de outro erro
+ *   (qa_coverage, executionTimeout, System error), e nenhuma linha da tabela
+ *   casa "runpod completed" sem ser exatamente esse fallback — zero falso
+ *   positivo hoje.
+ *
+ *   ⛔ NÃO TROQUE O TEXTO DO `error_message` pra algo que "não pareça sucesso",
+ *   por mais tentador que seja: route.ts:230-232 avisa que a assinatura do
+ *   incidente é derivada do texto do erro (`lib/incidents/classify.ts`), e mexer
+ *   nisso já estilhaçou a mesma falha em 4 incidentes. Rótulo ruim é problema
+ *   real, mas é cartão PRÓPRIO, com migração de assinatura pensada.
+ *
+ *   ⚠️ BURACO CONHECIDO, FORA DO ESCOPO DESTA ENTRADA: o caminho do POLL não
+ *   gera esta string. Em COMPLETED ele grava `out.error ?? "unknown"`
+ *   (`generations/[id]/route.ts:146-155`), então um COMPLETED-sem-upload visto
+ *   pelo poll viraria `"unknown"` e NÃO ganha reenvio. Medido: 0 linhas com
+ *   `error_message = "unknown"` na tabela inteira, então isto nunca disparou na
+ *   prática. NÃO acrescente "unknown" aqui — casaria erro alheio demais; se um
+ *   dia aparecer, o certo é o poll gravar a mesma string do webhook.
+ *
  * ⚠️ Continua FORA: OOM/CUDA, erro de modelo e áudio inválido/corrompido —
  * repetir só faria o aluno esperar em dobro pelo mesmo erro. A fronteira é
  * fina de propósito: "áudio que não cobre o texto porque o modelo sorteou
@@ -229,6 +290,8 @@ const TRANSITORIAS = [
   "internalerror",
   "qa_coverage",
   "system error",
+  // ⚠️ "runpod completed" e NÃO "completed": ver o bloco de 17/09 acima.
+  "runpod completed",
 ];
 
 export function ehFalhaTransitoria(rawError: string): boolean {
