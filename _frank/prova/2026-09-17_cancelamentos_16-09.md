@@ -94,3 +94,38 @@ ronda.
 Nenhum saldo foi tocado. A ronda é somente-leitura (regra 9-A): quem age é a
 varredura automática, e ela está desligada por decisão de 18/08. Religar não é
 decisão minha — a última vez que rodou de verdade zerou 14 pessoas.
+
+## Aviso ao grupo — ENVIADO (17/09, ronda de conferência)
+
+`notify-grupo.sh` devolveu **`enviado ao grupo`**. Conteúdo: as 5 saídas, o lado
+do dinheiro correto (assinante manteve 164.080 cr, zero zeramentos, zero
+estornos), os 4 desvios de trial com a causa única, os 317.021 cr parados, a
+armadilha das duas cobranças não pagas, e o buraco de 15/09.
+
+⚠️ **Por que esta seção existe.** Quando cheguei nesta conferência, o relatório
+acima estava pronto e commitado (`c2958fa9`, 09:12) mas **não dizia se o aviso
+tinha saído**. O `notify-grupo.sh` só grava prova em disco quando FALHA — logo,
+ausência de registro não distingue "enviado" de "nunca enviado". Tive que
+decidir no escuro, com risco dos dois lados: repetir o aviso é o ruído que mata
+o canal (regra 27, o Lucas está lá), e não repetir arriscava repetir o próprio
+buraco de 15/09. Daqui pra frente, **toda ronda anota aqui o resultado do
+envio** — é a linha que eu queria ter encontrado.
+
+## Conferência independente dos números (17/09)
+
+Rodei `cancelamentos_ontem.cjs --dia 2026-09-16` de novo, do zero, em vez de
+confiar no relatório. Bate inteiro: 5 eventos -> 5 pessoas, 4 trial + 1
+assinante, os 4 mesmos casos fora da regra, e 73.942 + 64.729 + 98.950 + 79.400
+= **317.021 cr**.
+
+⚠️ **Armadilha 3, cometida e corrigida nesta conferência.** Minha primeira
+checagem leu `zeramentos` e `estornos` na RAIZ de cada pessoa e voltou
+`AUSENTE` nos 5. Quase reportei "zero zeramentos" a partir de um campo que **eu
+estava lendo no lugar errado** — `zeramentos` mora dentro de `banco`, e
+`estornos` não é campo, se apura pelo status das cobranças. Zero de chave
+inexistente não é zero de dado.
+
+Refeito com as chaves certas e **com contraprova**: `banco.zeramentos` existe e
+está `[]` nos 5 (presente-e-vazio, não ausente), e a leitura de cobranças
+enxerga 5 status distintos na rodada (`APPROVED, CANCELLED, WAITING_PAYMENT,
+COMPLETE, OVERDUE`) — instrumento que enxerga é o que dá valor ao zero.
