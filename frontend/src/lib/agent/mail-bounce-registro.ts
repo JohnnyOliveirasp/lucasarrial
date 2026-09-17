@@ -29,6 +29,7 @@ import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import { parseBounce, planoDoBounce, type AcaoDeBounce, type Bounce } from "./mail-bounce";
 import { lerHistoricoDeContato } from "./contato-ficha";
 import { refinarPorDns } from "./mail-bounce-dns";
+import { notaDeObsoleto, veredictoDoCadastro } from "./mail-bounce-cadastro";
 import { marcarNaoEntregue } from "./mail-envio-registro";
 
 /**
@@ -71,6 +72,14 @@ export type ResultadoBounce = {
   reabertos: number[];
   /** Chamados abertos/somados para a entrega que falhou. */
   chamados: number[];
+  /**
+   * Endereços que quicaram e que NÃO são mais cadastro de ninguém — o chamado
+   * deles nasceu marcado como obsoleto. Contado em vez de só marcado: se este
+   * número crescer, o problema não é o bounce, é o cadastro deixando endereço
+   * morto pra trás, e é melhor saber por um número do que por um chamado
+   * fantasma virando ordem de "corrigir o cadastro" (foi o #440).
+   */
+  obsoletos: string[];
   /** Só a cópia interna falhou — sinal nosso, sem vítima do lado do aluno. */
   soInterno: boolean;
   /** Envios que o bounce conseguiu carimbar como não-entregues (casou o Message-ID). */
@@ -135,16 +144,31 @@ async function reabrirPorBounce(email: string, motivo: string): Promise<number[]
   }
 }
 
-/** Grava o chamado de uma ação do plano. */
-async function abrirChamadoDaAcao(a: AcaoDeBounce, emailsAfetados: string[]): Promise<number | null> {
+/**
+ * Grava o chamado de uma ação do plano.
+ *
+ * `obsoleto` faz o chamado NASCER marcado (ignored + nota), sem sumir: é o
+ * caso do endereço que quicou e que não é mais o do cadastro. A medição, e o
+ * que aquele caminho se proíbe (adivinhar o endereço substituto), estão em
+ * `mail-bounce-cadastro.ts`.
+ */
+async function abrirChamadoDaAcao(
+  a: AcaoDeBounce,
+  emailsAfetados: string[],
+  obsoleto?: { nota: string },
+): Promise<number | null> {
   return abrirChamadoReportado({
     signature: a.signature,
-    title: a.titulo,
-    description: a.descricao,
+    // A marca vai no TÍTULO porque é por ele que a fila é lida. Um chamado
+    // fechado com a marca só na nota continua parecendo caso de verdade pra
+    // quem bate o olho na lista.
+    title: obsoleto ? `[endereço obsoleto] ${a.titulo}`.slice(0, 120) : a.titulo,
+    description: obsoleto ? `${obsoleto.nota}\n\n---\n\n${a.descricao}` : a.descricao,
     reportedBy: "fast",
     categoria: a.categoria,
     affectedEmails: emailsAfetados,
     sampleError: a.diagnostico || null,
+    ...(obsoleto ? { nasceIgnorado: true, notaDeFechamento: obsoleto.nota } : {}),
   });
 }
 
@@ -173,6 +197,7 @@ export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> 
     alunos: [],
     reabertos: [],
     chamados: [],
+    obsoletos: [],
     soInterno: false,
     enviosMarcados: 0,
     enviosNaoRegistrados: 0,
@@ -232,8 +257,24 @@ export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> 
   for (const a of planoComHistorico.alunos) {
     res.alunos.push(a.email);
     try {
+      /**
+       * O endereço que quicou ainda é o do cadastro? (#440/#441, 17/09.)
+       *
+       * Só para ALUNO: a cópia interna (`plano.interno`, acima) NÃO passa por
+       * aqui de propósito — `suporte@fastcloner.com` nunca vai constar em
+       * `sgp_pedidos` nem em `profiles`, então a checagem diria "obsoleto" pra
+       * TODO bounce interno e nasceria fechado o sinal de saída suja, que é
+       * justamente o que ninguém mais veria.
+       *
+       * "nao-sei" cai no ramo normal junto com "vigente": na dúvida o chamado
+       * nasce ABERTO, que é o comportamento de sempre.
+       */
+      const veredicto = await veredictoDoCadastro(a.email);
+      const obsoleto = veredicto === "obsoleto" ? { nota: notaDeObsoleto(a.email, new Date().toISOString()) } : undefined;
+      if (obsoleto) res.obsoletos.push(a.email);
+
       res.reabertos.push(...(await reabrirPorBounce(a.email, a.motivoReabertura)));
-      const numero = await abrirChamadoDaAcao(a, [a.email]);
+      const numero = await abrirChamadoDaAcao(a, [a.email], obsoleto);
       if (numero != null) res.chamados.push(numero);
     } catch (e) {
       console.error(`[agent/bounce] falhou ao registrar ${a.email}:`, e instanceof Error ? e.message : e);
@@ -245,6 +286,7 @@ export async function registrarBounce(bounce: Bounce): Promise<ResultadoBounce> 
       `[agent/bounce] entrega falhou para ${res.alunos.join(", ")}` +
         `${res.reabertos.length ? ` · reabertos ${res.reabertos.map((n) => `#${n}`).join(", ")}` : ""}` +
         `${res.chamados.length ? ` · chamados ${res.chamados.map((n) => `#${n}`).join(", ")}` : ""}` +
+        `${res.obsoletos.length ? ` · ${res.obsoletos.length} endereço(s) obsoleto(s) — chamado nasceu marcado` : ""}` +
         `${res.enviosMarcados ? ` · ${res.enviosMarcados} envio(s) carimbado(s) como não-entregue` : ""}` +
         `${res.enviosNaoRegistrados ? ` · ${res.enviosNaoRegistrados} bounce(s) sem envio registrado` : ""}`,
     );

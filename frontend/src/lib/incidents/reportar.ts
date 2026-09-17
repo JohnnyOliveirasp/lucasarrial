@@ -15,7 +15,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAdmin } from "@/lib/db/admin";
 import { assinaturaLegada } from "@/lib/agent/mail-incident";
-import { CLOSED_STATUSES, limparFechamento } from "./closure";
+import { CLOSED_STATUSES, closureFields, limparFechamento } from "./closure";
 import { CONFLITO, inserirChamadoUnico } from "./gravar";
 
 export type ChamadoReportado = {
@@ -55,6 +55,23 @@ export type ChamadoReportado = {
    */
   kind?: string;
   cause?: string;
+  /**
+   * O chamado JÁ NASCE fechado como `ignored`, com `notaDeFechamento` dizendo
+   * por quê. Mesma ideia do `rajadaNasceFechada` (support/failure-alert.ts):
+   * o registro existe, tem número e é buscável — só não entra na fila de quem
+   * trabalha, porque já se sabe que não há o que fazer ali.
+   *
+   * Usado pelo bounce de endereço obsoleto (17/09): o endereço que quicou não
+   * é mais o do cadastro, então o caso é fantasma. NÃO suprime — marcar é o
+   * pedido; sumir seria ficar cego pra entrega que falhou de verdade.
+   *
+   * ⚠️ Só vale na CRIAÇÃO. Num chamado que já existe isto não fecha nada — ver
+   * o `reopened` abaixo, onde ele só impede a REABERTURA automática.
+   */
+  nasceIgnorado?: boolean;
+  /** O porquê do `nasceIgnorado`. Nota genérica em chamado auto-fechado é o
+   *  mesmo que não ter nota: quem lê depois não sabe se confia no fechamento. */
+  notaDeFechamento?: string;
 };
 
 type ChamadoExistente = {
@@ -138,7 +155,15 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
   }
 
   if (existing) {
-    const reopened = existing.status === "fixed" || existing.status === "ignored";
+    /**
+     * `!c.nasceIgnorado` é o que impede o chamado fantasma de RESSUSCITAR um
+     * chamado já fechado. Sem isso o conserto se anularia no segundo bounce:
+     * o endereço obsoleto que quica de novo (o do Robério quicou duas vezes)
+     * acharia o `ignored` que acabou de nascer e o reabriria como "open", que é
+     * exatamente o chamado fantasma na fila que este caminho veio tirar.
+     * Mesma guarda do `reopened = closed && !userError` em failure-alert.ts.
+     */
+    const reopened = (existing.status === "fixed" || existing.status === "ignored") && !c.nasceIgnorado;
     const tituloNovo = c.title.slice(0, 120);
     /**
      * ⚠️ TÍTULO E DESCRIÇÃO TÊM QUE ANDAR JUNTOS (#213, 31/08).
@@ -227,7 +252,13 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
   const criado = await inserirChamadoUnico(admin, {
       kind: c.kind ?? "reported",
       cause: c.cause ?? "reported",
-      status: "open",
+      status: c.nasceIgnorado ? "ignored" : "open",
+      // O carimbo do fechamento sai do `closureFields` e não na mão: é o único
+      // lugar que garante os TRÊS campos juntos. Escrever `resolved_at` solto
+      // aqui seria o sétimo conserto da família descrita em ./closure.ts.
+      ...(c.nasceIgnorado
+        ? { ...closureFields("ignored", "sistema", now), resolution_note: c.notaDeFechamento ?? null }
+        : {}),
       signature: c.signature,
       title: c.title.slice(0, 120),
       occurrences: 1,
