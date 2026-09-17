@@ -17,7 +17,7 @@
  *  2. O número do quadro vem de CLONE_TIERS, não de literal na tela. Duplicar
  *     valor foi o que produziu o #414 e as reincidências #175/#178/#209.
  */
-import { CLONE_TIERS } from "./config";
+import { CLONE_TIERS } from "./config.ts";
 
 export type OrientacaoImagem = "horizontal" | "vertical" | "quadrada" | "desconhecida";
 
