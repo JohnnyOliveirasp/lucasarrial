@@ -25,6 +25,7 @@ import { handleTechFailure } from "@/lib/support/failure-alert";
 import type { GenerationStatus } from "@/lib/db/types";
 import { tentarReenviar } from "@/lib/generations/reenviar";
 import { reivindicarFalha, STATUS_EM_ANDAMENTO } from "@/lib/generations/falha-claim";
+import { mensagemFalhaRunpod } from "@/lib/generations/erro-runpod-pure";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -143,13 +144,27 @@ export async function GET(request: NextRequest, ctx: Ctx) {
         if (ok && !truncado) {
           // marcado ready dentro do finalize (audio_path aponta pro .mp3)
         } else {
+          // #457/#461: aqui o nome da falha era um "unknown" solto (o erro do
+          // worker, ou essa palavra). Um COMPLETED sem upload visto pelo POLL
+          // virava então **"unknown"**, que não casa nada em
+          // TRANSITORIAS (execucao.ts) — logo NÃO ganhava o reenvio de graça
+          // que a MESMA falha ganha quando quem chega primeiro é o webhook
+          // (que grava "RunPod COMPLETED"). O gate de sucesso é idêntico nos
+          // dois caminhos, então era a mesma falha com dois nomes: ela abriu
+          // dois chamados (#457, 9 ocorrências × #461, 1) e a aluna
+          // semeadorriquezas@gmail.com caiu nos DOIS em 43 minutos — no lado
+          // do poll ela foi estornada sem reenvio (geração 9ada4b25, 11,5s de
+          // cold start, `request_attempts = 1`).
+          // Agora os dois caminhos passam pela MESMA função e a falha tem UM
+          // nome. ⛔ NÃO acrescente "unknown" em TRANSITORIAS: é genérico
+          // demais e casaria erro alheio — o conserto é na origem da string.
           await failGeneration(
             id,
             auth.user_id,
             gen.runpod_job_id,
             truncado
               ? "O áudio saiu incompleto (mais curto que o texto). Refaça — os créditos foram devolvidos."
-              : out.error ?? "unknown",
+              : mensagemFalhaRunpod(out.error, resp.error, resp.status),
             resp.executionTime,
             resp.delayTime,
           );

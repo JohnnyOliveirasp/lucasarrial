@@ -37,6 +37,7 @@ import { verificarOnboardingPronto } from "@/lib/onboarding/pronto";
 import { avancarEtapasDoUsuario } from "@/lib/sgp/etapas";
 import { tentarReenviar } from "@/lib/generations/reenviar";
 import { reivindicarFalha } from "@/lib/generations/falha-claim";
+import { mensagemFalhaRunpod } from "@/lib/generations/erro-runpod-pure";
 
 type RunpodWebhookPayload = {
   id: string;
@@ -219,9 +220,15 @@ async function handleGenerationWebhook(
     truncado = true;
   }
 
+  // Texto IDÊNTICO ao de sempre — `mensagemFalhaRunpod` é EXTRAÇÃO, não
+  // reescrita: ela devolve `out.error || payload.error || \`RunPod ${status}\``
+  // byte a byte. Ela saiu daqui pra `erro-runpod-pure.ts` porque o caminho do
+  // POLL precisa gravar ESTA string e não a dele: a mesma falha tinha dois
+  // nomes ("RunPod COMPLETED" aqui, "unknown" lá) e só este ganhava reenvio —
+  // e isso partiu o chamado em dois (#457 × #461) com a mesma aluna nos dois.
   const rawError = truncado
     ? "O áudio saiu incompleto (mais curto que o texto). Refaça — os créditos foram devolvidos."
-    : out.error || payload.error || `RunPod ${payload.status}`;
+    : mensagemFalhaRunpod(out.error, payload.error, payload.status);
   // Grava o tempo de execução que o RunPod já manda no webhook (incidente
   // d3d8d1b2, 18/08): o log do worker expira ~30min depois do job, então toda
   // investigação de "tempo de execução estourado" chegava tarde e batia em 404.
