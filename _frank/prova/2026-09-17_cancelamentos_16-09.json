@@ -1,0 +1,282 @@
+{
+  "dia": "2026-09-16",
+  "janela": "janela UTC 2026-09-16T00:00:00.000Z -> 2026-09-17T00:00:00.000Z (dia 2026-09-16)",
+  "eventos": 5,
+  "varredura": {
+    "estado": "desativada",
+    "motivo": "DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas"
+  },
+  "pessoas": [
+    {
+      "email": "jakson_correia@outlook.com",
+      "nome": "Jakson moises correia diana",
+      "tipo": "TRIAL",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 5,
+      "adesao": "2026-09-11",
+      "cancelamento": "2026-09-16",
+      "trialVenceEm": "2026-09-21",
+      "trialJaVenceu": false,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "U8TF2M07",
+            "status": "CANCELLED_BY_CUSTOMER",
+            "trial": true,
+            "adesao": 1789137784000,
+            "fim": 1789551288000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "U8TF2M07",
+            "valor": 0,
+            "status": "APPROVED",
+            "rec": 1,
+            "quando": 1789137783000
+          }
+        ]
+      },
+      "banco": {
+        "id": "a9cd268c-459e-438b-843a-0f66afa44da6",
+        "sub": 73942,
+        "extra": 0,
+        "acessoAte": "2026-09-18T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": [
+        "TRIAL ainda no prazo (dia 10 em 2026-09-21), mas a varredura esta DESATIVADA (DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas) — os 73942 cr NAO vao expirar sozinhos."
+      ]
+    },
+    {
+      "email": "well.160790@gmail.com",
+      "nome": "Wellington alves de amorim",
+      "tipo": "TRIAL",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 0,
+      "adesao": "2026-09-16",
+      "cancelamento": "2026-09-16",
+      "trialVenceEm": "2026-09-26",
+      "trialJaVenceu": false,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "6KNRUP4Y",
+            "status": "CANCELLED_BY_SELLER",
+            "trial": true,
+            "adesao": 1789574121000,
+            "fim": 1789581123000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "6KNRUP4Y",
+            "valor": 0,
+            "status": "APPROVED",
+            "rec": 1,
+            "quando": 1789574120000
+          }
+        ]
+      },
+      "banco": {
+        "id": "ddc87d4e-1fe8-41a7-ab32-c9073a235908",
+        "sub": 64729,
+        "extra": 0,
+        "acessoAte": "2026-09-23T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": [
+        "TRIAL ainda no prazo (dia 10 em 2026-09-26), mas a varredura esta DESATIVADA (DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas) — os 64729 cr NAO vao expirar sozinhos."
+      ]
+    },
+    {
+      "email": "portalenfermagemquantica@gmail.com",
+      "nome": "DENISE REZENDE",
+      "tipo": "ASSINANTE",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 7,
+      "adesao": "2026-09-09",
+      "cancelamento": "2026-09-16",
+      "trialVenceEm": null,
+      "trialJaVenceu": null,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "M74VJ2PW",
+            "status": "INACTIVE",
+            "trial": true,
+            "adesao": 1788996061000,
+            "fim": null
+          },
+          {
+            "code": "4EWIE5MC",
+            "status": "CANCELLED_BY_CUSTOMER",
+            "trial": true,
+            "adesao": 1788996134000,
+            "fim": 1789584415000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "M74VJ2PW",
+            "valor": 0,
+            "status": "CANCELLED",
+            "rec": 1,
+            "quando": null
+          },
+          {
+            "code": "4EWIE5MC",
+            "valor": 0,
+            "status": "APPROVED",
+            "rec": 1,
+            "quando": 1788996133000
+          },
+          {
+            "code": "4EWIE5MC",
+            "valor": 97,
+            "status": "APPROVED",
+            "rec": 2,
+            "quando": 1789568146000
+          }
+        ]
+      },
+      "banco": {
+        "id": "ee32c46c-e70c-4047-b51f-7e1aae204889",
+        "sub": 164080,
+        "extra": 0,
+        "acessoAte": "2026-10-09T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": []
+    },
+    {
+      "email": "silvanabrito87@gmail.com",
+      "nome": "Silvanete Medina",
+      "tipo": "TRIAL",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 7,
+      "adesao": "2026-09-09",
+      "cancelamento": "2026-09-16",
+      "trialVenceEm": "2026-09-19",
+      "trialJaVenceu": false,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "LRCC3R8W",
+            "status": "CANCELLED_BY_CUSTOMER",
+            "trial": true,
+            "adesao": 1788995857000,
+            "fim": 1789585851000
+          },
+          {
+            "code": "2N54WHVC",
+            "status": "INACTIVE",
+            "trial": true,
+            "adesao": 1788996214000,
+            "fim": null
+          },
+          {
+            "code": "95GZ5JZ4",
+            "status": "INACTIVE",
+            "trial": true,
+            "adesao": 1788996374000,
+            "fim": null
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "LRCC3R8W",
+            "valor": 0,
+            "status": "APPROVED",
+            "rec": 1,
+            "quando": 1788995856000
+          },
+          {
+            "code": "LRCC3R8W",
+            "valor": 97,
+            "status": "WAITING_PAYMENT",
+            "rec": 2,
+            "quando": null
+          },
+          {
+            "code": "2N54WHVC",
+            "valor": 0,
+            "status": "CANCELLED",
+            "rec": 1,
+            "quando": null
+          },
+          {
+            "code": "95GZ5JZ4",
+            "valor": 0,
+            "status": "CANCELLED",
+            "rec": 1,
+            "quando": null
+          }
+        ]
+      },
+      "banco": {
+        "id": "8870c6b7-cf7b-4170-99f6-541bd8b582c9",
+        "sub": 98950,
+        "extra": 0,
+        "acessoAte": "2026-10-09T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": [
+        "TRIAL ainda no prazo (dia 10 em 2026-09-19), mas a varredura esta DESATIVADA (DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas) — os 98950 cr NAO vao expirar sozinhos."
+      ]
+    },
+    {
+      "email": "adrianepignatti@gmail.com",
+      "nome": "Adriane Pignatti",
+      "tipo": "TRIAL",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 14,
+      "adesao": "2026-09-02",
+      "cancelamento": "2026-09-16",
+      "trialVenceEm": "2026-09-12",
+      "trialJaVenceu": true,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "I71B8DP4",
+            "status": "CANCELLED_BY_CUSTOMER",
+            "trial": true,
+            "adesao": 1788340298000,
+            "fim": 1789591362000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "I71B8DP4",
+            "valor": 0,
+            "status": "COMPLETE",
+            "rec": 1,
+            "quando": 1788340298000
+          },
+          {
+            "code": "I71B8DP4",
+            "valor": 97,
+            "status": "OVERDUE",
+            "rec": 2,
+            "quando": null
+          }
+        ]
+      },
+      "banco": {
+        "id": "f5fe90c7-36ab-4488-b86a-29d701afff07",
+        "sub": 79400,
+        "extra": 0,
+        "acessoAte": "2026-10-02T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": [
+        "TRIAL passou do dia 10 (venceu 2026-09-12) e ainda tem 79400 cr — a varredura NAO pegou."
+      ]
+    }
+  ]
+}
