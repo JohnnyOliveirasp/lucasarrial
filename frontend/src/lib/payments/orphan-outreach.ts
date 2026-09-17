@@ -28,6 +28,7 @@ import {
   registroDoConvite,
   type RegistroConvite,
 } from "@/lib/payments/orphan-ciclo";
+import { normalizarEmailParaComparacao } from "@/lib/payments/email-normalizado";
 
 const PRODUCT_ID = "7851642";
 const STATE_KEY = "orphan_invites";
@@ -173,27 +174,56 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     }
   }
 
-  // Guarda que decide quem é "órfão". NUNCA puxar a tabela profiles inteira:
-  // o teto de 1000 do PostgREST foi exatamente o que mandou "crie sua conta"
-  // pra 105 clientes ATIVOS (incidente 72a4c9db, 04–19/08; profiles tinha 1293
-  // linhas e o Set só conhecia 1000). Consultamos SÓ os e-mails dos compradores,
-  // em blocos de 500 pra não estourar o tamanho da URL do .in().
-  // Premissa verificada em produção (20/08): profiles.email é sempre minúsculo
-  // (Supabase Auth normaliza no signup) e as chaves de buyers já são minúsculas,
-  // então o .in() case-sensitive bate; a comparação segue em lowercase.
-  // Se a consulta da guarda falhar, ABORTA — seguir com Set incompleto é o que
-  // transforma cliente ativo em "órfão".
+  // Guarda que decide quem é "órfão": este comprador já tem conta na plataforma?
+  //
+  // ⚠️ #306 / 18bf275c (nomeado em 08/09, medido ainda vivo em 17/09): a versão
+  // antiga perguntava com `.in("email", chunk)`, ou seja, igualdade de STRING.
+  // O Gmail ignora o ponto no nome do usuário e ignora tudo depois do `+`, então
+  // `herysilva.27@gmail.com` (compra, entitlement PPEVZBRG, user_id NULL) e
+  // `herysilva27@gmail.com` (conta plan=pro criada em 21/07) são a MESMA caixa e
+  // a guarda não enxergava: a casa mandou "crie sua conta com EXATAMENTE este
+  // e-mail" pra própria dona da conta. Repetição do 72a4c9db / #127.
+  // Agora a comparação é por e-mail NORMALIZADO (`email-normalizado.ts`, puro e
+  // testado; só funde domínio do Google, de propósito).
+  //
+  // ⚠️ A normalização MUDA A CHAVE, então não dá mais pra filtrar por
+  // `.in("email", ...)`: o banco não conhece a forma normalizada. Lemos a tabela
+  // profiles inteira, e é justamente aqui que mora o perigo histórico — o teto
+  // silencioso de 1000 linhas do PostgREST foi o que mandou "crie sua conta" pra
+  // 105 clientes ATIVOS (72a4c9db, 04–19/08; profiles tinha 1293 linhas e o Set
+  // só conhecia 1000), e foi o que o commit c5f67bd consertou neste arquivo.
+  // O que torna a leitura completa segura é o CONTRÁRIO de truncar: paginar com
+  // ordem estável até a página vir incompleta, ABORTAR com throw se a consulta
+  // falhar, e ABORTAR com throw se passar do teto de segurança. Set incompleto é
+  // exatamente o que transforma cliente ativo em "órfão" — na dúvida, não mandar
+  // e-mail nenhum é o comportamento certo.
   const hasAccount = new Set<string>();
-  const buyerEmails = [...buyers.keys()];
-  const CHUNK = 500;
-  for (let i = 0; i < buyerEmails.length; i += CHUNK) {
-    const chunk = buyerEmails.slice(i, i + CHUNK);
-    const { data, error } = await admin.from("profiles").select("email").in("email", chunk);
+  const PAGE_PROFILES = 1000;
+  // Teto de sanidade: profiles tinha ~1,3 mil linhas em 08/2026, e 200 mil é
+  // ~150x isso. Se chegarmos lá, a paginação não está terminando (ordem
+  // instável, tabela crescendo durante a varredura) e o certo é morrer, nunca
+  // truncar em silêncio e seguir com meio Set.
+  const TETO_PROFILES = 200_000;
+  for (let from = 0; ; from += PAGE_PROFILES) {
+    if (from >= TETO_PROFILES) {
+      throw new Error(
+        `[orphan-outreach] guarda hasAccount passou de ${TETO_PROFILES} perfis sem terminar de paginar — abortando em vez de decidir órfão com lista incompleta`,
+      );
+    }
+    const { data, error } = await admin
+      .from("profiles")
+      .select("email")
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_PROFILES - 1);
     if (error) throw new Error(`[orphan-outreach] guarda hasAccount falhou: ${error.message}`);
     for (const p of (data ?? []) as { email: string | null }[]) {
-      if (p.email) hasAccount.add(p.email.toLowerCase());
+      if (p.email) hasAccount.add(normalizarEmailParaComparacao(p.email));
     }
+    if (!data || data.length < PAGE_PROFILES) break;
   }
+
+  const buyerEmails = [...buyers.keys()];
+  const CHUNK = 500;
 
   // #127 (Cassio, 24/08): compra aprovada UMA VEZ entrava na lista pra sempre.
   // Quem estornou/deu chargeback recebia "seus créditos continuam reservados" —
@@ -273,7 +303,9 @@ export async function sweepOrphanPurchases(): Promise<OrphanSweepSummary> {
     .filter((e) => e && e !== "suporte@fastcloner.com");
 
   for (const [email, info] of buyers) {
-    if (hasAccount.has(email)) continue; // criou conta — claim do login resolve
+    // Normalizado dos DOIS lados (o Set também é normalizado): é o que enxerga
+    // `herysilva.27@` comprando e `herysilva27@` já sendo a conta dela. #306.
+    if (hasAccount.has(normalizarEmailParaComparacao(email))) continue; // criou conta — claim do login resolve
     if (jaTemDono.has(email)) continue; // compra já ligada a uma conta (outro e-mail)
     // Só convida quem PAGOU a assinatura E ainda está dentro da janela paga.
     // Sem as duas: #127 (convite pra quem estornou) ou #138 (trial de R$ 0 lido
