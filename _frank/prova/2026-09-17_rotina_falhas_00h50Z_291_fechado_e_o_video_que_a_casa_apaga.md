@@ -228,3 +228,30 @@ O que achou o buraco foi **levar a frase da aluna a sério depois de derrubar as
 duas teorias**: ela disse "cobradas e não salvas", e eu fui procurar o que na
 conta dela é cobrado e não fica salvo, em vez de procurar onde as hipóteses
 mandavam olhar. **Refutar a hipótese não é o fim da investigação — é o começo.**
+
+---
+
+## 8. Conferência de fim de ronda — e um aviso sobre ela
+
+- `git fetch origin && git log --oneline origin/main..HEAD` → **vazio**. O log
+  desta ronda está na **main** (`b4430b5`), empurrado.
+- **Não houve mudança de código nesta ronda** (o `#439` é cartão de conserto, não
+  o conserto). Então não existe fix meu preso em branch — não por eu ter
+  auditado, mas porque **não escrevi nenhum**.
+
+⚠️ **O passo do `git rev-list main..<branch>` do manual está inútil neste repo, e
+eu não vou fingir que ele passou.** Rodei em todos os branches locais: **160
+acusam commit "fora da main"**. Quase todos foram mergeados por **PR com squash**
+— o conteúdo está na main, o hash não. O instrumento só sabe comparar hash, então
+ele grita 160 vezes e um fix realmente esquecido ficaria **invisível no meio do
+grito**. Era exatamente o caso que a regra existia pra pegar (o fix que ficou 9h
+preso em 19/08).
+
+**Proposta pro Johnny** (não executei, mexe em histórico): trocar a conferência
+por uma que compare **conteúdo**, não hash — `git cherry main <branch>` ou
+`git branch --no-merged main` depois de podar branch já mergeado por squash. E,
+separado disso, podar os branches mortos no origin que o `README.md` já manda
+**não mergear** (`feat/onedrive-401`, `feat/fix-image-upload-retry`,
+`fix/referencia-fronteira-de-frase-por-palavra`,
+`feat/fabricar-referencia-fronteira-por-palavra`): enquanto eles existirem, todo
+mundo depende de lembrar de um aviso em vez de o repositório proteger sozinho.
