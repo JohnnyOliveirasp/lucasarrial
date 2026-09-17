@@ -57,6 +57,19 @@ async function consultar(sql) {
  * escrito pra quem atende, não pra quem lê código.
  */
 const CLASSES = {
+  // ordem 0 e não 1: é a única classe em que a casa PERDE DINHEIRO enquanto
+  // ninguém olha — o aluno pediu o dinheiro de volta, recebeu, e ficou com o
+  // crédito de mensalidade. Sobe pro topo do relatório.
+  estorno_sem_funcao: {
+    ordem: 0,
+    titulo: "ESTORNO NÃO ZEROU O CRÉDITO — função de banco não existe",
+    acao:
+      "O aluno recebeu o dinheiro de volta E CONTINUOU com o crédito de " +
+      "mensalidade. Zere o `credits_subscription` desse aluno À MÃO. A causa " +
+      "raiz é a `scripts/111_estorno_zera_credito.sql`, que aguarda aval do " +
+      "Johnny porque mexe em dinheiro de aluno — enquanto ela não for aplicada, " +
+      "TODO estorno novo cai aqui. Não é defeito de atendimento.",
+  },
   sgp_nao_recebeu: {
     ordem: 1,
     titulo: "COMPRADOR DO SGP PAGOU E NÃO RECEBEU O E-MAIL",
@@ -107,6 +120,12 @@ const CLASSES = {
  */
 const CLASSE_RUIDO = "revoke_reassinatura";
 
+/**
+ * Nome da função de banco do estorno — espelha `RPC_ESTORNO` em
+ * `frontend/src/lib/credits/refund-erro.ts`. Se lá mudar, muda aqui.
+ */
+const RPC_ESTORNO = "zero_subscription_credits_on_refund";
+
 function sqlDaVarredura(dias) {
   return `
 with e as (
@@ -138,6 +157,24 @@ select
   error,
   tem_assinatura_viva,
   case
+    -- #446 · ESTORNO SEM A FUNÇÃO DE BANCO. Duas redações caem aqui:
+    --   · antes da ponte (o que está em produção hoje, 2 de 2 eventos desde
+    --     14/09, ambos com processed_at NULL): a mensagem CRUA do throw,
+    --     'zero_subscription_credits_on_refund: Could not find the function
+    --      public.zero_subscription_credits_on_refund(...) in the schema cache';
+    --   · depois da ponte: 'crédito NÃO zerado (rpc_ausente:…)'.
+    -- O casamento é ESTREITO DE PROPÓSITO: exige o NOME DA FUNÇÃO **e** um
+    -- sinal de "função ausente" (PGRST202 / 42883 / 'Could not find the
+    -- function'). Casar por 'refund' solto engoliria estorno que falhou DE
+    -- VERDADE — um timeout vem como 'zero_subscription_credits_on_refund:
+    -- canceling statement due to statement timeout', tem o nome da função e
+    -- NÃO é função ausente; ele precisa cair em 'desconhecido' e ser lido por
+    -- gente, não ser arquivado como "já sabemos o que é".
+    when (error like '%${RPC_ESTORNO}%'
+           and (error like '%Could not find the function%'
+                or error like '%PGRST202%'
+                or error like '%42883%'))
+      or error like '%rpc_ausente:${RPC_ESTORNO}%'  then 'estorno_sem_funcao'
     when error like 'boas-vindas do SGP não saíram%'
       or error like 'boas-vindas do SGP desistiram%'
       or error like 'boas-vindas do SGP falharam%'      then 'sgp_nao_recebeu'

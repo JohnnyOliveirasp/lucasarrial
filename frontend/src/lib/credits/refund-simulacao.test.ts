@@ -15,10 +15,11 @@
  *   node --import ./test/alias-loader.mjs --experimental-test-module-mocks \
  *        --test src/lib/credits/refund-simulacao.test.ts
  *
- * Sem essas flags o arquivo se marca como SKIP em vez de derrubar a suíte —
- * o resto dos testes da casa roda com `node --test` pelado.
+ * Sem essas flags o arquivo PULA cada teste com o motivo impresso, em vez de
+ * derrubar a suíte — o resto dos testes da casa roda com `node --test` pelado.
+ * O carregamento mora num `before()` de propósito: ver o comentário longo nele.
  */
-import { test, mock } from "node:test";
+import { before, test, mock, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { MOTIVO_RPC_AUSENTE, RPC_ESTORNO } from "./refund-erro.ts";
 
@@ -32,29 +33,54 @@ const chamadas: Array<{ nome: string; args: unknown }> = [];
 let refund: typeof import("./refund.ts") | null = null;
 let motivoSkip = "";
 
-try {
-  mock.module("@/lib/db/admin", {
-    namedExports: {
-      getAdmin: () => ({
-        rpc: async (nome: string, args: unknown) => {
-          chamadas.push({ nome, args });
-          return resposta;
-        },
-      }),
-    },
-  });
-  refund = await import("@/lib/credits/refund");
-} catch (e) {
-  motivoSkip = `precisa de --import ./test/alias-loader.mjs --experimental-test-module-mocks (${e instanceof Error ? e.message : e})`;
-}
+/**
+ * O mock + o import do módulo sob teste moram num `before()`, NÃO no escopo do
+ * módulo. Motivo (#446): `await` no topo do arquivo é ilegal quando o runner
+ * transpila pra CJS (`npx tsx --test` → esbuild → "Top-level await is currently
+ * not supported with the cjs output format"), e essa falha é de COMPILAÇÃO —
+ * acontece antes de qualquer linha rodar, então o `try/catch` abaixo nunca
+ * dispararia e o arquivo inteiro morreria sem executar um único teste. Um
+ * arquivo de prova que não roda é pior que nenhum, porque engana quem revisa.
+ * Dentro de uma função async o `await import` é legal nos dois formatos, então
+ * aqui o try/catch volta a ter poder: sem as flags, os testes PULAM com motivo.
+ */
+before(async () => {
+  try {
+    mock.module("@/lib/db/admin", {
+      namedExports: {
+        getAdmin: () => ({
+          rpc: async (nome: string, args: unknown) => {
+            chamadas.push({ nome, args });
+            return resposta;
+          },
+        }),
+      },
+    });
+    refund = await import("@/lib/credits/refund");
+  } catch (e) {
+    motivoSkip = `precisa de --import ./test/alias-loader.mjs --experimental-test-module-mocks (${e instanceof Error ? e.message : e})`;
+  }
+});
 
-const pular = motivoSkip ? { skip: motivoSkip } : {};
+/**
+ * Pula COM MOTIVO IMPRESSO quando o módulo não pôde ser carregado. Precisa ser
+ * em tempo de execução (e não `{ skip: … }` no registro do teste) porque agora
+ * o motivo só é conhecido depois do `before()`.
+ */
+function semModulo(t: TestContext): boolean {
+  if (motivoSkip) {
+    t.skip(motivoSkip);
+    return true;
+  }
+  return false;
+}
 
 const ARGS = { userId: "user-1", refId: "HP123456", eventType: "PURCHASE_REFUNDED" };
 
 // ── (a) FUNÇÃO AUSENTE: NÃO LANÇA ─────────────────────────────────────────
 
-test("PGRST202 (função não existe) devolve ok:false e NÃO lança", pular, async () => {
+test("PGRST202 (função não existe) devolve ok:false e NÃO lança", async (t) => {
+  if (semModulo(t)) return;
   chamadas.length = 0;
   resposta = {
     data: null,
@@ -80,7 +106,8 @@ test("PGRST202 (função não existe) devolve ok:false e NÃO lança", pular, as
   });
 });
 
-test("42883 (undefined_function) também devolve ok:false sem lançar", pular, async () => {
+test("42883 (undefined_function) também devolve ok:false sem lançar", async (t) => {
+  if (semModulo(t)) return;
   resposta = { data: null, error: { code: "42883", message: "function does not exist" } };
   const r = await refund!.zeroSubscriptionCreditsOnRefund(ARGS);
   assert.equal(r.ok, false);
@@ -89,7 +116,8 @@ test("42883 (undefined_function) também devolve ok:false sem lançar", pular, a
 
 // ── (b) ERRO TRANSITÓRIO: AINDA LANÇA ─────────────────────────────────────
 
-test("timeout (57014) AINDA LANÇA — 500 pra Hotmart reenviar", pular, async () => {
+test("timeout (57014) AINDA LANÇA — 500 pra Hotmart reenviar", async (t) => {
+  if (semModulo(t)) return;
   resposta = {
     data: null,
     error: { code: "57014", message: "canceling statement due to statement timeout" },
@@ -101,7 +129,8 @@ test("timeout (57014) AINDA LANÇA — 500 pra Hotmart reenviar", pular, async (
   );
 });
 
-test("permissão negada AINDA LANÇA (não é 'função ausente')", pular, async () => {
+test("permissão negada AINDA LANÇA (não é 'função ausente')", async (t) => {
+  if (semModulo(t)) return;
   resposta = {
     data: null,
     error: { code: "42501", message: "permission denied for function" },
@@ -109,7 +138,8 @@ test("permissão negada AINDA LANÇA (não é 'função ausente')", pular, async
   await assert.rejects(() => refund!.zeroSubscriptionCreditsOnRefund(ARGS), /permission denied/);
 });
 
-test("resposta inesperada do RPC (sem `ok`) continua lançando", pular, async () => {
+test("resposta inesperada do RPC (sem `ok`) continua lançando", async (t) => {
+  if (semModulo(t)) return;
   resposta = { data: { qualquer: "coisa" }, error: null };
   await assert.rejects(
     () => refund!.zeroSubscriptionCreditsOnRefund(ARGS),
@@ -119,7 +149,8 @@ test("resposta inesperada do RPC (sem `ok`) continua lançando", pular, async ()
 
 // ── (c) CAMINHO FELIZ INTOCADO ────────────────────────────────────────────
 
-test("resposta ok do RPC continua passando igual (sem regressão)", pular, async () => {
+test("resposta ok do RPC continua passando igual (sem regressão)", async (t) => {
+  if (semModulo(t)) return;
   resposta = {
     data: { ok: true, already_processed: false, debited: 1000, balance: 0 },
     error: null,
@@ -128,7 +159,8 @@ test("resposta ok do RPC continua passando igual (sem regressão)", pular, async
   assert.deepEqual(r, { ok: true, already_processed: false, debited: 1000, balance: 0 });
 });
 
-test("ok:false legítimo da própria função (no_profile) passa como antes", pular, async () => {
+test("ok:false legítimo da própria função (no_profile) passa como antes", async (t) => {
+  if (semModulo(t)) return;
   resposta = { data: { ok: false, reason: "no_profile" }, error: null };
   const r = await refund!.zeroSubscriptionCreditsOnRefund(ARGS);
   assert.deepEqual(r, { ok: false, reason: "no_profile" });
