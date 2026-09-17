@@ -54,7 +54,14 @@ export function ImageAnimatePanel({
 
   const selected = VIDEO_TIERS.find((t) => t.id === tier) ?? null;
   const inflight = status === "pending" || status === "generating";
-  const temVideoPronto = status === "ready" && !!videoUrl;
+  // A guarda NÃO pode depender de videoUrl: essa URL é presignada na hora pelo
+  // servidor e vira null em silêncio quando o presign falha (catch nu em
+  // api/v1/images/route.ts e api/v1/images/[id]/route.ts). O vídeo continua no
+  // R2 e o video_path continua no banco — o que some é só o link. Se a guarda
+  // olhasse a URL, o aluno perderia o aviso exatamente no caso em que ele mais
+  // tende a clicar "Gerar de novo" (o vídeo não carregou, ele acha que falhou).
+  // O que está em jogo aqui é "existe vídeo a destruir", não "tenho URL".
+  const podeDestruirVideo = status === "ready";
 
   // "A tela corre para baixo": ao abrir o painel, traz ele pra vista.
   useEffect(() => {
@@ -113,7 +120,7 @@ export function ImageAnimatePanel({
 
   // Só pede confirmação quando existe vídeo pronto pra ser destruído.
   function aoClicarGerar() {
-    if (temVideoPronto && !confirmandoSubstituir) {
+    if (podeDestruirVideo && !confirmandoSubstituir) {
       setConfirmandoSubstituir(true);
       return;
     }
@@ -237,10 +244,17 @@ export function ImageAnimatePanel({
               <p className="text-[13px] text-[var(--ink)]">
                 {t("replaceWarnBody", { credits: selected.creditsPerClip })}
               </p>
+              {!videoUrl && (
+                <p className="font-mono text-[11px] leading-relaxed tracking-wide text-[var(--status-error)]">
+                  {t("replaceNoDownload")}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={downloadVideo} className={PILL}>
-                  <Download className="h-4 w-4" /> {t("downloadVideo")}
-                </button>
+                {videoUrl && (
+                  <button type="button" onClick={downloadVideo} className={PILL}>
+                    <Download className="h-4 w-4" /> {t("downloadVideo")}
+                  </button>
+                )}
                 <button type="button" onClick={() => setConfirmandoSubstituir(false)} className={PILL}>
                   {t("replaceCancel")}
                 </button>

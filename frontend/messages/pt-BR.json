@@ -581,6 +581,7 @@
       "retryHint": "Quer outro movimento? Ajuste o prompt abaixo e gere de novo. ATENÇÃO: a nova animação SUBSTITUI esta — o vídeo atual é apagado e não temos como recuperar. Baixe antes de gerar de novo (e há novo custo em créditos).",
       "replaceWarnTitle": "Isto vai apagar o vídeo que você já pagou",
       "replaceWarnBody": "Gerar de novo substitui a animação atual desta imagem: ela some do seu histórico e não temos como recuperar. Baixe o vídeo atual antes de continuar. A nova geração custa {credits} créditos.",
+      "replaceNoDownload": "Não conseguimos carregar o vídeo atual agora, então não dá para baixar por aqui. Ele continua salvo e vai ser apagado se você substituir. Recarregue a página e baixe o vídeo antes de gerar de novo.",
       "replaceConfirm": "Sim, substituir",
       "replaceCancel": "Cancelar",
       "generating": "Gerando vídeo…",
