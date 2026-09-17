@@ -4,7 +4,7 @@
  */
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { r2, R2_BUCKETS } from "./client";
+import { r2, R2_BUCKETS } from "./client.ts";
 
 const ALLOWED_AUDIO_MIME = new Set([
   "audio/mpeg",

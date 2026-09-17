@@ -16,7 +16,7 @@ import {
   type DiagnosticoTrainer,
   ehCudaOom,
   SUFIXO_CUDA_OOM,
-} from "./diagnostico-trainer";
+} from "./diagnostico-trainer.ts";
 
 export type { DiagnosticoTrainer };
 export { ASSINATURA_CUDA_OOM, ehCudaOom };
