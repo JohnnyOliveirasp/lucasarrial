@@ -582,3 +582,109 @@ test("bounce truncado (só cabeçalhos) ainda entrega o destinatário pelo X-Fai
   // Sem diagnóstico a gente NÃO inventa a causa.
   assert.equal(b.destinatarios[0].classe, "desconhecida");
 });
+
+// ------------------------------------------- endereço obsoleto (#440/#441)
+
+/**
+ * O endereço que quicou ainda é o do cadastro?
+ *
+ * OS CASOS SÃO REAIS, medidos em 17/09 contra o banco vivo. Dos 16 chamados
+ * `fast-bounce:` dos últimos 30 dias, 5 eram de endereço que não consta mais
+ * em `sgp_pedidos.email` nem em `profiles.email` (#339, #378, #401, #440,
+ * #441) e 11 eram de endereço VIGENTE — e são estes 11 que não podem
+ * regredir: bounce de endereço bom continua abrindo chamado normal, vivo.
+ *
+ * A armadilha que estes testes guardam é a do `null`: "não consegui perguntar"
+ * NÃO é "não achei". Confundir os dois marcaria chamado legítimo como fantasma
+ * toda vez que o banco piscasse, e em silêncio.
+ */
+import { decidirCadastro, notaDeObsoleto, veredictoDoCadastro, type Cadastro } from "./mail-bounce-cadastro.ts";
+
+/** Porta falsa: responde o que o teste mandar, sem banco. */
+function cadastroFalso(r: { emSgp: boolean | null; emProfiles: boolean | null }): Cadastro {
+  return { emSgp: async () => r.emSgp, emProfiles: async () => r.emProfiles };
+}
+
+test("cadastro: endereço que AINDA é do cadastro segue vigente (chamado normal, vivo)", async () => {
+  // Os 11 medidos em 17/09 — o lado que não pode regredir.
+  assert.equal(decidirCadastro({ emSgp: true, emProfiles: false }), "vigente");
+  assert.equal(decidirCadastro({ emSgp: false, emProfiles: true }), "vigente");
+  assert.equal(decidirCadastro({ emSgp: true, emProfiles: true }), "vigente");
+  assert.equal(
+    await veredictoDoCadastro("lucianadox1@gmail.com", cadastroFalso({ emSgp: true, emProfiles: false })),
+    "vigente",
+  );
+});
+
+test("cadastro: endereço que sumiu dos DOIS cadastros é obsoleto (#440 Robério)", async () => {
+  assert.equal(decidirCadastro({ emSgp: false, emProfiles: false }), "obsoleto");
+  assert.equal(
+    await veredictoDoCadastro("roberioaraujohairstylist@gmmail.com", cadastroFalso({ emSgp: false, emProfiles: false })),
+    "obsoleto",
+  );
+});
+
+test("cadastro: UMA tabela sozinha não decide — as duas são consultadas", async () => {
+  // Medido: dos 11 vigentes, 1 só existe em sgp_pedidos e 8 só em profiles.
+  // Quem olhasse só `profiles` marcaria o aluno do SGP como fantasma.
+  assert.equal(decidirCadastro({ emSgp: true, emProfiles: false }), "vigente");
+  // E quem olhasse só `sgp_pedidos` marcaria os 8 da plataforma.
+  assert.equal(decidirCadastro({ emSgp: false, emProfiles: true }), "vigente");
+});
+
+test("cadastro: erro de consulta é 'não sei' e NUNCA vira obsoleto", async () => {
+  // `null` = a pergunta não foi respondida. O chamado tem que nascer ABERTO.
+  assert.equal(decidirCadastro({ emSgp: null, emProfiles: null }), "nao-sei");
+  assert.equal(decidirCadastro({ emSgp: false, emProfiles: null }), "nao-sei");
+  assert.equal(decidirCadastro({ emSgp: null, emProfiles: false }), "nao-sei");
+  // Um `false` + um `null` NÃO somam "não está em lugar nenhum".
+  assert.notEqual(decidirCadastro({ emSgp: false, emProfiles: null }), "obsoleto");
+  assert.equal(
+    await veredictoDoCadastro("alguem@exemplo.com", cadastroFalso({ emSgp: false, emProfiles: null })),
+    "nao-sei",
+  );
+});
+
+test("cadastro: achou na primeira tabela não pergunta à segunda", async () => {
+  let perguntou = false;
+  const c: Cadastro = {
+    emSgp: async () => true,
+    emProfiles: async () => {
+      perguntou = true;
+      return false;
+    },
+  };
+  assert.equal(await veredictoDoCadastro("x@y.com", c), "vigente");
+  assert.equal(perguntou, false, "consulta desnecessária ao profiles");
+});
+
+test("cadastro: porta que LANÇA não derruba a varredura, vira 'não sei'", async () => {
+  // `tratarSeForBounce` não pode lançar: exceção aqui trava a fila inteira.
+  const explode: Cadastro = {
+    emSgp: async () => {
+      throw new Error("supabase fora do ar");
+    },
+    emProfiles: async () => false,
+  };
+  assert.equal(await veredictoDoCadastro("x@y.com", explode), "nao-sei");
+});
+
+test("cadastro: endereço vazio não vira obsoleto", async () => {
+  assert.equal(await veredictoDoCadastro("", cadastroFalso({ emSgp: false, emProfiles: false })), "nao-sei");
+});
+
+test("nota do obsoleto NÃO nomeia endereço substituto e proíbe trocar cadastro", () => {
+  const nota = notaDeObsoleto("roberioaraujohairstylist@gmmail.com", "2026-09-17T01:00:00.000Z");
+  // Diz o que foi medido...
+  assert.match(nota, /não consta em/i);
+  assert.match(nota, /roberioaraujohairstylist@gmmail\.com/);
+  // ...e não chuta o substituto. O prefixo do Robério casa o e-mail da Hotmart
+  // (roberioaraujo18@gmail.com), que é OUTRO — escrevê-lo aqui teria virado a
+  // ordem de trocar um cadastro verificado e em uso. É o defeito, não a cura.
+  assert.doesNotMatch(nota, /roberioaraujo18/);
+  assert.doesNotMatch(nota, /cadastro atual (é|:)\s*\S+@/i);
+  // E manda explicitamente NÃO trocar cadastro por causa deste chamado.
+  assert.match(nota, /NÃO troque o cadastro/);
+  // O caminho que funciona é procurar pelo NOME.
+  assert.match(nota, /NOME/);
+});
