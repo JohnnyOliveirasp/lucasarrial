@@ -578,7 +578,12 @@
         "generic": "Error"
       },
       "downloadVideo": "Descargar video",
-      "retryHint": "¿Quieres otro movimiento? Ajusta el prompt abajo y genera de nuevo (nuevo costo en créditos).",
+      "retryHint": "¿Quieres otro movimiento? Ajusta el prompt abajo y genera de nuevo. ATENCIÓN: la nueva animación REEMPLAZA esta — el video actual se borra y no podemos recuperarlo. Descárgalo antes (y hay un nuevo costo en créditos).",
+      "replaceWarnTitle": "Esto va a borrar el video que ya pagaste",
+      "replaceWarnBody": "Generar de nuevo reemplaza la animación actual de esta imagen: desaparece de tu historial y no podemos recuperarla. Descarga el video actual antes de continuar. La nueva generación cuesta {credits} créditos.",
+      "replaceNoDownload": "No pudimos cargar el video actual ahora, así que no se puede descargar aquí. Sigue guardado y se va a borrar si lo reemplazas. Recarga la página y descarga el video antes de generar de nuevo.",
+      "replaceConfirm": "Sí, reemplazar",
+      "replaceCancel": "Cancelar",
       "generating": "Generando video…",
       "generatingHint": "Puede tardar unos minutos. Puedes salir y volver.",
       "tierCredits": "{credits} créditos",
