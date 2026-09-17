@@ -1,5 +1,22 @@
 # Ronda das falhas — 17/09 ~18hZ
 
+> ## ⛔ RETRATADO 25 MINUTOS DEPOIS — NÃO LEIA ESTE ARQUIVO SOZINHO
+>
+> **A segunda metade do título deste arquivo é FALSA.** O aviso NÃO levou 2
+> dias: saiu em **20 segundos** (`uid 2416`, 15/09 12:02:24Z), e teve um
+> segundo aviso em 16/09 (`uid 2494`). Eu concluí "ninguém avisou" a partir de
+> `emails_enviados`, que **não registra envio feito pelo `enviar_email.cjs`** —
+> provado pelo meu próprio e-mail, que também não aparece lá.
+>
+> **Cai junto:** o número "63 de 64" (item 6) e o "achado" do item 5(a), que já
+> estava medido, comunicado e `fixed` no chamado `1e133bcd` desde 16/09 01:52.
+>
+> **Continua de pé:** o fecho `fixed`, o cancelamento pedido pelo titular e
+> executado em 11 min, e o dinheiro conferido (nada devido).
+>
+> Correção completa em
+> `2026-09-17_rotina_falhas_18h30_eu_errei_a_nota_que_acabei_de_publicar.md`.
+
 **Fechado:** `6c38c99d` (Luciano de Pinho). **Aluno avisado, dinheiro conferido,
 sem commit — porque não havia código quebrado.**
 
