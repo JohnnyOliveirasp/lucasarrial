@@ -28,6 +28,8 @@ import {
   resolveUserIdByEmail,
 } from "@/lib/credits/service";
 import { zeroSubscriptionCreditsOnRefund } from "@/lib/credits/refund";
+import { motivoEhRpcAusente, RPC_ESTORNO } from "@/lib/credits/refund-erro";
+import { escapeHtml } from "@/lib/email/resend";
 import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
 import { avisarCompraOrfa } from "@/lib/payments/aviso-orfao";
@@ -191,6 +193,54 @@ type ProcessResult = {
 };
 
 const ok = (handled: string): ProcessResult => ({ handled, processError: null });
+
+/**
+ * PONTE TEMPORÁRIA (#446) — avisa a casa que um estorno passou SEM zerar o
+ * crédito porque a função de banco não existe. Morre junto com a ponte quando
+ * a `scripts/111` for aplicada.
+ *
+ * Reusa os canais que este mesmo webhook já usa pro aviso de compra órfã
+ * (`canaisDaCasa`, em lib/payments/aviso-orfao-canal.ts): Telegram em tempo
+ * real + e-mail pro suporte e pra allowlist de admins. Canal NOVO não se
+ * inventa. O recado durável (`registrar`) fica de fora de propósito: a
+ * assinatura dele é específica de compra órfã (`CompraOrfa`) e forçar este
+ * caso lá dentro sujaria o estado `orphan_alerts` com coisa que não é órfã.
+ *
+ * Devolve `true` se ALGUM canal aceitou. NUNCA lança: aviso que falha não pode
+ * derrubar o webhook — é a mesma regra do aviso de compra órfã, e devolver 500
+ * aqui reabriria exatamente o defeito que esta ponte fecha.
+ */
+async function avisarCasaEstornoSemFuncao(a: {
+  userId: string;
+  buyerEmail: string | null;
+  eventType: string;
+  refId: string;
+}): Promise<boolean> {
+  try {
+    const canais = canaisDaCasa();
+    const assunto = `🚨 Estorno NÃO zerou crédito — função ${RPC_ESTORNO} não existe no banco`;
+    const linhas = [
+      "Um evento de dinheiro devolvido foi processado, mas o crédito de mensalidade NÃO foi zerado.",
+      `Motivo: a função ${RPC_ESTORNO} não existe no banco (scripts/111_estorno_zera_credito.sql aguarda aval do Johnny).`,
+      `Evento: ${a.eventType}`,
+      `Aluno: ${a.userId}${a.buyerEmail ? ` (${a.buyerEmail})` : ""}`,
+      `Transação: ${a.refId}`,
+      "AÇÃO: zerar o credits_subscription deste aluno À MÃO, ou aplicar a 111.",
+    ];
+    const texto = `${assunto}\n\n${linhas.join("\n")}`;
+    const html = `<p><strong>${escapeHtml(assunto)}</strong></p><ul>${linhas
+      .map((l) => `<li>${escapeHtml(l)}</li>`)
+      .join("")}</ul>`;
+    // Os dois canais sempre, sem curto-circuito: um `false` do Telegram não
+    // pode calar o e-mail (foi assim que o #239 avisou ninguém).
+    const porTelegram = await canais.telegram(texto);
+    const porEmail = await canais.email(assunto, html);
+    return porTelegram || porEmail;
+  } catch {
+    // best-effort: nenhuma falha de aviso derruba o processamento do evento
+    return false;
+  }
+}
 
 /** Mapeia o evento da Hotmart para liberar/revogar acesso. */
 async function processEvent(
@@ -376,6 +426,21 @@ async function processEvent(
     // credits_extra nunca é tocado (dívida nossa com o aluno). A função no
     // banco é idempotente por transação: reentrega não lança 2x, e recompra
     // depois do estorno não é apagada por reprocessamento do evento antigo.
+    //
+    // ⚠️ PONTE TEMPORÁRIA (#446) — LER ANTES DE MEXER AQUI. A função de banco
+    // `zero_subscription_credits_on_refund` NÃO EXISTE em produção: o commit
+    // 0776768 (14/09) subiu este chamador sem a DDL que a cria
+    // (`scripts/111_estorno_zera_credito.sql`, parada aguardando aval do Johnny
+    // porque mexe em dinheiro de aluno). Medido no catálogo do Postgres: 0
+    // linhas em `pg_proc` pra esse nome. Consequência até agora: todo evento de
+    // dinheiro devolvido lançava, o webhook respondia 500, a Hotmart reenviava
+    // 5× contra a mesma função ausente e o evento ficava com `processed_at`
+    // NULL pra sempre (2 de 2 eventos desde 14/09; antes disso, 4 de 4 limpos).
+    // A ponte faz SÓ esse caso virar `ok:false` (evento processado + erro
+    // gravado + casa avisada) em vez de derrubar o webhook. O crédito continua
+    // NÃO zerado — isso só a 111 resolve. QUANDO A 111 FOR APLICADA, todo este
+    // caminho (o `rpcAusente` abaixo, o aviso e `lib/credits/refund-erro.ts`)
+    // vira código morto e deve ser REMOVIDO.
     if (isMoneyReturnedStatus(revokeStatus)) {
       // preferimos o dono do ENTITLEMENT (mesma pessoa da compra estornada);
       // sem match (órfão/unmatched), caímos pro e-mail do comprador.
@@ -389,10 +454,37 @@ async function processEvent(
         // chave de idempotência = a transação estornada (o externalId da
         // assinatura é o código do assinante, igual em toda renovação).
         const refId = extractTransactionId(data) ?? externalId;
-        // falha de RPC LANÇA → 500 → Hotmart reenvia (seguro: idempotente)
+        // falha de RPC LANÇA → 500 → Hotmart reenvia (seguro: idempotente).
+        // EXCEÇÃO: função ausente devolve ok:false — ver a ponte #446 acima.
         const zeroed = await zeroSubscriptionCreditsOnRefund({ userId, refId, eventType });
         if (!zeroed.ok) {
-          errors.push(`crédito NÃO zerado (${zeroed.reason}) [user: ${userId}]`);
+          const rpcAusente = motivoEhRpcAusente(zeroed.reason);
+          errors.push(
+            `crédito NÃO zerado (${zeroed.reason}) [user: ${userId}]` +
+              (rpcAusente
+                ? ` — a função ${RPC_ESTORNO} NÃO existe no banco (scripts/111 ` +
+                  `aguarda aval): o crédito de mensalidade deste estorno CONTINUA ` +
+                  `com o aluno e precisa ser zerado À MÃO`
+                : ""),
+          );
+          if (rpcAusente) {
+            // payment_events.error sozinho não basta: esse balde já provou que
+            // ninguém olha (o defeito gritou 26h lá sem ninguém ver). Avisa a
+            // casa pelos MESMOS canais da compra órfã. Best-effort: não lança.
+            const entregue = await avisarCasaEstornoSemFuncao({
+              userId,
+              buyerEmail,
+              eventType,
+              refId,
+            });
+            // #239: aviso que não entrou em NENHUM canal é indistinguível de
+            // "avisamos" visto de fora. Se nenhum canal aceitou, fica escrito.
+            if (!entregue) {
+              errors.push(
+                `aviso interno do estorno sem função NÃO entrou em nenhum canal [user: ${userId}]`,
+              );
+            }
+          }
         }
       }
     }
