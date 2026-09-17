@@ -10,6 +10,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/types";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
 import { hasActiveAccess } from "@/lib/credits/access";
+import { temAssinaturaPlataformaPorEmail } from "@/lib/payments/entitlements";
 import { ONBOARDING_VOICE_NAME } from "./import";
 import { desfechoOnboarding } from "./desfecho-pure";
 // #435: o parágrafo da senha mora no `avisos.ts` (que é o módulo de baixo —
@@ -186,11 +187,24 @@ export async function verificarOnboardingPronto(admin: Admin, userId: string): P
     // assinatura vigente → "tudo pronto". Sem assinatura (ou nunca entrou) →
     // "seus arquivos estão ok, assine pra acessar". Nenhuma das duas fala de
     // saldo — decisão dele.
-    const ativo = hasActiveAccess(
-      email,
-      claimed?.[0]?.access_until as string | null,
-      claimed?.[0]?.access_source as string | null,
-    );
+    //
+    // #290 (perna irmã, 16/09): `hasActiveAccess` lê o CACHE do profile
+    // (access_until/access_source), que só é preenchido pela reconciliação.
+    // Quem compra SGP + assinatura no MESMO checkout (order bump C1/C2) termina
+    // o onboarding ANTES disso — o profile ainda diz `free` e caía no
+    // `avisoOkMasAssine`, que manda "Assine aqui" COM LINK DE CHECKOUT pra quem
+    // acabou de pagar. Era o #290 (mesma mentira, caminho irmão), com o
+    // agravante do link de venda.
+    // O segundo teste pergunta pelo E-MAIL DA COMPRA (entitlements), pela MESMA
+    // régua do gate. É ADITIVO e curto-circuita: só consulta o banco quando o
+    // profile já disse "sem acesso", então o caminho comum não paga nada e
+    // ninguém que hoje recebe "tudo pronto" passa a receber outra coisa.
+    const ativo =
+      hasActiveAccess(
+        email,
+        claimed?.[0]?.access_until as string | null,
+        claimed?.[0]?.access_source as string | null,
+      ) || (await temAssinaturaPlataformaPorEmail(email));
 
     // #189 (29/08): `pronto` fica true com ZERO avatar de propósito (decisão de
     // 22/08 — a voz de pé basta pra fechar a linha, senão quem perdeu as
