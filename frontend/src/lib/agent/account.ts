@@ -26,6 +26,8 @@ import {
   type EventoCompra,
 } from "@/lib/agent/garantia";
 import { qaVeredito, AVISO_QA_NAO_PROVA } from "@/lib/generations/qa-veredito";
+import { entitlementValeAcesso } from "@/lib/payments/acesso-regra";
+import { fraseDeAcessoParaAgente } from "@/lib/payments/acesso-frase";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
 export async function phoneFromJid(jid: string): Promise<string | null> {
@@ -180,6 +182,49 @@ function jobLines(lines: JobLine[]): string {
 // daqui porque este era o endereço dela desde o #198.
 export { GARANTIA_ESCALAR };
 
+/**
+ * O status da MELHOR linha viva de `entitlements` — "a assinatura desta conta
+ * renova ou termina?". Incidente #303.
+ *
+ * Existe porque `profiles.access_until` sozinho NÃO responde: para assinatura
+ * ACTIVE aquela data é a próxima COBRANÇA (medido em 17/09: 605 de 606 perfis
+ * com entitlement `active` vivo têm `access_until` igual, ao minuto, a
+ * `raw_event->purchase->date_next_charge`), e para CANCELED é o fim do período
+ * pago. A mesma coluna, dois significados opostos.
+ *
+ * O desempate é o de `entitlements-pure.melhorAcesso`, que é quem escreveu o
+ * `access_until` do perfil: "active" ganha de "canceled"; empatado, a data mais
+ * longe. Ler por outro critério daria o status de UMA linha e a data de OUTRA.
+ *
+ * ⚠️ Devolve `null` quando a leitura falha, e isso é decisão, não descuido:
+ * `null` leva a frase para o ramo `desconhecido`, que manda a Fast ESCALAR em
+ * vez de afirmar. É o princípio do #282 — erro de leitura não pode virar
+ * afirmação sobre a assinatura de um pagante. Best-effort igual ao resto deste
+ * arquivo: nada aqui derruba o pipeline.
+ */
+async function statusDaAssinatura(profileId: string): Promise<string | null> {
+  try {
+    const { data, error } = await getAdmin()
+      .from("entitlements")
+      .select("status,access_until")
+      .eq("user_id", profileId);
+    if (error || !data?.length) return null;
+    const agoraIso = new Date().toISOString();
+    const vivas = (data as { status: string; access_until: string | null }[]).filter((e) =>
+      entitlementValeAcesso(e, agoraIso),
+    );
+    if (!vivas.length) return null;
+    return vivas.sort((a, b) => {
+      if (a.status !== b.status) return a.status === "active" ? -1 : 1;
+      const va = a.access_until === null ? Infinity : new Date(a.access_until).getTime();
+      const vb = b.access_until === null ? Infinity : new Date(b.access_until).getTime();
+      return vb - va;
+    })[0].status;
+  } catch {
+    return null;
+  }
+}
+
 async function linhaGarantiaHotmart(email: string | null): Promise<string> {
   if (!email) return GARANTIA_ESCALAR;
   try {
@@ -299,11 +344,29 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       .join("\n");
 
     const saldo = (profile.credits_subscription ?? 0) + (profile.credits_extra ?? 0);
-    const acesso = profile.access_until
-      ? `ativo até ${dtBR(profile.access_until)}`
-      : profile.access_source
-        ? "ativo"
-        : "SEM assinatura ativa";
+
+    // ⚠️ A DATA VAI ACOMPANHADA DO STATUS — incidente #303. Até aqui esta linha
+    // era `ativo até ${dtBR(profile.access_until)}`, e a string entregue ao
+    // agente NÃO carregava se a assinatura renova. Para assinatura ACTIVE
+    // `access_until` é a PRÓXIMA COBRANÇA, então "ativo até 09/09" descrevia uma
+    // RENOVAÇÃO com cara de vencimento e o agente inventava urgência: em 07/09 a
+    // casa escreveu a uma aluna "o seu acesso está indo até 09/09, ou seja, mais
+    // dois dias" (Enviados uid 1243) sobre a assinatura HCIA7GIM, ACTIVE, que ia
+    // renovar naquele dia — 27.436 créditos queimados nas 8 horas seguintes.
+    //
+    // Mesmo desenho de `linhaGarantiaHotmart()` três linhas abaixo, criada
+    // depois do #198 pela mesma razão: o dado que falta vira afirmação errada.
+    // A frase mora em `payments/acesso-frase.ts` (puro, sob teste) porque a
+    // armadilha não é do agente — é da LEITURA DA COLUNA, e em 08/09 ela
+    // reapareceu num e-mail escrito à mão para 8 pagantes.
+    const acesso = fraseDeAcessoParaAgente(
+      {
+        accessUntil: profile.access_until ?? null,
+        accessSource: profile.access_source ?? null,
+        statusEntitlement: await statusDaAssinatura(profileId),
+      },
+      new Date().toISOString(),
+    );
 
     // Nunca deixa de sair: a função já devolve a linha de ESCALAR em qualquer
     // falha. É a ausência desta linha que produziu o #198.
