@@ -4,7 +4,8 @@
  *  - add_note    {incident_id, note}                  → anota diagnóstico no incidente
  *  - set_status  {incident_id, status, resolution_note?, resolved_commit?}
  *  - set_state   {key, value}                          → memória persistente do agente
- *  - notify      {subject, body}                       → e-mail pro admin (Johnny)
+ *  - notify      {subject, body}                       → e-mail pro admin (Johnny);
+ *                devolve {email, email_configured} — o envio pode falhar calado
  *  - ask_humans  {subject, question, ...}              → pede um olho humano no grupo
  * O agente NÃO tem ação de deploy nem escrita fora destas tabelas.
  */
@@ -14,7 +15,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { agentTokenOk } from "@/lib/incidents/agent-auth";
 import { closureFields } from "@/lib/incidents/closure";
 import { isIncidentStatus } from "@/lib/incidents/status";
-import { sendEmail } from "@/lib/email/resend";
+import { emailConfigured, sendEmail } from "@/lib/email/resend";
 import { sendAgentText } from "@/lib/agent/provider";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { R2_BUCKETS, imagesBucket } from "@/lib/r2/client";
@@ -137,10 +138,25 @@ export async function POST(request: NextRequest) {
       return jsonOk({ ok: true });
     }
 
+    /**
+     * ⚠️ DEVOLVE O RESULTADO DO ENVIO DE PROPÓSITO (incidente #305/e8885d03,
+     * medido 16/09). Antes, esta ação dava `await sendEmail(...)`, DESCARTAVA o
+     * boolean e devolvia `{ok:true}` sempre — então uma rotina cujo e-mail não
+     * saiu recebia a mesma resposta de uma cujo e-mail saiu, e o canal por onde
+     * o Vigia fala com o Johnny podia estar morto há semanas sem ninguém saber.
+     * É a mesma honestidade que o `tell_frank` logo abaixo já pratica ao
+     * devolver `telegram:false`: o campo diz a verdade sobre o que aconteceu.
+     *
+     * `email_configured` separa os dois motivos que o boolean sozinho embola:
+     * env ausente no servidor (no-op) de envio recusado pelo Resend. Quem chama
+     * NÃO deve tratar `email:false` como erro da requisição — o aviso pode ter
+     * ido por outro canal (push/Telegram); é medição, não status HTTP.
+     */
     if (body.action === "notify") {
       const { subject, body: text } = body;
       if (!subject || !text) return badRequest("notify requires subject and body");
-      await sendEmail({
+      const configurado = emailConfigured();
+      const entregue = await sendEmail({
         to: ADMIN_NOTIFY_EMAIL,
         subject: `🤖 Vigia FastCloner: ${String(subject).slice(0, 120)}`,
         html: `<pre style="font-family:inherit;white-space:pre-wrap">${String(text)
@@ -148,8 +164,12 @@ export async function POST(request: NextRequest) {
           .replace(/&/g, "&amp;")
           .replace(/</g, "&lt;")}</pre>`,
       });
-      logger.info("audit", "agent.notify", { subject: String(subject).slice(0, 120) });
-      return jsonOk({ ok: true });
+      logger.info("audit", "agent.notify", {
+        subject: String(subject).slice(0, 120),
+        email: entregue,
+        email_configured: configurado,
+      });
+      return jsonOk({ ok: true, email: entregue, email_configured: configurado });
     }
 
     /**
