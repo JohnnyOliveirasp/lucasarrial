@@ -45,10 +45,16 @@ export function ImageAnimatePanel({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paywall, setPaywall] = useState<{ subscribed: boolean } | null>(null);
+  // Incidente #439: a key do vídeo no R2 é por ID DA IMAGEM, então animar de
+  // novo SOBRESCREVE o vídeo que o aluno já pagou e não sobra rastro. Enquanto
+  // a key não for versionada, o aluno tem que ser avisado ANTES — ele era
+  // avisado só do custo novo, nunca da destruição do vídeo anterior.
+  const [confirmandoSubstituir, setConfirmandoSubstituir] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const selected = VIDEO_TIERS.find((t) => t.id === tier) ?? null;
   const inflight = status === "pending" || status === "generating";
+  const temVideoPronto = status === "ready" && !!videoUrl;
 
   // "A tela corre para baixo": ao abrir o painel, traz ele pra vista.
   useEffect(() => {
@@ -79,6 +85,7 @@ export function ImageAnimatePanel({
 
   async function submit() {
     if (!selected) return;
+    setConfirmandoSubstituir(false);
     setSubmitting(true);
     setError(null);
     try {
@@ -102,6 +109,15 @@ export function ImageAnimatePanel({
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Só pede confirmação quando existe vídeo pronto pra ser destruído.
+  function aoClicarGerar() {
+    if (temVideoPronto && !confirmandoSubstituir) {
+      setConfirmandoSubstituir(true);
+      return;
+    }
+    void submit();
   }
 
   async function downloadVideo() {
@@ -212,13 +228,33 @@ export function ImageAnimatePanel({
             </p>
           )}
 
+          {confirmandoSubstituir && selected && (
+            <div
+              role="alert"
+              className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--status-error)]/40 bg-[var(--surface-card)] px-3 py-3"
+            >
+              <p className="text-sm font-medium text-[var(--status-error)]">{t("replaceWarnTitle")}</p>
+              <p className="text-[13px] text-[var(--ink)]">
+                {t("replaceWarnBody", { credits: selected.creditsPerClip })}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={downloadVideo} className={PILL}>
+                  <Download className="h-4 w-4" /> {t("downloadVideo")}
+                </button>
+                <button type="button" onClick={() => setConfirmandoSubstituir(false)} className={PILL}>
+                  {t("replaceCancel")}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="font-mono text-[11px] tracking-wide text-[var(--ash)]">
               {selected
                 ? t("cost", { credits: selected.creditsPerClip, seconds: VIDEO_DURATION_SECONDS })
                 : t("selectModel")}
             </span>
-            <button type="button" disabled={!selected || submitting} onClick={submit} className={PILL}>
+            <button type="button" disabled={!selected || submitting} onClick={aoClicarGerar} className={PILL}>
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : status === "ready" || status === "failed" ? (
@@ -228,9 +264,11 @@ export function ImageAnimatePanel({
               )}
               {submitting
                 ? t("sending")
-                : selected
-                  ? `${status === "ready" || status === "failed" ? t("regenerate") : t("animateBtn")} · ${selected.creditsPerClip} cr`
-                  : t("animateBtn")}
+                : confirmandoSubstituir && selected
+                  ? `${t("replaceConfirm")} · ${selected.creditsPerClip} cr`
+                  : selected
+                    ? `${status === "ready" || status === "failed" ? t("regenerate") : t("animateBtn")} · ${selected.creditsPerClip} cr`
+                    : t("animateBtn")}
             </button>
           </div>
         </>

@@ -578,7 +578,11 @@
         "generic": "Error"
       },
       "downloadVideo": "Download video",
-      "retryHint": "Want a different motion? Adjust the prompt below and generate again (new credit cost).",
+      "retryHint": "Want a different motion? Adjust the prompt below and generate again. HEADS UP: the new animation REPLACES this one — the current video is deleted and cannot be recovered. Download it first (and there is a new credit cost).",
+      "replaceWarnTitle": "This will delete the video you already paid for",
+      "replaceWarnBody": "Generating again replaces this image's current animation: it disappears from your history and cannot be recovered. Download the current video before continuing. The new generation costs {credits} credits.",
+      "replaceConfirm": "Yes, replace it",
+      "replaceCancel": "Cancel",
       "generating": "Generating video…",
       "generatingHint": "It can take a few minutes. You can leave and come back.",
       "tierCredits": "{credits} credits",
