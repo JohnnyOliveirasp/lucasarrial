@@ -9,7 +9,7 @@
  * O medidor até percebeu — os dois arquivos em inglês têm
  * `avisos: ["volume baixo", "a fala parece não estar em português (english)"]`
  * gravados no próprio pedido — mas AVISO não barra: `status` ficou `aprovado`
- * nos três (`audio/route.ts:57`, o status sai de `m.aprovado`, que não olha o
+ * nos três (`audio/route.ts:53`, o status sai de `m.aprovado`, que não olha o
  * idioma). Ela recebeu a voz, viu que não prestava e APAGOU a voz.
  *
  * Medido no banco em 17/09: `voices` do aluno = **0 linhas**; o CASCADE de
@@ -23,7 +23,7 @@
  *   1. `/sgp` (entrada do wizard) roteia por status: o mapa `PROXIMA`
  *      (`app/[locale]/sgp/page.tsx:15-22`) manda `pronto` → `/app/sgp`. Ela
  *      NUNCA chega na tela 3.
- *   2. `/sgp/revisao` (`page.tsx:31-33`) desvia `enviado|processando|pronto|
+ *   2. `/sgp/revisao` (`page.tsx:28`) desvia `enviado|processando|pronto|
  *      falhou` pra `/app/sgp`.
  *   3. `POST /api/v1/sgp/enviar` — a régua é `portaDoEnvio()`
  *      (`lib/sgp/porta-envio.ts:83-95`) e **só `revisao` devolve
@@ -46,7 +46,7 @@
  *   (b) REENVIAR — `POST /api/v1/sgp/audio/concluir` promove
  *       `audio` → `revisao` e **só a partir de `audio`**:
  *       `status: pedido.status === "audio" ? "revisao" : pedido.status`
- *       (`audio/concluir/route.ts:37`). Deixar em `revisao` puláva a troca;
+ *       (`audio/concluir/route.ts:38`). Deixar em `revisao` puláva a troca;
  *       deixar em qualquer outro status faria o `concluir` ser um no-op e ela
  *       voltaria a bater na porta fechada.
  *   Daí em diante quem anda é a produção, sem mais nada na mão:
@@ -54,7 +54,7 @@
  *
  * ── Por que `enviado_em` PRECISA ser limpo (não é cosmético) ──────────────
  * `estadoDasEtapas` (`lib/sgp/etapas.ts:49`) **reescreve o `status`**: calcula
- * `s.pronto ? "pronto" : s.falhou ? "falhou" : "processando"` (linha ~104) a
+ * `s.pronto ? "pronto" : s.falhou ? "falhou" : "processando"` (`etapas.ts:93`) a
  * partir de `statusOnboarding(user_id)` e grava por `carimbarStatus`. Com a
  * voz apagada, `desfechoOnboarding` devolve HOJE `{pronto:false, falhou:false}`
  * (voz `null` não é `ready` e não é `vozMorta`) ⇒ `"processando"`. Quer dizer:
@@ -82,7 +82,7 @@
  *     `/admin/sgp`. `enviarPedido` reacha a conta pelo e-mail de qualquer
  *     jeito (`processar.ts` › `acharUsuarioPorEmail`).
  *   • `ciencia_audio` / `ciencia_audio_at` — o `concluir` regrava os dois.
- *   • `aceite_lgpd_at` — recarimbado no envio (`processar.ts:158`).
+ *   • `aceite_lgpd_at` — recarimbado no envio (`processar.ts:160`).
  *   • `profiles.onboarding_ready_email_at` — é de OUTRA tabela e é o cadeado do
  *     "Sua plataforma está pronta". Fica como está de propósito: mexer nele é
  *     mexer no onboarding do aluno inteiro, não neste pedido. CONSEQUÊNCIA
@@ -94,7 +94,7 @@
  *
  * ── O que ESTA ferramenta não resolve (dito na cara) ───────────────────────
  *   • **O cookie.** O dono do pedido é `sgp_sessao`, httpOnly, 30 dias a
- *     partir da criação da linha (`lib/sgp/sessao.ts:16,36-42`). Nenhuma
+ *     partir da criação da linha (`lib/sgp/sessao.ts:13` + `36-44`). Nenhuma
  *     ferramenta enxerga o navegador dela. Isto aqui abre a porta; se o cookie
  *     tiver morrido/sido limpo, ou se ela usar outro aparelho, ela cai num
  *     pedido NOVO e este continua reaberto e parado. A ferramenta imprime a
@@ -142,7 +142,7 @@ const { SGP_AUDIO_MIN_SEGUNDOS, SGP_AUDIO_MAX_SEGUNDOS, SGP_AUDIO_MAX_ARQUIVOS }
 const DESTINO = "audio";
 /** Só faz sentido reabrir quem JÁ passou do wizard. */
 const REABRIVEIS = ["enviado", "processando", "pronto", "falhou"];
-/** `sessao.ts:16` — `MAX_IDADE` do cookie `sgp_sessao`. */
+/** `sessao.ts:13` — `MAX_IDADE` do cookie `sgp_sessao`. */
 const COOKIE_DIAS = 30;
 
 const CAMPOS =
