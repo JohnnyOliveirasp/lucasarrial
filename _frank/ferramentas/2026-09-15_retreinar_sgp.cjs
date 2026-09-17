@@ -39,9 +39,27 @@
  * criou o vão do #351. Se a receita mudar lá (max_steps, timeout, chaves),
  * esta ferramenta muda junto sozinha.
  *
+ * ── ⚠️ O WEBHOOK: rode SEMPRE com NEXT_PUBLIC_SITE_URL de produção ────────
+ * Medido em 17/09 23:45Z, ao retreinar o Alberto (`0bf47f6a`): o disparo morreu
+ * com `RunPod 400 {"detail":"invalid webhook url"}`. Causa: `webhookUrlFor()`
+ * (`lib/runpod/client.ts:182-187`) lê `NEXT_PUBLIC_SITE_URL` **antes** de
+ * `SITE_URL`, e no `.env.local` desta máquina a primeira vale
+ * `http://localhost:3000`. A RunPod recusa localhost, e com razão — ela teria
+ * de chamar de volta a MINHA máquina, que não atende.
+ *
+ * Não reescrevo o env dentro do script de propósito (mascarar ambiente é como
+ * se inventa entrega que não existe). A forma certa é explícita:
+ *
+ *   NEXT_PUBLIC_SITE_URL=https://fastcloner.com \
+ *     node 2026-09-15_retreinar_sgp.cjs <voiceId> --confirmar
+ *
+ * O guard abaixo aborta ANTES de gastar GPU se a URL for local. Em produção
+ * (Vercel) a variável já é o domínio real — o vão é só do shell local.
+ *
  * ── Uso ────────────────────────────────────────────────────────────────────
  *   node 2026-09-15_retreinar_sgp.cjs <voiceId>              # SIMULA
- *   node 2026-09-15_retreinar_sgp.cjs <voiceId> --confirmar  # dispara
+ *   NEXT_PUBLIC_SITE_URL=https://fastcloner.com \
+ *     node 2026-09-15_retreinar_sgp.cjs <voiceId> --confirmar  # dispara
  *
  * Sem `--confirmar` ele NÃO despacha nada: só confere as pré-condições e diz o
  * que faria. Com `--confirmar`, relê o banco DEPOIS de gravar e imprime o que o
@@ -132,6 +150,17 @@ async function main() {
   if (!Array.isArray(voice.raw_audio_paths) || voice.raw_audio_paths.length === 0)
     problemas.push("sem áudios em raw_audio_paths");
   if (cobraria) problemas.push("origem 'sgp' estaria COBRANDO — abortado, o aluno não pode pagar por falha nossa");
+
+  // Guard do webhook: a RunPod recusa localhost com 400 e o disparo morre DEPOIS
+  // de a voz já ter ido pra `training`. Mede-se antes (17/09, ver cabeçalho).
+  const baseWebhook = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "";
+  if (/localhost|127\.0\.0\.1/.test(baseWebhook)) {
+    problemas.push(
+      `NEXT_PUBLIC_SITE_URL='${baseWebhook}' — a RunPod recusa webhook local (400 invalid webhook url). ` +
+        "Rode com NEXT_PUBLIC_SITE_URL=https://fastcloner.com",
+    );
+  }
+  if (!baseWebhook) problemas.push("sem NEXT_PUBLIC_SITE_URL/SITE_URL — o job sairia SEM webhook e ninguém finalizaria a voz");
 
   if (problemas.length) {
     console.log("\n❌ NÃO DÁ PRA DISPARAR:");
