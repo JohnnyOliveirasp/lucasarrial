@@ -24,6 +24,10 @@
  *    onboarding.
  */
 import { getAdmin } from "@/lib/db/admin";
+import {
+  DESTINO_DEFINIR_SENHA,
+  montarLinkDeAcesso,
+} from "@/lib/auth/link-de-acesso";
 import { sendSupportMail } from "@/lib/agent/mail-smtp";
 import { registrarAviso } from "@/lib/onboarding/registrar-aviso";
 import { resolveUserIdByEmail } from "@/lib/credits/service";
@@ -219,10 +223,20 @@ async function criarContaDoComprador(d: {
     type: "recovery",
     email,
     options: {
-      redirectTo: `${siteUrl()}/auth/callback?next=${encodeURIComponent("/reset-password")}`,
+      redirectTo: `${siteUrl()}/auth/callback?next=${encodeURIComponent(DESTINO_DEFINIR_SENHA)}`,
     },
   });
-  const link = data?.properties?.action_link ?? null;
+
+  // ESTE É O CAMINHO QUE CARIMBA O RECOVERY NO INSTANTE DA CRIAÇÃO DA CONTA, e
+  // é o que pôs link morto na caixa de 536 alunos (incidente #438): até
+  // 18/09/2026 mandávamos o `action_link`, que entrega a sessão no fragmento e
+  // faz o /auth/callback queimar o token e responder
+  // `missing_code_or_token`. O link do aluno sai do `hashed_token`. O porquê,
+  // com a medição, está em `@/lib/auth/link-de-acesso`.
+  const hashedToken = data?.properties?.hashed_token ?? null;
+  const link = hashedToken
+    ? montarLinkDeAcesso({ site: siteUrl(), hashedToken, type: "recovery" })
+    : null;
 
   logger.info("audit", "sgp.conta.criada", { target: email, comLink: Boolean(link) });
 
@@ -232,7 +246,7 @@ async function criarContaDoComprador(d: {
     return {
       situacao: "criada",
       linkDefinirSenha: null,
-      erro: erroLink?.message ?? "generateLink não devolveu action_link",
+      erro: erroLink?.message ?? "generateLink não devolveu hashed_token",
     };
   }
   return { situacao: "criada", linkDefinirSenha: link, erro: null };
