@@ -21,6 +21,7 @@ import {
   aplicaGuardaDeMandato,
   classificaTroca,
   chave,
+  eSoletracaoInventada,
   PROTEGIDAS,
 } from "./mandato-normalizacao.ts";
 
@@ -167,6 +168,82 @@ test("a lista de protegidas cobre os grupos que o prompt nomeia", () => {
   for (const p of ["pra", "ta", "to", "digital", "video", "online", "postar"]) {
     assert.ok(PROTEGIDAS.has(p), `"${p}" devia estar protegida`);
   }
+});
+
+// ── 3b. SOLETRAÇÃO INVENTADA (incidente #52, geração d07d0d7d) ───────────
+// O normalizador é não-determinístico: o MESMO text_raw (md5 d45e7c5bede6,
+// 1521 chars) gerou 4 text_normalized diferentes em 14 min. Em UMA delas o
+// modelo soletrou a grafia fonética da aluna, a cobertura do chunk caiu de
+// 0,833 pra 0,344 (piso 0,65) e o job morreu. O discriminador é a conta
+// letra-por-token, NUNCA a caixa.
+
+const soletra = (cru: string, saida: string) =>
+  eSoletracaoInventada(chave(cru), saida.split(/\s+/).map(chave));
+
+test("a soletração inventada da aluna é revertida (Ceebeessi — 9 letras, 5 tokens)", () => {
+  assert.ok(soletra("Ceebeessi", "Ce E Be E Sse"));
+  const r = aplicaGuardaDeMandato("a Ceebeessi manda", "a Ce E Be E Sse manda");
+  assert.equal(r.texto, "a Ceebeessi manda");
+  assert.equal(r.revertidas.length, 1);
+  assert.equal(r.revertidas[0].motivo, "reverte-soletracao-inventada");
+});
+
+test("a segunda sigla fonética do mesmo parágrafo também volta (ibeessi — 7 letras, 4 tokens)", () => {
+  assert.ok(soletra("ibeessi", "I Be E Sse"));
+  const r = aplicaGuardaDeMandato("do ibeessi hoje", "do I Be E Sse hoje");
+  assert.equal(r.texto, "do ibeessi hoje");
+  assert.equal(r.revertidas.length, 1);
+});
+
+test("soletração de sigla DE VERDADE é mantida (cbs: 3 letras, 3 tokens)", () => {
+  // é trabalho legítimo: a conta fecha, um token por letra.
+  assert.equal(soletra("cbs", "ce be esse"), false);
+  const r = aplicaGuardaDeMandato("a cbs manda", "a ce be esse manda");
+  assert.equal(r.texto, "a ce be esse manda");
+  assert.equal(r.revertidas.length, 0);
+});
+
+test("sigla em CAIXA ALTA soletrada é mantida (a caixa não é o discriminador)", () => {
+  assert.equal(soletra("CBS", "ce be esse"), false);
+  const r = aplicaGuardaDeMandato("a CBS manda", "a ce be esse manda");
+  assert.equal(r.texto, "a ce be esse manda");
+  assert.equal(r.revertidas.length, 0);
+});
+
+test("expansão que NÃO é soletração continua intacta (moeda por extenso)", () => {
+  assert.equal(soletra("50", "cinquenta reais"), false);
+  const r = aplicaGuardaDeMandato(
+    "custa R$ 50,90 por mes",
+    "custa cinquenta reais e noventa centavos por mês",
+  );
+  assert.equal(r.revertidas.length, 0);
+  assert.equal(r.texto, "custa cinquenta reais e noventa centavos por mês");
+});
+
+test("MUTAÇÃO: sem a condição (b), a soletração legítima de sigla quebraria", () => {
+  // Neutralizar a conta letra-por-token (ou seja, reverter sempre que todos os
+  // tokens forem nome de letra) faria "cbs" -> "ce be esse" ser desfeito, que é
+  // trabalho BOM. Este teste trava o discriminador: as duas pontas têm que
+  // continuar discordando.
+  const inventada = soletra("Ceebeessi", "Ce E Be E Sse"); // conta NÃO fecha
+  const legitima = soletra("cbs", "ce be esse"); // conta fecha
+  assert.equal(inventada, true);
+  assert.equal(legitima, false);
+  assert.notEqual(inventada, legitima);
+});
+
+test("o parágrafo real da aluna volta a ter as palavras dela", () => {
+  const cru = "Houve mudanca nas aliquotas da Ceebeessi e do ibeessi neste ano.";
+  const saida = "Houve mudança nas alíquotas da Ce E Be E Sse e do I Be E Sse neste ano.";
+  const r = aplicaGuardaDeMandato(cru, saida);
+  assert.ok(r.texto.includes("Ceebeessi"), `esperava "Ceebeessi", veio: ${r.texto}`);
+  assert.ok(r.texto.includes("ibeessi"), `esperava "ibeessi", veio: ${r.texto}`);
+  // o conserto de acento do LLM (mudanca/aliquotas) NÃO pode ser desfeito
+  assert.ok(r.texto.includes("mudança"));
+  assert.ok(r.texto.includes("alíquotas"));
+  // e o invariante de fim de frase continua valendo
+  const fins = (s: string) => (s.match(/[.!?]/g) || []).length;
+  assert.equal(fins(r.texto), fins(saida));
 });
 
 // ── 4. LIMITES CONHECIDOS — medidos, e de propósito NÃO corrigidos aqui ──
