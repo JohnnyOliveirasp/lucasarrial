@@ -36,6 +36,12 @@
  * não couber no mandato volta a ser a palavra do aluno, no lugar dela, sem
  * mexer em pontuação nem no número de fins de frase.
  *
+ * A ÚNICA expansão que a guarda desfaz é a SOLETRAÇÃO INVENTADA (incidente
+ * #52): o modelo pega a grafia fonética da aluna ("Ceebeessi") e devolve
+ * soletrado ("Ce E Be E Sse"), o que derruba o QA de cobertura do worker e
+ * MATA o job. Soletração de sigla de verdade continua passando — o
+ * discriminador é a conta letra-por-token (ver `eSoletracaoInventada`).
+ *
  * ORDEM DE DECISÃO (a primeira que casar decide):
  *   0. não é substituição 1x1 alfabética, ou só muda acento/caixa  -> não mexe
  *   1. palavra do aluno em CAIXA ALTA (sigla)                      -> não mexe
@@ -245,6 +251,51 @@ const ESTRANGEIRAS_NOMINAIS: ReadonlySet<string> = new Set([
   "banner", "banners", "close", "print", "prints", "outdoor", "release",
 ]);
 
+/**
+ * NOMES DE LETRA do português — o vocabulário com que o modelo soletra.
+ *
+ * Em `chave` (minúscula sem acento). "sse" está junto de "esse" porque o
+ * modelo escreve as duas formas; "esse" também é demonstrativo, e por isso
+ * esta lista NUNCA decide sozinha (ver `eSoletracaoInventada`).
+ */
+export const NOMES_DE_LETRA: ReadonlySet<string> = new Set([
+  "a", "be", "ce", "de", "e", "efe", "ge", "aga", "i", "jota", "ka", "ele",
+  "eme", "ene", "o", "pe", "que", "erre", "esse", "sse", "te", "u", "ve",
+  "xis", "ipsilon", "ze",
+]);
+
+/**
+ * SOLETRAÇÃO INVENTADA — o defeito do incidente #52 (geração d07d0d7d).
+ *
+ * A aluna escreveu "Ceebeessi" (grafia fonética DELA para a sigla CBS). Numa
+ * das rodadas o modelo leu aquilo como sigla e devolveu "Ce E Be E Sse". O QA
+ * de cobertura do worker compara o áudio com o texto JÁ reescrito, e o whisper
+ * transcreve o áudio de volta como "CBS", nunca como "ce e be e sse": a
+ * cobertura do chunk despencou de 0,833 pra 0,344, abaixo do piso
+ * `coverage_espalhada_min=0.65`, e o job MORREU. Mesmo padrão em 27/08 com
+ * outra aluna (geração 44ac6f60). As duas únicas falhas com soletração no
+ * texto normalizado são falhas de qa_coverage.
+ *
+ * O DISCRIMINADOR é a contagem, não a caixa: soletração LEGÍTIMA de sigla de
+ * verdade gasta um token por letra, e soletração inventada em cima de grafia
+ * fonética não fecha a conta.
+ *
+ *   "cbs"       (3 letras) -> "ce be esse"    (3 tokens)  3 === 3  MANTÉM
+ *   "Ceebeessi" (9 letras) -> "Ce E Be E Sse" (5 tokens)  9 !== 5  REVERTE
+ *   "ibeessi"   (7 letras) -> "I Be E Sse"    (4 tokens)  7 !== 4  REVERTE
+ *
+ * Caixa alta NÃO serve de discriminador sozinha: sigla escrita em minúscula
+ * ("cbs") expandida é trabalho legítimo e seria quebrada.
+ */
+export function eSoletracaoInventada(cru: string, saidas: readonly string[]): boolean {
+  if (saidas.length < 2) return false;
+  if (!SO_LETRAS.test(cru)) return false;
+  // (a) TODO token de saída é nome de letra
+  if (!saidas.every((s) => NOMES_DE_LETRA.has(s))) return false;
+  // (b) a conta letra-por-token não fecha
+  return cru.length !== saidas.length;
+}
+
 /** Palavra com cara de estrangeira — o prompt MANDA reescrever essas pela
  *  pronúncia, então a guarda não pode desfazer. */
 export function pareceEstrangeira(w: string): boolean {
@@ -271,7 +322,8 @@ export type Veredito =
   | "mantem"
   | "reverte-protegida"
   | "reverte-flexao"
-  | "reverte-troca-lexical";
+  | "reverte-troca-lexical"
+  | "reverte-soletracao-inventada";
 
 /** Limiar de semelhança abaixo do qual a troca é outra palavra, não um
  *  conserto de digitação. Calibrado no histórico: "creator"/"criador" fica em
@@ -418,6 +470,41 @@ export type ResultadoGuarda = {
 };
 
 /**
+ * Devolve a palavra do aluno com a caixa certa pro lugar onde ela vai entrar.
+ * A caixa segue a da SAÍDA quando o modelo abriu frase ali, pra não estragar o
+ * começo de uma frase que o LLM manteve.
+ */
+function repoeComCaixa(textoCru: string, textoSaida: string): string {
+  const saidaAbreMaiuscula =
+    textoSaida[0] === textoSaida[0]?.toUpperCase() &&
+    textoSaida[0] !== textoSaida[0]?.toLowerCase();
+  const cruAbreMinuscula =
+    textoCru[0] === textoCru[0]?.toLowerCase() &&
+    textoCru[0] !== textoCru[0]?.toUpperCase();
+  if (saidaAbreMaiuscula && cruAbreMinuscula) {
+    return textoCru[0].toUpperCase() + textoCru.slice(1);
+  }
+  return textoCru;
+}
+
+/**
+ * O pedaço `idx` abre frase? (começo do texto, ou tem [.!?] antes dele)
+ *
+ * Existe por causa da soletração: o modelo escreve TODO nome de letra em
+ * maiúscula ("da Ce E Be E Sse e do I Be E Sse"), no meio da frase. Sem esta
+ * checagem, `repoeComCaixa` leria aquele "I" como início de frase e devolveria
+ * "Ibeessi" no meio do parágrafo — maiúscula que a aluna não escreveu. Na
+ * substituição 1x1 a heurística de caixa continua valendo sozinha, como antes.
+ */
+function abreFrase(pedacos: Pedaco[], idx: number): boolean {
+  let sep = "";
+  let k = idx - 1;
+  for (; k >= 0 && !pedacos[k].ehPalavra; k--) sep = pedacos[k].texto + sep;
+  if (k < 0) return true;
+  return /[.!?…\n]/.test(sep);
+}
+
+/**
  * Confere a saída do LLM contra o texto do aluno e desfaz troca de palavra
  * fora do mandato. Só mexe em substituição 1-para-1 de palavra alfabética:
  * expansão, remoção e inserção passam intactas, e nenhum caractere de
@@ -444,9 +531,43 @@ export function aplicaGuardaDeMandato(cru: string, saida: string): ResultadoGuar
 
   for (const op of ops) {
     if (op.tipo !== "troca") continue;
-    // SÓ substituição 1x1. 1-pra-muitos é expansão (o trabalho legítimo),
-    // muitos-pra-1 e os desequilibrados são rubrica/marcação saindo ou
-    // expansão parcial — desfazer ali quebraria a normalização.
+
+    // 1-pra-muitos é expansão — o trabalho legítimo, e passa intacta. A ÚNICA
+    // exceção é a soletração inventada do #52, que mata o job no QA de
+    // cobertura (ver `eSoletracaoInventada`).
+    if (op.cru.length === 1 && op.saida.length >= 2) {
+      const kCru = chavesCru[op.cru[0]];
+      const kSaidas = op.saida.map((p) => chavesSaida[p]);
+      if (!eSoletracaoInventada(kCru, kSaidas)) continue;
+
+      // os pedaços entre os tokens têm que ser só espaço. Se o modelo pôs
+      // pontuação no meio da soletração, a guarda se abstém: apagar ali podia
+      // mudar a contagem de fins de frase, e o invariante vale mais.
+      const primeiro = idxSaida[op.saida[0]];
+      const ultimo = idxSaida[op.saida[op.saida.length - 1]];
+      let soEspaco = true;
+      for (let k = primeiro + 1; k < ultimo; k++) {
+        const p = pedacosSaida[k];
+        if (!p.ehPalavra && p.texto.trim() !== "") soEspaco = false;
+      }
+      if (!soEspaco) continue;
+
+      const textoCru = pedacosCru[idxCru[op.cru[0]]].texto;
+      pedacosSaida[primeiro].texto = abreFrase(pedacosSaida, primeiro)
+        ? repoeComCaixa(textoCru, pedacosSaida[primeiro].texto)
+        : textoCru;
+      for (let k = primeiro + 1; k <= ultimo; k++) pedacosSaida[k].texto = "";
+      revertidas.push({
+        cru: kCru,
+        saida: kSaidas.join(" "),
+        motivo: "reverte-soletracao-inventada",
+      });
+      continue;
+    }
+
+    // SÓ substituição 1x1. Muitos-pra-1 e os desequilibrados são
+    // rubrica/marcação saindo ou expansão parcial — desfazer ali quebraria a
+    // normalização.
     if (op.cru.length !== 1 || op.saida.length !== 1) continue;
 
     const posCru = op.cru[0];
@@ -465,20 +586,8 @@ export function aplicaGuardaDeMandato(cru: string, saida: string): ResultadoGuar
       continue;
     }
 
-    // devolve a palavra do aluno no lugar da palavra do modelo. A caixa segue
-    // a da SAÍDA quando o modelo abriu frase ali, pra não estragar o começo de
-    // uma frase que o LLM manteve.
-    let reposta = textoCru;
-    const saidaAbreMaiuscula =
-      alvo.texto[0] === alvo.texto[0]?.toUpperCase() &&
-      alvo.texto[0] !== alvo.texto[0]?.toLowerCase();
-    const cruAbreMinuscula =
-      textoCru[0] === textoCru[0]?.toLowerCase() &&
-      textoCru[0] !== textoCru[0]?.toUpperCase();
-    if (saidaAbreMaiuscula && cruAbreMinuscula) {
-      reposta = textoCru[0].toUpperCase() + textoCru.slice(1);
-    }
-    alvo.texto = reposta;
+    // devolve a palavra do aluno no lugar da palavra do modelo.
+    alvo.texto = repoeComCaixa(textoCru, alvo.texto);
     revertidas.push(registro);
   }
 
