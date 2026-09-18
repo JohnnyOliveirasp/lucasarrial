@@ -209,3 +209,33 @@ O motivo é o próprio #74: a nota 1 dele registra que o fix do Vigia
 (commit local `c788b40`, branch `agent/fix-ref-quadro-desatualizado`) **sumiu
 com o container** e o trabalho se perdeu. Instrumento fora do git é instrumento
 que a próxima ronda não tem.
+
+### Conferência de branch — e um 4º STALE da família documentada
+
+`git log --oneline origin/main..HEAD` saiu **VAZIO**: nada meu ficou preso.
+
+Conferindo se não havia fix do #74 pendurado em branch (foi assim que um fix de
+aluno ficou 9h preso em 19/08), achei **`fix/trava-foto-nova-8379549c`** — o
+sufixo é o id deste cartão. Ele **existe no origin**, tem **2 commits fora da
+main** e **nenhum PR**:
+
+```
+136c4956 chore(frank): medicao reproduzivel do incidente 8379549c (R2 paginado)
+87203148 fix(imagem): trava bloqueante quando foto nova do banco ficou fora da geracao
+```
+
+Autor Frank, **21/08 16:49Z** — exatamente a janela em que o `f48358c` do
+Claude subiu (nota 4 do cartão, 16:14Z). São **duas tentativas paralelas pro
+mesmo defeito**: o aviso + auto-adoção foi pra produção, a **trava bloqueante**
+ficou no branch e foi abandonada sem PR.
+
+**Isso não invalida o fechamento** — o que subiu resolveu (24 alunos
+destravados, 13 estornados, zero ocorrência nova em 28 dias). Mas o branch soma
+**123 linhas** em `image-studio.tsx`, arquivo que a main moveu em **5 commits**
+desde a base dele. Mergear hoje derrubaria o que está no ar: é a **mesma
+família** do `feat/onedrive-401`, do `feat/fix-image-upload-retry` e das duas da
+cura de referência. **Registrei na tabela do `_frank/ordens/README.md`**, que é
+onde os outros três já estão — quem for mexer em imagem lê ali antes de abrir o
+branch.
+
+Não apaguei o branch no origin: apagar coisa dos outros não é decisão de ronda.
