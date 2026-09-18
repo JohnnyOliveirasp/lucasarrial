@@ -1,11 +1,17 @@
 # 18/09 ~16hZ — Ronda das falhas (serial, dono da fila)
 
-Nenhum cartão fechado. O card serial foi o **#11** (`9ac03612`, 58,7d), que
-**reabriu às 15:31:17Z**, depois da ronda das 14h. A causa saiu cravada em
-minutos — e o que ela revelou foi maior que o cartão: **uma falha física só,
-espalhada em quatro cartões**, e um **buraco de estorno** achado de raspão.
+**Dois cartões fechados com fix em produção** (#11 e #468) e dois abertos
+(#468, #469). O card serial foi o **#11** (`9ac03612`, 58,7d), que **reabriu às
+15:31:17Z**, depois da ronda das 14h. A causa saiu cravada em minutos — e o que
+ela revelou foi maior que o cartão: **uma falha física só, espalhada em quatro
+cartões**, um **conserto pronto parado há 16h num PR**, e um **buraco de
+estorno** achado de raspão.
 
-## Card serial: #11 (`9ac03612`) — NÃO fechado, e é decisão
+> **Desfecho:** PR #335 revisado e mergeado (`c6b0cfb4`, 16:02:33Z), deploy de
+> produção **SUCCESS às 16:06:11Z**. Disco cheio passa a ter assinatura própria
+> e para de reabrir o #11. Os 4 alunos atingidos estão entregues.
+
+## Card serial: #11 (`9ac03612`) — FECHADO, com fix no ar
 
 Peguei por ser o **mais antigo acionável**: 58,7d de vida e `last_seen_at` de
 27 minutos atrás. Os dois logo abaixo dele seguem como a ronda das 14h
@@ -74,17 +80,68 @@ treino em vez da geração.
 
 A nota de **17/09 no próprio #11** diz ter aberto *"cartão 30cefcdc pro coder"*
 para o disco cheio. **Esse cartão não existe**: conferi por id e por busca de
-assinatura, zero linha. O trabalho foi declarado e não foi feito, e por causa
-disso a classe ficou 1 dia sem dono enquanto voltava 3 vezes.
+assinatura, zero linha. O trabalho foi declarado e não foi feito.
 
-Abri o de verdade: **#468** (`78ea706d`), com a medição acima e o pedido
-concreto — detector e assinatura próprios decididos pelo `trainer_stderr` /
-`returncode`, no molde do que o OOM ganhou no PR #308.
+Abri o de verdade: **#468** (`78ea706d`) — e **abri errado**, o que me leva ao
+item seguinte.
 
-**A causa raiz (por que `/workspace` enche) segue sem dono e eu não a
-investiguei.** O que tenho é o fato de 13 dias limpos virarem 4 falhas em 30h,
-o que cheira a lixo acumulando em volume persistente. Está escrito no #468 como
-hipótese, não como diagnóstico.
+## O erro que eu cometi nesta ronda, e ele custou caro
+
+Abri o #468 dizendo que faltava **construir** detector e assinatura próprios.
+Estava errado. O conserto **já existia**: PR **#335**, branch
+`feat/trainer-disco-cheio`, commit `13287e33`, **aberto 18/09 00:07:36Z**.
+
+Eu declarei que faltava código sem ter procurado branch. **Não faltava código,
+faltava merge.**
+
+E a distinção não é acadêmica: o PR ficou **16h aberto sem revisão**, e nessas
+16h o disco cheio derrubou **mais três alunos** — derinsulanerjp (09:19Z),
+taischw1 (13:00Z), heitorcamargo7 (15:31Z). O PR foi escrito honestamente com
+**n=1** ("primeira desta classe desde que existe instrumentação"). Quando eu
+cheguei, já era **n=4 em 30h**.
+
+A ronda das 14h chegou a citar o #335 — mas como pendência do #32, não como o
+conserto de uma classe que estava derrubando gente naquele mesmo dia.
+
+## O que eu revisei antes de mergear (conferido, não herdado)
+
+- Merge da `main` (**23 commits à frente**) no branch: **sem conflito**.
+- `node --test src/lib/incidents/*.test.ts src/lib/voices/*.test.ts` **com a
+  main dentro**: 167 testes, **153 pass, 0 fail**, 14 skip.
+- `diagnostico-trainer.test.ts` isolado: **31/31**.
+- `tsc --noEmit`: **exit 0**.
+- `IncidentCause` só tem outro consumidor (`admin/falhas/page.tsx`, lê
+  `CAUSE_LABELS`, atualizado no diff). Nenhum switch exaustivo quebrado.
+- Escopo: **sem migration, sem DDL, sem GPU**, nada de crédito/saldo/entitlement.
+- A parte que mais olhei foi a guarda
+  `if (!e && !ehCudaOom(...) && !ehDiscoCheio(...))` — é onde o PR #308 teria
+  vazado. Está certa e coberta por mutação.
+
+Comentei a revisão e a evidência nova (n=1 → n=4) **no próprio PR** antes de
+mergear.
+
+## O que está em produção agora
+
+**Merge `c6b0cfb4ecf27f3215d23e59e458c13a634ab86f`, 16:02:33Z.** Deploy Frontend
+(production), run `35366072528`: **SUCCESS, 16:06:11Z**. Conferido na main
+depois do pull: `ehDiscoCheio` em `diagnostico-trainer.ts`, `infra_disk` em
+`classify.ts:33/43/171`.
+
+Disco cheio passa a ter **causa própria** (`infra_disk`, separada de
+`infra_storage`, que é o bucket R2 remoto) e **assinatura fixa**
+`training:infra_disk:no-space`, decidida pelo `trainer_stderr` e não pelo texto
+do `error_message`. A classe para de se fragmentar e para de reabrir o #11.
+
+**A causa raiz (por que `/workspace` enche) segue SEM DONO e eu não a
+investiguei.** O que tenho é 13 dias limpos virando 4 falhas em 30h, o que
+cheira a lixo acumulando em volume persistente. Está registrado como
+**hipótese, não diagnóstico**. Se voltar, agora abre na assinatura certa e soma
+série no lugar certo.
+
+**Afinação anotada, não bloqueante:** o título novo diz *"treino completou,
+perdeu ao salvar"*. Isso descreve a falha de 17/09 (step 499) mas **não** a de
+15:31Z, que estourou no **step 0**. Vai mentir nesse subcaso — e segue
+infinitamente melhor que "trainer failed".
 
 ## Achado de raspão: estorno multiplicado (#469)
 
@@ -165,7 +222,10 @@ ordem de 17/09.
 
 | medida | valor | instrumento |
 |---|---|---|
-| chamados abertos | **96** (+1 na varredura; +2 abertos por mim) | `varredura_travados.cjs` |
+| cartões fechados com fix no ar | **2** (#11, #468) | merge + deploy conferidos |
+| cartões abertos por mim | **2** (#468 fechado junto, #469 vivo) | `incidents` |
+| PR mergeado | **#335** → `c6b0cfb4`, deploy SUCCESS 16:06:11Z | `gh run 35366072528` |
+| chamados abertos | **96** na varredura (antes dos meus) | `varredura_travados.cjs` |
 | aguardando aluno | **31**, mais velho **21d** | idem |
 | itens presos | **0** | idem |
 | travados em percepção | **0 reais** (1 apontado) | `percepcao_travada.cjs` |
@@ -173,24 +233,31 @@ ordem de 17/09.
 | falhas de treino em 30h | **5**, sendo **4 de disco cheio**, 4 alunos | `training_jobs` |
 | alunos travados agora | **0** (as 4 vozes `ready`) | `voices` |
 
-## Erro meu, nesta ronda
+## Erros meus, nesta ronda
 
-Carimbei "~18hZ" nas notas que escrevi no #11, #32, #465 e #466 — eram
-**15:5xZ**, ronda das 16h. Corrigi as descrições do #468/#469 na origem e
-registrei a correção como nota nova no #11, em vez de reescrever (nota não se
-sobrescreve). O conteúdo e as medições não mudam; a hora estava errada e isso
-atrapalharia quem for ordenar os fatos depois.
+1. **Declarei trabalho faltando sem procurar branch.** O #468 nasceu pedindo um
+   detector que já existia em PR aberto. Custo real: as 16h que o #335 esperou
+   valeram 3 alunos. **A lição é de rotina, não de caso:** antes de abrir cartão
+   dizendo "falta construir X", `git branch | grep` e `gh pr list`. A casa tem
+   histórico exatamente disso — o índice de ordens é cheio de branch STALE, e em
+   19/08 um fix de aluno ficou 9h preso. Desta vez o preso não era um branch
+   esquecido: era um **PR pronto, com testes e mutação, só sem revisor**.
+2. **Carimbei "~18hZ"** nas notas do #11, #32, #465 e #466 — eram **15:5xZ**,
+   ronda das 16h. Corrigi as descrições do #468/#469 na origem e registrei a
+   correção como nota nova no #11, em vez de reescrever (nota não se
+   sobrescreve).
 
 ## O que NÃO fiz
 
-- **Não fechei o #11** — a causa é viva, não há conserto nosso em produção, e
-  fechar seria trocar "disco cheio voltou" por "achei que tinha resolvido".
 - **Não escrevi pra nenhum aluno.** Os 4 atingidos foram entregues e o do #11
   já recebeu carta às 15:37Z. Escrever "você está com 10.000 créditos que não
   são seus" antes do Johnny decidir seria pior que o silêncio.
 - **Não toquei no saldo de ninguém.** Zero migration, zero DDL.
 - **Zero GPU.** Nenhum treino disparado por mim.
-- **Não investiguei a causa raiz do disco encher** — declarada como hipótese no
-  #468, não como diagnóstico.
+- **Não investiguei a causa raiz do disco encher** — declarada como hipótese,
+  não como diagnóstico, e segue sem dono.
+- **Não fechei o #469** (estorno multiplicado): o conserto da regra é trabalho
+  de código que eu não fiz nesta ronda, e a decisão sobre os 10.000 cr é do
+  Johnny.
 - Continuo sem atacar os **`aguardando_aluno` com 7d+** (mais velho 21d).
   Dívida declarada de novo, com número e idade.
