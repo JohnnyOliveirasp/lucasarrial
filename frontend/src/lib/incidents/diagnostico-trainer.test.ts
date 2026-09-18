@@ -28,10 +28,13 @@ import assert from "node:assert/strict";
 import {
   ASSINATURA_CUDA_OOM,
   ASSINATURA_DISCO_CHEIO,
+  ASSINATURA_ESCRITA_CHECKPOINT,
   ehCudaOom,
   ehDiscoCheio,
+  ehEscritaDeCheckpointFalhou,
   notaDeTransitoriedade,
   notaDiscoCheio,
+  notaEscritaCheckpointFalhou,
 } from "./diagnostico-trainer.ts";
 import { classifyCause, errorSignature, incidentTitle } from "./classify.ts";
 
@@ -459,5 +462,327 @@ test("erro de dataset continua ganhando do diagnóstico de disco", () => {
   assert.doesNotMatch(
     errorSignature("training", erroAluno, { stderr: STDERR_DISCO_REAL }),
     /no-space/,
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. ESCRITA DE CHECKPOINT TRUNCADA (18/09) — a MESMA função, o arquivo
+//    SEGUINTE, e o torch engolindo o errno
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * STDERR REAL, copiado de `training_jobs.trainer_stderr` do job `c7a376e5…`
+ * (18/09 22:40:12Z). Não é traceback plausível escrito à mão: é o que o banco
+ * tem. Repare em DUAS coisas que este fixture prova sozinho:
+ *
+ *  1. morreu na MESMA `save_checkpoint()` do caso de ENOSPC — mas na linha
+ *     814 (`optimizer.pth`, gravado pelo torch), não na 777
+ *     (`lora_weights.safetensors`, gravado pelo safetensors);
+ *  2. NÃO existe a string "no space left on device" em lugar nenhum. O torch
+ *     engole o errno — é exatamente por isso que `ehDiscoCheio` não pegou e o
+ *     incidente #11 reabriu.
+ */
+const STDERR_ESCRITA_REAL = `Traceback (most recent call last):
+  File "/app/VoxCPM/scripts/train_voxcpm_finetune.py", line 357, in train
+    save_checkpoint(model, optimizer, scheduler, save_dir, step, pretrained_path, hf_model_id, distribute)
+  File "/app/VoxCPM/scripts/train_voxcpm_finetune.py", line 814, in save_checkpoint
+    torch.save(optimizer.state_dict(), folder / "optimizer.pth")
+  File "/usr/local/lib/python3.12/dist-packages/torch/serialization.py", line 1268, in _save
+    zip_file.write_record(name, storage, num_bytes)
+RuntimeError: [enforce fail at inline_container.cc:858] . PytorchStreamWriter failed writing file data/1004: file write failed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/VoxCPM/scripts/train_voxcpm_finetune.py", line 814, in save_checkpoint
+    torch.save(optimizer.state_dict(), folder / "optimizer.pth")
+  File "/usr/local/lib/python3.12/dist-packages/torch/serialization.py", line 966, in save
+    with _open_zipfile_writer(f) as opened_zipfile:
+  File "/usr/local/lib/python3.12/dist-packages/torch/serialization.py", line 798, in __exit__
+    self.file_like.write_end_of_file()
+RuntimeError: [enforce fail at inline_container.cc:664] . unexpected pos 131040192 vs 131040080
+`;
+
+test("stderr de escrita truncada: o detector reconhece o traceback REAL do banco", () => {
+  assert.equal(ehEscritaDeCheckpointFalhou(STDERR_ESCRITA_REAL), true);
+  // E — o ponto do cartão — o detector de ENOSPC NÃO pega este caso. Não é
+  // regressão do `ehDiscoCheio`: o texto do errno simplesmente não está aqui.
+  assert.equal(
+    ehDiscoCheio(STDERR_ESCRITA_REAL),
+    false,
+    "o torch engole o errno: 'no space left on device' não aparece neste stderr",
+  );
+  assert.equal(ehCudaOom(STDERR_ESCRITA_REAL), false);
+});
+
+test("stderr de escrita truncada: a causa deixa de ser 'bug' e vira infra_disk", () => {
+  // Era isto que acontecia às 22:40:12Z de 18/09: caía em `bug` e reabria o #11.
+  assert.equal(classifyCause(ERROR_MESSAGE_GRAVADO), "bug");
+  assert.equal(
+    classifyCause(ERROR_MESSAGE_GRAVADO, { stderr: STDERR_ESCRITA_REAL, returncode: 1 }),
+    "infra_disk",
+  );
+});
+
+test("stderr de escrita truncada: assinatura PRÓPRIA, fora do #11 e fora do no-space", () => {
+  const antes = errorSignature("training", ERROR_MESSAGE_GRAVADO);
+  const depois = errorSignature("training", ERROR_MESSAGE_GRAVADO, {
+    stderr: STDERR_ESCRITA_REAL,
+    returncode: 1,
+  });
+  assert.equal(antes, ASSINATURA_DO_11, "o guarda-chuva antigo continua sendo o que era");
+  assert.equal(depois, ASSINATURA_ESCRITA_CHECKPOINT);
+  assert.equal(ASSINATURA_ESCRITA_CHECKPOINT, "training:infra_disk:write-failed");
+  assert.notEqual(depois, antes);
+  // ⚠️ A decisão central deste PR, travada por teste: MESMA causa do ENOSPC,
+  // chave DIFERENTE. Reaproveitar `no-space` afirmaria no chamado um errno que
+  // o torch nunca entregou.
+  assert.notEqual(ASSINATURA_ESCRITA_CHECKPOINT, ASSINATURA_DISCO_CHEIO);
+  assert.doesNotMatch(depois, /no-space/);
+  assert.notEqual(ASSINATURA_ESCRITA_CHECKPOINT, ASSINATURA_CUDA_OOM);
+});
+
+test("a assinatura de escrita truncada é CONSTANTE: dois tracebacks, uma chave só", () => {
+  // Mesma patologia que as outras duas já travam. Aqui o que muda entre
+  // ocorrências é o nome do registro do zip (`data/1004`) e os dois números do
+  // `unexpected pos` — se qualquer um entrasse no head de 120 chars, cada falha
+  // abriria um incidente novo.
+  const outraEscrita = STDERR_ESCRITA_REAL.replace("data/1004", "data/37")
+    .replace("131040192", "88604672")
+    .replace("131040080", "88604544");
+  assert.notEqual(outraEscrita, STDERR_ESCRITA_REAL, "o par de tracebacks precisa ser diferente");
+  assert.equal(
+    errorSignature("training", ERROR_MESSAGE_GRAVADO, { stderr: outraEscrita }),
+    errorSignature("training", ERROR_MESSAGE_GRAVADO, { stderr: STDERR_ESCRITA_REAL }),
+  );
+});
+
+test("kind 'voice' também unifica em 'training' na chave de escrita truncada", () => {
+  assert.equal(
+    errorSignature("voice", ERROR_MESSAGE_GRAVADO, { stderr: STDERR_ESCRITA_REAL }),
+    ASSINATURA_ESCRITA_CHECKPOINT,
+  );
+});
+
+test("o título de escrita truncada diz PROVÁVEL, não afirma o errno, e cabe na coluna", () => {
+  const t = incidentTitle("training", ERROR_MESSAGE_GRAVADO, { stderr: STDERR_ESCRITA_REAL });
+  assert.match(t, /truncada/i);
+  // A palavra que separa hipótese de fato. Quem varre a fila lê só o título.
+  assert.match(t, /prov[áa]vel/i);
+  assert.ok(t.length <= 120, `título com ${t.length} chars estoura o slice(0,120)`);
+  // E não pode ser o título do ENOSPC provado: são certezas diferentes.
+  assert.notEqual(
+    t,
+    incidentTitle("training", ERROR_MESSAGE_GRAVADO, { stderr: STDERR_DISCO_REAL }),
+  );
+});
+
+test("erro vazio COM prova de escrita truncada é classificado assim mesmo", () => {
+  // Guarda `!e` de classifyCause: sem incluir o detector novo nela, este caso
+  // sairia como "unknown" antes de chegar na regra que o classifica.
+  assert.equal(classifyCause("", { stderr: STDERR_ESCRITA_REAL }), "infra_disk");
+  assert.equal(
+    errorSignature("training", "", { stderr: STDERR_ESCRITA_REAL }),
+    ASSINATURA_ESCRITA_CHECKPOINT,
+  );
+});
+
+test("a nota de escrita truncada carrega as 4 coisas que mudam a conduta", () => {
+  const nota = notaEscritaCheckpointFalhou({ stderr: STDERR_ESCRITA_REAL, returncode: 1 });
+  // (a) disco cheio é a causa PROVÁVEL, com o porquê: 777 → 814, mesma função.
+  assert.match(nota, /disco cheio/i);
+  assert.match(nota, /777/);
+  assert.match(nota, /814/);
+  assert.match(nota, /save_checkpoint/);
+  assert.match(nota, /7115da78/, "o caso de ENOSPC provado do mesmo dia é a evidência");
+  // (b) "unexpected pos X vs Y" é escrita TRUNCADA, não escrita recusada.
+  assert.match(nota, /TRUNCADA/);
+  assert.match(nota, /131040192/);
+  assert.match(nota, /131040080/);
+  // (c) a RESSALVA: o torch não entrega o errno → provável, não confessado.
+  assert.match(nota, /CAUSA PROVÁVEL, NÃO CONFESSADA/);
+  assert.match(nota, /errno/);
+  assert.match(nota, /n[ãa]o prova/i);
+  // (d) o disco é do WORKER, não do aluno.
+  assert.match(nota, /DISCO É DO WORKER, NÃO DO ALUNO/);
+  assert.match(nota, /intacto/i);
+  // Retentar é barato e funciona — com o caso medido, não "costuma curar".
+  assert.match(nota, /Heitor/);
+  assert.match(nota, /260s/);
+  assert.match(nota, /trainer_returncode: 1/);
+  // E nada de prometer retentativa automática, que não existe (regra do #308).
+  assert.match(nota, /Não há\s*\n?\s*retentativa automática/);
+  assert.doesNotMatch(nota, /autom[áa]tic[ao]\s+(vai|será|acontece)/i);
+});
+
+test("a nota de escrita truncada NÃO é a de disco cheio nem a de OOM", () => {
+  // O risco real: alguém copiar o parágrafo do ENOSPC e o chamado afirmar um
+  // errno que o torch nunca devolveu.
+  const escrita = notaEscritaCheckpointFalhou({ stderr: STDERR_ESCRITA_REAL, returncode: 1 });
+  assert.notEqual(escrita, notaDiscoCheio({ stderr: STDERR_DISCO_REAL, returncode: 1 }));
+  assert.notEqual(escrita, notaDeTransitoriedade({ stderr: STDERR_OOM_REAL, returncode: 1 }));
+  assert.doesNotMatch(escrita, /GPU ficou sem memória/);
+  assert.doesNotMatch(escrita, /os error 28/i);
+});
+
+test("returncode ausente não some da nota de escrita truncada", () => {
+  assert.match(notaEscritaCheckpointFalhou({ stderr: STDERR_ESCRITA_REAL }), /não registrado/);
+  assert.match(notaEscritaCheckpointFalhou(undefined), /não registrado/);
+});
+
+// ── Controles NEGATIVOS: mencionar escrita/posição não é escrita truncada ───
+
+test("traceback que só MENCIONA escrita/posição não vira escrita truncada", () => {
+  // As três armadilhas nomeadas no cartão, e o motivo de cada uma:
+  // "write failed", "enforce fail" e "pos" são palavras que um traceback cita
+  // por mil motivos. A âncora exige o writer PELO NOME junto do verbo.
+  assert.equal(ehEscritaDeCheckpointFalhou("OSError: could not write log file"), false);
+  assert.equal(ehEscritaDeCheckpointFalhou("ValueError: unexpected position in stream"), false);
+  // ⚠️ ESTE é o caso que trava o espaço final de "unexpected pos ". O de cima
+  // NÃO trava: ele é rejeitado pela exigência de `inline_container`, então
+  // apagar o espaço do detector continuaria passando (medido por mutação). Aqui
+  // os dois termos estão presentes e só o espaço separa "pos" de "position".
+  assert.equal(
+    ehEscritaDeCheckpointFalhou(
+      "RuntimeError: [enforce fail at inline_container.cc:120] . unexpected position for record data/7",
+    ),
+    false,
+    "'unexpected position' não é 'unexpected pos <n>' — o espaço final é o que separa",
+  );
+  assert.equal(
+    ehEscritaDeCheckpointFalhou("[debug] PytorchStreamWriter opened file model.pt"),
+    false,
+    "abrir o writer não é falhar ao escrever nele",
+  );
+  // Palavras soltas, uma a uma, como o cartão exige.
+  assert.equal(ehEscritaDeCheckpointFalhou("RuntimeError: file write failed"), false);
+  assert.equal(ehEscritaDeCheckpointFalhou("[enforce fail at foo.cc:12] . bad alloc"), false);
+  assert.equal(ehEscritaDeCheckpointFalhou("seek to pos 4096 before reading"), false);
+  // "unexpected pos " sem o inline_container também não basta: os dois termos
+  // são exigidos JUNTOS.
+  assert.equal(ehEscritaDeCheckpointFalhou("parser: unexpected pos 12 vs 13"), false);
+  assert.equal(ehEscritaDeCheckpointFalhou("[enforce fail at inline_container.cc:1] . ok"), false);
+  // Os stderrs das outras duas classes não são esta.
+  assert.equal(ehEscritaDeCheckpointFalhou(STDERR_SEM_OOM), false);
+  assert.equal(ehEscritaDeCheckpointFalhou(STDERR_OOM_REAL), false);
+  assert.equal(ehEscritaDeCheckpointFalhou(STDERR_DISCO_REAL), false);
+});
+
+test("detector de escrita truncada: âncora, reforço e imunidade a caixa", () => {
+  // A âncora sozinha basta (primeira exceção da cadeia).
+  assert.equal(
+    ehEscritaDeCheckpointFalhou("PytorchStreamWriter failed writing file data/1004"),
+    true,
+  );
+  assert.equal(ehEscritaDeCheckpointFalhou("PYTORCHSTREAMWRITER FAILED WRITING FILE data/3"), true);
+  // O reforço sozinho basta — é o caso em que só a SEGUNDA exceção sobrevive no
+  // tail do stderr, que é o que o banco guarda.
+  assert.equal(
+    ehEscritaDeCheckpointFalhou(
+      "RuntimeError: [enforce fail at inline_container.cc:664] . unexpected pos 131040192 vs 131040080",
+    ),
+    true,
+  );
+  assert.equal(ehEscritaDeCheckpointFalhou(null), false);
+  assert.equal(ehEscritaDeCheckpointFalhou(undefined), false);
+  assert.equal(ehEscritaDeCheckpointFalhou(""), false);
+});
+
+// ── Não-regressão: as duas classes anteriores não se mexem ──────────────────
+
+test("o ENOSPC NÃO regride: continua infra_disk com a chave no-space", () => {
+  assert.equal(ehDiscoCheio(STDERR_DISCO_REAL), true);
+  assert.equal(
+    classifyCause(ERROR_MESSAGE_GRAVADO, { stderr: STDERR_DISCO_REAL, returncode: 1 }),
+    "infra_disk",
+  );
+  assert.equal(
+    errorSignature("training", ERROR_MESSAGE_GRAVADO, { stderr: STDERR_DISCO_REAL }),
+    ASSINATURA_DISCO_CHEIO,
+  );
+  assert.match(
+    incidentTitle("training", ERROR_MESSAGE_GRAVADO, { stderr: STDERR_DISCO_REAL }),
+    /disco cheio/i,
+  );
+});
+
+test("o OOM NÃO regride por causa do detector novo", () => {
+  assert.equal(
+    classifyCause(ERROR_MESSAGE_GRAVADO, { stderr: STDERR_OOM_REAL, returncode: 1 }),
+    "infra_gpu",
+  );
+  assert.equal(
+    errorSignature("training", ERROR_MESSAGE_GRAVADO, { stderr: STDERR_OOM_REAL }),
+    ASSINATURA_CUDA_OOM,
+  );
+});
+
+test("stderr com ENOSPC E escrita truncada: o errno PROVADO ganha", () => {
+  /**
+   * ⚠️ CASO NUNCA OBSERVADO — teste de CARACTERIZAÇÃO, não de requisito.
+   *
+   * Diferente do desempate OOM × disco, este é PLAUSÍVEL de verdade: as duas
+   * classes moram na mesma `save_checkpoint()`, em arquivos consecutivos, e um
+   * stderr longo o bastante poderia trazer as duas mensagens. Por isso o
+   * desempate está travado aqui: ganha o ENOSPC, que é o único dos dois com
+   * prova de errno. Inferência não pode sobrepor confissão.
+   *
+   * Este teste também protege a ordem em `classifyCause` e em `errorSignature`:
+   * ao contrário do caso OOM × disco, os dois detectores NÃO são disjuntos
+   * neste fixture, então reordenar as linhas quebra aqui.
+   */
+  const ambos = STDERR_DISCO_REAL + "\n" + STDERR_ESCRITA_REAL;
+  assert.equal(ehDiscoCheio(ambos), true, "o fixture precisa casar os DOIS detectores");
+  assert.equal(ehEscritaDeCheckpointFalhou(ambos), true, "o fixture precisa casar os DOIS");
+  assert.equal(classifyCause(ERROR_MESSAGE_GRAVADO, { stderr: ambos }), "infra_disk");
+  assert.equal(
+    errorSignature("training", ERROR_MESSAGE_GRAVADO, { stderr: ambos }),
+    ASSINATURA_DISCO_CHEIO,
+  );
+  assert.match(
+    incidentTitle("training", ERROR_MESSAGE_GRAVADO, { stderr: ambos }),
+    /disco cheio/i,
+  );
+});
+
+test("falha CEGA continua 'bug': escrita truncada não é palpite para quem não tem stderr", () => {
+  // As 70 falhas sem stderr não podem ganhar causa nova por causa deste PR.
+  for (const diag of [
+    undefined,
+    {},
+    { stderr: null },
+    { stderr: "" },
+    { stderr: null, returncode: 1 },
+  ]) {
+    assert.equal(ehEscritaDeCheckpointFalhou(diag?.stderr), false);
+    assert.equal(classifyCause(ERROR_MESSAGE_GRAVADO, diag), "bug");
+    assert.equal(errorSignature("training", ERROR_MESSAGE_GRAVADO, diag), ASSINATURA_DO_11);
+    assert.equal(
+      incidentTitle("training", ERROR_MESSAGE_GRAVADO, diag),
+      incidentTitle("training", ERROR_MESSAGE_GRAVADO),
+    );
+  }
+});
+
+test("erro vazio sem diagnóstico continua 'unknown' com o detector novo na guarda", () => {
+  // A guarda `!e` ganhou um terceiro detector; ela não pode ter passado a
+  // classificar erro vazio sem prova nenhuma.
+  assert.equal(classifyCause("", { stderr: null, returncode: 1 }), "unknown");
+  assert.equal(classifyCause("", { stderr: "" }), "unknown");
+  assert.equal(classifyCause("", undefined), "unknown");
+});
+
+test("erro de dataset continua ganhando do diagnóstico de escrita truncada", () => {
+  // Mesma precedência das outras duas. A guarda por CAUSA em errorSignature
+  // impede a chave inconsistente `training:user_dataset:write-failed`.
+  const erroAluno = "insufficient_audio: only 4s of usable speech";
+  assert.equal(classifyCause(erroAluno, { stderr: STDERR_ESCRITA_REAL }), "user_dataset");
+  assert.equal(
+    errorSignature("training", erroAluno, { stderr: STDERR_ESCRITA_REAL }),
+    errorSignature("training", erroAluno),
+  );
+  assert.doesNotMatch(
+    errorSignature("training", erroAluno, { stderr: STDERR_ESCRITA_REAL }),
+    /write-failed/,
   );
 });
