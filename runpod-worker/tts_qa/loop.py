@@ -10,8 +10,9 @@ import soundfile as sf
 
 from worker_log import log as _log
 
-from .metrics import (chunk_coverage, chunk_intrusions, echo_leak_count, fim_abrupto,
-                      maior_lacuna, palavras_faltantes, ultima_palavra_truncada)
+from .metrics import (chunk_coverage, chunk_intrusions, divergencias_de_grafia,
+                      echo_leak_count, fim_abrupto, maior_lacuna,
+                      palavras_faltantes, ultima_palavra_truncada)
 from .rate import measure_seg_rate
 from .text import norm_words
 
@@ -291,6 +292,59 @@ def registrar_faltantes(qa_stats: dict, faltantes, amostra_max: int = 20) -> Non
         qa_stats["faltantes_amostra"] = list(faltantes[:max(0, int(amostra_max))])
 
 
+def registrar_grafias(qa_stats: dict, grafias, amostra_max: int = 20) -> None:
+    """Acumula o que o audio DISSE e o whisper escreveu de outro jeito (18/09).
+
+    TELEMETRIA PURA, o MESMO contrato de `registrar_faltantes`: nao decide
+    nada, nenhum portao le estes campos, nenhum job passa a falhar por causa
+    deles.
+
+    POR QUE ELA PRECISA SER CONTAVEL SEPARADO. Ate hoje nome proprio grafado
+    diferente (skydivethru 11, cestaro 8, naldy 8, riuls 6 nos 1.035 faltantes
+    medidos em 18/09) entrava na conta de "palavra perdida" e sujava os dois
+    lados da leitura: inflava `faltantes_total` com audio bom e escondia a
+    pergunta que realmente importa, que e "quanto do que o comparador chama de
+    divergencia e nome proprio, e quanto e o modelo trocando palavra de
+    verdade?". Somar as duas classes num numero so nao responde nenhuma das
+    duas. Agora a classe tem coluna propria e da pra contar.
+
+    ⚠️ ELA NAO INOCENTA NADA. Grafia divergente nao prova audio bom — prova que
+    o comparador nao serve de juiz naquele ponto. O que estes campos entregam e
+    o TAMANHO da zona cinzenta, pra que alguem possa ir OUVIR uma amostra dela
+    depois. Ler `grafia_total` como "tudo isso estava certo" seria repetir, com
+    outro nome, o erro que esta correcao desfaz.
+
+    Campos (espelham `faltantes_*` de proposito, pra ler lado a lado):
+      grafia_total        — pares somando TODOS os pedacos entregues;
+      grafia_medido_n     — DENOMINADOR: pedacos entregues em que deu pra
+                            medir. Sem ele, `grafia_total` = 0 nao distingue
+                            "grafia bateu sempre" de "nao mediu";
+      grafia_sem_veredito — pedacos entregues sem medida. Fecha a conta:
+                            entregues = medido_n + sem_veredito;
+      grafia_pior_n       — quantos pares no PIOR pedaco;
+      grafia_amostra      — os `amostra_max` PRIMEIROS pares desse pedaco, no
+                            formato "texto>audio" e na ordem do texto.
+
+    ⚠️ QUEM CHAMA E' O CHAMADOR, pelo mesmo motivo de `registrar_cobertura`
+    (26/08), `registrar_tail_interno` (02/09) e `registrar_faltantes` (04/09):
+    o audio julgado dentro de `run_chunk_qa` ainda pode ser jogado fora pelo
+    resgate por subdivisao, e so o chamador sabe o que virou entrega.
+
+    ⚠️ LIMITE HONESTO, o mesmo dos outros tres: estes contadores so descrevem
+    entrega quando a geracao termina `ready`. Leia filtrando por
+    `status='ready'`.
+    """
+    if grafias is None:
+        qa_stats["grafia_sem_veredito"] = qa_stats.get("grafia_sem_veredito", 0) + 1
+        return
+    qa_stats["grafia_medido_n"] = qa_stats.get("grafia_medido_n", 0) + 1
+    qa_stats["grafia_total"] = qa_stats.get("grafia_total", 0) + len(grafias)
+    pior = qa_stats.get("grafia_pior_n")
+    if pior is None or len(grafias) > pior:
+        qa_stats["grafia_pior_n"] = len(grafias)
+        qa_stats["grafia_amostra"] = list(grafias[:max(0, int(amostra_max))])
+
+
 def run_chunk_qa(
     seg,
     idx: int,
@@ -344,6 +398,14 @@ def run_chunk_qa(
     muda decisão nenhuma; acompanha a cobertura porque descreve o MESMO áudio
     que ela mede. Quem acumula é o chamador, via `registrar_faltantes`, pela
     terceira vez pelo mesmo motivo.
+
+    O 6o valor (`list | None`) são as DIVERGÊNCIAS DE GRAFIA da tentativa
+    VENCEDORA (18/09): o que o áudio disse e o Whisper escreveu de outro jeito,
+    em pares "texto>audio". Telemetria pura também, e anda junto das faltantes
+    porque as duas saem do MESMO alinhamento — uma nomeia o que o modelo não
+    falou, a outra nomeia o que ele falou e o comparador não soube reconhecer.
+    Quem acumula é o chamador, via `registrar_grafias`, pela quarta vez pelo
+    mesmo motivo.
     """
     attempt = 0
     max_attempts = max(
@@ -356,6 +418,10 @@ def run_chunk_qa(
     # de `best_lacuna` de proposito: as duas descrevem o MESMO buraco, uma pela
     # forma e a outra pelo nome. Ver `registrar_faltantes`.
     best_faltantes = None
+    # Pares "texto>audio" da tentativa VENCEDORA. Mesmo alinhamento das
+    # faltantes, resposta complementar: o que o audio FALOU e o whisper grafou
+    # diferente. Ver `registrar_grafias`.
+    best_grafias = None
     # Veredito de fronteira INTERNA da tentativa VENCEDORA (a que vira entrega).
     # Os contadores `tail_interno_*` do laco contam TENTATIVA — inclusive as
     # descartadas —, e por isso nao respondem "o aluno recebeu decepado?".
@@ -373,6 +439,7 @@ def run_chunk_qa(
         coverage = None
         lacuna_desta = None
         faltantes_desta = None
+        grafias_desta = None
         # Resetado a cada volta DE PROPOSITO: e' o veredito DESTA tentativa,
         # nao o acumulado. None = a fronteira interna nao foi julgada aqui.
         interno_cortado_desta = None
@@ -413,6 +480,7 @@ def run_chunk_qa(
             # Telemetria pura, na carona da MESMA transcricao e do MESMO
             # alinhamento: nao paga whisper nem entra no `score`.
             faltantes = palavras_faltantes(got, chunk, qa_language)
+            grafias = divergencias_de_grafia(got, chunk, qa_language)
             qa_stats["coverage_checked"] += 1
             if coverage is None:
                 qa_stats["coverage_none"] += 1
@@ -426,6 +494,10 @@ def run_chunk_qa(
                     # inteiro do aluno, e o log do worker nao e' lugar de
                     # despejar isso a cada tentativa.
                     faltantes_n=(None if faltantes is None else len(faltantes)),
+                    # Mesma regra da linha de cima: SO A CONTAGEM no log. Os
+                    # pares carregam texto do aluno e vao pro `qa_stats`, com
+                    # teto, e nao pro log do worker.
+                    grafias_n=(None if grafias is None else len(grafias)),
                 )
                 if coverage < coverage_qa_min:
                     qa_stats["coverage_flagged"] += 1
@@ -439,6 +511,7 @@ def run_chunk_qa(
                     alucinadas_seguidas = 0
             lacuna_desta = lacuna
             faltantes_desta = faltantes
+            grafias_desta = grafias
         if intrusion_qa_enabled and attempt < intrusion_qa_retries:
             intrusoes = chunk_intrusions(got, chunk, qa_language)
             qa_stats["intrusion_checked"] += 1
@@ -550,6 +623,7 @@ def run_chunk_qa(
             best_lacuna = lacuna_desta
             best_tail_interno = interno_cortado_desta
             best_faltantes = faltantes_desta
+            best_grafias = grafias_desta
         if score == 0:
             break
         attempt += 1
@@ -633,8 +707,14 @@ def run_chunk_qa(
                 # apontaria palavra perdida em audio que acabou de ser
                 # inocentado. Recalcula no idioma detectado, sem whisper novo.
                 best_faltantes = palavras_faltantes(got2, chunk, lang2)
-    # NAO registra a cobertura, a fronteira interna nem as palavras faltantes
-    # aqui: este audio ainda pode ser DESCARTADO pelo resgate por subdivisao.
-    # Quem registra e' o chamador, quando sabe o que virou entrega — ver
-    # `registrar_cobertura`, `registrar_tail_interno` e `registrar_faltantes`.
-    return best_seg, best_coverage, best_lacuna, best_tail_interno, best_faltantes
+                # Pelo MESMO motivo do comentario acima: a lista tem que vir da
+                # leitura ADOTADA. Grafia medida contra uma transcricao que o
+                # whisper TRADUZIU descreveria a traducao, nao o audio.
+                best_grafias = divergencias_de_grafia(got2, chunk, lang2)
+    # NAO registra a cobertura, a fronteira interna, as palavras faltantes nem
+    # as divergencias de grafia aqui: este audio ainda pode ser DESCARTADO pelo
+    # resgate por subdivisao. Quem registra e' o chamador, quando sabe o que
+    # virou entrega — ver `registrar_cobertura`, `registrar_tail_interno`,
+    # `registrar_faltantes` e `registrar_grafias`.
+    return (best_seg, best_coverage, best_lacuna, best_tail_interno,
+            best_faltantes, best_grafias)

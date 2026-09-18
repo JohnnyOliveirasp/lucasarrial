@@ -2,28 +2,33 @@
 
 Saiu do handler.py em 20/08 (o arquivo tinha ~1.700 linhas misturando treino,
 inferência e QA). Cada régua está em metrics.py, o laço que regenera em
-loop.py, e a normalização de texto/número em text.py e numbers.py.
+loop.py, e a normalização de texto/número em text.py, numbers.py e canon.py.
 
 Os 87 testes de test_coverage_qa.py cobrem exatamente estas funções.
 """
-from .loop import (registrar_cobertura, registrar_faltantes,
+from .canon import canonizar_contracoes, expandir_falado
+from .loop import (registrar_cobertura, registrar_faltantes, registrar_grafias,
                    registrar_tail_interno, run_chunk_qa, start_word_ok,
                    transcribe_seg)
-from .metrics import (chunk_coverage, chunk_intrusions, echo_leak_count,
-                      maior_lacuna, palavras_faltantes)
+from .metrics import (chunk_coverage, chunk_intrusions, divergencias_de_grafia,
+                      echo_leak_count, maior_lacuna, palavras_faltantes)
 from .numbers import digits_to_words
 from .text import norm_words
 
 __all__ = [
+    "canonizar_contracoes",
     "chunk_coverage",
     "chunk_intrusions",
     "digits_to_words",
+    "divergencias_de_grafia",
     "echo_leak_count",
+    "expandir_falado",
     "maior_lacuna",
     "norm_words",
     "palavras_faltantes",
     "registrar_cobertura",
     "registrar_faltantes",
+    "registrar_grafias",
     "registrar_tail_interno",
     "run_chunk_qa",
     "start_word_ok",
