@@ -60,6 +60,15 @@
   --elevation-popover: 0 0 0 1px var(--hairline-strong), 0 24px 60px -20px rgba(0, 0, 0, 0.9);
 
   /* ---- FONTS ---- (--font-dm-sans e --font-dm-mono são injetadas por next/font no <html>) */
+
+  /* ---- FAIXA DE RODAPÉ ----
+     Espaço que o conteúdo do /app deixa livre no fim pra não terminar
+     embaixo de um overlay `fixed` (o balão da Fast). Este valor é o do
+     balão na posição PADRÃO — bottom 20 + altura 56 + folga 12 — e serve
+     pro primeiro paint; depois da hidratação quem manda é
+     `use-reserva-de-rodape.ts`, que mede o balão de verdade e acompanha o
+     arrasto. A régua e o porquê estão em `lib/ui/reserva-de-rodape.ts`. */
+  --fc-reserva-rodape: 88px;
 }
 
 @theme inline {

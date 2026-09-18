@@ -13,6 +13,8 @@ import { usePathname } from "@/i18n/navigation";
 import { MessageCircle, X, Send, ImagePlus, Camera, Loader2, Mic, Trash2 } from "lucide-react";
 import { useVoiceRecorder } from "@/components/app/use-voice-recorder";
 import { useArrastavel } from "@/components/app/use-arrastavel";
+import { useReservaDeRodape } from "@/components/app/use-reserva-de-rodape";
+import { reservaDaFaixa } from "@/lib/ui/reserva-de-rodape";
 import { ensureUploadableImage, IMAGE_ACCEPT_WITH_HEIC } from "@/lib/images/heic";
 
 type Msg = {
@@ -74,6 +76,8 @@ export function HelpWidget() {
   // Balão arrastável (14/08): fixo no canto ele tapava botão de wizard.
   const { pos, arrastando, foiArrasto, handlers } = useArrastavel();
   const [loaded, setLoaded] = useState(false);
+  const fabRef = useRef<HTMLButtonElement>(null);
+  const [faixa, setFaixa] = useState(0);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -110,6 +114,36 @@ export function HelpWidget() {
   useEffect(() => {
     if (open) scrollToEnd();
   }, [open, messages.length, scrollToEnd]);
+
+  /**
+   * 🐛 18/09 — a colisão de 14/08 voltou no MESMO botão "Continuar" do wizard
+   * (o passo 01 cresceu com o banner de gravações achadas, PR #330):
+   * sobreposição de 108x36 px em 390 px de largura, e o clique no canto do
+   * botão caía no balão. Arrastar não resolveu porque ninguém adivinha que dá
+   * pra arrastar.
+   *
+   * Agora o balão DECLARA a faixa que ocupa e a página reserva esse espaço no
+   * fim do conteúdo (ver `use-reserva-de-rodape.ts`). Medimos o botão de
+   * verdade em vez de repetir a altura em número mágico — mudar `h-14` aqui
+   * reajusta a reserva sozinho.
+   *
+   * O PAINEL aberto fica de fora de propósito: ele sobe 560 px e é um overlay
+   * de conversa, não um vizinho permanente do conteúdo. Reservar a altura
+   * dele empurraria a página inteira toda vez que o aluno abre o chat.
+   */
+  useEffect(() => {
+    const medir = () => {
+      const el = fabRef.current;
+      if (!el) return;
+      setFaixa(reservaDaFaixa(el.getBoundingClientRect().top, window.innerHeight));
+    };
+    medir();
+    window.addEventListener("resize", medir);
+    return () => window.removeEventListener("resize", medir);
+    // `pos` muda a cada arrasto e `open` troca a largura do botão: remede.
+  }, [pos, open]);
+
+  useReservaDeRodape("balao-de-ajuda", faixa);
 
   async function attachBlob(blob: Blob) {
     setError(null);
@@ -248,6 +282,7 @@ export function HelpWidget() {
           ARRASTÁVEL desde 14/08: fixo no canto ele cobriu o "Continuar" do
           wizard e travou o Johnny. Botão de ajuda não pode atrapalhar o uso. */}
       <button
+        ref={fabRef}
         type="button"
         {...handlers}
         onClick={() => {

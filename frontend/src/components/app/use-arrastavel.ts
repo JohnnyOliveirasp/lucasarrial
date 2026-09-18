@@ -8,8 +8,18 @@
  * tamanho da janela. Botão de ajuda não pode impedir o uso do produto.
  *
  * A posição fica guardada por navegador: quem moveu uma vez não move de novo.
+ *
+ * ⚠️ 18/09: o arrasto NÃO era o conserto daquele bug — a mesma colisão voltou
+ * no mesmo botão assim que o passo 01 cresceu (PR #330). Quem conserta agora
+ * é a reserva de rodapé (`lib/ui/reserva-de-rodape.ts`): a página deixa a
+ * faixa do balão livre sozinha. O arrasto ficou sendo o que sempre deveria
+ * ter sido — conveniência, não a defesa. Em troca, ele passou a respeitar um
+ * TETO vertical: o balão anda à vontade na horizontal, mas não sobe além da
+ * faixa de baixo. É isso que mantém a reserva num tamanho defensável em
+ * qualquer posição que o aluno escolher (ver `tetoDaFaixa`).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { tetoDaFaixa } from "@/lib/ui/reserva-de-rodape";
 
 const CHAVE = "fc-help-pos-v1";
 /** Distância mínima pra considerar arrasto — abaixo disso é clique. */
@@ -24,7 +34,13 @@ const PADRAO: PosicaoBalao = { right: 20, bottom: 20 };
 function limitar(p: PosicaoBalao): PosicaoBalao {
   if (typeof window === "undefined") return p;
   const maxRight = Math.max(MARGEM, window.innerWidth - 72);
-  const maxBottom = Math.max(MARGEM, window.innerHeight - 72);
+  // Teto vertical: sem ele, um balão estacionado no alto faria a página
+  // reservar uma tela inteira de vazio no fim. Posição antiga guardada acima
+  // do teto (localStorage de antes de 18/09) desce pra dentro da faixa aqui.
+  const maxBottom = Math.max(
+    MARGEM,
+    Math.min(window.innerHeight - 72, tetoDaFaixa(window.innerHeight)),
+  );
   return {
     right: Math.min(Math.max(MARGEM, p.right), maxRight),
     bottom: Math.min(Math.max(MARGEM, p.bottom), maxBottom),

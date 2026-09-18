@@ -112,6 +112,13 @@
       "eyebrow": "01 · Train voice",
       "title": "New voice",
       "subtitle": "Upload at least 20 minutes of you talking. More is better.",
+      "recordingsFound": {
+        "checking": "Looking for the recordings you already made…",
+        "title": "{count, plural, one {Found # recording of yours ({duration}) — it is already here and goes into this training.} other {Found # recordings of yours ({duration}) — they are already here and go into this training.}}",
+        "ready": "You do not need to record again: name the voice, tick the declaration below and continue.",
+        "measuring": "{count, plural, one {Still reading the duration of # recording} other {Still reading the duration of # recordings}} — the total above can still go up.",
+        "short": "Still {missing} short of the {min} min minimum — you can keep recording in the Recorder or upload files on the next screen."
+      },
       "recordInstead": {
         "text": "No file yet? This screen is upload only — recording lives in Recorder.",
         "cta": "Open the Recorder"
