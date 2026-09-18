@@ -46,6 +46,19 @@ export type OrigemEnvio =
   /** campanha de recuperação */
   | "winback"
   /**
+   * "Esqueci a senha" (`api/v1/auth/recuperar-senha`).
+   *
+   * ⚠️ ESTA ORIGEM NÃO EXISTIA, e a ausência dela é a história: até 18/09 o link
+   * de senha saía pelo provedor do **Supabase** (chamada de cliente, no
+   * `forgot-password-form.tsx`), então não passava pelo `sendSupportMail` e não
+   * deixava linha nenhuma nesta tabela. Medido na aluna
+   * walsicleia_kaka@hotmail.com: `recovery_sent_at` carimbado em `auth.users` e
+   * ZERO linha aqui — a casa não tinha prova de entrega NEM de bounce
+   * justamente no e-mail mais crítico que existe, o que devolve a conta pra
+   * quem não consegue entrar.
+   */
+  | "recuperacao-senha"
+  /**
    * E-mail escrito À MÃO pela ronda, pelo `_frank/ferramentas/enviar_email.cjs`.
    *
    * Não passa pelo `sendSupportMail` — sai de um script, direto no SMTP — e por

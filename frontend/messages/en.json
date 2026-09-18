@@ -236,6 +236,7 @@
       "submit": "Send link",
       "submitting": "Sending…",
       "sent": "If this email has an account, you'll receive a link to reset your password. Check your inbox (and spam).",
+      "sentRemetente": "The message comes from suporte@fastcloner.com and the link is valid for 1 hour. If you cannot find it, search for that sender — including in spam.",
       "backToLogin": "← Back to login"
     },
     "reset": {
