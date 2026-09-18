@@ -110,13 +110,57 @@ com 188 alunos de exposição, isso é gap, não rodapé. Apliquei a ordem de 17
 tela — card **`37db55b3`**, rodando ao fim desta ronda. O veredito volta escrito.
 **Não mergeei e não recomendo mergear antes do veredito.**
 
+## O veredito do QA voltou dentro desta ronda — e achou mais do que eu pedi
+
+O card `37db55b3` fechou antes do fim da ronda. O que **passou**, medido em
+worktree isolada (sem merge, sem push, checkout principal intacto):
+
+| checagem | resultado |
+|---|---|
+| `node --test src/lib/audio/gravacoes-achadas.test.ts` | **10 pass / 0 fail** |
+| `npx tsc --noEmit` | **exit 0** |
+| `npm run build` | **exit 0** |
+| diff real contra `git merge-base` (`2472847`) | **6 arquivos, +392/−19**, exatamente o declarado |
+
+E o que **não** passou — com o motivo concreto, que é o que a ordem de 17/09
+manda escrever quando o artefato não abre:
+
+> `npx next dev` devolve **HTTP 500 em qualquer rota**, inclusive a raiz, antes
+> de chegar no middleware de auth:
+> `EvalError: Code generation from strings disallowed for this context`
+
+**O QA não fingiu ter visto a tela.** E provou que o bloqueio não é do PR:
+reproduziu **idêntico em `origin/main` puro**, segunda worktree, mesmo
+`.env.local`, mesmo `node_modules`.
+
+### O achado que vale mais que o card
+
+Isto é o **motivo estrutural** de os PRs de frontend desta casa chegarem com
+"não houve verificação em navegador". Não é desleixo de quem escreve o PR: a
+casa **não consegue abrir tela nenhuma localmente**, autenticada ou não.
+Enquanto durar, toda tela vai pra produção coberta só por teste puro + guarda
+estrutural — e o `PR #330`, com 188 alunos de exposição, é o caso da vez.
+
+Abri o chamado **`#471`** (`14fc0e22`) pra isso, com a prova do QA e os dois
+caminhos possíveis (achar a incompatibilidade Sentry/OTel × Next 15.5.18, ou
+montar verificação visual fora do `next dev` desta máquina). Sem um dos dois,
+**"verificado em navegador" não existe neste repo**. Não há aluno afetado: o
+defeito é da nossa capacidade de verificar, não da produção.
+
+O veredito completo ficou comentado no próprio `PR #330`
+(`issuecomment-5733300510`), que é onde a decisão de merge vai ser tomada.
+
+**Eu não mergeei o #330 e não recomendo mergear às cegas.** A régua pura está
+provada; a ligação régua↔tela, não.
+
 ## Fila
 
 | status | antes | depois |
 |---|---|---|
-| open | 6 | **3** |
+| open | 6 | **3** + 1 novo (`#471`) = **4** |
 | investigating | 91 | **90** |
 | fixed | 270 | **274** |
 
 Não zerei nada por decreto: 4 fechados, todos com medição no banco e nota
-dizendo o que era e o que fiz.
+dizendo o que era e o que fiz. O único card novo é o `#471`, e ele nasceu de
+prova, não de suspeita.
