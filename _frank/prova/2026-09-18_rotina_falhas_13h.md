@@ -153,3 +153,31 @@ que usei pra medir (PostgREST × Management API): 2,957% → 0,121%, 24,5×.
 
 Instrumento fora do git é instrumento que a próxima ronda não tem — foi assim
 que o fix do #74 sumiu com o container em 21/08.
+
+## Adendo — prova de deploy do worker (regra 5-B)
+
+Fechei o cartão apoiado na queda de **taxa** em produção. Isso é dado de
+produção, mas é **indireto**: prova que o comportamento mudou, não que este
+commit está no worker **hoje**. Fui atrás da prova direta em vez de deixar
+passar.
+
+O campo **`coverage_alucinado` é escrito exclusivamente pelo `7d030db3`**
+(`git log -S` sobre `runpod-worker/` devolve esse commit e só ele). A geração
+`d07d0d7d`, de **ontem** (17/09 20:18Z), tem `coverage_alucinado=4` gravado no
+banco. Logo o worker que rodou ontem executava o código do `7d030db3`.
+
+É mais forte que o md5 do fonte no servidor: md5 prova que o arquivo está lá;
+este campo prova que o código **executou e produziu efeito observável**, com
+data. Cadeia fechada: commit → campo que só ele escreve → campo presente em
+geração de ontem.
+
+## Conferência de branch
+
+`git log --oneline origin/main..HEAD` saiu **VAZIO**: nada meu ficou preso.
+
+Conferi o branch homônimo do cartão, `feat/52-reenvio-qa-coverage` — é o padrão
+que já mordeu a casa quatro vezes (`feat/onedrive-401`,
+`feat/fix-image-upload-retry`, as duas da cura de referência,
+`fix/trava-foto-nova-8379549c`). Aqui está **limpo**: `0` commits fora da
+`origin/main` e o PR **#244 MERGED**. Nada pendurado, nada a registrar no
+índice de ordens.
