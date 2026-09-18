@@ -25,6 +25,7 @@ from worker_config import (
     WORKSPACE,
     worker_build_id,
 )
+from worker_disk import area_em_uso
 from worker_log import log as _log
 
 from .train_dataset import (
@@ -67,6 +68,19 @@ class TrainJob:
 
     # ── Orquestracao ───────────────────────────────────────────────────────
     def run(self) -> dict:
+        """Protege a area deste treino do despejo de disco e roda.
+
+        O despejo (#32, `worker_disk.despejar`) apaga area de treino VELHA pra
+        nao deixar o disco encher. A area do treino EM EXECUCAO tem de
+        sobreviver a isso: apagar `dirs.job` no meio derruba o aluno que esta
+        treinando agora — a falha mais grave possivel naquele caminho. O
+        registro e global do processo, entao vale tambem quando quem dispara a
+        faxina e OUTRO job (worker com concurrency > 1).
+        """
+        with area_em_uso(self.dirs.job):
+            return self._executar()
+
+    def _executar(self) -> dict:
         self._limpar_area()
         self.t0 = time.monotonic()
         free_cuda()   # worker quente pode ter VRAM presa de inferencias anteriores
