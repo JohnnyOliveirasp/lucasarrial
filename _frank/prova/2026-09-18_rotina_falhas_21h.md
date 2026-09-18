@@ -3,6 +3,33 @@
 Dono da fila (14-A). Método serial da ordem de 21/08. Canal: grupo (ordem de 31/08).
 Ronda anterior: `2026-09-18_rotina_falhas_19h.md`. Vigia mais recente: `2026-09-18_vigia_20h.md`.
 
+> ## ⛔ ESTE LOG TEM UMA PREMISSA REFUTADA — leia a correção antes de agir
+>
+> **Corrigido em:** `2026-09-18_rotina_falhas_22h.md` (seção "O log das 21h
+> ficou velho").
+>
+> Tudo que este arquivo diz sobre a **Janice (`#444`)** parte de *"a voz não
+> existe, nada foi treinado"*. **Falso.** A aluna criou a voz
+> `9e94f1f6` (`status=ready`) às **08:31:32Z de 18/09** — doze horas antes da
+> carta que este log celebra. A ronda mediu a voz **do pedido** (`4703d0b0`,
+> apagada) em vez de medir **por `user_id`**.
+>
+> O que muda na prática, para quem ler isto depois:
+> 1. A carta das 20:53Z (uid 2825) **nasceu velha** e foi **substituída** pela
+>    de 21:06Z (uid 2830), que assume o erro e informa o estorno.
+> 2. Ela **foi cobrada** 10.000 (clicou o botão às 08:32Z) e **foi estornada**
+>    às 21:05Z (`ref_type='voice_train_refund'`, saldo 100.000).
+> 3. A recomendação de mergear **`feat/reabrir-audio-sgp`** *"por causa da
+>    Janice"* **perdeu o motivo**: não há etapa de áudio a reabrir para ela.
+>    O branch pode ter mérito próprio, mas **não com esta justificativa**.
+> 4. A afirmação de que o treino da casa sairia *"por conta da casa, zero
+>    débito"* também foi refutada: `deveCobrarOnboarding` **não existe** no
+>    repo, e o caminho da casa **cobra de propósito**.
+>
+> A correção já estava na nota do incidente (21:08:35Z) — **mas não neste
+> arquivo**, que é o que a ronda seguinte lê primeiro. Esse descompasso é o
+> achado da ronda das 22h.
+
 ---
 
 ## Passo fixo: reconciliar os envios (ordem de 18/09)
