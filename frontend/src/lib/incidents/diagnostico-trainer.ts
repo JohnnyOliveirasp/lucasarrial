@@ -27,6 +27,17 @@
  * alocados, pid, GiB livres) e o head de 120 chars da assinatura faria cada
  * falha virar um incidente NOVO. A cura é ler o stderr COMO DIAGNÓSTICO, à
  * parte, e deixar ele decidir causa e assinatura — sem nunca entrar no head.
+ *
+ * ── 17/09: o mesmo vão, com outro nome ────────────────────────────────────
+ * O detector de OOM (16/09) fechou o buraco para GPU e SÓ para GPU. Em 17/09 o
+ * job `bbf4b050` (almaraujo13) morreu com o disco do worker cheio — ENOSPC ao
+ * gravar o `lora_weights.safetensors` — e, por não casar nada, caiu de novo em
+ * `bug` + `training:bug:trainer failed`, reabrindo o #11 por um motivo que não
+ * é o dele. Daí `ehDiscoCheio`/`ASSINATURA_DISCO_CHEIO`, logo abaixo.
+ *
+ * O padrão a repetir quando aparecer a PRÓXIMA classe: detector estreito
+ * ancorado na FRASE do erro (nunca em palavra solta), assinatura FIXA, nota de
+ * conduta própria, e nenhuma retentativa automática.
  */
 
 /**
@@ -102,6 +113,109 @@ export function ehCudaOom(stderr: string | null | undefined): boolean {
     s.includes("torch.outofmemoryerror") ||
     s.includes("torch.cuda.outofmemoryerror")
   );
+}
+
+/** Sufixo da assinatura de disco cheio. Fixo — ver `ASSINATURA_DISCO_CHEIO`. */
+export const SUFIXO_DISCO_CHEIO = "no-space";
+
+/**
+ * A assinatura que todo "disco cheio do worker" passa a ter.
+ *
+ * ⚠️ FIXA, SEM HEAD DO ERRO, pelo mesmo motivo escrito em `ASSINATURA_CUDA_OOM`:
+ * o traceback muda a cada ocorrência (step alcançado, loss, caminho do
+ * checkpoint, frames do safetensors) e o head de 120 chars faria cada falha de
+ * disco abrir um incidente NOVO.
+ *
+ * ── Por que causa PRÓPRIA (`infra_disk`) e não `infra_storage` ─────────────
+ * `infra_storage` hoje significa uma coisa só: o bucket REMOTO (R2) recusou —
+ * `cloudflarestorage`, `r2 upload failed`, `502 bad gateway`, `failed to
+ * download`. É outra máquina, outro dono e outra conduta. Isto aqui é o
+ * SISTEMA DE ARQUIVOS LOCAL do worker da RunPod enchendo. Jogar os dois no
+ * mesmo balde esconderia um problema recorrente de capacidade de volume dentro
+ * de um incidente de indisponibilidade de bucket — exatamente o tipo de
+ * mistura que este arquivo existe para desfazer.
+ */
+export const ASSINATURA_DISCO_CHEIO = `training:infra_disk:${SUFIXO_DISCO_CHEIO}`;
+
+/**
+ * Este treino morreu porque o disco do worker encheu?
+ *
+ * Detector ESTREITO, na mesma disciplina do `ehCudaOom`: a âncora é a FRASE do
+ * erro, não as palavras "disco"/"espaço"/"device" soltas. Um traceback que só
+ * MENCIONA espaço em disco noutra frase ("could not check free space", "disk
+ * space is low") não pode ser carimbado como disco cheio — há teste de controle
+ * negativo travando isso.
+ *
+ * Os dois padrões são OBSERVADOS na única falha instrumentada deste tipo
+ * (training_jobs `bbf4b050`, 17/09, almaraujo13) — não são palpite:
+ *
+ *   safetensors._safetensors_rust.SafetensorError: Error while serializing:
+ *   I/O error: No space left on device (os error 28)
+ *
+ * `no space left on device` é a mensagem canônica do ENOSPC e atravessa as duas
+ * camadas que podem gritar aqui: o Rust do safetensors ("os error 28") e o
+ * Python puro ("[Errno 28] No space left on device", que contém a mesma frase).
+ * Por isso a frase é a âncora e `os error 28` entra como reforço — espelhando a
+ * escolha feita no OOM, onde a mensagem do torch é a âncora e o nome da classe
+ * é o reforço.
+ */
+export function ehDiscoCheio(stderr: string | null | undefined): boolean {
+  const s = (stderr ?? "").toLowerCase();
+  if (!s) return false;
+  return s.includes("no space left on device") || s.includes("os error 28");
+}
+
+/**
+ * O parágrafo que o chamado de DISCO CHEIO precisa carregar.
+ *
+ * Este texto NÃO é cópia do de OOM, e a diferença é o ponto. No OOM o treino
+ * morre no meio e a GPU não chegou a produzir nada. Aqui o treino COMPLETOU —
+ * no caso medido, 499 de 500 steps, 10,6 epochs, loss convergido — e o
+ * resultado foi jogado fora no `save_checkpoint`, ao gravar o
+ * `lora_weights.safetensors`. Quem lê o chamado precisa saber disso por dois
+ * motivos práticos: repetir é BARATO EM RISCO (o material já provou que treina)
+ * e CARO EM GPU (a placa vai ser paga uma segunda vez pelo mesmo trabalho).
+ *
+ * ⚠️ INSTRUÇÃO PARA GENTE, não gatilho — igual ao OOM. Nenhuma retentativa
+ * automática entra por aqui: retreino queima GPU e a decisão é do dono do
+ * negócio (cartão próprio: #422).
+ */
+export function notaDiscoCheio(diag: DiagnosticoTrainer | undefined): string {
+  return [
+    `DISCO CHEIO NO WORKER — o treino terminou e o resultado se perdeu ao salvar.`,
+    ``,
+    `NÃO é "morreu no meio": é "morreu na entrega". No caso instrumentado o`,
+    `trainer chegou ao step 499 de 500 (10,6 epochs, loss convergido) e falhou`,
+    `em save_checkpoint(), gravando lora_weights.safetensors, com ENOSPC —`,
+    `"No space left on device (os error 28)". A GPU fez o trabalho inteiro e ele`,
+    `foi descartado na hora de escrever o arquivo.`,
+    ``,
+    `O DISCO É DO WORKER, NÃO DO ALUNO. O material enviado está intacto e não há`,
+    `nada para ele corrigir, reenviar ou regravar — não peça isso a ele.`,
+    ``,
+    `⚠️ JÁ ACONTECEU ANTES. A resolution_note do incidente #11 registra a falha`,
+    `de 10/08 como "disco cheio do worker (tratada no incidente de disk_full)".`,
+    `Esta é a SEGUNDA vez. Disco que enche de novo depois de "tratado" sugere`,
+    `volume que se enche com o tempo (checkpoints//tmp/cache que não são`,
+    `limpos), e isso é INFRA para alguém olhar — não é código para consertar`,
+    `nesta classificação. Este cartão só tira a falha do guarda-chuva cego; ele`,
+    `não resolve o volume, e ninguém deve fechá-lo achando que resolveu.`,
+    ``,
+    `CONDUTA: repetir o treino com o mesmo material tende a curar SE o volume`,
+    `tiver espaço agora — mas confira o disco do worker antes de gastar GPU de`,
+    `novo, porque repetir num volume ainda cheio queima a placa para nada. Não`,
+    `há retentativa automática de propósito: a decisão de acionar retreino é do`,
+    `dono do negócio.`,
+    ``,
+    `Frequência medida em 17/09 na tabela inteira (1394 treinos, 72 falhas): das`,
+    `2 falhas com stderr — as únicas diagnosticáveis, pois o resto é anterior à`,
+    `mig 97 — 1 é OOM e 1 é esta. n=1: é a primeira desta classe DESDE que existe`,
+    `instrumentação, não "50% das falhas". As outras 70 são cegas e continuam`,
+    `sem causa conhecida.`,
+    ``,
+    `trainer_returncode: ${diag?.returncode ?? "(não registrado)"}`,
+    `(o ENOSPC chega como exceção do safetensors, não como sinal do kernel.)`,
+  ].join("\n");
 }
 
 /**

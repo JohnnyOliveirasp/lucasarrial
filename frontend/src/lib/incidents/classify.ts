@@ -13,17 +13,24 @@
  */
 import {
   ASSINATURA_CUDA_OOM,
+  ASSINATURA_DISCO_CHEIO,
   type DiagnosticoTrainer,
   ehCudaOom,
+  ehDiscoCheio,
   SUFIXO_CUDA_OOM,
+  SUFIXO_DISCO_CHEIO,
 } from "./diagnostico-trainer.ts";
 
 export type { DiagnosticoTrainer };
-export { ASSINATURA_CUDA_OOM, ehCudaOom };
+export { ASSINATURA_CUDA_OOM, ASSINATURA_DISCO_CHEIO, ehCudaOom, ehDiscoCheio };
 
 export type IncidentCause =
   | "user_dataset"
   | "infra_gpu"
+  // Disco LOCAL do worker cheio (ENOSPC). Separado de `infra_storage`, que é o
+  // bucket remoto (R2): outra máquina, outro dono, outra conduta. Ver
+  // `ASSINATURA_DISCO_CHEIO`.
+  | "infra_disk"
   | "infra_storage"
   | "capacity"
   | "bug"
@@ -33,6 +40,7 @@ export type IncidentCause =
 export const CAUSE_LABELS: Record<IncidentCause, string> = {
   user_dataset: "Áudio do usuário",
   infra_gpu: "Infra GPU",
+  infra_disk: "Infra disco (worker)",
   infra_storage: "Infra armazenamento",
   capacity: "Capacidade/timeout",
   bug: "Bug",
@@ -113,7 +121,10 @@ export function classifyCause(error: string, diag?: DiagnosticoTrainer): Inciden
   // mig 97) e caller antigo continuam caindo nas mesmas regras de sempre —
   // inclusive `!e → unknown`, que precede o diagnóstico de propósito: erro
   // vazio sem stderr não pode virar causa inventada.
-  if (!e && !ehCudaOom(diag?.stderr)) return "unknown";
+  // ⚠️ Os dois detectores precisam estar nesta guarda. Ela roda ANTES das
+  // regras, então um `error` vazio com stderr que PROVA a causa sairia daqui
+  // como "unknown" e nunca chegaria na linha que o classifica.
+  if (!e && !ehCudaOom(diag?.stderr) && !ehDiscoCheio(diag?.stderr)) return "unknown";
   if (
     e.includes("insufficient_audio") ||
     e.includes("no usable speech") ||
@@ -142,6 +153,22 @@ export function classifyCause(error: string, diag?: DiagnosticoTrainer): Inciden
    * escrita para não mudar semântica antiga sem medida que justifique.
    */
   if (ehCudaOom(diag?.stderr)) return "infra_gpu";
+  /**
+   * DISCO CHEIO PROVADO PELO STDERR — a correção de 17/09 (job `bbf4b050`).
+   *
+   * Mesmo vão que o OOM fechou, com outro nome: sem esta linha,
+   * `classifyCause("trainer failed")` cai lá embaixo na regra de `bug` e uma
+   * falha de INFRAESTRUTURA vira BUG NOSSO dentro do #11.
+   *
+   * ⚠️ VEM DEPOIS do OOM, de propósito e conservadoramente. Os dois nunca
+   * coexistiram (medido: o stderr do `bbf4b050` tem ENOSPC e NÃO tem texto de
+   * OOM), então a ordem entre eles é hoje inobservável. Colocar disco DEPOIS
+   * garante, por construção, que nenhum stderr que hoje classifica como
+   * `infra_gpu` mude de causa por causa deste PR — zero regressão sem medida
+   * que a justifique. Se algum dia chegar uma falha com os dois textos, ela cai
+   * em `infra_gpu` e isso é uma decisão a revisar COM o caso na mão, não agora.
+   */
+  if (ehDiscoCheio(diag?.stderr)) return "infra_disk";
   if (e.includes("out of memory") || e.includes("outofmemoryerror") || e.includes("cuda")) {
     return "infra_gpu";
   }
@@ -205,6 +232,14 @@ export function errorSignature(kind: string, error: string, diag?: DiagnosticoTr
   if (cause === "infra_gpu" && ehCudaOom(diag?.stderr)) {
     return `${k}:${cause}:${SUFIXO_CUDA_OOM}`;
   }
+  // Disco cheio: mesma disciplina do OOM logo acima — chave CONSTANTE (o
+  // traceback muda a cada ocorrência: step, loss, frames do safetensors) e
+  // guarda pela CAUSA DECIDIDA, não só pelo detector, para não produzir chave
+  // inconsistente do tipo `training:user_dataset:no-space` caso um dia o
+  // material do aluno ganhe a precedência com ENOSPC no stderr.
+  if (cause === "infra_disk" && ehDiscoCheio(diag?.stderr)) {
+    return `${k}:${cause}:${SUFIXO_DISCO_CHEIO}`;
+  }
   // user_dataset: a CAUSA já é a raiz — o texto varia (erro cru do worker ×
   // mensagem amigável do voices.error_message desde fdcc75c) e duplicava o
   // incidente (acf8acd6 × 014bb108, gap achado pelo Vigia 23/07). Demais
@@ -238,6 +273,11 @@ export function incidentTitle(kind: string, error: string, diag?: DiagnosticoTra
   // precedência é `classifyCause`, não cada função por conta própria.
   if (cause === "infra_gpu" && ehCudaOom(diag?.stderr)) {
     return `${k}: GPU sem memória (OOM) — transitório, repetir costuma curar`;
+  }
+  // O título precisa dizer que o treino TERMINOU, senão quem varre a fila lê
+  // "falhou" e vai procurar defeito no material do aluno — que está intacto.
+  if (cause === "infra_disk" && ehDiscoCheio(diag?.stderr)) {
+    return `${k}: disco cheio no worker — treino completou, perdeu ao salvar`;
   }
   if (cause === "user_dataset") {
     return isCorruptFile(error)
