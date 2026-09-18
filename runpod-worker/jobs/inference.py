@@ -11,6 +11,7 @@ Testes: test_refactor_smoke.py roda o caminho inteiro com o VoxCPM stubado.
 """
 from __future__ import annotations
 
+import contextlib
 import time
 
 import numpy as np
@@ -25,6 +26,7 @@ from tts_qa.metrics import fim_abrupto, ultima_palavra_truncada
 from tts_qa.loop import palavras_com_tempo
 from tts_text import split_text_for_tts, split_below_sentence
 from worker_config import WORKSPACE
+from worker_disk import area_em_uso
 from worker_log import log as _log, phase as _phase
 
 from .inference_setup import baixar_lora, carregar_modelo, preparar_referencia
@@ -127,9 +129,30 @@ class InferenceJob:
         # Instrumentação d3d8d1b2: tentativa POR CHUNK (1 = geração original,
         # 2+ = regen do QA) — sem isso o heartbeat não distingue os dois.
         self._chunk_attempts: dict[int, int] = {}
+        # Pilha das proteções de disco (#32). Criada aqui pra que chamar
+        # `_executar()` direto (teste) não estoure em AttributeError; `run()`
+        # entra nela de verdade e a fecha no fim do job.
+        self._protegidos = contextlib.ExitStack()
 
     # ── Orquestracao ───────────────────────────────────────────────────────
     def run(self) -> dict:
+        """Protege LoRA e referencia deste job do despejo de disco e gera.
+
+        LoRA e referencia sao CACHE COMPARTILHADO (mesmo arquivo pra todo job
+        da mesma voz) e o despejo (#32) pode escolher justo eles pra apagar. A
+        referencia e lida a CADA chunk (re-ancora), entao some-la no meio
+        quebra a geracao. Com concurrency > 1 quem dispara a faxina pode ser
+        outro job — por isso o registro e global do processo, nao por job.
+        """
+        with contextlib.ExitStack() as protegidos:
+            self._protegidos = protegidos
+            return self._executar()
+
+    # `_executar`, não `_gerar`: `_gerar(chunk_text, ...)` já existe nesta
+    # classe (linha ~267, geração de UM chunk) e o nome repetido silenciosamente
+    # sobrescreve o método antigo — toda geração de todo aluno morreria em
+    # TypeError. Pego pelo test_refactor_smoke.py rodando de verdade.
+    def _executar(self) -> dict:
         # ── Instrumentação #15 (d3d8d1b2) ──────────────────────────────────
         # O setup era o único trecho PESADO fora de _phase: baixar o LoRA,
         # preparar a referência e carregar o modelo são três downloads/cargas
@@ -144,11 +167,15 @@ class InferenceJob:
         t_setup = time.monotonic()
         with _phase("inference.setup.lora"):
             lora_path = baixar_lora(self.inp.get("lora_url"))
+            if lora_path:
+                self._protegidos.enter_context(area_em_uso(lora_path))
         with _phase("inference.setup.reference"):
             self.prompt_wav_local, self.prompt_text = preparar_referencia(
                 self.inp, self.inp.get("prompt_wav_url"), self.prompt_text,
                 self.cfg.ref_tail_silence_ms,
             )
+            if self.prompt_wav_local:
+                self._protegidos.enter_context(area_em_uso(self.prompt_wav_local))
         with _phase("inference.setup.model"):
             self.model, self.sample_rate = carregar_modelo(self.inp, lora_path)
         self.setup_s = round(time.monotonic() - t_setup, 2)
