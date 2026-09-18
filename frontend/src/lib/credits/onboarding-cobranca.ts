@@ -29,8 +29,9 @@
  * erro na direção oposta: o treino era por conta da casa mas o estorno de
  * falha devolvia 10k nunca cobrados. Se agora o SGP para de debitar e o
  * estorno continuar decidindo por `bypassesBilling`, o bug de 17/08 VOLTA
- * pelo caminho novo. Por isso `deveEstornarTreino` decide pelo DÉBITO QUE
- * EXISTE no extrato, não por inferência sobre quem é o aluno.
+ * pelo caminho novo. Por isso `valorDoEstornoDeTreino` decide pelo EXTRATO —
+ * pelo saldo que aquele `ref_id` ainda deve —, não por inferência sobre quem
+ * é o aluno.
  */
 
 /** Origem do onboarding. Muda quem paga a conta do material entregue. */
@@ -56,20 +57,54 @@ export function deveCobrarOnboarding(args: {
 }
 
 /**
- * Estorna o treino que falhou?
+ * QUANTO estornar do treino que falhou? (0 = não estorna)
  *
- * SÓ devolve o que de fato saiu. `temDebito` é a existência da linha de débito
- * (`kind='training'`, `ref_type='voice'`, `ref_id=<voiceId>`) no extrato — a
- * mesma linha que `treino.ts` e o `start-training` gravam. Sem linha, não
- * houve cobrança, e "estornar" seria CONCEDER crédito novo.
+ * ── Por que deixou de ser "existe débito?" (medido 18/09/2026) ────────────
+ * Até aqui a pergunta era booleana: *existe uma linha de débito para esta
+ * voz?* Ela era escopada por voz (`ref_id`) desde o início — o furo NUNCA foi
+ * falta de escopo. O furo era não olhar o que já tinha VOLTADO.
  *
- * `bypass` fica como segunda trava (cinto e suspensório): equipe não é cobrada,
- * então também não recebe estorno, mesmo que alguma linha antiga exista.
+ * A mesma voz pode falhar mais de uma vez: o fluxo de resgate re-executa o
+ * treino, e cada falha passa por aqui. Na 1ª falha estorna certo; na 2ª, o
+ * débito original AINDA está no extrato (estornar não apaga a linha, acrescenta
+ * a linha oposta), então "existe débito" responde `true` de novo e a casa paga
+ * o MESMO débito duas vezes. Caso real: voz 600173a6, 18/09 — débito -10.000
+ * às 14:43, estorno +10.000 às 14:44, retry falha às 15:31 e sai um SEGUNDO
+ * estorno +10.000. Saldo do ref: +10.000 criados do nada.
+ *
+ * Por isso a pergunta agora é de SALDO, não de existência: some o que saiu com
+ * o que já voltou para este `ref_id` e devolva só o que ainda falta. Débito sem
+ * estorno → devolve; débito já estornado → saldo 0, devolve NADA; dois débitos
+ * e um estorno → devolve só o que ficou pendente.
+ *
+ * ── O teto, e por que ele existe ──────────────────────────────────────────
+ * `teto` (o custo de UMA tentativa) limita quanto uma única falha pode
+ * devolver. Cada falha estorna a tentativa dela, não a dívida acumulada da voz
+ * inteira: se duas tentativas foram cobradas e as duas falharem, cada passagem
+ * por aqui devolve uma. Sem o teto, a primeira falha sozinha limparia as duas.
+ *
+ * ── O que continua valendo ────────────────────────────────────────────────
+ * `bypass` segue como segunda trava (cinto e suspensório): equipe não é
+ * cobrada, então também não recebe estorno, mesmo que exista linha antiga.
+ * E a simetria de 17/08 continua intacta — quem não foi cobrado tem saldo
+ * pendente 0 e recebe 0, que é a mesma resposta de antes.
+ *
+ * @param saldoPendente Soma algébrica dos lançamentos DESTE `ref_id`: débitos
+ *   (negativos) + estornos já lançados (positivos). NEGATIVO = ainda se deve
+ *   ao aluno. Zero ou positivo = não há o que devolver.
+ * @param teto Custo de uma tentativa; máximo que esta falha pode devolver.
+ * @returns Quanto creditar, sempre >= 0. `0` significa NÃO estornar.
  */
-export function deveEstornarTreino(args: {
+export function valorDoEstornoDeTreino(args: {
   bypass: boolean;
-  temDebito: boolean;
-}): boolean {
-  if (args.bypass) return false;
-  return args.temDebito;
+  saldoPendente: number;
+  teto: number;
+}): number {
+  if (args.bypass) return 0;
+  // Conservador no lixo: número inválido vira "não devo nada". Deixar de
+  // devolver o suporte resolve; conceder crédito que nunca saiu ninguém vê.
+  if (!Number.isFinite(args.saldoPendente) || args.saldoPendente >= 0) return 0;
+  if (!Number.isFinite(args.teto) || args.teto <= 0) return 0;
+  const devido = -args.saldoPendente;
+  return Math.min(devido, args.teto);
 }
