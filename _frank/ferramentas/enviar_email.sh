@@ -7,6 +7,38 @@
 # inteiro SEM enviar nada. E-mail não tem desfazer — ensaie antes.
 set -euo pipefail
 
+# ⛔ APOSENTADO EM 18/09 PELA RONDA DO #101 — NÃO USE ESTE SCRIPT.
+#
+# Ele manda por `curl` SMTP direto e NÃO faz nenhuma das três escriturações
+# que a casa passou a exigir: não carimba Message-ID, não grava cópia na
+# pasta Enviados e não escreve linha em `emails_enviados`. Carta que sai por
+# aqui é INVISÍVEL nos três livros — e, pior, é invisível também para o
+# `2026-09-18_reconciliar_envios_da_pasta.cjs`, que conserta o buraco lendo a
+# pasta Enviados: sem cópia na pasta, não há o que reconciliar.
+#
+# O efeito prático é o defeito que o #101 descreve, na pior forma: a ficha de
+# contato (`contato-tentativas.ts`) lê "0 tentativas" para quem JÁ recebeu
+# carta, e esse zero cego é, pelo cabeçalho do próprio módulo, o pior desfecho
+# dele — existe pra MATAR a ordem de reenvio e acaba assinando embaixo dela.
+# Foi assim que a Valdeni levou QUATRO ordens de reenvio.
+#
+# Medido em 18/09: ZERO chamadores no repositório. Não estava em uso — está
+# aposentado ANTES de virar furo de verdade, não depois.
+#
+# USE NO LUGAR:
+#   node _frank/ferramentas/enviar_email.cjs <destino> <assunto> <arquivo-html>
+#
+# Recusa em vez de `rm` de propósito: apagar deixaria um "command not found"
+# misterioso pra quem esbarrasse nele, e o corpo abaixo fica legível como
+# referência do SMTP (porta 587 + STARTTLS, 465 bloqueada no Hetzner).
+echo "⛔ enviar_email.sh está APOSENTADO (ronda do #101, 18/09)." >&2
+echo "   Ele envia sem Message-ID, sem cópia em Enviados e sem linha em" >&2
+echo "   emails_enviados — a carta fica invisível nos três livros e o" >&2
+echo "   reconciliador não a alcança." >&2
+echo "" >&2
+echo "   Use:  node _frank/ferramentas/enviar_email.cjs <destino> <assunto> <arquivo-html>" >&2
+exit 1
+
 # Separa a flag dos posicionais pra --dry-run funcionar em qualquer posição.
 DRY_RUN=0
 POS=()
