@@ -28,7 +28,9 @@ import { classifyCause, errorSignature, incidentTitle } from "@/lib/incidents/cl
 import {
   type DiagnosticoTrainer,
   ehCudaOom,
+  ehDiscoCheio,
   notaDeTransitoriedade,
+  notaDiscoCheio,
 } from "@/lib/incidents/diagnostico-trainer";
 
 const SUPPORT_EMAIL = "suporte@fastcloner.com";
@@ -254,6 +256,7 @@ async function abrirChamadoDaFalhaTecnica(args: {
   // ganha do diagnóstico) e deixaria a conduta do chamado divergir da causa.
   const cause = classifyCause(args.rawError, args.diag);
   const oom = cause === "infra_gpu" && ehCudaOom(args.diag.stderr);
+  const discoCheio = cause === "infra_disk" && ehDiscoCheio(args.diag.stderr);
   try {
     return await abrirChamadoReportado({
       signature: errorSignature("training", args.rawError, args.diag),
@@ -272,6 +275,10 @@ async function abrirChamadoDaFalhaTecnica(args: {
         // Só quando o stderr PROVA o OOM. Sem prova, nada de conduta: falha
         // cega não vira "tente de novo" por palpite.
         ...(oom ? [notaDeTransitoriedade(args.diag), ``] : []),
+        // Idem: só quando o stderr PROVA o ENOSPC. As duas condutas são
+        // mutuamente exclusivas por construção (`cause` é uma só), então o
+        // chamado nunca carrega os dois parágrafos.
+        ...(discoCheio ? [notaDiscoCheio(args.diag), ``] : []),
         `Traceback completo: training_jobs.trainer_stderr / trainer_stdout,`,
         `pelo runpod_job_id acima. O job do RunPod expira em poucas horas —`,
         `depois disso essas colunas são a única cópia.`,
