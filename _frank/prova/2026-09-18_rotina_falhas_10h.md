@@ -129,6 +129,43 @@ A faxina de entrada estava **sem `try/except`**: um erro nela mataria o job
 *antes* de começar, trocando um defeito raro por um pior. Consertei o código,
 não o teste.
 
+## O mesmo ponto cego, agora num TERCEIRO instrumento (PR #335)
+
+Na conferência de fim de ronda achei a branch `feat/trainer-disco-cheio` —
+**PR #335, aberto desde 18/09 00:07Z**, escrito ontem para esta mesma classe:
+tira o disco cheio do guarda-chuva cego do #11 e dá a ele causa
+(`infra_disk`) e assinatura (`training:infra_disk:no-space`) próprias.
+
+É trabalho bem feito. Mas **não aceitei o relato: rodei o código da branch**
+contra as ocorrências reais do #32, num worktree descartável:
+
+```
+forma A — bbf4b050 (Alberto 17/09)
+   causa: infra_disk    assinatura: training:infra_disk:no-space        ✅
+
+forma B — b76f9ec0 (Alexandre 18/09, HOJE)
+   causa: unknown       assinatura: training:unknown:[errno #] no space…  ❌
+
+forma B — 76cdefc2 (10/08)
+   causa: unknown       assinatura: training:unknown:[errno #] no space…  ❌
+```
+
+**As duas ocorrências registradas no #32 são da forma B.** O PR escrito para
+este cartão não classifica nenhuma das duas — pelo mesmo motivo que travou meu
+rearme hoje de manhã: `ehDiscoCheio()` lê **só** `trainer_stderr`, e na forma B
+não existe stderr *por desenho*, porque o subprocess nunca chegou a existir.
+
+É o **terceiro instrumento** com a mesma suposição — a de que toda falha de
+treino passa pelo trainer. Não é coincidência, é um hábito da casa que vale
+nomear: *"o texto está no traceback"* é verdade na forma A e se inverte na
+forma B, onde a marca está no `error_message` curto e estável.
+
+Não mergeei: fechar meio detector divide a classe em dois cartões (forma A
+ganha um novo, forma B fica no antigo) e cria trabalho de reconciliação depois.
+Deixei a medição comentada no PR, com a sugestão — a `ASSINATURA_DISCO_CHEIO`
+já é constante, então basta o detector olhar as duas colunas para A e B caírem
+no **mesmo** cartão, que é o certo: é uma causa só.
+
 ## Ritmo da classe: ela acelerou
 
 3 ocorrências — 10/08, **17/09 21:27Z**, **18/09 09:17Z**. Duas em **13 horas**
@@ -179,9 +216,18 @@ próxima ronda**.
 | fechado sobre o próprio disparo | **1** (`#407`) | `varredura_travados.cjs` |
 | fila de recados | 96 | `idade_incidentes.cjs` |
 
+## Os três PRs desta classe, e o que falta em cada um
+
+| PR | camada | estado | o que falta |
+|---|---|---|---|
+| **#337** | ferramenta de resgate | **na main** (`9d157083`) | nada — fechado |
+| **#335** | classificação do chamado | aberto desde 18/09 00:07Z | detector também ler `error_message` (medido acima) |
+| **#338** | worker: faxina na entrada | aberto hoje | Johnny decidir o momento do deploy (recicla GPU) |
+
 ## O que NÃO fiz
 
-Não mergeei o #338 (motivo declarado acima, é pergunta ao Johnny). Não toquei em
+Não mergeei o #338 (motivo declarado acima, é pergunta ao Johnny) nem o #335
+(está incompleto para a forma B, medido). Não toquei em
 crédito, acesso, migration nem em voz de ninguém além do resgate do Alexandre.
 Não carimbei recovery. Não mandei e-mail em massa.
 
