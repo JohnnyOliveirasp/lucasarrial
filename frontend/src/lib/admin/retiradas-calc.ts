@@ -18,6 +18,20 @@
 export const SOCIOS = ["Johnny", "Lucas", "Eduardo"] as const;
 export type Socio = (typeof SOCIOS)[number];
 
+/** Quem ENXERGA as retiradas (pedido Johnny 18/09): só os três sócios.
+ *  Ser admin não basta — rayanne@ e suporte@ também são admin e não podem
+ *  ver quanto cada sócio tirou. Entrar um sócio novo = editar esta lista. */
+export const EMAILS_SOCIOS = [
+  "johnny.oliveirasp@gmail.com",
+  "lucas.m.arrial@gmail.com",
+  "edukrupeizak@gmail.com",
+] as const;
+
+export function ehSocio(email: string | null | undefined): boolean {
+  const e = String(email ?? "").trim().toLowerCase();
+  return e !== "" && (EMAILS_SOCIOS as readonly string[]).includes(e);
+}
+
 /** Teto de sanidade do campo de valor: R$ 1.000.000,00 por retirada.
  *  Não é regra de negócio, é anti-dedo-gordo (digitar "294700" sem vírgula
  *  zeraria o "Em caixa" e ninguém entenderia por quê). */

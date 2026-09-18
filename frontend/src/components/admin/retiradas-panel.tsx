@@ -14,6 +14,10 @@
  * gran/key do dashboard) em vez de receber por prop: assim o poll de 30s da
  * visão geral não sobrescreve uma retirada recém-gravada, e o "Em caixa"
  * recalcula na hora do OK, sem recarregar a página.
+ *
+ * SÓ OS SÓCIOS VEEM (pedido Johnny 18/09). A rota responde 403 pra qualquer
+ * outro admin e aqui o bloco não aparece — nem o título, nem o "Em caixa".
+ * Até a primeira resposta chegar o bloco também não aparece, pra não piscar.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Wallet } from "lucide-react";
@@ -48,6 +52,8 @@ export function RetiradasPanel({
   const [linhas, setLinhas] = useState<RetiradaLinha[]>([]);
   const [tabelaAusente, setTabelaAusente] = useState(false);
   const [carregando, setCarregando] = useState(true);
+  // null = ainda não sabemos; false = não é sócio (403) → não renderiza nada.
+  const [permitido, setPermitido] = useState<boolean | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   const [valor, setValor] = useState("");
@@ -57,6 +63,11 @@ export function RetiradasPanel({
   const carregar = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/admin/retiradas?gran=${gran}&key=${periodKey}`, { cache: "no-store" });
+      if (res.status === 403) {
+        setPermitido(false);
+        return;
+      }
+      setPermitido(true);
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error?.message || "Falha ao carregar retiradas");
       const data = json as Resposta;
@@ -101,6 +112,8 @@ export function RetiradasPanel({
       setSalvando(false);
     }
   }
+
+  if (permitido !== true) return null;
 
   const total = totalRetiradas(linhas);
   const restante = emCaixa(lucro, linhas);
