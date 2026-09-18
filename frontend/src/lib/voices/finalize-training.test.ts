@@ -119,7 +119,7 @@ test("os logs do trainer são truncados em 8000 chars, pelo FIM", () => {
  */
 
 test("o desfecho (estorno + chamado) é apurado ANTES da mensagem do aluno", () => {
-  const posEstorno = FONTE.indexOf("const temDebito = await houveDebitoDeTreino");
+  const posEstorno = FONTE.indexOf("const saldoPendente = await saldoPendenteDoTreino");
   const posChamado = FONTE.indexOf("chamado = await abrirChamadoDaFalhaTecnica");
   const posMensagem = FONTE.indexOf("const errorMessage = success");
   assert.ok(posEstorno > 0 && posChamado > 0 && posMensagem > 0, "sumiu alguma das três etapas");
@@ -151,7 +151,28 @@ test("o estorno continua decidido pelo EXTRATO, não por quem é o aluno", () =>
   // A simetria de 17/08 (onboarding-cobranca.ts): sem linha de débito para
   // esta voz, não há o que estornar. Trocar isto por bypassesBilling sozinho
   // devolve 10.000 créditos REAIS a quem nunca pagou.
-  assert.match(FONTE, /deveEstornarTreino\(\{\s*bypass: bypassesBilling\(userEmail\),\s*temDebito,/);
+  assert.match(
+    FONTE,
+    /valorDoEstornoDeTreino\(\{\s*bypass: bypassesBilling\(userEmail\),\s*saldoPendente,/,
+  );
+});
+
+test("o valor creditado é o APURADO, nunca o custo cheio de tabela", () => {
+  // O bug de 18/09 (voz 600173a6) em uma linha: com `amount: TRAINING_CREDIT_COST`
+  // fixo, a segunda falha de uma voz já estornada devolve 10.000 de novo em
+  // cima de um débito que já tinha voltado. O valor tem que vir da apuração.
+  assert.match(FONTE, /amount: valorEstornado,/);
+  assert.ok(
+    !/amount: TRAINING_CREDIT_COST,/.test(FONTE),
+    "o estorno voltou a creditar o custo de tabela em vez do saldo apurado",
+  );
+});
+
+test("os textos de crédito citam o valor apurado, não um número fixo", () => {
+  // Dizer "10.000 devolvidos" quando voltaram 4.000 é a mentira de 15/09
+  // outra vez, agora no valor em vez do fato.
+  assert.match(FONTE, /custoCreditos: valorEstornado/);
+  assert.match(FONTE, /args\.valorEstornado\.toLocaleString/);
 });
 
 test("escalateStuckUser continua DEPOIS do estorno (a régua de rajada conta o estorno)", () => {

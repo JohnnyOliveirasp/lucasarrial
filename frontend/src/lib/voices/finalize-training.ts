@@ -9,9 +9,9 @@
 import { logger } from "@/lib/logger/server";
 import { getAdmin } from "@/lib/db/admin";
 import { buildAutoReferenceKey } from "@/lib/r2/presigned";
-import { addExtraCredits, houveDebitoDeTreino } from "@/lib/credits/service";
+import { addExtraCredits, saldoPendenteDoTreino } from "@/lib/credits/service";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
-import { deveEstornarTreino } from "@/lib/credits/onboarding-cobranca";
+import { valorDoEstornoDeTreino } from "@/lib/credits/onboarding-cobranca";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { bypassesBilling } from "@/lib/credits/access";
 import { escalateStuckUser } from "@/lib/support/failure-alert";
@@ -310,6 +310,9 @@ async function alertSupportTrainFailure(args: {
   rawError: string;
   /** O MESMO desfecho que decidiu a mensagem do aluno — nada de booleano. */
   credito: DesfechoCredito;
+  /** O valor APURADO desta falha. O suporte age por ele quando o estorno não
+   *  entra; um número fixo mandaria aplicar na mão o que já tinha voltado. */
+  valorEstornado: number;
   chamado: number | null;
   mensagemAoAluno: string;
 }): Promise<void> {
@@ -321,8 +324,8 @@ async function alertSupportTrainFailure(args: {
   const linhaCredito: Record<DesfechoCredito, string> = {
     nao_cobrado:
       "não houve cobrança para esta voz (SGP ou equipe) — nada a estornar, e nada foi creditado",
-    estornado: `${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos devolvidos automaticamente`,
-    estorno_falhou: `FALHOU — aplicar ${TRAINING_CREDIT_COST.toLocaleString("pt-BR")} créditos manualmente!`,
+    estornado: `${args.valorEstornado.toLocaleString("pt-BR")} créditos devolvidos automaticamente`,
+    estorno_falhou: `FALHOU — aplicar ${args.valorEstornado.toLocaleString("pt-BR")} créditos manualmente!`,
   };
   await sendEmail({
     to: SUPPORT_EMAIL,
@@ -597,9 +600,15 @@ export async function finalizeTraining(args: {
    * exatamente por isso que ele podia mentir (caso ricardoolito, 15/09:
    * "seus créditos foram devolvidos" numa voz sem uma única linha de débito).
    *
-   * O estorno continua sendo decidido pelo EXTRATO (`houveDebitoDeTreino` por
-   * ref_id/ref_type), não por inferência sobre quem é o aluno — a simetria de
-   * 17/08 documentada em `onboarding-cobranca.ts` segue intacta.
+   * O estorno continua sendo decidido pelo EXTRATO (`saldoPendenteDoTreino`
+   * por ref_id/ref_type), não por inferência sobre quem é o aluno — a simetria
+   * de 17/08 documentada em `onboarding-cobranca.ts` segue intacta.
+   *
+   * ⚠️ E o critério é SALDO PENDENTE, não "existe débito": a mesma voz pode
+   * falhar de novo depois de já ter sido estornada (o fluxo de resgate
+   * re-executa o treino), e o débito original continua no extrato para sempre.
+   * Perguntar "existe débito?" respondia `true` na segunda falha e pagava o
+   * MESMO débito duas vezes — voz 600173a6, 18/09, +10.000 criados do nada.
    *
    * ⚠️ `escalateStuckUser` continua DEPOIS de tudo, de propósito: ele conta
    * `credit_transactions` com ref_type `voice_train_refund` na janela, então
@@ -609,6 +618,10 @@ export async function finalizeTraining(args: {
   let credito: DesfechoCredito = "nao_cobrado";
   let chamado: number | null = null;
   let falhaNossa = false;
+  /** Quanto esta falha devolveu de fato. Só ele pode aparecer nos textos:
+   *  dizer "10.000" quando voltaram 4.000 é a mesma mentira de 15/09, agora
+   *  no valor em vez do fato. */
+  let valorEstornado = 0;
 
   if (!success) {
     const { data: profile } = await admin
@@ -618,17 +631,21 @@ export async function finalizeTraining(args: {
       .maybeSingle();
     userEmail = (profile as { email?: string } | null)?.email ?? null;
 
-    const temDebito = await houveDebitoDeTreino(userId, voiceId);
-    const billed = deveEstornarTreino({
+    const saldoPendente = await saldoPendenteDoTreino(userId, voiceId);
+    valorEstornado = valorDoEstornoDeTreino({
       bypass: bypassesBilling(userEmail),
-      temDebito,
+      saldoPendente,
+      teto: TRAINING_CREDIT_COST,
     });
+    const billed = valorEstornado > 0;
 
     let estornoOk = false;
     if (billed) {
       const r = await addExtraCredits({
         userId,
-        amount: TRAINING_CREDIT_COST,
+        // O valor APURADO, não o custo cheio: se parte já voltou, devolver
+        // TRAINING_CREDIT_COST de novo é exatamente o dinheiro criado do nada.
+        amount: valorEstornado,
         refType: "voice_train_refund",
         refId: voiceId,
       });
@@ -667,7 +684,9 @@ export async function finalizeTraining(args: {
     : friendlyTrainError(
         out,
         rawError,
-        mensagemFalhaTecnica({ credito, chamado, custoCreditos: TRAINING_CREDIT_COST }),
+        // `valorEstornado`, não o custo cheio: a frase promete ao aluno o
+        // número que de fato entrou (ou que a equipe vai aplicar na mão).
+        mensagemFalhaTecnica({ credito, chamado, custoCreditos: valorEstornado }),
       );
 
   // ── Voz ─────────────────────────────────────────────────────────────────
@@ -749,6 +768,7 @@ export async function finalizeTraining(args: {
         runpodStatus,
         rawError,
         credito,
+        valorEstornado,
         chamado,
         mensagemAoAluno: errorMessage ?? "",
       });

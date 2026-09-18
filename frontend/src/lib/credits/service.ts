@@ -168,39 +168,64 @@ export async function debitCreditsOnboarding(args: {
 }
 
 /**
- * ESTE TREINO FOI COBRADO? Olha o extrato, não o perfil do aluno.
+ * QUANTO ESTE TREINO AINDA DEVE AO ALUNO? Olha o extrato, não o perfil dele.
  *
- * A linha procurada é a que `start-training` e `onboarding/treino.ts` gravam
- * com o MESMO shape (`kind='training'`, `ref_type='voice'`, `ref_id=<voiceId>`,
- * `amount` negativo) — é justamente essa igualdade de shape que os dois
- * arquivos documentam como contrato para o estorno casar.
+ * Soma algébrica de tudo que este `ref_id` movimentou:
+ *  · DÉBITO  — o que `start-training` e `onboarding/treino.ts` gravam com o
+ *    MESMO shape (`kind='training'`, `ref_type='voice'`, `amount` negativo);
+ *    é essa igualdade de shape que os dois arquivos documentam como contrato.
+ *  · ESTORNO — o que `finalize-training` grava ao devolver (`amount` positivo).
+ *
+ * Retorno NEGATIVO = ainda se deve ao aluno. Zero = já quitado.
+ *
+ * ── ⚠️ O ESTORNO SE ACHA POR `ref_type`, JAMAIS POR `kind` ────────────────
+ * Quem grava o estorno é o RPC `add_extra_credits`, e ele carimba
+ * `kind='extra_purchase'` (scripts/13_credits.sql) — o MESMO `kind` de uma
+ * compra de pacote avulso. Filtrar estorno por `kind='training'` não acha
+ * nada, o saldo parece eternamente devedor e a casa paga o mesmo débito em
+ * toda falha. A única marca confiável é `ref_type='voice_train_refund'`.
+ * Esta é a mesma armadilha que em `generation_refund` já quase pagou 13 alunos
+ * em dobro; não troque este filtro por `kind`.
  *
  * Existe porque `bypassesBilling` deixou de ser um proxy confiável de "houve
  * cobrança": o onboarding do SGP entrega treino SEM debitar. Inferir cobrança
  * a partir de quem é o aluno passaria a CONCEDER crédito em vez de devolver.
  *
- * Conservador no erro: se a consulta falhar, responde `false` (não estorna).
+ * Conservador no erro: se a consulta falhar, responde `0` (não estorna).
  * Deixar de devolver é reclamação que o suporte resolve; conceder crédito que
  * nunca saiu é dinheiro criado do nada e ninguém percebe.
  */
-export async function houveDebitoDeTreino(
+export async function saldoPendenteDoTreino(
   userId: string,
   voiceId: string,
-): Promise<boolean> {
+): Promise<number> {
   const { data, error } = await getAdmin()
     .from("credit_transactions")
-    .select("id")
+    .select("amount, kind, ref_type")
     .eq("user_id", userId)
-    .eq("kind", "training")
-    .eq("ref_type", "voice")
     .eq("ref_id", voiceId)
-    .lt("amount", 0)
-    .limit(1);
+    .in("ref_type", ["voice", "voice_train_refund"]);
   if (error) {
-    console.error("[credits] houveDebitoDeTreino falhou:", error.message);
-    return false;
+    console.error("[credits] saldoPendenteDoTreino falhou:", error.message);
+    return 0;
   }
-  return (data?.length ?? 0) > 0;
+  const linhas = (data ?? []) as Array<{
+    amount: number | null;
+    kind: string | null;
+    ref_type: string | null;
+  }>;
+  return linhas.reduce((saldo, l) => {
+    const amount = typeof l.amount === "number" ? l.amount : 0;
+    // Débito da tentativa: só o shape contratado, e só o que de fato saiu.
+    if (l.ref_type === "voice" && l.kind === "training" && amount < 0) {
+      return saldo + amount;
+    }
+    // Estorno já lançado: casado por ref_type (ver aviso acima), nunca por kind.
+    if (l.ref_type === "voice_train_refund" && amount > 0) {
+      return saldo + amount;
+    }
+    return saldo;
+  }, 0);
 }
 
 /** Recarrega os créditos da assinatura (reset, não acumula). Chamar no ciclo aprovado. */
