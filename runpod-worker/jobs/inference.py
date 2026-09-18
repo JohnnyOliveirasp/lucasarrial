@@ -25,7 +25,11 @@ from tts_qa.metrics import fim_abrupto, ultima_palavra_truncada
 from tts_qa.loop import palavras_com_tempo
 from tts_text import split_text_for_tts, split_below_sentence
 from worker_config import WORKSPACE
-from worker_log import log as _log, phase as _phase
+from worker_log import (
+    log as _log,
+    phase as _phase,
+    set_job_stats_provider as _set_job_stats_provider,
+)
 
 from .inference_setup import baixar_lora, carregar_modelo, preparar_referencia
 from .tts_settings import TtsSettings
@@ -130,6 +134,23 @@ class InferenceJob:
 
     # ── Orquestracao ───────────────────────────────────────────────────────
     def run(self) -> dict:
+        # ── Regens acumulados no heartbeat (#15, 17/09) ─────────────────────
+        # O heartbeat passa a consultar este provedor a cada tick e a mandar
+        # `regens` junto da fase, pra que um job morto no teto do
+        # executionTimeout deixe registrado quantas tentativas já tinha
+        # queimado — hoje esse número só é persistido no FIM do job e morre com
+        # o SIGKILL (19 de 19 timeouts medidos com regens NULO), justamente
+        # quando ele é a informação que explica o estouro.
+        # Passamos o dict VIVO de propósito: a leitura tem que ser do valor de
+        # AGORA, não do congelado na entrada da fase. Quem limpa o provedor é
+        # `set_current_job(None)`, no finally do handler.
+        # É a PRIMEIRA coisa do run(): um job que pendura já no download do
+        # LoRA (caso 86254b30, abaixo) também precisa do contador visível.
+        try:
+            _set_job_stats_provider(lambda: self.qa_stats)
+        except Exception:
+            pass  # telemetria jamais derruba uma geração de aluno
+
         # ── Instrumentação #15 (d3d8d1b2) ──────────────────────────────────
         # O setup era o único trecho PESADO fora de _phase: baixar o LoRA,
         # preparar a referência e carregar o modelo são três downloads/cargas
