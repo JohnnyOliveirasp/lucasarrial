@@ -50,6 +50,38 @@ Watchdog já está provado e encerrado. As ordens abaixo viram referência.
 incidentes, corrigir pelo playbook e fechar. Um relatório por dia, mesmo em
 dia limpo. Enquanto o vigia noturno não existe, **o Frank é o vigia**.
 
+### 📬 Passo fixo da ronda, desde 18/09: reconciliar os envios
+
+```bash
+node _frank/ferramentas/2026-09-18_reconciliar_envios_da_pasta.cjs --corte=2026-09-14T14:06:31Z --confirmar
+```
+
+**Por que é passo fixo e não ferramenta de ocasião (#101).** A carta mandada de
+um **worktree descartável** sai pro aluno e não entra em livro nenhum: medido em
+18/09, **106 de 117** cópias do `enviar_email.cjs` na máquina não têm
+`registrarEmEnviosDaCasa`, e o ledger local é **gitignored** — morre junto com o
+worktree. Consertar "o código da main" nunca fecha esse buraco, porque as cópias
+furadas nascem mais rápido do que se conserta (99 → 106 em uma hora).
+
+O que **sobrevive** a qualquer checkout é a pasta **Enviados** do IMAP, que é
+remota. Por isso a reconciliação lê a pasta, não o ledger — e por isso ela
+precisa rodar **toda ronda**: é o controle compensatório do buraco, não um
+conserto de uma vez só. **Ronda que não rodar isto deixa o buraco voltar em
+silêncio.** O `enviado_em` sai do cabeçalho `Date` da carta (a coluna tem
+`default now()`: gravar sem data diria que a casa escreveu HOJE pra quem não
+recebe nada há dias) e a linha nasce com `origem='reconciliado-da-pasta'`,
+porque linha remontada não pode se passar por registro feito na hora.
+
+Confira com o irmão de leitura, que é instrumento independente:
+`node _frank/ferramentas/2026-09-18_enviados_x_tabela.cjs` — o veredito tem que
+dizer **0 carta depois do corte**.
+
+⚠️ **As 77 cartas anteriores a 14/09 14:06:31Z seguem SEM decisão** (é o que o
+`--corte` exclui). Escriturá-las é defensável, mas `contato-tentativas.ts`
+declara `cobreDesde` obrigatório e anuncia cobertura a partir da migration 108 —
+mexer nisso é decisão de produção, não de ronda. Quem for decidir, decida com o
+`cobreDesde` na mão.
+
 ## Vigentes
 
 | Assunto | Ordem que vale |
