@@ -76,6 +76,35 @@
  * STORE/EXPUNGE/MOVE/DELETE/APPEND/COPY, com tripwire que derruba o processo
  * antes de o comando ir pro socket.
  *
+ * ⚠️ DOIS FILTROS DE TEMPO, E ELES NÃO SÃO A MESMA COISA.
+ *
+ *   `--desde <data>`  → filtro GROSSO, no servidor. Vira `UID SEARCH SINCE`, e
+ *                       o IMAP (RFC 3501) só entende DATA CHEIA: `14-Sep-2026`.
+ *                       Não existe SINCE com hora. Ele decide o que a máquina
+ *                       chega a BAIXAR.
+ *   `--corte=<ISO>`   → filtro FINO, aqui dentro, depois de ler o cabeçalho
+ *                       `Date:`. Aceita minuto e segundo
+ *                       (`2026-09-14T14:06:31Z`). Ele decide, do que foi
+ *                       baixado, o que é ESCRITURÁVEL agora.
+ *
+ * O corte existe porque a fronteira que importa não cai à meia-noite: a tabela
+ * nasceu às 14:06:31Z de 14/09 (migration 108) e o módulo de contato
+ * (`contato-tentativas.ts`) DECLARA esse instante como início da sua cobertura.
+ * Escriturar carta anterior a ele é defensável (a carta saiu mesmo), mas põe
+ * dado antes do período que o módulo anuncia cobrir — é decisão de quem
+ * confirma, e o corte é o jeito de tomá-la explicitamente.
+ *
+ * ⚠️ FORA DA JANELA ≠ RECUSADA, e a conta separa as duas.
+ * RECUSADA é DEFEITO da carta: sem Message-ID, sem `Date` legível, `Date` no
+ * futuro, sem destinatário. FORA DA JANELA é DECISÃO de quem rodou: a carta
+ * está sã, só é anterior ao `--corte`. Misturar as duas faria uma decisão de
+ * escopo parecer um monte de carta quebrada — e um dia alguém iria "consertar"
+ * carta que não tem nada de errado.
+ * O corte é aplicado DEPOIS das recusas de cabeçalho (sem Message-ID, sem Date,
+ * Date no futuro) porque sem chave ou sem data não dá NEM pra dizer de que lado
+ * da janela a carta cai: o defeito é anterior à pergunta. Nos dois modos essas
+ * cartas contam como recusadas, então o corte não maquia defeito.
+ *
  * SEM `--confirmar` ele SIMULA e só imprime o que faria. COM `--confirmar`
  * grava e RELÊ DO BANCO os Message-IDs que tentou gravar, conferindo um a um
  * se a linha existe e se a data que ficou é a do cabeçalho — insert que afeta
@@ -85,8 +114,10 @@
  * USO:
  *   node _frank/ferramentas/2026-09-18_reconciliar_envios_da_pasta.cjs
  *   node _frank/ferramentas/2026-09-18_reconciliar_envios_da_pasta.cjs --desde 01-Sep-2026
+ *   node _frank/ferramentas/2026-09-18_reconciliar_envios_da_pasta.cjs --corte=2026-09-14T14:06:31Z
  *   node _frank/ferramentas/2026-09-18_reconciliar_envios_da_pasta.cjs --json /tmp/recon.json
  *   node _frank/ferramentas/2026-09-18_reconciliar_envios_da_pasta.cjs --confirmar
+ *   node _frank/ferramentas/2026-09-18_reconciliar_envios_da_pasta.cjs --help
  */
 const fs = require("node:fs");
 const path = require("node:path");
@@ -331,15 +362,69 @@ function fmt(d) {
   return d ? new Date(d).toISOString().replace("T", " ").slice(0, 19) + "Z" : "?";
 }
 
+const AJUDA = `
+reconciliar_envios_da_pasta — reconstrói em emails_enviados a carta que saiu da
+casa (pasta Enviados, IMAP) e não deixou linha.
+
+  --desde <data>     filtro GROSSO, no servidor (UID SEARCH SINCE). O IMAP só
+                     entende DATA CHEIA, no formato dd-Mon-yyyy: 14-Sep-2026.
+                     Não existe SINCE com hora. Decide o que é BAIXADO.
+                     (padrão: 14-Sep-2026)
+
+  --corte=<ISO>      filtro FINO, aqui dentro, aplicado DEPOIS de ler o
+                     cabeçalho Date: da carta. Aceita minuto e segundo:
+                     --corte=2026-09-14T14:06:31Z. Decide, do que foi baixado,
+                     o que é ESCRITURÁVEL agora. Carta anterior ao instante sai
+                     da conta como FORA DA JANELA — que NÃO é o mesmo que
+                     'recusada'. Recusada é defeito da carta (sem Message-ID,
+                     sem Date, Date no futuro, sem destinatário); fora da janela
+                     é decisão de quem rodou, e a carta está sã.
+                     Exija o fuso (Z ou ±hh:mm): sem ele o Node leria como hora
+                     LOCAL da máquina e o corte mudaria de lugar.
+                     (padrão: sem corte — tudo que --desde trouxe vale)
+
+  --json <arquivo>   grava o detalhe (candidatas, fora da janela, recusadas)
+  --confirmar        GRAVA. Sem ele o script só simula e não escreve nada.
+  --help, -h         esta ajuda
+`;
+
 (async () => {
   const argv = process.argv.slice(2);
+  // aceita as duas formas: "--k valor" e "--k=valor"
   const pega = (k) => {
+    const comIgual = argv.find((a) => a.startsWith(`${k}=`));
+    if (comIgual) return comIgual.slice(k.length + 1);
     const i = argv.indexOf(k);
     return i >= 0 ? argv[i + 1] : null;
   };
+  if (argv.includes("--help") || argv.includes("-h")) {
+    console.log(AJUDA);
+    return;
+  }
   const confirmar = argv.includes("--confirmar");
   const desde = pega("--desde") || "14-Sep-2026";
   const saidaJson = pega("--json");
+
+  // ⚠️ fuso OBRIGATÓRIO quando vem hora. `new Date("2026-09-14T14:06:31")` é
+  // lido como hora LOCAL pelo Node — o corte andaria de lugar conforme a
+  // máquina, e um corte que anda é pior que corte nenhum. Data-só vale como
+  // meia-noite UTC (é o que a própria ISO 8601 diz).
+  const corteBruto = pega("--corte");
+  let corte = null;
+  if (corteBruto != null) {
+    const ok = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2}))?$/.test(
+      corteBruto,
+    );
+    corte = ok ? new Date(corteBruto.replace(" ", "T")) : null;
+    if (!corte || Number.isNaN(corte.getTime())) {
+      console.error(
+        `FALHOU: --corte inválido: "${corteBruto}"\n` +
+          `   use ISO com fuso explícito, ex.: --corte=2026-09-14T14:06:31Z\n` +
+          `   (data-só também vale: --corte=2026-09-14 = meia-noite UTC)`,
+      );
+      process.exit(1);
+    }
+  }
 
   // Produção, não cópia: `linhaDoEnvio` monta a linha (e normaliza a chave do
   // casamento) e o `mail-charset` decodifica o assunto. Type-stripping nativo
@@ -350,6 +435,11 @@ function fmt(d) {
   const db = supa();
 
   console.log(`📤 reconciliando pasta Enviados (desde ${desde}) → emails_enviados`);
+  console.log(
+    corte
+      ? `   corte fino: só carta com Date >= ${fmt(corte)} (o resto fica FORA DA JANELA, não é recusa)`
+      : `   corte fino: nenhum (--corte=<ISO> estreita por hora/minuto/segundo)`,
+  );
   console.log(`   origem das linhas novas: '${ORIGEM}'`);
   console.log(`   modo: ${confirmar ? "⚠️  CONFIRMAR (grava)" : "🧪 ENSAIO (não grava nada)"}\n`);
 
@@ -375,6 +465,7 @@ function fmt(d) {
   const recusadas = [];
   const jaRegistradas = [];
   const duplicadasNaFonte = [];
+  const foraDaJanela = []; // --corte: decisão de escopo, NUNCA defeito
   const agora = Date.now();
 
   for (const m of [...msgs, ...local.itens]) {
@@ -398,6 +489,14 @@ function fmt(d) {
     // poluiria a ficha com "a casa escreveu" numa data que ainda não chegou.
     if (m.quando.getTime() > agora + 24 * 3600_000) {
       recusadas.push({ m, motivo: `Date no futuro (${fmt(m.quando)}) — cabeçalho não confiável` });
+      continue;
+    }
+    // ⚠️ AQUI, e não antes: o corte é filtro FINO e só pode ser aplicado depois
+    // de a data ter sido lida e validada acima. E vem ANTES das recusas que
+    // sobraram (sem destinatário, linha recusada) de propósito: carta que eu
+    // decidi não escriturar agora não precisa ser dissecada em busca de defeito.
+    if (corte && m.quando.getTime() < corte.getTime()) {
+      foraDaJanela.push(m);
       continue;
     }
     if (!m.para) {
@@ -427,23 +526,58 @@ function fmt(d) {
   if (duplicadasNaFonte.length) {
     console.log(`✔ ${duplicadasNaFonte.length} repetida(s) entre pasta e registro local — contadas uma vez só`);
   }
+  if (foraDaJanela.length) {
+    const ordenadas = [...foraDaJanela].sort((a, z) => a.quando - z.quando);
+    console.log(
+      `\n🚪 ${foraDaJanela.length} FORA DA JANELA (--corte=${corteBruto}) — sem defeito nenhum,` +
+        ` só anteriores ao corte:`,
+    );
+    console.log(`   da mais velha ${fmt(ordenadas[0].quando)} até ${fmt(ordenadas[ordenadas.length - 1].quando)}`);
+    console.log(`   NÃO são recusas: some o --corte e elas voltam pra conta. Detalhe por carta: --json`);
+  }
   if (recusadas.length) {
-    console.log(`\n⛔ ${recusadas.length} RECUSADA(s) de propósito:`);
+    console.log(`\n⛔ ${recusadas.length} RECUSADA(s) de propósito (DEFEITO da carta, não escopo):`);
     for (const r of recusadas) console.log(`   ${r.m.fonte} · ${r.m.para || "?"} — ${r.motivo}`);
   }
+
+  // ---- a conta tem que FECHAR com o que foi lido, senão sumiu carta no meio ----
+  const totalLido = msgs.length + local.itens.length;
+  const soma =
+    jaRegistradas.length + duplicadasNaFonte.length + foraDaJanela.length + recusadas.length + lista.length;
+  console.log(`\n📐 CONTAGEM (tem que fechar com o total lido):`);
+  console.log(`   ${String(msgs.length).padStart(5)}  lidas da pasta "${caixa}"`);
+  console.log(`   ${String(local.itens.length).padStart(5)}  + registro local (#210)`);
+  console.log(`   ${String(totalLido).padStart(5)}  = TOTAL`);
+  console.log(`   ${String(jaRegistradas.length).padStart(5)}    já tinham linha`);
+  console.log(`   ${String(duplicadasNaFonte.length).padStart(5)}    repetidas entre as duas fontes`);
+  console.log(`   ${String(foraDaJanela.length).padStart(5)}    FORA DA JANELA (decisão: --corte)`);
+  console.log(`   ${String(recusadas.length).padStart(5)}    RECUSADAS (defeito da carta)`);
+  console.log(
+    `   ${String(lista.length).padStart(5)}    ${
+      corte ? "DENTRO DA JANELA — escrituráveis" : "escrituráveis (sem --corte a janela é tudo que --desde trouxe)"
+    }`,
+  );
+  console.log(
+    soma === totalLido
+      ? `   ✔ ${soma} = ${totalLido}: nenhuma carta sumiu na classificação`
+      : `   ⛔ ${soma} ≠ ${totalLido}: ${Math.abs(soma - totalLido)} carta(s) sumiram na classificação — NÃO confirme`,
+  );
 
   const vivo = new Date(TABELA_VIVA_DESDE).getTime();
   const antesDaTabela = lista.filter((f) => f.quando.getTime() < vivo);
 
   console.log("\n" + "═".repeat(70));
-  console.log(`🕳️  CARTAS QUE SAÍRAM E NÃO TÊM LINHA: ${lista.length}`);
+  console.log(
+    `🕳️  CARTAS QUE SAÍRAM E NÃO TÊM LINHA${corte ? ", DENTRO DA JANELA" : ""}: ${lista.length}`,
+  );
   console.log("═".repeat(70));
   if (antesDaTabela.length) {
     console.log(
       `   (${antesDaTabela.length} delas são anteriores a ${fmt(TABELA_VIVA_DESDE)}, quando a tabela`,
     );
     console.log(`    nasceu. A carta saiu de verdade, então escriturar é correto — mas é DECISÃO`);
-    console.log(`    de quem confirma, não defeito novo. Use --desde pra estreitar ou alargar.)`);
+    console.log(`    de quem confirma, não defeito novo. Pra deixar essas de fora agora:`);
+    console.log(`    --corte=${TABELA_VIVA_DESDE})`);
   }
   for (const f of lista) {
     console.log(`\n   ${fmt(f.quando)} · ${f.linha.to_email}`);
@@ -452,7 +586,30 @@ function fmt(d) {
   }
 
   if (saidaJson) {
-    fs.writeFileSync(saidaJson, JSON.stringify({ desde, origem: ORIGEM, candidatas: lista, recusadas }, null, 2));
+    fs.writeFileSync(
+      saidaJson,
+      JSON.stringify(
+        {
+          desde,
+          corte: corte ? corte.toISOString() : null,
+          origem: ORIGEM,
+          contagem: {
+            total_lido: totalLido,
+            ja_registradas: jaRegistradas.length,
+            duplicadas_na_fonte: duplicadasNaFonte.length,
+            fora_da_janela: foraDaJanela.length,
+            recusadas: recusadas.length,
+            dentro_da_janela: lista.length,
+            fecha: soma === totalLido,
+          },
+          candidatas: lista,
+          fora_da_janela: foraDaJanela,
+          recusadas,
+        },
+        null,
+        2,
+      ),
+    );
     console.log(`\ndetalhe gravado em ${saidaJson}`);
   }
 
