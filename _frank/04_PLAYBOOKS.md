@@ -19,7 +19,7 @@ o áudio fica lá e a linha morre. (18/08: 43 vozes assim, 19 com áudio inteiro
 2. Voz com áudio ≥20 min → vira **pronta pra treinar**; o aluno clica.
 3. Áudio menor → vira **rejeitada** com o motivo visível.
 4. Sem áudio nenhum e com 45 min+ → a linha é apagada (é fantasma).
-5. Avise o aluno por e-mail (`ferramentas/enviar_email.sh`).
+5. Avise o aluno por e-mail (`ferramentas/enviar_email.cjs`).
 
 **Se o aluno esperou por culpa nossa, o treino é por conta da casa** — use
 `ferramentas/resgatar_voz.cjs <voiceId> --confirmar` (não cobra).
@@ -149,8 +149,12 @@ node _frank/ferramentas/enviar_email.cjs aluno@exemplo.com "Assunto" corpo.html 
 # 2) envio de verdade:
 node _frank/ferramentas/enviar_email.cjs aluno@exemplo.com "Assunto" corpo.html --bcc suporte@lucasarrial.com
 ```
-Roda da sua máquina, sem SSH (a senha está no `.env.local`). O
-`enviar_email.sh` (versão do servidor) aceita a mesma flag `--dry-run`.
+Roda da sua máquina, sem SSH (a senha está no `.env.local`). ⛔ O
+`enviar_email.sh` (antiga "versão do servidor") está **DESATIVADO** desde 18/09
+(ronda do `#101`): ele recusa e sai com erro. Enviava sem Message-ID, sem cópia
+em Enviados e sem linha em `emails_enviados` — carta invisível nos três livros
+e fora do alcance do reconciliador. **Não existe mais "versão do servidor": use
+o `.cjs` da sua máquina, que é o caminho único de envio.**
 
 - **Ensaie com `--dry-run` antes de todo envio** — e-mail é irreversível:
   destinatário errado já chegou na caixa da pessoa. Confira o endereço e o
