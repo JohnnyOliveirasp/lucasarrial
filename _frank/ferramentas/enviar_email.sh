@@ -1,13 +1,12 @@
 #!/bin/bash
-# 18/08 — envia e-mail pelo SMTP do suporte@ (regra do Johnny 10/08: script
-# que fala com aluno NÃO usa Resend, senão chega como "AI Clone Verse").
-# Roda NO SERVIDOR:  bash enviar_email.sh <destino> <assunto> <arquivo-corpo-html> [--dry-run]
-# Porta 587 + STARTTLS (465 bloqueada no Hetzner).
-# --dry-run é o ENSAIO: imprime destinatário, remetente, assunto, bcc e o corpo
-# inteiro SEM enviar nada. E-mail não tem desfazer — ensaie antes.
-set -euo pipefail
-
 # ⛔ APOSENTADO EM 18/09 PELA RONDA DO #101 — NÃO USE ESTE SCRIPT.
+#
+# ORIGEM (18/08, mantida por valor histórico): enviava e-mail pelo SMTP do
+# suporte@ porque **script que fala com aluno NÃO usa Resend** (regra do Johnny
+# de 10/08 — pelo Resend a carta chega como "AI Clone Verse", domínio antigo, e
+# queima a confiança na frente do cliente). Essa regra CONTINUA VALENDO; o que
+# foi aposentado é este caminho de envio, não o motivo que o criou.
+# Falava porta 587 + STARTTLS (a 465 é bloqueada no Hetzner).
 #
 # Ele manda por `curl` SMTP direto e NÃO faz nenhuma das três escriturações
 # que a casa passou a exigir: não carimba Message-ID, não grava cópia na
@@ -25,19 +24,36 @@ set -euo pipefail
 # Medido em 18/09: ZERO chamadores no repositório. Não estava em uso — está
 # aposentado ANTES de virar furo de verdade, não depois.
 #
-# USE NO LUGAR:
-#   node _frank/ferramentas/enviar_email.cjs <destino> <assunto> <arquivo-html>
+# USE NO LUGAR (assinatura real, conferida no próprio enviar_email.cjs):
+#   node _frank/ferramentas/enviar_email.cjs <destino> "<assunto>" <corpo.html> \
+#        [--bcc <email>] [--chave <slug>] [--janela <horas>] [--forcar] [--dry-run]
+#
+# O `--dry-run` do `.cjs` é o mesmo ENSAIO que existia aqui, e melhor: além de
+# imprimir destinatário/remetente/assunto/bcc e o corpo inteiro sem enviar
+# nada, mostra o VEREDITO da trava anti-duplicata ("esse aluno já recebeu este
+# aviso?"). Ninguém perde o ensaio ao migrar pro `.cjs`.
 #
 # Recusa em vez de `rm` de propósito: apagar deixaria um "command not found"
 # misterioso pra quem esbarrasse nele, e o corpo abaixo fica legível como
 # referência do SMTP (porta 587 + STARTTLS, 465 bloqueada no Hetzner).
+#
+# A recusa é a PRIMEIRA instrução executável do arquivo: não há caminho de
+# execução — nem com `--dry-run` — que chegue ao SMTP.
 echo "⛔ enviar_email.sh está APOSENTADO (ronda do #101, 18/09)." >&2
 echo "   Ele envia sem Message-ID, sem cópia em Enviados e sem linha em" >&2
 echo "   emails_enviados — a carta fica invisível nos três livros e o" >&2
 echo "   reconciliador não a alcança." >&2
 echo "" >&2
-echo "   Use:  node _frank/ferramentas/enviar_email.cjs <destino> <assunto> <arquivo-html>" >&2
+echo "   Use:  node _frank/ferramentas/enviar_email.cjs <destino> \"<assunto>\" <corpo.html>" >&2
+echo "         flags: [--bcc <email>] [--chave <slug>] [--janela <horas>] [--forcar] [--dry-run]" >&2
+echo "         (--dry-run = ensaio: não envia e ainda mostra a trava anti-duplicata)" >&2
 exit 1
+
+# --- HISTÓRICO: implementação antiga, desativada em 18/09/2026 pela ronda do
+# --- #101, mantida só como referência (inalcançável — o `exit 1` acima corta
+# --- qualquer execução). Não reative sem resolver Message-ID + cópia em
+# --- Enviados + linha em emails_enviados.
+set -euo pipefail
 
 # Separa a flag dos posicionais pra --dry-run funcionar em qualquer posição.
 DRY_RUN=0

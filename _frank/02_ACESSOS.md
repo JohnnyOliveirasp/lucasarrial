@@ -88,11 +88,27 @@ Chave: `RUNPOD_API_KEY`. Endpoints (**nunca recriar**):
 | Uso | Como |
 |---|---|
 | **Falar com aluno** | `ferramentas/enviar_email.cjs` — Node puro, roda **da sua máquina**, sem SSH. Usa SMTP `mail.privateemail.com:587` (STARTTLS) com `SUPPORT_MAIL_PASSWORD`. Testado 18/08. |
-| Mesma coisa, pelo servidor | `ferramentas/enviar_email.sh` (bash+curl, roda no Hetzner) |
+| ~~Mesma coisa, pelo servidor~~ | ⛔ `ferramentas/enviar_email.sh` **DESATIVADO em 18/09** (ronda do `#101`): recusa e sai com erro. Enviava por `curl` sem Message-ID, sem cópia em Enviados e sem linha em `emails_enviados` — invisível nos três livros e fora do alcance do reconciliador. **Não há substituto rodando no servidor hoje** (ver nota abaixo); o `.cjs` da linha de cima não precisa de servidor. |
 | Caixa de entrada | IMAP no mesmo host — a Fast lê sozinha a cada 5 min. **Não leia a caixa em paralelo com ela.** |
 | Alertas internos | Resend (`RESEND_API_KEY`) — **só pra equipe**, nunca pra aluno |
 
 A porta 465 está bloqueada no Hetzner; use sempre a 587.
+
+**Envio A PARTIR DO SERVIDOR: sem ferramenta hoje — e na prática já estava
+assim.** Medido no Hetzner em 18/09: `_frank/ferramentas/` lá tem só 5
+arquivos (`avisar_grupo.cjs`, `cancelamentos_ontem.cjs`, `_comum.cjs`,
+`curar_mp3_xing.cjs`, `whatsapp_audio.cjs`) — o `enviar_email.sh` **nunca
+esteve deployado no servidor**, apesar do que esta tabela dizia; e o
+`enviar_email.cjs` também não está. O servidor não tem checkout do repo
+(sem `.git`), os arquivos são copiados um a um.
+O que o servidor TEM: `node v18.19.1`, `frontend/node_modules/dotenv` e
+`@supabase/supabase-js` — ou seja, o `.cjs` é **compatível** com o servidor;
+faltaria só copiar pra lá `enviar_email.cjs` **e** `_envios.cjs` (o módulo da
+trava anti-duplicata, que ele exige). Isso **não foi feito** e fica como
+pendência aberta.
+Na prática ninguém precisa disso: o `.cjs` roda da sua máquina, sem SSH.
+Só valeria copiar se algum dia um cron **no servidor** tiver de mandar carta
+pro aluno sozinho.
 
 ## Onboarding pela planilha
 
