@@ -2,7 +2,8 @@
 
 Cada `type` do payload cai num modulo de jobs/. O que este arquivo faz e' so:
 escolher o job, nao deixar excecao subir crua pro RunPod, soltar a VRAM se
-algo estourar e mandar a faxina de disco rodar no fim de TODO job.
+algo estourar e mandar a faxina de disco rodar nas DUAS pontas de TODO job:
+na entrada quando o disco chega sujo (#32) e no fim, sempre.
 
 Rotas principais (event['input']['type']):
   - "train"       jobs/train.py       audio bruto -> LoRA da voz
@@ -25,6 +26,7 @@ import runpod
 
 from jobs import handle_inference, handle_train, handle_transcribe
 from model_loader import free_cuda
+from worker_config import DISK_ALERT_PERCENT
 from worker_disk import disk_percent, faxina
 from worker_log import log as _log, set_current_job, start_heartbeat
 
@@ -32,7 +34,55 @@ from worker_log import log as _log, set_current_job, start_heartbeat
 def handler(event: dict) -> dict:
     inp = event.get("input") or {}
     job_type = inp.get("type", "inference")
-    _log("info", "job.start", type=job_type, disk_pct=round(disk_percent(), 1))
+    disco_entrada = disk_percent()
+    _log("info", "job.start", type=job_type, disk_pct=round(disco_entrada, 1))
+    # ── Faxina de ENTRADA (#32, 18/09) ──────────────────────────────────────
+    # A faxina do `finally` conserta o worker DEPOIS — o job que encontra o
+    # disco cheio já morreu. Quem paga a sujeira é sempre o aluno seguinte, e
+    # ele morre ANTES do trainer subir: `started_at`, `trainer_returncode` e
+    # `trainer_stderr` saem todos nulos, com "[Errno 28] No space left on
+    # device" cru em `error_message` (b76f9ec0 18/09, 76cdefc2 10/08).
+    #
+    # Medido: `job.start` já lia o disco desde 10/08 e só LOGAVA. A medição
+    # existia, a ação não. Duas mortes em 13h (17/09 21:27 e 18/09 09:17)
+    # depois de 38 dias limpos mostram que o `finally` sozinho não segura.
+    #
+    # Por que o `finally` não basta, em três buracos medidos no próprio código:
+    #   1. job SIGKILLado pelo executionTimeout (a classe do d3d8d1b2) nunca
+    #      chega no `finally` — deixa a sujeira inteira e pula a faxina;
+    #   2. `purge_dir` engole toda exceção (`except Exception: continue`), então
+    #      "faxina rodou" nunca significou "liberou espaço";
+    #   3. container novo herda camada de imagem e cache de modelo que a faxina
+    #      do job anterior (noutro worker) jamais tocou.
+    #
+    # NÃO é uma segunda régua: reusa `faxina()` e o mesmo DISK_ALERT_PERCENT.
+    # Abaixo do limite não faz nada e não custa nada — só a leitura de disco que
+    # já acontecia. Acima, limpa antes de deixar o aluno entrar.
+    # O try/except é a MESMA garantia que a faxina do `finally` já dava:
+    # limpeza nunca pode virar causa de falha. Sem ele, um erro na faxina de
+    # entrada mataria o job ANTES de ele começar — trocaria um defeito raro por
+    # um pior. (Pego pelo próprio teste desta mudança, em 18/09.)
+    try:
+        if disco_entrada >= DISK_ALERT_PERCENT:
+            _log("warn", "disk.dirty_on_arrival", type=job_type, disk_pct=round(disco_entrada, 1))
+            faxina(f"{job_type}:entrada")
+            depois = disk_percent()
+            # Declarar quando NÃO resolveu importa tanto quanto limpar: se o
+            # disco segue cheio, o job vai morrer e o log tem de dizer que a
+            # casa sabia.
+            _log(
+                "warn" if depois >= DISK_ALERT_PERCENT else "info",
+                "disk.cleaned_on_arrival",
+                type=job_type,
+                before_pct=round(disco_entrada, 1),
+                after_pct=round(depois, 1),
+                resolvido=depois < DISK_ALERT_PERCENT,
+            )
+    except Exception as exc:  # faxina de entrada NUNCA derruba o job
+        try:
+            _log("warn", "disk.cleanup_on_arrival_failed", type=job_type, error=str(exc))
+        except Exception:
+            pass
     # Instrumentação d3d8d1b2: heartbeat nomeia a fase corrente no log — num
     # hang SIGKILLado pelo executionTimeout, é o único rastro que sobra.
     # Parte 2 do d3d8d1b2 (b9bc646): se o app mandou fase_url/token/ref no
