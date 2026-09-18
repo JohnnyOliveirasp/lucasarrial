@@ -132,11 +132,39 @@ Disco cheio passa a ter **causa própria** (`infra_disk`, separada de
 `training:infra_disk:no-space`, decidida pelo `trainer_stderr` e não pelo texto
 do `error_message`. A classe para de se fragmentar e para de reabrir o #11.
 
-**A causa raiz (por que `/workspace` enche) segue SEM DONO e eu não a
-investiguei.** O que tenho é 13 dias limpos virando 4 falhas em 30h, o que
-cheira a lixo acumulando em volume persistente. Está registrado como
-**hipótese, não diagnóstico**. Se voltar, agora abre na assinatura certa e soma
-série no lugar certo.
+### A causa raiz: eu errei a MESMA coisa duas vezes na mesma ronda
+
+Escrevi, aqui e nos cartões, que a causa raiz (por que `/workspace` enche)
+*"segue sem dono e sem investigação"*. **Errado, pelo mesmo motivo de antes: não
+procurei PR antes de declarar ausência.**
+
+Ela tem dono e conserto pronto: **PR #338** (`fix/faxina-antes-do-job`, aberto
+18/09 11:00:25Z). O diagnóstico dele é melhor que o meu: a faxina de disco
+existe desde 10/08 **mas só no `finally`** — conserta o worker *depois*, e quem
+paga a sujeira é sempre o aluno seguinte. Pior, `handler.py:35` **já lia o disco
+no `job.start` desde 10/08 e só logava**: a medição existia, a ação não. E o
+`finally` tem três buracos — job SIGKILLado por `executionTimeout` nunca chega
+nele; `purge_dir` engole exceção (logo *"faxina rodou"* nunca significou
+*"liberou espaço"*); e container novo herda camada de imagem que a faxina
+anterior não tocou.
+
+**Não mergeei, de propósito.** O próprio PR abre com *"⚠️ NÃO MERGEAR SEM O
+JOHNNY DECIDIR O MOMENTO"*: o merge dispara build da imagem do worker e
+**recicla o endpoint de produção** (`workersMax 0 → N`) — capacidade de GPU fora
+do ar por minutos, com aluno treinando ao vivo. É janela de deploy, decisão do
+Johnny. O bloqueio é legítimo e tem data; não é cartão parado por esquecimento.
+Levei a decisão ao grupo.
+
+Enquanto ela não vem: o que está no ar é o conserto de **classificação**. Disco
+cheio para de se disfarçar — **mas continua acontecendo**.
+
+### O achado maior, que não é deste cartão
+
+`gh pr list`: **28 PRs abertos, o mais velho de 19/08**. O #335 ficou 16h e
+custou 3 alunos; o #338 está pronto esperando uma janela. **A fila de merge
+virou depósito de conserto pronto — e é de lá que sai o aluno derrubado.**
+Ofereci ao Johnny varrer essa fila na próxima ronda e separar o que está
+pronto, o que espera decisão dele, e o que apodreceu e deve ser fechado.
 
 **Afinação anotada, não bloqueante:** o título novo diz *"treino completou,
 perdeu ao salvar"*. Isso descreve a falha de 17/09 (step 499) mas **não** a de
@@ -235,13 +263,18 @@ ordem de 17/09.
 
 ## Erros meus, nesta ronda
 
-1. **Declarei trabalho faltando sem procurar branch.** O #468 nasceu pedindo um
-   detector que já existia em PR aberto. Custo real: as 16h que o #335 esperou
-   valeram 3 alunos. **A lição é de rotina, não de caso:** antes de abrir cartão
-   dizendo "falta construir X", `git branch | grep` e `gh pr list`. A casa tem
-   histórico exatamente disso — o índice de ordens é cheio de branch STALE, e em
-   19/08 um fix de aluno ficou 9h preso. Desta vez o preso não era um branch
-   esquecido: era um **PR pronto, com testes e mutação, só sem revisor**.
+1. **Declarei trabalho faltando sem procurar branch — e repeti o erro.** O #468
+   nasceu pedindo um detector que já existia em PR aberto (#335). Depois de
+   corrigir isso, escrevi que a causa raiz estava "sem dono" — e ela também
+   tinha PR (#338). **Duas vezes na mesma ronda, o mesmo erro.** Custo da
+   primeira: as 16h que o #335 esperou valeram 3 alunos.
+
+   **A lição é de rotina, não de caso:** antes de escrever "falta construir X"
+   ou "X não tem dono", rodar `gh pr list`. A casa tem histórico exatamente
+   disso — o índice de ordens é cheio de branch STALE, e em 19/08 um fix de
+   aluno ficou 9h preso. Mas desta vez o preso **não era branch esquecido**: era
+   PR pronto, com teste e mutação, só sem revisor. É um modo de falha diferente
+   e pior, porque parece organizado.
 2. **Carimbei "~18hZ"** nas notas do #11, #32, #465 e #466 — eram **15:5xZ**,
    ronda das 16h. Corrigi as descrições do #468/#469 na origem e registrei a
    correção como nota nova no #11, em vez de reescrever (nota não se
