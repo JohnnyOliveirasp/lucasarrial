@@ -62,11 +62,48 @@ const path = require("path");
 const RAIZ = path.resolve(__dirname, "..", "..");
 const { supa } = require(path.join(RAIZ, "_frank/ferramentas/_comum.cjs"));
 
-/** Marcas de INFRA NOSSA. Lista fechada, de propósito. */
+/**
+ * Marcas de INFRA NOSSA. Lista fechada, de propósito.
+ *
+ * ── 18/09 23hZ: a lista tinha um vão, e foi a SEGUNDA vez em 24h ──────────
+ * A Tati (voz 5e97cd9c, job c7a376e5, 22:40Z) morreu de disco cheio e a trava
+ * recusou rearmar, porque o texto dela não tem nenhuma das três marcas acima.
+ * Ontem, com o Heitor, eu contornei essa mesma recusa por SQL cru — e anotei a
+ * lição: guarda que se contorna por SQL vira teatro. Então desta vez o conserto
+ * é NA TRAVA, não em volta dela.
+ *
+ * O que faltava: `save_checkpoint()` grava DOIS arquivos, com DOIS gravadores
+ * diferentes, e só um deles confessa o errno.
+ *
+ *   linha 777  save_file(..., "lora_weights.safetensors")  → safetensors (Rust)
+ *              diz a frase inteira: "No space left on device (os error 28)".
+ *   linha 814  torch.save(optimizer.state_dict(), "optimizer.pth") → zip writer
+ *              do PyTorch (C++), que ENGOLE o errno e só diz
+ *              "PytorchStreamWriter failed writing file data/NNNN: file write failed".
+ *
+ * Mesmo ENOSPC, duas línguas. Prova de que é o mesmo disco, medida no mesmo
+ * dia: o job 7115da78 (Heitor, 15:27Z) morreu na 777 com o errno limpo; o
+ * c7a376e5 (Tati, 22:40Z) PASSOU da 777 e morreu na 814 — disco com um pouco de
+ * espaço e não o bastante falha exatamente assim: o primeiro arquivo entra, o
+ * segundo não. E a reentrada da exceção traz "unexpected pos 131040192 vs
+ * 131040080" — escreveu 112 bytes a menos do que prometeu, que é write curto.
+ *
+ * ⚠️ Por que é SEGURO pôr esta marca numa lista cujo único trabalho é separar
+ * "infra nossa" de "material do aluno": o arquivo que falha aqui é o estado do
+ * OTIMIZADOR, gravado no disco local do worker. Nada que o aluno envie — áudio
+ * ruim, formato errado, duas vozes na gravação — produz falha de escrita no
+ * disco da máquina. Não existe caminho em que esta marca signifique culpa dele.
+ * Por isso ela entra; e por isso "file write failed" SOZINHO não entra: frase
+ * solta demais, casaria com I/O de qualquer camada.
+ */
 const INFRA = [
   { marca: "No space left on device", causa: "disco cheio no worker" },
   { marca: "torch.OutOfMemoryError", causa: "OOM de GPU" },
   { marca: "CUDA out of memory", causa: "OOM de GPU" },
+  {
+    marca: "PytorchStreamWriter failed writing file",
+    causa: "escrita do checkpoint falhou no worker (disco cheio provável — o torch não entrega o errno)",
+  },
 ];
 
 /**
