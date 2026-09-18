@@ -209,3 +209,58 @@ não está em produção, e o cartão cobre mais do que a causa que eu nomeei.
 > Vizinha da lição de ontem ("controle que testa só o passo em que eu já
 > confiava é cerimônia"): aqui, **régua consertada no lugar que não decide é a
 > mesma cerimônia**, com aparência melhor ainda, porque o commit existe.
+
+---
+
+# Adendo — a correção saiu, verificada contra produção (mesma ronda, ~01h30Z)
+
+O card `462f1043` voltou. **PR #336** (`feat/guarda-soletracao-inventada`),
+**não mergeado**.
+
+## Não aceitei o relato do operário — conferi eu mesmo
+
+Rodei a guarda do branch em cima do `text_raw` e do `text_normalized` **reais
+da geração `d07d0d7d`**, puxados do banco. Não a paráfrase do teste: o texto que
+matou o job.
+
+| verificação | resultado |
+|---|---|
+| `Ceêbêéssi` volta pro texto | ✅ |
+| `íbêéssi` volta pro texto | ✅ |
+| `Cê Ê Bê Ê Sse` sumiu | ✅ |
+| `Í Bê Ê Sse` sumiu | ✅ |
+| expansão legítima de `60%` ("sessenta por cento") preservada | ✅ |
+| invariante de fim de frase | 13 → 13 ✅ |
+| `abstida` | false |
+
+A frase reconstruída fica **idêntica** à das três rodadas que deram certo com o
+mesmo texto cru.
+
+Testes: **28/28** (eram 21 na main — 7 novos). `tsc --noEmit`: **limpo**.
+
+## Erro meu na especificação
+
+Mandei o operário rodar `npx vitest run`. O runner deste arquivo é
+**`node --test`** — no vitest ele diz *"No test suite found"* e sai **FAIL**.
+Se eu tivesse lido só o "FAIL" da minha própria instrução, teria reprovado um
+patch correto. O teste estava certo; a instrução é que estava errada.
+
+## Ressalva que vai junto com o patch
+
+Nas reversões aparece uma entrada cujo lado de saída é `"ce e be e sse e i be"`:
+o alinhamento LCS **absorveu a conjunção "e"** no meio do run, porque `"e"`
+também é nome de letra. **Neste texto o resultado saiu correto** — conferi, o
+"e do" sobreviveu — mas o mecanismo existe e pode, em outro texto, engolir uma
+conjunção legítima entre duas siglas soletradas.
+
+Não é bloqueador (o pior caso devolve a palavra do aluno, que é o lado
+conservador), mas quem mergear precisa saber que está lá. Está escrito no PR e
+no cartão.
+
+## Por que NÃO mergeei
+
+Mexe no caminho de **toda** geração, e a classe é de **2 ocorrências em 30
+dias**. Não é urgência que justifique merge sem revisão humana à 1h da manhã. A
+regra da casa é clara: card "completed" não é produção, e só a main deploya.
+
+O `#52` segue **open**, agora com 56 notas.
