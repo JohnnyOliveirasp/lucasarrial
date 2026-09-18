@@ -690,6 +690,7 @@ export function resumirCompradores(linhas: LinhaComprador[]): ResumoCompradores 
     concluido: 0,
     erro: 0,
     entregue: 0,
+    aviso_nao_confirmado: 0,
     aguardando: 0,
     pronto: 0,
   };
