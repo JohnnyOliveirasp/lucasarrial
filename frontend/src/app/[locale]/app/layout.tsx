@@ -139,7 +139,25 @@ export default async function AppLayout({
             unlimited={unlimited}
           />
           {showPendingBanner && <PendingPaymentBanner />}
-          <main className="flex-1 px-6 py-10 lg:px-12">{children}</main>
+          {/*
+            O fim do conteúdo respeita a FAIXA DE RODAPÉ ocupada pelos
+            overlays `fixed` desta casa (hoje: o balão da Fast). Sem isso, a
+            última coisa clicável da tela nasce embaixo do balão — aconteceu
+            em 14/08 e de novo em 18/09, no mesmo "Continuar" do wizard.
+            Vale pra TODA tela do /app, inclusive as que ainda não existem:
+            quem cede é a página, não a régua de cada tela. Quem preenche
+            `--fc-reserva-rodape` é `use-reserva-de-rodape.ts`; o padrão do
+            globals.css cobre o primeiro paint, antes da hidratação.
+          */}
+          <main
+            className="flex-1 px-6 pt-10 lg:px-12"
+            style={{
+              paddingBottom:
+                "max(2.5rem, calc(var(--fc-reserva-rodape, 0px) + env(safe-area-inset-bottom, 0px)))",
+            }}
+          >
+            {children}
+          </main>
         </div>
         <ConsentGate />
         <PresencePinger />
