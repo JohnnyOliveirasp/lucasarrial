@@ -73,22 +73,38 @@ e isso é o achado que destrava o caso:
 2. **`2026-09-15_retreinar_sgp.cjs`** — mesma premissa (voz em
    `awaiting_training`/`failed`). Não se aplica.
 
-### O flip manual de status seria PERIGOSO — medido, não suposto
+### O flip manual de status — e o ERRO QUE EU COMETI aqui
 
-Cogitei `pedido.status` `'pronto'` → `'audio'` pra reabrir o wizard. **Não fiz**,
-e a razão é concreta:
+⚠️ **Esta seção foi reescrita no fim da ronda. A primeira versão estava errada,
+e o erro era contra mim.** Deixo os dois textos porque o modo de errar importa.
 
-> `lib/sgp/etapas.ts:93` calcula
-> `status = s.pronto ? "pronto" : s.falhou ? "falhou" : "processando"`
-> e o `carimbarStatus` (`etapas.ts:126`) escreve esse valor com `.eq("id")`
-> **sem guarda de status** — sobrescreve incondicionalmente.
+**O que eu escrevi primeiro**, com as palavras *"medido, não suposto"*: que pôr
+o pedido em `'audio'` faria a máquina disparar `avisoSgpFalhou` (*"não
+conseguimos finalizar o seu clone"*) **na aluna** e `escalarNoGrupo`. **Falso.**
+Eu li o caminho até `etapas.ts:93` e **inferi** o ramo `falhou` sem medir
+`s.falhou`. Chamei de medição o que era dedução — exatamente o que a rotina
+proíbe.
 
-O pedido dela tem `enviado_em` preenchido (16/09 20:00:46Z), então
-`avancarEtapasDoUsuario` **não** retorna cedo e a máquina roda. Com a voz
-apagada, o caminho `falhou` dispara **`avisoSgpFalhou`** (e-mail *"não
-conseguimos finalizar o seu clone"*) **na aluna** e `escalarNoGrupo`. Eu teria
-trocado 1,3 dia de silêncio por uma **carta falsa de fracasso**. Não toquei no
-status do pedido.
+**O que o código diz de verdade** (`lib/onboarding/desfecho-pure.ts`):
+
+```
+vozMorta     = vozStatus === "failed" || vozStatus === "rejected_too_short"   (l.54)
+vozAssentada = vozStatus === "ready" || vozMorta                              (l.63)
+falhou = onboarding && !pronto && pendentes===0 && !vozTreinando
+         && (vozMorta || (avatarMorto && vozAssentada))                       (l.65-70)
+```
+
+Com a voz **apagada**, `vozOnboarding` é `null` ⇒ `vozStatus` é `null` ⇒
+`vozMorta` **false**, `vozAssentada` **false** ⇒ o termo inteiro é **false** ⇒
+**`falhou = false`**. E `pronto` também é false (exige `ready`). Logo
+`etapas.ts:93` cai em **`"processando"`**, não em `falhou`. **Não há carta de
+fracasso e não há escalação.**
+
+**O risco real, que continua existindo — menor e de outro tipo.** O flip cru
+não machuca a aluna: ele **some**. `carimbarStatus` reescreve pra `processando`
+na primeira leitura e, como não existe voz que possa virar `ready`, ela fica em
+`processando` pra sempre. O conserto evaporaria em silêncio. Ruim, mas não é o
+que eu disse. **Não toquei no status do pedido** — isso não muda.
 
 ### Armadilha a mais, pra quem reabrir o wizard no futuro
 
@@ -172,6 +188,29 @@ inventar resultado. Lição banca (`remember` **#1668**).
 
 ---
 
+## ⚠️ ACHADO DA CONFERÊNCIA DE BRANCH: a ferramenta deste caso existe, e está presa
+
+O passo fixo de fim de ronda (`git rev-list main..<branch>`) pegou o que a fila
+não pegava: **`origin/feat/reabrir-audio-sgp`** traz
+`_frank/ferramentas/2026-09-17_reabrir_audio_sgp.cjs`, escrita em **17/09**,
+**nomeando esta aluna e este pedido** (`09646e28`). Ou seja: no mesmo dia em que
+o cartão nasceu, alguém construiu a ferramenta exata pra ele — e ela **nunca
+chegou na main**, enquanto a aluna esperava 1,3 dia. É o modo de falha do 19/08
+(fix de aluno preso 9h num branch), de novo.
+
+E ela resolve **melhor do que eu descrevi**: além de pôr `status='audio'`, ela
+**limpa `enviado_em`**, que é o que desarma os três chamadores de
+`estadoDasEtapas` — webhook (`etapas.ts:42`), `/sgp/acompanhar`
+(`page.tsx:20`) e `GET /api/v1/sgp/status`. É exatamente a trava contra o "some
+em silêncio" que eu descrevi acima. `enviarPedido` recarimba `enviado_em` no
+reenvio (`processar.ts:159`), então nada permanente se perde. Ela também já
+tinha medido em 17/09 o que eu remedi hoje: `voices` do aluno = **0 linhas**.
+
+**Não rodei.** É código não mergeado e não revisado, e mexer no pedido de uma
+aluna pagante viva com script de branch é precisamente o tipo de coisa com que a
+casa já se queimou. Fica como **recomendação de merge pro Johnny**, não como ação
+minha. A carta que saiu não depende dele.
+
 ## Decisões que estão com o Johnny
 
 1. **Janela pra mergear os PRs do worker — agora são TRÊS**: `#338` (mitigação
@@ -194,8 +233,17 @@ inventar resultado. Lição banca (`remember` **#1668**).
 
 ## O que eu NÃO fiz
 
-- **Não toquei no `status` do pedido SGP dela** — e o log acima diz exatamente
-  por quê (o `carimbarStatus` sobrescreveria e dispararia carta de fracasso).
+- **Não toquei no `status` do pedido SGP dela** — o `carimbarStatus`
+  sobrescreveria e o conserto sumiria em silêncio. (A versão anterior desta
+  linha dizia que dispararia carta de fracasso; era **minha inferência errada**,
+  corrigida na seção própria acima.)
+- **Errei e reportei o erro pra frente.** A afirmação da carta de fracasso foi
+  ao incidente E ao grupo antes de eu conferi-la. Corrigida nos três lugares
+  (nota do incidente, este log, grupo). Nenhuma decisão de produção foi tomada em
+  cima dela e a aluna não foi prejudicada — o estrago foi de credibilidade do
+  relato, que é justamente o que a rotina cobra.
+- **Não rodei a ferramenta do branch `feat/reabrir-audio-sgp`** em pedido de
+  aluna viva, por não estar mergeada nem revisada.
 - **Não marquei nada como `fixed`.** Nenhum incidente foi resolvido nesta ronda;
   o `#444` mudou de estado com carta atrás, que não é a mesma coisa.
 - **Não ouvi áudio nenhum** e não opino sobre como a voz da Janice soou.
