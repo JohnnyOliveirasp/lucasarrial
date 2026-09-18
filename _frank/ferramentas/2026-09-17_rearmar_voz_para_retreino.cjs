@@ -15,12 +15,38 @@
  * Ela **não dispara treino** e **não mexe em crédito**. Só rearma o estado.
  * Quem dispara é a ferramenta do SGP, que carrega a receita de PRODUÇÃO.
  *
+ * ── ⚠️ 18/09: a trava 2 tinha um FALSO NEGATIVO que travou um aluno ───────
+ * Nasci lendo a prova de infra SÓ em `trainer_stderr`. Medido no #32
+ * (`9119254c`, disco cheio, 39 dias) em 18/09: a falha tem DUAS formas, e a
+ * minha leitura só enxergava uma.
+ *
+ *   forma A — o trainer RODOU e morreu no meio: `trainer_returncode=1`,
+ *     `trainer_stderr` tem a marca, e `error_message` é o genérico
+ *     "trainer failed". Ex.: `bbf4b050` (Alberto, 17/09).
+ *   forma B — a coisa morreu ANTES do trainer subir (download/descompactação):
+ *     `started_at`, `trainer_returncode`, `trainer_stderr` e `trainer_stdout`
+ *     TODOS nulos, e a marca está em `error_message`, crua:
+ *     "[Errno 28] No space left on device". Ex.: `b76f9ec0` (Alexandre
+ *     Scalzitti, 18/09 09:17Z) e `76cdefc2` (10/08) — as DUAS ocorrências do
+ *     #32, ou seja, justamente a classe pra que esta ferramenta serve.
+ *
+ * Na forma B eu recusava com "causa CEGA, não rearmo às cegas". A causa não
+ * era cega: estava escrita, em outra coluna. E o preço do falso negativo é
+ * concreto — o pedido SGP `251b2b1e` do Alexandre ficou em `falhou`, estado
+ * sem saída, enquanto a tela dele prometia "o retreino é por nossa conta".
+ *
+ * A trava agora procura a marca em `trainer_stderr` **e** em `error_message`,
+ * pela MESMA lista fechada. O que NÃO mudou: sem marca da lista nas duas
+ * colunas, a recusa continua. Mensagem genérica ("trainer failed", "unknown")
+ * não passa, e material do aluno nunca passou.
+ *
  * ── As travas (todas medidas, nenhuma suposta) ────────────────────────────
  * 1. A voz tem de estar `failed`. Rearmar voz `ready` apagaria entrega boa.
  * 2. O ÚLTIMO training_job dela tem de ter morrido por causa de INFRA NOSSA,
- *    provada no `trainer_stderr` (disco cheio / OOM de GPU). Se o stderr não
- *    existe, ou a causa é o material do aluno, a ferramenta RECUSA — rearmar
- *    às cegas gasta GPU da casa pra morrer igual.
+ *    provada por uma marca da lista fechada em `trainer_stderr` OU em
+ *    `error_message` (disco cheio / OOM de GPU). Se nenhuma das duas colunas
+ *    carrega marca, a ferramenta RECUSA — rearmar às cegas gasta GPU da casa
+ *    pra morrer igual.
  * 3. `raw_audio_paths` tem de ter arquivo. Sem áudio não há o que treinar.
  * 4. Ela imprime o extrato por `ref_id` ANTES e não segue se houver débito
  *    pendente pra essa voz sem estorno — o aluno não paga falha nossa.
@@ -36,12 +62,35 @@ const path = require("path");
 const RAIZ = path.resolve(__dirname, "..", "..");
 const { supa } = require(path.join(RAIZ, "_frank/ferramentas/_comum.cjs"));
 
-/** Marcas de INFRA NOSSA no stderr do trainer. Lista fechada, de propósito. */
+/** Marcas de INFRA NOSSA. Lista fechada, de propósito. */
 const INFRA = [
   { marca: "No space left on device", causa: "disco cheio no worker" },
   { marca: "torch.OutOfMemoryError", causa: "OOM de GPU" },
   { marca: "CUDA out of memory", causa: "OOM de GPU" },
 ];
+
+/**
+ * Procura a marca de infra nas DUAS colunas onde ela pode aparecer, e diz em
+ * QUAL delas achou — porque "não achei" e "achei no lugar que eu não olhava"
+ * são diagnósticos diferentes, e foi a confusão entre os dois que travou o
+ * Alexandre (ver cabeçalho, 18/09).
+ *
+ * Caixa ignorada de propósito: a mesma falha sai "No space left on device" do
+ * runtime Python e "no space left on device" de camadas em C.
+ */
+function acharInfra(job) {
+  const colunas = [
+    ["trainer_stderr", job?.trainer_stderr || ""],
+    ["error_message", job?.error_message || ""],
+  ];
+  for (const [coluna, texto] of colunas) {
+    const achado = INFRA.find((i) => texto.toLowerCase().includes(i.marca.toLowerCase()));
+    if (achado) return { ...achado, coluna, texto };
+  }
+  return null;
+}
+
+module.exports = { INFRA, acharInfra };
 
 async function main() {
   const voiceId = process.argv[2];
@@ -65,7 +114,7 @@ async function main() {
 
   const { data: jobs, error: eJ } = await db
     .from("training_jobs")
-    .select("id, status, error_message, trainer_returncode, trainer_stderr, elapsed_seconds, created_at")
+    .select("id, status, error_message, trainer_returncode, trainer_stderr, trainer_stdout, started_at, elapsed_seconds, created_at")
     .eq("voice_id", voiceId);
   if (eJ) throw new Error(`training_jobs: ${eJ.message}`);
   jobs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -77,7 +126,7 @@ async function main() {
   const soma = (tx || []).reduce((s, t) => s + Number(t.amount || 0), 0);
 
   const stderr = ultimo?.trainer_stderr || "";
-  const achado = INFRA.find((i) => stderr.includes(i.marca));
+  const achado = acharInfra(ultimo);
 
   console.log("── ALVO ────────────────────────────────────────────────");
   console.log("  voz        :", voice.id);
@@ -87,7 +136,17 @@ async function main() {
   console.log("── ÚLTIMO TREINO ───────────────────────────────────────");
   console.log("  job        :", ultimo?.id, ultimo?.status, `rc=${ultimo?.trainer_returncode}`, `el=${ultimo?.elapsed_seconds}s`);
   console.log("  stderr     :", stderr ? `${stderr.length} chars` : "AUSENTE");
-  console.log("  causa infra:", achado ? `SIM — ${achado.causa} ("${achado.marca}")` : "NÃO RECONHECIDA");
+  console.log("  error_msg  :", ultimo?.error_message || "AUSENTE");
+  console.log(
+    "  forma      :",
+    ultimo?.trainer_stderr || ultimo?.trainer_returncode !== null
+      ? "A (o trainer subiu e morreu)"
+      : "B (morreu ANTES do trainer — stderr não existe por desenho)",
+  );
+  console.log(
+    "  causa infra:",
+    achado ? `SIM — ${achado.causa} ("${achado.marca}", achada em ${achado.coluna})` : "NÃO RECONHECIDA",
+  );
   console.log("── DINHEIRO (por ref_id, nunca por kind) ───────────────");
   console.log("  linhas p/ esta voz:", (tx || []).length, "| soma do sinal:", soma);
   for (const t of tx || []) console.log("    ", t.ref_type, t.kind, t.amount, t.created_at);
@@ -97,8 +156,10 @@ async function main() {
   if (!Array.isArray(voice.raw_audio_paths) || voice.raw_audio_paths.length === 0)
     problemas.push("sem áudios em raw_audio_paths — não há o que treinar");
   if (!ultimo) problemas.push("nenhum training_job para esta voz");
-  else if (!stderr) problemas.push("último job sem trainer_stderr — causa CEGA, não rearmo às cegas");
-  else if (!achado) problemas.push("stderr não bate com nenhuma marca de infra nossa — pode ser material do aluno");
+  else if (!achado)
+    problemas.push(
+      "nem trainer_stderr nem error_message batem com marca de infra nossa — causa CEGA ou material do aluno, não rearmo às cegas",
+    );
   if (soma < 0) problemas.push(`extrato com débito pendente (soma ${soma}) — estorne ANTES de rearmar`);
 
   if (problemas.length) {
@@ -136,7 +197,11 @@ async function main() {
   console.log("\n➡️  agora: node 2026-09-15_retreinar_sgp.cjs", voiceId, "--confirmar");
 }
 
-main().catch((e) => {
-  console.error("FALHOU:", e.message);
-  process.exit(1);
-});
+// Só roda quando chamado pela linha de comando. Sem esta guarda o teste que
+// dá `require` no módulo dispararia uma varredura de banco.
+if (require.main === module) {
+  main().catch((e) => {
+    console.error("FALHOU:", e.message);
+    process.exit(1);
+  });
+}
