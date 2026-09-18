@@ -1,20 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
-import { createClient } from "@/lib/supabase/client";
+import { useLocale, useTranslations } from "next-intl";
 
 const INPUT_CLASS =
   "h-11 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-3.5 text-[14px] text-[var(--ink)] placeholder:text-[var(--ash)] transition-colors duration-[var(--dur-base)] ease-[var(--ease-out)] focus-visible:border-[var(--hairline-bright)] focus-visible:outline-none";
 
 /**
- * "Esqueci a senha": pede o e-mail e dispara o link de recuperação do Supabase.
+ * "Esqueci a senha": pede o e-mail e manda a casa despachar o link.
  * O link cai em /auth/callback (type=recovery) → sessão → /reset-password.
  * Sempre mostra sucesso mesmo se o e-mail não existir (anti-enumeração).
+ *
+ * ⚠️ NÃO CHAMA MAIS `supabase.auth.resetPasswordForEmail`. Aquela é chamada de
+ * CLIENTE: quem mandava o e-mail era o provedor do próprio Supabase, de um
+ * remetente que não é o nosso — e o envio não deixava rastro nenhum do lado de
+ * cá (nada em `emails_enviados`, sem Message-ID nosso, sem cópia em Enviados,
+ * sem onde o bounce cair). Medido em 18/09 na aluna walsicleia_kaka@hotmail.com:
+ * `recovery_sent_at` carimbado e ZERO linha de envio, enquanto o
+ * `suporte@fastcloner.com` entregava na caixa dela sem um bounce sequer.
+ * Agora o pedido vai pro servidor e a carta sai pelo SMTP da casa.
  */
 export function ForgotPasswordForm() {
   const t = useTranslations("auth");
-  const supabase = createClient();
+  const locale = useLocale();
 
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -26,30 +34,47 @@ export function ForgotPasswordForm() {
     setSubmitting(true);
     setError(null);
 
-    const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/reset-password")}`,
-    });
-
-    if (authError) {
-      const code = authError.message.toLowerCase();
-      // "For security purposes, you can only request this after N seconds" =
-      // cooldown de 60s do Supabase entre pedidos pro MESMO e-mail (visto em
-      // prod 21/07: usuário reenviava e caía no "Algo deu errado" genérico).
-      if (code.includes("rate") || code.includes("security purposes"))
-        setError(t("errors.rateLimited"));
-      else setError(t("errors.generic"));
+    let status = 0;
+    try {
+      const r = await fetch("/api/v1/auth/recuperar-senha", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // O idioma da carta é o da tela em que a pessoa está pedindo.
+        body: JSON.stringify({ email, idioma: locale }),
+      });
+      status = r.status;
+    } catch {
+      // Rede caiu antes de chegar no servidor.
+      setError(t("errors.generic"));
       setSubmitting(false);
       return;
     }
+
+    // 429 = teto por e-mail (1/min, o cooldown que o Supabase dava) ou por IP.
+    // A mensagem é a mesma de antes: a pessoa só precisa saber que é pra esperar.
+    if (status === 429) {
+      setError(t("errors.rateLimited"));
+      setSubmitting(false);
+      return;
+    }
+    if (status !== 200) {
+      setError(t("errors.generic"));
+      setSubmitting(false);
+      return;
+    }
+    // 200 é o MESMO pra conta que existe e pra que não existe — de propósito.
     setSent(true);
     setSubmitting(false);
   }
 
   if (sent) {
     return (
-      <p className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-4 py-3.5 text-[14px] leading-relaxed text-[var(--silver)]">
-        {t("forgot.sent")}
-      </p>
+      <div className="flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-4 py-3.5">
+        <p className="text-[14px] leading-relaxed text-[var(--silver)]">{t("forgot.sent")}</p>
+        {/* Agora a carta sai do NOSSO endereço: dizer qual é ajuda a pessoa a
+            achar (e a resgatar do spam) em vez de procurar por "Supabase". */}
+        <p className="text-[13px] leading-relaxed text-[var(--ash)]">{t("forgot.sentRemetente")}</p>
+      </div>
     );
   }
 

@@ -240,6 +240,7 @@
       "submit": "Enviar link",
       "submitting": "Enviando…",
       "sent": "Se este email tiver uma conta, você vai receber um link pra redefinir a senha. Confira a caixa de entrada (e o spam).",
+      "sentRemetente": "A mensagem chega de suporte@fastcloner.com e o link vale por 1 hora. Se não achar, procure por esse remetente — inclusive no spam.",
       "backToLogin": "← Voltar pro login"
     },
     "reset": {
