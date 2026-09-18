@@ -115,20 +115,54 @@ if (!URL_SUPABASE || !CHAVE_SERVICO) {
     process.exit(2);
   }
 
-  const link = corpo?.action_link ?? null;
+  const acao = corpo?.action_link ?? null;
   const otp = corpo?.email_otp ?? null;
+  const hashed = corpo?.hashed_token ?? null;
+
+  /**
+   * ⛔ NAO MANDE O `action_link` PRO ALUNO. MEDIDO EM PRODUCAO 18/09 ~22h50Z.
+   *
+   * O `action_link` aponta pro `/auth/v1/verify` do Supabase, que responde
+   * **303 com a sessao no FRAGMENTO** (`#access_token=...`). Fragmento NAO
+   * viaja pro servidor, e o `auth/callback/route.ts` so le `code`/`token_hash`
+   * da QUERY — entao cai no ramo final e manda o aluno pra
+   * `/login?error=missing_code_or_token` com o token de uso unico **JA
+   * QUEIMADO**. O aluno ve um erro, e o link dele morreu junto.
+   *
+   * Medicao lado a lado, com token FRESCO em CADA caminho. O primeiro teste
+   * desta ronda foi INVALIDO e esta registrado por isso: os dois caminhos
+   * dividiram o mesmo token, o [A] queimou e o [B] herdou "expired". Refeito
+   * isolado:
+   *
+   *   [A] action_link ......... 303 -> /auth/callback?next=..#access_token=..
+   *                                 -> /login?error=missing_code_or_token
+   *   [B] token_hash na QUERY .. 307 -> /reset-password
+   *                                 + Set-Cookie sb-<proj>-auth-token   ✅
+   *
+   * O ramo [B] chama `verifyOtp({token_hash,type})` NO SERVIDOR, que grava o
+   * cookie do lado certo. Por isso o link que esta ferramenta imprime e o [B].
+   * O `action_link` fica so como referencia de diagnostico.
+   */
+  const link = hashed
+    ? `${SITE}/auth/callback?token_hash=${hashed}` +
+      `&type=${tipo === "magiclink" ? "magiclink" : "recovery"}` +
+      `&next=${encodeURIComponent("/reset-password")}`
+    : null;
 
   console.log(`e-mail ........ ${email}`);
   console.log(`tipo .......... ${tipo}`);
   console.log(`gerado em ..... ${new Date().toISOString()}`);
   console.log("");
   if (!link) {
-    console.log("⚠️  o Supabase respondeu OK mas NAO veio action_link:");
+    console.log("⚠️  o Supabase respondeu OK mas NAO veio hashed_token:");
     console.log(JSON.stringify(corpo, null, 2));
     process.exit(3);
   }
-  console.log("LINK (uso unico, ~60 min):");
+  console.log("LINK PRO ALUNO (uso unico, ~60 min) — formato token_hash:");
   console.log(link);
+  console.log("");
+  console.log("action_link do Supabase (NAO mandar — queima o token e cai em erro):");
+  console.log(`  ${String(acao).slice(0, 96)}...`);
   console.log("");
   console.log(`email_otp ..... ${otp ?? "(nao veio)"}`);
   console.log(
