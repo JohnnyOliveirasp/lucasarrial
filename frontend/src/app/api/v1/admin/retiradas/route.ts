@@ -3,23 +3,26 @@
  *   GET  ?gran=day|month|year&key=... → retiradas da MESMA janela dos KPIs
  *   POST { valor, socio, origem? }    → registra uma retirada
  *
- * Restrito a admin (gateAdmin default — suporte NÃO entra: é dinheiro de sócio).
+ * Restrito aos TRÊS SÓCIOS (pedido Johnny 18/09): ser admin não basta —
+ * rayanne@ e suporte@ são admin e não podem ver quanto cada sócio tirou.
+ * Quem não é sócio leva 403 e a tela esconde o bloco inteiro.
  *
  * Retirada não é despesa: nada aqui toca receita, custo ou lucro. Esta rota só
  * grava/lista linhas; quem subtrai é a tela ("Em caixa" = lucro − retiradas).
  */
 import type { NextRequest } from "next/server";
 import { gateAdmin } from "@/lib/admin/api";
-import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
+import { badRequest, forbidden, jsonOk, serverError } from "@/lib/api/responses";
 import { resolveRange } from "@/lib/admin/period";
 import { createRetirada, listRetiradas } from "@/lib/admin/retiradas";
-import { validarRetirada } from "@/lib/admin/retiradas-calc";
+import { ehSocio, validarRetirada } from "@/lib/admin/retiradas-calc";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const g = await gateAdmin(request);
   if ("res" in g) return g.res;
+  if (!ehSocio(g.auth.email)) return forbidden("Retiradas são visíveis só para os sócios");
 
   const params = new URL(request.url).searchParams;
   const range = resolveRange(params.get("gran"), params.get("key"));
@@ -35,6 +38,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const g = await gateAdmin(request);
   if ("res" in g) return g.res;
+  if (!ehSocio(g.auth.email)) return forbidden("Retiradas são visíveis só para os sócios");
 
   let body: { valor?: unknown; socio?: unknown; origem?: unknown };
   try {

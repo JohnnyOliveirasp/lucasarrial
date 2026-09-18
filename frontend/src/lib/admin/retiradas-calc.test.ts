@@ -11,9 +11,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  EMAILS_SOCIOS,
   SOCIOS,
   VALOR_MAXIMO,
   centavos,
+  ehSocio,
   ehTabelaAusente,
   emCaixa,
   parseValorBrl,
@@ -165,4 +167,21 @@ test("ehTabelaAusente não confunde erro comum com migration faltando", () => {
 test("SOCIOS são os três do acordo, sem repetição", () => {
   assert.deepEqual([...SOCIOS], ["Johnny", "Lucas", "Eduardo"]);
   assert.equal(new Set(SOCIOS).size, SOCIOS.length);
+});
+
+// ───────── quem enxerga (pedido Johnny 18/09: só os sócios) ─────────
+
+test("ehSocio: os três sócios entram, com caixa e espaço diferentes", () => {
+  assert.equal(EMAILS_SOCIOS.length, 3);
+  assert.equal(ehSocio("johnny.oliveirasp@gmail.com"), true);
+  assert.equal(ehSocio("  Lucas.M.Arrial@Gmail.com "), true);
+  assert.equal(ehSocio("edukrupeizak@gmail.com"), true);
+});
+
+test("ehSocio: admin que não é sócio fica de fora", () => {
+  assert.equal(ehSocio("rayanne@lucasarrial.com"), false);
+  assert.equal(ehSocio("suporte@lucasarrial.com"), false);
+  assert.equal(ehSocio(""), false);
+  assert.equal(ehSocio(null), false);
+  assert.equal(ehSocio(undefined), false);
 });
