@@ -208,11 +208,19 @@ em disputa é 41.600 — mais que o dobro do que a casa vinha estimando.**
 
 ## 6. Para quem pegar a próxima ronda
 
-1. **O veredito do `olho` no `c677967f` provavelmente já chegou** — o gerente
-   **reprovou a primeira entrega dele** e mandou refazer (vi o cartão voltar de
-   `review` pra `running`). Leia, **confira com instrumento próprio** e grave no
-   `85ca1863` marcado como veredito de agente. Não grave veredito de agente como
-   se fosse medição da casa.
+1. **O veredito do `olho` (`c677967f`) NÃO chegou nesta ronda.** Esperei duas
+   vezes, com teto (~9 min no total) em vez de ficar pendurado, e acompanhei o
+   cartão ciclar `running` → `review` → `running` → `queued`: **o gerente reprovou
+   a entrega dele e mandou refazer.** Não sei ainda se a reprovação é rigor do
+   gerente (bom) ou o `olho` não dando conta do vídeo (ruim) — **não afirmo nem
+   um nem outro, porque não medi.**
+   Quando chegar: leia, **confira com instrumento próprio** e grave no `85ca1863`
+   marcado como **veredito de agente**, nunca como medição da casa. **Se ele
+   ciclar de novo sem entregar, troque o modelo do `olho` ou contrate outro que
+   leia vídeo e compare** — é a regra da frota (falhou ~2x, troca), e não vale
+   deixar o cartão girando em silêncio como se estivesse sendo trabalhado.
+   **A decisão dos 41.600 não depende dele:** o número e a causa estão medidos por
+   mim, do extrato e do código. O veredito visual reforça, não sustenta.
 2. **Os 41.600 cr do #329 estão na mesa do Johnny desde esta ronda.** Aluno
    pagante esperando 10 dias, e agora ele tem número e causa. Se voltar "pode
    devolver", o estorno é de vídeo: grave com `ref_type` de estorno e **confira a
