@@ -29,8 +29,16 @@ const USER = process.env.SUPPORT_MAIL_USER || "suporte@fastcloner.com";
 const PASS = process.env.SUPPORT_MAIL_PASSWORD || "";
 
 const uid = process.argv[2];
+// --texto: imprime o CORPO decodificado da carta.
+// Por que foi acrescentado (ronda de 19/09 ~12hZ): este script nasceu pra caçar
+// link ruim, então só imprimia análise de URL. Mas a pergunta "o que a casa
+// escreveu pra este aluno?" não tinha instrumento nenhum — `emails_enviados` não
+// guarda o corpo. Sem isso, a ronda ia mandar uma 2ª carta pra Katia sem saber o
+// que a 1ª dizia, contradizendo a anterior. Continua leitura pura (EXAMINE +
+// BODY.PEEK). Pede-se explicitamente porque corpo de carta tem dado de aluno.
+const querTexto = process.argv.includes("--texto");
 if (!uid) {
-  console.error("uso: node _frank/ferramentas/2026-09-18_dump_enviada.cjs <uid>");
+  console.error("uso: node _frank/ferramentas/2026-09-18_dump_enviada.cjs <uid> [--texto]");
   process.exit(1);
 }
 
@@ -151,6 +159,15 @@ function decodificarCorpo(bruto) {
   console.log(`tem "localhost" ....... ${/localhost|127\.0\.0\.1/i.test(corpo)}`);
   console.log(`tem "auth/v1/verify" .. ${/auth\/v1\/verify/i.test(corpo)}`);
   console.log(`tem "reset-password" .. ${/reset-password/i.test(corpo)}`);
+
+  if (querTexto) {
+    // só o corpo, sem o bloco de cabeçalhos: o que interessa é o que o aluno leu.
+    const corte = corpo.search(/\r?\n\r?\n/);
+    console.log("");
+    console.log("─── CORPO (decodificado) ───────────────────────────────");
+    console.log((corte >= 0 ? corpo.slice(corte) : corpo).trim());
+    console.log("─── fim do corpo ──────────────────────────────────────");
+  }
 
   sock.end();
 })().catch((e) => {
