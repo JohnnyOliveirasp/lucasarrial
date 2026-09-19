@@ -31,7 +31,12 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  CLONE_AVISO_DERIVA_ROSTO,
+  CLONE_DERIVA_ROSTO_SECONDS,
   CLONE_FIXED_OVERHEAD_SECONDS,
   CLONE_FIXED_OVERHEAD_MEDIDO_EM_SUCESSO,
   CLONE_MAX_AUDIO_SECONDS,
@@ -142,3 +147,121 @@ test("(4c) todo tier vivo produz teto finito, positivo e crescente no áudio", (
     }
   }
 });
+
+// ─── 5. O AVISO DE DERIVA DE ROSTO ESTÁ EM TODO TIER (#329) ──────────────────
+//
+// O defeito de 19/09: a frase "acima de ~40s o rosto pode se afastar da foto"
+// existia SÓ no blurb do "Padrão 2.0" (105 cr/s). O "Turbo" (80 cr/s) — que o
+// blurb dele mesmo chama de "no mesmo motor" — não avisava nada. Como o vídeo
+// longo é o caro, o preço empurrava justamente quem mais precisava do aviso pro
+// tier que calava. Um aluno pagante queimou 41.600 créditos em vídeos >40s,
+// todos no Turbo.
+//
+// ⚠️ ESTES TESTES CHECAM O TEXTO LITERAL, não `blurb.includes(CONSTANTE)`.
+// A constante é appendada por código em `CLONE_TIERS`, então comparar o blurb
+// com ela seria TAUTOLOGIA: passaria por construção, inclusive se alguém
+// voltasse a escrever os blurbs à mão sem o aviso. Ancorar no conteúdo
+// ("se afastar da foto" + o número) é o que faz o teste MORRER se o bug voltar.
+
+/** O que qualquer aviso de deriva tem que dizer, venha de onde vier. */
+const MARCAS_DO_AVISO = ["se afastar da foto", String(CLONE_DERIVA_ROSTO_SECONDS)];
+
+for (const tier of CLONE_TIERS) {
+  test(`(5a) o blurb do tier "${tier.label}" (${tier.id}) avisa da deriva de rosto`, () => {
+    for (const marca of MARCAS_DO_AVISO) {
+      assert.ok(
+        tier.blurb.includes(marca),
+        `o blurb de ${tier.id} ("${tier.label}") não contém "${marca}".\n` +
+          `Blurb atual: ${tier.blurb}\n` +
+          `Foi exatamente isto que custou 41.600 cr no #329: tier sem aviso.`,
+      );
+    }
+  });
+}
+
+test("(5b) o TURBO especificamente avisa — foi ele que faltava no #329", () => {
+  // Nomeado à parte de propósito: o laço acima passa a existir/sumir junto com
+  // CLONE_TIERS. Se alguém remover o Turbo da lista, este teste cai e nomeia.
+  const turbo = getCloneTier("480p-v2");
+  assert.ok(turbo, "o tier 480p-v2 (Turbo) sumiu de CLONE_TIERS");
+  assert.ok(
+    turbo.blurb.includes("se afastar da foto"),
+    `regressão do #329: o Turbo voltou a não avisar. Blurb: ${turbo.blurb}`,
+  );
+});
+
+test("(5c) o aviso é do MOTOR — não pode nomear um tier só", () => {
+  // Trava contra o conserto errado: copiar pro Turbo uma frase que diz
+  // "no Padrão 2.0 o rosto se afasta". O aviso tem que valer pros dois.
+  for (const nomeDeTier of ["Padrão 2.0", "Turbo"]) {
+    assert.ok(
+      !CLONE_AVISO_DERIVA_ROSTO.includes(nomeDeTier),
+      `o aviso comum cita "${nomeDeTier}" — ele é compartilhado, não pode ser de um tier.`,
+    );
+  }
+  assert.ok(
+    /nos dois modos|do motor/i.test(CLONE_AVISO_DERIVA_ROSTO),
+    "o aviso não diz que a limitação é do motor/vale nos dois modos",
+  );
+});
+
+test("(5d) o limiar do aviso fica ABAIXO do teto aceito — senão nunca dispara", () => {
+  // A plataforma aceita 90s e documenta ~40s. Se alguém "alinhar" os dois
+  // subindo o limiar até o teto, o aviso deixa de aparecer pra todo mundo.
+  assert.ok(
+    CLONE_DERIVA_ROSTO_SECONDS < CLONE_MAX_AUDIO_SECONDS,
+    `limiar (${CLONE_DERIVA_ROSTO_SECONDS}s) não pode alcançar o teto (${CLONE_MAX_AUDIO_SECONDS}s)`,
+  );
+  assert.equal(CLONE_DERIVA_ROSTO_SECONDS, 40, "o limiar documentado ao aluno é ~40s");
+});
+
+// ─── 6. O AVISO CHEGA NOS TRÊS IDIOMAS ───────────────────────────────────────
+//
+// Achado de 19/09 junto com o #329: `tierNote` — a nota que a tela mostra
+// abaixo dos dois cartões, independente do tier — JÁ avisava da deriva em
+// pt-BR e es, mas o en.json NÃO tinha a frase. Aluno em inglês não era avisado
+// em lugar nenhum: nem no blurb (que só o v3 tinha) nem na nota.
+// `chaves.test.ts` só prova que a CHAVE existe nos três; não olha o conteúdo.
+
+const DIR_MENSAGENS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "messages");
+
+/** "pt-BR" → o objeto videoClone.studio daquele idioma. */
+function studioDoIdioma(locale: string): Record<string, string> {
+  const dic = JSON.parse(readFileSync(join(DIR_MENSAGENS, `${locale}.json`), "utf8"));
+  return dic.videoClone.studio as Record<string, string>;
+}
+
+/** Como a deriva aparece escrita em cada idioma. */
+const DERIVA_POR_IDIOMA: Record<string, RegExp> = {
+  "pt-BR": /se afastar da foto/i,
+  en: /drift away from the photo/i,
+  es: /alejarse de la foto/i,
+};
+
+for (const [locale, marca] of Object.entries(DERIVA_POR_IDIOMA)) {
+  test(`(6a) ${locale}: a nota dos modos (tierNote) avisa da deriva`, () => {
+    const studio = studioDoIdioma(locale);
+    assert.ok(
+      marca.test(studio.tierNote),
+      `${locale}.json videoClone.studio.tierNote não avisa da deriva.\n` +
+        `Era este o buraco do en.json em 19/09: pt-BR e es avisavam, o en não.`,
+    );
+  });
+
+  test(`(6b) ${locale}: o aviso da hora de gerar (longAudioDrift) existe e cita o áudio`, () => {
+    const studio = studioDoIdioma(locale);
+    assert.ok(studio.longAudioDrift, `${locale}.json não tem videoClone.studio.longAudioDrift`);
+    assert.ok(
+      marca.test(studio.longAudioDrift),
+      `${locale}: longAudioDrift não fala da deriva — texto: ${studio.longAudioDrift}`,
+    );
+    // Os dois parâmetros que o componente passa. Faltando um, o next-intl
+    // renderiza o literal "{seconds}" na cara do aluno.
+    for (const param of ["{seconds}", "{limit}"]) {
+      assert.ok(
+        studio.longAudioDrift.includes(param),
+        `${locale}: longAudioDrift não usa ${param} — texto: ${studio.longAudioDrift}`,
+      );
+    }
+  });
+}

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Check, Clock, Download, Film, Info, Loader2, RefreshCw } from "lucide-react";
 import {
+  CLONE_DERIVA_ROSTO_SECONDS,
   CLONE_MAX_AUDIO_SECONDS,
   CLONE_TIERS,
   CloneTierId,
@@ -535,6 +536,24 @@ export function CloneStudio({
       {error && (
         <p role="alert" className="font-mono text-[11px] tracking-wide text-[var(--status-error)]">
           {error}
+        </p>
+      )}
+
+      {/* DERIVA DE ROSTO (#329): o aviso do `tierNote` acima é genérico e o aluno
+          lê antes de escolher o áudio — quando ele volta com um áudio de 60s,
+          ninguém repete. Este aqui é o mesmo fato dito na hora que passa a valer
+          pra ELE, com o número do áudio dele, ao lado do botão que cobra. Vale em
+          QUALQUER tier (a deriva é do motor) e NÃO bloqueia: 90s continua
+          permitido, o aluno só passa a decidir sabendo. */}
+      {audio && audio.seconds > CLONE_DERIVA_ROSTO_SECONDS && (
+        <p className="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--status-warn)] bg-[var(--surface-card)] p-3 text-[12px] leading-snug text-[var(--ink)]">
+          <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-[var(--status-warn)]" />
+          <span>
+            {t("longAudioDrift", {
+              seconds: Math.round(audio.seconds),
+              limit: CLONE_DERIVA_ROSTO_SECONDS,
+            })}
+          </span>
         </p>
       )}
 
