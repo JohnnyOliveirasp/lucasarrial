@@ -14,15 +14,25 @@
 import {
   ASSINATURA_CUDA_OOM,
   ASSINATURA_DISCO_CHEIO,
+  ASSINATURA_ESCRITA_CHECKPOINT,
   type DiagnosticoTrainer,
   ehCudaOom,
   ehDiscoCheio,
+  ehEscritaDeCheckpointFalhou,
   SUFIXO_CUDA_OOM,
   SUFIXO_DISCO_CHEIO,
+  SUFIXO_ESCRITA_CHECKPOINT,
 } from "./diagnostico-trainer.ts";
 
 export type { DiagnosticoTrainer };
-export { ASSINATURA_CUDA_OOM, ASSINATURA_DISCO_CHEIO, ehCudaOom, ehDiscoCheio };
+export {
+  ASSINATURA_CUDA_OOM,
+  ASSINATURA_DISCO_CHEIO,
+  ASSINATURA_ESCRITA_CHECKPOINT,
+  ehCudaOom,
+  ehDiscoCheio,
+  ehEscritaDeCheckpointFalhou,
+};
 
 export type IncidentCause =
   | "user_dataset"
@@ -124,7 +134,14 @@ export function classifyCause(error: string, diag?: DiagnosticoTrainer): Inciden
   // ⚠️ Os dois detectores precisam estar nesta guarda. Ela roda ANTES das
   // regras, então um `error` vazio com stderr que PROVA a causa sairia daqui
   // como "unknown" e nunca chegaria na linha que o classifica.
-  if (!e && !ehCudaOom(diag?.stderr) && !ehDiscoCheio(diag?.stderr)) return "unknown";
+  if (
+    !e &&
+    !ehCudaOom(diag?.stderr) &&
+    !ehDiscoCheio(diag?.stderr) &&
+    !ehEscritaDeCheckpointFalhou(diag?.stderr)
+  ) {
+    return "unknown";
+  }
   if (
     e.includes("insufficient_audio") ||
     e.includes("no usable speech") ||
@@ -169,6 +186,24 @@ export function classifyCause(error: string, diag?: DiagnosticoTrainer): Inciden
    * em `infra_gpu` e isso é uma decisão a revisar COM o caso na mão, não agora.
    */
   if (ehDiscoCheio(diag?.stderr)) return "infra_disk";
+  /**
+   * ESCRITA DE CHECKPOINT TRUNCADA — a correção de 18/09 (job `c7a376e5`).
+   *
+   * Terceira vez o mesmo vão: sem esta linha, `classifyCause("trainer failed")`
+   * cai lá embaixo em `bug` e a falha reabre o #11. Foi o que aconteceu às
+   * 22:40:12Z de 18/09.
+   *
+   * ⚠️ MESMA CAUSA do ENOSPC (`infra_disk`) — mesma conduta, mesmo dono — mas
+   * assinatura com SUFIXO PRÓPRIO, porque o torch não confessa o errno. O
+   * porquê está em `ASSINATURA_ESCRITA_CHECKPOINT`.
+   *
+   * ⚠️ VEM DEPOIS do ENOSPC, de propósito e conservadoramente: os dois textos
+   * podem coexistir num stderr longo (mesma função `save_checkpoint`, arquivos
+   * diferentes) e, nesse caso, ganha o que tem PROVA de errno. Assim nenhum
+   * stderr que hoje classifica como `no-space` muda de assinatura por causa
+   * deste PR.
+   */
+  if (ehEscritaDeCheckpointFalhou(diag?.stderr)) return "infra_disk";
   if (e.includes("out of memory") || e.includes("outofmemoryerror") || e.includes("cuda")) {
     return "infra_gpu";
   }
@@ -240,6 +275,15 @@ export function errorSignature(kind: string, error: string, diag?: DiagnosticoTr
   if (cause === "infra_disk" && ehDiscoCheio(diag?.stderr)) {
     return `${k}:${cause}:${SUFIXO_DISCO_CHEIO}`;
   }
+  // Escrita truncada: MESMA causa do acima (`infra_disk`), chave DIFERENTE. É a
+  // primeira vez que duas classes dividem a causa, então a ordem destes dois
+  // `if` é que arbitra o desempate — e ela é a mesma de `classifyCause`: ENOSPC
+  // provado ganha de ENOSPC inferido. Repare que a guarda por CAUSA continua
+  // valendo pelo mesmo motivo do OOM: sem ela, material impróprio do aluno com
+  // este traceback produziria `training:user_dataset:write-failed`.
+  if (cause === "infra_disk" && ehEscritaDeCheckpointFalhou(diag?.stderr)) {
+    return `${k}:${cause}:${SUFIXO_ESCRITA_CHECKPOINT}`;
+  }
   // user_dataset: a CAUSA já é a raiz — o texto varia (erro cru do worker ×
   // mensagem amigável do voices.error_message desde fdcc75c) e duplicava o
   // incidente (acf8acd6 × 014bb108, gap achado pelo Vigia 23/07). Demais
@@ -278,6 +322,12 @@ export function incidentTitle(kind: string, error: string, diag?: DiagnosticoTra
   // "falhou" e vai procurar defeito no material do aluno — que está intacto.
   if (cause === "infra_disk" && ehDiscoCheio(diag?.stderr)) {
     return `${k}: disco cheio no worker — treino completou, perdeu ao salvar`;
+  }
+  // "provável" no TÍTULO, não só na nota: quem varre a fila lê o título e nada
+  // mais. Se ele dissesse "disco cheio" seco, a hipótese viraria fato antes de
+  // alguém abrir o chamado — e o torch não confessou errno nenhum aqui.
+  if (cause === "infra_disk" && ehEscritaDeCheckpointFalhou(diag?.stderr)) {
+    return `${k}: escrita do checkpoint truncada — provável disco cheio no worker`;
   }
   if (cause === "user_dataset") {
     return isCorruptFile(error)

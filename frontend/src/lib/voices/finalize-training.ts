@@ -29,8 +29,10 @@ import {
   type DiagnosticoTrainer,
   ehCudaOom,
   ehDiscoCheio,
+  ehEscritaDeCheckpointFalhou,
   notaDeTransitoriedade,
   notaDiscoCheio,
+  notaEscritaCheckpointFalhou,
 } from "@/lib/incidents/diagnostico-trainer";
 
 const SUPPORT_EMAIL = "suporte@fastcloner.com";
@@ -257,6 +259,16 @@ async function abrirChamadoDaFalhaTecnica(args: {
   const cause = classifyCause(args.rawError, args.diag);
   const oom = cause === "infra_gpu" && ehCudaOom(args.diag.stderr);
   const discoCheio = cause === "infra_disk" && ehDiscoCheio(args.diag.stderr);
+  // ⚠️ O `!discoCheio` NÃO é redundante, e este é o único ponto do PR onde a
+  // exclusão precisa ser escrita à mão. `errorSignature` e `incidentTitle`
+  // desempatam sozinhos porque são cadeias de `if/return`; aqui os parágrafos
+  // são SOMADOS numa lista, e duas classes agora dividem a mesma `cause`
+  // (`infra_disk`). Sem esta guarda, um stderr com os dois textos carregaria os
+  // dois parágrafos no mesmo chamado — um afirmando ENOSPC provado e o outro
+  // dizendo que ninguém viu errno. A ordem é a mesma das outras duas funções:
+  // ENOSPC provado ganha de ENOSPC inferido.
+  const escritaTruncada =
+    cause === "infra_disk" && !discoCheio && ehEscritaDeCheckpointFalhou(args.diag.stderr);
   try {
     return await abrirChamadoReportado({
       signature: errorSignature("training", args.rawError, args.diag),
@@ -275,10 +287,15 @@ async function abrirChamadoDaFalhaTecnica(args: {
         // Só quando o stderr PROVA o OOM. Sem prova, nada de conduta: falha
         // cega não vira "tente de novo" por palpite.
         ...(oom ? [notaDeTransitoriedade(args.diag), ``] : []),
-        // Idem: só quando o stderr PROVA o ENOSPC. As duas condutas são
-        // mutuamente exclusivas por construção (`cause` é uma só), então o
-        // chamado nunca carrega os dois parágrafos.
+        // Idem: só quando o stderr PROVA o ENOSPC. A exclusividade entre as
+        // três condutas é garantida acima (uma `cause` só + o `!discoCheio` do
+        // caso de escrita truncada), então o chamado nunca carrega dois
+        // parágrafos.
         ...(discoCheio ? [notaDiscoCheio(args.diag), ``] : []),
+        // Escrita truncada: mesma disciplina, mas aqui a nota diz por escrito
+        // que disco cheio é a leitura PROVÁVEL e não uma confissão do sistema
+        // de arquivos — o torch engole o errno.
+        ...(escritaTruncada ? [notaEscritaCheckpointFalhou(args.diag), ``] : []),
         `Traceback completo: training_jobs.trainer_stderr / trainer_stdout,`,
         `pelo runpod_job_id acima. O job do RunPod expira em poucas horas —`,
         `depois disso essas colunas são a única cópia.`,

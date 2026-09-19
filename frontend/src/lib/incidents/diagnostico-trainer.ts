@@ -35,6 +35,22 @@
  * `bug` + `training:bug:trainer failed`, reabrindo o #11 por um motivo que não
  * é o dele. Daí `ehDiscoCheio`/`ASSINATURA_DISCO_CHEIO`, logo abaixo.
  *
+ * ── 18/09: a MESMA função, o arquivo SEGUINTE ─────────────────────────────
+ * `ehDiscoCheio` está ancorado no texto do ENOSPC ("no space left on device"),
+ * que é o que o safetensors grita. Às 22:40:12Z de 18/09 o job `c7a376e5`
+ * morreu dentro do MESMO `save_checkpoint()`, no arquivo seguinte —
+ * `optimizer.pth`, gravado pelo `torch.save` — e não casou nada: o torch ENGOLE
+ * o errno e devolve só `PytorchStreamWriter failed writing file data/1004`.
+ * Resultado: causa `bug` e reabertura do #11, de novo. Daí
+ * `ehEscritaDeCheckpointFalhou`/`ASSINATURA_ESCRITA_CHECKPOINT`, no fim do
+ * arquivo.
+ *
+ * ⚠️ Essa classe é a primeira que divide a CAUSA (`infra_disk`) com outra e
+ * mesmo assim tem SUFIXO próprio (`write-failed`, não `no-space`). O motivo
+ * está escrito em `ASSINATURA_ESCRITA_CHECKPOINT` e é de honestidade, não de
+ * organização: o torch não diz ENOSPC nesse texto, então carimbar `no-space`
+ * afirmaria no chamado uma coisa que o traceback não prova.
+ *
  * O padrão a repetir quando aparecer a PRÓXIMA classe: detector estreito
  * ancorado na FRASE do erro (nunca em palavra solta), assinatura FIXA, nota de
  * conduta própria, e nenhuma retentativa automática.
@@ -257,5 +273,125 @@ export function notaDeTransitoriedade(diag: DiagnosticoTrainer | undefined): str
     `trainer_returncode: ${diag?.returncode ?? "(não registrado)"}`,
     `(único valor já visto na tabela é 1 — o OOM chega como exceção do PyTorch,`,
     `não como sinal do kernel. 137/139 nunca ocorreram aqui.)`,
+  ].join("\n");
+}
+
+/** Sufixo da assinatura de escrita de checkpoint truncada. Fixo — ver
+ *  `ASSINATURA_ESCRITA_CHECKPOINT`. NÃO é `no-space`, e isso é deliberado. */
+export const SUFIXO_ESCRITA_CHECKPOINT = "write-failed";
+
+/**
+ * A assinatura que toda "escrita de checkpoint truncada" passa a ter.
+ *
+ * ⚠️ FIXA, SEM HEAD DO ERRO, pelo mesmo motivo já escrito em
+ * `ASSINATURA_CUDA_OOM` e `ASSINATURA_DISCO_CHEIO`: o traceback muda a cada
+ * ocorrência — o nome do registro interno do zip (`data/1004`), os dois números
+ * do `unexpected pos 131040192 vs 131040080`, o step alcançado — e o head de
+ * 120 chars faria cada falha virar um incidente NOVO.
+ *
+ * ── Por que causa IGUAL (`infra_disk`) e sufixo DIFERENTE (`write-failed`) ──
+ * A CAUSA é a mesma do ENOSPC: disco local do worker, mesma conduta, mesmo
+ * dono. Por isso `infra_disk`, e não uma causa nova que racharia o painel em
+ * dois baldes que a mesma pessoa trata do mesmo jeito.
+ *
+ * O SUFIXO, porém, NÃO pode ser `no-space`. O torch engole o errno: o texto que
+ * ele devolve ("PytorchStreamWriter failed writing file", "unexpected pos X vs
+ * Y") diz que a escrita SAIU CURTA, não que o dispositivo estava cheio. Disco
+ * cheio é a leitura mais provável — mas é leitura NOSSA, não confissão do
+ * sistema de arquivos. Carimbar `no-space` afirmaria no chamado uma coisa que o
+ * traceback não prova, e quem abrisse o incidente não teria como distinguir os
+ * dois casos. Sufixo próprio mantém a diferença visível na chave: o `no-space`
+ * é ENOSPC provado, este é ENOSPC inferido.
+ */
+export const ASSINATURA_ESCRITA_CHECKPOINT = `training:infra_disk:${SUFIXO_ESCRITA_CHECKPOINT}`;
+
+/**
+ * Este treino morreu porque a ESCRITA do checkpoint saiu truncada?
+ *
+ * Detector ESTREITO, na mesma disciplina dos dois acima: âncora é a FRASE, e
+ * palavra solta é proibida. "write failed", "enforce fail" e "pos" aparecem em
+ * traceback por mil motivos e nenhum deles é este — há teste de controle
+ * negativo travando cada um.
+ *
+ * Os dois padrões são OBSERVADOS na falha instrumentada deste tipo
+ * (training_jobs `c7a376e5`, 18/09 22:40:12Z) — não são palpite. O traceback
+ * traz as DUAS mensagens, em cadeia:
+ *
+ *   RuntimeError: [enforce fail at inline_container.cc:858] .
+ *   PytorchStreamWriter failed writing file data/1004: file write failed
+ *   ...
+ *   RuntimeError: [enforce fail at inline_container.cc:664] .
+ *   unexpected pos 131040192 vs 131040080
+ *
+ * `pytorchstreamwriter failed writing file` é a âncora: é a mensagem do
+ * `_open_zipfile_writer` do torch ao não conseguir gravar um registro do zip, e
+ * cita o writer PELO NOME junto do verbo. O par `unexpected pos ` +
+ * `inline_container` entra como reforço para o caso em que só a segunda
+ * exceção da cadeia sobrevive no tail do stderr — e os dois termos são exigidos
+ * JUNTOS de propósito, porque "unexpected pos" sozinho casaria "unexpected
+ * position", que é outra coisa. Espelha a escolha do OOM (mensagem é âncora,
+ * classe é reforço) e a do ENOSPC (frase é âncora, "os error 28" é reforço).
+ */
+export function ehEscritaDeCheckpointFalhou(stderr: string | null | undefined): boolean {
+  const s = (stderr ?? "").toLowerCase();
+  if (!s) return false;
+  if (s.includes("pytorchstreamwriter failed writing file")) return true;
+  // Espaço final em "unexpected pos " é o que separa de "unexpected position",
+  // e o `inline_container` garante que é o writer do torch falando.
+  return s.includes("unexpected pos ") && s.includes("inline_container");
+}
+
+/**
+ * O parágrafo que o chamado de ESCRITA TRUNCADA precisa carregar.
+ *
+ * Este texto NÃO é cópia do de disco cheio, e a diferença é justamente o que
+ * ele precisa comunicar. Lá o sistema de arquivos CONFESSA ("No space left on
+ * device (os error 28)"). Aqui o torch engole o errno e sobra só o sintoma: a
+ * escrita saiu curta. A conduta é a mesma; a certeza não é. Quem lê o chamado
+ * precisa saber dessa diferença, senão o "provável" vira "foi" na primeira
+ * releitura e alguém fecha o volume como resolvido sem ter medido nada.
+ *
+ * ⚠️ INSTRUÇÃO PARA GENTE, não gatilho — igual aos dois anteriores. Nenhuma
+ * retentativa automática entra por aqui: retreino queima GPU e a decisão é do
+ * dono do negócio.
+ */
+export function notaEscritaCheckpointFalhou(diag: DiagnosticoTrainer | undefined): string {
+  return [
+    `ESCRITA DO CHECKPOINT SAIU TRUNCADA — causa PROVÁVEL: disco cheio no worker.`,
+    ``,
+    `O que o traceback diz, literalmente: o torch tentou gravar`,
+    `optimizer.pth e o PytorchStreamWriter falhou no meio —`,
+    `"unexpected pos 131040192 vs 131040080". Esse par de números é uma ESCRITA`,
+    `TRUNCADA: o arquivo prometeu 131040192 bytes e o writer só conseguiu pôr`,
+    `131040080 no lugar. Gravação que para antes do fim, não gravação recusada.`,
+    ``,
+    `POR QUE DISCO CHEIO É A LEITURA MAIS PROVÁVEL: save_checkpoint() grava dois`,
+    `arquivos em sequência — lora_weights.safetensors (linha 777) e, logo`,
+    `depois, optimizer.pth (linha 814). A falha de ENOSPC PROVADA do mesmo dia`,
+    `(job 7115da78, 15:27Z) morreu na 777; esta morreu na 814, no arquivo`,
+    `seguinte da mesma função. Volume com pouco espaço falha exatamente assim:`,
+    `o primeiro arquivo ainda cabe, o segundo não.`,
+    ``,
+    `⚠️ RESSALVA — ISTO É CAUSA PROVÁVEL, NÃO CONFESSADA. O torch NÃO entrega o`,
+    `errno: ao contrário do safetensors, que diz "No space left on device (os`,
+    `error 28)" com todas as letras, aqui sobra só o sintoma da escrita curta.`,
+    `Disco cheio explica bem, mas o traceback não prova. Por isso este chamado`,
+    `tem assinatura PRÓPRIA (write-failed) e não entra no balde do no-space —`,
+    `quem for medir o volume precisa saber que está confirmando uma hipótese, e`,
+    `quem ler depois precisa saber que ninguém viu um ENOSPC aqui.`,
+    ``,
+    `O DISCO É DO WORKER, NÃO DO ALUNO. O material enviado está intacto e não há`,
+    `nada para ele corrigir, reenviar ou regravar — não peça isso a ele.`,
+    ``,
+    `CONDUTA: repetir o treino com o mesmo material. É barato e já funcionou —`,
+    `medido em 18/09 com o Heitor: falhou às 15:27Z, foi retentado, e a voz`,
+    `ficou ready às 15:36Z, em 260s. Confira o disco do worker antes, porque`,
+    `repetir num volume ainda cheio queima a placa para nada. Não há`,
+    `retentativa automática de propósito: retreino gasta GPU e a decisão de`,
+    `acioná-lo é do dono do negócio.`,
+    ``,
+    `trainer_returncode: ${diag?.returncode ?? "(não registrado)"}`,
+    `(a escrita curta chega como RuntimeError do torch, não como sinal do`,
+    `kernel — e sem o errno que o safetensors entregaria.)`,
   ].join("\n");
 }
