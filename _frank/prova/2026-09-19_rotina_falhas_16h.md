@@ -254,13 +254,80 @@ escreveu, commite.
 6. **O `#481` continua com o conserto pronto pra escrever** e teste óbvio (os 17
    estornos conhecidos viram fixture).
 
-## 8. Fim de ronda — passo fixo conferido
+## 8. Fim de ronda — passo fixo ⚠️ REPROVADO NA PRIMEIRA PASSADA
 
-`git fetch origin` · `git log --oneline origin/main..HEAD` **vazio** ·
-`git branch` + `git rev-list main..<branch>` conferidos: o único branch com
-commit à frente da main é o `feat/titularidade-so-adiciona-dono-314`, que é o
-**PR #355 aberto de propósito** — nenhum fix preso sem PR.
+**Escrevi esta seção dizendo "conferido" ANTES de rodar a conferência, e a
+conferência reprovou.** Deixo o erro à vista em vez de reescrever a seção: ele é
+o mesmo erro que o manual manda evitar ("escreva o que o banco confirma DEPOIS
+de gravar, nunca o que o script planejava fazer"), cometido por mim, nesta
+ronda, no parágrafo que existe justamente para pegá-lo.
+
+O que a conferência achou está em §9. A §9 é a verdade; esta seção é o registro
+de que quase passou batido.
+
+## 9. O passo fixo pegou um commit meu FORA da main — e trabalho de outro agente dentro do meu PR
+
+`git log --oneline origin/main..HEAD` deu **vazio** (main pushada) e por isso
+*parecia* limpo. Só que o vazio não prova o que interessa. A segunda metade do
+passo fixo — `git rev-list main..<branch>` — mostrou que o meu branch estava
+**3 commits à frente da main**, quando deveria estar 1. Fui ver o que eram:
+
+```
+f80906eb  #314: o e-mail da compra deixa de TROCAR o dono   <- meu, esperado
+973d69fa  Fast explica o caminho de cancelamento e reembolso <- NÃO É MEU
+fc7ad927  #314: 2o reparo da titularidade do Jesus Peres     <- meu, e sumido da main
+```
+
+**Dois defeitos, os dois medidos, não deduzidos:**
+
+1. **`fc7ad927` — o commit do reparo do Jesus — NÃO estava em `origin/main`.**
+   `git merge-base --is-ancestor fc7ad927 origin/main` → falso. Ele nem aparece
+   no reflog da main: entre o meu commit e o meu `checkout`, a main foi movida
+   por outro processo (`main@{2}: pull -q --ff-only`, fast-forward para
+   `66b54d7d`), e o meu commit ficou pendurado só no branch. **A prova do reparo
+   de um aluno pagante estava fora da main de novo — exatamente o incidente de
+   19/08, que custou 9h.**
+2. **`973d69fa` não é meu** — é do Frank `frank.agent.002`, commitado às
+   **11:47:52**, nos mesmos minutos em que eu criava o branch, e caiu **no meu
+   branch** porque a árvore de trabalho é compartilhada. Eram os 347 linhas de
+   `mail-respond.ts` + `mail-regras-atendimento.test.ts` que eu tinha visto
+   soltos e registrado na §6 como "trabalho solto, não é meu, não toquei". Ele
+   não estava solto: **estava dentro do meu PR**, e teria sido mergeado junto
+   com o meu conserto sob um título que não fala dele.
+
+**O que eu fiz para corrigir, na ordem:**
+
+1. `git branch rescue/fast-explica-cancelamento-973d69fa 973d69fa` — **preservei
+   o trabalho do outro agente ANTES de mexer em qualquer coisa**, e empurrei
+   para o origin. Não é meu para descartar, e não é meu para mergear.
+2. `git cherry-pick fc7ad927` na main → **`4231c13f`**, pushado. Conferido pelo
+   caminho independente: `git log origin/main -- <arquivo do script>` devolve
+   `4231c13f`. **O reparo do Jesus agora está na main de verdade.**
+3. `git rebase --onto main 973d69fa` no meu branch → o PR #355 passou a ter
+   **1 commit** (`c88b52dd`) e a tocar **exatamente 3 arquivos**
+   (`entitlements.ts`, `vinculo.ts`, `vinculo.test.ts`, +179/-36). Testes
+   rerodados depois do rebase: **9/9**. Force-push com `--force-with-lease`.
+
+**A lição, que vale mais que este caso:** `origin/main..HEAD` vazio **não**
+significa "nada ficou preso". Ele só diz que o branch atual está pushado. Com
+vários agentes na MESMA árvore de trabalho, um `checkout`/`pull` alheio move a
+main debaixo de um commit recém-feito e **some com ele sem erro nenhum**, e um
+commit alheio entra num branch que não é dele **sem avisar**. As duas metades
+do passo fixo existem por isso, e **só a segunda pegou**.
+
+**O que eu NÃO fiz:** não mergeei, não descartei e não reescrevi o commit do
+outro agente — ele está intacto em `rescue/fast-explica-cancelamento-973d69fa`,
+no origin, e quem escreveu decide o que fazer com ele. Avisei no grupo.
+
+**E o que segue por auditar:** são **294 branches locais**, ~170 delas à frente
+da main. Essa dívida é pré-existente, esta ronda não a criou e **eu não a
+auditei** — o índice de ordens já lista 5 branches STALE perigosas
+(`feat/onedrive-401`, `feat/fix-image-upload-retry`, as 2 da cura de referência,
+`fix/trava-foto-nova-8379549c`), e hoje o mecanismo que as produz mordeu de
+novo. Dizer "conferi as branches" seria mentira: conferi que **nada meu** ficou
+preso.
 
 Entregas desta ronda: **2 escritas no banco** (titularidade + perfil fantasma,
 1 linha cada, relidas), **1 nota no `#314`** (relida), **1 script de reparo**
-e **este arquivo** na main, e **1 PR** no branch.
+(`4231c13f`) e **este arquivo** na main, **1 PR** (#355, 1 commit, 3 arquivos,
+9/9) e **1 branch de resgate** com trabalho alheio que eu quase levei junto.
