@@ -837,6 +837,7 @@
       "stepQuality": "3. Qualidade",
       "perSecond": "{n} créditos/segundo de áudio",
       "tierNote": "Qual escolher? Os dois usam o novo motor, em 480p. O Padrão 2.0 é o recomendado: repetível — a mesma foto com o mesmo áudio gera sempre o mesmo vídeo. Em áudios longos (acima de ~40s) o rosto pode se afastar da foto ao longo do vídeo — é limitação do modelo, nos dois modos: prefira vídeos curtos. O Turbo é a opção econômica: mesma qualidade, corta o vídeo exatamente no fim do áudio e cada geração pode variar um pouco.",
+      "longAudioDrift": "Seu áudio tem {seconds}s. Acima de ~{limit}s o rosto pode se afastar da foto ao longo do vídeo, em qualquer um dos modos — é limitação do motor, não do modo escolhido. Você pode gerar assim mesmo; um vídeo mais curto sai mais parecido com a foto.",
       "cost": "Custo: {seconds}s × {rate} = {cost} créditos",
       "costBalance": "(você tem {have})",
       "pickToSeeCost": "Escolha a foto e o áudio pra ver o custo",
