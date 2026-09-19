@@ -8,8 +8,11 @@
  * tom de desculpas quando a falha foi nossa) → resposta SMTP pelo próprio
  * suporte@ + cópia oculta pros admins → marca como lida.
  *
- * Regras duras herdadas: dinheiro/reembolso → [ESCALAR] (a Fast acolhe e
- * avisa que a equipe confirma; nunca resolve sozinha). "PULAR" = silêncio.
+ * Regras duras herdadas: dinheiro/reembolso → [ESCALAR] (a Fast nunca confirma
+ * nem executa reembolso sozinha). "PULAR" = silêncio. Desde 19/09 ela também
+ * EXPLICA o caminho certo em vez de só prometer que a equipe confirma — ver o
+ * bloco REEMBOLSO/CANCELAMENTO/COBRANÇA em `mailSystemExtra`, e o porquê no
+ * comentário logo acima dele.
  */
 import { getAdmin } from "@/lib/db/admin";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
@@ -32,6 +35,14 @@ import {
   type ThreadMail,
 } from "./mail-imap";
 import { jaRespondida, reservarResposta, liberarReserva } from "./mail-dedupe";
+// O número vem da CONSTANTE, nunca de um literal aqui: foi assim que o #414
+// nasceu (a Fast inventou "(41) 9 8878-6342" e mandou uma aluna cobrar
+// R$ 2.712,12 no zap de um comércio qualquer). A constante mora em
+// `payments/sgp-boas-vindas` desde 31/08 como canal de CURSO; a ordem do Johnny
+// de 19/09 é que ESTE mesmo número é também o fallback do atendimento
+// (cancelamento/reembolso/cobrança). Uma cópia nova aqui seria a segunda
+// verdade que apodrece — ver `manual-contatos.test.ts`.
+import { WHATSAPP_SUPORTE_CURSO } from "@/lib/payments/sgp-boas-vindas";
 import { sendSupportMail } from "./mail-smtp";
 import { tratarSeForBounce } from "./mail-bounce-registro";
 import { winbackContextByEmail, applyWinbackMarkers } from "@/lib/winback/conversation";
@@ -65,7 +76,21 @@ function shouldSkip(raw: string, fromEmail: string): string | null {
 
 // ---------- contexto de canal pro cérebro ----------
 
-function mailSystemExtra(accountFound: boolean): string {
+/**
+ * O link do zap DERIVADO da constante, não digitado de novo. `sgp/fracasso.ts`
+ * já carrega um `https://wa.me/5541991481573` literal — duas cópias do mesmo
+ * telefone, e a terceira seria esta. Aqui o link não tem como divergir do
+ * número: se a constante mudar, o link muda junto.
+ */
+export const WHATSAPP_SUPORTE_LINK = `https://wa.me/55${WHATSAPP_SUPORTE_CURSO.replace(/\D/g, "")}`;
+
+/**
+ * Exportada por causa do teste (`mail-regras-atendimento.test.ts`): o bloco de
+ * regras é TEXTO, e texto só se prova lendo a string que de fato chega no
+ * prompt. Era o buraco que o #198 e o #265 pagaram caro — regra escrita no
+ * arquivo, nenhum teste tocando numa letra dela.
+ */
+export function mailSystemExtra(accountFound: boolean): string {
   return [
     `CANAL: você está respondendo um E-MAIL enviado pro suporte@fastcloner.com. Formato: e-mail curto em texto puro (sem markdown, sem asteriscos), começando com "Oi, [nome]!" quando souber o nome, terminando com "Abraço,\nFast — suporte FastCloner".`,
     `TOM: muitos desses e-mails são de alunos chateados com falhas. Se o problema relatado tem cara de falha NOSSA (erro, crédito que não entrou, geração ruim), comece pedindo desculpas sinceras, sem se defender. Seja concreta no próximo passo.`,
@@ -82,7 +107,26 @@ function mailSystemExtra(accountFound: boolean): string {
     // produto (6, 7, 14, 15 ou 30 dias no que a Hotmart já nos mandou), então
     // repetir "7" aqui reintroduzia pela instrução o número que a conta parou
     // de usar.
-    `REEMBOLSO/CANCELAMENTO/COBRANÇA: acolha, lamente e diga que a equipe confirma a solicitação em breve; finalize com [ESCALAR: resumo]. NUNCA confirme reembolso você mesma. Sobre a janela de garantia, seja obediente à linha GARANTIA HOTMART do bloco da conta — ela traz a DATA de fim, e a janela NÃO é sempre de 7 dias, então cite a data e nunca um número de dias: se ela disser FORA, ou não existir, NÃO afirme que há garantia — só diga que a equipe vai verificar.`,
+    // ⚠️ POR QUE ESTE BLOCO DEIXOU DE SER UMA LINHA SÓ (ordem do Johnny, 19/09).
+    // O texto anterior mandava "acolha, lamente e diga que a equipe confirma a
+    // solicitação em breve" e escalava. Ou seja: a carta automática NÃO
+    // explicava caminho NENHUM, só prometia que alguém confirmaria. Medido em
+    // 19/09: 7 chamados dessa classe abertos, o mais velho com 9,8 dias, cada um
+    // com um aluno esperando uma confirmação que nunca chegou.
+    //
+    // E o texto MISTURAVA dois casos que têm donos opostos:
+    //   · CANCELAR assinatura → quem cancela é A CASA, a pedido do titular
+    //     (regra 9-C, decisão do Johnny de 21/08; ferramenta
+    //     `_frank/ferramentas/cancelar_assinatura.cjs`). É o #400: hoje a casa
+    //     manda o aluno se virar numa coisa que é nossa pra fazer.
+    //   · REEMBOLSO dentro da garantia → quem pede é O PRÓPRIO ALUNO, na Área do
+    //     Comprador, e sai AUTOMÁTICO, sem aprovação da casa. Escalar isso pra
+    //     um humano só queima dias de garantia do aluno.
+    `REEMBOLSO/CANCELAMENTO/COBRANÇA — são DOIS pedidos diferentes, com donos diferentes, e você separa ANTES de responder. Em qualquer um dos dois: acolha, lamente o transtorno, NUNCA confirme um reembolso você mesma, NUNCA diga que já cancelou ou já estornou, e finalize SEMPRE com [ESCALAR: resumo]. Explicar o caminho NÃO substitui o registro do chamado — as duas coisas acontecem juntas.`,
+    `(A) CANCELAR A ASSINATURA (parar a cobrança que se repete): quem cancela é A CASA, a pedido do titular. Confirme pra pessoa que o pedido de cancelamento dela foi REGISTRADO e que a nossa equipe vai cancelar a renovação, e diga que o que já foi pago continua valendo até o fim do período contratado (cancelar a recorrência não apaga crédito nem tira acesso). NUNCA mande a pessoa cancelar sozinha na Hotmart e NUNCA diga que ela precisa resolver o cancelamento com a Hotmart: isso é com a gente. Finalize com [ESCALAR: pedido de cancelamento de assinatura].`,
+    `(B) REEMBOLSO (dinheiro de volta) — quem pede é O PRÓPRIO ALUNO, e sai AUTOMÁTICO, sem depender da nossa aprovação: é por isso que esse é o caminho mais rápido pra ele, e não um jeito de empurrar. Só ofereça este caminho se a linha GARANTIA HOTMART do bloco da conta disser DENTRO. Aí explique o passo a passo: entrar na Área do Comprador da Hotmart, em compradores.hotmart.com, com o MESMO e-mail da compra; abrir a compra do produto; usar a opção de solicitar reembolso. Cite a DATA que está na linha GARANTIA HOTMART como o limite, e NUNCA um número de dias — a janela varia por produto. Se a linha trouxer mais de um produto, use a linha do produto sobre o qual a pessoa está falando; se não estiver claro qual é, PERGUNTE antes de citar qualquer data.`,
+    `(B2) Se a linha GARANTIA HOTMART disser FORA, ou se ela não existir no bloco da conta, NÃO afirme que há garantia, NÃO invente nenhuma data e NÃO mande a pessoa pedir reembolso na Hotmart — fora da janela esse pedido não sai sozinho e ela iria bater numa parede. Nesse caso diga que a equipe vai verificar o caso dela, e escale.`,
+    `(C) SE A PESSOA NÃO CONSEGUIR pelo caminho acima (não acha a opção, a Hotmart recusa, não consegue entrar na conta dela), ofereça o WhatsApp do suporte — ${WHATSAPP_SUPORTE_CURSO}, ${WHATSAPP_SUPORTE_LINK} — dizendo que ELA pode chamar por lá. OFEREÇA o número: nunca prometa que alguém vai ligar, chamar ou entrar em contato por WhatsApp, porque quem começa a conversa no WhatsApp é sempre o cliente, nunca a casa. Não passe nenhum outro telefone, de ninguém.`,
     `Se o e-mail NÃO for um aluno/cliente pedindo ajuda (propaganda, spam, notificação de sistema, corrente), responda APENAS a palavra PULAR.`,
   ].join("\n");
 }
