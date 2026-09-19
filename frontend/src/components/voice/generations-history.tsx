@@ -12,6 +12,7 @@ import {
   X,
   ChevronDown,
 } from "lucide-react";
+import { aoFalharOTocador, type EstadoTocador } from "./tocador-recuperacao";
 
 type Gen = {
   id: string;
@@ -40,6 +41,17 @@ export function GenerationsHistory() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const editInputRef = useRef<HTMLInputElement>(null);
+  /**
+   * Tocador: URL re-assinada por card, e quais cards já desistiram.
+   *
+   * A guarda de "uma tentativa só" é um `useRef`, não `useState`, de
+   * propósito: ela precisa ser gravada de forma SÍNCRONA antes do await
+   * (ver tocador-recuperacao.ts). `tocadorMorto` é o espelho da guarda que a
+   * tela precisa pra renderizar — esse pode ser state.
+   */
+  const estadoTocadorRef = useRef<Map<string, EstadoTocador>>(new Map());
+  const [tocadorMorto, setTocadorMorto] = useState<Set<string>>(new Set());
+  const [urlsFrescas, setUrlsFrescas] = useState<Record<string, string>>({});
 
   function toggleExpand(id: string) {
     setExpanded((prev) => {
@@ -56,6 +68,11 @@ export function GenerationsHistory() {
       if (!res.ok) throw new Error(t("history.loadError"));
       const json = await res.json();
       setItems((json.generations ?? []) as Gen[]);
+      // Listagem nova = URLs assinadas novas. Quem tinha desistido ganha de
+      // volta o direito à primeira tentativa.
+      estadoTocadorRef.current.clear();
+      setTocadorMorto(new Set());
+      setUrlsFrescas({});
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
@@ -132,6 +149,23 @@ export function GenerationsHistory() {
     } catch {
       window.open(url, "_blank");
     }
+  }
+
+  /**
+   * A outra metade do mesmo card. O `download()` acima já se curava de URL
+   * presignada vencida; o `<audio>` ao lado não tinha nada — falhava e
+   * deixava um controle morto na tela, sem uma palavra. Agora os dois tratam
+   * a mesma URL do mesmo jeito: pede uma fresca, tenta UMA vez, e se ainda
+   * assim não for, fala.
+   */
+  async function aoFalharAudio(g: Gen) {
+    const acao = await aoFalharOTocador(g.id, estadoTocadorRef.current, fetch);
+    if (acao.tipo === "nada") return;
+    if (acao.tipo === "trocar-src") {
+      setUrlsFrescas((prev) => ({ ...prev, [g.id]: acao.url }));
+      return;
+    }
+    setTocadorMorto((prev) => new Set(prev).add(g.id));
   }
 
   async function confirmDelete() {
@@ -373,13 +407,26 @@ export function GenerationsHistory() {
               <div className="flex items-center gap-3 sm:w-[420px] sm:justify-end">
                 {g.status === "ready" && g.audio_url ? (
                   <>
-                    <audio
-                      src={g.audio_url}
-                      controls
-                      controlsList="nodownload"
-                      preload="metadata"
-                      className="h-9 max-w-[220px]"
-                    />
+                    {tocadorMorto.has(g.id) ? (
+                      <p
+                        role="status"
+                        className="max-w-[220px] font-mono text-[10px] leading-relaxed tracking-wide text-[var(--mute)]"
+                      >
+                        {t("history.playerFailed")}
+                      </p>
+                    ) : (
+                      <audio
+                        // A key força o remontar quando a URL é trocada, em vez
+                        // de depender do browser reagir à mudança de atributo.
+                        key={urlsFrescas[g.id] ?? g.audio_url}
+                        src={urlsFrescas[g.id] ?? g.audio_url}
+                        onError={() => aoFalharAudio(g)}
+                        controls
+                        controlsList="nodownload"
+                        preload="metadata"
+                        className="h-9 max-w-[220px]"
+                      />
+                    )}
                     <button
                       type="button"
                       onClick={() => download(g)}

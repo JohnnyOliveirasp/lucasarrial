@@ -1496,6 +1496,7 @@
       "showLess": "show less",
       "showFull": "show full text",
       "downloadAria": "Download",
+      "playerFailed": "I couldn't play this audio here in the browser. That doesn't mean the file is damaged — use the download button next to it, which fetches a fresh copy.",
       "deleteOneAria": "Delete this audio",
       "deleteModal": {
         "title": "Delete {n, plural, one {# audio} other {# audios}}?",

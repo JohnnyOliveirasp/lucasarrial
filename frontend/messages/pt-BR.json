@@ -1496,6 +1496,7 @@
       "showLess": "ver menos",
       "showFull": "ver texto completo",
       "downloadAria": "Baixar",
+      "playerFailed": "Não consegui tocar este áudio aqui no navegador. Isso não quer dizer que o arquivo tenha problema — use o botão de baixar ao lado, que busca uma cópia nova.",
       "deleteOneAria": "Apagar este áudio",
       "deleteModal": {
         "title": "Apagar {n, plural, one {# áudio} other {# áudios}}?",
