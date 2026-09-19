@@ -25,7 +25,7 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { logger } from "@/lib/logger/server";
-import { donoDoEntitlement } from "@/lib/payments/vinculo";
+import { donoDoEntitlement, titularidadeDivergente } from "@/lib/payments/vinculo";
 import {
   entitlementDaPlataforma,
   entitlementValeAcesso as valeAcesso,
@@ -110,27 +110,61 @@ export async function grantAccess(input: GrantInput): Promise<void> {
   // Não achar perfil para o e-mail da compra é ausência de informação, não é
   // a informação "esta compra não tem dono". A decisão mora em `vinculo.ts`,
   // sob teste (`vinculo.test.ts`).
+  //
+  // ⚠️ #314: A LEITURA DO DONO ATUAL DEIXOU DE SER CONDICIONAL.
+  //
+  // Até 19/09 ela só rodava no ramo `if (!userIdDoEmail)`, e por isso a guarda
+  // do #222 protegia contra gravar NULL por cima do dono mas NÃO contra gravar
+  // OUTRO DONO por cima dele. Quando o aluno cria uma conta com o e-mail da
+  // compra — gesto que uma carta NOSSA de 01/09 pediu a 3 alunos —, o próximo
+  // evento da Hotmart passava a compra para essa conta nova, em silêncio, e o
+  // crédito do ciclo caía numa conta que ninguém abriu (Jesus Peres: 08/09 e,
+  // depois do reparo manual, 16/09 de novo). Para `donoDoEntitlement` poder
+  // preservar o dono, ela precisa SEMPRE saber quem é o dono.
+  //
+  // O custo é uma leitura a mais por evento, e o risco novo é o `exigirSucesso`
+  // abaixo passar a poder lançar em eventos que antes nem liam. É o certo: o
+  // webhook trata exceção gravando `payment_events.error`, devolvendo 500 e
+  // reprocessando no reenvio, e o upsert é idempotente. Falhar alto e reprocessar
+  // é melhor que decidir titularidade com leitura que não aconteceu.
   const userIdDoEmail = await findUserIdByEmail(email);
-  let userId = userIdDoEmail;
-  if (!userIdDoEmail) {
-    const { data: atual, error } = await admin
-      .from("entitlements")
-      .select("user_id")
-      .eq("provider", input.provider)
-      .eq("external_id", input.externalId)
-      .maybeSingle();
-    // ⚠️ É AQUI que o #222 voltaria pela porta do erro: consulta que falha
-    // devolve `atual = null`, `donoDoEntitlement(null, null)` devolve null, e o
-    // upsert abaixo gravaria `user_id: NULL` POR CIMA do dono — desligando a
-    // compra da conta por causa de um blip de rede. A guarda do #222 só protege
-    // contra o lookup VAZIO; ela não tem como distinguir "não tem dono" de
-    // "não consegui ler".
-    exigirSucesso("leitura do dono atual", error, {
+  const { data: atual, error: erroDono } = await admin
+    .from("entitlements")
+    .select("user_id")
+    .eq("provider", input.provider)
+    .eq("external_id", input.externalId)
+    .maybeSingle();
+  // ⚠️ É AQUI que o #222 voltaria pela porta do erro: consulta que falha
+  // devolve `atual = null`, `donoDoEntitlement(null, null)` devolve null, e o
+  // upsert abaixo gravaria `user_id: NULL` POR CIMA do dono — desligando a
+  // compra da conta por causa de um blip de rede. A guarda do #222 só protege
+  // contra o lookup VAZIO; ela não tem como distinguir "não tem dono" de
+  // "não consegui ler".
+  exigirSucesso("leitura do dono atual", erroDono, {
+    provider: input.provider,
+    externalId: input.externalId,
+    buyerEmail: email,
+  });
+  const userIdGravado = atual?.user_id ?? null;
+  const userId = donoDoEntitlement(userIdDoEmail, userIdGravado);
+
+  // A transferência de titularidade que este arquivo fazia calada agora é
+  // RECUSADA — e registrada. O #314 durou 8 dias e explodiu duas vezes porque
+  // a troca não deixava rastro nenhum: `entitlements` não tem trilha de
+  // auditoria (só `updated_at`, sobrescrito), então transferência já revertida
+  // é estruturalmente invisível. Sem esta linha, trocaríamos um dano silencioso
+  // por uma recusa silenciosa — e a recusa também precisa ser vista, porque é
+  // ela que aponta os casos em que o dono gravado pode ser o errado.
+  if (titularidadeDivergente(userIdDoEmail, userIdGravado)) {
+    logger.error("audit", "entitlements: titularidade divergente — dono PRESERVADO", {
+      incidente: "#314",
       provider: input.provider,
       externalId: input.externalId,
       buyerEmail: email,
+      donoGravado: userIdGravado,
+      donoDoEmailDaCompra: userIdDoEmail,
+      decisao: "manteve o dono gravado; e-mail da compra NAO troca dono",
     });
-    userId = donoDoEntitlement(userIdDoEmail, atual?.user_id ?? null);
   }
 
   const { error: erroUpsert } = await admin.from("entitlements").upsert(
