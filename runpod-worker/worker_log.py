@@ -69,6 +69,78 @@ def phase(name: str, **meta: Any):
             pass
 
 
+# ───────── Contadores acumulados do job no heartbeat (#15, 17/09) ─────────
+# `qa_stats["regens"]` (tts_qa/loop.py:588) já conta cada regeneração do job e
+# já chega ao banco em generations.qa->>'regens' — MAS só no FIM do job. Nos 19
+# executionTimeout medidos no #15 esse campo veio NULO, 19 de 19: o SIGKILL do
+# teto de 480s chega antes de qualquer escrita. E a medição de 17/09 aponta o
+# regen como o MULTIPLICADOR do relógio (0 de 48 gerações com <=10 regens
+# encostou no teto; 12 de 21 com 31+ encostaram) — ou seja, o número que
+# EXPLICA o estouro é exatamente o que nunca sobrevive ao estouro.
+#
+# O `attempt` que já viaja no meta da fase NÃO substitui isto: ele é POR CHUNK
+# e zera a cada chunk novo, enquanto quem prevê estouro de orçamento é o
+# ACUMULADO do job.
+#
+# Aqui o job registra um PROVEDOR (callable sem argumentos que devolve o
+# qa_stats) e o heartbeat o consulta A CADA TICK — leitura AO VIVO, e não o
+# valor congelado na entrada da fase. Isso importa: `inference.chunk.qa` é
+# entrada UMA vez por chunk e os regens sobem DENTRO dela (loop.py incrementa
+# e só então chama `regen_fn`), então um valor capturado na entrada da fase
+# mostraria o acumulado do INÍCIO do chunk e calaria justamente a tempestade
+# em curso.
+#
+# REGRA DURA deste arquivo: telemetria JAMAIS derruba job. O provedor é
+# chamado dentro do seu próprio try/except — provedor quebrado devolve `{}` e
+# o heartbeat segue postando a fase, só sem os contadores.
+_JOB_STATS_PROVIDER = None  # Callable[[], dict] | None — setado por job
+
+
+def set_job_stats_provider(fn) -> None:
+    """Registra a fonte dos contadores acumulados do job; `None` limpa.
+
+    Chamado pelo job (jobs/inference.py) no começo da execução. Quem LIMPA é
+    `set_current_job(None)`, que o handler já roda no `finally` de todo job:
+    assim o provedor de um job nunca vaza pro próximo, mesma garantia do
+    `_FASE_CFG`.
+    """
+    global _JOB_STATS_PROVIDER
+    _JOB_STATS_PROVIDER = fn
+
+
+# Chaves do qa_stats que podem viajar no heartbeat. Lista BRANCA de propósito:
+# o qa_stats tem ~40 chaves, alguma delas lista (`exhausted_scores`), e o
+# payload da fase é recortado a escalares pequenos. Só entra aqui o que
+# responde "quantas tentativas este job já queimou".
+#
+# É também o que torna a leitura SEGURA entre threads: iteramos esta tupla
+# constante e fazemos `stats.get(k)` — nunca iteramos o dict que a thread
+# principal está mutando (que é o que levantaria "dict changed size during
+# iteration").
+_STATS_NO_HEARTBEAT = ("regens",)
+
+
+def _stats_do_job() -> dict:
+    """Contadores acumulados do job AGORA. `{}` = sem provedor, ou provedor
+    quebrado/devolvendo coisa inesperada. Nunca lança."""
+    try:
+        fn = _JOB_STATS_PROVIDER
+        if fn is None:
+            return {}
+        stats = fn() or {}
+        out: dict = {}
+        for k in _STATS_NO_HEARTBEAT:
+            v = stats.get(k)
+            # `bool` é subclasse de int e não é contador; None/str/lista ficam
+            # fora (a chave ausente já significa "não veio", sem ambiguidade).
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                continue
+            out[k] = v
+        return out
+    except Exception:
+        return {}
+
+
 def _heartbeat_loop() -> None:
     while True:
         try:
@@ -80,6 +152,16 @@ def _heartbeat_loop() -> None:
                 name = top["name"] if top else "(sem fase instrumentada)"
                 running_s = round(time.monotonic() - top["start"], 1) if top else None
                 meta = dict(top["meta"]) if top else {}
+            # Contadores ACUMULADOS do job (regens) primeiro, meta da FASE por
+            # cima. Nesta ordem de propósito, por dois motivos:
+            #   1. o meta da fase é chunk-escopado (chunk/attempt/chars/cfg) e
+            #      deve MANDAR numa colisão de nome — ele descreve o que está
+            #      rodando agora;
+            #   2. o recorte do payload (`_meta_serializavel`) tem teto de 12
+            #      itens contando na ordem do dict, então vir primeiro garante
+            #      que `regens` sobreviva se um dia alguma fase carregar um
+            #      meta grande.
+            meta = {**_stats_do_job(), **meta}
             log("info", "phase.alive", phase=name, running_s=running_s,
                 job_type=_CURRENT_JOB_TYPE, **meta)
             # Leva a fase até o NOSSO banco (o log daqui expira ~30min e o
@@ -220,3 +302,9 @@ def set_current_job(job_type, inp: dict | None = None) -> None:
     global _CURRENT_JOB_TYPE, _FASE_CFG
     _CURRENT_JOB_TYPE = job_type
     _FASE_CFG = _fase_cfg_from_input(inp) if (job_type is not None and inp) else None
+    if job_type is None:
+        # Fim do job: o provedor de contadores morre com ele. O objeto de job
+        # vai embora e não pode ficar pendurado num global servindo número
+        # velho pro job seguinte. Mesma garantia (e mesmo ponto de limpeza) do
+        # `_FASE_CFG` — por isso o handler não precisa de nenhuma mudança.
+        set_job_stats_provider(None)
