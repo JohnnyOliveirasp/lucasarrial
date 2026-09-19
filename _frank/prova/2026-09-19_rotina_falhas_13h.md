@@ -55,6 +55,14 @@ parcial. **Eu não aceitei a refutação dele de graça — refiz cada perna:**
 e o custo de sair dele. É inferência forte, **não** medição direta da sessão — e está
 escrito assim na nota do cartão.
 
+**Busca exaustiva, pra fechar a única brecha que restava no argumento:** varri o repo
+inteiro atrás de `tierNote`. Ele existe em **exatamente um** ponto de render
+(`clone-studio.tsx`) e nos **três** arquivos de idioma — nenhum segundo studio,
+nenhuma cópia da string que pudesse sobrescrever ou esconder o aviso (o resto dos
+hits é artefato de build em `.next/`). Importa porque o argumento é *"a tela avisava"*:
+se houvesse um segundo caminho de render, "avisava no código" não provaria "avisava
+pra ele".
+
 ### O contrapeso, que também é fato
 
 Não virei advogado da casa. As duas coisas que seguram o outro lado:
