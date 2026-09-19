@@ -2,8 +2,11 @@
  * Wizard Vídeo Edição — W5 fase 2: legendas karaokê num VÍDEO CLONE pronto.
  *
  * POST { video: {kind:"clone-padrao"|"clone-heygen", id},
- *        audio: {kind:"generation", id} | {kind:"take", key} }
+ *        audio: {kind:"generation", id} | {kind:"take", key},
+ *        confirmar_substituicao?: boolean }
  *   → { job_id, output_key }
+ *   → 409 `substituicao_requer_confirmacao` quando a saída JÁ existe e a pessoa
+ *     ainda não confirmou (recusa ANTES do gate e da transcrição — reaplicar.ts)
  *   Resolve o MP4 do clone + transcreve o áudio da E2 com timestamps POR
  *   PALAVRA (o áudio É o que gerou o vídeo — timestamps casam 1:1) e submete
  *   o job caption_burn no worker. Cobra EDICAO_CAPTION_COST após o job no ar.
@@ -14,12 +17,14 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
+import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { debitCredits } from "@/lib/credits/service";
 import { gateStudioCredits } from "@/lib/studio/billing";
 import { EDICAO_CAPTION_COST } from "@/lib/edicao/pricing";
+import { CODIGO_SUBSTITUICAO, decidirAplicacao } from "@/lib/edicao/reaplicar";
 import { imagesBucket, R2_BUCKETS } from "@/lib/r2/client";
+import { objectExists } from "@/lib/r2/exists";
 import { createPresignedGet, createPresignedPut } from "@/lib/r2/presigned";
 import { runpodGetStatus, runpodSubmitTrain } from "@/lib/runpod/client";
 import { transcribeWords } from "@/lib/video/transcribe-words";
@@ -73,7 +78,12 @@ export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
 
-  let body: { video?: VideoRef; audio?: AudioRef; source_key?: unknown } = {};
+  let body: {
+    video?: VideoRef;
+    audio?: AudioRef;
+    source_key?: unknown;
+    confirmar_substituicao?: unknown;
+  } = {};
   try {
     body = await request.json();
   } catch {
@@ -102,6 +112,20 @@ export async function POST(request: NextRequest) {
   const audio = await resolveAudio(auth.user_id, a);
   if (!audio) return badRequest("Áudio não encontrado.");
 
+  // Saída determinística por vídeo (re-legendar sobrescreve), bucket permanente.
+  // ⚠️ Mesma classe do b-roll: sem esta recusa, "Legendar de novo" cobra 200 cr
+  // e apaga a legendagem que a pessoa já tinha pago. Vem ANTES do gate E da
+  // transcrição — o Whisper é a parte cara e não faz sentido rodar pra recusar
+  // depois. `objectExists` falha aberto (R2 instável → pede confirmação).
+  const outputKey = `${auth.user_id}/edicao/captions/${v.kind}-${v.id}.mp4`;
+  const decisao = decidirAplicacao({
+    saidaJaExiste: await objectExists(imagesBucket(), outputKey),
+    confirmou: body.confirmar_substituicao === true,
+    custo: EDICAO_CAPTION_COST,
+    alvo: "captions",
+  });
+  if (!decisao.pode) return jsonError(CODIGO_SUBSTITUICAO, decisao.mensagem, 409);
+
   const gate = await gateStudioCredits({
     userId: auth.user_id,
     email: auth.email,
@@ -118,8 +142,6 @@ export async function POST(request: NextRequest) {
     return serverError("Não consegui transcrever o áudio pra legenda. Tente novamente.");
   }
 
-  // Saída determinística por vídeo (re-legendar sobrescreve), bucket permanente.
-  const outputKey = `${auth.user_id}/edicao/captions/${v.kind}-${v.id}.mp4`;
   let videoUrl: string;
   let putUrl: string;
   try {

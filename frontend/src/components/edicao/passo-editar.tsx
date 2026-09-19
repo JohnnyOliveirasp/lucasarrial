@@ -11,9 +11,10 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Captions, Check, Film, Loader2, Music, Sparkles, SkipForward } from "lucide-react";
+import { AlertTriangle, Captions, Check, Film, Loader2, Music, Sparkles, SkipForward } from "lucide-react";
 import { STUDIO_MONTAGE_COST } from "@/lib/studio/pricing";
 import { EDICAO_CAPTION_COST } from "@/lib/edicao/pricing";
+import { CODIGO_SUBSTITUICAO, sourceKeyParaLegenda } from "@/lib/edicao/reaplicar";
 import type { SubtitlePosition, SubtitleSize } from "@/lib/video/subtitle-presets";
 import { EditarCloneBroll } from "./editar-clone-broll";
 import { LegendaPicker } from "./legenda-picker";
@@ -101,6 +102,8 @@ function EditarCloneLegendas({ draft, onChange }: Props) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  /** Texto da recusa 409 do servidor — abre o diálogo de substituir. */
+  const [confirmarSubst, setConfirmarSubst] = useState<string | null>(null);
   const job = draft.captionJob;
 
   // Poll do job em voo (retomável — o job mora no draft/localStorage).
@@ -132,12 +135,20 @@ function EditarCloneLegendas({ draft, onChange }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.job]);
 
-  async function legendar() {
+  /**
+   * Legenda o vídeo. `confirmado` só vai true depois do diálogo: a chave de
+   * saída é determinística e "Legendar de novo" sobrescreve — mesma classe do
+   * b-roll que custou 600 cr à aluna Leonice em 19/09.
+   */
+  async function legendar(confirmado = false) {
     if (!draft.video || !draft.audio) return;
     setBusy(true);
     setErro(null);
     setVideoUrl(null);
     try {
+      // b-roll aplicado antes → legenda por cima do resultado. Depois do
+      // "voltar ao original" a key é null e a legenda volta pro clone cru.
+      const sourceKey = sourceKeyParaLegenda(draft.videoEditadoKey);
       const res = await fetch("/api/v1/edicao/captions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -147,16 +158,21 @@ function EditarCloneLegendas({ draft, onChange }: Props) {
             draft.audio.kind === "generation"
               ? { kind: "generation", id: draft.audio.id }
               : { kind: "take", key: draft.audio.key },
-          // b-roll aplicado antes → legenda por cima do resultado.
-          ...(draft.videoEditadoKey?.includes("/edicao/broll/")
-            ? { source_key: draft.videoEditadoKey }
-            : {}),
+          ...(sourceKey ? { source_key: sourceKey } : {}),
+          ...(confirmado ? { confirmar_substituicao: true } : {}),
         }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.status === 402) throw new Error(t("semCreditos"));
+      // 409: já existe legendagem e ninguém confirmou. Nada foi cobrado — a
+      // recusa acontece antes do gate de crédito E antes da transcrição.
+      if (res.status === 409 && j?.error?.code === CODIGO_SUBSTITUICAO) {
+        setConfirmarSubst(j.error.message ?? t("substituir.texto", { custo: EDICAO_CAPTION_COST }));
+        return;
+      }
       if (!res.ok) throw new Error(j?.error?.message ?? j?.message ?? t("erro"));
       const d = j?.data ?? j;
+      setConfirmarSubst(null);
       onChange({ captionJob: { job: d.job_id, key: d.output_key }, videoEditadoKey: null });
     } catch (e) {
       setErro(e instanceof Error && e.message ? e.message : t("erro"));
@@ -192,6 +208,49 @@ function EditarCloneLegendas({ draft, onChange }: Props) {
           <p className="text-[12px] text-[var(--ash)]">{t("brollEmBreve")}</p>
           {erro && <p className="text-[13px] text-red-400">{erro}</p>}
         </>
+      )}
+
+      {/* Diálogo de SUBSTITUIÇÃO — texto vindo do servidor (fonte única). */}
+      {confirmarSubst && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setConfirmarSubst(null)}
+        >
+          <div
+            className="flex w-full max-w-md flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-300" />
+              <h3 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
+                {t("substituir.titulo")}
+              </h3>
+            </div>
+            <p className="text-sm text-[var(--body)]">{confirmarSubst}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmarSubst(null)}
+                className="inline-flex h-10 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
+              >
+                {t("substituir.cancelar")}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmarSubst(null);
+                  void legendar(true);
+                }}
+                className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] bg-[var(--ink)] px-[18px] text-[14px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+              >
+                {t("substituir.confirmar", { custo: EDICAO_CAPTION_COST })}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

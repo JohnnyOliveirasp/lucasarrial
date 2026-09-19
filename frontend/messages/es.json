@@ -2069,7 +2069,13 @@
         "pronto": "Video subtitulado listo — sigue a la publicación.",
         "brollEmBreve": "Escenas extra sobre el clon (b-roll) y transiciones llegan en el próximo paso de esta fase.",
         "semCreditos": "Créditos insuficientes.",
-        "erro": "No pude subtitular el video. Inténtalo de nuevo."
+        "erro": "No pude subtitular el video. Inténtalo de nuevo.",
+        "substituir": {
+          "titulo": "Esto reemplaza lo que ya tienes",
+          "texto": "Subtitular de nuevo reemplaza la versión subtitulada que ya tienes — la actual se pierde. Se cobrarán {custo} créditos más.",
+          "cancelar": "Cancelar",
+          "confirmar": "Reemplazar de todos modos ({custo} cr)"
+        }
       },
       "cenas": {
         "legendas": "Subtítulos (karaoke, 2 palabras a la vez)",
@@ -2111,7 +2117,15 @@
         "erroIniciar": "No pude preparar el audio. Inténtalo de nuevo.",
         "erroPlanejar": "No pude planear las escenas. Recarga e inténtalo de nuevo.",
         "erroCenas": "No pude generar las escenas. Inténtalo de nuevo.",
-        "erroAplicar": "No pude aplicar el b-roll. Inténtalo de nuevo."
+        "erroAplicar": "No pude aplicar el b-roll. Inténtalo de nuevo.",
+        "voltarOriginal": "Volver al video original",
+        "voltarOriginalNota": "Descarta la edición: la publicación vuelve a usar el video del clon como era. No borra nada ni cobra créditos. Para recuperar la edición tienes que aplicarla de nuevo — y pagar de nuevo.",
+        "substituir": {
+          "titulo": "Esto reemplaza lo que ya tienes",
+          "texto": "Aplicar de nuevo reemplaza la versión con b-roll que ya tienes — la actual se pierde. Se cobrarán {custo} créditos más.",
+          "cancelar": "Cancelar",
+          "confirmar": "Reemplazar de todos modos ({custo} cr)"
+        }
       },
       "legendaPicker": {
         "estilo": "Estilo del subtítulo",

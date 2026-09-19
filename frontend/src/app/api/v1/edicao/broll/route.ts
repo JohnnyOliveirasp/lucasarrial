@@ -7,19 +7,24 @@
  * cada frase (sentencesWithTimes, MESMA segmentação do worker) + MP4 de cada
  * cena → job broll_overlay (áudio e duração do clone intocados).
  *
- * POST { project_id, video: {kind:"clone-padrao"|"clone-heygen", id} }
+ * POST { project_id, video: {kind:"clone-padrao"|"clone-heygen", id},
+ *        confirmar_substituicao?: boolean }
  *   → { job_id, output_key }
+ *   → 409 `substituicao_requer_confirmacao` quando a saída JÁ existe e a pessoa
+ *     ainda não confirmou (recusa ANTES do gate de crédito — ver reaplicar.ts).
  * GET ?job=&key= → { status, video_url?, error? }  (poll, estorno em falha)
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
+import { badRequest, jsonError, jsonOk, notFound, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { debitCredits } from "@/lib/credits/service";
 import { gateStudioCredits } from "@/lib/studio/billing";
 import { EDICAO_BROLL_COST } from "@/lib/edicao/pricing";
+import { CODIGO_SUBSTITUICAO, decidirAplicacao } from "@/lib/edicao/reaplicar";
 import { sentencesWithTimes, type StudioWord } from "@/lib/studio/pricing";
 import { imagesBucket, R2_BUCKETS } from "@/lib/r2/client";
+import { objectExists } from "@/lib/r2/exists";
 import { createPresignedGet, createPresignedPut } from "@/lib/r2/presigned";
 import { runpodGetStatus, runpodSubmitTrain } from "@/lib/runpod/client";
 import { handleTechFailure } from "@/lib/support/failure-alert";
@@ -56,7 +61,7 @@ export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
 
-  let body: { project_id?: unknown; video?: VideoRef } = {};
+  let body: { project_id?: unknown; video?: VideoRef; confirmar_substituicao?: unknown } = {};
   try {
     body = await request.json();
   } catch {
@@ -107,6 +112,20 @@ export async function POST(request: NextRequest) {
   }
   if (inserts.length === 0) return badRequest("Nenhuma cena pronta pra aplicar.");
 
+  // ⚠️ A chave é determinística por vídeo: aplicar de novo SOBRESCREVE o
+  // arquivo anterior (caso Leonice, 19/09 — 4 débitos, 1 arquivo). A recusa vem
+  // ANTES do gate de crédito de propósito: perguntar não pode custar nada.
+  // `objectExists` falha ABERTO (erro transitório do R2 → true), então uma
+  // instabilidade vira "confirme, por favor", nunca uma cobrança silenciosa.
+  const outputKey = `${auth.user_id}/edicao/broll/${v.kind}-${v.id}.mp4`;
+  const decisao = decidirAplicacao({
+    saidaJaExiste: await objectExists(imagesBucket(), outputKey),
+    confirmou: body.confirmar_substituicao === true,
+    custo: EDICAO_BROLL_COST,
+    alvo: "broll",
+  });
+  if (!decisao.pode) return jsonError(CODIGO_SUBSTITUICAO, decisao.mensagem, 409);
+
   const gate = await gateStudioCredits({
     userId: auth.user_id,
     email: auth.email,
@@ -115,7 +134,6 @@ export async function POST(request: NextRequest) {
   });
   if (!gate.ok) return gate.deny;
 
-  const outputKey = `${auth.user_id}/edicao/broll/${v.kind}-${v.id}.mp4`;
   let baseUrl: string;
   let putUrl: string;
   let insertsSigned: { t0: number; t1: number; video_url: string }[];

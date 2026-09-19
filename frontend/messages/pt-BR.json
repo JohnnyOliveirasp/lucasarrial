@@ -2069,7 +2069,13 @@
         "pronto": "Vídeo legendado pronto — segue pra publicação.",
         "brollEmBreve": "Cenas extras por cima do clone (b-roll) e transições chegam na próxima etapa desta fase.",
         "semCreditos": "Créditos insuficientes.",
-        "erro": "Não consegui legendar o vídeo. Tente de novo."
+        "erro": "Não consegui legendar o vídeo. Tente de novo.",
+        "substituir": {
+          "titulo": "Isso substitui o que você já tem",
+          "texto": "Legendar de novo substitui a versão legendada que você já tem — a atual se perde. Vão ser cobrados mais {custo} créditos.",
+          "cancelar": "Cancelar",
+          "confirmar": "Substituir mesmo assim ({custo} cr)"
+        }
       },
       "cenas": {
         "legendas": "Legendas (karaokê, 2 palavras por vez)",
@@ -2111,7 +2117,15 @@
         "erroIniciar": "Não consegui preparar o áudio. Tente de novo.",
         "erroPlanejar": "Não consegui planejar as cenas. Recarregue e tente de novo.",
         "erroCenas": "Não consegui gerar as cenas. Tente de novo.",
-        "erroAplicar": "Não consegui aplicar o b-roll. Tente de novo."
+        "erroAplicar": "Não consegui aplicar o b-roll. Tente de novo.",
+        "voltarOriginal": "Voltar ao vídeo original",
+        "voltarOriginalNota": "Descarta a edição: a publicação volta a usar o vídeo do clone como ele era. Não apaga nada e não cobra crédito. Pra ter a edição de volta você precisa aplicar de novo — e aí paga de novo.",
+        "substituir": {
+          "titulo": "Isso substitui o que você já tem",
+          "texto": "Aplicar de novo substitui a versão com b-roll que você já tem — a atual se perde. Vão ser cobrados mais {custo} créditos.",
+          "cancelar": "Cancelar",
+          "confirmar": "Substituir mesmo assim ({custo} cr)"
+        }
       },
       "legendaPicker": {
         "estilo": "Estilo da legenda",
