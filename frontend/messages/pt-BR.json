@@ -458,6 +458,9 @@
         "label": "Gerando sua imagem…",
         "hint": "Pode levar de alguns segundos a ~1 min. Pode acompanhar no histórico abaixo."
       },
+      "slow": {
+        "notice": "A imagem passou de {min} minutos e ainda não voltou do gerador. Ela continua na fila e aparece no histórico aqui embaixo assim que terminar — não gere de novo, porque cada geração cobra outra vez. Se ela não aparecer, fale com a gente que conferimos a sua cobrança."
+      },
       "refs": {
         "label": "1. Suas fotos (referência)",
         "hint": "A foto principal é a âncora do rosto: o resultado mantém o rosto dela. Use fotos nítidas e bem iluminadas. Em Fotos extras você pode somar mais ângulos da MESMA pessoa (mais semelhança) ou trazer uma foto DIFERENTE pra compor — um cenário, um ambiente, um objeto, uma roupa.",

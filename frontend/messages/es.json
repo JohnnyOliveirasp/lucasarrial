@@ -458,6 +458,9 @@
         "label": "Generando tu imagen…",
         "hint": "Puede tardar de unos segundos a ~1 min. Puedes seguirla en el historial de abajo."
       },
+      "slow": {
+        "notice": "La imagen pasó de {min} minutos y todavía no volvió del generador. Sigue en la cola y aparecerá en el historial de abajo en cuanto termine — no generes de nuevo, porque cada generación se cobra aparte. Si no aparece, escríbenos y revisamos tu cobro."
+      },
       "refs": {
         "label": "1. Tus fotos (referencia)",
         "hint": "La foto principal es el ancla del rostro: el resultado mantiene ese rostro. Usa fotos nítidas y bien iluminadas. En Fotos extra puedes sumar más ángulos de la MISMA persona (más parecido) o traer una foto DIFERENTE para componer — un escenario, un ambiente, un objeto, una prenda.",
