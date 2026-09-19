@@ -249,3 +249,36 @@ Errata gravada no `4ce9f365`: 6 → 7 notas, array preservado, status inalterado
    não trabalho.
 5. **Se alguém mexer no PR #92**, a Ellen tem de ser avisada — é promessa escrita
    da casa (§3.3).
+
+---
+
+## 7. Passo fixo de fim de ronda — o git
+
+`git log --oneline origin/main..HEAD` saiu **VAZIO**: o log desta ronda está na
+`origin/main` (`4918915c`). Não criei branch nem commit de código.
+
+**Fui além do check literal**, porque a regra existe por causa do fix que ficou
+9h preso em 19/08. Medi **16 branches com commit nas últimas 30h que não estão na
+main**:
+
+- **13 têm PR aberto** (#341, #342, #343, #345, #346, #349, #350, #351, #352,
+  #353, #355, #356, #330). Branch com PR **não está preso** — está em revisão.
+- **`rescue/fast-explica-cancelamento-973d69fa`** — sem PR próprio, mas
+  **`patch-id` IDÊNTICO** (`6673b155…`) ao HEAD do branch do **PR #354**. É cópia
+  redundante, **não é fix preso**.
+- **`LOCAL-SUJO-nao-usar-fast-explica-cancelamento`** — **só local**, o próprio
+  nome recusa uso, mesmo assunto do #354.
+- **`feat/recuperar-senha-pelo-smtp-da-casa`** — **só local**, e é a versão
+  **anterior** (15:23) do que virou o **PR #343** (15:26). O PR é o mais completo:
+  tem o `api/v1/auth/recuperar-senha/route.ts` e as chaves de i18n que o local não
+  tem.
+
+> **Um achado honesto, pequeno mas real:** esse branch local tem **uma** coisa que
+> o PR #343 **não** tem — o `_frank/ferramentas/2026-09-18_recovery_que_nunca_vira_login.cjs`
+> (95 linhas, instrumento de medição). Ele existe **só em branch local**: some se
+> a máquina sumir. **Não é fix de aluno preso**, é ferramenta — por isso não
+> parei a ronda por ele, mas fica escrito, que é o contrário de descobrir depois.
+
+**Veredito: nenhum fix de aluno preso em branch.** O que está parado está parado
+em **revisão**, não em esquecimento: **41 PRs abertos**, o mais velho o **#9**, e o
+**#92** (prosódia — a dívida com a Ellen, §3.3) **draft desde 28/08**.
