@@ -239,3 +239,26 @@ exatamente isso que produziu o número inflado.
 6. **Os 41.600 cr do `#329` continuam na mesa do Johnny**, agora com a premissa
    certa (ronda das 13hZ). Se voltar "pode devolver": grave por `ref_type` de
    estorno, **nunca** por `kind`, e confira a linha na releitura.
+
+## 8. Fim de ronda — passo fixo conferido
+
+```
+git fetch origin && git log --oneline origin/main..HEAD   →  VAZIO  ✔
+```
+
+Este log está na **main** e **pushado** (`350f32e7`). **Nada desta ronda ficou
+fora da main**, e é fácil afirmar isso com segurança porque **esta ronda não
+produziu código**: as entregas foram 3 escritas no banco (notas/fechamento, as
+três conferidas na releitura com 1 linha afetada) e este arquivo.
+
+**O que eu NÃO afirmo:** que as ~280 branches locais estejam limpas. Rodei
+`git rev-list main..<branch>` em todas e dezenas têm de 1 a 5 commits à frente
+da main — inclusive as já conhecidas como STALE e marcadas "não mergear" no
+índice de ordens. **Isso é dívida pré-existente do repositório, não resíduo
+desta ronda**, e auditá-la é trabalho próprio, não rodapé de log. Registro o
+número pra não virar surpresa: quem for atacar isso tem uma lista grande e vai
+precisar do índice de ordens na mão, porque ali estão as branches que **derrubam
+produção se mergeadas** (`feat/onedrive-401`,
+`feat/fix-image-upload-retry`, `fix/trava-foto-nova-8379549c`,
+`fix/referencia-fronteira-de-frase-por-palavra` e
+`feat/fabricar-referencia-fronteira-por-palavra`).
