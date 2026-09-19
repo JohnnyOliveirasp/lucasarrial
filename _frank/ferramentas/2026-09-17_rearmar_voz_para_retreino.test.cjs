@@ -143,3 +143,65 @@ test("MUTAÇÃO — o código VELHO (só stderr) reprova nos casos reais do #32"
   assert.ok(acharInfra(FORMA_B));
   assert.ok(acharInfra(FORMA_A));
 });
+
+/**
+ * ── 19/09: a frase ambígua (#475) ─────────────────────────────────────────
+ * Os DOIS casos abaixo são os únicos jobs da história da tabela com
+ * "Invalid data found when processing input" (medido em 19/09), e significam
+ * coisas OPOSTAS. Se a trava tratar os dois igual, ela erra nos dois sentidos:
+ * ou deixa a josiclareth sem voz, ou queima GPU em cima de um zip podre.
+ */
+const DATASET_NOSSO = {
+  id: "ab066e99-c6ae-4aa2-b0bb-3d9e521413f8", // josiclareth, 19/09 05:15Z
+  started_at: null,
+  trainer_returncode: null,
+  trainer_stderr: null,
+  error_message:
+    "[Errno 1094995529] Invalid data found when processing input: " +
+    "'/workspace/jobs/05a57533-8403-4015-9a11-47ad9153dbcc/dataset/voice_0032.wav'",
+};
+
+const RAW_DO_ALUNO = {
+  id: "1815ad70-3318-4ad6-9c35-f0a74c77fc06", // 14/08 02:37Z — zip que o aluno subiu
+  trainer_stderr: null,
+  error_message:
+    "ffmpeg stereo 44k failed: /workspace/jobs/ca61b94d-ccb8-4db8-868a-53d2bd99025c/" +
+    "raw/000_000_onboarding_1y99Dd_kRYy8KBSEf3Y4JWXi4sJCgr9WT.zip: " +
+    "Invalid data found when processing input",
+};
+
+test("chunk inválido em /dataset/ é infra NOSSA (o worker construiu o arquivo)", () => {
+  const achado = acharInfra(DATASET_NOSSO);
+  assert.ok(achado, "sem isto a josiclareth fica sem voz por um arquivo que NÓS cortamos");
+  assert.equal(achado.coluna, "error_message");
+  assert.match(achado.causa, /dataset/);
+});
+
+test("MESMA frase apontando /raw/ continua RECUSADA — é material do aluno", () => {
+  // Este é o teste que importa: a marca nova não pode transformar o caso de
+  // 14/08 em rearme. O arquivo podre ali era o ZIP que o próprio aluno subiu, e
+  // rearmar gastaria GPU da casa pra morrer idêntico.
+  assert.equal(
+    acharInfra(RAW_DO_ALUNO),
+    null,
+    "a frase sozinha NÃO pode autorizar rearme: /raw/ é do aluno",
+  );
+});
+
+test("a marca nova exige o caminho, não só a frase", () => {
+  // Erro genérico de mídia, sem caminho nenhum: não vira infra nossa.
+  assert.equal(acharInfra({ error_message: "Invalid data found when processing input" }), null);
+  // Caminho certo, frase errada: também não.
+  assert.equal(acharInfra({ error_message: "permission denied: /workspace/jobs/x/dataset/voice_0001.wav" }), null);
+});
+
+test("MUTAÇÃO — sem exigeCaminho a trava rearmaria o zip do aluno", () => {
+  // Substring pura, como as outras entradas da lista. Prova que o campo novo
+  // é o que segura o caso de 14/08 — e não algum outro acaso do texto.
+  const semCaminho = (job) => {
+    const t = (job?.error_message || "").toLowerCase();
+    return INFRA.find((i) => t.includes(i.marca.toLowerCase())) || null;
+  };
+  assert.ok(semCaminho(RAW_DO_ALUNO), "é exatamente este o falso positivo que exigeCaminho impede");
+  assert.equal(acharInfra(RAW_DO_ALUNO), null);
+});

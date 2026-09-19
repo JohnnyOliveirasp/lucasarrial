@@ -24,7 +24,12 @@ import {
   mensagemFalhaTecnica,
 } from "@/lib/voices/falha-de-treino";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
-import { classifyCause, errorSignature, incidentTitle } from "@/lib/incidents/classify";
+import {
+  classifyCause,
+  ehChunkDoDatasetInvalido,
+  errorSignature,
+  incidentTitle,
+} from "@/lib/incidents/classify";
 import {
   type DiagnosticoTrainer,
   ehCudaOom,
@@ -147,10 +152,19 @@ function isDatasetError(error: string | null | undefined): boolean {
 
 /** Arquivo enviado corrompido/incompleto (caso Carla 29/07: MP4 sem moov atom
  * = upload interrompido). Problema do ARQUIVO do usuário, não nosso: mensagem
- * acionável ("reenvie") em vez de "problema técnico" + sem pager pro suporte. */
+ * acionável ("reenvie") em vez de "problema técnico" + sem pager pro suporte.
+ *
+ * ⚠️ 19/09 (#475): mídia ilegível cujo caminho é `/dataset/` NÃO é arquivo do
+ * aluno — aquele chunk foi escrito pelo NOSSO worker. Sem esta guarda,
+ * `falhaEhNossa()` devolvia false, NENHUM chamado era aberto, e a mensagem
+ * mandava a aluna "enviar o arquivo de novo (ou gravar novamente)" — 23 minutos
+ * de regravação por um arquivo que ela nunca enviou. A regra mora em
+ * `lib/incidents/classify.ts` e é IMPORTADA, não copiada: predicado duplicado
+ * que diverge do irmão foi exatamente como nasceu o vão do #351. */
 function isCorruptFileError(error: string | null | undefined): boolean {
   if (!error) return false;
   const e = error.toLowerCase();
+  if (ehChunkDoDatasetInvalido(e)) return false;
   return (
     e.includes("moov atom not found") ||
     e.includes("invalid data found when processing input") ||

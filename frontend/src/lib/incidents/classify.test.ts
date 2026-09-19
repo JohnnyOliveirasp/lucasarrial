@@ -28,7 +28,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyCause, errorSignature, incidentTitle } from "./classify.ts";
+import {
+  classifyCause,
+  ehChunkDoDatasetInvalido,
+  errorSignature,
+  incidentTitle,
+  isCorruptFile,
+} from "./classify.ts";
 
 /** Exatamente o que o worker manda em `error` e o finalize-training grava em
  * training_jobs.error_message (jobs/train.py:97). Não é um texto inventado. */
@@ -82,4 +88,87 @@ test("ARMADILHA: concatenar o traceback no error_message estilhaçaria o #11", (
 
 test("o título do incidente #11 continua legível", () => {
   assert.equal(incidentTitle("training", ERROR_MESSAGE_GRAVADO), "Treino de voz: trainer failed");
+});
+
+/**
+ * ── #475, 19/09: a mesma frase, dois donos ────────────────────────────────
+ *
+ * "Invalid data found when processing input" aparece em exatamente DOIS jobs
+ * em toda a história de `training_jobs` (medido em 19/09) e significa coisas
+ * opostas. O que decide não é o texto: é a PASTA do arquivo citado.
+ *
+ *   /raw/     → upload do aluno  → user_dataset, mensagem "reenvie", sem chamado
+ *   /dataset/ → chunk que NÓS cortamos → bug nosso, chamado aberto, sem culpar
+ *
+ * O caso real: a josiclareth ficou 5h sem voz, sem chamado nenhum na fila, com
+ * uma mensagem mandando regravar 23 minutos por um arquivo que ela não enviou.
+ */
+const ERRO_DATASET_NOSSO =
+  "[Errno 1094995529] Invalid data found when processing input: " +
+  "'/workspace/jobs/05a57533-8403-4015-9a11-47ad9153dbcc/dataset/voice_0032.wav'";
+
+const ERRO_RAW_DO_ALUNO =
+  "ffmpeg stereo 44k failed: /workspace/jobs/ca61b94d-ccb8-4db8-868a-53d2bd99025c/" +
+  "raw/000_000_onboarding_1y99Dd_kRYy8KBSEf3Y4JWXi4sJCgr9WT.zip: " +
+  "Invalid data found when processing input";
+
+test("#475: chunk inválido em /dataset/ é bug NOSSO, não material do aluno", () => {
+  assert.equal(classifyCause(ERRO_DATASET_NOSSO), "bug");
+  assert.equal(isCorruptFile(ERRO_DATASET_NOSSO), false);
+  assert.equal(ehChunkDoDatasetInvalido(ERRO_DATASET_NOSSO), true);
+});
+
+test("#475: a MESMA frase em /raw/ continua sendo do aluno (zero regressão)", () => {
+  // Este é o teste que protege o caso de 14/08. Se ele quebrar, passamos a
+  // abrir chamado e retreinar por nossa conta em cima de zip podre do aluno.
+  assert.equal(classifyCause(ERRO_RAW_DO_ALUNO), "user_dataset");
+  assert.equal(isCorruptFile(ERRO_RAW_DO_ALUNO), true);
+  assert.equal(ehChunkDoDatasetInvalido(ERRO_RAW_DO_ALUNO), false);
+});
+
+test("#475: erro de mídia SEM caminho continua do aluno (não alarguei nada)", () => {
+  // O caso Carla 29/07 e o caso Erica 31/07 não citam pasta nenhuma.
+  assert.equal(classifyCause("moov atom not found"), "user_dataset");
+  assert.equal(classifyCause("does not contain any stream"), "user_dataset");
+  assert.equal(isCorruptFile("could not find codec parameters"), true);
+});
+
+test("#475: a assinatura é CONSTANTE — o incidente acumula em vez de rachar", () => {
+  // O `[Errno 1094995529]` e o índice do chunk mudam entre ocorrências; se a
+  // assinatura levasse o head, cada falha abriria cartão novo (patologia #11).
+  const outroChunk =
+    "[Errno 42] Invalid data found when processing input: " +
+    "'/workspace/jobs/99999999-0000-0000-0000-000000000000/dataset/voice_0007.wav'";
+  const a = errorSignature("training", ERRO_DATASET_NOSSO);
+  const b = errorSignature("training", outroChunk);
+  assert.equal(a, b, "duas ocorrências têm de somar no MESMO incidente");
+  assert.match(a, /dataset-chunk-invalido/);
+  // e não pode colidir com o guarda-chuva do #11 nem com o do aluno
+  assert.notEqual(a, errorSignature("training", "trainer failed"));
+  assert.notEqual(a, errorSignature("training", ERRO_RAW_DO_ALUNO));
+});
+
+test("#475: o título diz de QUEM é o arquivo", () => {
+  const t = incidentTitle("training", ERRO_DATASET_NOSSO);
+  assert.match(t, /NOSSO/);
+  assert.match(incidentTitle("training", ERRO_RAW_DO_ALUNO), /arquivo enviado corrompido/);
+});
+
+test("#475 MUTAÇÃO: o código VELHO culpava a aluna", () => {
+  // Réplica literal do predicado antes da correção: só texto, sem caminho.
+  const velho = (error: string) => {
+    const e = (error || "").toLowerCase();
+    return (
+      e.includes("moov atom") ||
+      e.includes("invalid data found when processing input") ||
+      e.includes("could not find codec parameters") ||
+      e.includes("corrompido ou incompleto") ||
+      e.includes("does not contain any stream")
+    );
+  };
+  assert.equal(velho(ERRO_DATASET_NOSSO), true, "era este o defeito: arquivo nosso lido como dela");
+  assert.equal(isCorruptFile(ERRO_DATASET_NOSSO), false, "e é este o conserto");
+  // O velho acertava o caso do aluno, e o novo tem de continuar acertando.
+  assert.equal(velho(ERRO_RAW_DO_ALUNO), true);
+  assert.equal(isCorruptFile(ERRO_RAW_DO_ALUNO), true);
 });

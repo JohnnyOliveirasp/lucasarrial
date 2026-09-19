@@ -96,6 +96,40 @@ const { supa } = require(path.join(RAIZ, "_frank/ferramentas/_comum.cjs"));
  * Por isso ela entra; e por isso "file write failed" SOZINHO não entra: frase
  * solta demais, casaria com I/O de qualquer camada.
  */
+/**
+ * ── 19/09: a 1ª marca que NÃO pode entrar como frase solta (#475, josiclareth)
+ *
+ * O treino dela morreu com
+ *   "[Errno 1094995529] Invalid data found when processing input:
+ *    '/workspace/jobs/<voz>/dataset/voice_0032.wav'"
+ *
+ * Essa frase é, ao pé da letra, a MESMA que significa CULPA DO ALUNO em
+ * `isCorruptFile()` — e com razão: em 14/08 o job 1815ad70 morreu com
+ *   "ffmpeg stereo 44k failed: /workspace/jobs/<voz>/raw/000_000_onboarding_*.zip:
+ *    Invalid data found when processing input"
+ * e ali o arquivo quebrado era o ZIP que o próprio aluno subiu.
+ *
+ * São os DOIS únicos jobs desta frase em toda a história da tabela (medido em
+ * 19/09) e querem dizer coisas OPOSTAS. O que os separa não é o texto do erro —
+ * é **de quem é o arquivo citado**:
+ *
+ *   /raw/      → o aluno enviou. Material dele. NÃO é infra nossa.
+ *   /dataset/  → o WORKER construiu, fatiando o áudio dele. Nada que o aluno
+ *                envie nasce nessa pasta: ela só existe depois que a NOSSA
+ *                etapa de preparo escreve nela.
+ *
+ * Por isso esta entrada carrega `exigeCaminho` — a frase sozinha nunca basta.
+ * Pôr "Invalid data found" como marca solta faria a trava rearmar o caso de
+ * 14/08 e queimar GPU da casa pra morrer igual num zip corrompido do aluno:
+ * exatamente o que a trava 2 existe pra impedir.
+ *
+ * E o que autoriza a entrada não é o texto, é a perícia: os 9 `raw/*.mp3` dela
+ * foram decodificados um a um em 19/09 por
+ * `2026-09-19_periciar_takes_da_voz.cjs` — 9/9 limpos, taxa uniforme de
+ * 16003 B/s, nenhum mudo, com o detector provado por controle negativo na
+ * MESMA execução. O material dela está bom; inválido saiu o pedaço que nós
+ * cortamos.
+ */
 const INFRA = [
   { marca: "No space left on device", causa: "disco cheio no worker" },
   { marca: "torch.OutOfMemoryError", causa: "OOM de GPU" },
@@ -103,6 +137,14 @@ const INFRA = [
   {
     marca: "PytorchStreamWriter failed writing file",
     causa: "escrita do checkpoint falhou no worker (disco cheio provável — o torch não entrega o errno)",
+  },
+  {
+    marca: "Invalid data found when processing input",
+    // Sem este caminho a marca é PERIGOSA: casa com material do aluno.
+    exigeCaminho: "/dataset/",
+    causa:
+      "chunk do dataset que o NOSSO worker construiu saiu inválido " +
+      "(o arquivo citado está em /dataset/, não em /raw/)",
   },
 ];
 
@@ -114,6 +156,11 @@ const INFRA = [
  *
  * Caixa ignorada de propósito: a mesma falha sai "No space left on device" do
  * runtime Python e "no space left on device" de camadas em C.
+ *
+ * ⚠️ `exigeCaminho` (19/09): quando a entrada tem esse campo, a marca só vale
+ * se o MESMO texto também citar aquele caminho. É o que impede uma frase
+ * ambígua — a mesma que descreve arquivo podre do aluno — de virar passe livre
+ * pra queimar GPU. Entrada sem o campo segue como sempre: substring pura.
  */
 function acharInfra(job) {
   const colunas = [
@@ -121,7 +168,12 @@ function acharInfra(job) {
     ["error_message", job?.error_message || ""],
   ];
   for (const [coluna, texto] of colunas) {
-    const achado = INFRA.find((i) => texto.toLowerCase().includes(i.marca.toLowerCase()));
+    const t = texto.toLowerCase();
+    const achado = INFRA.find(
+      (i) =>
+        t.includes(i.marca.toLowerCase()) &&
+        (!i.exigeCaminho || t.includes(i.exigeCaminho.toLowerCase())),
+    );
     if (achado) return { ...achado, coluna, texto };
   }
   return null;

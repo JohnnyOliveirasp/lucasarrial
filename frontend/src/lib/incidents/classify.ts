@@ -65,10 +65,61 @@ export const KIND_LABELS: Record<string, string> = {
   reported: "Reportado",
 };
 
-/** Arquivo do usuário corrompido/incompleto (caso Carla 29/07: moov atom).
- * Cobre o erro CRU do ffmpeg e a mensagem amigável do finalize-training. */
-export function isCorruptFile(error: string): boolean {
+/** Sufixo da assinatura do chunk de dataset inválido. Fixo — ver
+ *  `ehChunkDoDatasetInvalido`. */
+export const SUFIXO_CHUNK_DATASET = "dataset-chunk-invalido";
+
+/**
+ * O ARQUIVO CITADO NO ERRO É NOSSO, NÃO DO ALUNO — #475, medido em 19/09.
+ *
+ * O worker trabalha em duas pastas, e a diferença entre elas é a diferença
+ * entre "o aluno mandou lixo" e "nós produzimos lixo":
+ *
+ *   /workspace/jobs/<voz>/raw/      ← o que o ALUNO enviou (upload/zip)
+ *   /workspace/jobs/<voz>/dataset/  ← o que NÓS escrevemos, fatiando o áudio
+ *                                     dele em chunks `voice_NNNN.wav`
+ *
+ * Nada que o aluno envie nasce em `/dataset/`: essa pasta só existe depois que
+ * a nossa etapa de preparo escreve nela. Logo, mídia inválida ali dentro é
+ * defeito NOSSO, por construção.
+ *
+ * ── Por que isto precisou virar código ────────────────────────────────────
+ * `isCorruptFile()` decidia por TEXTO, e o texto é o mesmo nos dois mundos. Os
+ * dois únicos jobs da história da tabela com "Invalid data found when
+ * processing input" (medido em 19/09) dizem coisas opostas:
+ *
+ *   14/08  1815ad70  ".../raw/000_000_onboarding_*.zip: Invalid data found"
+ *                    → o ZIP que o aluno subiu estava podre. Culpa dele. OK.
+ *   19/09  ab066e99  "[Errno 1094995529] Invalid data found: '.../dataset/
+ *                     voice_0032.wav'"
+ *                    → o arquivo é um chunk que NÓS cortamos. Culpa nossa.
+ *
+ * O segundo caía em `user_dataset` junto com o primeiro, e isso disparava três
+ * consequências erradas de uma vez, todas medidas na josiclareth (#475):
+ *   1. `falhaEhNossa()` devolvia false → NENHUM chamado foi aberto. A falha não
+ *      existiu para a fila: entre 00h15Z e 10h15Z nasceram 2 cartões e os dois
+ *      vieram da Fast, por contato de aluno.
+ *   2. A mensagem mandou ela "enviar o arquivo de novo (ou gravar novamente)" —
+ *      23 minutos de regravação por um arquivo que ela nunca enviou.
+ *   3. Ela não tentou de novo. Ficou 5h sem voz, com acesso ativo e 100.000
+ *      créditos na conta.
+ *
+ * A perícia que sustenta "o material dela estava bom": os 9 `raw/*.mp3` foram
+ * decodificados um a um (`_frank/ferramentas/2026-09-19_periciar_takes_da_voz.cjs`)
+ * — 9/9 limpos, taxa uniforme de 16003 B/s, nenhum mudo, detector validado por
+ * controle negativo na mesma execução.
+ *
+ * ⚠️ Deliberadamente ESTREITO: só o caminho `/dataset/`. Erro sem caminho
+ * nenhum ("moov atom not found" seco) continua sendo do aluno, como sempre foi
+ * — mudar isso mexeria em comportamento antigo sem medida que justifique.
+ */
+export function ehChunkDoDatasetInvalido(error: string | null | undefined): boolean {
   const e = (error || "").toLowerCase();
+  return e.includes("/dataset/") && ehTextoDeMidiaInvalida(e);
+}
+
+/** As frases de mídia ilegível, sem julgar de QUEM é o arquivo. */
+function ehTextoDeMidiaInvalida(e: string): boolean {
   return (
     e.includes("moov atom") ||
     e.includes("invalid data found when processing input") ||
@@ -78,6 +129,17 @@ export function isCorruptFile(error: string): boolean {
     // (vídeo mudo ou upload quebrado) — ffmpeg não tem o que converter.
     e.includes("does not contain any stream")
   );
+}
+
+/** Arquivo do usuário corrompido/incompleto (caso Carla 29/07: moov atom).
+ * Cobre o erro CRU do ffmpeg e a mensagem amigável do finalize-training.
+ *
+ * ⚠️ 19/09: mídia ilegível cujo caminho é `/dataset/` NÃO entra aqui — aquele
+ * arquivo foi escrito por nós. Ver `ehChunkDoDatasetInvalido`. */
+export function isCorruptFile(error: string): boolean {
+  const e = (error || "").toLowerCase();
+  if (ehChunkDoDatasetInvalido(e)) return false;
+  return ehTextoDeMidiaInvalida(e);
 }
 
 /**
@@ -156,6 +218,26 @@ export function classifyCause(error: string, diag?: DiagnosticoTrainer): Inciden
   ) {
     return "user_dataset";
   }
+  /**
+   * CHUNK DO DATASET INVÁLIDO — a correção de 19/09 (job `ab066e99`, #475).
+   *
+   * Sem esta linha a falha cai em `unknown`, porque o texto dela não casa com
+   * nenhuma regra abaixo (não tem "trainer failed", nem traceback, nem cuda,
+   * nem timeout). `unknown` abriria chamado — já seria melhor que hoje — mas
+   * não diz nada a quem varre a fila, e o vão que esta correção fecha é
+   * justamente o de uma falha nossa passar despercebida.
+   *
+   * É `bug` e não `infra_*` de propósito: com n=1 eu NÃO sei o mecanismo que
+   * produziu o wav inválido (disco? escrita curta? take na fronteira do corte?).
+   * `bug` diz o que está provado — o arquivo é nosso e saiu quebrado — e deixa
+   * a investigação com dono. Chamar de `infra_disk` seria herdar a causa do
+   * incidente vizinho, que é exatamente a armadilha que o playbook U proíbe.
+   *
+   * ⚠️ VEM DEPOIS de `user_dataset` para não mexer na precedência existente. Os
+   * dois não podem coexistir: `isCorruptFile` agora devolve false justamente
+   * quando este detector devolve true, e o teste de mutação prova isso.
+   */
+  if (ehChunkDoDatasetInvalido(error)) return "bug";
   /**
    * OOM PROVADO PELO STDERR — a correção de 16/09 (incidente #11).
    *
@@ -293,6 +375,14 @@ export function errorSignature(kind: string, error: string, diag?: DiagnosticoTr
   if (cause === "user_dataset") {
     return isCorruptFile(error) ? `${k}:${cause}:corrupt` : `${k}:${cause}`;
   }
+  // Chunk de dataset inválido: chave CONSTANTE, mesma disciplina do OOM e do
+  // disco cheio. O head normalizado seria quase estável (o uuid vira <id> e o
+  // 0032 vira #), mas "quase" já rachou incidente aqui antes — e o `[Errno
+  // 1094995529]` do início da frase é justamente o tipo de número que muda de
+  // ocorrência para ocorrência. Fixa, então, e o incidente acumula.
+  if (cause === "bug" && ehChunkDoDatasetInvalido(error)) {
+    return `${k}:${cause}:${SUFIXO_CHUNK_DATASET}`;
+  }
   const head = stripRunpodWrapper(stripFaseSuffix(error))
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, "<url>")
@@ -333,6 +423,13 @@ export function incidentTitle(kind: string, error: string, diag?: DiagnosticoTra
     return isCorruptFile(error)
       ? `${k}: arquivo enviado corrompido/incompleto`
       : `${k}: áudio insuficiente/sem fala limpa`;
+  }
+  // O título precisa dizer DE QUEM é o arquivo. Mesma lição do disco cheio
+  // logo acima: quem varre a fila lê só o título, e se ele disser "arquivo
+  // inválido" seco a pessoa vai procurar defeito no material do aluno — que
+  // aqui está intacto, e que o produto já culpou uma vez.
+  if (cause === "bug" && ehChunkDoDatasetInvalido(error)) {
+    return `${k}: chunk do dataset saiu inválido — arquivo NOSSO, material do aluno intacto`;
   }
   if (cause === "infra_gpu") return `${k}: GPU sem memória (OOM)`;
   if (cause === "infra_storage") return `${k}: falha de armazenamento (R2)`;
