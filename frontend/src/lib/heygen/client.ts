@@ -17,15 +17,33 @@ const API = "https://api.heygen.com";
 const UPLOAD = "https://upload.heygen.com";
 const TIMEOUT_MS = 30_000;
 
+/**
+ * Campos declarados e atribuídos no corpo, em vez de "parameter properties"
+ * (`constructor(readonly status: number)`). São equivalentes em runtime, mas a
+ * forma curta é sintaxe que o type-stripping do Node NÃO aceita
+ * (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX), e isso tornava este arquivo inteiro
+ * impossível de importar num `node --test` — que é como a casa testa.
+ */
 export class HeygenError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(message: string, status: number, code?: string) {
     super(message);
+    this.status = status;
+    this.code = code;
   }
 }
+
+/**
+ * Código do erro "li a resposta do HeyGen e não achei o número do saldo".
+ *
+ * É um CÓDIGO e não uma frase de propósito: `classifyHeygenError` decide por
+ * regex sobre a mensagem (`/quota|credit|insufficient/`), e qualquer texto
+ * honesto sobre saldo cai nessa regex — o erro viraria "cota zerada", que é
+ * exatamente a confusão que este caminho existe para evitar.
+ */
+export const CODIGO_SALDO_ILEGIVEL = "saldo_ilegivel";
 
 async function call<T>(
   apiKey: string,
@@ -85,13 +103,33 @@ async function call<T>(
 export async function getRemainingQuota(
   apiKey: string,
 ): Promise<{ credits: number; raw: number }> {
-  const data = await call<{ remaining_quota?: number; details?: unknown }>(
+  const data = await call<{ remaining_quota?: number; details?: { api?: number } }>(
     apiKey,
     "/v2/user/remaining_quota",
   );
-  // remaining_quota vem em "unidades" internas (60 ≈ 1 crédito/minuto standard)
-  const raw = typeof data.remaining_quota === "number" ? data.remaining_quota : 0;
-  return { credits: raw / 60, raw };
+  // remaining_quota vem em "unidades" internas (60 ≈ 1 crédito/minuto standard).
+  // `details.api` é a outra casa onde esse número já apareceu na resposta deles.
+  const bruto =
+    typeof data.remaining_quota === "number"
+      ? data.remaining_quota
+      : typeof data.details?.api === "number"
+        ? data.details.api
+        : null;
+  // NÃO COAGIR PARA 0 (19/09, #396). Até aqui, resposta em formato desconhecido
+  // virava `raw = 0` — e 0 é INDISTINGUÍVEL de "a cota acabou de verdade". A
+  // tela então mostrava em vermelho "sua cota de API chegou a zero, recarregue
+  // no HeyGen" para um aluno que podia estar com a cota cheia, e mandava ele
+  // gastar dinheiro à toa. Falhar explícito faz o GET cair no catch que já
+  // existe, que devolve `raw: null` e faz a tela dizer "não foi possível
+  // consultar agora" — que é a verdade.
+  if (bruto === null) {
+    throw new HeygenError(
+      "Não foi possível ler o seu saldo no HeyGen agora: a resposta veio num formato que não reconhecemos. Isso é um problema nosso, não da sua conta — a sua chave continua válida.",
+      200,
+      CODIGO_SALDO_ILEGIVEL,
+    );
+  }
+  return { credits: bruto / 60, raw: bruto };
 }
 
 export type HeygenAvatar = {
@@ -291,6 +329,12 @@ export type HeygenErrorKind = "auth" | "quota" | "heygen" | "network";
 
 export function classifyHeygenError(e: unknown): { kind: HeygenErrorKind; message: string } {
   if (e instanceof HeygenError) {
+    // ANTES da regex, de propósito: a mensagem deste erro fala de saldo e
+    // casaria com /quota|credit|insufficient/, virando "cota zerada" — o
+    // falso zero que este caminho existe para evitar (#396).
+    if (e.code === CODIGO_SALDO_ILEGIVEL) {
+      return { kind: "heygen", message: e.message };
+    }
     if (e.status === 401 || e.status === 403) {
       return {
         kind: "auth",
