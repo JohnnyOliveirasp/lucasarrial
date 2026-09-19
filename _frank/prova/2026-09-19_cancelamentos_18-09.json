@@ -1,0 +1,107 @@
+{
+  "dia": "2026-09-18",
+  "janela": "janela UTC 2026-09-18T00:00:00.000Z -> 2026-09-19T00:00:00.000Z (dia 2026-09-18)",
+  "eventos": 2,
+  "varredura": {
+    "estado": "desativada",
+    "motivo": "DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas"
+  },
+  "pessoas": [
+    {
+      "email": "tonimekautocenter@gmail.com",
+      "nome": "Tonimek Auto Center",
+      "tipo": "TRIAL",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 1,
+      "adesao": "2026-09-17",
+      "cancelamento": "2026-09-18",
+      "trialVenceEm": "2026-09-27",
+      "trialJaVenceu": false,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "X20EC2VU",
+            "status": "CANCELLED_BY_SELLER",
+            "trial": true,
+            "adesao": 1789646990000,
+            "fim": 1789733583000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "X20EC2VU",
+            "valor": 0,
+            "status": "APPROVED",
+            "rec": 1,
+            "quando": 1789646989000
+          }
+        ]
+      },
+      "banco": {
+        "id": "649e37f2-65dc-4298-beb3-d229507f69da",
+        "sub": 72790,
+        "extra": 1320,
+        "acessoAte": "2026-09-24T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": [
+        "TRIAL ainda no prazo (dia 10 em 2026-09-27), mas a varredura esta DESATIVADA (DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas) — os 72790 cr NAO vao expirar sozinhos."
+      ]
+    },
+    {
+      "email": "ljm.larajmotta@gmail.com",
+      "nome": "Lara Jansiski Motta Godinho",
+      "tipo": "ASSINANTE",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 31,
+      "adesao": "2026-08-18",
+      "cancelamento": "2026-09-18",
+      "trialVenceEm": null,
+      "trialJaVenceu": null,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "LXTTYOVM",
+            "status": "CANCELLED_BY_CUSTOMER",
+            "trial": true,
+            "adesao": 1787072550000,
+            "fim": 1789744118000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "LXTTYOVM",
+            "valor": 0,
+            "status": "COMPLETE",
+            "rec": 1,
+            "quando": 1787072549000
+          },
+          {
+            "code": "LXTTYOVM",
+            "valor": 97,
+            "status": "COMPLETE",
+            "rec": 2,
+            "quando": 1787666173000
+          },
+          {
+            "code": "LXTTYOVM",
+            "valor": 97,
+            "status": "APPROVED",
+            "rec": 3,
+            "quando": 1789740280000
+          }
+        ]
+      },
+      "banco": {
+        "id": "8bc35327-dbbb-42d9-97cd-47855509e2e7",
+        "sub": 293950,
+        "extra": 0,
+        "acessoAte": "2026-10-18T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": []
+    }
+  ]
+}
