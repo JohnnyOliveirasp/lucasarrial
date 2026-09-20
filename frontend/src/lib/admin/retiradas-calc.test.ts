@@ -14,6 +14,7 @@ import {
   EMAILS_SOCIOS,
   SOCIOS,
   VALOR_MAXIMO,
+  caixaReal,
   centavos,
   ehSocio,
   ehTabelaAusente,
@@ -184,4 +185,27 @@ test("ehSocio: admin que não é sócio fica de fora", () => {
   assert.equal(ehSocio(""), false);
   assert.equal(ehSocio(null), false);
   assert.equal(ehSocio(undefined), false);
+});
+
+// ───────── caixaReal: o desconto que vale pro período E pro acumulado ─────────
+
+test("caixaReal desconta o que já foi retirado", () => {
+  assert.equal(caixaReal(78_666.35, 8841), 69_825.35);
+  assert.equal(caixaReal(20_377.98, 8841), 11_536.98);
+});
+
+test("caixaReal sem retirada devolve o lucro intacto", () => {
+  for (const lucro of [0, 1, 12_345.67, -500]) {
+    assert.equal(caixaReal(lucro, 0), centavos(lucro));
+  }
+});
+
+test("caixaReal fecha em centavos e não vira NaN com lixo", () => {
+  assert.equal(caixaReal(0.3, 0.1 + 0.1 + 0.1), 0);
+  assert.equal(caixaReal(NaN, 8841), -8841);
+  assert.equal(caixaReal(1000, NaN), 1000);
+});
+
+test("caixaReal em cima da lista bate com emCaixa (mesma conta, uma fonte)", () => {
+  assert.equal(caixaReal(20_000, totalRetiradas(AS_TRES)), emCaixa(20_000, AS_TRES));
 });

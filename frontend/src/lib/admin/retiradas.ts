@@ -11,7 +11,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { fetchAllPages } from "@/lib/db/paginate";
 import type { RetiradaSocioRow } from "@/lib/db/types";
 import type { DateRange } from "./queries";
-import { ehTabelaAusente } from "./retiradas-calc";
+import { ehTabelaAusente, totalRetiradas } from "./retiradas-calc";
 
 const COLUNAS = "id, valor, socio, retirada_em, origem, registrado_por, criado_em";
 
@@ -84,4 +84,34 @@ export async function createRetirada(nova: NovaRetirada): Promise<RetiradaSocioR
     throw new Error(`Falha ao registrar a retirada: ${error.message}`);
   }
   return data as RetiradaSocioRow;
+}
+
+/**
+ * Quanto já foi retirado: no período e desde o início (pedido Johnny 18/09,
+ * "todos os valores positivos precisam conter esta retirada"). É o que o
+ * dashboard desconta do Lucro (caixa) e do Lucro acumulado — SÓ pro sócio.
+ *
+ * Tabela ausente ou leitura podre devolve 0: o painel de dinheiro não pode
+ * ficar em branco por causa disto, e 0 mantém os números como eram antes.
+ */
+export async function somasRetiradas(range: DateRange): Promise<{ periodo: number; acumulado: number }> {
+  const admin = getAdmin();
+  const ler = async (janela: DateRange | null) =>
+    fetchAllPages<RetiradaSocioRow>(
+      janela ? "retiradas_socios período" : "retiradas_socios acumulado",
+      (from, to) => {
+        let q = admin.from("retiradas_socios").select(COLUNAS);
+        if (janela) q = q.gte("retirada_em", janela.since).lt("retirada_em", janela.until);
+        return q.order("retirada_em", { ascending: false }).order("id", { ascending: true }).range(from, to);
+      },
+    );
+
+  try {
+    const [periodo, acumulado] = await Promise.all([ler(range), ler(null)]);
+    return { periodo: totalRetiradas(periodo), acumulado: totalRetiradas(acumulado) };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!ehTabelaAusente(msg)) console.warn("[retiradas] soma falhou:", msg);
+    return { periodo: 0, acumulado: 0 };
+  }
 }
