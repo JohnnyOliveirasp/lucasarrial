@@ -9,6 +9,8 @@ import { r2, imagesBucket } from "@/lib/r2/client";
 import { getAdmin } from "@/lib/db/admin";
 import { kieGetTask, friendlyKieError } from "@/lib/kie/client";
 import { stripAudioTrack } from "@/lib/video/strip-audio";
+import { addExtraCredits } from "@/lib/credits/service";
+import { estornarRegenDaCena } from "@/lib/video/estorno-cena-regen";
 
 function pickExt(url: string, contentType: string | null): string {
   if (contentType?.includes("webm")) return "webm";
@@ -89,12 +91,86 @@ export async function finalizeSceneVideo(
     .eq("id", sceneId);
 }
 
-/** Marca o vídeo da cena como falha. */
+/** Estados em que a cena ainda está em andamento — os únicos falháveis. */
+const STATUS_CENA_EM_ANDAMENTO = ["pending", "generating"] as const;
+
+/**
+ * Marca o vídeo da cena como falha + ESTORNO AUTOMÁTICO da regeração.
+ *
+ * O caso que originou isto (#485, medido 20/09): esta função só escrevia
+ * `failed` e ia embora. Resultado — `video_clip_regen` acumulou 301 débitos
+ * (−781.180 cr) desde 07/07 com ZERO estornos, enquanto o irmão Animar Imagem
+ * (`lib/images/video-sync.ts:120-130`) devolvia desde 11/07.
+ *
+ * O desenho é o mesmo do irmão: TRANSIÇÃO IDEMPOTENTE primeiro — só quem tira
+ * a cena de `pending`/`generating` dispara a contingência, o que fecha a
+ * corrida webhook × poll. Quem perdeu a corrida (ou chegou com a cena já
+ * `failed`/`ready`) só atualiza o texto do erro e sai sem tocar em dinheiro.
+ *
+ * ⚠️ SÓ a perna `video_clip_regen` é estornada aqui, e não é preguiça: nela o
+ * `ref_id` do débito é a própria cena (1:1). O débito de `video_clips` é
+ * AGREGADO por projeto (videos/route.ts:211-220) e devolver por cena a partir
+ * dele exige mudar a granularidade do débito — decisão de produto, fora deste
+ * conserto. Enquanto isso, uma cena que falhou na PRIMEIRA leva continua sem
+ * estorno automático; o aluno recupera clicando em Regerar (aí sim 1:1).
+ *
+ * LANÇA se o estorno falhar, e antes disso devolve a cena pro estado anterior
+ * pra que o próximo poll/webhook tente de novo. É de propósito: cena sem marcar
+ * é um incômodo visível e recuperável; crédito sumindo em silêncio é o defeito
+ * que este arquivo está consertando.
+ */
 export async function failSceneVideo(sceneId: string, message: string): Promise<void> {
-  await getAdmin()
+  const admin = getAdmin();
+  const erro = message.slice(0, 500);
+
+  const { data: claimed } = await admin
     .from("video_scenes")
-    .update({ video_status: "failed", video_error: message.slice(0, 500) })
-    .eq("id", sceneId);
+    .update({ video_status: "failed", video_error: erro })
+    .eq("id", sceneId)
+    .in("video_status", STATUS_CENA_EM_ANDAMENTO)
+    .select("id, user_id");
+  const cena = (claimed ?? [])[0] as { id: string; user_id: string } | undefined;
+  if (!cena) {
+    // Não venceu a transição. Dois motivos possíveis, e nenhum estorna:
+    //  · outra via (webhook × poll) já falhou esta cena e já cuidou do estorno;
+    //  · falha PRÉ-despacho (generate-scene-video.ts), quando a cena ainda está
+    //    `ready` de um clipe anterior ou nula — e aí não houve débito nenhum,
+    //    porque o débito do regen só é gravado depois do "started".
+    // Em ambos, o texto do erro ainda precisa chegar ao aluno.
+    await admin
+      .from("video_scenes")
+      .update({ video_status: "failed", video_error: erro })
+      .eq("id", sceneId);
+    return;
+  }
+
+  try {
+    const r = await estornarRegenDaCena(
+      { admin, creditar: addExtraCredits },
+      { userId: cena.user_id, sceneId },
+    );
+    // Log nos DOIS desfechos: "não estornei" é a decisão que mais precisa de
+    // rastro — foi a ausência dela que deixou o #485 rodar calado desde 07/07.
+    console.warn(
+      `[video-sync] cena ${sceneId} falhou — estorno ${r.aplicado ? "APLICADO" : "não"}: ${r.motivo}`,
+    );
+  } catch (e) {
+    const detalhe = e instanceof Error ? e.message : String(e);
+    console.error(`[video-sync] ESTORNO FALHOU na cena ${sceneId}: ${detalhe}`);
+    // Desfaz a marcação pra que a próxima passada do poll/webhook reentre aqui
+    // e tente devolver de novo. Guardado por `video_status = failed` pra não
+    // atropelar um estado que outra via tenha escrito nesse meio-tempo.
+    try {
+      await admin
+        .from("video_scenes")
+        .update({ video_status: "pending" })
+        .eq("id", sceneId)
+        .eq("video_status", "failed");
+    } catch {
+      // Best-effort: se nem desfazer der, o erro original é o que importa.
+    }
+    throw e;
+  }
 }
 
 /** Consulta o Kie e atualiza o vídeo da cena (poll/webhook). */
