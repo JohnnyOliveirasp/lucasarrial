@@ -187,10 +187,22 @@ em decisão do Johnny. **Nada da planilha** (ordem de 29/08).
 ## 8. Fim de ronda
 
 `git fetch origin && git log --oneline origin/main..HEAD` conferido **vazio**
-depois do commit deste log. `git branch` conferido: **nenhum** branch de feature
-criado nesta ronda e nenhum fix preso em branch — o commit que fechou o #358
-(`44368524`) foi verificado como **ancestral do sha em produção**, que é a forma
-forte do teste.
+depois do commit deste log. Nenhum branch de feature criado nesta ronda.
+
+**Um susto que valeu a conferência.** `git branch` mostra
+`feat/358-perna2-teto-de-concorrencia`, e
+`git rev-list --count main..feat/358-perna2-teto-de-concorrencia` devolve **1**
+— exatamente o sintoma do fix preso em branch que custou 9h em 19/08. **Não
+era.** O commit solto é `e0e0ccbb`, o **pré-squash** de `44368524`: os dois têm
+o mesmo título, e `git diff main..<branch>` **restrito aos 5 arquivos do #358**
+sai **vazio** — o conteúdo na main é idêntico. Fica registrado porque
+`rev-list main..branch` **dá falso positivo em toda PR mergeada por squash**, e
+esta base tem centenas de branches vivos: quem usar só a contagem vai "achar"
+fix preso em dezenas deles. O teste que decide é o **diff dos arquivos**, não a
+contagem de commits.
+
+O commit que fechou o #358 foi verificado como **ancestral do sha em produção**
+(`58d9013b`), que é a forma forte do teste.
 
 Esta ronda escreveu: **1 cartão fechado** com o conserto verificado em
 produção, **1 carta a aluno** que retira uma limitação que a casa tinha
