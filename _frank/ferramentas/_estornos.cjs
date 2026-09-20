@@ -101,6 +101,31 @@ const REF_TYPES_ESTORNO = [
   // (A Priscilla fica com liquido negativo de proposito: recebeu 19 cenas e o
   // estorno cobriu so o que nao foi entregue — ver o log das 03h.)
   "video_clip_refund_backfill",
+  // ⚠️ 20/09, ronda das falhas ~18h30Z: ESTE FALTAVA e o infrator fui EU MESMO
+  // OUTRA VEZ — a ronda das 16h30 de HOJE criou o tipo pra estornar a imagem que
+  // o gate do #371 recusou por SORTEIO, e nao passou aqui. Mesma ronda, mesmo
+  // erro que `video_clip_refund_backfill` (criado aas 03h de hoje) ja tinha
+  // cometido 13h antes. QUINTA reincidencia da classe (#185 studio_audio, #342
+  // perdao/compensation, 19/09 edicao_broll, 20/09 03h video_clip, agora esta).
+  //
+  // PROVA PELO CRITERIO DESTE ARQUIVO (casar ref_id, somar o sinal), medida no
+  // banco antes de mover — UMA linha, e ela zera o debito:
+  //   ref_id 4100fc07… image_generation -525 + image_refund_gate371 +525 = 0
+  // 1 linha / +525 cr / 1 aluna (Alice Silveira, #371). Sem ele,
+  // `ehEstorno('image_refund_gate371')` dava false e quem perguntasse "a imagem
+  // 4100fc07 da Alice ja foi ressarcida?" leria NAO e pagaria de novo — o falso
+  // negativo que paga em dobro, pela quinta vez.
+  //
+  // O QUE ESTE CASO ACRESCENTA AOS QUATRO ANTERIORES: o tipo nasceu numa
+  // ferramenta de ronda (`2026-09-17_estornar_imagem_que_a_tela_nao_mostrou`-
+  // familia), NAO em codigo de produto. As quatro notas acima culpam "quem
+  // escreve o refundRefType nao sabe que esta lista existe" — mas aqui quem
+  // escreveu SABIA: sou eu, e eu mantenho a lista. Conhecer a regra nao bastou;
+  // so o guarda por EXCLUSAO (`conferirListaCompleta`) pegou, de novo, em horas.
+  // Isso e argumento pra ligar o guarda no caminho de GRAVACAO do estorno em vez
+  // de so na varredura — enquanto for so varredura, a janela entre gravar e
+  // acusar continua existindo, e nela cabe um pagamento em dobro.
+  "image_refund_gate371",
 ];
 
 /**
