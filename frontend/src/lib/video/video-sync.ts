@@ -9,6 +9,8 @@ import { r2, imagesBucket } from "@/lib/r2/client";
 import { getAdmin } from "@/lib/db/admin";
 import { kieGetTask, friendlyKieError } from "@/lib/kie/client";
 import { stripAudioTrack } from "@/lib/video/strip-audio";
+import { inserirChamadoUnico } from "@/lib/incidents/gravar";
+import { getTier } from "@/lib/video/tiers";
 
 function pickExt(url: string, contentType: string | null): string {
   if (contentType?.includes("webm")) return "webm";
@@ -89,12 +91,107 @@ export async function finalizeSceneVideo(
     .eq("id", sceneId);
 }
 
-/** Marca o vídeo da cena como falha. */
-export async function failSceneVideo(sceneId: string, message: string): Promise<void> {
-  await getAdmin()
+type CenaFalhada = {
+  id: string;
+  user_id: string;
+  video_project_id: string;
+  idx: number;
+  video_tier: string | null;
+};
+
+/**
+ * Abre (ou reaquece) UM chamado técnico por PROJETO quando o clipe de uma cena
+ * falha. Best-effort: chamado é registro, nunca derruba o fluxo que o originou.
+ *
+ * POR QUE EXISTE (chamado #484, 19/09): esta era a ÚNICA perna de geração da
+ * casa que falhava MUDA. As irmãs todas avisam — Animar Imagem, TTS, Vídeo
+ * Clone e as três do Studio chamam `handleTechFailure`, e a perna de imagem
+ * ainda guarda o erro cru em `kie_raw_error`. Aqui não havia chamado, nem
+ * e-mail, nem coluna de erro cru: a mensagem do Kie era traduzida pra frase
+ * amigável, gravada em `video_error` e o original morria no processo. Por isso
+ * as 6 falhas seguidas do aluno em Bronze só chegaram à casa porque ele
+ * reclamou no chat do app — e chegaram SEM a causa.
+ *
+ * POR QUE POR PROJETO E NÃO POR CENA: esta perna gera em LOTE (uma cena a cada
+ * 5s de roteiro, dezenas delas) e, quando o titular do tier está ruim, o lote
+ * inteiro falha junto. Um chamado por cena seria uma enxurrada; a assinatura
+ * por projeto faz as N cenas — e as retentativas do aluno — virarem
+ * OCORRÊNCIAS do mesmo cartão, que é o número que interessa a quem lê o quadro.
+ *
+ * LIMITE CONHECIDO E ACEITO: poll e webhook podem ver a MESMA falha e contar
+ * duas ocorrências. Não há claim atômico aqui de propósito — o claim natural
+ * ("só avisa quem tirou a cena de failed") silenciaria justamente o caso do
+ * #484, porque o redespacho só marca `pending` DEPOIS que o Kie aceita: numa
+ * falha de criação a cena continua `failed` da tentativa anterior, e da 2ª
+ * tentativa em diante ninguém avisaria. Entre contar demais e ficar cego, a
+ * casa prefere contar demais.
+ */
+async function abrirChamadoDeClipe(row: CenaFalhada, rawMessage: string): Promise<void> {
+  try {
+    const admin = getAdmin();
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("email")
+      .eq("id", row.user_id)
+      .maybeSingle();
+    const email = (profile as { email?: string } | null)?.email ?? "(sem e-mail)";
+    const tier = getTier(row.video_tier);
+    const now = new Date().toISOString();
+
+    await inserirChamadoUnico(admin, {
+      kind: "generation",
+      cause: "unknown",
+      status: "open",
+      signature: `video-scene-clip:${row.video_project_id}`,
+      title:
+        `Vídeo História: clipe de cena falhou${tier ? ` (${tier.label})` : ""} — ` +
+        `${email} (projeto ${row.video_project_id.slice(0, 8)})`,
+      occurrences: 1,
+      affected_emails: [email],
+      // CRU, como manda o #425: é por esta string que se descobre se foi 429,
+      // timeout ou recusa de conteúdo. A frase de conforto fica em video_error.
+      sample_error: rawMessage.slice(0, 1000),
+      description:
+        `Falhou o clipe da cena ${row.idx} do projeto ${row.video_project_id} ` +
+        `(/app/videos/${row.video_project_id}), tier ${tier?.label ?? row.video_tier ?? "?"}. ` +
+        `As demais cenas do MESMO projeto e as retentativas do aluno entram como ` +
+        `ocorrências deste cartão.\n\n` +
+        `⚠️ CONFERIR O EXTRATO À MÃO: esta perna NÃO tem estorno automático. O ` +
+        `débito sai em /api/v1/videos/[id]/videos (ref_type "video_clips", ref_id = ` +
+        `o PROJETO, lote agregado de started × preço do tier) e nada devolve quando ` +
+        `o clipe falha depois de despachado — ao contrário do Animar Imagem, que ` +
+        `estorna por "image_video_refund".\n\n` +
+        `⚠️ Esta perna também NÃO tem o fallback de contingência: o titular do tier ` +
+        `falhou e ninguém redespachou no reserva, então o aluno tende a repetir a ` +
+        `tentativa no MESMO modelo que acabou de falhar.`,
+      reported_by: "video-scene-clip",
+      categoria: "tecnico",
+      first_seen_at: now,
+      last_seen_at: now,
+    });
+  } catch {
+    /* best-effort: registro nunca derruba a entrega */
+  }
+}
+
+/**
+ * Marca o vídeo da cena como falha e ABRE O CHAMADO.
+ *
+ * Recebe o erro CRU — quem chama NÃO deve pré-traduzir. A tradução amigável
+ * acontece só aqui (mesma regra que `images/video-sync.ts` já segue): entra
+ * cru, sai cru pro diagnóstico e amigável pra tela.
+ */
+export async function failSceneVideo(sceneId: string, rawMessage: string): Promise<void> {
+  const { data } = await getAdmin()
     .from("video_scenes")
-    .update({ video_status: "failed", video_error: message.slice(0, 500) })
-    .eq("id", sceneId);
+    .update({ video_status: "failed", video_error: friendlyKieError(rawMessage).slice(0, 500) })
+    .eq("id", sceneId)
+    .select("id, user_id, video_project_id, idx, video_tier");
+
+  const row = (data ?? [])[0] as unknown as CenaFalhada | undefined;
+  if (!row) return;
+
+  await abrirChamadoDeClipe(row, rawMessage);
 }
 
 /** Consulta o Kie e atualiza o vídeo da cena (poll/webhook). */
@@ -124,7 +221,8 @@ export async function syncSceneVideo(
   }
 
   if (info.state === "fail") {
-    await failSceneVideo(sceneId, friendlyKieError(info.failMsg || info.failCode || "geração falhou"));
+    // CRU: friendlyKieError roda dentro de failSceneVideo (#425).
+    await failSceneVideo(sceneId, info.failMsg || info.failCode || "geração falhou");
     return;
   }
 
