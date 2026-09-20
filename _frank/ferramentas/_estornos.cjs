@@ -75,6 +75,32 @@ const REF_TYPES_ESTORNO = [
   // deste arquivo (`ref_type de estorno que a lista nao conhece`) e que pegou —
   // ele apareceu na varredura de hoje antes de qualquer humano notar.
   "edicao_broll_refund",
+  // ⚠️ 20/09, ronda das falhas ~11hZ: ESTE FALTAVA e o infrator fui EU MESMO —
+  // a ronda das 03h de HOJE criou o tipo pra estornar o #485 (clipe de cena
+  // cobrado e nunca devolvido) e nao passou aqui. 6 linhas / +59.400 cr / 6
+  // alunos, todas de 20/09 02h-03hZ. Sem ele, `ehEstorno` dava false e quem
+  // perguntasse "o Felipe e a Glaucia ja foram ressarcidos?" leria NAO e
+  // pagaria de novo — o mesmo falso negativo de sempre.
+  // QUARTA reincidencia da classe (#185 studio_audio, #342 perdao/compensation,
+  // 19/09 edicao_broll, agora esta). O que mudou pra melhor: o guarda
+  // `conferirListaCompleta` acusou em HORAS, nao em dias — rodado hoje, varreu
+  // 3.489 linhas e devolveu exatamente ["video_clip_refund_backfill"]. O
+  // criterio por EXCLUSAO fez o que foi desenhado pra fazer.
+  //
+  // PROVA PELO CRITERIO DESTE ARQUIVO (casar ref_id, somar o sinal) — e a
+  // armadilha NOVA que ela revelou, espelho da de cima: somando SO
+  // `video_clips`, tres alunos PARECEM ter recebido estorno A MAIOR (glaucia
+  // +2.640; felipe e josimo +1.320 cada). NAO e verdade. A perna que falta e
+  // `video_clip_regen`, que debita a regeracao de clipe em linha propria:
+  //   felipe  video_clips -18.480 + video_clip_regen -1.320 = -19.800 · estorno +19.800 -> 0
+  //   josimo  video_clips  -9.240 + video_clip_regen -1.320 = -10.560 · estorno +10.560 -> 0
+  //   glaucia video_clips  -2.640 + video_clip_regen -2.640 =  -5.280 · estorno  +5.280 -> 0
+  // Medir estorno de clipe por UMA perna so faz a conta CERTA parecer ERRADA —
+  // e uma ronda apressada "corrigiria" tirando credito de aluno pagante, que e
+  // exatamente o que a 9-A proibe. Quem conferir clipe de cena soma AS DUAS.
+  // (A Priscilla fica com liquido negativo de proposito: recebeu 19 cenas e o
+  // estorno cobriu so o que nao foi entregue — ver o log das 03h.)
+  "video_clip_refund_backfill",
 ];
 
 /**
