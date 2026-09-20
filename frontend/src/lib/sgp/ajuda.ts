@@ -15,6 +15,7 @@
  * types.ts, o que a Fast diz muda junto.
  */
 import { formatDuration } from "@/lib/audio/duration";
+import { somaFalaDistinta } from "./fala-distinta";
 import {
   SGP_AUDIO_MAX_SEGUNDOS,
   SGP_AUDIO_MIN_SEGUNDOS,
@@ -133,7 +134,9 @@ export function contextoDoPedido(pedido: SgpPedidoRow | null, passo: SgpPasso | 
   const audios = pedido.audios ?? [];
   const aprovados = audios.filter((a) => a.status === "aprovado");
   const reprovados = audios.filter((a) => a.status === "reprovado");
-  const fala = aprovados.reduce((s, a) => s + (a.segundos ?? 0), 0);
+  // Fala DISTINTA (#501): a Fast responde com a MESMA régua dos portões —
+  // dizer "20 min ✓" pra quem reenviou o mesmo arquivo seria mentir junto.
+  const fala = somaFalaDistinta(aprovados);
   const ressalvas = [...new Set(aprovados.flatMap((a) => a.avisos ?? []))];
   const motivosFoto = reprovadas.flatMap((f) => f.motivos ?? []).join("; ");
   const motivosAudio = reprovados.flatMap((a) => a.motivos ?? []).join("; ");

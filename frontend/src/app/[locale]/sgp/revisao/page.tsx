@@ -3,6 +3,7 @@ import { Link, redirect } from "@/i18n/navigation";
 import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { formatDuration } from "@/lib/audio/duration";
+import { somaFalaDistinta } from "@/lib/sgp/fala-distinta";
 import { pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 import { SgpShell } from "@/components/sgp/sgp-shell";
 import { SgpEnviarForm } from "@/components/sgp/sgp-enviar-form";
@@ -37,7 +38,9 @@ export default async function SgpRevisaoPage({ params }: { params: Promise<{ loc
       .map(async (f) => ({ ...f, url: await createPresignedGet(bucket, f.key, 3600) })),
   );
   const audios = (pedido!.audios ?? []).filter((a) => a.status === "aprovado");
-  const totalFala = audios.reduce((s, a) => s + a.segundos, 0);
+  // Fala DISTINTA (#501): a mesma régua dos portões — o total que o aluno
+  // revisa aqui não pode contradizer o que o envio vai aceitar.
+  const totalFala = somaFalaDistinta(audios);
 
   const bloco = "rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] p-4";
   const cab = "mb-3 flex items-center justify-between";

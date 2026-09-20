@@ -2327,6 +2327,7 @@
       "continuar": "Continuar",
       "salvando": "Guardando…",
       "avisoAfeta": "puede afectar la voz clonada",
+      "repetido": "archivo repetido — ya enviado antes, no cuenta para los minutos. Puedes eliminarlo.",
       "arquivoLongo": "Este archivo tiene {tem} — el límite es {max} min por archivo. Córtalo en partes más pequeñas y envíalo de nuevo."
     },
     "revisao": {

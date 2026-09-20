@@ -8,6 +8,7 @@ import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { createPresignedPut, isAllowedAudioMime } from "@/lib/r2/presigned";
+import { somaFalaDistinta } from "@/lib/sgp/fala-distinta";
 import { pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 import { SGP_AUDIO_MAX_ARQUIVOS as MAX_ARQUIVOS, SGP_AUDIO_MAX_SEGUNDOS } from "@/lib/sgp/types";
 
@@ -31,9 +32,10 @@ export async function POST(request: NextRequest) {
     // Teto já batido: não adianta gastar upload + ffmpeg + Whisper num arquivo
     // que o "Continuar" vai recusar de qualquer jeito (Johnny 29/08). Cada
     // análise custa dinheiro nosso e minutos do aluno.
-    const falaAprovada = (pedido.audios ?? [])
-      .filter((a) => a.status === "aprovado")
-      .reduce((s, a) => s + (a.segundos ?? 0), 0);
+    // Fala DISTINTA (#501): cópia do mesmo arquivo não conta — senão este
+    // atalho recusaria upload novo por causa de minutos que não existem.
+    // (É só o atalho de UX; quem decide são os portões do concluir/enviar.)
+    const falaAprovada = somaFalaDistinta((pedido.audios ?? []).filter((a) => a.status === "aprovado"));
     if (falaAprovada >= SGP_AUDIO_MAX_SEGUNDOS) {
       return badRequest(
         `Você já tem ${Math.round(falaAprovada / 60)} min de fala aprovada e o limite é ` +

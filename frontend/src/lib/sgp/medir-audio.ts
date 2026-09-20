@@ -45,12 +45,20 @@ export type Medicao = {
   /** Ressalvas — o áudio vale, mas pode afetar a voz clonada. */
   avisos: string[];
   indeciso?: boolean;
+  /**
+   * Impressão de conteúdo do objeto no R2 (#501): a régua dos 20 min usa
+   * ETag+tamanho pra contar o mesmo arquivo reenviado UMA vez só. Saem do
+   * GetObject que o download já faz — nenhuma ida a mais. `null` quando a
+   * resposta não trouxe (aí o item conta individualmente, falha aberta).
+   */
+  etag: string | null;
+  bytes: number | null;
 };
 
 export async function medirAudio(key: string): Promise<Medicao> {
   const dir = await dirTemporario("sgp-audio-");
   try {
-    const bytes = await baixar(key);
+    const { bytes, etag, tamanho } = await baixar(key);
     const entrada = join(dir, "in" + (key.match(/\.[a-z0-9]{2,5}$/i)?.[0] ?? ".bin"));
     await writeFile(entrada, bytes);
 
@@ -91,7 +99,7 @@ export async function medirAudio(key: string): Promise<Medicao> {
       }
     }
 
-    return { segundos, falaSegundos, meanDb, maxDb, idioma, aprovado: motivos.length === 0, motivos, avisos };
+    return { segundos, falaSegundos, meanDb, maxDb, idioma, aprovado: motivos.length === 0, motivos, avisos, etag, bytes: tamanho };
   } catch (e) {
     console.error("[sgp/medir-audio] falhou:", e instanceof Error ? e.message : e);
     return { ...vazio(), indeciso: true };
@@ -101,13 +109,20 @@ export async function medirAudio(key: string): Promise<Medicao> {
 }
 
 function vazio(): Medicao {
-  return { segundos: 0, falaSegundos: 0, meanDb: null, maxDb: null, idioma: null, aprovado: false, motivos: [], avisos: [] };
+  return { segundos: 0, falaSegundos: 0, meanDb: null, maxDb: null, idioma: null, aprovado: false, motivos: [], avisos: [], etag: null, bytes: null };
 }
 
-async function baixar(key: string): Promise<Uint8Array> {
+async function baixar(key: string): Promise<{ bytes: Uint8Array; etag: string | null; tamanho: number | null }> {
   const res = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKETS.voices, Key: key }));
   if (!res.Body) throw new Error("objeto sem corpo");
-  return res.Body.transformToByteArray();
+  const bytes = await res.Body.transformToByteArray();
+  return {
+    bytes,
+    etag: typeof res.ETag === "string" && res.ETag.length > 0 ? res.ETag : null,
+    // ContentLength da resposta quando veio; senão o que foi baixado — os dois
+    // descrevem o MESMO objeto, e byte contado não mente.
+    tamanho: typeof res.ContentLength === "number" && res.ContentLength > 0 ? res.ContentLength : bytes.byteLength || null,
+  };
 }
 
 function duracaoDoLog(log: string): number {

@@ -63,6 +63,14 @@ export type SgpAudio = {
   motivos?: string[];
   /** Ressalvas: o áudio vale, mas pode afetar a voz clonada. */
   avisos?: string[];
+  /**
+   * Impressão de CONTEÚDO (ETag md5 + tamanho do R2) pra régua contar fala
+   * DISTINTA (#501: reenvio do mesmo arquivo fechava os 20 min com uma fração
+   * de fala real). OPCIONAIS: áudio anexado antes do conserto não tem — e aí
+   * conta individualmente, como sempre contou. Ver lib/sgp/fala-distinta.ts.
+   */
+  etag?: string | null;
+  bytes?: number | null;
 };
 
 export type SgpPedidoRow = {
