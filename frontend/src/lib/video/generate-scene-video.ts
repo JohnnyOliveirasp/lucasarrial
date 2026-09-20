@@ -31,7 +31,7 @@ export async function startSceneVideo(args: {
   const { sceneId, tier, imageUrl, promptPt, promptEn, creditsCost, callbackUrl } = args;
   const t = getTier(tier);
   if (!t) {
-    await failSceneVideo(sceneId, "Tier de vídeo inválido");
+    await failSceneVideo(sceneId, "Tier de vídeo inválido", { cobrado: false });
     return "error";
   }
 
@@ -71,7 +71,9 @@ export async function startSceneVideo(args: {
     const raw = e instanceof Error ? e.message : "Falha ao criar o vídeo";
     console.error("[startSceneVideo] Kie falhou:", raw);
     // CRU: quem traduz é o failSceneVideo, que também abre o chamado (#425/#484).
-    await failSceneVideo(sceneId, raw);
+    // `cobrado: false`: o Kie recusou a criação, então nenhuma das duas pernas
+    // de débito chegou a cobrar esta tentativa (#485).
+    await failSceneVideo(sceneId, raw, { cobrado: false });
     return isProviderCreditError(raw) ? "provider_out_of_credits" : "error";
   }
 }

@@ -11,6 +11,7 @@ import { kieGetTask, friendlyKieError } from "@/lib/kie/client";
 import { stripAudioTrack } from "@/lib/video/strip-audio";
 import { inserirChamadoUnico } from "@/lib/incidents/gravar";
 import { getTier } from "@/lib/video/tiers";
+import { addExtraCredits } from "@/lib/credits/service";
 
 function pickExt(url: string, contentType: string | null): string {
   if (contentType?.includes("webm")) return "webm";
@@ -97,7 +98,10 @@ type CenaFalhada = {
   video_project_id: string;
   idx: number;
   video_tier: string | null;
+  video_credits_cost: number | null;
 };
+
+const CENA_CAMPOS = "id, user_id, video_project_id, idx, video_tier, video_credits_cost";
 
 /**
  * Abre (ou reaquece) UM chamado técnico por PROJETO quando o clipe de uma cena
@@ -156,11 +160,10 @@ async function abrirChamadoDeClipe(row: CenaFalhada, rawMessage: string): Promis
         `(/app/videos/${row.video_project_id}), tier ${tier?.label ?? row.video_tier ?? "?"}. ` +
         `As demais cenas do MESMO projeto e as retentativas do aluno entram como ` +
         `ocorrências deste cartão.\n\n` +
-        `⚠️ CONFERIR O EXTRATO À MÃO: esta perna NÃO tem estorno automático. O ` +
-        `débito sai em /api/v1/videos/[id]/videos (ref_type "video_clips", ref_id = ` +
-        `o PROJETO, lote agregado de started × preço do tier) e nada devolve quando ` +
-        `o clipe falha depois de despachado — ao contrário do Animar Imagem, que ` +
-        `estorna por "image_video_refund".\n\n` +
+        `O estorno desta tentativa é AUTOMÁTICO desde o #485 (ref_type ` +
+        `"video_clip_refund", ref_id = a CENA, valor = video_credits_cost). Se o ` +
+        `extrato do aluno não tiver a linha, foi porque nada tinha sido cobrado ` +
+        `nesta tentativa — não porque a casa ficou com o dinheiro.\n\n` +
         `⚠️ Esta perna também NÃO tem o fallback de contingência: o titular do tier ` +
         `falhou e ninguém redespachou no reserva, então o aluno tende a repetir a ` +
         `tentativa no MESMO modelo que acabou de falhar.`,
@@ -175,22 +178,108 @@ async function abrirChamadoDeClipe(row: CenaFalhada, rawMessage: string): Promis
 }
 
 /**
- * Marca o vídeo da cena como falha e ABRE O CHAMADO.
+ * Devolve o que ESTA tentativa cobrou, e só ela.
+ *
+ * POR QUE NÃO DÁ PRA USAR O `handleTechFailure` DAS IRMÃS (#485, medido em
+ * produção em 20/09): aquele caminho chama `refundOriginalDebit`, que devolve o
+ * VALOR INTEIRO do débito casado por `(user_id, ref_type, ref_id)`. Serve pra
+ * Animar Imagem porque lá 1 débito = 1 imagem. Aqui não: o débito do lote
+ * (`/api/v1/videos/[id]/videos`, ref_type "video_clips") tem `ref_id` = o
+ * PROJETO e valor `started × costPer`, ou seja N cenas numa linha só. Estornar
+ * por ele devolveria o lote inteiro na PRIMEIRA cena que falhasse — inclusive as
+ * que deram certo. Isso é estorno a MAIOR, que é dar dinheiro que não era do
+ * aluno, e é por isso que esta perna ficou sem estorno em vez de copiar a irmã.
+ *
+ * O valor certo já está gravado na própria linha da cena:
+ * `video_scenes.video_credits_cost`, escrito por `generate-scene-video.ts` como
+ * `billed ? costPer : 0`. Ele é exato pras DUAS pernas (o lote e o
+ * `video_clip_regen`, que cobram o mesmo `costPer` por cena) e já vem 0 quando a
+ * geração foi por conta da casa — então conta da casa não vira estorno de graça
+ * (regra 8 das regras duras).
+ */
+async function estornarClipeDaCena(row: CenaFalhada): Promise<void> {
+  const valor = row.video_credits_cost ?? 0;
+  if (valor <= 0) return; // nada foi cobrado nesta tentativa (conta da casa / não faturado)
+  try {
+    await addExtraCredits({
+      userId: row.user_id,
+      amount: valor,
+      refType: "video_clip_refund",
+      refId: row.id,
+    });
+  } catch {
+    /* best-effort: o estorno nunca derruba o fluxo que o originou */
+  }
+}
+
+/**
+ * Marca o vídeo da cena como falha, ESTORNA a tentativa e ABRE O CHAMADO.
  *
  * Recebe o erro CRU — quem chama NÃO deve pré-traduzir. A tradução amigável
  * acontece só aqui (mesma regra que `images/video-sync.ts` já segue): entra
  * cru, sai cru pro diagnóstico e amigável pra tela.
+ *
+ * ⚠️ AS DUAS METADES TÊM GARANTIAS OPOSTAS, E ISSO É DE PROPÓSITO (#485):
+ *
+ * - O **estorno** precisa de EXATAMENTE-UMA-VEZ: poll e webhook enxergam a
+ *   mesma falha, e pagar duas vezes é dinheiro saindo errado. Por isso ele anda
+ *   pendurado no CLAIM ATÔMICO (`.in(["pending","generating"])`): só quem
+ *   realmente virou a linha devolve.
+ * - O **chamado** precisa de PELO-MENOS-UMA-VEZ, e o comentário de
+ *   `abrirChamadoDeClipe` explica por quê: da 2ª tentativa em diante a cena já
+ *   está `failed`, o claim não casaria e o #484 voltaria a ser mudo. Contar
+ *   ocorrência demais é barato; ficar cego não é.
+ *
+ * Quem perde o claim, então, NÃO estorna mas AINDA abre chamado. Misturar as
+ * duas garantias numa só é o erro que este comentário existe pra impedir.
+ *
+ * O claim também é o que torna o estorno correto na RETENTATIVA: o redespacho
+ * põe a cena de volta em `pending`, então a próxima falha ganha o claim e
+ * devolve de novo — que é o certo, porque o aluno pagou de novo.
+ *
+ * ⚠️ `cobrado` DIZ SE ESTA TENTATIVA CHEGOU A COBRAR, e não é detalhe:
+ * `video_credits_cost` só é escrito quando o Kie ACEITA a tarefa
+ * (`generate-scene-video.ts`), e as duas pernas de débito só cobram depois
+ * disso. Numa falha de CRIAÇÃO nada foi cobrado, mas a linha pode carregar o
+ * custo VELHO de uma tentativa anterior — e, se a cena ainda estiver `pending`
+ * daquela tentativa em voo, o claim casaria e a casa devolveria um débito que
+ * ainda vai ser entregue. Por isso quem chama declara: `syncSceneVideo` (falha
+ * assíncrona do que já foi despachado) passa `true`; `startSceneVideo` (o Kie
+ * recusou, ninguém pagou) passa `false`.
  */
-export async function failSceneVideo(sceneId: string, rawMessage: string): Promise<void> {
-  const { data } = await getAdmin()
+export async function failSceneVideo(
+  sceneId: string,
+  rawMessage: string,
+  opts: { cobrado: boolean },
+): Promise<void> {
+  const admin = getAdmin();
+  const friendly = friendlyKieError(rawMessage).slice(0, 500);
+  const marcar = { video_status: "failed" as const, video_error: friendly };
+
+  const { data: claimed } = await admin
     .from("video_scenes")
-    .update({ video_status: "failed", video_error: friendlyKieError(rawMessage).slice(0, 500) })
+    .update(marcar)
     .eq("id", sceneId)
-    .select("id, user_id, video_project_id, idx, video_tier");
+    .in("video_status", ["pending", "generating"])
+    .select(CENA_CAMPOS);
 
-  const row = (data ?? [])[0] as unknown as CenaFalhada | undefined;
+  let row = (claimed ?? [])[0] as unknown as CenaFalhada | undefined;
+
+  if (row) {
+    if (opts.cobrado) await estornarClipeDaCena(row);
+  } else {
+    // Não ganhou o claim (corrida, ou cena que já estava `failed` de uma
+    // tentativa anterior): mantém a escrita do estado como era antes do #485,
+    // sem estornar — nesta tentativa não houve débito novo pra devolver.
+    const { data } = await admin
+      .from("video_scenes")
+      .update(marcar)
+      .eq("id", sceneId)
+      .select(CENA_CAMPOS);
+    row = (data ?? [])[0] as unknown as CenaFalhada | undefined;
+  }
+
   if (!row) return;
-
   await abrirChamadoDeClipe(row, rawMessage);
 }
 
@@ -206,7 +295,7 @@ export async function syncSceneVideo(
   if (info.state === "success") {
     const url = info.resultUrls[0];
     if (!url) {
-      await failSceneVideo(sceneId, "Kie retornou sucesso sem vídeo");
+      await failSceneVideo(sceneId, "Kie retornou sucesso sem vídeo", { cobrado: true });
       return;
     }
     try {
@@ -215,6 +304,7 @@ export async function syncSceneVideo(
       await failSceneVideo(
         sceneId,
         e instanceof Error ? `salvar resultado: ${e.message}` : "salvar resultado falhou",
+        { cobrado: true },
       );
     }
     return;
@@ -222,7 +312,9 @@ export async function syncSceneVideo(
 
   if (info.state === "fail") {
     // CRU: friendlyKieError roda dentro de failSceneVideo (#425).
-    await failSceneVideo(sceneId, info.failMsg || info.failCode || "geração falhou");
+    await failSceneVideo(sceneId, info.failMsg || info.failCode || "geração falhou", {
+      cobrado: true,
+    });
     return;
   }
 
