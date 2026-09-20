@@ -35,6 +35,7 @@
  * ferramenta grava o que voce mandar; a honestidade da nota e sua.
  */
 const { supa, STATUS_FECHADO } = require("./_comum.cjs");
+const { resolverIncidente } = require("./_incidente_nota.cjs");
 
 // `aguardando_aluno` ja existia no banco (incidentes 120 e 124) e esta lista o
 // recusava — o que empurrava quem fechasse um caso desses pro `fixed`,
@@ -50,24 +51,36 @@ function arg(nome) {
 const tem = (nome) => process.argv.includes(nome);
 
 /**
- * Resolve prefixo -> uuid completo. Recusa em vez de adivinhar: id que nao
- * existe faria o UPDATE afetar 0 linhas sem erro nenhum.
+ * Resolve o alvo (NUMERO do chamado ou uuid/prefixo) -> incidente.
+ *
+ * ⚠️ POR QUE ISTO NAO E MAIS FEITO AQUI (medido 20/09, chamado #496).
+ * A versao antiga deste arquivo so casava PREFIXO DE UUID. Quem passava o
+ * numero visivel do chamado caia numa armadilha calada: "427" e prefixo de
+ * EXATAMENTE UM uuid (42741499-..., que e o #138), entao a checagem de
+ * ambiguidade nao disparava, o UPDATE ia pro cartao errado e o script imprimia
+ * "✅ GRAVADO". O Vigia caiu nisso ao vivo na ronda das 12hZ.
+ *
+ * Medido na base inteira, 482 numeros:
+ *    65  sao prefixo de EXATAMENTE 1 uuid  -> escrita errada SILENCIOSA
+ *    64  sao prefixo de mais de 1          -> recusa (ruidosa, segura)
+ *   353  nao sao prefixo de nada           -> recusa (ruidosa, segura)
+ * Ou seja: a ferramenta recusava alto no caso seguro e escrevia baixo no caso
+ * perigoso. Pior combinacao possivel.
+ *
+ * ⚠️ E A CURA JA EXISTIA. `_incidente_nota.cjs` foi escrito em 15/09 com o
+ * resolvedor certo (numero PRIMEIRO, prefixo depois, e recusa quando os dois
+ * apontam pra cartoes diferentes), justamente porque o MESMO bug tinha mordido
+ * com "407" -> 4071ee9a (#399). Ele tem 26 testes. So o cancelar_assinatura.cjs
+ * tinha adotado. A ferramenta mais usada da casa ficou cinco dias com o defeito
+ * que ja tinha conserto escrito. Nao duplicar regra: importar.
  */
 async function resolverId(db, alvo) {
-  const { data, error } = await db.from("incidents").select("id,title,status");
-  if (error) throw new Error(`falha lendo incidents: ${JSON.stringify(error)}`);
-  const hits = data.filter((i) => String(i.id).startsWith(alvo));
-  if (hits.length === 0) {
-    throw new Error(
-      `nenhum incidente comeca com "${alvo}" — nao vou dar UPDATE em id que nao existe (afetaria 0 linhas em silencio)`,
-    );
-  }
-  if (hits.length > 1) {
-    throw new Error(
-      `prefixo "${alvo}" e ambiguo (${hits.length}): ${hits.map((h) => h.id.slice(0, 12)).join(", ")}`,
-    );
-  }
-  return hits[0];
+  const { incidente, via, avisos } = await resolverIncidente(db, alvo);
+  // Os avisos sao o ponto: e aqui que o "427 tambem e prefixo de 42741499"
+  // aparece na tela em vez de virar nota no cartao de outra pessoa.
+  for (const a of avisos) console.log(`⚠️  ${a}`);
+  console.log(`alvo resolvido por ${via.toUpperCase()}: #${incidente.numero} ${String(incidente.id).slice(0, 8)}`);
+  return incidente;
 }
 
 /** agent_notes ja corrompido (string) vira UMA nota legada, sem perder o texto. */
