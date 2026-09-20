@@ -6,6 +6,7 @@ import { useRouter } from "@/i18n/navigation";
 import { formatDuration, measureAudioDuration } from "@/lib/audio/duration";
 import { putToR2 } from "@/lib/images/upload";
 import { criarFila } from "@/lib/sgp/fila";
+import { cienciaAudioValida, motivosBloqueioAudio } from "@/lib/sgp/passo-audio-pure";
 import { CIENCIA_AUDIO, SGP_AUDIO_MAX_SEGUNDOS, SGP_AUDIO_MIN_SEGUNDOS, type SgpAudio } from "@/lib/sgp/types";
 import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
 
@@ -22,14 +23,36 @@ type Item =
  *  vídeo do Lucas (aviso até ele gravar) · 4 checkboxes (ciência com hora) ·
  *  upload como o gravador do app, acumula minutos · cada arquivo é MEDIDO no
  *  servidor (✅/❌ com motivo) · Continuar só com 20–60 min de fala aprovada.
+ *
+ * 20/09 — os dois consertos que a tela de FOTO já tinha desde 14/09 (commit
+ * c08da4b9), trazidos pra cá pelo caso da Catarina, 37h parada aqui:
+ *  1. o botão desligado agora DIZ o que falta (motivosBloqueioAudio), com o
+ *     número em segundos quando falta menos de um minuto. Ela tinha 1.170s de
+ *     fala contra os 1.200 da régua — faltavam 30 SEGUNDOS, e o único texto
+ *     da tela era um ✓ verde escrito "aprovado";
+ *  2. os checkboxes são guardados a cada clique e reidratados na carga
+ *     (`cienciaInicial`), porque antes atualizar a página apagava tudo em
+ *     silêncio. No pedido dela `ciencia_audio` estava NULL: ela dizia ter
+ *     marcado as 4 caixinhas e estava certa, só não havia onde gravar.
+ * Nenhuma das condições afrouxou — a régua de 20 min é de qualidade de treino.
  */
-export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
+export function StepAudioForm({
+  iniciais,
+  cienciaInicial = [],
+}: {
+  iniciais: SgpAudio[];
+  /** Rascunho dos checkboxes que já veio do banco (sgp_pedidos.ciencia_audio). */
+  cienciaInicial?: string[];
+}) {
   const t = useTranslations("sgp.audio");
   const router = useRouter();
   const input = useRef<HTMLInputElement | null>(null);
   // Confirmação uma de cada vez (o upload segue paralelo) — defesa em
   // profundidade do #238. A trava de verdade é no banco.
   const fila = useRef(criarFila());
+  // Fila própria pro rascunho dos checkboxes: cliques rápidos não podem
+  // chegar fora de ordem e gravar um estado velho por último.
+  const filaCiencia = useRef(criarFila());
   const [itens, setItens] = useState<Item[]>(() =>
     iniciais.map((a) =>
       a.status === "aprovado"
@@ -37,14 +60,17 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
         : { id: a.key, nome: a.nome, fase: "reprovado", motivos: a.motivos ?? [], key: a.key },
     ),
   );
-  const [ciencia, setCiencia] = useState<Set<string>>(new Set());
+  const [ciencia, setCiencia] = useState<Set<string>>(() => new Set(cienciaAudioValida(cienciaInicial)));
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  /** O rascunho dos checkboxes não está subindo — recarregar pode apagar. */
+  const [cienciaEmRisco, setCienciaEmRisco] = useState(false);
 
   const total = itens.reduce((s, i) => (i.fase === "aprovado" ? s + i.segundos : s), 0);
   const ocupado = itens.some((i) => i.fase === "enviando" || i.fase === "analisando");
-  const dentroDaRegua = total >= SGP_AUDIO_MIN_SEGUNDOS && total <= SGP_AUDIO_MAX_SEGUNDOS;
-  const podeContinuar = dentroDaRegua && !ocupado && ciencia.size === CIENCIA_AUDIO.length;
+  // O MESMO motivo alimenta o texto e o `disabled` — nunca um sem o outro.
+  const motivos = motivosBloqueioAudio({ falaAprovada: total, arquivos: itens.length, ocupado, ciencia: ciencia.size });
+  const podeContinuar = motivos.length === 0;
   const progresso = Math.min(100, Math.round((total / SGP_AUDIO_MIN_SEGUNDOS) * 100));
 
   function patch(id: string, novo: Item) {
@@ -118,12 +144,31 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
   }
 
   function alternar(c: string) {
-    setCiencia((prev) => {
-      const n = new Set(prev);
-      if (n.has(c)) n.delete(c);
-      else n.add(c);
-      return n;
-    });
+    const n = new Set(ciencia);
+    if (n.has(c)) n.delete(c);
+    else n.add(c);
+    setCiencia(n);
+    void guardarCiencia(n);
+  }
+
+  /**
+   * Guarda o rascunho no pedido. Otimista: a marcação aparece na hora e a
+   * gravação vai atrás. Se a gravação falhar, o aluno é AVISADO — perder as
+   * marcações caladas é exatamente o defeito que este conserto ataca.
+   */
+  async function guardarCiencia(marcados: Set<string>) {
+    try {
+      const r = await filaCiencia.current(() =>
+        fetch("/api/v1/sgp/audio/ciencia", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ciencia: [...marcados] }),
+        }),
+      );
+      setCienciaEmRisco(!r.ok);
+    } catch {
+      setCienciaEmRisco(true);
+    }
   }
 
   async function continuar() {
@@ -215,6 +260,39 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
       </div>
 
       {erro ? <p role="alert" className={SGP_ERROR_CLASS}>{erro}</p> : null}
+
+      {cienciaEmRisco ? (
+        <p role="status" className={SGP_ERROR_CLASS}>
+          {t("cienciaNaoGuardada")}
+        </p>
+      ) : null}
+
+      {/* Por que o botão está cinza. Sem isto o aluno só vê um ✓ verde escrito
+          "aprovado" e um botão morto — foi o que prendeu a Catarina por 37h. */}
+      {motivos.length ? (
+        <p role="status" aria-live="polite" className={SGP_HINT_CLASS}>
+          {motivos
+            .map((m) => {
+              switch (m.tipo) {
+                case "ocupado":
+                  return t("bloqueio.ocupado");
+                case "vazio":
+                  return t("bloqueio.vazio", { min: SGP_AUDIO_MIN_SEGUNDOS / 60 });
+                case "fala":
+                  return t(m.unidade === "segundos" ? "bloqueio.falaSegundos" : "bloqueio.falaMinutos", {
+                    n: m.quanto,
+                    tem: formatDuration(m.falaAprovada),
+                    min: SGP_AUDIO_MIN_SEGUNDOS / 60,
+                  });
+                case "excedeu":
+                  return t("bloqueio.excedeu", { max: SGP_AUDIO_MAX_SEGUNDOS / 60 });
+                case "ciencia":
+                  return t("bloqueio.ciencia", { n: m.faltam });
+              }
+            })
+            .join(" ")}
+        </p>
+      ) : null}
 
       <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={() => router.push("/sgp/foto")} className={SGP_GHOST_CLASS}>← {t("voltar")}</button>

@@ -16,7 +16,10 @@ export default async function SgpAudioPage({ params }: { params: Promise<{ local
 
   return (
     <SgpShell passo="audio" titulo={t("titulo")} descricao={t("descricao")}>
-      <StepAudioForm iniciais={pedido!.audios ?? []} />
+      {/* ciencia_audio volta pra tela: sem isso, atualizar a página apagava os
+          4 checkboxes em silêncio (caso da Catarina, 20/09 — no pedido dela
+          ciencia_foto tinha 5 itens e ciencia_audio estava NULL). */}
+      <StepAudioForm iniciais={pedido!.audios ?? []} cienciaInicial={pedido!.ciencia_audio ?? []} />
     </SgpShell>
   );
 }

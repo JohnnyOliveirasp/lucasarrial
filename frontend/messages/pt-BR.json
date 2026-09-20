@@ -2327,7 +2327,16 @@
       "continuar": "Continuar",
       "salvando": "Salvando…",
       "avisoAfeta": "pode afetar a voz clonada",
-      "arquivoLongo": "Este arquivo tem {tem} — o limite é {max} min por arquivo. Corte em partes menores e envie de novo."
+      "arquivoLongo": "Este arquivo tem {tem} — o limite é {max} min por arquivo. Corte em partes menores e envie de novo.",
+      "bloqueio": {
+        "ocupado": "Aguarde a análise dos áudios terminar para continuar.",
+        "vazio": "Você ainda não enviou nenhum áudio. Precisamos de {min} min de fala para clonar a sua voz.",
+        "falaSegundos": "Falta(m) {n} segundo(s) para liberar o botão: você tem {tem} de fala aprovada e o mínimo é {min} min. A conta é do tempo de FALA, não da duração do arquivo — as pausas e o silêncio entre as frases não entram. Grave mais um trecho curto e envie: ele soma ao que já está aqui.",
+        "falaMinutos": "Falta(m) {n} min para liberar o botão: você tem {tem} de fala aprovada e o mínimo é {min} min. A conta é do tempo de FALA, não da duração do arquivo — as pausas e o silêncio entre as frases não entram. Grave mais um trecho e envie: ele soma ao que já está aqui.",
+        "excedeu": "Você passou do máximo de {max} min de fala aprovada. Remova algum arquivo para continuar.",
+        "ciencia": "Falta(m) {n} item(ns) por marcar na lista de confirmação, no começo desta tela."
+      },
+      "cienciaNaoGuardada": "Não conseguimos guardar suas marcações agora. Não atualize a página antes de continuar, senão elas podem sumir."
     },
     "revisao": {
       "titulo": "Confirmação & Autorização",
