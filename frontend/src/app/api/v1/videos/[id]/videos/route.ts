@@ -16,13 +16,16 @@ import { getBalance, debitCredits } from "@/lib/credits/service";
 import { kieCallbackUrl } from "@/lib/kie/client";
 import {
   getTier,
+  getVideoFallback,
   VideoTierId,
   FALLBACK_MOVEMENT_PROMPT_PT,
   FALLBACK_MOVEMENT_PROMPT_EN,
 } from "@/lib/video/tiers";
 import { generateVideoPrompt } from "@/lib/llm/generate-video-prompt";
 import { startSceneVideo } from "@/lib/video/generate-scene-video";
-import { syncSceneVideo } from "@/lib/video/video-sync";
+import { syncSceneVideo, failSceneVideo } from "@/lib/video/video-sync";
+import { escolherModeloDoRegen } from "@/lib/video/regen-fallback";
+import { reivindicarCenaParaDespacho } from "@/lib/video/claim-cena";
 import { notifyKieOutOfCredits } from "@/lib/video/notify-provider";
 import { imagesBucket } from "@/lib/r2/client";
 import { createPresignedGet } from "@/lib/r2/presigned";
@@ -174,10 +177,24 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   const results = await Promise.all(
     targets.map(async (s) => {
+      // CLAIM ANTES DE TUDO (#485, perna (b)). Dois cliques simultâneos no lote
+      // leem as MESMAS cenas `failed`; sem o compare-and-swap os dois despacham
+      // e os dois cobram. Quem perde a corrida sai como "skipped" e NÃO entra na
+      // conta do débito lá embaixo.
+      const claim = await reivindicarCenaParaDespacho(s.id, s.video_status);
+      if (!claim.ok) return "skipped" as const;
+
       const imageUrl = s.image_path
         ? await createPresignedGet(bucket, s.image_path, 60 * 60).catch(() => null)
         : null;
-      if (!imageUrl) return "error" as const;
+      if (!imageUrl) {
+        // Devolve o claim: nada foi despachado, então a cena tem que voltar ao
+        // estado de antes pra continuar regenerável (mesma ideia do "DEVOLVE O
+        // CLAIM" do irmão `lib/studio/scenes.ts`). Sem isto ela ficaria presa em
+        // `pending` sem task id, invisível pro GET e fora do filtro da linha 146.
+        await failSceneVideo(s.id, "não consegui ler a imagem da cena");
+        return "error" as const;
+      }
 
       // Prompt de movimento via Sonnet (visão). Fallback resiliente por cena.
       let pt = FALLBACK_MOVEMENT_PROMPT_PT;
@@ -190,6 +207,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         /* usa fallback */
       }
 
+      // Cena que já falhou vai no RESERVA do tier; cena nova vai no titular.
+      const escolha = escolherModeloDoRegen({
+        status: s.video_status,
+        reserva: getVideoFallback(tier.id),
+      });
+
       return startSceneVideo({
         sceneId: s.id,
         tier: tier.id as VideoTierId,
@@ -198,6 +221,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         promptEn: en,
         creditsCost: billed ? costPer : 0,
         callbackUrl,
+        reserva: escolha.usaReserva ? escolha.reserva : null,
       });
     }),
   );

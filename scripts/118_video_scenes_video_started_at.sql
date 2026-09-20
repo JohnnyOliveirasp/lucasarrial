@@ -1,0 +1,67 @@
+-- ============================================================================
+-- 118_video_scenes_video_started_at.sql
+--
+-- ############################################################################
+-- #                                                                          #
+-- #   *** NAO APLICADA. E *OPCIONAL*. O PR #<n> NAO DEPENDE DELA. ***        #
+-- #                                                                          #
+-- #   Quem aplica DDL nesta casa e o JOHNNY, nunca o agente.                 #
+-- #                                                                          #
+-- #   LEIA ANTES DE APLICAR:                                                 #
+-- #   Esta migration NAO e pre-requisito do merge. O codigo do #485 perna    #
+-- #   (b) (fallback + claim atomico no Regerar de clipe de cena) funciona    #
+-- #   SEM ela: o claim usa o proprio `video_status` como token de            #
+-- #   compare-and-swap, e nenhuma linha do codigo novo le ou escreve a       #
+-- #   coluna criada aqui. Aplicar ou nao aplicar nao muda o comportamento    #
+-- #   do que foi mergeado. Nao ha o risco do #446 (codigo na main            #
+-- #   dependendo de DDL que nunca subiu).                                    #
+-- #                                                                          #
+-- #   Ela existe pra FECHAR UMA JANELA ESTREITA que o claim deixa aberta,    #
+-- #   e so vale a pena junto com o sweeper descrito abaixo, que ainda NAO    #
+-- #   foi escrito. Aplicar esta coluna sozinha nao conserta nada.            #
+-- #                                                                          #
+-- ############################################################################
+--
+-- QUAL E A JANELA (medida por leitura de codigo, nao por ocorrencia em
+-- producao — ate 20/09 nao ha caso observado):
+--   O claim marca a cena `pending` ANTES de chamar o Kie. Se o processo morrer
+--   entre o claim e a resposta do Kie, a linha fica `pending` com
+--   `video_kie_task_id` nulo. A partir dai ela some das duas saidas:
+--     · o GET so sincroniza pending/generating QUE TEM task id
+--       (app/api/v1/videos/[id]/videos/route.ts, filtro do GET);
+--     · o lote so pega `video_status` null ou 'failed'
+--       (mesma rota, linha 146).
+--   Resultado: cena presa, sem botao de regerar, sem clipe.
+--
+--   O caminho normal de falha NAO cai nisso: `startSceneVideo` tem catch que
+--   chama `failSceneVideo`, devolvendo a cena pra `failed` (= claim liberado).
+--   So um crash do processo no meio deixa o orfao. E a mesma classe de risco
+--   que os dois irmaos ja aceitam hoje em producao: crash deixa
+--   `image_generations.video_retry_count` preso em 1 e
+--   `studio_scenes.anim_retried` preso em true.
+--
+-- POR QUE ESTA COLUNA RESOLVE:
+--   Com o instante do despacho carimbado, um cron consegue varrer
+--   "pending/generating ha mais de X minutos" e reprovar/reenfileirar. E
+--   exatamente o que a perna de IMAGEM desta mesma tabela ja faz com
+--   `image_started_at` (migration 83) — esta aqui e a irma simetrica dela pra
+--   perna de VIDEO. Hoje NAO existe sweeper nenhum pro clipe de `video_scenes`:
+--   o `lib/studio/sweep-stuck-scenes.ts` cobre `studio_scenes`, outra tabela.
+--
+-- O QUE FALTA DEPOIS (nao entra neste PR):
+--   1. `startSceneVideo`/claim passam a carimbar `video_started_at = now()`;
+--   2. cron de varredura reprovando cena parada alem do teto;
+--   3. so entao a janela fecha de fato.
+--   Instalar instrumento nao e ter instrumento: o cron tem que disparar sozinho
+--   uma vez e gravar a linha antes de ser considerado vivo.
+--
+-- REVERSAO: ALTER TABLE public.video_scenes DROP COLUMN IF EXISTS video_started_at;
+--
+-- Aplicar via Transaction Pooler (porta 6543). Idempotente.
+-- ============================================================================
+
+ALTER TABLE public.video_scenes
+  ADD COLUMN IF NOT EXISTS video_started_at timestamptz NULL;
+
+COMMENT ON COLUMN public.video_scenes.video_started_at IS
+  'Quando a tentativa ATUAL de gerar o CLIPE comecou (setado no claim do despacho). Base do teto de espera: passado o teto sem resposta da Kie, a cena vira failed e o botao de regerar volta. Espelha image_started_at (migration 83) na perna de video. NULL = linha anterior a esta migration OU despacho que nao carimbou.';
