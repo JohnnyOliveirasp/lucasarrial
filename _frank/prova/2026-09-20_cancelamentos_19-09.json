@@ -1,0 +1,196 @@
+{
+  "dia": "2026-09-19",
+  "janela": "janela UTC 2026-09-19T00:00:00.000Z -> 2026-09-20T00:00:00.000Z (dia 2026-09-19)",
+  "eventos": 4,
+  "varredura": {
+    "estado": "desativada",
+    "motivo": "DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas"
+  },
+  "pessoas": [
+    {
+      "email": "felipe.liima.eng@gmail.com",
+      "nome": "Felipe de Lima da Silva Fernandes",
+      "tipo": "TRIAL",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 7,
+      "adesao": "2026-09-12",
+      "cancelamento": "2026-09-19",
+      "trialVenceEm": "2026-09-22",
+      "trialJaVenceu": false,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "QVSSJVLD",
+            "status": "CANCELLED_BY_SELLER",
+            "trial": true,
+            "adesao": 1789172744000,
+            "fim": 1789784494000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "QVSSJVLD",
+            "valor": 0,
+            "status": "COMPLETE",
+            "rec": 1,
+            "quando": 1789172743000
+          }
+        ]
+      },
+      "banco": {
+        "id": "5574b74d-dab6-47fa-9fbb-8bc663dd92cf",
+        "sub": 47724,
+        "extra": 0,
+        "acessoAte": null,
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": [
+        "TRIAL ainda no prazo (dia 10 em 2026-09-22), mas a varredura esta DESATIVADA (DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas) — os 47724 cr NAO vao expirar sozinhos."
+      ]
+    },
+    {
+      "email": "mariliarossini@gmail.com",
+      "nome": "MARÍLIA GIORDANI ROSSINI",
+      "tipo": "ASSINANTE",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 11,
+      "adesao": "2026-09-08",
+      "cancelamento": "2026-09-19",
+      "trialVenceEm": null,
+      "trialJaVenceu": null,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "YPQFX971",
+            "status": "CANCELLED_BY_SELLER",
+            "trial": true,
+            "adesao": 1788901223000,
+            "fim": 1789826647000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "YPQFX971",
+            "valor": 0,
+            "status": "COMPLETE",
+            "rec": 1,
+            "quando": 1788901222000
+          },
+          {
+            "code": "YPQFX971",
+            "valor": 97,
+            "status": "APPROVED",
+            "rec": 2,
+            "quando": 1789482455000
+          }
+        ]
+      },
+      "banco": {
+        "id": "012e0b67-5b83-459a-96a0-04dec9d277b7",
+        "sub": 178598,
+        "extra": 0,
+        "acessoAte": "2026-10-08T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": []
+    },
+    {
+      "email": "allysoncruz.nutri@gmail.com",
+      "nome": "ALLYSON DO NASCIMENTO DA CRUZ",
+      "tipo": "ASSINANTE",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 31,
+      "adesao": "2026-08-19",
+      "cancelamento": "2026-09-19",
+      "trialVenceEm": null,
+      "trialJaVenceu": null,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "7JO7EK5B",
+            "status": "CANCELLED_BY_SELLER",
+            "trial": true,
+            "adesao": 1787142649000,
+            "fim": 1789845804000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "7JO7EK5B",
+            "valor": 0,
+            "status": "COMPLETE",
+            "rec": 1,
+            "quando": 1787142648000
+          },
+          {
+            "code": "7JO7EK5B",
+            "valor": 97,
+            "status": "COMPLETE",
+            "rec": 2,
+            "quando": 1787753506000
+          },
+          {
+            "code": "7JO7EK5B",
+            "valor": 97,
+            "status": "APPROVED",
+            "rec": 3,
+            "quando": 1789825896000
+          }
+        ]
+      },
+      "banco": {
+        "id": "5f578600-15c3-4878-a373-ad6158f02f66",
+        "sub": 120630,
+        "extra": 125797,
+        "acessoAte": "2026-10-19T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": []
+    },
+    {
+      "email": "hrmarinscatequese@gmail.com",
+      "nome": "HELCIO ROGERIO COSTA MARINS",
+      "tipo": "TRIAL",
+      "outrasAssinaturasVivas": [],
+      "diasNaCasa": 3,
+      "adesao": "2026-09-16",
+      "cancelamento": "2026-09-19",
+      "trialVenceEm": "2026-09-26",
+      "trialJaVenceu": false,
+      "hotmart": {
+        "assinaturas": [
+          {
+            "code": "56PK4S3B",
+            "status": "CANCELLED_BY_SELLER",
+            "trial": true,
+            "adesao": 1789562576000,
+            "fim": 1789859314000
+          }
+        ],
+        "cobrancas": [
+          {
+            "code": "56PK4S3B",
+            "valor": 0,
+            "status": "APPROVED",
+            "rec": 1,
+            "quando": 1789562575000
+          }
+        ]
+      },
+      "banco": {
+        "id": "37f17ec4-bdce-42b1-b3cf-d1733468ed96",
+        "sub": 70575,
+        "extra": 0,
+        "acessoAte": "2026-09-23T12:00:00+00:00",
+        "marca": null,
+        "zeramentos": []
+      },
+      "alertas": [
+        "TRIAL ainda no prazo (dia 10 em 2026-09-26), mas a varredura esta DESATIVADA (DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas) — os 70575 cr NAO vao expirar sozinhos."
+      ]
+    }
+  ]
+}
