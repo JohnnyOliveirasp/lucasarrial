@@ -268,7 +268,11 @@ export function FinanceSection({
             { key: "infra", label: "Infraestrutura", brl: money.infraPeriod, detail: INFRA_DETAIL, color: "#94a3b8" },
             { key: "refund", label: "Estornos", brl: refunds, detail: refundDetail, color: REFUND_COLOR },
           ]}
-          centerLabel={isLoss ? "Prejuízo (caixa)" : "Lucro (caixa)"}
+          // O centro decompõe o BRUTO, então continua o resultado cheio — mas o
+          // rótulo não pode ser "Lucro (caixa)": esse nome já é do KPI lá em
+          // cima, que sai descontado, e dois números diferentes com o mesmo
+          // nome na mesma tela é o começo de uma decisão errada de dinheiro.
+          centerLabel={isLoss ? "Prejuízo do período" : "Resultado do período"}
           centerValue={Math.abs(money.profitPeriod)}
           centerSub={
             promoValue > 0
