@@ -201,3 +201,18 @@ Ainda não houve **nenhuma** geração `failed` depois do recycle do endpoint
 (00:20:16Z), então o `regens` no heartbeat **está em produção mas não foi visto
 em job real** — e, pelo que está na §1, só será numa falha de mais de ~30s.
 Enquanto não houver, não há o que conferir: isso é notícia boa, não pendência.
+
+## 7. O passo fixo de fim de ronda, como está escrito, não mede nada
+
+`git fetch && git log --oneline origin/main..HEAD` saiu **vazio** — minha parte
+está publicada. Mas a segunda metade (`git rev-list main..<branch>` em todo
+branch) devolveu **170+ branches "com commit preso"**, a maioria já entregue por
+squash merge: o conteúdo está na main e o commit original não, então a contagem
+nunca zera. Uma lista de 170 linhas que sempre acusa é uma lista que ninguém lê
+— exatamente o tipo de alarme que deixou um fix de aluno 9h preso em 19/08, só
+que pelo motivo inverso.
+
+Fica registrado como defeito do procedimento, não como achado: a pergunta útil é
+"o que EU escrevi nesta ronda ficou preso?", e para isso `origin/main..HEAD` já
+basta. Quem for consertar, compare por **conteúdo** (`git cherry main <branch>`),
+não por sha.
