@@ -14,7 +14,11 @@ reprocessado. Canal: o aviso foi pro **grupo** (`notify-grupo.sh`), ordem de
 
 ## Placar
 
-- Fila: **85 → 84 abertos** (fechei o #485, abri o #488).
+- Fila: **85 → 85 abertos.** Fechei o #485 e abri o #488, então o número não
+  andou. Escrevi "85 → 84" na primeira versão deste log e está errado —
+  conferido no banco depois de fechar: 85. O saldo honesto da ronda não é a
+  fila ter diminuído (não diminuiu), é um defeito ter saído de produção e
+  59.400 cr terem voltado pro bolso de quem pagou.
 - Fechados como `fixed`: **1** (#485), com commit e prova de deploy.
 - Fix em produção: **1** (`dc3a6be3`).
 - Alunos respondidos: **6** (uids 2959–2964 na pasta de enviados).
