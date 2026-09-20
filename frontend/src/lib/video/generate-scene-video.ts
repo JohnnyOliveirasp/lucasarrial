@@ -14,6 +14,30 @@ import { failSceneVideo } from "@/lib/video/video-sync";
 
 export type StartVideoResult = "started" | "error" | "provider_out_of_credits";
 
+/**
+ * `failSceneVideo` passou a ESTORNAR e, por isso, a LANÇAR quando o estorno não
+ * confirma (#485). Aqui isso não pode escapar: os dois chamadores deste arquivo
+ * dependem do retorno (`provider_out_of_credits` vira um 503 explicado pro
+ * aluno; deixar a exceção subir trocaria isso por um 500 mudo).
+ *
+ * É seguro engolir SÓ NESTE ARQUIVO porque aqui o dinheiro do regen ainda não
+ * existe: `regenerate/route.ts:125-134` e `wand/route.ts:124-133` só debitam
+ * DEPOIS de `startSceneVideo` devolver "started". Falha daqui é pré-despacho —
+ * não há crédito pendente pra sumir em silêncio. Qualquer crédito de uma
+ * tentativa ANTERIOR que ficou pendurado segue coberto: o erro vai pro log e a
+ * cena continua sendo reavaliada pelo poll.
+ */
+async function marcarFalhaSemQuebrarORetorno(sceneId: string, mensagem: string): Promise<void> {
+  try {
+    await failSceneVideo(sceneId, mensagem);
+  } catch (e) {
+    console.error(
+      `[startSceneVideo] falha pré-despacho da cena ${sceneId} não fechou limpa:`,
+      e instanceof Error ? e.message : e,
+    );
+  }
+}
+
 /** Heurística: o erro cru do Kie é por falta de saldo/limite do provedor? */
 function isProviderCreditError(raw: string): boolean {
   return /402|insufficient|credit|balance|quota/i.test(raw);
@@ -31,7 +55,7 @@ export async function startSceneVideo(args: {
   const { sceneId, tier, imageUrl, promptPt, promptEn, creditsCost, callbackUrl } = args;
   const t = getTier(tier);
   if (!t) {
-    await failSceneVideo(sceneId, "Tier de vídeo inválido");
+    await marcarFalhaSemQuebrarORetorno(sceneId, "Tier de vídeo inválido");
     return "error";
   }
 
@@ -70,7 +94,7 @@ export async function startSceneVideo(args: {
     // Loga o detalhe cru no servidor; guarda mensagem amigável pra UI.
     const raw = e instanceof Error ? e.message : "Falha ao criar o vídeo";
     console.error("[startSceneVideo] Kie falhou:", raw);
-    await failSceneVideo(sceneId, friendlyKieError(raw));
+    await marcarFalhaSemQuebrarORetorno(sceneId, friendlyKieError(raw));
     return isProviderCreditError(raw) ? "provider_out_of_credits" : "error";
   }
 }
