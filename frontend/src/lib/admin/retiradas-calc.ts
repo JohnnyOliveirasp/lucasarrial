@@ -132,6 +132,26 @@ export function emCaixa(lucro: number, linhas: readonly RetiradaLinha[]): number
 }
 
 /**
+ * CAIXA REAL (pedido Johnny 18/09): todo número de lucro que a tela mostra ao
+ * sócio já sai com o que foi retirado descontado — "pra saber o que realmente
+ * existe em caixa". Vale pro lucro do período E pro lucro acumulado.
+ *
+ * Não é o mesmo que somar retirada nas despesas: "Saiu (gastos)", "Entrou" e a
+ * barra "pra onde foi o bruto" continuam intocados (retirada não é custo da
+ * operação). O desconto é só na ponta, no que sobrou.
+ *
+ * `retirado` já vem somado (totalRetiradas). Lixo vira 0 em vez de NaN: um
+ * número de dinheiro não pode sumir da tela por causa de uma linha podre.
+ */
+export function caixaReal(lucro: number, retirado: number): number {
+  const l = Number.isFinite(lucro) ? lucro : 0;
+  const r = Number.isFinite(retirado) ? retirado : 0;
+  const v = centavos(l - r);
+  // Zerou na vírgula: `-0` sairia na tela como "-$ 0,00" e pareceria dívida.
+  return Object.is(v, -0) ? 0 : v;
+}
+
+/**
  * A migration 108 pode não ter sido aplicada (DDL commitado ≠ DDL aplicado).
  * Quando não foi, a tabela não existe e o painel precisa DIZER isso — mostrar
  * "0 retiradas" em silêncio faria o "Em caixa" repetir o lucro e mentir.

@@ -11,6 +11,13 @@
  * Retiradas dos sócios (11/09) entram LOGO ABAIXO do Lucro (caixa), em bloco
  * PRÓPRIO: retirada não é despesa, então ela não encosta no `totalOut` nem no
  * `money.profitPeriod` — só produz o "Em caixa" (lucro − retiradas).
+ *
+ * CAIXA REAL (Johnny, 18/09): o CARD "Lucro (caixa)" passa a MOSTRAR o valor já
+ * descontado, "pra saber o que realmente existe em caixa". O que muda é só o
+ * número exibido na ponta — `money.profitPeriod` (a decomposição do bruto no
+ * donut e na barra) continua o lucro cheio, porque retirada não é custo da
+ * operação. `retiradas` só chega do servidor pra SÓCIO; pra qualquer outro
+ * admin vem null e a tela fica idêntica à de antes.
  */
 import { Wallet, Gift, BadgeDollarSign, TrendingUp } from "lucide-react";
 import type { Finance, Money } from "@/lib/admin/queries";
@@ -18,6 +25,7 @@ import { PLAN_PRICE_BRL, INFRA_USD_MONTH } from "@/lib/admin/cost";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { TrialPanel } from "@/components/admin/trial-panel";
 import { RetiradasPanel } from "@/components/admin/retiradas-panel";
+import { caixaReal } from "@/lib/admin/retiradas-calc";
 import type { Gran } from "@/components/admin/period-filter";
 import { Donut, type DonutSlice } from "@/components/admin/donut";
 
@@ -93,6 +101,7 @@ export function FinanceSection({
   periodLabel,
   gran,
   periodKey,
+  retiradas,
 }: {
   money: Money;
   fin: Finance;
@@ -100,6 +109,8 @@ export function FinanceSection({
   /** Período do filtro — o bloco de Retiradas recorta a MESMA janela dos KPIs. */
   gran: Gran;
   periodKey: string;
+  /** Somas das retiradas (período e acumulado). `null` = quem olha não é sócio. */
+  retiradas: { periodo: number; acumulado: number } | null;
 }) {
   // Promoção valorizada: o que seria cobrado em valor de tabela.
   const promoValue = fin.offerValuePeriod;
@@ -112,6 +123,10 @@ export function FinanceSection({
   const gpuReal = money.gpuRealPeriod;
   const usd2 = (n: number) => `US$${n.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}`;
   const isLoss = money.profitPeriod < 0;
+  // O que sobrou de fato no período, já sem o que foi retirado.
+  const retiradoPeriodo = retiradas?.periodo ?? 0;
+  const caixaPeriodo = caixaReal(money.profitPeriod, retiradoPeriodo);
+  const caixaNegativo = caixaPeriodo < 0;
   // Opção B: caixa e "com promoção" sempre lado a lado.
   const combined = money.profitPeriod - promoValue;
   // LUCRO REAL (mig 105, 03/09): a base virou o LÍQUIDO que a Hotmart repassa
@@ -159,17 +174,22 @@ export function FinanceSection({
           hint={`ferramentas ${brl2(toolsCost)} + infra ${brl2(money.infraPeriod)}${refunds > 0 ? ` + estornos ${brl2(refunds)}` : ""} · taxa Hotmart já saiu do líquido`}
         />
         <KpiCard
-          label={isLoss ? "Prejuízo (caixa)" : "Lucro (caixa)"}
-          value={brl2(Math.abs(money.profitPeriod))}
-          tone={isLoss ? "bad" : "profit"}
+          label={caixaNegativo ? "Prejuízo (caixa)" : "Lucro (caixa)"}
+          value={brl2(Math.abs(caixaPeriodo))}
+          tone={caixaNegativo ? "bad" : "profit"}
           icon={TrendingUp}
-          hint={
-            promoValue > 0
-              ? `c/ promoção: ${brl2(combined)}${money.revenuePeriod > 0 ? ` · ${Math.abs(money.marginPct).toFixed(0)}% sobre o líquido` : ""}`
-              : money.revenuePeriod > 0
-                ? `${Math.abs(money.marginPct).toFixed(0)}% sobre o líquido`
-                : `sem receita no período`
-          }
+          hint={[
+            promoValue > 0 ? `c/ promoção: ${brl2(combined)}` : null,
+            money.revenuePeriod > 0 ? `${Math.abs(money.marginPct).toFixed(0)}% sobre o líquido` : null,
+            // Só pro sócio, e sem a palavra: o card já sai descontado, então a
+            // linha explica de onde veio o número em vez de deixá-lo inexplicado.
+            retiradoPeriodo > 0
+              ? `cheio ${brl2(money.profitPeriod)} − ${brl2(retiradoPeriodo)} aplicados`
+              : null,
+            promoValue === 0 && money.revenuePeriod === 0 ? "sem receita no período" : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         />
       </div>
 

@@ -20,12 +20,19 @@ import type { TotalSummary } from "@/lib/admin/totals";
 import type { RunpodHealth } from "@/lib/admin/runpod";
 import { PeriodFilter, currentKey, labelFor, type Gran } from "@/components/admin/period-filter";
 import { FinanceSection } from "@/components/admin/finance-section";
+import { caixaReal } from "@/lib/admin/retiradas-calc";
 import { RunpodStatus } from "@/components/admin/runpod-status";
 import { LiveCloningPanel } from "@/components/admin/live-cloning";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { ChurnChart } from "@/components/admin/churn-chart";
 
-type Payload = AdminData & { totals: TotalSummary; live: LiveCloning[]; runpod: RunpodHealth[] };
+type Payload = AdminData & {
+  totals: TotalSummary;
+  live: LiveCloning[];
+  runpod: RunpodHealth[];
+  /** Somas das retiradas. `null`/ausente = quem olha não é sócio (nada muda). */
+  retiradas?: { periodo: number; acumulado: number } | null;
+};
 
 // Pedido Johnny 01/08: sem "R$" — só "$" (menos ruído visual nos cards).
 const brl0 = (n: number) =>
@@ -132,7 +139,14 @@ export function DashboardClient() {
       {/* Financeiro (KPIs + retiradas dos sócios + compra×promoção + destino do
           bruto + gasto por ferramenta). gran/periodKey vão junto porque o bloco
           de Retiradas busca a própria lista na MESMA janela de calendário. */}
-      <FinanceSection money={money} fin={fin} periodLabel={periodLabel} gran={gran} periodKey={periodKey} />
+      <FinanceSection
+        money={money}
+        fin={fin}
+        periodLabel={periodLabel}
+        gran={gran}
+        periodKey={periodKey}
+        retiradas={data.retiradas ?? null}
+      />
 
       {/* Acumulado da operação inteira — não depende do filtro de período.
           Lucro acumulado é a régua do gatilho de retirada dos sócios (R$15k).
@@ -164,13 +178,29 @@ export function DashboardClient() {
             icon={TrendingDown}
             hint="taxas + GPU/Kie + infra + estornos"
           />
-          <KpiCard
-            label="Lucro acumulado"
-            value={brl2(data.totals.profit)}
-            tone={data.totals.profit >= 0 ? "profit" : "bad"}
-            icon={TrendingUp}
-            hint={`margem ${data.totals.marginPct.toFixed(0)}% · gatilho retirada $15k: ${Math.max(0, Math.min(100, (data.totals.profit / 15000) * 100)).toFixed(0)}%`}
-          />
+          {(() => {
+            // CAIXA REAL (Johnny 18/09): o acumulado também sai com o que já foi
+            // retirado descontado, e o gatilho de $15k passa a medir esse número
+            // — é ele que diz o que existe pra distribuir de novo.
+            const retirado = data.retiradas?.acumulado ?? 0;
+            const caixa = caixaReal(data.totals.profit, retirado);
+            const gatilho = Math.max(0, Math.min(100, (caixa / 15000) * 100));
+            return (
+              <KpiCard
+                label="Lucro acumulado"
+                value={brl2(caixa)}
+                tone={caixa >= 0 ? "profit" : "bad"}
+                icon={TrendingUp}
+                hint={[
+                  `margem ${data.totals.marginPct.toFixed(0)}%`,
+                  retirado > 0 ? `cheio ${brl2(data.totals.profit)} − ${brl2(retirado)} aplicados` : null,
+                  `gatilho retirada $15k: ${gatilho.toFixed(0)}%`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              />
+            );
+          })()}
           <KpiCard
             label="Cancelaram (pagantes)"
             value={num(data.totals.canceledPaid)}
