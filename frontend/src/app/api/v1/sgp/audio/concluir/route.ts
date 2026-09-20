@@ -5,6 +5,7 @@
  */
 import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
+import { somaFalaDistinta } from "@/lib/sgp/fala-distinta";
 import { atualizarSessao, pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 import { CIENCIA_AUDIO, SGP_AUDIO_MAX_SEGUNDOS, SGP_AUDIO_MIN_SEGUNDOS } from "@/lib/sgp/types";
 
@@ -24,7 +25,11 @@ export async function POST(request: NextRequest) {
     const pedido = await pedidoDaSessaoOuNull();
     if (!pedido) return badRequest("Comece pela tela de dados.");
     const aprovados = (pedido.audios ?? []).filter((a) => a.status === "aprovado");
-    const total = aprovados.reduce((s, a) => s + a.segundos, 0);
+    // Fala DISTINTA (#501): o mesmo arquivo reenviado conta uma vez. É esta
+    // soma — sobre o array de verdade do banco — que decide o portão, então
+    // não importa em que ordem as cópias entraram (o buraco do #238 era
+    // decidir na escrita; aqui a decisão é na conta).
+    const total = somaFalaDistinta(aprovados);
     if (total < SGP_AUDIO_MIN_SEGUNDOS) {
       return badRequest(`Faltam ${Math.ceil((SGP_AUDIO_MIN_SEGUNDOS - total) / 60)} min de fala aprovada.`);
     }

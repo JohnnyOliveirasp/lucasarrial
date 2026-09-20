@@ -53,6 +53,11 @@ export async function POST(request: NextRequest) {
       status: m.aprovado && !brutoLimite ? "aprovado" : "reprovado",
       motivos,
       avisos: m.avisos,
+      // Impressão de conteúdo (#501): a régua conta o mesmo arquivo reenviado
+      // uma vez só. A cópia ENTRA (histórico do aluno preservado), quem a
+      // ignora é a soma — ver lib/sgp/fala-distinta.ts.
+      etag: m.etag,
+      bytes: m.bytes,
     };
     // Append atômico (linha travada). A janela de corrida aqui é ainda maior
     // que a da foto: `maxDuration = 300` porque o ffmpeg pode demorar minutos,

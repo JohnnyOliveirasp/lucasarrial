@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { formatDuration, measureAudioDuration } from "@/lib/audio/duration";
 import { putToR2 } from "@/lib/images/upload";
+import { chavesRepetidas, somaFalaDistinta } from "@/lib/sgp/fala-distinta";
 import { criarFila } from "@/lib/sgp/fila";
 import { CIENCIA_AUDIO, SGP_AUDIO_MAX_SEGUNDOS, SGP_AUDIO_MIN_SEGUNDOS, type SgpAudio } from "@/lib/sgp/types";
 import { SGP_ERROR_CLASS, SGP_GHOST_CLASS, SGP_HINT_CLASS, SGP_PILL_CLASS } from "./sgp-classes";
@@ -13,7 +14,7 @@ const ACCEPT = ".mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4,.aac,.opus,audio/*";
 
 type Item =
   | { id: string; nome: string; fase: "enviando" | "analisando" }
-  | { id: string; nome: string; fase: "aprovado"; segundos: number; key: string; avisos?: string[] }
+  | { id: string; nome: string; fase: "aprovado"; segundos: number; key: string; avisos?: string[]; etag?: string | null; bytes?: number | null }
   | { id: string; nome: string; fase: "reprovado"; motivos: string[]; key: string }
   | { id: string; nome: string; fase: "indeciso" | "erro"; mensagem: string; key?: string };
 
@@ -33,7 +34,7 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
   const [itens, setItens] = useState<Item[]>(() =>
     iniciais.map((a) =>
       a.status === "aprovado"
-        ? { id: a.key, nome: a.nome, fase: "aprovado", segundos: a.segundos, key: a.key, avisos: a.avisos }
+        ? { id: a.key, nome: a.nome, fase: "aprovado", segundos: a.segundos, key: a.key, avisos: a.avisos, etag: a.etag, bytes: a.bytes }
         : { id: a.key, nome: a.nome, fase: "reprovado", motivos: a.motivos ?? [], key: a.key },
     ),
   );
@@ -41,7 +42,12 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const total = itens.reduce((s, i) => (i.fase === "aprovado" ? s + i.segundos : s), 0);
+  // Fala DISTINTA (#501): o mesmo arquivo reenviado conta UMA vez — a régua
+  // aqui é a mesma dos portões do servidor, senão a barra diria "20 min ✓" e
+  // o Continuar recusaria. A cópia fica listada e marcada "não conta".
+  const aprovados = itens.filter((i): i is Extract<Item, { fase: "aprovado" }> => i.fase === "aprovado");
+  const total = somaFalaDistinta(aprovados);
+  const repetidos = chavesRepetidas(aprovados);
   const ocupado = itens.some((i) => i.fase === "enviando" || i.fase === "analisando");
   const dentroDaRegua = total >= SGP_AUDIO_MIN_SEGUNDOS && total <= SGP_AUDIO_MAX_SEGUNDOS;
   const podeContinuar = dentroDaRegua && !ocupado && ciencia.size === CIENCIA_AUDIO.length;
@@ -102,7 +108,7 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
       patch(
         id,
         audio.status === "aprovado"
-          ? { id, nome, fase: "aprovado", segundos: audio.segundos, key, avisos: audio.avisos }
+          ? { id, nome, fase: "aprovado", segundos: audio.segundos, key, avisos: audio.avisos, etag: audio.etag, bytes: audio.bytes }
           : { id, nome, fase: "reprovado", motivos: audio.motivos ?? [], key },
       );
     } catch (e) {
@@ -196,6 +202,7 @@ export function StepAudioForm({ iniciais }: { iniciais: SgpAudio[] }) {
                   {i.fase === "aprovado" ? (
                     <>
                       <span className="text-emerald-400">✓ {t("aprovado")} · {formatDuration(i.segundos)} {t("deFala")}</span>
+                      {repetidos.has(i.key) ? <span className="text-amber-400">⚠ {t("repetido")}</span> : null}
                       {(i.avisos ?? []).map((a) => (
                         <span key={a} className="text-amber-400">⚠ {a} — {t("avisoAfeta")}</span>
                       ))}

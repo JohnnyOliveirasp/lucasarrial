@@ -56,7 +56,13 @@ export async function anexarFoto(
   return ler(data as RetornoSql);
 }
 
-/** Anexa UM áudio. Mesma trava; áudio não tem dedup (ver o .sql). */
+/**
+ * Anexa UM áudio. Mesma trava; o passo atômico não tem dedup (ver o .sql) —
+ * a cópia idêntica ENTRA de propósito, e quem a ignora é a RÉGUA (#501):
+ * lib/sgp/fala-distinta.ts conta cada conteúdo (ETag+bytes do R2) uma vez só,
+ * em qualquer ordem de escrita. Decidir na conta, não na escrita, é o que
+ * fecha o buraco de concorrência do #238 sem mexer no SQL.
+ */
 export async function anexarAudio(
   sessao: string,
   audio: SgpAudio,

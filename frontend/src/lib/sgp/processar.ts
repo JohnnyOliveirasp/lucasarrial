@@ -24,6 +24,7 @@ import { dispararTreinoOnboarding } from "@/lib/onboarding/treino";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 import { imagesBucket, r2, R2_BUCKETS } from "@/lib/r2/client";
 import { buildRawAudioKey } from "@/lib/r2/presigned";
+import { distintosPorConteudo, somaFalaDistinta } from "./fala-distinta";
 import { camposDoPerfil, type PerfilAtual } from "./identidade-pure";
 import { registrarFalhaDeClaim } from "./reconciliacao";
 import { atualizarSessao } from "./sessao";
@@ -78,7 +79,8 @@ export async function enviarPedido(pedido: SgpPedidoRow, senha: string | null): 
 
   const fotos = (pedido.fotos ?? []).filter((f) => f.status === "aprovada");
   const audios = (pedido.audios ?? []).filter((a) => a.status === "aprovado");
-  const totalFala = audios.reduce((s, a) => s + a.segundos, 0);
+  // Fala DISTINTA (#501): o mesmo arquivo reenviado conta uma vez na régua.
+  const totalFala = somaFalaDistinta(audios);
   if (fotos.length < SGP_FOTOS_MIN) throw new Error("Faltam fotos aprovadas.");
   if (totalFala < SGP_AUDIO_MIN_SEGUNDOS) throw new Error("Falta áudio aprovado.");
 
@@ -173,7 +175,10 @@ export async function enviarPedido(pedido: SgpPedidoRow, senha: string | null): 
 async function processarMaterial(pedido: SgpPedidoRow, userId: string, email: string): Promise<void> {
   const admin = getAdmin();
   const fotos = (pedido.fotos ?? []).filter((f) => f.status === "aprovada");
-  const audios = (pedido.audios ?? []).filter((a) => a.status === "aprovado");
+  // Fala DISTINTA (#501): a cópia idêntica não vai pro treino — copiar o
+  // mesmo arquivo duas vezes pra raw/ só infla duration_seconds e vicia o
+  // material da voz NOVA. Voz já treinada não é tocada (decisão do Johnny).
+  const audios = distintosPorConteudo((pedido.audios ?? []).filter((a) => a.status === "aprovado"));
   const totalFala = audios.reduce((s, a) => s + a.segundos, 0);
   const erros: string[] = [];
 

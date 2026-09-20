@@ -2327,6 +2327,7 @@
       "continuar": "Continue",
       "salvando": "Saving…",
       "avisoAfeta": "may affect the cloned voice",
+      "repetido": "duplicate file — already sent before, it does not count toward the minutes. You can remove it.",
       "arquivoLongo": "This file is {tem} long — the limit is {max} min per file. Split it into smaller parts and upload again."
     },
     "revisao": {
