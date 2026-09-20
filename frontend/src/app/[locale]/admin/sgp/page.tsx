@@ -54,6 +54,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { filtrarBusca } from "@/lib/sgp/busca";
+import { EntrarComoAluno } from "@/components/admin/sgp/entrar-como-aluno";
 import type { SgpGeracoes } from "@/lib/sgp/geracoes";
 import { videoLegivel, vozLegivel } from "@/lib/sgp/geracoes-pure";
 import {
@@ -890,8 +891,23 @@ export default function SgpPage() {
                       p.paradoTexto
                     )}
                   </Td>
+                  {/* Pedido do time (18/09): o telefone é LINK de WhatsApp,
+                      como já era na aba "Todos os compradores" — o uso real é
+                      falar com a pessoa, não ler o número. */}
                   <Td className="whitespace-nowrap font-mono text-[11px] text-[var(--mute)]">
-                    {p.whatsapp === "—" ? "—" : telefoneLegivel(p.whatsapp)}
+                    {p.whatsapp === "—" ? (
+                      "—"
+                    ) : (
+                      <a
+                        href={`https://wa.me/${p.whatsapp.replace(/\D/g, "")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Abrir conversa no WhatsApp"
+                        className="text-[var(--ink)] underline decoration-[var(--hairline-strong)] underline-offset-2 transition-colors hover:text-[var(--status-online)]"
+                      >
+                        {telefoneLegivel(p.whatsapp)}
+                      </a>
+                    )}
                   </Td>
                   {/* ⚠️ Linha de quem NUNCA COMEÇOU não tem pedido, logo não tem
                       onde escrever: os três botões viram um aviso só. Oferecer o
@@ -959,7 +975,19 @@ export default function SgpPage() {
                     </>
                   )}
                   <Td>{p.etapa}</Td>
-                  <Td className="font-mono text-[11px] text-[var(--mute)]">{p.email}</Td>
+                  <Td className="font-mono text-[11px] text-[var(--mute)]">
+                    {p.email === "—" ? (
+                      "—"
+                    ) : (
+                      <a
+                        href={`mailto:${p.email}`}
+                        title="Escrever para este aluno"
+                        className="underline decoration-[var(--hairline-strong)] underline-offset-2 transition-colors hover:text-[var(--status-online)]"
+                      >
+                        {p.email}
+                      </a>
+                    )}
+                  </Td>
                   {/* Prosa longa: foi pro fim porque era ela que empurrava os botões
                       pra fora da tela. Texto inteiro preservado (o time lê), só
                       mais estreito — era o que mais esticava a tabela. */}
@@ -979,7 +1007,36 @@ export default function SgpPage() {
                 {expandido === p.id && (
                   <tr className="border-t border-[var(--hairline)] bg-[var(--surface-deep)]">
                     <td colSpan={14} className="px-3 py-4">
-                      <div className="sticky left-0 w-fit max-w-[1100px]">
+                      <div className="sticky left-0 flex w-fit max-w-[1100px] flex-col gap-4">
+                        {/* Pedido do time (18/09): os dados da pessoa ficam
+                            ONDE o material dela está, pra não ter que caçar a
+                            coluna numa tabela de 1780px. O botão de entrar na
+                            conta é o herdeiro da senha anotada na planilha —
+                            mesmo acesso, sem guardar senha de ninguém. */}
+                        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--hairline)] pb-3">
+                          <span className="text-[13px] text-[var(--ink)]">{p.nome}</span>
+                          {p.email !== "—" && (
+                            <a
+                              href={`mailto:${p.email}`}
+                              className="font-mono text-[11px] text-[var(--mute)] underline decoration-[var(--hairline-strong)] underline-offset-2 transition-colors hover:text-[var(--status-online)]"
+                            >
+                              {p.email}
+                            </a>
+                          )}
+                          {p.whatsapp !== "—" && (
+                            <a
+                              href={`https://wa.me/${p.whatsapp.replace(/\D/g, "")}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono text-[11px] text-[var(--mute)] underline decoration-[var(--hairline-strong)] underline-offset-2 transition-colors hover:text-[var(--status-online)]"
+                            >
+                              {telefoneLegivel(p.whatsapp)}
+                            </a>
+                          )}
+                          {!p.naoIniciou && p.email !== "—" && (
+                            <EntrarComoAluno email={p.email} nome={p.nome} />
+                          )}
+                        </div>
                         <PainelGeracoes
                           estado={geracoes[p.id]}
                           onTentarDeNovo={() => carregarGeracoes(p.id)}
@@ -2029,7 +2086,19 @@ function AbaCompradores({
                       <span className="text-[var(--ash)]">—</span>
                     )}
                   </Td>
-                  <Td className="font-mono text-[11px] text-[var(--mute)]">{c.email}</Td>
+                  <Td className="font-mono text-[11px] text-[var(--mute)]">
+                    {c.email === "—" ? (
+                      "—"
+                    ) : (
+                      <a
+                        href={`mailto:${c.email}`}
+                        title="Escrever para este aluno"
+                        className="underline decoration-[var(--hairline-strong)] underline-offset-2 transition-colors hover:text-[var(--status-online)]"
+                      >
+                        {c.email}
+                      </a>
+                    )}
+                  </Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{dt(c.enviadoEm)}</Td>
                   <Td
                     className={`font-mono text-[11px] tabular-nums ${
