@@ -129,8 +129,9 @@ export function RetiradasPanel({
       </div>
 
       <p className="font-mono text-[11px] leading-relaxed text-[var(--ash)]">
-        Retirada não é despesa: não entra em &quot;Saiu (gastos)&quot; e não muda o &quot;Lucro (caixa)&quot; —
-        é lucro sendo distribuído. O que ela muda é só o &quot;Em caixa&quot; aqui embaixo.
+        Retirada não é despesa: não entra em &quot;Saiu (gastos)&quot; nem na conta do bruto —
+        é lucro sendo distribuído. Desde 18/09 o &quot;Lucro (caixa)&quot; e o &quot;Lucro acumulado&quot;
+        já aparecem com ela descontada, e é o mesmo número do &quot;Em caixa&quot; aqui embaixo.
       </p>
 
       {tabelaAusente && (
