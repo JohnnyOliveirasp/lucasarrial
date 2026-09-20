@@ -63,6 +63,18 @@ const REF_TYPES_ESTORNO = [
   // perguntasse "a geracao 0c0c08fc ja foi ressarcida?" leria NAO — o falso
   // negativo que paga em dobro. O nome enganou; o ref_id nao engana.
   "compensation",
+  // ⚠️ 19/09, ronda noturna: ESTE FALTAVA e a lista comecou a mentir no MESMO
+  // dia em que o tipo nasceu. Quem grava: frontend/src/app/api/v1/edicao/broll/
+  // route.ts:200 (`refundRefType`) — producao, nao rascunho. Medido na hora de
+  // somar: 3 linhas / +600 cr / 1 aluna (Leonice, #302, estornadas em c0d7a759).
+  // Sem ele, `ehEstorno('edicao_broll_refund')` dava false e quem perguntasse
+  // "os b-rolls da Leonice ja foram ressarcidos?" leria NAO e pagaria de novo.
+  // Terceira reincidencia da MESMA classe (#185 studio_audio, #342 perdao/
+  // compensation, agora esta): todo refundRefType novo nasce fora da lista, e
+  // quem o escreve nao sabe que esta lista existe. Por isso o guarda do fim
+  // deste arquivo (`ref_type de estorno que a lista nao conhece`) e que pegou —
+  // ele apareceu na varredura de hoje antes de qualquer humano notar.
+  "edicao_broll_refund",
 ];
 
 /**
