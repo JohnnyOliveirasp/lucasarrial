@@ -65,6 +65,8 @@ class Referencia:
     # ⚠️ Telemetria causal, NAO detector de defeito: corte seco nao prediz voz
     # ruim (amostra de 50 medida em 12/09: seco->diverge 18 / seco->ok 18).
     cut_mode: str | None = None
+    speech_rate_wps: float | None = None      # velocidade natural (dataset ou mediana, pal/s)
+    reference_rate_wps: float | None = None   # velocidade da ref escolhida
 
 
 def _desempacotar_candidata(cand) -> "tuple[Path, str, str | None]":
@@ -72,7 +74,8 @@ def _desempacotar_candidata(cand) -> "tuple[Path, str, str | None]":
 
     Tolera a forma ANTIGA de 2 itens (`(clip, texto)`), que ainda sai de stub de
     teste e de chamador nao atualizado: modo ausente vira `None` — "nao da pra
-    saber" — em vez de um palpite.
+    saber" — em vez de um palpite. A candidata NOVA (RefCandidate de 4 campos,
+    com wps no fim) tambem passa aqui: [2] segue sendo o cut_mode.
     """
     clip, texto = cand[0], cand[1]
     modo = cand[2] if len(cand) > 2 else None
@@ -80,7 +83,7 @@ def _desempacotar_candidata(cand) -> "tuple[Path, str, str | None]":
 
 
 def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
-                     language: str) -> Referencia:
+                     language: str, target_wps: "float | None" = None) -> Referencia:
     """Corta REFERENCE_SECONDS de um audio ja LIMPO pelo Demucs e sobe.
 
     Substitui o upload manual de referencia — garante que a ref e' curta (sem
@@ -111,6 +114,7 @@ def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
     # uma e escolhe a de menor risco de "filler" ("entao/nao/ta/ne" na borda).
     # Conserta a raiz do bug "entao nao" (a ref aleatoria da Pri terminava em
     # "...apertando o botao nao").
+    medidas: dict = {}
     ref.candidatas = select_reference_candidates(
         norm_files,
         work_dir=dirs.job / "ref_candidates",
@@ -122,7 +126,13 @@ def escolher_e_subir(inp: dict, dirs, norm_dir: Path, whisper_model: str,
         transcribe_words_fn=lambda p: transcrever_palavras_seguro(p, whisper_model, language),
         language=language,
         log=lambda **k: _log(k.pop("level", "info"), k.pop("event", "train.reference"), **k),
+        medidas=medidas,
+        # Velocidade real da pessoa (dataset inteiro, #165). None = o seletor
+        # usa a mediana das candidatas como regua, como em 25/08.
+        target_wps=target_wps,
     )
+    ref.speech_rate_wps = medidas.get("speech_rate_wps")
+    ref.reference_rate_wps = medidas.get("reference_rate_wps")
     escolhida = ref.candidatas[0] if ref.candidatas else None
     if not escolhida:
         ref.error = "reference selection/transcription returned empty"
