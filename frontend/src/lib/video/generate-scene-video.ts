@@ -7,7 +7,7 @@
  * Server-only.
  */
 import { getAdmin } from "@/lib/db/admin";
-import { kieCreateVideoTask, friendlyKieError } from "@/lib/kie/client";
+import { kieCreateVideoTask } from "@/lib/kie/client";
 import { getTier, VideoTierId, VIDEO_DURATION_SECONDS, VIDEO_RESOLUTION } from "@/lib/video/tiers";
 import { VIDEO_ASPECT_RATIO } from "@/lib/video/config";
 import { failSceneVideo } from "@/lib/video/video-sync";
@@ -70,7 +70,8 @@ export async function startSceneVideo(args: {
     // Loga o detalhe cru no servidor; guarda mensagem amigável pra UI.
     const raw = e instanceof Error ? e.message : "Falha ao criar o vídeo";
     console.error("[startSceneVideo] Kie falhou:", raw);
-    await failSceneVideo(sceneId, friendlyKieError(raw));
+    // CRU: quem traduz é o failSceneVideo, que também abre o chamado (#425/#484).
+    await failSceneVideo(sceneId, raw);
     return isProviderCreditError(raw) ? "provider_out_of_credits" : "error";
   }
 }
