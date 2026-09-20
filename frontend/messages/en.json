@@ -2327,7 +2327,16 @@
       "continuar": "Continue",
       "salvando": "Saving…",
       "avisoAfeta": "may affect the cloned voice",
-      "arquivoLongo": "This file is {tem} long — the limit is {max} min per file. Split it into smaller parts and upload again."
+      "arquivoLongo": "This file is {tem} long — the limit is {max} min per file. Split it into smaller parts and upload again.",
+      "bloqueio": {
+        "ocupado": "Wait for the audio analysis to finish to continue.",
+        "vazio": "You haven't sent any audio yet. We need {min} min of speech to clone your voice.",
+        "falaSegundos": "{n} more second(s) to unlock the button: you have {tem} of approved speech and the minimum is {min} min. We count SPEAKING time, not file length — pauses and the silence between sentences don't count. Record one more short take and send it: it adds to what's already here.",
+        "falaMinutos": "{n} more minute(s) to unlock the button: you have {tem} of approved speech and the minimum is {min} min. We count SPEAKING time, not file length — pauses and the silence between sentences don't count. Record one more take and send it: it adds to what's already here.",
+        "excedeu": "You went over the maximum of {max} min of approved speech. Remove a file to continue.",
+        "ciencia": "{n} item(s) still unchecked in the confirmation list at the top of this screen."
+      },
+      "cienciaNaoGuardada": "We couldn't save your check marks right now. Don't refresh the page before continuing, or they may disappear."
     },
     "revisao": {
       "titulo": "Confirmation & Authorization",
