@@ -27,6 +27,7 @@ import {
   planoDoBounce,
   classeComDns,
   pareceFalhaDeMx,
+  pareceCaixaInexistente,
   dominioDoEmail,
 } from "./mail-bounce.ts";
 
@@ -687,4 +688,121 @@ test("nota do obsoleto NÃO nomeia endereço substituto e proíbe trocar cadastr
   assert.match(nota, /NÃO troque o cadastro/);
   // O caminho que funciona é procurar pelo NOME.
   assert.match(nota, /NOME/);
+});
+
+// ---------------------------------------------------------------------------
+// "mailbox unavailable" do Outlook (Aline, 20/09) — e os CONTROLES NEGATIVOS.
+//
+// Os diagnósticos abaixo são os TEXTOS REAIS lidos de `emails_enviados` nesta
+// ronda (11 bounces: temporaria 4 · desconhecida 3 · inexistente 2 ·
+// caixa-cheia 2), não exemplo inventado. Se alguém mexer no padrão, o que
+// segura a mão é o controle negativo: as 6 linhas que JÁ estavam certas têm
+// que continuar na classe delas.
+// ---------------------------------------------------------------------------
+
+/** O texto real do bounce da Aline, na íntegra. */
+const ALINE =
+  "smtp; 550 5.5.0 Requested action not taken: mailbox unavailable (S2017062302). " +
+  "[SJ1PEPF00002313.namprd03.prod.outlook.com 2026-09-20T10:22:13.299Z 08DF145A87CDB346]";
+
+test("Outlook '550 5.5.0 mailbox unavailable' é caixa INEXISTENTE, não 'desconhecida'", () => {
+  // A aluna pagou 10:22, a carta morreu 10:25 e ela ficou parecendo atendida.
+  assert.equal(classificarDiagnostico(ALINE), "inexistente");
+  assert.equal(pareceCaixaInexistente(ALINE), true);
+});
+
+test("o DNS não desmente a Aline: hotmail.com.br resolve, mas o defeito é a CAIXA", () => {
+  // O bounce não culpa MX/DNS, então `classeComDns` nem opina.
+  assert.equal(pareceFalhaDeMx(ALINE), false);
+  assert.equal(classeComDns("inexistente", ALINE, "resolve"), "inexistente");
+});
+
+test("CONTROLE: 'mailbox unavailable' com 4xx continua TEMPORÁRIA (450 do RFC 5321)", () => {
+  // Mesma frase, outro lado da cerca: 450 é caixa ocupada, reenviar funciona.
+  const r450 = "smtp; 450 4.2.1 Requested mail action not taken: mailbox unavailable";
+  assert.equal(classificarDiagnostico(r450), "temporaria");
+  assert.equal(pareceCaixaInexistente(r450), false);
+});
+
+test("CONTROLE: 550 E 4xx no MESMO texto — o temporário ganha, não abandona o aluno", () => {
+  // Caso MISTO, e é ele que faz a guarda de 4xx valer alguma coisa: o relay da
+  // frente carimba o SEU 550 enquanto CITA a resposta 4xx do servidor remoto
+  // (o arquivo já conhece o gênero — ver armadilha 2, Status 5.0.0 com
+  // Diagnostic-Code 452-4.2.2). Sem a guarda isto viraria 'inexistente' e a
+  // casa desistiria de um endereço que só estava em greylist: o erro caro, o de
+  // abandonar aluno alcançável.
+  const misto =
+    "smtp; 550 5.5.0 Requested action not taken: mailbox unavailable; " +
+    "remote host said: 451 4.7.1 Greylisted, please try again later";
+  assert.equal(pareceCaixaInexistente(misto), false);
+  assert.notEqual(classificarDiagnostico(misto), "inexistente");
+});
+
+test("CONTROLE: 'mailbox unavailable' com bloqueio explícito fica em bloqueio-destino", () => {
+  const bloq = "smtp; 550 5.7.1 mailbox unavailable; message blocked by policy";
+  assert.equal(classificarDiagnostico(bloq), "bloqueio-destino");
+});
+
+test("CONTROLE: 550 que NÃO é caixa inexistente — o spam da nossa SAÍDA (uid 608)", () => {
+  // Medido, não teórico: se o padrão usasse `550` nu, este viraria 'inexistente'
+  // e a casa deixaria de saber que o barramento foi DELA.
+  const luctec = "smtp; 550 Rejected due to high probability of spam";
+  assert.equal(classificarDiagnostico(luctec), "spam-saida");
+  assert.equal(pareceCaixaInexistente(luctec), false);
+});
+
+test("CONTROLE NEGATIVO: os 4 bounces reais 'temporaria' continuam temporários", () => {
+  const reais = [
+    "smtp; Network error: Network error when connecting to MX server gmmail.com[64.99.64.37] for gmmail.com: Connection timed out",
+    "smtp; Network error: Network error when connecting to MX server hotmaim.com[20.112.250.133] for hotmaim.com: Connection timed out",
+    "smtp; Network error: Network error when connecting to MX server hotmal.com[20.70.246.20] for hotmal.com: Connection timed out",
+    "smtp; Network error: Network error when connecting to MX server hormail.com[104.215.95.187] for hormail.com: Connection timed out",
+  ];
+  for (const d of reais) {
+    assert.equal(pareceCaixaInexistente(d), false, d);
+    // Estes culpam MX e o DNS é quem julga: com domínio que resolve, temporária.
+    assert.equal(classeComDns(classificarDiagnostico(d), d, "resolve"), "temporaria", d);
+  }
+});
+
+test("CONTROLE NEGATIVO: os 2 bounces reais de caixa CHEIA continuam caixa-cheia", () => {
+  // O primeiro diz "mailbox full" (não "unavailable") e ainda é 554 permanente:
+  // mesmo assim caixa-cheia ganha, porque é julgada ANTES de inexistente.
+  const thallita =
+    "smtp;554 5.2.2 mailbox full; STOREDRV.Deliver.Exception:QuotaExceededException." +
+    "MapiExceptionStorageShutoffQuotaExceeded; Failed to process message due to a permanent exception";
+  const pcsul =
+    "smtp; 452-4.2.2 The recipient's inbox is out of storage space. Please direct the recipient to " +
+    "https://support.google.com/mail/?p=OverQuotaTemp a92af1059eb24-144cdfc65c2si5254137c88.43 - gsmtp";
+  assert.equal(classificarDiagnostico(thallita), "caixa-cheia");
+  assert.equal(classificarDiagnostico(pcsul), "caixa-cheia");
+  assert.equal(pareceCaixaInexistente(thallita), false);
+  assert.equal(pareceCaixaInexistente(pcsul), false);
+});
+
+test("CONTROLE NEGATIVO: 552 over quota é caixa-cheia, não endereço inexistente", () => {
+  const over = "smtp; 552 5.2.2 Requested mail action aborted: exceeded storage allocation (over quota)";
+  assert.equal(classificarDiagnostico(over), "caixa-cheia");
+});
+
+test("CONTROLE NEGATIVO: 'No MX server found' continua na mão do DNS, não vira frase-juiz", () => {
+  // As outras 2 'desconhecida' reais da tabela. Ficam assim DE PROPÓSITO (#402).
+  const prado =
+    "smtp; DNS Error: DNS error occurred while resolving the Mail Exchange (MX) server for the " +
+    "specified domain (pradocomunicacao.com). No MX server found";
+  assert.equal(classificarDiagnostico(prado), "desconhecida");
+  assert.equal(pareceCaixaInexistente(prado), false);
+  assert.equal(classeComDns("desconhecida", prado, "sem-registro"), "inexistente");
+  assert.equal(classeComDns("desconhecida", prado, "resolve"), "temporaria");
+});
+
+test("diagnóstico vazio/null não quebra e cai em 'desconhecida'", () => {
+  assert.equal(classificarDiagnostico(""), "desconhecida");
+  assert.equal(classificarDiagnostico("", null), "desconhecida");
+  assert.equal(classificarDiagnostico(null as unknown as string), "desconhecida");
+  assert.equal(classificarDiagnostico(undefined as unknown as string), "desconhecida");
+  assert.equal(pareceCaixaInexistente(null as unknown as string), false);
+  assert.equal(pareceCaixaInexistente(undefined as unknown as string), false);
+  // Vazio com Status 4.x continua temporário (o Status só manda sem diagnóstico).
+  assert.equal(classificarDiagnostico("", "4.4.1"), "temporaria");
 });

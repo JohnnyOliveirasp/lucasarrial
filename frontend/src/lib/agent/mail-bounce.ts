@@ -175,8 +175,55 @@ export function pareceCaixaInexistente(diagnostico: string): boolean {
     /\b5\.1\.[01]\b/.test(d) ||
     /(user unknown|no such user|address (does not|doesn't) exist|recipient (address )?rejected|unknown recipient)/i.test(d) ||
     /account that you tried to reach (does not exist|is disabled)/i.test(d) ||
-    /\bNoSuchUser\b/i.test(d)
+    /\bNoSuchUser\b/i.test(d) ||
+    caixaIndisponivelPermanente(d)
   );
+}
+
+/**
+ * "mailbox unavailable" do Outlook/Exchange — a redação que faltava (Aline,
+ * 20/09, `alinedutra_@hotmail.com.br`). O texto real, na íntegra:
+ *
+ *   smtp; 550 5.5.0 Requested action not taken: mailbox unavailable
+ *   (S2017062302). [SJ1PEPF00002313.namprd03.prod.outlook.com ...]
+ *
+ * Caía em `desconhecida` pela regra genérica de 5xx no fim de
+ * `classificarDiagnostico`, e o efeito é a FALHA SILENCIOSA de sempre: ela
+ * pagou às 10:22, a carta de boas-vindas morreu às 10:25, e como o SMTP tinha
+ * devolvido 250 na entrega ela ficou parecendo aluna ATENDIDA. Ninguém
+ * reclama de uma carta que não sabe que existe.
+ *
+ * ⚠️ POR QUE A FRASE SOZINHA NÃO BASTA, e por que o CÓDIGO NU também não:
+ *
+ *  · `mailbox unavailable` existe nos DOIS lados da cerca. O texto canônico do
+ *    RFC 5321 para o caso TEMPORÁRIO é "450 Requested mail action not taken:
+ *    mailbox unavailable" (caixa ocupada/travada, reenviar funciona) e o do
+ *    PERMANENTE é "550 ... mailbox unavailable" (caixa não existe). A mesma
+ *    frase, dois destinos. Por isso qualquer 4xx no diagnóstico DERRUBA o
+ *    casamento: entre carimbar "não existe" num aluno alcançável e mandar a
+ *    casa tentar de novo, o custo do segundo erro é um reenvio.
+ *
+ *  · `550` NU é proibido e isto é medido, não teórico: o bounce do
+ *    `luctec@gmail.com` (uid 608, 13/09) era "smtp; 550 Rejected due to high
+ *    probability of spam" — um 550 que NÃO é caixa inexistente, é o filtro de
+ *    SAÍDA da própria casa. Hoje ele é pego antes, no ramo `spam-saida`, mas
+ *    um `550` solto aqui seria uma armadilha esperando a próxima redação.
+ *    Mesma razão para `5.5.0` nu: o enhanced code é "Other or undefined
+ *    protocol status", ou seja, lixeira — só vale acompanhado da frase.
+ *
+ *  · Bloqueio explícito também sai fora. `bloqueio-destino` é julgado DEPOIS
+ *    de `inexistente` em `classificarDiagnostico`, então sem esta guarda um
+ *    "550 5.7.1 ... mailbox unavailable ... blocked" seria roubado da classe
+ *    certa. Endereço barrado por política não é endereço que não existe: a
+ *    orientação ao humano é outra.
+ */
+function caixaIndisponivelPermanente(d: string): boolean {
+  if (!/mailbox (is )?unavailable/i.test(d)) return false;
+  // 4xx (código nu ou enhanced) manda tentar de novo — não é "não existe".
+  if (/(^|\s)4\d\d[\s-]/.test(d) || /\b4\.\d\.\d\b/.test(d)) return false;
+  // Barramento por política pertence a `bloqueio-destino`, que vem depois.
+  if (/\b5\.7\.\d+\b/.test(d) || /(blocked|banned|blacklist|not authorized|policy)/i.test(d)) return false;
+  return /(^|\s)550[\s-]/.test(d) || /\b5\.5\.0\b/.test(d);
 }
 
 /**
