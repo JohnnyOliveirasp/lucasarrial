@@ -1007,11 +1007,11 @@ export default function SgpPage() {
                       </a>
                     )}
                   </Td>
-                  <Td>
+                  <Td className="min-w-[110px] whitespace-nowrap">
                     {p.email === "—" ? (
                       <span className="font-mono text-[11px] text-[var(--ash)]">—</span>
                     ) : (
-                      <EntrarComoAluno email={p.email} nome={p.nome} />
+                      <EntrarComoAluno email={p.email} nome={p.nome} compacto />
                     )}
                   </Td>
                   {/* Prosa longa: foi pro fim porque era ela que empurrava os botões
@@ -2143,11 +2143,11 @@ function AbaCompradores({
                       </a>
                     )}
                   </Td>
-                  <Td>
+                  <Td className="min-w-[110px] whitespace-nowrap">
                     {c.email === "—" ? (
                       <span className="font-mono text-[11px] text-[var(--ash)]">—</span>
                     ) : (
-                      <EntrarComoAluno email={c.email} nome={c.nome} />
+                      <EntrarComoAluno email={c.email} nome={c.nome} compacto />
                     )}
                   </Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{dt(c.enviadoEm)}</Td>
