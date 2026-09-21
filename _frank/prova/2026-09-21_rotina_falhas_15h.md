@@ -166,6 +166,9 @@ afetada, conferida na releitura).
    Não a fiz: a coorte tem 1h de vida e mediria ruído.
 4. **#343 e #324**, os outros 2 PRs da porta, ainda sem revisão.
 5. **#226** — não falta mais medição, falta a escolha do Johnny.
+6. **PR #381 e #382**, abertos hoje pelas rondas das 13h/14h e ainda sem
+   revisão (ver seção 9). Pela 14-B, quem pegar **revisa e mergeia** — não
+   espera aval, porque para código sem DDL esse aval não existe.
 
 ---
 
@@ -181,5 +184,26 @@ PR, não mergeei nada. Hotmart só por GET. Nada da planilha (ordem de 29/08).
 ## 9. Passo fixo de fim de ronda
 
 Registro vai **direto na `main`**. Esta ronda **não produziu código** — nenhum
-fix pode ter ficado preso em branch porque nenhum branch foi criado. Conferência
-de `git log --oneline origin/main..HEAD` vazio registrada abaixo, após o push.
+fix pode ter ficado preso em branch porque nenhum branch foi criado.
+`git log --oneline origin/main..HEAD` conferido **vazio** após o push (commit
+`16590e99` na `origin/main`).
+
+⚠️ **A conferência de branches, como o manual a escreve, produz falso positivo
+em massa — registro porque ela pode enganar a próxima ronda.** Rodar
+`git rev-list main..<branch>` em todos os branches acusa **~190** com "commits
+presos". Quase todos são históricos já entregues por **squash**: o commit do
+branch nunca vira ancestral da `main`, então a contagem é > 0 para sempre. Lida
+ao pé da letra, ela diz que há 190 fixes presos, e isso é falso — e uma
+conferência que sempre grita é uma conferência que ninguém lê.
+
+**O recorte que responde à pergunta real** ("ficou fix DESTA ronda preso?") é
+filtrar por data do tip. Aplicado hoje, sobram **2**, nenhum meu:
+
+| branch | tip | PR |
+|---|---|---|
+| `feat/credito-cai-pro-dono-do-entitlement` | 21/09 13:47Z | **#381 OPEN** |
+| `feat/510-assinatura-constante-infra-storage` | 21/09 14:35Z | **#382 OPEN** |
+
+Os dois **têm PR aberto**, então não estão invisíveis — estão em revisão, que é
+o processo certo. **Não os mergeei porque não os revisei**, e mergear sem
+revisar é o que a 14-B proíbe. Ficam nomeados na seção 7.
