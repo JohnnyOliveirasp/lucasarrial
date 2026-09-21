@@ -105,8 +105,19 @@ function paraHtml(texto) {
       },
     });
     if (erroLink) throw new Error(`generateLink ${alvo.email}: ${erroLink.message}`);
-    const link = linkData?.properties?.action_link ?? null;
-    if (!link) throw new Error(`generateLink nao devolveu action_link para ${alvo.email}`);
+    // ⛔ NAO use `action_link`: ele entrega a sessao no FRAGMENTO, o
+    // /auth/callback nao ve nada na QUERY, queima o token de uso unico e joga o
+    // aluno em `missing_code_or_token` (incidente #438). O formato provado em
+    // producao e o `hashed_token` na QUERY — canonico em
+    // `frontend/src/lib/auth/link-de-acesso.ts` (repetido aqui porque este
+    // script e CommonJS e nao importa TypeScript).
+    const hashed = linkData?.properties?.hashed_token ?? null;
+    if (!hashed) throw new Error(`generateLink nao devolveu hashed_token para ${alvo.email}`);
+    const link = `${SITE}/auth/callback?${new URLSearchParams({
+      token_hash: hashed,
+      type: "recovery",
+      next: "/reset-password",
+    }).toString()}`;
     console.log(`  link de senha: OK (${link.slice(0, 60)}...)`);
 
     // 4. O texto, pela funcao de PRODUCAO.

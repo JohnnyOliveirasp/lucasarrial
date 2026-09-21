@@ -695,7 +695,7 @@ test("conta criada SEM link de senha sai sem o bloco, e a falha fica registrada"
     garantirConta: async () => ({
       situacao: "criada",
       linkDefinirSenha: null,
-      erro: "generateLink não devolveu action_link",
+      erro: "generateLink não devolveu hashed_token",
     }),
     email: async (_to, _assunto, texto) => {
       enviados.push(texto);
@@ -715,7 +715,7 @@ test("conta criada SEM link de senha sai sem o bloco, e a falha fica registrada"
   assert.equal(r.enviou, true);
   // sem link não existe bloco de acesso — e-mail sem link quebrado dentro
   assert.ok(!/A SUA CONTA JÁ ESTÁ CRIADA/.test(enviados[0]));
-  assert.match(r.contaErro ?? "", /action_link/);
+  assert.match(r.contaErro ?? "", /hashed_token/);
 });
 
 test("a conta nasce SEM assinatura e SEM crédito — por construção", () => {

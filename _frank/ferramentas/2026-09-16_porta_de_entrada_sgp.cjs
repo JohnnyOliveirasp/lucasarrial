@@ -114,6 +114,21 @@ async function acharUsuario(email) {
   return achado;
 }
 
+/**
+ * ⛔ NAO USE `action_link` AQUI. Esta ferramenta MANDA E-MAIL PRO ALUNO, e ate
+ * 18/09/2026 ela mandava o `action_link` — que aponta pro `/auth/v1/verify` do
+ * Supabase, responde 303 com a sessao no FRAGMENTO (`#access_token=...`), e
+ * portanto nao entrega nada pro nosso servidor: o `/auth/callback` so le
+ * `code`/`token_hash` da QUERY, cai no ramo final e manda o aluno pra
+ * `/login?error=missing_code_or_token` com o token de uso unico JA QUEIMADO.
+ * Esse e o incidente #438.
+ *
+ * O formato que funciona (medido em producao, 307 -> /reset-password com
+ * Set-Cookie) e o `hashed_token` na QUERY. A versao canonica desta montagem,
+ * com a medicao completa, vive em
+ * `frontend/src/lib/auth/link-de-acesso.ts` — aqui esta repetida porque este
+ * script e CommonJS e nao importa TypeScript. Se mudar la, mude aqui.
+ */
 async function gerarLink(email) {
   const { data, error } = await db.auth.admin.generateLink({
     type: "recovery",
@@ -121,9 +136,14 @@ async function gerarLink(email) {
     options: { redirectTo: REDIRECT },
   });
   if (error) throw new Error(`generateLink(${email}): ${error.message}`);
-  const link = data?.properties?.action_link;
-  if (!link) throw new Error(`generateLink(${email}): sem action_link na resposta`);
-  return link;
+  const hashed = data?.properties?.hashed_token;
+  if (!hashed) throw new Error(`generateLink(${email}): sem hashed_token na resposta`);
+  const q = new URLSearchParams({
+    token_hash: hashed,
+    type: "recovery",
+    next: "/reset-password",
+  });
+  return `${SITE}/auth/callback?${q.toString()}`;
 }
 
 function corpo(nome, link) {
