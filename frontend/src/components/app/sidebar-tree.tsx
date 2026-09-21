@@ -347,6 +347,11 @@ export function SidebarTree({
           )}
         </li>
 
+        {/* 21/09: o Publicador é produto público — aparece no menu principal
+            pra QUEM PODE, admin incluído. Antes o admin só o via dentro da
+            pré-produção, e o Johnny leu isso (com razão) como "não subiu". */}
+        {publisherAllowed && publisherGroup}
+
         {/* Cadeado por CRÉDITO (Johnny 18/08): a PÁGINA de settings já
             liberava por saldo (creditsTotal > 0) e só o menu ainda olhava
             assinatura — menu dizia "trancado" e a tela abria. Bug puro. */}
@@ -358,10 +363,6 @@ export function SidebarTree({
           locked={!unlimited && creditsTotal <= 0}
           lockTitle={tShell("lockApiCredits")}
         />
-
-        {/* Liberação individual do Publicador (13/08): não-admin com o gate
-            liberado vê o grupo Instagram/TikTok aqui, fora da pré-produção. */}
-        {!isAdmin && publisherAllowed && publisherGroup}
 
         {/* Papel `suporte` (mig 95): não vê pré-produção, mas precisa do
             caminho pro painel — senão só chega no /admin digitando a URL. */}
@@ -458,8 +459,9 @@ export function SidebarTree({
               {/* 🧪 Padrão 2.0 GRADUOU (08/08): virou o tier Padrão público
                   do Vídeo Clone (V1 aposentado, Turbo 80 cr/s). */}
               {/* ✅ HeyGen BYOK GRADUOU 14/08 → grupo Vídeos público. */}
-              {/* 🧪 Publicador (JSX compartilhado — ver publisherGroup). */}
-              {publisherGroup}
+              {/* ✅ Publicador GRADUOU 21/09 (ordem do Johnny): a Meta aprovou o
+                  content_publish em 05/09 e o produto subiu pro menu
+                  principal. Não fica mais aqui. */}
             </ul>
             <div className="mt-2 border-t border-[var(--hairline)] pt-2">
               <NavLeaf
