@@ -1,19 +1,127 @@
 """As RÉGUAS do QA de chunk — cada uma mede um defeito diferente.
 
-  echo_leak_count     texto SOBRANDO (eco da referência)
-  chunk_coverage      QUANTO do texto pedido está no áudio (0..1)
-  chunk_intrusions    palavra A MAIS ou TROCADA
-  maior_lacuna        FORMA do buraco: maior trecho contínuo que sumiu
-  palavras_faltantes  O QUE sumiu — TELEMETRIA PURA, nenhum gate a consulta
+  echo_leak_count         texto SOBRANDO (eco da referência)
+  chunk_coverage          QUANTO do texto pedido está no áudio (0..1)
+  chunk_intrusions        palavra A MAIS ou TROCADA
+  maior_lacuna            FORMA do buraco: maior trecho contínuo que sumiu
+  palavras_faltantes      O QUE sumiu — TELEMETRIA PURA, nenhum gate a consulta
+  divergencias_de_grafia  o que o áudio DISSE e escreveu de outro jeito —
+                          TELEMETRIA PURA, e a razão de existir está abaixo
 
 Todas devolvem None quando o resultado é inconclusivo — QA aqui é rede de
 segurança, nunca portão que derruba job por dúvida.
+
+⚠️ AS QUATRO PRIMEIRAS LEEM O MESMO DIAGNÓSTICO (`_diagnostico`, 18/09). Antes,
+cada uma montava seu próprio `SequenceMatcher` sobre os MESMOS dois lados e
+tirava sua própria conclusão. Funcionava, mas deixava a cobertura dizer "faltou
+palavra" enquanto a lista de faltantes podia dizer outra coisa. Agora o
+alinhamento é calculado UMA vez e cada régua faz uma pergunta diferente sobre
+ele — as respostas não podem mais se contradizer.
 """
 from __future__ import annotations
 
 import difflib
 
 from .text import norm_words
+
+# Limiar de "é a mesma palavra escrita de outro jeito". É o MESMO de
+# `chunk_intrusions` (0.7, com o corte de 3 letras junto), de propósito: a casa
+# tem UMA régua de semelhança de palavra, não duas que discordam entre si.
+_PARECIDA_MIN = 0.7
+_PARECIDA_MIN_LETRAS = 3
+
+
+def _parecida(w: str, candidatas) -> bool:
+    """`w` é a mesma palavra que alguma de `candidatas`, escrita diferente?
+
+    Extraída de `chunk_intrusions` em 18/09 sem mudar uma vírgula do critério —
+    lá ela decide "não conta como intrusão", aqui decide "não conta como
+    faltante". É a MESMA pergunta, vista dos dois lados do alinhamento.
+    """
+    for c in candidatas:
+        if difflib.SequenceMatcher(None, w, c).ratio() >= _PARECIDA_MIN:
+            return True
+        # Whisper separa/junta palavra composta ("autoconhecimento" →
+        # "auto conhecimento"): pedaço-prefixo/sufixo não é palavra diferente.
+        # Só vale com pedaço ≥3 (senão tudo casa com tudo).
+        if len(w) >= _PARECIDA_MIN_LETRAS and len(c) >= _PARECIDA_MIN_LETRAS and (
+            c.startswith(w) or c.endswith(w) or w.startswith(c) or w.endswith(c)
+        ):
+            return True
+    return False
+
+
+class _Diagnostico:
+    """O que o alinhamento `expected` × `got` diz, calculado UMA vez.
+
+    Três campos, e cada régua lê os que lhe interessam:
+      casadas      — palavras do texto que apareceram IGUAIS no áudio;
+      grafias      — {índice em expected: palavra que o áudio disse no lugar}.
+                     O áudio FALOU ali; só escreveu de outro jeito;
+      faltantes_i  — índices de expected que o áudio NÃO falou, em ordem.
+
+    A conta FECHA, e é isso que torna a separação auditável:
+      len(expected) == casadas + len(grafias) + len(faltantes_i)
+    """
+
+    __slots__ = ("casadas", "grafias", "faltantes_i")
+
+    def __init__(self, casadas: int, grafias: dict, faltantes_i: list):
+        self.casadas = casadas
+        self.grafias = grafias
+        self.faltantes_i = faltantes_i
+
+
+def _diagnostico(expected: list, got: list) -> _Diagnostico:
+    """Alinha e separa "o áudio não falou" de "falou com outra grafia".
+
+    ⚠️ POR QUE A SEPARAÇÃO EXISTE (medido em 18/09 sobre 1.035 ocorrências reais
+    de `qa->faltantes_amostra`): o topo da lista de nome próprio —
+    skydivethru (11), cestaro (8), naldy (8), riuls (6) — NÃO é áudio faltando.
+    O aluno escreveu o nome de um jeito e o Whisper grafou de outro. Chamar
+    isso de "palavra perdida" fazia três estragos de uma vez: derrubava a
+    cobertura de áudio BOM, gastava regeneração atrás de fantasma (e
+    regeneração é relógio — 31+ regens = 314s médios, 57% das gerações acima de
+    300s, teto 480s) e poluía a amostra que existe justamente pra alguém LER o
+    que sumiu.
+
+    ⚠️ E POR QUE ISSO NÃO AFROUXA A RÉGUA. Grafia só nasce de opcode `replace`:
+    quer dizer que o Whisper OUVIU alguma coisa naquele lugar e escreveu uma
+    palavra parecida. O defeito que este QA existe pra pegar (caso Katia 19/08 —
+    o modelo pula um pedação, chunk mudo, áudio que começa no meio) vira opcode
+    `delete`, onde o Whisper não ouviu NADA, e ali `livres` é vazio: TODA
+    palavra continua faltante, sem exceção. Palavra trocada por outra que não
+    se parece (ratio < 0.7) também continua faltante.
+    """
+    sm = difflib.SequenceMatcher(None, expected, got)
+    casadas = sum(b.size for b in sm.get_matching_blocks())
+    grafias: dict = {}
+    faltantes_i: list = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag not in ("delete", "replace"):
+            continue
+        # Em `delete`, j1 == j2 e esta lista nasce VAZIA — é o que garante que
+        # trecho comido nunca vira grafia.
+        livres = list(range(j1, j2))
+        for i in range(i1, i2):
+            e = expected[i]
+            achou = None
+            if len(e) >= _PARECIDA_MIN_LETRAS:
+                for k, j in enumerate(livres):
+                    g = got[j]
+                    if len(g) >= _PARECIDA_MIN_LETRAS and _parecida(e, (g,)):
+                        achou = (k, g)
+                        break
+            if achou is None:
+                faltantes_i.append(i)
+            else:
+                k, g = achou
+                grafias[i] = g
+                # Cada palavra OUVIDA justifica UMA palavra do texto: sem tirar
+                # da lista, um único "casa" no áudio absolveria "casa casa
+                # casa" no texto.
+                livres.pop(k)
+    return _Diagnostico(casadas, grafias, faltantes_i)
 
 
 def echo_leak_count(got, chunk_text, prompt_text, language: str = "pt"):
@@ -55,6 +163,13 @@ def chunk_coverage(got, chunk_text, language: str = "pt"):
     `got` é a MESMA transcrição usada pelo echo QA (não paga whisper 2x).
     None = inconclusivo (whisper falhou, ou chunk sem palavras) — não bloqueia;
     transcrição VAZIA de um chunk com texto é cobertura 0.0 (bloqueia).
+
+    ⚠️ 18/09: DIVERGÊNCIA DE GRAFIA CONTA COMO PRESENTE. Se o Whisper escreveu
+    "Cestaro" onde a aluna escreveu "Sestaro", o áudio DISSE o nome — a
+    cobertura estava sendo descontada por ortografia do transcritor, e cada
+    ponto perdido aí vira regeneração que nunca conserta nada (o nome vai ser
+    grafado igual na próxima tentativa). Quem não falou nada continua valendo
+    zero: ver o aviso em `_diagnostico`.
     """
     expected = norm_words(chunk_text, language)
     if not expected:
@@ -63,9 +178,8 @@ def chunk_coverage(got, chunk_text, language: str = "pt"):
         return None
     if not got:
         return 0.0
-    sm = difflib.SequenceMatcher(None, expected, got)
-    matched = sum(b.size for b in sm.get_matching_blocks())
-    return round(matched / len(expected), 3)
+    d = _diagnostico(expected, got)
+    return round((d.casadas + len(d.grafias)) / len(expected), 3)
 
 
 def palavras_faltantes(got, chunk_text, language: str = "pt"):
@@ -110,18 +224,49 @@ def palavras_faltantes(got, chunk_text, language: str = "pt"):
     lista vem do texto do PRÓPRIO ALUNO, onde "de"/"um"/"já" sumido é perda
     real — é exatamente o tipo de palavra curta e comum que separa o caso
     Katia do markup.
+
+    ⚠️ 18/09: DIVERGÊNCIA DE GRAFIA SAIU DAQUI e foi pra
+    `divergencias_de_grafia`. A amostra existe pra ser LIDA por gente, e o topo
+    dela estava tomado por nome próprio que o áudio falou certo — enquanto o
+    campo prometia "o que sumiu". Agora ela só nomeia o que o áudio não falou;
+    quem quiser contar a outra classe conta na coluna dela.
     """
     expected = norm_words(chunk_text, language)
     if not expected:
         return None
     if got is None:
         return None
-    sm = difflib.SequenceMatcher(None, expected, got)
-    faltantes: list[str] = []
-    for tag, i1, i2, _j1, _j2 in sm.get_opcodes():
-        if tag in ("delete", "replace"):
-            faltantes.extend(w for w in expected[i1:i2] if len(w) >= 2)
-    return faltantes
+    d = _diagnostico(expected, got)
+    return [expected[i] for i in d.faltantes_i if len(expected[i]) >= 2]
+
+
+def divergencias_de_grafia(got, chunk_text, language: str = "pt"):
+    """O que o áudio DISSE e o Whisper escreveu de outro jeito.
+
+    ⚠️ NÃO É RÉGUA — é TELEMETRIA, o mesmo contrato de `palavras_faltantes`:
+    nada aqui entra em score e nenhum portão de entrega consulta esta função.
+
+    POR QUE EXISTE (18/09): a família de nome próprio — skydivethru, cestaro,
+    naldy, riuls — não pode ser contada como palavra perdida (o áudio falou),
+    mas também NÃO pode ser contada como palavra casada e esquecida. Grafia
+    divergente não prova áudio bom; prova que o comparador não serve de juiz
+    naquele ponto. O jeito honesto de tratar isso é dar um nome próprio à
+    classe e deixar ela CONTÁVEL, pra que alguém possa perguntar depois
+    "quanto disso é nome, e quanto é o modelo trocando palavra?".
+
+    Devolve pares "texto>audio" (ex.: "sestaro>cestaro"), na ordem do texto.
+    Contrato idêntico ao de `chunk_coverage`:
+      None  = inconclusivo (whisper falhou, ou chunk sem palavra);
+      []    = nenhuma divergência;
+      lista = os pares, na ordem em que aparecem no texto.
+    """
+    expected = norm_words(chunk_text, language)
+    if not expected:
+        return None
+    if got is None:
+        return None
+    d = _diagnostico(expected, got)
+    return [f"{expected[i]}>{d.grafias[i]}" for i in sorted(d.grafias)]
 
 
 def chunk_intrusions(got, chunk_text, language="pt"):
@@ -141,23 +286,18 @@ def chunk_intrusions(got, chunk_text, language="pt"):
 
     Retorna o Nº de intrusões (0 = limpo); None = inconclusivo (não bloqueia —
     rede de segurança, não gate).
+
+    ⚠️ 18/09: o critério `parecida` que morava DENTRO desta função virou o
+    `_parecida` do módulo, sem mudar uma vírgula do comportamento — ele saiu
+    daqui só pra poder ser reusado por `_diagnostico`, que faz a MESMA pergunta
+    do outro lado do alinhamento ("esta palavra do TEXTO tem uma parecida no
+    áudio?"). Um critério, duas leituras.
     """
     expected = norm_words(chunk_text, language)
     if not expected or not got:
         return None
 
-    def parecida(w, candidatas):
-        for c in candidatas:
-            if difflib.SequenceMatcher(None, w, c).ratio() >= 0.7:
-                return True
-            # Whisper separa/junta palavra composta ("autoconhecimento" →
-            # "auto conhecimento"): pedaço-prefixo/sufixo da vizinha não é
-            # intrusão. Só vale com pedaço ≥3 (senão tudo casa com tudo).
-            if len(w) >= 3 and len(c) >= 3 and (
-                c.startswith(w) or c.endswith(w) or w.startswith(c) or w.endswith(c)
-            ):
-                return True
-        return False
+    parecida = _parecida
 
     sm = difflib.SequenceMatcher(None, expected, got)
     intrusoes = 0
@@ -195,6 +335,14 @@ def maior_lacuna(got, chunk_text, language="pt"):
     Então medimos o maior buraco contínuo em vez de só contar o que falta.
     Isso não depende de saber QUAIS símbolos não se fala — funciona pra
     variação que ainda nem apareceu.
+
+    ⚠️ 18/09: DIVERGÊNCIA DE GRAFIA INTERROMPE O BURACO, e isso é o ponto
+    inteiro desta régua aplicado à classe nova. O buraco aqui é "trecho que o
+    modelo não falou"; se no meio do trecho o áudio DISSE "Cestaro" (e o texto
+    dizia "Sestaro"), ali não há buraco — há fala. Contar a palavra falada como
+    parte do vão emendava dois vãos pequenos num vão grande e mandava pro
+    `_resgatar_por_subdivisao` um chunk que não tinha o defeito que o resgate
+    conserta. Palavra que o áudio NÃO falou continua contando inteira.
     """
     expected = norm_words(chunk_text, language)
     if not expected:
@@ -203,20 +351,29 @@ def maior_lacuna(got, chunk_text, language="pt"):
         return None
     if not got:
         return len(expected)  # chunk inteiro mudo: buraco = tudo
-    sm = difflib.SequenceMatcher(None, expected, got)
+    d = _diagnostico(expected, got)
+    # CORREÇÃO 24/08 (incidente 37bacb68): buraco medido em palavras FALÁVEIS —
+    # token de 1 letra não conta. SIGLA SOLETRADA ("B P C, L O A S") normaliza
+    # pra 7 tokens de 1 letra e o whisper escreve "BPC LOAS": buraco contínuo
+    # de 7, indistinguível de parágrafo comido, e o gate reprovava ÁUDIO BOM
+    # (tulliojeronimo, 23/08: mesmo roteiro falhou 2x soletrado e passou
+    # escrito "Bê pê cê"). Trecho realmente comido é feito de palavra de
+    # verdade — o desconto NÃO enfraquece a proteção do caso Katia.
     maior = 0
-    for tag, i1, i2, _j1, _j2 in sm.get_opcodes():
-        if tag in ("delete", "replace"):
-            # CORREÇÃO 24/08 (incidente 37bacb68): buraco medido em palavras
-            # FALÁVEIS — token de 1 letra não conta. SIGLA SOLETRADA ("B P C,
-            # L O A S") normaliza pra 7 tokens de 1 letra e o whisper escreve
-            # "BPC LOAS": buraco contínuo de 7, indistinguível de parágrafo
-            # comido, e o gate reprovava ÁUDIO BOM (tulliojeronimo, 23/08:
-            # mesmo roteiro falhou 2x soletrado e passou escrito "Bê pê cê").
-            # Trecho realmente comido é feito de palavra de verdade — o
-            # desconto NÃO enfraquece a proteção do caso Katia.
-            faladas = sum(1 for w in expected[i1:i2] if len(w) >= 2)
-            maior = max(maior, faladas)
+    corrente = 0
+    anterior = None
+    for i in d.faltantes_i:
+        # `faltantes_i` vem em ordem crescente; índice que pula quebra o vão,
+        # e o que foi pulado é palavra casada OU grafia — nos dois casos houve
+        # fala ali.
+        corrente = corrente + 1 if anterior is not None and i == anterior + 1 else 1
+        if len(expected[i]) < 2:
+            # Token de 1 letra não conta pro tamanho, mas também não PARTE o
+            # vão: "B P C" no meio de um parágrafo comido continua sendo um
+            # buraco só. É o mesmo desconto de 24/08, agora explícito.
+            corrente -= 1
+        anterior = i
+        maior = max(maior, corrente)
     return maior
 
 
