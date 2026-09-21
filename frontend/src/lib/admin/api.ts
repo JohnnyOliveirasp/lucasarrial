@@ -10,8 +10,9 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate, type AuthResult } from "@/lib/api/auth";
-import { adminRole, type AdminRole } from "@/lib/admin/guard";
-import { forbidden, unauthorized } from "@/lib/api/responses";
+import { adminRoleDetalhado, type AdminRole } from "@/lib/admin/guard";
+import { decidirGate } from "@/lib/admin/guard-pure";
+import { forbidden, serviceUnavailable, unauthorized } from "@/lib/api/responses";
 
 /** Falhas, SGP e Agente sao o trabalho do suporte (mig 95) — os dois papeis entram. */
 export const SUPORTE_OK = { allow: ["admin", "suporte"] } as const;
@@ -27,12 +28,30 @@ export async function gateAdmin(
   const auth = await authenticate(request);
   if (!auth) return { res: unauthorized() };
 
-  const role = await adminRole(auth.email);
-  if (!role) return { res: forbidden("Acesso restrito a administradores") };
+  const resultado = await adminRoleDetalhado(auth.email);
+  const decisao = decidirGate(resultado, opts?.allow ?? ["admin"], {
+    email: auth.email,
+    rota: request.nextUrl?.pathname ?? "(rota desconhecida)",
+  });
 
-  const allow = opts?.allow ?? ["admin"];
-  if (!allow.includes(role)) {
-    return { res: forbidden("Seu acesso não inclui esta área") };
+  if (decisao.tipo === "permitir") return { auth, role: decisao.role };
+
+  // Toda recusa LOGA (medido 21/09: o Johnny levou 403 três vezes e o log de
+  // produção tinha zero registros — a negativa era muda e ninguém fechou a
+  // causa). Só e-mail, papel, fonte, rota e motivo — nunca token/cookie.
+  if (decisao.tipo === "negar_503") {
+    // Erro de CONSULTA não é "você não é admin": responde 503 pra pessoa
+    // tentar de novo, e error-level porque é infra quebrada, não gente errada.
+    console.error("[gate-admin] não consegui verificar o papel", JSON.stringify(decisao.log));
+    return { res: serviceUnavailable("Não consegui confirmar seu acesso. Tente de novo.") };
   }
-  return { auth, role };
+
+  console.warn("[gate-admin] acesso negado", JSON.stringify(decisao.log));
+  return {
+    res: forbidden(
+      decisao.motivo === "sem_papel"
+        ? "Acesso restrito a administradores"
+        : "Seu acesso não inclui esta área",
+    ),
+  };
 }

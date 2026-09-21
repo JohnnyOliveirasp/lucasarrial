@@ -44,3 +44,12 @@ export function badRequest(message: string, details?: unknown) {
 export function serverError(message = "Internal error") {
   return jsonError("server_error", message, 500);
 }
+
+/**
+ * 503 — "não consegui VERIFICAR", diferente de 403 "você não pode".
+ * Usado pelo gate de admin quando a consulta de papel falha: banco fora do ar
+ * não pode virar "acesso restrito a administradores" (defeito de 21/09).
+ */
+export function serviceUnavailable(message = "Service unavailable") {
+  return jsonError("service_unavailable", message, 503);
+}
