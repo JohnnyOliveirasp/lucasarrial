@@ -2,6 +2,7 @@ import { setRequestLocale } from "next-intl/server";
 import { redirect } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { HeygenConnect } from "@/components/lab/heygen-connect";
+import { heygenLiberado } from "@/lib/heygen/gate";
 
 /**
  * HeyGen (BYOK — "HeyGen dentro do FastCloner", 05/08).
@@ -9,10 +10,10 @@ import { HeygenConnect } from "@/components/lab/heygen-connect";
  * a galeria dele (foto-avatares/looks) aparece aqui e os vídeos são gerados
  * sem sair da plataforma — consumindo os créditos DA CONTA DELE no HeyGen.
  *
- * ✅ GRADUOU 14/08 (ordem do Johnny): o Lucas rodou e aprovou, e o upload de
- * áudio que faltava subiu em 507ae4c. Saiu do gate de admin e entrou no
- * grupo Vídeos como "HeyGen". As rotas /api/v1/heygen nunca foram
- * admin-only — o gate vivia só aqui.
+ * ⛔ VOLTOU PRA PRÉ-PRODUÇÃO em 21/09 (ordem do Johnny): "não terá mais no
+ * projeto, desabilita do menu e move para apenas a pré-produção". Tirar do
+ * menu não bastava — quem tivesse a URL entraria igual —, então a página e as
+ * 4 rotas passam pelo mesmo portão (`lib/heygen/gate.ts`).
  */
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,9 @@ export default async function VideoHeygenPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return redirect({ href: "/login", locale });
+  // Aluno que chegou pela URL volta pro painel, sem página de erro: o produto
+  // não existe mais pra ele, e não é falha dele ter tentado.
+  if (!(await heygenLiberado(user.email))) return redirect({ href: "/app/dashboard", locale });
 
   return (
     <div className="flex flex-col gap-6">

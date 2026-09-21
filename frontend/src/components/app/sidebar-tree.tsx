@@ -57,6 +57,8 @@ export type NavProps = {
   /** Liberação individual do Publicador (social/access.ts) — mostra o grupo
    *  Instagram/TikTok mesmo sem ser admin (modelo "aluno pede", 13/08). */
   publisherAllowed: boolean;
+  /** TikTok ainda NÃO foi liberado (21/09): item some pra quem não pode. */
+  tiktokAllowed: boolean;
 };
 
 /** Cabeçalho da marca — mesmo link do logo no desktop e no drawer. */
@@ -80,6 +82,7 @@ export function SidebarTree({
   podeAbrirPainel = false,
   hasReadyVoice,
   publisherAllowed,
+  tiktokAllowed,
 }: NavProps) {
   const t = useTranslations("app");
   const tShell = useTranslations("shell.sidebar");
@@ -138,12 +141,16 @@ export function SidebarTree({
             label="Instagram"
             active={pathname.endsWith("/app/lab/publicador")}
           />
-          <NavLeaf
-            href="/app/lab/publicador/tiktok"
-            icon={Music2}
-            label="TikTok"
-            active={pathname.endsWith("/app/lab/publicador/tiktok")}
-          />
+          {/* 21/09 (ordem do Johnny): "só libera o Instagram, o TikTok ainda
+              não foi liberado" — o item some pra quem não está liberado. */}
+          {tiktokAllowed && (
+            <NavLeaf
+              href="/app/lab/publicador/tiktok"
+              icon={Music2}
+              label="TikTok"
+              active={pathname.endsWith("/app/lab/publicador/tiktok")}
+            />
+          )}
         </ul>
       )}
     </li>
@@ -211,16 +218,9 @@ export function SidebarTree({
       locked: false,
       lockTitle: "",
     },
-    // ✅ HeyGen BYOK GRADUOU 14/08 (ordem Johnny): o Lucas rodou e passou, e
-    // o upload de áudio que faltava subiu em 507ae4c (13/08). Aluno usa a
-    // própria API key — o gate de créditos daqui não se aplica.
-    {
-      href: "/app/lab/video-heygen",
-      icon: MonitorPlay,
-      label: t("nav.videoHeygen"),
-      locked: false,
-      lockTitle: "",
-    },
+    // ⛔ HeyGen SAIU do menu do aluno em 21/09 (ordem do Johnny): "nao tera
+    // mais no projeto, move para apenas a pre-producao". Ele graduou em 14/08
+    // e voltou — o item agora vive no bloco de pré-produção, que só admin vê.
   ];
 
   return (
@@ -409,6 +409,16 @@ export function SidebarTree({
                   pathname.endsWith("/app/videos/estudio") ||
                   pathname.endsWith("/app/videos/studio")
                 }
+              />
+              {/* ⛔ HeyGen DESCEU pra cá em 21/09 (ordem do Johnny): saiu do
+                  grupo público "Vídeos" e não é mais oferecido ao aluno. A
+                  página e as 4 rotas passaram a exigir admin também — o menu
+                  sozinho não seguraria quem tem a URL. */}
+              <NavLeaf
+                href="/app/lab/video-heygen"
+                icon={MonitorPlay}
+                label={t("nav.videoHeygen")}
+                active={pathname.endsWith("/app/lab/video-heygen")}
               />
             </GrupoPre>
 

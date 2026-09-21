@@ -25,6 +25,7 @@ export function Sidebar(props: Props) {
     podeAbrirPainel: props.podeAbrirPainel,
     hasReadyVoice: props.hasReadyVoice,
     publisherAllowed: props.publisherAllowed,
+    tiktokAllowed: props.tiktokAllowed,
   };
 
   return (

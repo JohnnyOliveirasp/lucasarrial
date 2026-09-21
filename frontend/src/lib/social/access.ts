@@ -34,15 +34,51 @@ const ALLOWED_EMAILS = new Set([
   "lucasarrial@gmail.com",
 ]);
 
-/** Chave geral: true = Publicador aberto a qualquer aluno (Meta aprovou 05/09). */
-const APROVADO_PELA_META = true;
+export type PlataformaSocial = "instagram" | "tiktok";
 
-/** E-mail pode usar o Publicador? */
-export async function socialPublisherAllowedEmail(email: string | null): Promise<boolean> {
-  if (APROVADO_PELA_META) return true;
+/**
+ * A chave é POR PLATAFORMA (correção do Johnny 21/09: "só libera o Instagram,
+ * o TikTok ainda não foi liberado"). As duas moravam no mesmo portão, então
+ * abrir o Instagram abria o TikTok junto — que não passou por review nenhum.
+ */
+const ABERTO: Record<PlataformaSocial, boolean> = {
+  instagram: true, // Meta aprovou o content_publish em 05/09/2026
+  tiktok: false, // sem aprovação — segue admin + allowlist
+};
+
+/** Regra antiga: admin, revisor da Meta ou liberação individual. */
+async function liberadoPorPessoa(email: string | null): Promise<boolean> {
   const low = email?.toLowerCase() ?? "";
   if (low && (REVIEWER_EMAILS.has(low) || ALLOWED_EMAILS.has(low))) return true;
   return isAdmin(email);
+}
+
+/** Pode usar ESTA plataforma? */
+export async function socialPublisherAllowedEmailFor(
+  plataforma: PlataformaSocial,
+  email: string | null,
+): Promise<boolean> {
+  if (ABERTO[plataforma]) return true;
+  return liberadoPorPessoa(email);
+}
+
+/** Pode abrir o Publicador (qualquer plataforma)? Decide menu e rotas comuns. */
+export async function socialPublisherAllowedEmail(email: string | null): Promise<boolean> {
+  if (Object.values(ABERTO).some(Boolean)) return true;
+  return liberadoPorPessoa(email);
+}
+
+/** Versão por plataforma a partir do user_id (usada pelas rotas do TikTok). */
+export async function socialPublisherEnabledFor(
+  plataforma: PlataformaSocial,
+  userId: string,
+): Promise<boolean> {
+  const { data } = await getAdmin()
+    .from("profiles")
+    .select("email")
+    .eq("id", userId)
+    .maybeSingle();
+  return socialPublisherAllowedEmailFor(plataforma, (data as { email: string | null } | null)?.email ?? null);
 }
 
 export async function socialPublisherEnabled(userId: string): Promise<boolean> {

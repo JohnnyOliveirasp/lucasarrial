@@ -12,7 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAdmin } from "@/lib/db/admin";
 import { bypassesBilling, hasActiveAccess } from "@/lib/credits/access";
 import { adminRole } from "@/lib/admin/guard";
-import { socialPublisherAllowedEmail } from "@/lib/social/access";
+import { socialPublisherAllowedEmail, socialPublisherAllowedEmailFor } from "@/lib/social/access";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
 import { precisaResgatarCompras } from "@/lib/payments/claim-guard";
 
@@ -107,6 +107,7 @@ export default async function AppLayout({
   const admin = papel === "admin";
   // Publicador: admin OU liberação individual (modelo "aluno pede", 13/08).
   const publisherAllowed = await socialPublisherAllowedEmail(email);
+  const tiktokAllowed = await socialPublisherAllowedEmailFor("tiktok", email);
 
   // Pix/boleto aguardando pagamento: mostra o banner só se ainda SEM acesso e o
   // aviso for recente (< 3 dias — janela típica do Pix). Some quando liberar/expirar.
@@ -129,7 +130,7 @@ export default async function AppLayout({
     // Sidebar — são irmãos, então o estado de aberto/fechado vive acima dos dois.
     <MobileNavProvider>
       <div className="grid min-h-svh grid-cols-1 lg:grid-cols-[260px_1fr] bg-[var(--canvas)]">
-        <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} podeAbrirPainel={papel !== null} hasReadyVoice={hasReadyVoice} publisherAllowed={publisherAllowed} />
+        <Sidebar creditsTotal={creditsTotal} unlimited={unlimited} subscribed={subscribed} isAdmin={admin} podeAbrirPainel={papel !== null} hasReadyVoice={hasReadyVoice} publisherAllowed={publisherAllowed} tiktokAllowed={tiktokAllowed} />
         <div className="flex flex-col">
           <Topbar
             email={profile?.email ?? user.email ?? ""}
