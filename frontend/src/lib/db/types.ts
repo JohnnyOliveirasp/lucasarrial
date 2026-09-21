@@ -524,12 +524,29 @@ export type ViralVideoRow = {
   garimpado_por: string | null;
   /** Vantagem de 7 dias de quem garimpou; depois cai no acervo comum. */
   exclusivo_ate: Timestamp | null;
+  /** ───── Vídeos Virais 1.0 (mig 118): o acervo que o ALUNO alimenta ─────
+   *  NULL em enviado_por = garimpo da casa (as 560 linhas antigas). */
+  enviado_por: string | null;
+  enviado_em: Timestamp | null;
+  /** O TEXTO aceito no envio, não um "sim": a frase muda, a prova não pode. */
+  consentimento_texto: string | null;
+  /** Aparece pra todos os alunos. Só nasce true com consentimento marcado. */
+  publico: boolean;
+  /** Admin tirou do ar — a linha nunca é apagada. */
+  removido_em: Timestamp | null;
+  removido_por: string | null;
+  removido_motivo: string | null;
   criado_em: Timestamp;
 };
-export type ViralVideoInsert = Omit<ViralVideoRow, "id" | "criado_em"> & {
-  id?: string;
-  criado_em?: Timestamp;
-};
+/**
+ * No INSERT só três colunas são obrigatórias: plataforma, video_id e url — o
+ * resto ou é nulo no banco ou tem default (score, likes, download_status…).
+ * Antes este tipo exigia TODAS, então quem grava um viral vindo de link teria
+ * que repetir uma dúzia de `null` de colunas que só a busca do Apify conhece.
+ */
+export type ViralVideoInsert = Partial<Omit<ViralVideoRow, "plataforma" | "video_id" | "url">> &
+  Pick<ViralVideoRow, "plataforma" | "video_id" | "url">;
+
 export type ViralVideoUpdate = Partial<Omit<ViralVideoRow, "id" | "criado_em">>;
 
 // ───────── viral_user_videos (mig 75 — a curadoria vira PESSOAL) ─────────

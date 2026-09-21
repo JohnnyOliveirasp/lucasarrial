@@ -141,16 +141,9 @@ export function SidebarTree({
             label="Instagram"
             active={pathname.endsWith("/app/lab/publicador")}
           />
-          {/* 21/09 (ordem do Johnny): "só libera o Instagram, o TikTok ainda
-              não foi liberado" — o item some pra quem não está liberado. */}
-          {tiktokAllowed && (
-            <NavLeaf
-              href="/app/lab/publicador/tiktok"
-              icon={Music2}
-              label="TikTok"
-              active={pathname.endsWith("/app/lab/publicador/tiktok")}
-            />
-          )}
+          {/* ⛔ TikTok NÃO entra aqui (ordem do Johnny 21/09): o menu principal
+              é só do que está liberado, e o TikTok não passou por review
+              nenhum. Ele vive no bloco de PRÉ-PRODUÇÃO, mais abaixo. */}
         </ul>
       )}
     </li>
@@ -221,6 +214,18 @@ export function SidebarTree({
     // ⛔ HeyGen SAIU do menu do aluno em 21/09 (ordem do Johnny): "nao tera
     // mais no projeto, move para apenas a pre-producao". Ele graduou em 14/08
     // e voltou — o item agora vive no bloco de pré-produção, que só admin vê.
+    //
+    // 🔥 Virais 1.0 (21/09): o acervo que a TURMA alimenta — o aluno cola o
+    // link do Instagram/TikTok e o vídeo fica pra todos. Entrada livre: quem
+    // não enviou nada ainda vê o que os outros mandaram. Não confundir com a
+    // Galeria de Virais da pré-produção, que é o garimpo pago da casa.
+    {
+      href: "/app/videos/virais",
+      icon: Flame,
+      label: "Virais",
+      locked: false,
+      lockTitle: "",
+    },
   ];
 
   return (
@@ -421,6 +426,17 @@ export function SidebarTree({
                 label={t("nav.videoHeygen")}
                 active={pathname.endsWith("/app/lab/video-heygen")}
               />
+              {/* 🧪 Publicador do TikTok: fica AQUI enquanto não for liberado.
+                  O Instagram graduou em 21/09 (Meta aprovou) e subiu pro menu
+                  principal; o TikTok não, então não pode aparecer lá. */}
+              {tiktokAllowed && (
+                <NavLeaf
+                  href="/app/lab/publicador/tiktok"
+                  icon={Music2}
+                  label="Publicar no TikTok"
+                  active={pathname.endsWith("/app/lab/publicador/tiktok")}
+                />
+              )}
             </GrupoPre>
 
             <GrupoPre
