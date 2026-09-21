@@ -54,12 +54,24 @@ avalia a ÚLTIMA nota, desconta o boilerplate do sensor e tem controle positivo
 > foi corrigida para isso. Em `agent_notes` null ou vazio, `-> -1` devolve
 > null e a linha simplesmente não casa — não explode.
 
+> **Segunda correção de 21/09 (ronda 18hZ).** A varredura só contava
+> `open`/`investigating` — mas card travado em percepção costuma estar em
+> `aguardando_aluno`, e esse rótulo MENTE sobre quem deve o próximo passo:
+> quando a casa é que precisa VER/OUVIR, quem trava é a CASA. Medido:
+> 13 cartões em `aguardando_aluno` casavam a condição de palavra-chave, todos
+> com aluno nomeado, invisíveis em toda contagem. Custo real: no `#207` o
+> Vigia avisou em 11/09 que a garantia vencia em ~11,7h; ninguém viu, a
+> garantia venceu e o aluno ficou com R$97 sem devolução. `aguardando_aluno`
+> entrou no filtro abaixo e no script; `fixed`/`ignored` seguem fora — a ordem
+> quer quem está ESPERANDO, não histórico, e são os status em que a
+> reincidência reabre o cartão sozinha.
+
 Consulta de apoio corrigida (só se o script não estiver à mão):
 
 ```sql
 select id, created_at, status, signature, affected_emails
 from incidents
-where status in ('open','investigating')
+where status in ('open','investigating','aguardando_aluno')
   and (agent_notes -> -1 ->> 'note' ilike '%humano olhar%'
     or agent_notes -> -1 ->> 'note' ilike '%precisa olhar%'
     or agent_notes -> -1 ->> 'note' ilike '%nao enxergo%'
