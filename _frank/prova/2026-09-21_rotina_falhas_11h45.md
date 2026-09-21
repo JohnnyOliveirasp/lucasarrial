@@ -188,7 +188,44 @@ existe — e-mail não tem desfazer.
 
 ## 6. Passo fixo de fim de ronda
 
-Conferência de branch preso na seção de commit. **Código de produção nesta
-ronda: nenhum.** O que vai para a `main` é este registro + a ferramenta nova de
-leitura (`2026-09-21_cartas_para_o_aluno.cjs`), que é instrumento de ronda, não
-código de produto.
+`git log --oneline origin/main..HEAD` saiu **VAZIO** após o push. **Código de
+produção nesta ronda: nenhum.** O que foi para a `main` é este registro + a
+ferramenta nova de leitura (`2026-09-21_cartas_para_o_aluno.cjs`), que é
+instrumento de ronda, não código de produto.
+
+### 6.1 Os 7 branches do #15: conferidos por CONTEÚDO, e nenhum está preso
+
+Como fechei o #15, conferi os branches com o nome dele. `git rev-list` acusou
+commits fora da `main` em três:
+
+| branch | commits fora da main |
+|---|---|
+| `feat/15-fase-corrente-com-meta` | 1 — *heartbeat leva chunk/attempt ao banco* |
+| `feat/fase-corrente-telemetria` | 2 — *fase corrente chega ao banco* + *error_message nomeia a fase* |
+| `feat/fase-telemetria-url-publica` | 1 — *a fase desligada AVISA em vez de ficar muda* |
+
+**Isso é `rev-list` mentindo, não fix preso.** Os PRs foram mergeados por
+**squash**, então o commit do branch nunca vira ancestral da `main` e aparece
+"fora" para sempre — é o mesmo efeito que a nota do #92 já descreve, invertido.
+`git diff main..branch` também não serve aqui: os branches são antigos e o diff
+acusa a remoção de 130k–240k linhas que a `main` ganhou depois.
+
+Conferi por **conteúdo**, que é o que vale:
+
+| ref | `fase-telemetria.ts` |
+|---|---|
+| **`main`** | **230 linhas** |
+| `feat/fase-telemetria-url-publica` | 196 |
+| `feat/15-fase-corrente-com-meta` | 173 |
+| `feat/fase-corrente-telemetria` | 139 |
+
+A `main` é **superset**: tem `faseTelemetriaMotivoDesligada()` (o conteúdo do
+`8f2a4289`) e tem o meta `chunk`/`attempt` (o conteúdo do `dd9a509f`), além do
+`error_message` que nomeia a fase — que eu **vi gravado em produção** na falha da
+debbie994. **Os 3 branches são STALE e podem ser apagados no origin; nenhum
+conserto de aluno está preso neles.**
+
+⚠️ **Alcance declarado:** conferi os branches **do #15**. O repositório tem ~280
+branches locais e eu **não** os auditei um a um nesta ronda — como esta ronda não
+produziu código, o passo fixo está satisfeito para o trabalho dela, mas a
+afirmação "nada preso" vale para o #15, não para o repositório inteiro.
