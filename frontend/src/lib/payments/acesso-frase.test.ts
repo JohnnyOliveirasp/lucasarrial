@@ -115,8 +115,34 @@ test("vitalício: sem data e com origem — não inventa data", () => {
 test("conta sem nada: SEM assinatura ativa, sem data pendurada", () => {
   const l = { accessUntil: null, accessSource: null, statusEntitlement: null };
   assert.equal(naturezaDaData(l, AGORA), "sem_acesso");
-  assert.equal(fraseDeAcessoParaAgente(l, AGORA), "SEM assinatura ativa.");
+  assert.match(fraseDeAcessoParaAgente(l, AGORA), /^SEM assinatura ativa\./);
+  // Sem data pendurada continua sendo o ponto do teste: nenhum "?" e nenhuma
+  // data inventada no lugar da que não existe.
+  assert.doesNotMatch(fraseDeAcessoParaAgente(l, AGORA), /\?/);
+  // A frase para o ALUNO não ganha imperativo — o imperativo é instrução de
+  // prompt, e quem lê esta é uma pessoa.
   assert.equal(fraseDeAcessoParaAluno(l, AGORA), "você não tem assinatura ativa");
+});
+
+test("sem acesso: a frase do agente PROÍBE o 'pode usar normalmente' (#507)", () => {
+  // 21/09/2026, chat de ajuda do app: o contexto trazia `Acesso: SEM
+  // assinatura ativa` e `Saldo: 0 créditos`, e a Fast ainda assim respondeu
+  // que a aluna podia "continuar usando a plataforma normalmente". Fato seco
+  // sem imperativo vira afirmação errada — a mesma classe do #198 e do #303.
+  for (const l of [
+    { accessUntil: null, accessSource: null, statusEntitlement: null },
+    { accessUntil: PASSADO, accessSource: "hotmart", statusEntitlement: "canceled" },
+  ]) {
+    const frase = fraseDeAcessoParaAgente(l, AGORA);
+    assert.match(frase, /^SEM assinatura ativa/);
+    assert.match(frase, /pode continuar usando a plataforma normalmente/);
+    assert.match(frase, /NUNCA/);
+    // Aponta para o SALDO em vez de negar a geração em bloco: conta sem
+    // assinatura e COM créditos avulsos gera normalmente, e negar seria o
+    // mesmo defeito virado ao contrário.
+    assert.match(frase, /SALDO/);
+    assert.doesNotMatch(frase, /^ATIVO/);
+  }
 });
 
 test("o caso real que abriu o card: conta 49110dde, HCIA7GIM ACTIVE, 09/09", () => {

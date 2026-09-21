@@ -142,9 +142,40 @@ export function fraseDeAcessoParaAgente(
         `humano em vez de escolher uma das duas.`
       );
     case "sem_acesso":
-      return l.accessUntil
-        ? `SEM assinatura ativa (a última janela paga terminou em ${dia}).`
-        : "SEM assinatura ativa.";
+      // ⚠️ ESTE CASO ERA O ÚNICO SEM IMPERATIVO — incidente #507 (21/09/2026).
+      //
+      // Os outros quatro ramos deste `switch` dizem ao modelo o que ele NÃO
+      // pode afirmar; `sem_acesso` só dizia o fato seco ("SEM assinatura
+      // ativa.") e confiava que ele tiraria a conclusão. Não tira: é a mesma
+      // aposta que produziu o #198 (data de garantia crua) e o #303 (data de
+      // acesso crua), e que o cabeçalho deste arquivo chama pelo nome — a
+      // linha que falta vira afirmação errada.
+      //
+      // Caso vivo: 21/09 08:54:39Z, chat de ajuda do app. O contexto da conta
+      // trazia, correto, `Plano: free · Acesso: SEM assinatura ativa` e
+      // `Saldo: 0 créditos`, e a Fast respondeu à aluna que ela "pode
+      // continuar usando a plataforma normalmente". A conta tinha zero
+      // entitlement, zero crédito e 16 dias de espera; a frase mandou uma
+      // pessoa que não consegue gerar nada ir tentar.
+      //
+      // A proibição aponta para o SALDO em vez de negar a geração em bloco,
+      // porque negar seria falso do outro lado: sem assinatura quem libera a
+      // geração é o saldo, exatamente como o ramo `termina` já explica ("a
+      // geração é liberada por SALDO, não por data"). Conta sem assinatura e
+      // COM créditos avulsos gera normalmente — e dizer a ela que não pode
+      // seria o mesmo defeito virado ao contrário.
+      return (
+        (l.accessUntil
+          ? `SEM assinatura ativa (a última janela paga terminou em ${dia}).`
+          : "SEM assinatura ativa.") +
+        ` ⚠️ NUNCA diga a esta conta que ela "pode continuar usando a` +
+        ` plataforma normalmente", e NUNCA mande ela "ir tentar": sem` +
+        ` assinatura, o que libera geração é o SALDO. LEIA a linha "Saldo" do` +
+        ` contexto antes de afirmar qualquer coisa sobre o que ela consegue` +
+        ` fazer. Se o saldo também for 0, a conta não consegue gerar NADA —` +
+        ` diga isso com todas as letras e trate o pedido dela como acesso que` +
+        ` falta, não como dúvida de uso.`
+      );
   }
 }
 
