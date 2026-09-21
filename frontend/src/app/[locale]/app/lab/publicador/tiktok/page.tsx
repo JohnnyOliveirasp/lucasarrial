@@ -1,7 +1,7 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { redirect } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { socialPublisherAllowedEmail } from "@/lib/social/access";
+import { socialPublisherAllowedEmailFor } from "@/lib/social/access";
 import { SocialPublisher } from "@/components/lab/social-publisher";
 
 /**
@@ -24,7 +24,7 @@ export default async function PublicadorTiktokPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return redirect({ href: "/login", locale });
   const { data: profile } = await supabase.from("profiles").select("email").eq("id", user.id).single();
-  if (!(await socialPublisherAllowedEmail(profile?.email ?? user.email ?? null))) {
+  if (!(await socialPublisherAllowedEmailFor("tiktok", profile?.email ?? user.email ?? null))) {
     redirect({ href: "/app/dashboard", locale });
   }
 

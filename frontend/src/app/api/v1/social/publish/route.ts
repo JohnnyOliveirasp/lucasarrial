@@ -12,7 +12,7 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, forbidden, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
-import { socialPublisherEnabled } from "@/lib/social/access";
+import { socialPublisherEnabled, socialPublisherEnabledFor, type PlataformaSocial } from "@/lib/social/access";
 import { resolvePublishSource, type PublishSource } from "@/lib/social/media-sources";
 import { resolveMediaUrl, startPublication } from "@/lib/social/publisher";
 import type { PublicationRow } from "@/lib/db/types";
@@ -103,6 +103,12 @@ export async function POST(request: NextRequest) {
   if (!account) return badRequest("Conta da rede social não encontrada");
   if (account.status !== "active") {
     return badRequest("A conexão com a rede social expirou. Reconecte a conta.");
+  }
+
+  // Portão POR PLATAFORMA (21/09): o Instagram abriu, o TikTok não. Sem isto,
+  // quem já tem conta do TikTok conectada continuaria publicando por ela.
+  if (!(await socialPublisherEnabledFor(account.platform as PlataformaSocial, auth.user_id))) {
+    return forbidden();
   }
 
   // TikTok: opções de compliance vindas do popup (privacidade + publi).

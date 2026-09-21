@@ -9,7 +9,8 @@
 import type { NextRequest } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { authenticate } from "@/lib/api/auth";
-import { jsonError, jsonOk, unauthorized } from "@/lib/api/responses";
+import { HEYGEN_FECHADO, heygenLiberado } from "@/lib/heygen/gate";
+import { forbidden, jsonError, jsonOk, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { decryptApiKey } from "@/lib/heygen/crypto";
 import { getVideoStatus, friendlyHeygenError, HeygenError } from "@/lib/heygen/client";
@@ -23,6 +24,9 @@ export async function GET(
 ) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
+  // ⛔ 21/09 (ordem do Johnny): HeyGen voltou pra pré-produção. O gate mora em
+  // lib/heygen/gate.ts — tirar do menu não segura quem chama a rota direto.
+  if (!(await heygenLiberado(auth.email))) return forbidden(HEYGEN_FECHADO);
   const { id } = await params;
 
   const admin = getAdmin();

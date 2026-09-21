@@ -10,7 +10,8 @@
  */
 import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
-import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
+import { HEYGEN_FECHADO, heygenLiberado } from "@/lib/heygen/gate";
+import { badRequest, forbidden, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { decryptApiKey } from "@/lib/heygen/crypto";
 import {
@@ -123,6 +124,9 @@ async function imageBytesFromBody(
 export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
+  // ⛔ 21/09 (ordem do Johnny): HeyGen voltou pra pré-produção. O gate mora em
+  // lib/heygen/gate.ts — tirar do menu não segura quem chama a rota direto.
+  if (!(await heygenLiberado(auth.email))) return forbidden(HEYGEN_FECHADO);
 
   let body: PostBody;
   try {
@@ -209,6 +213,9 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
+  // ⛔ 21/09 (ordem do Johnny): HeyGen voltou pra pré-produção. O gate mora em
+  // lib/heygen/gate.ts — tirar do menu não segura quem chama a rota direto.
+  if (!(await heygenLiberado(auth.email))) return forbidden(HEYGEN_FECHADO);
 
   const { data } = await getAdmin()
     .from("heygen_videos")
