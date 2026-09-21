@@ -18,7 +18,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { marcaDe, travadosDe, MARCAS, BOILERPLATE } = require("./percepcao_travada.cjs");
+const { marcaDe, travadosDe, MARCAS, BOILERPLATE, STATUS_VARRIDOS } = require("./percepcao_travada.cjs");
 
 // ---------------------------------------------------------------------------
 // Casos fabricados com a MESMA forma das linhas de `incidents`.
@@ -104,6 +104,57 @@ test("card fechado nao entra, mesmo com marca na ultima nota", () => {
   assert.equal(travadosDe([FECHADO]).length, 0);
 });
 
+// ---------------------------------------------------------------------------
+// SEGUNDO DEFEITO (21/09 18hZ): 'aguardando_aluno' que MENTE. O rotulo diz que
+// a bola e do aluno, mas a ultima nota pede percepcao — quem trava e a CASA.
+// A varredura antiga so contava open/investigating e 13 cartoes com aluno
+// nomeado ficaram invisiveis (o #207 perdeu a garantia assim: R$97 nao
+// devolvidos). Estes testes travam a regressao.
+// ---------------------------------------------------------------------------
+
+/** A forma do #216/#406/#455: parado em aguardando_aluno, ultima nota pede VER. */
+const AGUARDANDO_MAS_BOLA_DA_CASA = {
+  id: "aa11bb22-0000-4000-8000-000000000010", numero: 9010, status: "aguardando_aluno",
+  agent_notes: [
+    { by: "frank", at: "2026-09-10T10:00:00Z", note: "respondi o aluno pedindo o print" },
+    { by: "vigia", at: "2026-09-19T10:00:00Z", note: "o print chegou; falta olho humano conferir a imagem contra a referencia" },
+  ],
+};
+
+/** A forma do #207 HOJE: marca so em nota velha; a ultima diz que o aluno ja foi respondido. */
+const AGUARDANDO_JA_DESPACHADO = {
+  id: "aa11bb22-0000-4000-8000-000000000011", numero: 9011, status: "aguardando_aluno",
+  agent_notes: [
+    { by: "frank", at: "2026-09-01T10:00:00Z", note: "precisa assistir o video e ouvir o audio da geracao" },
+    { by: "frank", at: "2026-09-21T17:49:00Z", note: "ALUNO RESPONDIDO - carta enviada, reembolso encaminhado" },
+  ],
+};
+
+test("REGRESSAO do defeito: aguardando_aluno com percepcao na ULTIMA nota CASA", () => {
+  const t = travadosDe([AGUARDANDO_MAS_BOLA_DA_CASA]);
+  assert.equal(t.length, 1, "o rotulo aguardando_aluno nao pode esconder cartao travado na casa");
+  assert.equal(t[0].i.numero, 9010);
+  assert.equal(t[0].i.status, "aguardando_aluno", "o status sai junto: o relatorio mostra ONDE ele estava escondido");
+});
+
+test("aguardando_aluno com marca so em nota superada NAO casa (forma do #207 pos-despacho)", () => {
+  assert.equal(travadosDe([AGUARDANDO_JA_DESPACHADO]).length, 0);
+});
+
+test("aguardando_aluno com agent_notes null nao explode nem casa", () => {
+  assert.equal(travadosDe([{ id: "aa11bb22-0000-4000-8000-000000000012", numero: 9012, status: "aguardando_aluno", agent_notes: null }]).length, 0);
+});
+
+test("status FINAIS continuam fora, mesmo com marca viva (ignored alem do fixed)", () => {
+  assert.equal(travadosDe([{ ...FECHADO, id: "aa11bb22-0000-4000-8000-000000000013", numero: 9013, status: "ignored" }]).length, 0);
+});
+
+test("prova de discriminacao do status: o filtro VELHO (open/investigating) perdia o 9010", () => {
+  const filtroVelho = (i) => ["open", "investigating"].includes(i.status);
+  assert.equal(filtroVelho(AGUARDANDO_MAS_BOLA_DA_CASA), false, "a varredura antiga descartava este cartao");
+  assert.equal(travadosDe([AGUARDANDO_MAS_BOLA_DA_CASA]).length, 1, "a nova nao");
+});
+
 test("agent_notes null / [] / string / nota sem 'note' nao explode nem casa", () => {
   assert.equal(travadosDe([NOTAS_NULL, NOTAS_VAZIAS, NOTAS_STRING, ULTIMA_SEM_NOTE]).length, 0);
 });
@@ -136,4 +187,5 @@ test("sanidade das constantes exportadas", () => {
   assert.ok(MARCAS.includes("humano olhar"));
   assert.ok(!MARCAS.includes("alguem olhar"), "saiu em 17/09 (#315): verbo sem artefato");
   assert.equal(BOILERPLATE, "precisa de olho humano, nao de codigo");
+  assert.deepEqual(STATUS_VARRIDOS, ["open", "investigating", "aguardando_aluno"], "aguardando_aluno entrou em 21/09; finais ficam fora");
 });

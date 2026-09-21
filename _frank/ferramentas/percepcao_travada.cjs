@@ -41,6 +41,18 @@
  * ordem foi corrigida para `agent_notes -> -1` na mesma entrega; o instrumento
  * canonico continua sendo este arquivo (a memoria da casa ja dizia isso).
  *
+ * ⚠️ SEGUNDO DEFEITO, MEDIDO NA RONDA DE 21/09 18hZ (Frank): a varredura so
+ * contava open/investigating, e cartao travado em percepcao costuma estar em
+ * 'aguardando_aluno' — rotulo que MENTE sobre quem deve o proximo passo.
+ * Quando a ultima nota pede ver/ouvir/assistir, quem trava e a CASA; o cartao
+ * foi parado em aguardando_aluno e sumiu de toda contagem. Custo real: no
+ * #207 o Vigia avisou em 11/09 12:17Z que a garantia do aluno vencia em
+ * ~11,7h; o cartao estava em aguardando_aluno, invisivel, ninguem viu, a
+ * garantia venceu e o aluno ficou com R$97 cobrados sem devolucao. Falso
+ * NEGATIVO esconde aluno esperando — pior que falso positivo, que so faz
+ * ruido. Por isso STATUS_VARRIDOS inclui aguardando_aluno, e a saida marca
+ * esses cartoes como "rotulo mente: a bola e da CASA".
+ *
  * USO: node _frank/ferramentas/percepcao_travada.cjs
  * TESTE (sem banco): node --test "_frank/ferramentas/percepcao_travada.test.cjs"
  */
@@ -66,6 +78,22 @@ const MARCAS = [
   "ouvir o audio", "ver a imagem", "ver o video", "conferir a imagem",
 ];
 
+/**
+ * Status que a varredura considera "alguem esta ESPERANDO".
+ *
+ * ⚠️ 'aguardando_aluno' ENTROU em 21/09 (segundo defeito, ronda 18hZ). O
+ * rotulo diz que a bola e do aluno, mas quando a ULTIMA nota pede
+ * ver/ouvir/assistir, o passo que falta e da CASA — o cartao foi PARADO em
+ * aguardando_aluno e virou invisivel (caso #207, garantia vencida, R$97 nao
+ * devolvidos). A saida marca esses cartoes explicitamente.
+ *
+ * fixed/ignored ficam FORA de proposito: a ordem de 17/09 quer quem esta
+ * esperando, nao historico — e fixed/ignored sao exatamente os status em que
+ * a reincidencia REABRE o cartao sozinha no ingest, entao nao ha aluno mudo
+ * escondido atras deles. Se um dia entrar status final aqui, argumente.
+ */
+const STATUS_VARRIDOS = ["open", "investigating", "aguardando_aluno"];
+
 /** Sem acento e minusculo: a marca nao pode depender de como o agente digitou. */
 const chato = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -76,15 +104,16 @@ function marcaDe(nota) {
 }
 
 /**
- * Os cards que SO param por falta de ver/ouvir/assistir: abertos, e com a
- * marca na ULTIMA nota (o passo que falta AGORA). Pura, sem banco — e o
- * criterio inteiro do detector, e o que o teste unitario exercita.
+ * Os cards que SO param por falta de ver/ouvir/assistir: em status de espera
+ * (STATUS_VARRIDOS, incluindo o aguardando_aluno que mente), e com a marca na
+ * ULTIMA nota (o passo que falta AGORA). Pura, sem banco — e o criterio
+ * inteiro do detector, e o que o teste unitario exercita.
  * `agent_notes` null, vazio ou fora do formato de array NAO explode nem casa.
  */
 function travadosDe(incidentes) {
   const travados = [];
   for (const i of incidentes) {
-    if (!["open", "investigating"].includes(i.status)) continue;
+    if (!STATUS_VARRIDOS.includes(i.status)) continue;
     if (!Array.isArray(i.agent_notes) || !i.agent_notes.length) continue;
     const ultima = i.agent_notes[i.agent_notes.length - 1];
     const marca = marcaDe(ultima?.note);
@@ -97,7 +126,7 @@ function travadosDe(incidentes) {
 
 const dias = (iso) => (Date.now() - new Date(iso).getTime()) / 86400000;
 
-module.exports = { marcaDe, travadosDe, MARCAS, BOILERPLATE };
+module.exports = { marcaDe, travadosDe, MARCAS, BOILERPLATE, STATUS_VARRIDOS };
 
 if (require.main === module) (async () => {
   const { supa } = require("./_comum.cjs");
@@ -121,16 +150,26 @@ if (require.main === module) (async () => {
 
   const travados = travadosDe(data);
 
+  const porStatus = {};
+  for (const { i } of travados) porStatus[i.status] = (porStatus[i.status] ?? 0) + 1;
+  const quebra = STATUS_VARRIDOS
+    .filter((s) => porStatus[s])
+    .map((s) => `${s} ${porStatus[s]}`)
+    .join(" · ") || "nenhum";
+
   console.log("═".repeat(70));
-  console.log(`👁  SO PARAM POR FALTA DE VER/OUVIR/ASSISTIR: ${travados.length}`);
+  console.log(`👁  SO PARAM POR FALTA DE VER/OUVIR/ASSISTIR: ${travados.length}  (${quebra})`);
   console.log("═".repeat(70));
   if (!travados.length) {
-    console.log("  (nenhum — nenhum card aberto tem pedido de percepcao como ULTIMO passo)");
+    console.log("  (nenhum — nenhum card em espera tem pedido de percepcao como ULTIMO passo)");
   }
   for (const { i, marca, ultima } of travados) {
-    console.log(`  #${i.numero} · ${dias(i.created_at).toFixed(1)}d de vida · nota parada ha ${dias(ultima.at).toFixed(1)}d · [${marca}]`);
+    console.log(`  #${i.numero} · status=${i.status} · ${dias(i.created_at).toFixed(1)}d de vida · nota parada ha ${dias(ultima.at).toFixed(1)}d · [${marca}]`);
     console.log(`     ${(i.affected_emails ?? []).join(", ") || "(sem aluno nomeado)"} · ${String(i.title ?? i.signature).slice(0, 80)}`);
     console.log(`     ultima nota por "${ultima.by}": ${String(ultima.note).replace(/\s+/g, " ").slice(0, 140)}`);
+    if (i.status === "aguardando_aluno") {
+      console.log(`     ⚠ ROTULO MENTE: esta 'aguardando_aluno', mas o ultimo passo pedido e VER/OUVIR — a bola e da CASA. Despache (olho/qa), nao espere o aluno.`);
+    }
   }
 
   const velho = travados.length ? dias(travados[0].ultima.at).toFixed(1) : "0";
