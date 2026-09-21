@@ -69,6 +69,10 @@ export const KIND_LABELS: Record<string, string> = {
  *  `ehChunkDoDatasetInvalido`. */
 export const SUFIXO_CHUNK_DATASET = "dataset-chunk-invalido";
 
+/** Sufixo da assinatura de falha do bucket remoto (R2). Fixo — o porquê está
+ *  no bloco de `infra_storage` dentro de `errorSignature` (#510, 21/09). */
+export const SUFIXO_STORAGE = "r2";
+
 /**
  * O ARQUIVO CITADO NO ERRO É NOSSO, NÃO DO ALUNO — #475, medido em 19/09.
  *
@@ -365,6 +369,42 @@ export function errorSignature(kind: string, error: string, diag?: DiagnosticoTr
   // este traceback produziria `training:user_dataset:write-failed`.
   if (cause === "infra_disk" && ehEscritaDeCheckpointFalhou(diag?.stderr)) {
     return `${k}:${cause}:${SUFIXO_ESCRITA_CHECKPOINT}`;
+  }
+  /**
+   * ── R2 SAI DO HEAD DO ERRO — #510, medido em 21/09 ────────────────────────
+   *
+   * Chave CONSTANTE, mesma disciplina do OOM e do disco acima, pelo motivo
+   * mais literal de todos: a URL PRESIGNADA do R2 passa de 500 chars e o erro
+   * é truncado em 500 em DOIS produtores (finalize-training.ts, o
+   * `adminError`; ingest.ts, o `error` da occurrence). O corte cai DENTRO da
+   * URL, então cada produtor vê um tamanho diferente do MESMO erro e o head
+   * normaliza para assinaturas diferentes. Medido em 21/09 (voz 8d7e7c37,
+   * 12:54Z): a mesma falha de download virou #507 (texto longo, com o
+   * HTTPSConnectionPool) e #508 (texto cortado, só "failed to download
+   * <url>") — e o #508, com assinatura genérica parada em aguardando_aluno,
+   * virou ímã de falhas alheias (ingest casa por assinatura sem filtro de
+   * status e preserva o status existente).
+   *
+   * ⚠️ UMA chave só, sem separar download de upload, DE PROPÓSITO. A direção
+   * do fenômeno só existe no TEXTO ("failed to download" × "r2 upload
+   * failed"), e o texto é exatamente o que a truncagem destrói — o mesmo erro
+   * real chegou com e sem o pedaço do HTTPSConnectionPool dependendo de onde
+   * o corte caiu. Separar por marcador de texto recriaria o racha que esta
+   * chave mata. O precedente de duas chaves na mesma causa (infra_disk) não
+   * se aplica: lá o desempate é provado por detector de stderr à prova de
+   * truncagem (errno × frase do torch), não pelo head. Se um dia upload
+   * merecer cartão próprio, que venha com detector assim e com o caso na mão.
+   *
+   * ⚠️ A GUARDA É `cause === "infra_storage"`, e aqui ela é a decisão INTEIRA:
+   * ao contrário do OOM/disco, não existe detector de stderr para repetir na
+   * guarda — todo infra_storage nasce das regras de texto de `classifyCause`.
+   * A disciplina dos blocos acima continua valendo: `classifyCause` é o único
+   * lugar que arbitra precedência, então material impróprio do aluno continua
+   * ganhando (a causa dele decide antes) e nunca nasce a chave inconsistente
+   * `training:user_dataset:r2`.
+   */
+  if (cause === "infra_storage") {
+    return `${k}:${cause}:${SUFIXO_STORAGE}`;
   }
   // user_dataset: a CAUSA já é a raiz — o texto varia (erro cru do worker ×
   // mensagem amigável do voices.error_message desde fdcc75c) e duplicava o
