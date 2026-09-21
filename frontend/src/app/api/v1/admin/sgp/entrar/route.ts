@@ -13,8 +13,11 @@
  *    justamente o "parado por login/senha" da planilha;
  *  - o link é de uso único e expira sozinho.
  *
- * GRUPO FECHADO: só abre conta que tem pedido no SGP. E-mail de fora devolve
- * 404 — este atalho não é uma porta pra base inteira.
+ * GRUPO FECHADO: abre conta de quem TEM PEDIDO no SGP **ou** COMPROU o SGP na
+ * Hotmart e nunca começou (18/09: o botão tinha que aparecer na grid inteira,
+ * e 236 das linhas são exatamente essas — conta criada pelo webhook da compra,
+ * sem pedido nenhum). E-mail fora dos dois casos devolve 404: este atalho não
+ * é uma porta pra base inteira.
  *
  * `SUPORTE_OK` porque quem faz esse trabalho é o suporte (Karen), além de
  * admin (Johnny, Rayanne). Todo uso vai pro log de auditoria com QUEM entrou,
@@ -26,6 +29,7 @@ import { badRequest, jsonOk, notFound, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { logger } from "@/lib/logger/server";
 import { DESTINO_PADRAO, montarLinkDeEntrada } from "@/lib/sgp/link-entrada-pure";
+import { SGP_PRODUCT_ID_PADRAO } from "@/lib/payments/sgp-boas-vindas";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +46,7 @@ export async function POST(request: NextRequest) {
   try {
     const admin = getAdmin();
 
-    // Portão do grupo fechado: tem pedido no SGP?
+    // Portão do grupo fechado, porta 1: tem pedido no SGP?
     const { data: pedido, error: erroPedido } = await admin
       .from("sgp_pedidos")
       .select("id, email, user_id")
@@ -50,15 +54,26 @@ export async function POST(request: NextRequest) {
       .limit(1)
       .maybeSingle();
     if (erroPedido) return serverError(erroPedido.message);
-    if (!pedido) return notFound("Este e-mail não tem pedido no SGP");
 
-    // Conta ainda não existe: o wizard só cria no "Confirmar e Enviar". Dizer
-    // isso em português evita o atendente achar que o botão está quebrado.
-    if (!(pedido as { user_id: string | null }).user_id) {
-      return badRequest(
-        "Este aluno ainda não tem conta — ele parou antes de concluir o envio no SGP.",
-      );
+    // Porta 2: comprou o SGP na Hotmart e nunca abriu o portal. O id do produto
+    // mora dentro do JSON e vem como número — por isso o `->>`, que devolve
+    // texto (medido: 355 de 355 compras do SGP casam por este caminho).
+    let compraSgp = false;
+    if (!pedido) {
+      const produtoSgp = process.env.HOTMART_SGP_PRODUCT_ID ?? SGP_PRODUCT_ID_PADRAO;
+      const { data: compra, error: erroCompra } = await admin
+        .from("payment_events")
+        .select("id")
+        .eq("event_type", "PURCHASE_APPROVED")
+        .eq("payload->data->product->>id", produtoSgp)
+        .ilike("payload->data->buyer->>email", email)
+        .limit(1)
+        .maybeSingle();
+      if (erroCompra) return serverError(erroCompra.message);
+      compraSgp = !!compra;
     }
+
+    if (!pedido && !compraSgp) return notFound("Este e-mail não é comprador do SGP");
 
     const { data, error } = await admin.auth.admin.generateLink({
       type: "magiclink",
@@ -67,7 +82,15 @@ export async function POST(request: NextRequest) {
         redirectTo: `${site}/auth/callback?next=${encodeURIComponent(DESTINO_PADRAO)}`,
       },
     });
-    if (error) return badRequest(error.message);
+    if (error) {
+      // Conta ainda não existe (comprou e o webhook não criou, ou parou antes
+      // do "Confirmar e Enviar"). O atendente precisa ler isso em português —
+      // "User not found" faria ele achar que o botão está quebrado.
+      const msg = /not found|no user/i.test(error.message)
+        ? "Este aluno ainda não tem conta na plataforma — não há conta pra abrir."
+        : error.message;
+      return badRequest(msg);
+    }
 
     // O link entregue é montado com `token_hash` na QUERY, NUNCA o
     // `action_link` — ele entrega a sessão no fragmento (`#access_token=…`),
@@ -81,7 +104,8 @@ export async function POST(request: NextRequest) {
       admin: g.auth.email,
       role: g.role,
       target: email,
-      pedido: (pedido as { id: string }).id,
+      pedido: pedido ? (pedido as { id: string }).id : null,
+      porta: pedido ? "pedido" : "compra",
     });
 
     return jsonOk({ link });

@@ -795,6 +795,10 @@ export default function SgpPage() {
                 <Th>Atendimento</Th>
                 <Th>Etapa atual</Th>
                 <Th>E-mail</Th>
+                {/* 21/09: o acesso tem que estar em TODA linha, não escondido
+                    dentro do painel — o suporte abre a conta do aluno o tempo
+                    todo, inclusive de quem comprou e nunca começou. */}
+                <Th>Acesso</Th>
                 <Th>O que fazer</Th>
                 <Th>Foto</Th>
                 <Th>Voz</Th>
@@ -988,6 +992,13 @@ export default function SgpPage() {
                       </a>
                     )}
                   </Td>
+                  <Td>
+                    {p.email === "—" ? (
+                      <span className="font-mono text-[11px] text-[var(--ash)]">—</span>
+                    ) : (
+                      <EntrarComoAluno email={p.email} nome={p.nome} />
+                    )}
+                  </Td>
                   {/* Prosa longa: foi pro fim porque era ela que empurrava os botões
                       pra fora da tela. Texto inteiro preservado (o time lê), só
                       mais estreito — era o que mais esticava a tabela. */}
@@ -1006,7 +1017,7 @@ export default function SgpPage() {
                     que rolar pro lado pra ler o que acabou de abrir. */}
                 {expandido === p.id && (
                   <tr className="border-t border-[var(--hairline)] bg-[var(--surface-deep)]">
-                    <td colSpan={14} className="px-3 py-4">
+                    <td colSpan={15} className="px-3 py-4">
                       <div className="sticky left-0 flex w-fit max-w-[1100px] flex-col gap-4">
                         {/* Pedido do time (18/09): os dados da pessoa ficam
                             ONDE o material dela está, pra não ter que caçar a
@@ -2020,6 +2031,7 @@ function AbaCompradores({
                 <Th>Data Aquisição</Th>
                 <Th>Celular</Th>
                 <Th>E-mail</Th>
+                <Th>Acesso</Th>
                 <Th>Data de envio</Th>
                 <Th>Esperando há</Th>
               </tr>
@@ -2097,6 +2109,13 @@ function AbaCompradores({
                       >
                         {c.email}
                       </a>
+                    )}
+                  </Td>
+                  <Td>
+                    {c.email === "—" ? (
+                      <span className="font-mono text-[11px] text-[var(--ash)]">—</span>
+                    ) : (
+                      <EntrarComoAluno email={c.email} nome={c.nome} />
                     )}
                   </Td>
                   <Td className="font-mono text-[11px] text-[var(--mute)]">{dt(c.enviadoEm)}</Td>
