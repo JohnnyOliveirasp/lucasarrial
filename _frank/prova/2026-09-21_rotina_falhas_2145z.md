@@ -241,3 +241,28 @@ status intacto). A única carta a aluno foi a **uid 3141**.
 7. Seguem de pé: **140 recados `para_frank_*`** (mais velho ~430 h) e os **17
    cartões `aguardando_aluno` com 7+ dias** ainda não triados — dos mais velhos,
    `#172`, `#206`, `#223` e `#229` estão medidos e com dono definido.
+
+---
+
+## 6. Passo fixo de fim de ronda — e um defeito NO PRÓPRIO PASSO
+
+`git fetch origin && git log --oneline origin/main..HEAD` → **VAZIO**. O commit
+da ronda (`98b94e55`) está em `origin/main`. Nada preso.
+
+A segunda metade do passo (`git branch` + `git rev-list main..<branch>`) rodei
+inteira e ela **não serve como tripwire hoje**: devolve **180 branches locais**,
+cada um com 1–5 commits fora da main. É ruído histórico (boa parte já catalogada
+como STALE no `_frank/ordens/README.md` — `feat/onedrive-401`,
+`feat/fix-image-upload-retry`, `fix/trava-foto-nova-8379549c`, as 2 da cura de
+referência, `fix/ritmo-da-referencia-porta-73a60bb`).
+
+**Nesta ronda a resposta é NÃO**, e por construção: eu não criei branch nenhum,
+meu único commit foi direto na main, e `origin/main..HEAD` está vazio.
+
+⚠️ Mas fica escrito: **uma verificação que imprime 180 linhas toda ronda não
+detecta a 181ª.** O passo existe por causa do fix de aluno que ficou 9h preso em
+19/08; do jeito que está, ele não pegaria esse caso de novo — quem lê a saída
+para de ler na terceira linha. O conserto é comparar contra a lista conhecida e
+só gritar no **delta** (branch tocado nas últimas 24h, ou que não está no
+catálogo). Não consertei aqui porque não é o item serial e mexer em passo fixo
+de ronda merece cartão próprio, não um remendo no fim de uma.
