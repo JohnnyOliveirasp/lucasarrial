@@ -25,7 +25,7 @@
  */
 import type { NextRequest } from "next/server";
 import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
-import { badRequest, jsonOk, notFound, serverError } from "@/lib/api/responses";
+import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { logger } from "@/lib/logger/server";
 import { DESTINO_PADRAO, montarLinkDeEntrada } from "@/lib/sgp/link-entrada-pure";
@@ -73,7 +73,11 @@ export async function POST(request: NextRequest) {
       compraSgp = !!compra;
     }
 
-    if (!pedido && !compraSgp) return notFound("Este e-mail não é comprador do SGP");
+    // 404 escrito à mão: o `notFound()` cola " not found" no fim e o atendente
+    // leria "não é comprador do SGP not found".
+    if (!pedido && !compraSgp) {
+      return jsonError("not_found", "Este e-mail não é comprador do SGP", 404);
+    }
 
     const { data, error } = await admin.auth.admin.generateLink({
       type: "magiclink",
