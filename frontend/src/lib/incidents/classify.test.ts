@@ -34,6 +34,8 @@ import {
   errorSignature,
   incidentTitle,
   isCorruptFile,
+  stripFaseSuffix,
+  stripRunpodWrapper,
 } from "./classify.ts";
 
 /** Exatamente o que o worker manda em `error` e o finalize-training grava em
@@ -171,4 +173,136 @@ test("#475 MUTAÇÃO: o código VELHO culpava a aluna", () => {
   // O velho acertava o caso do aluno, e o novo tem de continuar acertando.
   assert.equal(velho(ERRO_RAW_DO_ALUNO), true);
   assert.equal(isCorruptFile(ERRO_RAW_DO_ALUNO), true);
+});
+
+/**
+ * ── #510, 21/09: a MESMA falha de download virou DOIS incidentes ──────────
+ *
+ * O worker não conseguiu baixar um take do NOSSO R2 (voz 8d7e7c37, 12:54Z). A
+ * URL presignada passa de 500 chars e o erro é truncado em 500 em dois
+ * produtores diferentes (finalize-training.ts e ingest.ts) — o corte cai
+ * DENTRO da URL, então cada produtor viu um tamanho diferente do mesmo erro:
+ *
+ *   #507  training:infra_storage:failed to download <url> httpsconnectionpool(
+ *         host='voices-clone-ai-verse.<hex>.r#.cloudflarestorage.com', port=#): read
+ *   #508  training:infra_storage:failed to download <url>
+ *
+ * A cura é a mesma disciplina do OOM/disco: chave CONSTANTE para a causa
+ * decidida, e o texto cru deixa de mandar na assinatura.
+ */
+const ASSINATURA_STORAGE_R2 = "training:infra_storage:r2";
+
+const HOST_R2 = "voices-clone-ai-verse.4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e.r2.cloudflarestorage.com";
+
+/** URL presignada com a cara da real: credential + signature de 64 hex. É ela
+ *  que estoura o teto de 500 dos produtores. */
+const URL_PRESIGNADA =
+  `https://${HOST_R2}/raw/8d7e7c37-5b2e-4c1a-9f3d-6e0a8b4c2d1f/` +
+  "000_003_take_gravado_no_onboarding_9fK2mLxQ7Rt4Vw8Yz.wav" +
+  "?X-Amz-Algorithm=AWS4-HMAC-SHA256" +
+  `&X-Amz-Credential=${"a".repeat(32)}%2F20260921%2Fauto%2Fs3%2Faws4_request` +
+  "&X-Amz-Date=20260921T125400Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host" +
+  `&X-Amz-Signature=${"b".repeat(64)}&X-Amz-Checksum-Mode=ENABLED&x-id=GetObject`;
+
+/** O erro INTEIRO, como o produtor que tinha ele em memória viu (→ #507). */
+const ERRO_507_LONGO =
+  `Failed to download ${URL_PRESIGNADA} HTTPSConnectionPool(host='${HOST_R2}', ` +
+  "port=443): Read timed out. (read timeout=60)";
+
+/** O MESMO erro depois do teto de 500 (→ #508). O slice imita finalize-training
+ *  .ts/ingest.ts; o assert logo abaixo prova que o corte caiu dentro da URL. */
+const ERRO_508_CURTO = `Failed to download ${URL_PRESIGNADA}`.slice(0, 500);
+
+test("#510: o texto do #507 e o do #508 caem no MESMO incidente", () => {
+  // Pré-condição do cenário: o corte de 500 tem de cair DENTRO da URL, senão
+  // este teste não reproduz o racha real.
+  assert.ok(
+    `Failed to download ${URL_PRESIGNADA}`.length > 500,
+    "a URL presignada do teste precisa estourar o teto de 500",
+  );
+  assert.equal(classifyCause(ERRO_507_LONGO), "infra_storage");
+  assert.equal(classifyCause(ERRO_508_CURTO), "infra_storage");
+  assert.equal(errorSignature("training", ERRO_507_LONGO), ASSINATURA_STORAGE_R2);
+  assert.equal(errorSignature("training", ERRO_508_CURTO), ASSINATURA_STORAGE_R2);
+});
+
+test("#510: alunos diferentes, URLs presignadas diferentes, MESMO incidente", () => {
+  const outroAluno =
+    `Failed to download https://${HOST_R2}/raw/aa11bb22-cc33-4d44-8e55-ff6677889900/` +
+    "voice_0002.wav?X-Amz-Algorithm=AWS4-HMAC-SHA256" +
+    `&X-Amz-Credential=${"c".repeat(32)}%2F20260921%2Fauto%2Fs3%2Faws4_request` +
+    `&X-Amz-Signature=${"d".repeat(64)} ` +
+    `HTTPSConnectionPool(host='${HOST_R2}', port=443): Read timed out. (read timeout=60)`;
+  assert.equal(errorSignature("training", outroAluno), ASSINATURA_STORAGE_R2);
+  assert.equal(
+    errorSignature("training", outroAluno),
+    errorSignature("training", ERRO_507_LONGO),
+    "duas ocorrências têm de somar no MESMO incidente",
+  );
+});
+
+test("#510: material impróprio do aluno NÃO vira chave de storage", () => {
+  // Espelho do "erro de dataset continua ganhando do diagnóstico" (OOM/disco):
+  // a guarda em errorSignature é pela CAUSA DECIDIDA, então um erro de dataset
+  // que por acaso cite o bucket não pode nascer `training:user_dataset:r2`.
+  const erroMisto = `insufficient_audio: no usable speech in file fetched from ${URL_PRESIGNADA}`;
+  assert.equal(classifyCause(erroMisto), "user_dataset");
+  assert.equal(errorSignature("training", erroMisto), "training:user_dataset");
+  assert.doesNotMatch(errorSignature("training", erroMisto), /infra_storage|:r2$/);
+});
+
+test("#510: infra_gpu e infra_disk continuam com as chaves de hoje", () => {
+  // Zero regressão nos vizinhos: as três chaves constantes provadas por stderr
+  // não mudam, e o infra_gpu decidido por TEXTO continua com head (é o
+  // comportamento de hoje — só o storage saiu do head neste PR).
+  const STDERR_OOM =
+    "torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 24.00 MiB. " +
+    "GPU 0 has a total capacity of 94.97 GiB of which 16.88 MiB is free.";
+  const STDERR_DISCO =
+    "safetensors._safetensors_rust.SafetensorError: Error while serializing: " +
+    "I/O error: No space left on device (os error 28)";
+  assert.equal(
+    errorSignature("training", "trainer failed", { stderr: STDERR_OOM }),
+    "training:infra_gpu:cuda-oom",
+  );
+  assert.equal(
+    errorSignature("training", "trainer failed", { stderr: STDERR_DISCO }),
+    "training:infra_disk:no-space",
+  );
+  assert.equal(
+    errorSignature("training", "CUDA error: device-side assert triggered"),
+    "training:infra_gpu:cuda error: device-side assert triggered",
+  );
+});
+
+test("#510 MUTAÇÃO: o código VELHO rachava a mesma falha em dois cartões", () => {
+  // Réplica literal do caminho ANTES da correção: infra_storage caía no caso
+  // geral e herdava o head do texto cru. Se este teste passar também no código
+  // novo, a réplica está errada — o par de asserts finais prova o conserto.
+  const velho = (kind: string, error: string) => {
+    const k = kind === "voice" ? "training" : kind;
+    const head = stripRunpodWrapper(stripFaseSuffix(error))
+      .toLowerCase()
+      .replace(/https?:\/\/\S+/g, "<url>")
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<id>")
+      .replace(/[0-9a-f]{16,}/g, "<hex>")
+      .replace(/\d+/g, "#")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
+    return `${k}:infra_storage:${head}`;
+  };
+  const a = velho("training", ERRO_507_LONGO);
+  const b = velho("training", ERRO_508_CURTO);
+  // Era este o defeito: o MESMO erro, visto por dois produtores, dava duas
+  // assinaturas — e são exatamente as dos cartões reais de 21/09.
+  assert.notEqual(a, b);
+  assert.equal(
+    a,
+    "training:infra_storage:failed to download <url> httpsconnectionpool(" +
+      "host='voices-clone-ai-verse.<hex>.r#.cloudflarestorage.com', port=#): read ",
+  );
+  assert.equal(b, "training:infra_storage:failed to download <url>");
+  // E é este o conserto:
+  assert.equal(errorSignature("training", ERRO_507_LONGO), errorSignature("training", ERRO_508_CURTO));
 });
