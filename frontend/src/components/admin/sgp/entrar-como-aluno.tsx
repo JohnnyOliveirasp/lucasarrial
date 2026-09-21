@@ -9,11 +9,26 @@
  * de admin da atendente na mesma aba — ela perderia a fila de trabalho.
  *
  * O link é de uso único e some daqui assim que é usado: nada é guardado.
+ *
+ * `compacto` (21/09): na GRID a célula tem ~110px e o rótulo inteiro quebrava
+ * em duas linhas dentro de um botão de altura fixa — a segunda linha saía
+ * cortada. Na grid o botão diz só "Entrar" (a coluna já se chama Acesso) e o
+ * texto inteiro vive no `title`; no painel, onde sobra largura, ele fala a
+ * frase completa.
  */
 import { useState } from "react";
 import { LogIn } from "lucide-react";
 
-export function EntrarComoAluno({ email, nome }: { email: string; nome: string }) {
+export function EntrarComoAluno({
+  email,
+  nome,
+  compacto = false,
+}: {
+  email: string;
+  nome: string;
+  /** true = dentro da grid (rótulo curto, uma linha só). */
+  compacto?: boolean;
+}) {
   const [estado, setEstado] = useState<"parado" | "abrindo" | "erro">("parado");
   const [erro, setErro] = useState<string | null>(null);
 
@@ -46,12 +61,14 @@ export function EntrarComoAluno({ email, nome }: { email: string; nome: string }
         onClick={entrar}
         disabled={estado === "abrindo"}
         title={`Abrir a conta de ${nome} já logada, em outra aba`}
-        className="inline-flex h-8 w-fit items-center gap-1.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] px-3 font-mono text-[11px] text-[var(--ink)] transition-colors hover:bg-[var(--surface-elevated)] disabled:opacity-50"
+        className="inline-flex min-h-8 w-fit items-center gap-1.5 whitespace-nowrap rounded-[var(--radius)] border border-[var(--hairline-strong)] px-3 py-1 font-mono text-[11px] leading-none text-[var(--ink)] transition-colors hover:bg-[var(--surface-elevated)] disabled:opacity-50"
       >
-        <LogIn className="size-3.5" />
-        {estado === "abrindo" ? "abrindo…" : "Entrar na conta do aluno"}
+        <LogIn className="size-3.5 shrink-0" />
+        {estado === "abrindo" ? "abrindo…" : compacto ? "Entrar" : "Entrar na conta do aluno"}
       </button>
-      {erro && <span className="font-mono text-[11px] text-[var(--status-error)]">{erro}</span>}
+      {erro && (
+        <span className="max-w-[220px] font-mono text-[11px] leading-snug text-[var(--status-error)]">{erro}</span>
+      )}
     </div>
   );
 }
