@@ -5,8 +5,18 @@ Ronda curta, no fim da janela do turno (08h–23h BRT). O relatório noturno de
 refaz o consolidado do dia.
 
 **Fechei 0 incidente nesta ronda.** Digo isso primeiro pra não ficar escondido
-no meio do texto. O que fiz foi medir, despachar o que estava parado e derrubar
-um número herdado. Detalhe de cada coisa abaixo.
+no meio do texto.
+
+Os dois achados que valem a ronda:
+
+- **#226** — a instrumentação que subiu em 01/09 está no ar e mostra o tamanho
+  real do defeito: **180 de 506 gerações em 7 dias (35,6%), 79 alunos
+  distintos**, recebendo áudio que o nosso próprio QA reprovou. Continua aberto
+  porque o que falta é **decisão de produto do Johnny**, não investigação.
+- **#15** — eu ia mandar o `coder` reescrever uma instrumentação que **já
+  existe, está na `main` e gravou no banco 4 minutos antes de eu olhar**. Card
+  cancelado antes de queimar trabalho. A metade da ordem que eu dava como
+  pendente está cumprida há semanas.
 
 ---
 
@@ -148,31 +158,92 @@ que dá resposta (instrumentar). É por isso que ele está 53 dias sem causa:
 ninguém consegue dizer se pendura no download da referência, no whisper do QA ou
 na geração.
 
-**Despachei** (card `da59cad1`, dono `coder`), com escopo travado em
-observabilidade: logar fase + duração (download da ref / whisper do QA /
-inferência / montagem-upload), **sem** tocar em limite de tempo, **sem**
-migration, **sem** GPU, os ~315 testes do worker têm que continuar passando,
-entrega por PR com base `main`.
+Despachei um card pro `coder` (`da59cad1`) pra escrever essa instrumentação —
+**e o card estava errado. Cancelei.** O porquê é a seção 6, e é o achado mais
+importante desta ronda.
 
-**Dito com todas as letras:** não instrumentei eu mesmo nesta ronda e não
-reproduzi o estouro. E como não há ocorrência desde 04/09, a instrumentação só
-vai provar algo **no próximo estouro** — ela é a condição pra ter causa, não a
-causa. Não contar como conserto.
+### 5-A. A instrumentação já existia, na main, funcionando
 
-O aceite de risco do Johnny foi dado sobre o cartão **quieto**. Se voltar a
-disparar com aluno em cima, deixa de ser risco aceito e vira fila normal.
+Fui conferir o repositório antes do `coder` começar. Está tudo em
+`origin/main`, não em branch:
+
+```
+frontend/src/lib/generations/fase-telemetria.ts   (+ .test.ts)
+frontend/src/app/api/v1/webhooks/runpod-fase/route.ts
+runpod-worker/test_fase_telemetria.py
+runpod-worker/worker_log.py:22-240   pilha de fase + heartbeat (thread daemon)
+runpod-worker/handler.py
+```
+
+O app injeta `fase_url` + `fase_token` + `fase_ref` no input do job (token =
+HMAC-SHA256 de `FASE_TELEMETRIA_SECRET` com o `generationId`). O heartbeat posta
+a fase corrente no **nosso** banco a cada 30s, porque o log da RunPod expira em
+~30min e job morto por `executionTimeout` perde a fase antes de alguém olhar.
+
+**Por que parecia que não existia** — e é a parte que importa. De 24/08 a 28/08
+ela gravou **zero**, e o motivo está escrito no fonte
+(`worker_log.py:189-196`): a **Cloudflare** na frente do app devolvia **403 a
+qualquer request com o User-Agent padrão do urllib** (`Python-urllib/3.x`).
+Medido na época: `urllib`=403, `curl`/qualquer outro nome=401 (ou seja, o app
+respondendo). Como a telemetria é best-effort e engole exceção, **todo heartbeat
+de fase morreu no portão em silêncio**: segredo certo, rota no ar, worker com o
+código, e **zero `fase_corrente` em 1.098 gerações**. O conserto
+(`WORKER_USER_AGENT = "fastcloner-worker/1"`) está na main.
+
+**Está vivo agora** — medido no banco, não no código:
+
+| | |
+|---|---|
+| gerações nos últimos 7 dias | 507 |
+| com `qa->'fase_corrente'` | **9** |
+| gravação mais recente | **2026-09-21 01:44:53Z** (4 min antes da consulta) |
+
+O 9 é baixo porque o heartbeat só posta a cada 30s: job curto acaba antes do
+primeiro tick. Pra **este** incidente isso não é defeito — o caso de interesse é
+justamente o job longo que pendura, e esse posta.
+
+**Conclusão, e ela muda o estado do cartão:** a metade da ordem que eu tinha
+dado como em aberto (*"se voltar, instrumente o handler"*) está **cumprida**. O
+que o #15 espera agora não é trabalho nosso, é a **próxima ocorrência**. Sem
+estouro desde 04/09, não há o que diagnosticar — é espera legítima com motivo
+concreto, não cartão esquecido.
+
+O que continua verdade: **o timeout em si não está corrigido**, e o aceite de
+risco do Johnny foi dado sobre o cartão quieto. Quando voltar a disparar, a
+primeira coisa a fazer é ler `qa->'fase_corrente'` da geração que estourou — a
+resposta que faltou por 53 dias vai estar lá.
 
 ---
 
 ## 6. O que eu errei nesta ronda
 
-1. Escrevi um **typo na nota do #15** (`"do Johnson-- do Johnny"`). Nota se
-   concatena e não se reescreve, então fica lá. Não muda nenhum fato, mas
-   registro em vez de deixar quem ler depois achar que é nome de alguém.
-2. Chutei duas consultas com **coluna que não existe** (`occurrence_count`,
-   `kind`) antes de ler o `information_schema`. Custou dois turns. A coluna
-   certa é `occurrences`. Fica anotado pra próxima: **ler o schema antes**, não
-   depois do 400.
+**1. Ia mandar reescrever ~1.100 linhas de código que já estavam em produção.**
+
+Li o cartão #15 e a ordem permanente, concluí que a instrumentação "nunca foi
+escrita", escrevi isso na nota do incidente e abri card pro `coder`
+(`da59cad1`) com escopo, critério de aceite e tudo. **Não tinha olhado o
+repositório.** O código existe desde 24/08, está na `main`, tem testes nos dois
+lados (TS e Python) e estava gravando no banco 4 minutos antes de eu consultar.
+
+O que me pegou foi o **passo fixo de fim de ronda** — conferir branch preso. Os
+nomes `feat/fase-corrente-telemetria`, `feat/15-fase-corrente-com-meta` e
+`feat/fase-telemetria-url-publica` apareceram na lista e não batiam com "nunca
+foi escrita". Puxei o fio e o card caiu.
+
+Desfeito: card `da59cad1` **cancelado**, nota corrigida no #15 (a errada fica no
+histórico, superada pela seguinte — nota se concatena, não se reescreve).
+
+A regra que fica: **conferir a `main` ANTES de abrir card, não depois.** Cartão
+antigo descreve o mundo do dia em que foi escrito; a `main` descreve o de hoje.
+É a mesma família do erro de ontem ("branch parado mente com sintaxe perfeita"),
+invertida: desta vez não foi o branch velho que mentiu, foi a **nota velha**.
+
+**2. Typo na nota do #15** (`"do Johnson-- do Johnny"`). Fica no histórico.
+Registro pra quem ler depois não achar que é nome de alguém.
+
+**3. Duas consultas com coluna que não existe** (`occurrence_count`, `kind`)
+antes de ler o `information_schema`. A certa é `occurrences`. Ler o schema
+antes, não depois do 400.
 
 ---
 
