@@ -55,6 +55,7 @@ import {
 } from "lucide-react";
 import { filtrarBusca } from "@/lib/sgp/busca";
 import { EntrarComoAluno } from "@/components/admin/sgp/entrar-como-aluno";
+import { Paginacao } from "@/components/admin/sgp/paginacao";
 import type { SgpGeracoes } from "@/lib/sgp/geracoes";
 import { videoLegivel, vozLegivel } from "@/lib/sgp/geracoes-pure";
 import {
@@ -520,6 +521,9 @@ export default function SgpPage() {
     [compradores, fila, resumo],
   );
 
+  const [pagina, setPagina] = useState(1);
+  const [porPagina, setPorPagina] = useState(50);
+
   const porPill = filtro
     ? fila.filter((p) => (filtro.tipo === "situacao" ? p.situacao === filtro.valor : p.status === filtro.valor))
     : fila;
@@ -530,6 +534,14 @@ export default function SgpPage() {
     // Vem "—" quando não há telefone; a régua ignora, porque não tem dígito.
     telefone: p.whatsapp,
   }));
+
+  // Paginação (21/09): 598 linhas × 15 colunas de uma vez faziam a página ter
+  // metros de altura. `paginaAtual` é derivada, não estado: filtrar de 598 pra
+  // 12 linhas estando na página 7 mostraria uma tabela vazia, e o time leria
+  // isso como "a busca quebrou".
+  const paginas = Math.max(1, Math.ceil(visiveis.length / porPagina));
+  const paginaAtual = Math.min(pagina, paginas);
+  const naTela = visiveis.slice((paginaAtual - 1) * porPagina, paginaAtual * porPagina);
 
   const rotuloDoFiltro =
     filtro?.tipo === "situacao"
@@ -750,7 +762,10 @@ export default function SgpPage() {
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
+      {/* 21/09: a tabela ganha TAMANHO DE TELA. `max-h` + `overflow-auto` dão as duas
+          barras (a de cima e a do lado) DENTRO da moldura, em vez de esticar a
+          página inteira, e o cabeçalho fica grudado no topo. */}
+      <div className="max-h-[calc(100vh-280px)] overflow-auto rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
         {loading ? (
           <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">carregando…</div>
         ) : visiveis.length === 0 ? (
@@ -782,7 +797,7 @@ export default function SgpPage() {
            * seguiu em 1773px.) Mexer nele só criaria conflito à toa com o #277.
            */
           <table className="w-full min-w-[1500px] border-collapse text-left">
-            <thead>
+            <thead className="sticky top-0 z-20">
               <tr className="border-b border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
                 <Th>Nome</Th>
                 <Th>Situação</Th>
@@ -807,7 +822,7 @@ export default function SgpPage() {
               </tr>
             </thead>
             <tbody>
-              {visiveis.map((p) => (
+              {naTela.map((p) => (
                 <Fragment key={p.id}>
                 <tr
                   className={`border-t border-[var(--hairline)] align-top ${
@@ -1062,6 +1077,14 @@ export default function SgpPage() {
           </table>
         )}
       </div>
+
+      <Paginacao
+        total={visiveis.length}
+        pagina={paginaAtual}
+        porPagina={porPagina}
+        onPagina={setPagina}
+        onPorPagina={setPorPagina}
+      />
 
       <p className="text-[12px] text-[var(--ash)]">
         <strong>Situação</strong> é a leitura de planilha: <strong>CONCLUÍDO</strong> é o time dizendo
@@ -1927,6 +1950,8 @@ function AbaCompradores({
    * trocar de aba e encontrar a lista já recortada sem ter pedido.
    */
   const [busca, setBusca] = useState("");
+  const [pagina, setPagina] = useState(1);
+  const [porPagina, setPorPagina] = useState(50);
 
   // Mesma régua da outra aba (lib/sgp/busca.ts). Só o telefone mora com outro
   // nome aqui: `celularDigitos`, que já vem só com dígito e `null` quando falta.
@@ -1935,6 +1960,10 @@ function AbaCompradores({
     email: c.email,
     telefone: c.celularDigitos,
   }));
+
+  const paginas = Math.max(1, Math.ceil(visiveis.length / porPagina));
+  const paginaAtual = Math.min(pagina, paginas);
+  const naTela = visiveis.slice((paginaAtual - 1) * porPagina, paginaAtual * porPagina);
 
   return (
     <div className="flex flex-col gap-6">
@@ -2006,7 +2035,10 @@ function AbaCompradores({
         achados={visiveis.length}
       />
 
-      <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
+      {/* 21/09: a tabela ganha TAMANHO DE TELA. `max-h` + `overflow-auto` dão as duas
+          barras (a de cima e a do lado) DENTRO da moldura, em vez de esticar a
+          página inteira, e o cabeçalho fica grudado no topo. */}
+      <div className="max-h-[calc(100vh-280px)] overflow-auto rounded-[var(--radius-lg)] border border-[var(--hairline-strong)]">
         {carregando && linhas === null ? (
           <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">carregando…</div>
         ) : !linhas || linhas.length === 0 ? (
@@ -2022,7 +2054,7 @@ function AbaCompradores({
           </div>
         ) : (
           <table className="w-full min-w-[1180px] border-collapse text-left">
-            <thead>
+            <thead className="sticky top-0 z-20">
               <tr className="border-b border-[var(--hairline-strong)] bg-[var(--surface-deep)]">
                 <Th>Nome</Th>
                 <Th>Situação</Th>
@@ -2037,7 +2069,7 @@ function AbaCompradores({
               </tr>
             </thead>
             <tbody>
-              {visiveis.map((c) => (
+              {naTela.map((c) => (
                 <tr
                   key={c.chave}
                   className={`border-t border-[var(--hairline)] align-top ${
@@ -2132,6 +2164,14 @@ function AbaCompradores({
           </table>
         )}
       </div>
+
+      <Paginacao
+        total={visiveis.length}
+        pagina={paginaAtual}
+        porPagina={porPagina}
+        onPagina={setPagina}
+        onPorPagina={setPorPagina}
+      />
 
       <div className="flex items-center justify-between gap-4">
         <p className="text-[12px] text-[var(--ash)]">
