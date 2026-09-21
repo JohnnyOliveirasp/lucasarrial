@@ -1,200 +1,213 @@
-# Ronda serial 21/09 ~20hZ — FastCloner
+# Ronda das falhas — 21/09, ~19h30–20h15Z
 
-Serial (regra 8). Cartão do Mission Board: `a78011cd`.
-
-**Resumo em uma linha:** o item serial (`#226`, 20,1 dias, ~160 alunos) não
-precisava de decisão nenhuma para andar — o conserto que ele esperava **já
-estava escrito desde 18/09 e apodrecendo num PR aberto há 3 dias**. Revisado,
-mutado e mergeado (`94c2a825`). E o achado que muda o cartão: **o número que
-sustenta a decisão de produto parada com o Johnny há 20 dias estava inflado
-por defeito do nosso próprio comparador** — ele contava GRAFIA como palavra
-sumida. A decisão foi devolvida ao grupo com o pedido de **não decidir esta
-semana**, e sim re-medir depois do deploy.
+Dono da fila: Frank. Metodo serial (regra 8 de 21/08).
 
 ---
 
-## 1. Passos fixos
+## 1. Passos fixos da ronda
 
-### 1.1 Reconciliação de envios — fecha, dois instrumentos concordando
+**Reconciliacao dos envios (passo fixo desde 18/09).** Rodada com
+`--corte=2026-09-14T14:06:31Z --confirmar`.
+962 cartas lidas na pasta remota "Sent" = 885 ja tinham linha + 77 fora da
+janela (decisao do `--corte`) + **0 escrituraveis**. A contagem fecha
+(962 = 962) e o veredito e **0 carta sem linha depois do corte**. Nada a fazer.
+As 77 anteriores a 14/09 seguem sem decisao, como a ordem preve.
 
-`2026-09-18_reconciliar_envios_da_pasta.cjs --corte=2026-09-14T14:06:31Z --confirmar`:
-
-| | |
-|---|---|
-| lidas da pasta "Sent" | 953 |
-| já tinham linha | 876 |
-| fora da janela (`--corte`) | 77 |
-| recusadas | 0 |
-| **dentro da janela sem linha** | **0** |
-
-Contagem fecha (953 = 953). O irmão de leitura independente
-(`2026-09-18_enviados_x_tabela.cjs`) dá o mesmo veredito: **0 carta depois do
-corte** fora da tabela, e casa 876 por Message-ID + 4 por destinatário+janela.
-As 77 pré-tabela seguem sem decisão.
-
-*(952 → 953 desde a ronda das 19h; a nova já nasceu com linha.)*
-
-### 1.2 Percepção — o mesmo 5, e a classe real continua ZERO
-
-`percepcao_travada.cjs` (já com `aguardando_aluno` na varredura, PRs #390/#392
-mergeados na ronda das 19h): controle positivo OK (#310 reencontrado), 502
-incidentes varridos, **5 cartões**.
-
-São **os mesmos 5 da ronda das 19h**, e os 5 já foram qualificados um a um
-naquela ronda como **falso positivo** — `#450` ("NAO e caso de percepcao"),
-`#406` ("OLHEI AS IMAGENS... NAO HA DEFEITO"), `#455` ("Audio LIBERADO"),
-`#438` (perna que saiu do papel) e `#216` (percepção cumprida). Nenhum nasceu
-novo nesta janela.
-
-**Número honesto pro relatório: 0 cartão travado em percepção.** O 5 é ruído
-do instrumento, e o defeito residual (o detector casa a NARRATIVA de percepção
-cumprida, não o pedido pendente) segue como card de código `1f33c59e` no
-`coder`, ainda `running` — não cobrei, porque foi aberto há ~2h.
-
-### 1.3 Fila
-
-**96 abertos**, **43 com 7+ dias** (era 95 / 42 às 19hZ: +1 nos dois).
-`agent_state`: 2 patches do vigia e 140 recados `para_frank_*` pendurados.
+**Percepcao travada.** `percepcao_travada.cjs`, controle positivo OK (#310
+reencontrado), 502 incidentes varridos: **7 cartoes**, o mais velho parado ha
+**6,3 dias** (#406). Os tres mais velhos da fila geral (#214, #216, #226) estao
+com nota do mesmo dia — ja foram mexidos nas rondas de hoje e aguardam decisao
+humana registrada, nao estao em silencio.
 
 ---
 
-## 2. O item serial: `#226` — 20,1 dias, ~160 alunos
+## 2. O ACHADO DA RONDA: o cartao #446 deixou de ser contabil e virou caixa
 
-`702cc916-882f-456f-9ff6-91fcc9bae1c4` · "ENTREGAMOS AUDIO QUE O NOSSO PROPRIO
-QA REPROVOU: tts_qa/loop.py:341-344". Peguei por ser o mais antigo com aluno
-afetado ainda acionável — o `#216` (mesma idade) foi fechado na ronda das 19h,
-e no empate de idade a regra 8 manda pegar quem tem mais gente sofrendo.
+Este e o item que importa desta ronda.
 
-### 2.1 O conserto não estava faltando. Estava parado.
+O `#446` (`vigia:estorno-rpc-ausente-webhook-500`) esta aberto desde **17/09**
+esperando decisao do Johnny. Desde 18/09 ele vinha sendo **de-escalado — por mim
+e pelo Vigia** — com a frase "consumo ZERO, o prejuizo e CONTABIL, nao caixa
+escorrendo". **Essa frase deixou de ser verdade hoje.**
 
-A nota [53] deste cartão, escrita por mim em 18/09, termina com "DESPACHADO o
-conserto da régua pro coder". **O conserto foi escrito**: virou o **PR #345**
-(`feat/qa-canon-grafia`) em 18/09 20:19Z — e ficou `OPEN`, sem um único
-update, até hoje. **Três dias.** Ninguém voltou pra buscar.
-
-Regra 5: *PR parado é código que não protege ninguém.* Isto é o segundo achado
-da mesma família em dois dias (ontem foi o PR #92 em draft há 23 dias). Não é
-coincidência: **a casa despacha bem e recolhe mal.**
-
-### 2.2 STALE — conferido ANTES de encostar
-
-O branch estava **153 commits atrás da main** e mexia em
-`runpod-worker/jobs/inference.py`, que a main **também** mexeu depois da base
-(`4d814c7a`). Esta é a família que já derrubou fix em produção 5 vezes aqui.
-
-Merge textual limpo **não bastava**, porque o PR muda `run_chunk_qa` de **5
-para 6 valores de retorno**: se a main tivesse acrescentado um call site novo,
-o auto-merge o deixaria desempacotando 5 e quebraria **em runtime, na GPU**,
-sem teste nenhum pegando.
-
-**Contei os call sites nos três lados** — base **3**, `origin/main` **3**,
-árvore mergeada **3**, todos convertidos para 6. Não havia call site novo. Só
-depois disso segui.
-
-### 2.3 Revisão — em worktree próprio, não aceita do coder no escuro
-
-| o que rodei | resultado |
-|---|---|
-| suíte na árvore **mergeada** | **357** testes · 3 falhas + 4 erros |
-| **mesma** suíte na `origin/main` **limpa** | **315** testes · 3 falhas + 4 erros |
-
-As falhas são **as mesmas dos dois lados** — ambiente sem ffmpeg (`atempo`),
-não regressão. **Zero regressão do PR.** 315 → 357 = **+42**, exatamente o
-`test_canon_qa`. Li o rodapé, não o exit code (lição das 8 de 8 SKIP do #259).
-
-**Mutei o código dele, porque teste que passa nos dois lados não prova nada:**
-
-| mutação | resultado |
-|---|---|
-| `expandir_falado` vira no-op | **33 de 42 morrem** |
-| bloco `delete` deixa de gerar faltante (a propriedade de segurança) | **17 falhas** |
-| a fraqueza que o **próprio autor declarou** no PR (`delete` olhando 3 palavras anteriores) | **passa OK** |
-
-As 17 batem **exatamente** com o número que ele declarou no corpo do PR, e a
-fraqueza que ele confessou **é real**. Ele falou a verdade sobre o próprio
-furo — e o furo é de uma variação hipotética, não do código que subiu
-(`range(j1, j2)` está correto).
-
-**A propriedade de segurança se sustenta por construção, não por teste:**
-grafia só nasce de opcode `replace` (o Whisper *ouviu* algo ali). Chunk mudo /
-áudio que começa no meio — o defeito que este QA existe pra pegar, caso Katia
-19/08 — vira opcode `delete`, onde `j1 == j2`, `livres` nasce **vazia** e toda
-palavra continua faltante. **Não há afrouxamento do lado perigoso.**
-
-### 2.4 Mergeado — e por que isso ainda NÃO está em produção
-
-**`94c2a825`** (21/09 18:56Z). Build da imagem disparado (run `35641626569`).
-
-⚠️ `runpod-worker/` sobe por **imagem própria**: merge na `main` **não prova
-produção** — foi o achado do vigia em 02/09 10hZ e não vou repetir o erro.
-Build anterior levou 41 min. **Enquanto não fechar verde, o conserto não está
-no ar**, e o cartão segue `investigating` (regra 14).
-
----
-
-## 3. 🔴 O que isso faz com a decisão parada há 20 dias
-
-A decisão de produto (falhar sem cobrar / entregar avisando / manter) vem
-sendo pedida ao Johnny **desde 01/09**, sempre em cima do número
-*"44-50% das entregas saem com o QA esgotado, ~160 alunos"*.
-
-**Esse número é produzido pelo comparador que acabou de ser consertado.**
-
-Pela classificação do próprio PR sobre **1.037** faltantes reais em 572
-gerações:
+### A sequencia, toda medida, toda no dia 21/09
 
 ```
-[A] some por construção (canon reescreve o token) ...   82    7,9%
-[B] casa SE o whisper grafou o símbolo ..............  114   11,0%
-[C1] forma plena: casa SE grafou a reduzida .........   31    3,0%
-[C] não decidível pela telemetria ...................  810   78,1%
+14:01:05Z  +100.000 cr   credit_transactions ref_type=payment_event ref_id=HP2319839714
+17:18:18Z  PURCHASE_PROTEST da MESMA transacao HP2319839714 (R$97)
+           -> payment_events.processed_at NULL, erro "Could not find the function
+              public.zero_subscription_credits_on_refund(...)"
+17:38:31Z  -1.960   generation
+17:42:51Z  -550     studio_audio
+17:46:28Z-17:46:57Z  20 x -1.800 studio_scene  (= 36.000)
+17:48:25Z  entitlements.status -> 'chargeback', access_until NULL  (revokeAccess RODOU)
+17:54:01Z  -1       studio_scene_improve   <-- gasto DEPOIS da revogacao
 ```
 
-**Só o [A] é prova.** O ganho real é **maior que 18,9% e ninguém sabe quanto**
-— a tabela `generations` não guarda a transcrição do Whisper, então **não
-existe replay**. E o caso Katia, o único cujo áudio foi de fato **ouvido**,
-cai no [C1]: as 3 "faltantes" eram 2× `ta`/`esta` e 1× `pra`/`para`, e o áudio
-estava **inteiro**.
+Total gasto **depois** do evento de dinheiro devolvido: **38.511 creditos em 23
+lancamentos**. Saldo restante: 149.006.
 
-**Escalado ao grupo** (`ask_humans`, entregue) com um pedido incomum: **não
-decidir esta semana.** Decidir (b) ou (c) agora é decidir sobre um número
-inflado por fantasma de grafia, e derrubar entrega de aluno por isso sai caro
-por pouco. O plano que fica registrado: quando o build fechar, re-medir
-`exhausted>0` sobre gerações criadas **depois** do deploy contra a mesma
-janela de antes. Se o patamar cair, a decisão dolorosa pode nem ser
-necessária; se **não** cair, ela volta pra mesa com número limpo.
+### Por que isto e importante alem do valor
 
-O que continua sendo do Johnny e eu não toquei: escolher entre falhar sem
-cobrar e entregar avisando, e **estorno em massa desta classe, que passa do
-meu teto de 20.000 cr** (regra 9-B).
+Eu vinha escrevendo, desde 17/09, que "revogar acesso NAO protege credito, porque
+o portao do app e o SALDO e nao o acesso". Ate hoje isso era **leitura de
+codigo**. Agora esta **medido em producao**: a porta fechou as 17:48:25Z e o
+aluno seguiu gastando as 17:54:01Z. Acesso revogado e saldo intacto convivem, e
+quem manda e o saldo.
+
+### Alcance atualizado
+
+6 eventos presos, **4 pessoas**, **589.102 creditos** (antes: 5 eventos, 3
+pessoas, 440.096).
+
+| quando | evento | pessoa | saldo | gasto pos-evento |
+|---|---|---|---|---|
+| 16/09 08:38Z | PROTEST | paula@handelhomes.com | 171.029 | 0 |
+| 16/09 09:03Z | REFUNDED | paula@handelhomes.com | | |
+| 17/09 14:18Z | REFUNDED | core@frentestudio.com.br | 169.067 | 0 |
+| 17/09 15:00Z | CHARGEBACK | core@frentestudio.com.br | | |
+| 18/09 19:23Z | REFUNDED | vazilg@gmail.com | 100.000 | 0 |
+| **21/09 17:18Z** | **PROTEST** | **mkt.drrigatti@gmail.com** | **149.006** | **38.511** |
+
+Os tres primeiros seguem com consumo zero — a de-escalada estava certa **para
+eles**. O que estava errado era tratar *"ninguem gastou ainda"* como *"ninguem
+vai gastar"*.
+
+### Janela da regressao, fechada por medicao
+
+Ultimo evento de dinheiro devolvido que processou limpo: `vazilg` PROTEST
+**11/09 20:29:41Z**. Primeiro preso: `paula` **16/09 08:38:05Z**. Desde 16/09 e
+**6 de 6, 100%**. Antes de 11/09 a regra 9 tambem nao tinha efeito (a funcao
+nunca existiu), mas falhava em **silencio**; o que mudou em ~15-16/09 foi o
+**chamador subir** (`refund.ts:33` lanca -> `route.ts:433` -> 500 ->
+`processed_at` NULL e Hotmart reenviando).
+
+Funcao conferida no **catalogo**, nao no log: `pg_proc` x `pg_namespace`,
+`proname ilike '%zero_subscription%'` -> **0 linhas** (21/09 19h4xZ).
+`scripts/111_estorno_zera_credito.sql` segue com o cabecalho "NAO APLICADA".
+
+### Decisao (nao e minha) — postada no grupo como urgente
+
+1. Aplicar a `scripts/111`? (para de sangrar + libera reprocessar os 6 eventos)
+2. Zerar os 589.102 ja acumulados? (retirada de credito de aluno)
+
+E a pergunta que o Vigia levantou em 18/09 e ninguem respondeu: a REGRA FINAL DE
+CREDITO de 20/08 diz *"parou de pagar, usa os que tem ate acabar"*. Estorno e
+chargeback contam como isso? **Quem aplicar a migration responde isso em
+silencio.** Hoje o custo de nao responder ficou visivel.
+
+**NAO apliquei DDL, NAO zerei credito de ninguem, NAO reprocessei evento.**
 
 ---
 
-## 4. O que eu NÃO fiz, de propósito
+## 3. Serial: #479 (Marlon) — conferido ate o fim e devolvido pra investigating
 
-- **Não mudei o status do `#226`** — o worker segue entregando chunk reprovado;
-  o comportamento não mudou, só a régua que o mede. Regra 14 é regra 14.
-- **Não toquei em crédito, não estornei, não avisei aluno**, não gastei GPU e
-  **não ouvi áudio nenhum** nesta ronda.
-- **Não re-medi o efeito do conserto** — o build não fechou. Fica nomeado como
-  o primeiro passo da próxima ronda.
-- **Não cobrei o card `1f33c59e`** (detector de percepção) — aberto há ~2h.
-- Não consultei a caixa do `suporte@` para triagem: a fila de `incidents`
-  é a fonte.
+O `garantia_na_fila.cjs` acusou o Marlon no bloco "VENCE EM ATE 48H" (restavam
+28,3h). O cartao estava **fixed** desde 19/09 com a premissa "pedido feito pelo
+proprio aluno na Hotmart, automatico" — desfecho **afirmado sem ter sido
+conferido**. Fui conferir.
+
+**Hotmart viva, consultada por `transaction` (nao por `buyer_email`):**
+`HP2093753501` · R$597 · PIX · SGP (7283229) · `is_subscription=false` ·
+garantia ate 23/09 00:00Z · **status = PROTESTED**. Ou seja: pedido de devolucao
+**registrado**, dinheiro **ainda nao devolvido**.
+
+**A garantia fechando NAO o prejudica — medido, nao suposto.** As 2 transacoes
+da Evelyn (`HP2585148563` R$672 e `HP3361171770` R$252,45) estavam PROTESTED com
+garantia vencida em **14/09** e hoje, 21/09, estao **REFUNDED**. E a sequencia
+PROTEST -> REFUNDED aparece em 6 casos nossos, de **25 minutos a 7 dias**.
+Pedido aberto dentro da janela sobrevive ao fim da janela.
+
+⚠️ **Alarme falso, e o instrumento vai repetir.** O `garantia_na_fila.cjs`
+compara **datas** e nao olha o status da transacao na Hotmart, entao acusa como
+"vai perder a janela" quem **ja tem devolucao em andamento**. E a familia da
+armadilha do estorno conferido por `kind` em vez de `ref_type` ("quase pagamos
+em dobro pra 13 alunos"): **quem agir so pelo bloco de 48h pode pagar duas
+vezes**. Antes de agir num nome que ele acusa, conferir o status na Hotmart viva.
+
+**O que descobri e nao e culpa dele:** pagou 16/09 07:17Z, recebeu boas-vindas
+07:17:46Z, pediu codigo **duas vezes** na mesma manha (07:20:30Z e 08:03:38Z) e
+o `last_sign_in_at` dele e **19/09 13:41:39Z**. Ficou **3 dias e 6 horas** sem
+conseguir entrar no que pagou; quando entrou, pediu cancelamento **3 minutos
+depois**. A desistencia tem causa nossa.
+
+**Feito:** carta enviada (uid **3133** na pasta Enviados) dizendo que o pedido
+esta registrado e em andamento, que o prazo de 22/09 nao o prejudica mais, que o
+dinheiro ainda nao caiu e que isso e normal nesta fase, e assumindo os 3 dias de
+porta fechada. Cartao **fixed -> investigating**: fecha quando `HP2093753501`
+virar REFUNDED.
 
 ---
 
-## 5. Para a próxima ronda, na ordem
+## 4. Dois compradores do SGP sem acesso — e um erro meu no meio
 
-1. **Conferir o build `35641626569`.** Se verde, re-medir `exhausted>0` em
-   gerações pós-deploy e comparar com a janela anterior — é o número que
-   destrava (ou dissolve) a decisão do `#226`.
-2. Se o build **falhou**, isso é urgente: o `94c2a825` está na main sem imagem
-   correspondente.
-3. **Varrer PR aberto por idade.** Dois achados em dois dias (#92 em draft há
-   23 dias, #345 parado há 3) dizem que a casa despacha e não recolhe. Vale
-   uma ferramenta, não mais uma nota.
-4. `#f8587cef` (palavra decapitada, 609×, 237 alunos): a nota [53] deixou
-   escrito que **quanto daquele 609 está inflado pela mesma régua** é pergunta
-   aberta. Agora a régua está consertada — quem pegar re-mede antes de
-   acreditar no 609.
+`boas_vindas_sgp_nao_saiu.cjs` (controle positivo 2/2 OK) acusou 2 compradores
+cujo e-mail de boas-vindas **falhou na saida**:
+
+- **marcio.laosa@trialseguros.com.br** · HP0040311395 · **R$597** · pago
+  12/09 21:24:56Z · causa **"SMTP timeout"**
+- **amanda.rosaleal@gmail.com** · HP1053950724 · **R$633,81** · pago
+  13/09 13:55:18Z · causa **"read ECONNRESET"**
+
+Mandei pros dois uma carta de reparo com link de primeiro acesso no formato
+`token_hash` (o que aponta pro `/auth/callback`, **nao** o `action_link` do
+Supabase, que queima o token e cai em erro). Enviadas e confirmadas na pasta
+Enviados: **uid 3134** (Marcio) e **uid 3135** (Amanda).
+
+### ⚠️ E entao eu errei, e o erro foi pra caixa de uma aluna
+
+A carta da Amanda afirmava que ela "nunca recebeu nada" e ficou "8 dias sem
+noticia". **As duas coisas sao falsas.** Conferindo a pasta Enviados **depois**
+de mandar, achei:
+
+```
+uid 2098 · 13/09 14:24:52Z · "107044 e o seu codigo do Sistema de Geracao Pronto"
+uid 2102 · 13/09 15:32:18Z · "Corrigido - pode clicar em Continuar, voce estava certa"
+uid 2146 · 13/09 22:26:20Z · "Faltou eu te contar das 5 caixinhas..."
+```
+
+Ela foi atendida **no mesmo dia da compra, tres vezes, por gente de verdade**. E
+o pedido dela andou: `sgp_pedidos 86add20a`, status **'audio'**, **6 fotos**, 0
+audios, ultima mexida 14/09 11:12Z.
+
+**De onde veio o erro (importa mais que o erro).** O detector imprime
+`login=NUNCA`, e eu li isso como "nunca teve contato". Para comprador de SGP
+essa leitura e **errada**: `login` ali e o `last_sign_in_at` do **aplicativo**, e
+o SGP tem **outra porta** — o portal do pedido, que entra por **codigo no
+e-mail**, sem login no app. Por isso a Amanda tem `last_sign_in_at` NULL **e**
+6 fotos enviadas ao mesmo tempo. O detector mede *"o e-mail automatico falhou no
+SMTP"* e **so isso**; eu transformei em *"a pessoa ficou sem contato"*.
+
+**Consertado:** correcao enviada na hora (uid **3136**), assumindo o erro, mandando
+ignorar o link do app (que nao e o bloqueio dela) e dizendo o que e verdade — o
+pedido esta parado na etapa do **audio**, com as 6 fotos salvas.
+
+**Regra que passo a seguir:** antes de escrever a um aluno **qualquer** frase
+sobre silencio ou abandono, rodar `2026-09-21_cartas_para_o_aluno.cjs <email>` e
+olhar o que ja foi dito. A propria saida do `aluno.cjs` avisa isso em caixa alta
+e eu passei por cima do aviso.
+
+### O Marcio se sustenta, e e o caso grave
+
+Conferido **depois**, pelo mesmo instrumento: **1 carta no total**, a minha de
+hoje. Pagou **R$597** em 12/09, `last_sign_in_at` NULL, `pedido_sgp=0`, **ZERO
+cartoes em `incidents`** e **zero cartas** antes de hoje. Ficou **9 dias no
+vacuo** e **nao existia em fila nenhuma** — se eu nao tivesse rodado o detector,
+ninguem o acharia.
+⚠️ Risco especifico: dominio corporativo (`trialseguros.com.br`). Se for
+Microsoft, o **Safe Links faz prefetch e queima** o link de uso unico antes do
+clique — armadilha que o proprio `link_de_primeiro_acesso.cjs` documenta. Por
+isso a carta dele leva dois caminhos alternativos ("Esqueci minha senha" e
+responder o e-mail).
+
+---
+
+## 5. O que NAO foi feito, declarado
+
+- **Nao apliquei** `scripts/111` nem nenhuma DDL (regra 21).
+- **Nao zerei** credito de ninguem (regra 9-A).
+- **Nao reprocessei** os 6 eventos presos (so faz sentido depois da DDL).
+- **Nao afirmo** que Marcio ou Amanda entraram: afirmo que as cartas sairam e
+  estao na pasta de enviados. `last_sign_in_at` dos dois era NULL as 19h5xZ.
+- Os 3 cartoes mais velhos da fila (#214, #216, #226) **nao avancaram nesta
+  ronda** — estao em decisao humana ja registrada, nao em silencio novo.
