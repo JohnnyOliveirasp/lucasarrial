@@ -130,6 +130,40 @@ test("a marca nova NÃO afrouxa a lista fechada", () => {
   assert.equal(acharInfra({ trainer_stderr: "PytorchStreamWriter opened file lora.safetensors" }), null);
 });
 
+/**
+ * Forma B outra vez, agora TRANSPORTE: o worker nao conseguiu BAIXAR do nosso
+ * R2. Medido em 21/09 no job 7c535216 (voz 8d7e7c37, lilikumon.liliane):
+ * stderr AUSENTE, returncode null, a causa inteira em `error_message`.
+ * Trecho literal do banco, cortado so no comprimento.
+ */
+const FORMA_D = {
+  id: "7c535216-55b2-40c8-898a-d17039ffd5e6",
+  trainer_returncode: null,
+  trainer_stderr: null,
+  error_message:
+    "Failed to download https://voices-clone-ai-verse.2ecbc907fdf5a1f0bdf3cc5e96fe351c" +
+    ".r2.cloudflarestorage.com/472f71bd-7f85-4309-9a3b-7e2d2e58af55/" +
+    "8d7e7c37-86e1-4776-9de4-1c87e59f6c3b/raw/002_take_1789994571815_300s.mp3" +
+    "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=7200",
+};
+
+test("forma D: falha ao BAIXAR do nosso R2 e infra nossa, mesmo com caminho /raw/", () => {
+  const achado = acharInfra(FORMA_D);
+  assert.ok(achado, "sem isto a aluna fica sem voz por uma falha de transporte nossa");
+  assert.equal(achado.coluna, "error_message");
+  assert.match(achado.causa, /baixar o audio do NOSSO R2/);
+});
+
+test("a marca de download NAO vale sem o host do nosso R2", () => {
+  // O qualificador existe pra manter a `causa` verdadeira: download que falha
+  // de outra origem nao e "o audio do nosso R2".
+  assert.equal(
+    acharInfra({ error_message: "Failed to download https://huggingface.co/modelo.bin" }),
+    null,
+  );
+  assert.equal(acharInfra({ error_message: "Failed to download" }), null);
+});
+
 test("MUTAÇÃO — o código VELHO (só stderr) reprova nos casos reais do #32", () => {
   // Cópia literal da linha original, antes do conserto de 18/09.
   const velho = (job) => {

@@ -134,6 +134,36 @@ const INFRA = [
   { marca: "No space left on device", causa: "disco cheio no worker" },
   { marca: "torch.OutOfMemoryError", causa: "OOM de GPU" },
   { marca: "CUDA out of memory", causa: "OOM de GPU" },
+  /**
+   * ── 21/09: o worker nao conseguiu BAIXAR o audio do nosso proprio R2 ──────
+   * Voz 8d7e7c37 (lilikumon.liliane). O treino morreu ANTES do trainer subir
+   * (forma B, sem stderr) com:
+   *   "Failed to download https://voices-clone-ai-verse...r2.cloudflarestorage
+   *    .com/<user>/<voz>/raw/002_take_...mp3?X-Amz-..."
+   *
+   * ⚠️ Por que isto e SEGURO na lista que separa "infra nossa" de "material do
+   * aluno", mesmo o caminho sendo /raw/ (arquivo que o ALUNO enviou): o que
+   * falhou nao foi LER o conteudo, foi BAIXAR do NOSSO bucket com a NOSSA
+   * credencial. Nada que o aluno envie faz o nosso worker falhar em buscar da
+   * nossa storage. E a distincao raw/ x dataset/ do #475 continua valendo pra
+   * "arquivo invalido"; ela nao se aplica a falha de transporte.
+   *
+   * CONFERIDO no caso que criou esta marca, antes de admiti-la: os 5 audios
+   * dela seguem no R2 (HeadObject), inclusive o exato que falhou (4,58 MB).
+   * Ou seja, nao foi objeto ausente — foi transporte. Se um dia o objeto
+   * estiver AUSENTE, o rearme sozinho nao resolve e o retreino falha de novo;
+   * por isso a conferencia no R2 fica registrada aqui como passo, nao como
+   * detalhe.
+   */
+  {
+    marca: "Failed to download",
+    // Qualificador pelo mesmo motivo do /dataset/ acima: a frase sozinha nao
+    // diz DE ONDE. Exigir o host do R2 prende a marca ao nosso bucket e mantem
+    // a `causa` abaixo verdadeira — um download que falhasse de outra origem
+    // (modelo, dependencia) seria outra historia e nao deve passar por aqui.
+    exigeCaminho: "r2.cloudflarestorage.com",
+    causa: "o worker nao conseguiu baixar o audio do NOSSO R2 (falha de transporte, nao do arquivo)",
+  },
   {
     marca: "PytorchStreamWriter failed writing file",
     causa: "escrita do checkpoint falhou no worker (disco cheio provável — o torch não entrega o errno)",
