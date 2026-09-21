@@ -33,9 +33,17 @@
  * EXECUTOR de 09/09): se a varredura por marca nao reencontra ELE no universo
  * de todos os status, o filtro quebrou e o zero nao vale nada.
  *
+ * ⚠️ MEDIDO DE NOVO EM 21/09, porque o numero errado voltou DUAS rondas
+ * seguidas: o SQL cru da ordem de 17/09 (pilha inteira) devolvia 18 cards, e
+ * os 18 eram falso positivo — 15 casavam so em nota JA SUPERADA (702cc916,
+ * ab5644be, bb97e2f1 entre eles) e 3 casavam na ultima nota por citacao/prosa,
+ * nao por pendencia. ESTE script, no mesmo instante, devolvia 2. A consulta da
+ * ordem foi corrigida para `agent_notes -> -1` na mesma entrega; o instrumento
+ * canonico continua sendo este arquivo (a memoria da casa ja dizia isso).
+ *
  * USO: node _frank/ferramentas/percepcao_travada.cjs
+ * TESTE (sem banco): node --test "_frank/ferramentas/percepcao_travada.test.cjs"
  */
-const { supa } = require("./_comum.cjs");
 
 /** A frase do sensor que NAO e pedido de percepcao. Normalizada sem acento. */
 const BOILERPLATE = "precisa de olho humano, nao de codigo";
@@ -67,9 +75,32 @@ function marcaDe(nota) {
   return MARCAS.find((m) => t.includes(m)) ?? null;
 }
 
+/**
+ * Os cards que SO param por falta de ver/ouvir/assistir: abertos, e com a
+ * marca na ULTIMA nota (o passo que falta AGORA). Pura, sem banco — e o
+ * criterio inteiro do detector, e o que o teste unitario exercita.
+ * `agent_notes` null, vazio ou fora do formato de array NAO explode nem casa.
+ */
+function travadosDe(incidentes) {
+  const travados = [];
+  for (const i of incidentes) {
+    if (!["open", "investigating"].includes(i.status)) continue;
+    if (!Array.isArray(i.agent_notes) || !i.agent_notes.length) continue;
+    const ultima = i.agent_notes[i.agent_notes.length - 1];
+    const marca = marcaDe(ultima?.note);
+    if (!marca) continue;
+    travados.push({ i, marca, ultima });
+  }
+  travados.sort((a, b) => new Date(a.ultima?.at) - new Date(b.ultima?.at));
+  return travados;
+}
+
 const dias = (iso) => (Date.now() - new Date(iso).getTime()) / 86400000;
 
-(async () => {
+module.exports = { marcaDe, travadosDe, MARCAS, BOILERPLATE };
+
+if (require.main === module) (async () => {
+  const { supa } = require("./_comum.cjs");
   const db = supa();
   const { data, error } = await db.from("incidents")
     .select("id,numero,status,signature,title,affected_emails,created_at,agent_notes")
@@ -88,16 +119,7 @@ const dias = (iso) => (Date.now() - new Date(iso).getTime()) / 86400000;
   }
   console.log(`controle positivo OK (#310 reencontrado pela marca) · ${data.length} incidentes varridos\n`);
 
-  const abertos = data.filter((i) => ["open", "investigating"].includes(i.status));
-  const travados = [];
-  for (const i of abertos) {
-    if (!Array.isArray(i.agent_notes) || !i.agent_notes.length) continue;
-    const ultima = i.agent_notes[i.agent_notes.length - 1];
-    const marca = marcaDe(ultima?.note);
-    if (!marca) continue;
-    travados.push({ i, marca, ultima });
-  }
-  travados.sort((a, b) => new Date(a.ultima.at) - new Date(b.ultima.at));
+  const travados = travadosDe(data);
 
   console.log("═".repeat(70));
   console.log(`👁  SO PARAM POR FALTA DE VER/OUVIR/ASSISTIR: ${travados.length}`);

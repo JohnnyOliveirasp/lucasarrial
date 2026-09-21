@@ -40,18 +40,32 @@ frase, sozinha, é o que produziu 16 dias de silêncio.
 
 ## Como a ronda encontra esses cards
 
-Consulta de apoio (roda a cada ronda, junto com a contagem de abertos):
+**O instrumento canônico é `_frank/ferramentas/percepcao_travada.cjs`** — ele
+avalia a ÚLTIMA nota, desconta o boilerplate do sensor e tem controle positivo
+(#310). Rode ELE a cada ronda, não o SQL.
+
+> **Correção de 21/09.** A consulta originalmente publicada aqui varria
+> `agent_notes::text` — a pilha de notas INTEIRA. Um card que um dia escreveu
+> "assistir" casava para sempre, mesmo resolvido: ela mede HISTÓRICO e
+> apresenta como PENDÊNCIA. Medido: 41 falsos em 17/09, e 18 em duas rondas
+> seguidas de 20–21/09 (15 casavam só em nota já superada — 702cc916,
+> ab5644be, bb97e2f1 entre eles), enquanto o `percepcao_travada.cjs` achava 2.
+> O estado do card mora na ÚLTIMA nota (`agent_notes -> -1`); a versão abaixo
+> foi corrigida para isso. Em `agent_notes` null ou vazio, `-> -1` devolve
+> null e a linha simplesmente não casa — não explode.
+
+Consulta de apoio corrigida (só se o script não estiver à mão):
 
 ```sql
 select id, created_at, status, signature, affected_emails
 from incidents
 where status in ('open','investigating')
-  and (agent_notes::text ilike '%humano olhar%'
-    or agent_notes::text ilike '%precisa olhar%'
-    or agent_notes::text ilike '%nao enxergo%'
-    or agent_notes::text ilike '%nao ouco%'
-    or agent_notes::text ilike '%assistir%'
-    or agent_notes::text ilike '%ouvir%')
+  and (agent_notes -> -1 ->> 'note' ilike '%humano olhar%'
+    or agent_notes -> -1 ->> 'note' ilike '%precisa olhar%'
+    or agent_notes -> -1 ->> 'note' ilike '%nao enxergo%'
+    or agent_notes -> -1 ->> 'note' ilike '%nao ouco%'
+    or agent_notes -> -1 ->> 'note' ilike '%assistir%'
+    or agent_notes -> -1 ->> 'note' ilike '%ouvir%')
 order by created_at;
 ```
 
