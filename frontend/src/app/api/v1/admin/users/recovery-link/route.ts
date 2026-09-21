@@ -2,7 +2,11 @@
  * POST /api/v1/admin/users/recovery-link → gera link de recuperação de senha
  * pra equipe mandar por WhatsApp quando o e-mail do aluno não chega (caso
  * Clínica Elgra 21/07: webmail corporativo segurando o e-mail do Supabase).
- * Só admins (allowlist). O link vale ~1h (expiração do OTP de recovery).
+ * Admin E suporte (ordem do Johnny 21/09): o suporte já tinha esse poder pro
+ * comprador do SGP (rota sgp/entrar é SUPORTE_OK); isto estende pra base
+ * inteira, DE PROPÓSITO. O que torna o poder rastreável é o log de auditoria
+ * `admin.recovery_link.generated` abaixo — NÃO remover.
+ * O link vale ~1h (expiração do OTP de recovery).
  *
  * O `link` devolvido aqui é o formato `token_hash` (ver
  * `@/lib/auth/link-de-acesso`), NÃO o `action_link` do Supabase — este endpoint
@@ -10,7 +14,7 @@
  * (incidente #438).
  */
 import type { NextRequest } from "next/server";
-import { gateAdmin } from "@/lib/admin/api";
+import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import {
   DESTINO_DEFINIR_SENHA,
@@ -23,7 +27,7 @@ import { logger } from "@/lib/logger/server";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const g = await gateAdmin(request);
+  const g = await gateAdmin(request, SUPORTE_OK);
   if ("res" in g) return g.res;
 
   const body = await request.json().catch(() => ({}));
