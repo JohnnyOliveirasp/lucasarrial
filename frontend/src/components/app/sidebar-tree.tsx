@@ -221,6 +221,18 @@ export function SidebarTree({
     // ⛔ HeyGen SAIU do menu do aluno em 21/09 (ordem do Johnny): "nao tera
     // mais no projeto, move para apenas a pre-producao". Ele graduou em 14/08
     // e voltou — o item agora vive no bloco de pré-produção, que só admin vê.
+    //
+    // 🔥 Virais 1.0 (21/09): o acervo que a TURMA alimenta — o aluno cola o
+    // link do Instagram/TikTok e o vídeo fica pra todos. Entrada livre: quem
+    // não enviou nada ainda vê o que os outros mandaram. Não confundir com a
+    // Galeria de Virais da pré-produção, que é o garimpo pago da casa.
+    {
+      href: "/app/videos/virais",
+      icon: Flame,
+      label: "Virais",
+      locked: false,
+      lockTitle: "",
+    },
   ];
 
   return (
