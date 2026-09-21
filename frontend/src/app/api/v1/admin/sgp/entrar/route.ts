@@ -25,6 +25,7 @@ import { gateAdmin, SUPORTE_OK } from "@/lib/admin/api";
 import { badRequest, jsonOk, notFound, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { logger } from "@/lib/logger/server";
+import { DESTINO_PADRAO, montarLinkDeEntrada } from "@/lib/sgp/link-entrada-pure";
 
 export const dynamic = "force-dynamic";
 
@@ -62,12 +63,19 @@ export async function POST(request: NextRequest) {
     const { data, error } = await admin.auth.admin.generateLink({
       type: "magiclink",
       email,
-      options: { redirectTo: `${site}/auth/callback?next=${encodeURIComponent("/app")}` },
+      options: {
+        redirectTo: `${site}/auth/callback?next=${encodeURIComponent(DESTINO_PADRAO)}`,
+      },
     });
     if (error) return badRequest(error.message);
 
-    const link = data.properties?.action_link ?? null;
-    if (!link) return serverError("O Supabase não devolveu o link de entrada");
+    // O link entregue é montado com `token_hash` na QUERY, NUNCA o
+    // `action_link` — ele entrega a sessão no fragmento (`#access_token=…`),
+    // que o callback não lê, e o token de uso único morre no caminho.
+    // MEDIDO 20/09 com `magiclink` — ver o docblock de `link-entrada-pure.ts`.
+    const montado = montarLinkDeEntrada(data.properties, site, DESTINO_PADRAO);
+    if (!montado.ok) return serverError(montado.erro);
+    const link = montado.link;
 
     logger.info("audit", "admin.sgp.entrar_como_aluno", {
       admin: g.auth.email,
