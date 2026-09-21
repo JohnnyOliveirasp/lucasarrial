@@ -31,6 +31,7 @@ import { zeroSubscriptionCreditsOnRefund } from "@/lib/credits/refund";
 import { applyPurchaseCampaignBonus } from "@/lib/campaigns/service";
 import { PLAN_MONTHLY_CREDITS } from "@/lib/credits/config";
 import { avisarCompraOrfa } from "@/lib/payments/aviso-orfao";
+import { decidirCreditoDaAssinatura } from "@/lib/payments/credito-assinatura";
 import { eventoEhPagamento } from "@/lib/payments/acesso-regra";
 import { canaisDaCasa, estadoDosAvisos } from "@/lib/payments/aviso-orfao-canal";
 import { hottokValido, tokensEsperados } from "@/lib/payments/hottok";
@@ -258,7 +259,45 @@ async function processEvent(
       });
       handledSuffix = `:subscription_${subscriptionStatus.toLowerCase()}`;
     }
-    const userId = await resolveUserIdByEmail(buyerEmail);
+    // 21/09: o dono do ciclo NÃO é só quem o e-mail resolve. Quando o aluno
+    // compra com um e-mail e cria a conta com outro, `resolveUserIdByEmail`
+    // devolve NULL mesmo com o vínculo certo já gravado em
+    // `entitlements.user_id` (à mão, pelo claim do login, ou pela
+    // reconciliação) — e o crédito do ciclo era PULADO. Medido: 6 assinantes
+    // ativos nessa condição; 2 pagaram um mês inteiro com ZERO linha no
+    // ledger (Marcio HP1509025099, Fernanda HP0304698101). E o
+    // `avisarCompraOrfa` abaixo disparava "compra paga SEM conta" pra cliente
+    // com conta ativa e vinculada — alarme com diagnóstico errado. A regra
+    // mora em `credito-assinatura.ts` (pura, testada): e-mail primeiro;
+    // senão, o dono do entitlement da MESMA assinatura (o `grantAccess` acima
+    // preserva esse vínculo — guarda do #222); órfã só quando NENHUM existe.
+    const userIdDoEmail = await resolveUserIdByEmail(buyerEmail);
+    let userIdDoEntitlement: string | null = null;
+    if (!userIdDoEmail) {
+      const { data: ent, error: erroEnt } = await getAdmin()
+        .from("entitlements")
+        .select("user_id")
+        .eq("provider", PROVIDER)
+        .eq("external_id", externalId)
+        .maybeSingle();
+      // Leitura que FALHA não pode virar "não tem dono" (lição do #222/#282):
+      // trataria um blip de rede como compra órfã — pularia o crédito E
+      // dispararia o alarme falso. Lançar → 500 → Hotmart reenvia (idempotente).
+      if (erroEnt) {
+        throw new Error(
+          `leitura do dono do entitlement falhou: ${erroEnt.message ?? "sem mensagem"} [${externalId}]`,
+        );
+      }
+      userIdDoEntitlement = ent?.user_id ?? null;
+    }
+    const credito = decidirCreditoDaAssinatura({
+      eventType,
+      userIdDoEmail,
+      userIdDoEntitlement,
+      transactionId: extractTransactionId(data),
+      externalId,
+    });
+    const userId = credito.userId;
     if (userId) {
       // CRÉDITO SÓ NO APPROVED (10/08). A Hotmart avisa a MESMA cobrança duas
       // vezes: APPROVED quando o dinheiro entra e COMPLETE ~7,8 dias depois,
@@ -267,7 +306,7 @@ async function processEvent(
       // seriam 200.000 por R$97 (medido: 484 cobranças com crédito em dobro).
       // O COMPLETE segue passando pelo grantAccess acima, porque é ele que
       // traz a data de renovação atualizada; só não gera crédito novo.
-      if (eventType === "PURCHASE_APPROVED") {
+      if (credito.creditar) {
         await grantSubscriptionCredits({
           userId,
           amount: PLAN_MONTHLY_CREDITS,
@@ -275,8 +314,9 @@ async function processEvent(
           // A chave é a TRANSAÇÃO, não o externalId: na assinatura o externalId
           // é o código do assinante e é o MESMO em toda renovação — usá-lo como
           // trava faria a cobrança de setembro parecer repetição da de julho e
-          // o aluno pagaria sem receber nada.
-          refId: extractTransactionId(data) ?? externalId,
+          // o aluno pagaria sem receber nada. `credito.refId` preserva
+          // exatamente essa chave; o RPC deduplica por ela.
+          refId: credito.refId,
         });
       }
       // Bônus de campanha de lançamento (feature À PARTE): se a compra cair na
@@ -285,7 +325,7 @@ async function processEvent(
       await applyPurchaseCampaignBonus(userId, externalId);
     }
     let avisoError: string | null = null;
-    if (!userId) {
+    if (credito.avisarOrfa) {
       // Compra aprovada SEM conta correspondente: o entitlement fica órfão e o
       // login resgata sozinho quando a conta nascer com ESTE e-mail (claim.ts).
       // Se a pessoa criar a conta com OUTRO e-mail (caso Juliano 13/07, caso
