@@ -11,13 +11,32 @@ disser "vê como estão as coisas". Leva ~10 minutos.
 ```sql
 select status, title, occurrences, last_seen_at, sample_error
 from incidents
-where status in ('open','investigating')
+where status in ('open','investigating','aguardando_aluno')
 order by last_seen_at desc;
 ```
 
 Pra cada um: é falha nossa ou erro do aluno? Falha nossa → conserte e feche
 com `fixed` + nota. Erro do aluno → `ignored`. **Não deixe nada "investigando"
 de véspera** — ou você está investigando agora, ou tem que fechar.
+
+⚠️ **`aguardando_aluno` ENTRA na contagem, e entrou tarde demais.** A versão
+antiga desta consulta lia só `open`/`investigating` — e `aguardando_aluno` não
+está em `STATUS_FECHADO` nem estava nessa lista, então **não aparecia em
+contagem nenhuma, nem de aberto nem de fechado**. Medido em 21/09 na ronda
+serial: **96 abertos pelo filtro velho, 131 com este** — 35 cartões invisíveis,
+**20 deles com 7+ dias**, o mais antigo com **24 dias**. Como a regra 8 manda
+pegar "o mais antigo com aluno afetado", o filtro velho fazia a ronda pegar o
+mais antigo *de uma lista que escondia justamente os mais velhos de todos*.
+O próprio Vigia avisou disto em 01/09 (nota do #172, e de novo no #214) e a
+contagem seguiu cega por mais 20 dias.
+
+⚠️ E **o rótulo mente sobre quem deve o próximo passo.** É a mesma cegueira que
+o PR #392 tirou do `percepcao_travada.cjs` no mesmo dia. O caso que provou:
+o **#214** ficou 21 dias em `aguardando_aluno` sem que **nada** tivesse sido
+pedido à aluna — ela tinha pago, escrito pedindo ajuda, e a bola era da CASA o
+tempo inteiro. Ao ler um `aguardando_aluno`, pergunte sempre: *o que,
+exatamente, foi pedido a essa pessoa, e em que data?* Sem resposta concreta, o
+rótulo é falso e o item é seu.
 
 > ⚠️ **Ficha de "e-mail não chegou" (`fast-bounce:%`): NÃO decida pelo SELECT
 > cru.** A `description` gravada é do dia do último BOUNCE — reenvio que dá
