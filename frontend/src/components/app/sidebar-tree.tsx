@@ -141,16 +141,9 @@ export function SidebarTree({
             label="Instagram"
             active={pathname.endsWith("/app/lab/publicador")}
           />
-          {/* 21/09 (ordem do Johnny): "só libera o Instagram, o TikTok ainda
-              não foi liberado" — o item some pra quem não está liberado. */}
-          {tiktokAllowed && (
-            <NavLeaf
-              href="/app/lab/publicador/tiktok"
-              icon={Music2}
-              label="TikTok"
-              active={pathname.endsWith("/app/lab/publicador/tiktok")}
-            />
-          )}
+          {/* ⛔ TikTok NÃO entra aqui (ordem do Johnny 21/09): o menu principal
+              é só do que está liberado, e o TikTok não passou por review
+              nenhum. Ele vive no bloco de PRÉ-PRODUÇÃO, mais abaixo. */}
         </ul>
       )}
     </li>
@@ -433,6 +426,17 @@ export function SidebarTree({
                 label={t("nav.videoHeygen")}
                 active={pathname.endsWith("/app/lab/video-heygen")}
               />
+              {/* 🧪 Publicador do TikTok: fica AQUI enquanto não for liberado.
+                  O Instagram graduou em 21/09 (Meta aprovou) e subiu pro menu
+                  principal; o TikTok não, então não pode aparecer lá. */}
+              {tiktokAllowed && (
+                <NavLeaf
+                  href="/app/lab/publicador/tiktok"
+                  icon={Music2}
+                  label="Publicar no TikTok"
+                  active={pathname.endsWith("/app/lab/publicador/tiktok")}
+                />
+              )}
             </GrupoPre>
 
             <GrupoPre
