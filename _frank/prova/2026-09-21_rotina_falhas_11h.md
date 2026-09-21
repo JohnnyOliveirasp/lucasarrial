@@ -2,9 +2,15 @@
 
 Ronda dentro da janela do turno (08h–23h BRT). Alvo serial: **#505**.
 
-**Fechei 0 incidente.** Digo primeiro pra não ficar escondido. Mas a ronda não
-foi vazia: **derrubei a premissa do #505 e o defeito real encolheu de 39 para
-12** — 12 alunos nomeados, 7 deles pagantes, que a casa nunca avisou.
+> ⛔ **LEIA A §7 ANTES DAS §2.4 E §2.5.** No fim desta ronda eu descobri que a
+> minha própria conclusão central estava **errada**, e corrigi. O texto errado
+> fica abaixo, íntegro, porque registro não se reescreve — mas **a §2.4 está
+> SUPERADA pela §7**. Resultado final: o #505 foi **fechado como não-defeito**,
+> e **nenhum aluno ficou sem aviso**.
+
+**Fechei 1 incidente (o #505, como `ignored`/não-defeito).** E errei feio no
+meio do caminho: passei a ronda inteira convencido de que 12 alunos nunca
+tinham sido avisados, e isso era falso. A §7 conta.
 
 Ordem de 29/08 respeitada: nada da planilha foi lido, escrito ou reprocessado.
 Canal: tudo que é aviso saiu **no grupo** (`notify-grupo.sh`), nada no privado.
@@ -217,6 +223,80 @@ era **grep barato primeiro, card depois, com a pergunta já afiada**. É a mesma
 família do erro de ontem, invertida mais uma vez: ontem confiei na nota velha
 sem olhar a `main`; hoje quase paguei caro por não olhar a `main` antes de
 escrever o enunciado.
+
+---
+
+## 7. ⛔ EU ERREI: os 12 FORAM avisados. A §2.4 está superada
+
+Descobri isto **no passo fixo de fim de ronda**, conferindo branch preso — pela
+segunda ronda seguida é esse passo que pega o meu erro.
+
+Vi `feat/sgp-gerado-vs-entregue` (PR #306, já mergeado por squash em 16/09), fui
+ler o que ele fez, e caí em `frontend/src/lib/sgp/aviso.ts:24-29`, que diz —
+**em caixa alta, escrito antes de eu chegar**:
+
+> *"⚠️ POR QUE NÃO `avisos_enviados` NEM `emails_enviados`, que seriam as
+> tabelas 'óbvias': as duas só começam em 2026-09-14T14:06 (medido, é o instante
+> em que a migration que as criou foi aplicada). **Zero nelas para qualquer
+> coisa anterior é zero CEGO**, e foi exatamente contra isso que o recado 6
+> avisou em caixa alta. `onboarding_ready_email_at` vai de 29/08 a hoje e cobre
+> 81 dos 82 pedidos prontos — por isso ele, e não elas."*
+
+Era exatamente o que eu tinha acabado de fazer.
+
+### A medição certa
+
+Fonte de verdade: **`profiles.onboarding_ready_email_at`**, que cobre desde
+29/08. Conferido um por um — **os 12 têm o carimbo**, cada um na data em que o
+clone ficou pronto:
+
+| aluno | carimbo | | aluno | carimbo |
+|---|---|---|---|---|
+| luzadvogado | 10/09 15:27Z | | cazanna1 | 12/09 20:10Z |
+| clonedoigor | 10/09 23:35Z | | rafael.oliveira | 12/09 21:10Z |
+| soleideritter | 11/09 02:02Z | | jlzpasqual | 12/09 21:36Z |
+| djrobertocarvalho | 11/09 18:45Z | | franklindfreis | 13/09 01:43Z |
+| walsicleia_kaka | 11/09 20:20Z | | annagalaggi | 14/09 01:29Z |
+| rafaelzan | 12/09 12:51Z | | sjhonattast | 14/09 03:00Z |
+
+E o carimbo **prova envio**: é um *claim atômico* gravado no instante **antes**
+de mandar (`lib/onboarding/pronto.ts:177-184`, `.is(...,null)` + `.select()`) e
+devolvido a nulo se o envio estoura. Carimbo preenchido = a carta saiu.
+
+### O que isso muda
+
+**Os 39 foram avisados** — 27 pela via nova, 12 pela via antiga. **Não existe
+aluno no escuro nesta população.** Somado a §2.2 (a falta de acesso é regra
+comercial deliberada, conferida em três camadas + o controle das 4 entitlements
+contra 352 compras), **o #505 não tem defeito de sistema nenhum**.
+
+**Fechei como `ignored`** pela ordem de 27/08 (só erro de SISTEMA vira chamado),
+com a nota de correção e `resolution_note` gravadas (2 notas, 782 chars,
+1 linha afetada, conferido na releitura). **Nenhuma carta foi enviada por causa
+deste cartão** — o "pode" que pedi ao Johnny era justamente o que me impediu de
+mandar 12 cartas erradas. A trava funcionou.
+
+Corrigido também no grupo, em mensagem própria liderando pelo erro.
+
+### A anatomia do erro, pra não repetir
+
+Não foi descuido de medição — **eu tinha o fato certo e o usei ao contrário**.
+Medi que `sgp_foto_pronta` começa em 14/09 14:06:33Z e, em vez de concluir *"então
+não sei nada de antes disso"*, concluí *"então quem é de antes não foi avisado"*.
+Transformei o **limite do instrumento** em **propriedade do mundo**.
+
+É a mesma família de `profiles.ja_pagou` (ordem de 18/08, SUSPENSA): uma fonte
+que lê "nunca" para todo mundo porque o backfill não saiu, e que faria negar
+crédito a quem pagou. A casa já tinha pago esse preço e escrito a lição; eu a
+repeti num campo novo.
+
+**A regra que fica:** antes de afirmar "não aconteceu" a partir de um zero,
+**medir desde quando a fonte existe** e comparar com a data do caso. Se o caso é
+anterior ao instrumento, o zero não é resposta — é ausência de resposta. E
+quando existir uma fonte mais antiga (aqui, `onboarding_ready_email_at`), é dela
+que sai a afirmação.
+
+Banco em `remember-cli` e `learn-cli`.
 
 ---
 
