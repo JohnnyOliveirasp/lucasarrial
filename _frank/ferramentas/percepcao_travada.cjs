@@ -94,12 +94,69 @@ const MARCAS = [
  */
 const STATUS_VARRIDOS = ["open", "investigating", "aguardando_aluno"];
 
+/**
+ * TERCEIRO DEFEITO, MEDIDO NA RONDA DE 21/09 ~19hZ: depois dos consertos da
+ * ultima-nota e do aguardando_aluno, os 5 que SOBRARAM eram TODOS falso
+ * positivo — a marca casava a NARRATIVA de percepcao ja cumprida, nao um
+ * pedido pendente. A classe real era ZERO e o relatorio mentia pra cima.
+ * Os 5, um por um (o teste trava cada um com o texto real da nota):
+ *   #450 — a propria nota diz "NAO e caso de percepcao"; casava por
+ *          '%precisa olhar%' CITADO entre aspas, prosa sobre o detector.
+ *   #406 — "OLHEI AS IMAGENS, UMA POR UMA" — cumprida; casava pelo recado
+ *          citado 'EU NAO ENXERGO IMAGEM, precisa de olho humano'.
+ *   #455 — "=== O QUE FOI FEITO === Audio LIBERADO" — cumprida.
+ *   #216 — "a percepcao JA foi cumprida", "FALSO POSITIVO" com todas as
+ *          letras; casava por "[olho humano]" entre colchetes, uma CITACAO.
+ *   #438 — relato de perna que saiu do papel; casava pela frase da ordem de
+ *          17/09 citada entre aspas ("precisa de um humano olhar").
+ *
+ * DOIS filtros novos, e nenhum depende de o agente lembrar frase magica
+ * (nota sobre instrumento cego nao sobrevive a ronda seguinte — ja
+ * aconteceu duas vezes nesta familia):
+ *
+ *   1. CITACAO NAO E PEDIDO. Trecho entre aspas ('...', "...") ou colchetes
+ *      [...] e fala SOBRE a marca (recado antigo, padrao SQL, tag do
+ *      detector), nao pedido novo. Sai antes de procurar marca. O span e
+ *      LIMITADO (sem quebra de linha, teto de chars): apostrofe solta num
+ *      texto longo nao pode engolir um pedido verdadeiro.
+ *   2. RELATO ANULA PEDIDO. Nota que conta percepcao FEITA (olhei/assisti/
+ *      ouvi em primeira pessoa, "despacho cumprido", "percepcao cumprida",
+ *      "falso positivo", "nao e caso de percepcao", "o que foi feito") e
+ *      relato, nao fila. Word boundary nos verbos: "assisti" NAO casa
+ *      dentro de "precisa assistir", senao o anulador mataria o proprio
+ *      pedido que ele protege.
+ *
+ * CUSTO ASSUMIDO, por escrito: uma nota mista ("olhei a foto, mas ainda
+ * falta ouvir o audio") sai da lista — falso negativo possivel. Aceito
+ * porque (a) a familia inteira medida ate hoje (5 de 5 em 21/09) e relato
+ * puro, e (b) quem cumpre percepcao pela metade escreve a pendencia na
+ * PROXIMA nota ao despachar, que e onde o detector le. Se este custo
+ * aparecer medido, o conserto e refinar o anulador, nao remove-lo.
+ */
+const CUMPRIMENTOS = [
+  /\bolhei\b/, /\bassisti\b/, /\bouvi\b/,
+  /despacho cumprido/, /percepcao (ja foi |foi )?cumprida/,
+  /nao e caso de percepcao/, /falso positivo/, /o que foi feito/,
+];
+
+/** Cita entre aspas/colchetes, span limitado (sem \n, teto de chars). */
+const semCitacoes = (t) => t
+  .replace(/"[^"\n]{1,200}"/g, " ")
+  .replace(/'[^'\n]{1,200}'/g, " ")
+  .replace(/\[[^\]\n]{1,120}\]/g, " ");
+
 /** Sem acento e minusculo: a marca nao pode depender de como o agente digitou. */
 const chato = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-/** A marca que casa numa nota, JA descontado o boilerplate do sensor. */
+/**
+ * A marca que casa numa nota: descontado o boilerplate do sensor, descontadas
+ * as CITACOES, e null se a nota e RELATO de percepcao cumprida (CUMPRIMENTOS).
+ * O anulador roda no texto JA sem citacoes: "olhei" citado de terceiro nao
+ * pode anular um pedido verdadeiro da mesma nota.
+ */
 function marcaDe(nota) {
-  const t = chato(nota).split(BOILERPLATE).join(" ");
+  const t = semCitacoes(chato(nota)).split(BOILERPLATE).join(" ");
+  if (CUMPRIMENTOS.some((c) => c.test(t))) return null;
   return MARCAS.find((m) => t.includes(m)) ?? null;
 }
 
@@ -126,7 +183,7 @@ function travadosDe(incidentes) {
 
 const dias = (iso) => (Date.now() - new Date(iso).getTime()) / 86400000;
 
-module.exports = { marcaDe, travadosDe, MARCAS, BOILERPLATE, STATUS_VARRIDOS };
+module.exports = { marcaDe, travadosDe, MARCAS, BOILERPLATE, STATUS_VARRIDOS, CUMPRIMENTOS };
 
 if (require.main === module) (async () => {
   const { supa } = require("./_comum.cjs");
