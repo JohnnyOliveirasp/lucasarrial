@@ -24,6 +24,9 @@ const run = promisify(execFile);
 type Admin = SupabaseClient<Database>;
 
 const YTDLP = () => process.env.YTDLP_BIN || "yt-dlp";
+/** Mesmo proxy residencial da leitura — IP do Hetzner é barrado pelas redes. */
+const PROXY = () => process.env.YTDLP_PROXY || "";
+const COOKIES_ARQUIVO = () => process.env.YTDLP_COOKIES || "";
 const MAX_FILESIZE = "80M";
 const TIMEOUT_MS = 240_000;
 
@@ -79,10 +82,10 @@ export async function baixarViralDaComunidade(
       "-o",
       saida,
     ];
-    if (url.includes("instagram.com")) {
-      const cookies = await arquivoDeCookies(dir);
-      if (cookies) args.push("--cookies", cookies);
-    }
+    const proxy = PROXY();
+    if (proxy) args.unshift("--proxy", proxy);
+    const cookies = COOKIES_ARQUIVO() || (await arquivoDeCookies(dir));
+    if (cookies) args.unshift("--cookies", cookies);
     args.push(url);
 
     await run(YTDLP(), args, { timeout: TIMEOUT_MS, env: childEnv(), maxBuffer: 8 * 1024 * 1024 });

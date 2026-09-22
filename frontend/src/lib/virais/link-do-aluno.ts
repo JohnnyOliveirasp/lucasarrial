@@ -6,11 +6,15 @@
  * BAIXA o mp4 hoje, custa zero por envio e entende Instagram e TikTok com a
  * mesma chamada. Um envio = um `--dump-json`, sem gastar centavo.
  *
- * ⚠️ Instagram normalmente exige sessão. Reaproveitamos o cookie que a busca
- * por hashtag já usa (`INSTAGRAM_WEB_COOKIES`): ele é escrito num arquivo
- * temporário no formato Netscape e passado com `--cookies`. Sem cookie, o
- * yt-dlp ainda tenta — posts públicos às vezes passam —, e se não passar o
- * aluno recebe a frase explicando, não um erro cru.
+ * ⚠️ IP de datacenter é barrado. MEDIDO em 21/09 no nosso Hetzner: TikTok
+ * devolve "Unexpected response" e o YouTube diz "Sign in to confirm you're not
+ * a bot" — o mesmo achado de 10/08 que motivou o proxy residencial. Por isso
+ * toda chamada daqui sai por `YTDLP_PROXY` (DataImpulse, pay-as-you-go),
+ * aplicado SÓ nesta execução (`--proxy`), nunca no sistema.
+ *
+ * ⚠️ Instagram normalmente exige sessão: usamos `YTDLP_COOKIES` (o mesmo
+ * arquivo do Gerador de Roteiros) e, se não houver, montamos um cookies.txt a
+ * partir de `INSTAGRAM_WEB_COOKIES`, que a busca por hashtag já usa.
  */
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
@@ -20,6 +24,10 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const YTDLP = () => process.env.YTDLP_BIN || "yt-dlp";
+/** Proxy residencial (assinado 10/08): sem ele, TikTok e YouTube barram o IP. */
+const PROXY = () => process.env.YTDLP_PROXY || "";
+/** cookies.txt já existente no servidor — vale pra Instagram e TikTok. */
+const COOKIES_ARQUIVO = () => process.env.YTDLP_COOKIES || "";
 const TIMEOUT_MS = 90_000;
 
 export type PlataformaViral = "instagram" | "tiktok";
@@ -139,6 +147,12 @@ function traduzir(cru: string): LinkViralError {
   if (s.includes("enoent") || s.includes("is not recognized")) {
     return new LinkViralError("Ferramenta de leitura indisponível no servidor.", "sem_ferramenta");
   }
+  if (s.includes("not a bot") || s.includes("unexpected response")) {
+    return new LinkViralError(
+      "A rede bloqueou a leitura a partir do nosso servidor. Já avisamos o suporte — tente de novo em alguns minutos.",
+      "sem_login",
+    );
+  }
   if (s.includes("login required") || s.includes("rate-limit") || s.includes("empty media response")) {
     return new LinkViralError(
       "O Instagram pediu login pra abrir esse post. Tente outro link ou avise o suporte.",
@@ -171,10 +185,10 @@ export async function lerDadosDoLink(link: LinkViral): Promise<DadosDoLink> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "viral-link-"));
   try {
     const args = ["--no-warnings", "--no-playlist", "--dump-json", "--skip-download"];
-    if (link.plataforma === "instagram") {
-      const cookies = await arquivoDeCookies(dir);
-      if (cookies) args.push("--cookies", cookies);
-    }
+    const proxy = PROXY();
+    if (proxy) args.unshift("--proxy", proxy);
+    const cookies = COOKIES_ARQUIVO() || (await arquivoDeCookies(dir));
+    if (cookies) args.unshift("--cookies", cookies);
     args.push(link.url);
 
     let stdout: string;
