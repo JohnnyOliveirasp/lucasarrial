@@ -1,3 +1,6 @@
+-- APLICADA EM 22/09/2026 (aval do Johnny), pelo MCP do Supabase, nome 111_estorno_zera_credito.
+-- No mesmo dia: 10 contas zeradas a mao pela propria funcao (1.456.335 cr de mensalidade),
+-- 6 eventos presos do webhook marcados processados. A ponte do PR #323 vira codigo morto.
 -- ⚠️ RENUMERADA EM 15/09: nascia como `108`, e HAVIA CINCO arquivos 108_*.sql
 -- diferentes no repo (emails_enviados, estorno, face_gate, retiradas, voices).
 -- O git nao reclama porque os nomes diferem, mas o NUMERO virava mentira e
