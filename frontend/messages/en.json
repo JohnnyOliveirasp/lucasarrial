@@ -2320,6 +2320,13 @@
       "analisando": "Analyzing…",
       "indeciso": "We couldn't analyze it right now. Try uploading again.",
       "remover": "Remove",
+      "bloqueio": {
+        "ocupado": "Wait for the audio analysis to finish to continue.",
+        "fala": "{falta} more of approved speech needed to continue — the minimum is {min} min.",
+        "excesso": "{sobra} over the {max}-min speech limit — remove a file.",
+        "ciencia": "{n} item(s) still unchecked in the confirmation list at the top of this screen."
+      },
+      "cienciaNaoGuardada": "We couldn't save your check marks right now. Don't refresh the page before continuing or they may be lost.",
       "erroUpload": "We couldn't upload the audio.",
       "erroAnalise": "We couldn't analyze the audio.",
       "erroConcluir": "Couldn't continue.",

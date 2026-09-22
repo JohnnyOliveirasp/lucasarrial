@@ -16,7 +16,7 @@ export default async function SgpAudioPage({ params }: { params: Promise<{ local
 
   return (
     <SgpShell passo="audio" titulo={t("titulo")} descricao={t("descricao")}>
-      <StepAudioForm iniciais={pedido!.audios ?? []} />
+      <StepAudioForm iniciais={pedido!.audios ?? []} cienciaInicial={pedido!.ciencia_audio ?? []} />
     </SgpShell>
   );
 }
