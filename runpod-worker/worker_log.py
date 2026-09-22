@@ -111,13 +111,23 @@ def set_job_stats_provider(fn) -> None:
 # Chaves do qa_stats que podem viajar no heartbeat. Lista BRANCA de propósito:
 # o qa_stats tem ~40 chaves, alguma delas lista (`exhausted_scores`), e o
 # payload da fase é recortado a escalares pequenos. Só entra aqui o que
-# responde "quantas tentativas este job já queimou".
+# responde "quantas tentativas este job já queimou" — e, desde o card
+# feat/heartbeat-setup-s (#15, 22/09), TAMBÉM o que responde "quanto do teto o
+# SETUP comeu": `qa.setup_s` só era persistido no SUCESSO, então num job morto
+# por SIGKILL o único número de que a régua depende não existia. Com
+# `setup_s` + `since_t0_s` pegando carona aqui, a próxima morte por timeout
+# separa (A) pico de setup comendo a base do teto de (B) worker degradado
+# rodando lento — as duas explicações que hoje sobrevivem a cada morte.
+#   - setup_s: duração do setup, publicada no dict vivo assim que medida
+#     (chave AUSENTE = ainda no setup);
+#   - since_t0_s: segundos desde o fim do setup, recalculado A CADA LEITURA
+#     pelo provedor (chave AUSENTE = t0 ainda não existe).
 #
 # É também o que torna a leitura SEGURA entre threads: iteramos esta tupla
 # constante e fazemos `stats.get(k)` — nunca iteramos o dict que a thread
 # principal está mutando (que é o que levantaria "dict changed size during
 # iteration").
-_STATS_NO_HEARTBEAT = ("regens",)
+_STATS_NO_HEARTBEAT = ("regens", "setup_s", "since_t0_s")
 
 
 def _stats_do_job() -> dict:

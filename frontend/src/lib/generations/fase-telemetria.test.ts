@@ -287,6 +287,28 @@ test("metaDaFaseSanitizado: passa escalar, corta chave longa, string longa e tet
   assert.equal(Object.keys(metaDaFaseSanitizado(grande) ?? {}).length, 12);
 });
 
+test("metaDaFaseSanitizado: setup_s e since_t0_s atravessam o portão (22/09, feat/heartbeat-setup-s)", () => {
+  // O worker passou a mandar os dois de carona no heartbeat, pra que um job
+  // morto por SIGKILL no executionTimeout deixe registrado quanto do teto o
+  // SETUP comeu (`qa.setup_s` só era persistido no SUCESSO). A rota é o
+  // portão: se o sanitizador cortasse os campos, o worker mandaria e o banco
+  // continuaria cego — este teste prende o contrato do lado do app.
+  const doWorker = {
+    regens: 31, setup_s: 88.2, since_t0_s: 391.7,
+    chunk: 7, attempt: 9, chars: 512, cfg: null,
+  };
+  assert.deepEqual(metaDaFaseSanitizado(doWorker), doWorker);
+  // Número passa como NÚMERO (o jsonb precisa comparar/ordenar), inclusive
+  // os floats novos.
+  const meta = metaDaFaseSanitizado(doWorker);
+  assert.equal(typeof meta?.setup_s, "number");
+  assert.equal(typeof meta?.since_t0_s, "number");
+  // E o payload REAL do worker (7 itens: 3 contadores + meta da fase de
+  // inference.chunk.generate) cabe FOLGADO no teto de 12 — chunk/attempt não
+  // caem fora.
+  assert.equal(Object.keys(meta ?? {}).length, 7);
+});
+
 test("metaDaFaseSanitizado: nada aproveitável = null (a rota não grava a chave)", () => {
   assert.equal(metaDaFaseSanitizado(undefined), null);
   assert.equal(metaDaFaseSanitizado(null), null);

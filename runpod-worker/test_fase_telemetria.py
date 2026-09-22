@@ -14,7 +14,11 @@ Estes testes provam, SEM GPU e SEM rede:
   6. `handler()` seta a config a partir do input e SEMPRE limpa no finally
      (config de um job nunca vaza pro próximo);
   7. os REGENS ACUMULADOS do job viajam no payload do heartbeat (17/09) —
-     leitura ao vivo, resistente a provedor quebrado, e sem vazar entre jobs.
+     leitura ao vivo, resistente a provedor quebrado, e sem vazar entre jobs;
+  8. setup_s + since_t0_s pegam carona no heartbeat (22/09, feat/heartbeat-
+     setup-s): durante o setup as chaves estão AUSENTES; depois do setup as
+     duas viajam, com since_t0_s recalculado a cada leitura; e o teto de 12
+     itens do meta não expulsa chunk/attempt.
 
 Roda sem GPU e sem pesos — módulos pesados stubados, rede mockada:
 
@@ -434,10 +438,165 @@ class RegensProvedorDoJobTest(unittest.TestCase):
         # 86254b30, morto no teto com a fase vazia) já nasce com o contador
         # visível pro heartbeat.
         self.assertIsNotNone(visto["provedor"])
-        # E aponta pro dict VIVO do job, não pra uma cópia.
-        self.assertIs(visto["provedor"](), job.qa_stats)
+        # E lê o estado VIVO do job, não uma cópia congelada no registro.
+        # (Desde feat/heartbeat-setup-s o provedor devolve um SNAPSHOT montado
+        # na hora da leitura — a garantia que importa é que mutação posterior
+        # do qa_stats aparece na próxima leitura, não a identidade do dict.)
         job.qa_stats["regens"] += 17
         self.assertEqual(worker_log._stats_do_job(), {"regens": 17})
+
+
+class SetupESinceT0Test(unittest.TestCase):
+    """setup_s + since_t0_s no heartbeat (#15, 22/09 — feat/heartbeat-setup-s).
+
+    O defeito: `qa.setup_s` só é persistido no SUCESSO. Num job morto por
+    SIGKILL no executionTimeout o único número de que a régua depende não
+    existe — e as duas explicações opostas ((A) pico de setup comendo a base
+    do teto, causa nomeada em 10/09; (B) worker degradado rodando ~3x lento)
+    sobrevivem a cada morte pedindo consertos opostos. Com os dois campos
+    pegando carona no heartbeat, a última linha gravada em
+    generations.qa.fase_corrente.meta passa a dizer quanto o setup comeu e
+    quanto já correu desde o t0 — TAMBÉM no job morto.
+    """
+
+    def tearDown(self):
+        worker_log.set_job_stats_provider(None)
+        worker_log._CURRENT_JOB_TYPE = None
+        worker_log._FASE_CFG = None
+        with worker_log._PHASE_LOCK:
+            worker_log._PHASE_STACK.clear()
+
+    def _rodar_um_tick(self):
+        """Um tick do loop real: 1º sleep passa, 2º encerra o teste."""
+        with mock.patch.object(
+            worker_log.time, "sleep", side_effect=[None, KeyboardInterrupt()]
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                worker_log._heartbeat_loop()
+
+    # ── o contrato das chaves ──────────────────────────────────────────────
+    def test_lista_branca_deixa_passar_os_dois_e_so_numero(self):
+        worker_log.set_job_stats_provider(lambda: {
+            "regens": 7, "setup_s": 12.3, "since_t0_s": 45.6, "exhausted": 2})
+        self.assertEqual(worker_log._stats_do_job(),
+                         {"regens": 7, "setup_s": 12.3, "since_t0_s": 45.6})
+        # Contrato do filtro intacto: bool/None/str continuam de fora.
+        worker_log.set_job_stats_provider(
+            lambda: {"setup_s": True, "since_t0_s": "9.9", "regens": None})
+        self.assertEqual(worker_log._stats_do_job(), {})
+
+    # ── DURANTE o setup: chaves AUSENTES, sem ambiguidade ──────────────────
+    def test_heartbeat_durante_o_setup_sem_setup_s_nem_since_t0(self):
+        from jobs import inference as inf
+
+        class Sentinela(Exception):
+            pass
+
+        job = inf.InferenceJob({}, "texto qualquer")
+        visto = {}
+
+        def no_meio_do_setup(*_a, **_k):
+            # `baixar_lora` é a primeira coisa do setup: o que o heartbeat
+            # leria AQUI é o que um job pendurado no download reporta.
+            visto["stats"] = worker_log._stats_do_job()
+            raise Sentinela()
+
+        with mock.patch.object(inf, "baixar_lora", side_effect=no_meio_do_setup):
+            with self.assertRaises(Sentinela):
+                job.run()
+
+        # Chave AUSENTE = "ainda no setup". NÃO pode ser 0 nem None: os dois
+        # são indistinguíveis de "mediu e deu zero".
+        self.assertNotIn("setup_s", visto["stats"])
+        self.assertNotIn("since_t0_s", visto["stats"])
+        # E o contador que já viajava continua viajando.
+        self.assertEqual(visto["stats"].get("regens"), 0)
+
+    # ── DEPOIS do setup: os dois viajam ────────────────────────────────────
+    def test_heartbeat_depois_do_setup_manda_setup_s_e_since_t0(self):
+        from jobs import inference as inf
+
+        class Sentinela(Exception):
+            pass
+
+        job = inf.InferenceJob({}, "texto qualquer")
+        visto = {}
+
+        def durante_os_chunks(_chunks):
+            # Ponto do run() logo DEPOIS de `self.t0 = time.monotonic()` —
+            # é onde um job vivo gerando chunks é lido pelo heartbeat.
+            visto["stats"] = worker_log._stats_do_job()
+            raise Sentinela()
+
+        with mock.patch.object(inf, "baixar_lora", return_value=None), \
+             mock.patch.object(inf, "preparar_referencia", return_value=(None, None)), \
+             mock.patch.object(inf, "carregar_modelo", return_value=(None, 16000)), \
+             mock.patch.object(job, "_medir_em_amostras", lambda: None), \
+             mock.patch.object(job, "_definir_regua_de_ritmo", lambda: None), \
+             mock.patch.object(job, "_gerar_todos_os_chunks",
+                               side_effect=durante_os_chunks):
+            with self.assertRaises(Sentinela):
+                job.run()
+
+        stats = visto["stats"]
+        self.assertIn("setup_s", stats)
+        self.assertIn("since_t0_s", stats)
+        # setup_s é o MESMO número que o caminho de sucesso persiste em
+        # qa.setup_s — publicado no dict vivo assim que medido.
+        self.assertEqual(stats["setup_s"], job.qa_stats["setup_s"])
+        self.assertGreaterEqual(stats["since_t0_s"], 0.0)
+
+    def test_since_t0_e_recalculado_a_cada_leitura(self):
+        """O ponto do cartão: since_t0_s é o valor de AGORA, não o congelado.
+
+        Um número estático gravado no dict na hora do t0 diria sempre ~0 e
+        calaria justamente o relógio que separa (A) de (B).
+        """
+        from jobs import inference as inf
+
+        job = inf.InferenceJob({}, "texto qualquer")
+        job.setup_s = 33.21
+        job.qa_stats["setup_s"] = job.setup_s
+        job.t0 = 1000.0
+        worker_log.set_job_stats_provider(job._stats_para_heartbeat)
+        with mock.patch.object(inf.time, "monotonic", side_effect=[1030.5, 1091.0]):
+            self.assertEqual(
+                worker_log._stats_do_job(),
+                {"regens": 0, "setup_s": 33.21, "since_t0_s": 30.5})
+            self.assertEqual(
+                worker_log._stats_do_job(),
+                {"regens": 0, "setup_s": 33.21, "since_t0_s": 91.0})
+
+    # ── teto de 12 itens: chunk/attempt NÃO caem fora ──────────────────────
+    def test_teto_de_12_preserva_chunk_e_attempt_no_body_do_post(self):
+        """`_meta_serializavel` corta em 12 itens NA ORDEM do dict, e os
+        contadores acumulados entram ANTES do meta da fase. Com regens +
+        setup_s + since_t0_s na frente, o meta REAL de inference.chunk.generate
+        (chunk, attempt, chars, cfg — o call site de produção em
+        jobs/inference.py:_gerar) tem que continuar passando INTEIRO:
+        chunk/attempt fora do payload é exatamente a cegueira do #15."""
+        worker_log._CURRENT_JOB_TYPE = "inference"
+        worker_log._FASE_CFG = worker_log._fase_cfg_from_input(dict(CFG_INPUT))
+        worker_log.set_job_stats_provider(
+            lambda: {"regens": 31, "setup_s": 88.2, "since_t0_s": 391.7})
+        with worker_log._PHASE_LOCK:
+            worker_log._PHASE_STACK.append({
+                "name": "inference.chunk.generate",
+                "start": time.monotonic(),
+                "meta": {"chunk": 7, "attempt": 9, "chars": 512, "cfg": None},
+            })
+        with mock.patch.object(worker_log.urllib.request, "urlopen") as urlopen:
+            urlopen.return_value.__enter__ = lambda s: s
+            urlopen.return_value.__exit__ = lambda s, *a: False
+            self._rodar_um_tick()
+        urlopen.assert_called_once()
+        body = json.loads(urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(body["meta"], {
+            "regens": 31, "setup_s": 88.2, "since_t0_s": 391.7,
+            "chunk": 7, "attempt": 9, "chars": 512, "cfg": None,
+        })
+        # 7 de 12: folga comprovada, nada foi cortado pelo teto.
+        self.assertLessEqual(len(body["meta"]), 12)
 
 
 if __name__ == "__main__":
