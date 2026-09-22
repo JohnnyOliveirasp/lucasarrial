@@ -2258,7 +2258,11 @@
       "erroGenerico": "Algo salió mal. Intenta de nuevo.",
       "nomeCurto": "Ingresa tu nombre completo.",
       "whatsappInvalido": "Ingresa un WhatsApp válido con código de área.",
-      "mudarEmail": "Cambiar e-mail"
+      "mudarEmail": "Cambiar e-mail",
+      "retomadaTitulo": "Ya tienes un pedido en curso",
+      "retomadaTexto": "Encontramos un pedido tuyo con este e-mail, iniciado en otro navegador o dispositivo ({fotos, plural, =0 {todavía sin fotos enviadas} one {con # foto ya aprobada} other {con # fotos ya aprobadas}}). ¿Quieres continuar donde lo dejaste?",
+      "retomadaContinuar": "Continuar donde lo dejé",
+      "retomadaDoZero": "Empezar un pedido desde cero"
     },
     "foto": {
       "titulo": "Foto base para el Clon",

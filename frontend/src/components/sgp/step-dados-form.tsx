@@ -34,11 +34,13 @@ export function StepDadosForm({
   const t = useTranslations("sgp.dados");
   const router = useRouter();
 
-  const [etapa, setEtapa] = useState<"form" | "codigo">("form");
+  const [etapa, setEtapa] = useState<"form" | "codigo" | "retomada">("form");
   const [nome, setNome] = useState(nomeInicial);
   const [whatsapp, setWhatsapp] = useState(whatsappInicial);
   const [email, setEmail] = useState(emailInicial);
   const [contaExistente, setContaExistente] = useState(false);
+  /** Fotos aprovadas do pedido em andamento oferecido pra retomada (null = sem oferta). */
+  const [retomadaFotos, setRetomadaFotos] = useState<number | null>(null);
   const [codigo, setCodigo] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -96,14 +98,76 @@ export function StepDadosForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ codigo }),
       });
-      const j = (await r.json().catch(() => null)) as { error?: { message?: string } } | null;
+      const j = (await r.json().catch(() => null)) as
+        | { error?: { message?: string }; retomada?: { fotos: number } | null }
+        | null;
       if (!r.ok) throw new Error(j?.error?.message ?? t("codigoInvalido"));
+      // Este e-mail já tem um pedido em andamento (de outro navegador/aparelho):
+      // o aluno DECIDE — continuar de onde parou ou começar do zero. Nunca
+      // retomamos à força, e recusar não apaga nada.
+      if (j?.retomada) {
+        setRetomadaFotos(j.retomada.fotos);
+        setEnviando(false);
+        setEtapa("retomada");
+        return;
+      }
       router.push("/sgp/foto");
       router.refresh();
     } catch (e2) {
       setErro(e2 instanceof Error ? e2.message : t("erroGenerico"));
       setEnviando(false);
     }
+  }
+
+  /** "Continuar de onde parei": o servidor re-deriva o alvo e reaponta o cookie. */
+  async function retomar() {
+    setErro(null);
+    setEnviando(true);
+    try {
+      const r = await fetch("/api/v1/sgp/retomar", { method: "POST" });
+      const j = (await r.json().catch(() => null)) as
+        | { error?: { message?: string }; destino?: string }
+        | null;
+      if (!r.ok) throw new Error(j?.error?.message ?? t("erroGenerico"));
+      router.push(j?.destino ?? "/sgp/foto");
+      router.refresh();
+    } catch (e2) {
+      setErro(e2 instanceof Error ? e2.message : t("erroGenerico"));
+      setEnviando(false);
+    }
+  }
+
+  /** "Começar do zero": fica no pedido novo desta sessão; o antigo segue intacto. */
+  function comecarDoZero() {
+    router.push("/sgp/foto");
+    router.refresh();
+  }
+
+  if (etapa === "retomada") {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-4 py-4">
+          <p className="mb-1 text-[13px] font-medium text-[var(--silver)]">{t("retomadaTitulo")}</p>
+          <p className="text-[14px] text-[var(--ink)]">
+            {t("retomadaTexto", { fotos: retomadaFotos ?? 0 })}
+          </p>
+        </div>
+
+        {erro ? <p role="alert" className={SGP_ERROR_CLASS}>{erro}</p> : null}
+
+        <button type="button" onClick={retomar} disabled={enviando} className={SGP_PILL_CLASS}>
+          {enviando ? t("verificando") : t("retomadaContinuar")}
+        </button>
+        <button
+          type="button"
+          onClick={comecarDoZero}
+          disabled={enviando}
+          className={`${SGP_GHOST_CLASS} sgp-btn--sm`}
+        >
+          {t("retomadaDoZero")}
+        </button>
+      </div>
+    );
   }
 
   if (etapa === "codigo") {

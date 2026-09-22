@@ -2258,7 +2258,11 @@
       "erroGenerico": "Algo deu errado. Tente novamente.",
       "nomeCurto": "Informe o nome completo.",
       "whatsappInvalido": "Informe um WhatsApp válido com DDD.",
-      "mudarEmail": "Trocar e-mail"
+      "mudarEmail": "Trocar e-mail",
+      "retomadaTitulo": "Você já tem um pedido em andamento",
+      "retomadaTexto": "Encontramos um pedido seu neste e-mail, começado em outro navegador ou aparelho ({fotos, plural, =0 {ainda sem fotos enviadas} one {com # foto já aprovada} other {com # fotos já aprovadas}}). Quer continuar de onde parou?",
+      "retomadaContinuar": "Continuar de onde parei",
+      "retomadaDoZero": "Começar um pedido do zero"
     },
     "foto": {
       "titulo": "Foto base para o Clone",
