@@ -185,6 +185,43 @@ afrouxa portão.**
 **A decisão é de produto (é do Johnny); a medição é minha.** Não juntei nem
 apaguei linha duplicada de ninguém.
 
+### 4.1 O conserto já está escrito desde 12/09 — achado no passo fixo do fim
+
+Conferindo branch presa (passo fixo de fim de ronda) achei
+**`wip/sgp-retomada-por-email-NAO-MERGEAR`**, dois commits de 12/09, **sem PR**,
+**618 inserções**, que é exatamente esta proposta: `api/v1/sgp/retomar/route.ts`,
+`lib/sgp/retomada.ts` (+ **129 linhas de teste**), `lib/sgp/destino.ts` (+50),
+e `+58` no próprio `lib/sgp/sessao.ts`.
+
+**Medi a obsolescência em vez de supor, porque aqui o número assusta e engana.**
+A main está **503 commits** à frente da base — que é a assinatura das branches
+venenosas do README (`feat/onedrive-401`, `fix/trava-foto-nova-8379549c`). Mas a
+pergunta certa não é quanto a main andou, e sim **quanto ela andou nos arquivos
+que a branch toca**:
+
+| arquivo | commits na main desde a base |
+|---|---|
+| `lib/sgp/sessao.ts` | **0** |
+| `api/v1/sgp/codigo/route.ts` | **0** |
+| `components/sgp/step-dados-form.tsx` | **0** |
+| `api/v1/sgp/inicio/route.ts` | **1** (`d8ace93f`, #377/#261) |
+
+E o `d8ace93f` troca a validação do **nome** no topo do handler — **não encosta
+em sessão, cookie ou retomada**.
+
+> **Conclusão honesta: esta branch NÃO é da família venenosa.** A superfície
+> dela está praticamente intacta na main. **Isso não autoriza mergear** — ela
+> nasceu marcada "NÃO MERGEAR SEM REVISÃO" pelo próprio autor, e eu **não li as
+> 618 inserções nem rodei os testes dela**. O que eu medi é o **custo de
+> retomá-la, que é baixo** — ao contrário do que "503 commits" faz parecer.
+
+**O que isso muda:** a decisão do Johnny deixa de ser *"mandar construir uma
+retomada"* (caro) e vira *"revisar e terminar uma que já existe, com 179 linhas
+de teste junto"* (barato).
+
+⚠️ **Por que foi abandonada eu não sei, e não vou inventar.** Sem PR, sem nota.
+Quem retomar tem que assumir que existe um motivo não escrito.
+
 ---
 
 ## 5. `#492` — causa confirmada no ar, código despachado, PR conferido por mim
