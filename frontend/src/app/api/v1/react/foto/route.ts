@@ -16,7 +16,7 @@
  * salvou no R2, devolve a URL nossa (a do Kie expira).
  */
 import type { NextRequest } from "next/server";
-import { gateAdmin } from "@/lib/admin/api";
+import { gateReact } from "@/lib/react/gate";
 import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { kieGetTask } from "@/lib/kie/client";
@@ -31,7 +31,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateReact(request);
   if ("res" in gate) return gate.res;
 
   let body: { image_url?: unknown };
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateReact(request);
   if ("res" in gate) return gate.res;
   const task = (request.nextUrl.searchParams.get("task") ?? "").trim();
   if (!task) return badRequest("Faltou o id da tarefa.");

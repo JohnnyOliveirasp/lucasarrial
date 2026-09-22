@@ -33,10 +33,13 @@ export type ViralDaComunidade = {
   thumbUrl: string | null;
   /** mp4 no nosso R2 — null enquanto o download não terminou. */
   videoUrl: string | null;
+  /** false = só o dono vê (upload privado do React). */
+  publico: boolean;
+  duracaoSegundos: number | null;
 };
 
 const COLUNAS =
-  "id, plataforma, url, autor, legenda, likes, views, duracao_seg, publicado_em, enviado_em, enviado_por, thumb_url, thumb_r2_key, r2_key";
+  "id, plataforma, url, autor, legenda, likes, views, duracao_seg, publicado_em, enviado_em, enviado_por, thumb_url, thumb_r2_key, r2_key, publico";
 
 type Linha = {
   id: string;
@@ -53,11 +56,26 @@ type Linha = {
   thumb_url: string | null;
   thumb_r2_key: string | null;
   r2_key: string | null;
+  publico: boolean;
 };
 
+/**
+ * `incluirMeusPrivados` (22/09, pedido do Johnny no React): além do acervo
+ * público, traz o que ESTE aluno subiu só pra ele — o "upload do meu próprio
+ * vídeo" do passo do React, que não entra no acervo de todos.
+ *
+ * Privado = `publico=false` com `enviado_por = eu`. Não precisou de coluna
+ * nova: o par que já existia diz exatamente isso.
+ */
 export async function listarComunidade(
   admin: Admin,
-  args: { userId: string; apenasMeus: boolean; limite: number; offset: number },
+  args: {
+    userId: string;
+    apenasMeus: boolean;
+    limite: number;
+    offset: number;
+    incluirMeusPrivados?: boolean;
+  },
 ): Promise<{ videos: ViralDaComunidade[]; total: number }> {
   const limite = Math.min(60, Math.max(1, args.limite));
   const offset = Math.max(0, args.offset);
@@ -65,13 +83,20 @@ export async function listarComunidade(
   let q = admin
     .from("viral_videos")
     .select(COLUNAS, { count: "exact" })
-    .eq("publico", true)
     .is("removido_em", null)
     // nullsFirst: false — envio sem data não pode furar a fila do topo.
     .order("enviado_em", { ascending: false, nullsFirst: false })
     .range(offset, offset + limite - 1);
 
-  if (args.apenasMeus) q = q.eq("enviado_por", args.userId);
+  if (args.apenasMeus) {
+    // "Meus envios": tudo que é meu, público ou privado.
+    q = q.eq("enviado_por", args.userId);
+  } else if (args.incluirMeusPrivados) {
+    // Acervo de todos + os meus privados, numa consulta só.
+    q = q.or(`publico.eq.true,and(publico.eq.false,enviado_por.eq.${args.userId})`);
+  } else {
+    q = q.eq("publico", true);
+  }
 
   const { data, count, error } = await q;
   if (error) throw new Error(error.message);
@@ -103,6 +128,8 @@ export async function listarComunidade(
         meu: l.enviado_por === args.userId,
         thumbUrl: thumb ?? l.thumb_url,
         videoUrl: video,
+        publico: l.publico,
+        duracaoSegundos: l.duracao_seg,
       };
     }),
   );

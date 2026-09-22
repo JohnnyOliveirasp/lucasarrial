@@ -13,7 +13,7 @@
  */
 import type { NextRequest } from "next/server";
 
-import { gateAdmin } from "@/lib/admin/api";
+import { gateReact } from "@/lib/react/gate";
 import { jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
@@ -36,7 +36,7 @@ type Linha = {
 };
 
 export async function GET(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateReact(request);
   if ("res" in gate) return gate.res;
 
   try {
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
  * apagar); a linha sai sempre.
  */
 export async function DELETE(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateReact(request);
   if ("res" in gate) return gate.res;
   const id = (request.nextUrl.searchParams.get("id") ?? "").trim();
   if (!/^[0-9a-f-]{36}$/i.test(id)) return badRequest("id inválido");

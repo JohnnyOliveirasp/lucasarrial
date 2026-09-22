@@ -9,7 +9,7 @@
  *    isso NÃO entra na conta de tempo do viral.
  */
 import type { NextRequest } from "next/server";
-import { gateAdmin } from "@/lib/admin/api";
+import { gateReact } from "@/lib/react/gate";
 import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
 import {
   contarPalavras,
@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateReact(request);
   if ("res" in gate) return gate.res;
 
   let body: { modo?: unknown; roteiro?: unknown; pedido?: unknown; duracao_seg?: unknown };

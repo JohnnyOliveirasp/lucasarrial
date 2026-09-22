@@ -13,7 +13,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { NextRequest } from "next/server";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { gateAdmin } from "@/lib/admin/api";
+import { gateReact } from "@/lib/react/gate";
 import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
@@ -33,7 +33,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateReact(request);
   if ("res" in gate) return gate.res;
 
   let body: { viral_id?: unknown; ideia?: unknown };

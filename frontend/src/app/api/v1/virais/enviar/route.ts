@@ -43,14 +43,24 @@ export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
 
-  let body: { url?: unknown; consentimento?: unknown; arquivo_key?: unknown; titulo?: unknown };
+  let body: {
+    url?: unknown;
+    consentimento?: unknown;
+    arquivo_key?: unknown;
+    titulo?: unknown;
+    /** true = o vídeo é SÓ do aluno (upload do próprio vídeo, no React). */
+    privado?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
     return badRequest("Invalid JSON body");
   }
 
-  if (body.consentimento !== true) {
+  // Privado não vai pra lugar nenhum além da conta de quem subiu, então não
+  // há o que consentir: o consentimento é sobre COMPARTILHAR com os outros.
+  const privado = body.privado === true;
+  if (!privado && body.consentimento !== true) {
     return badRequest("Marque o consentimento para enviar o vídeo.");
   }
 
@@ -83,13 +93,18 @@ export async function POST(request: NextRequest) {
         download_status: "pronto",
         enviado_por: auth.user_id,
         enviado_em: new Date().toISOString(),
-        consentimento_texto: consentimento,
-        publico: true,
+        consentimento_texto: privado ? null : consentimento,
+        publico: !privado,
       })
       .select("id")
       .single();
     if (error || !criado) return serverError("Não consegui salvar esse vídeo agora.");
-    return jsonOk({ id: (criado as { id: string }).id, ja_existia: false, origem: "upload" });
+    return jsonOk({
+      id: (criado as { id: string }).id,
+      ja_existia: false,
+      origem: "upload",
+      privado,
+    });
   }
 
   // ───── Caminho 1: LINK ─────
