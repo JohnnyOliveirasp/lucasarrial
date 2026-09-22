@@ -9,6 +9,12 @@
 import type { NextRequest } from "next/server";
 import { gateReact } from "@/lib/react/gate";
 import { custoDoReact, semSaldo } from "@/lib/react/preco";
+import {
+  REACT_DEBIT_REF_TYPE,
+  REACT_REFUND_REF_TYPE,
+  reivindicarFalhaDoReact,
+} from "@/lib/react/estorno";
+import { handleTechFailure } from "@/lib/support/failure-alert";
 import { bypassesBilling } from "@/lib/credits/access";
 import { debitCredits, getBalance } from "@/lib/credits/service";
 import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
@@ -167,14 +173,16 @@ export async function POST(request: NextRequest) {
   }
   const jobId = (job as { id: string }).id;
 
-  // Debita com o job na mão: o `refId` é ele, então um estorno futuro sabe
-  // exatamente qual React devolver.
+  // Debita com o job na mão: o `refId` é ele, e é por esse par
+  // (react_job, jobId) que o estorno casa quando o job falha — qualquer
+  // caminho de erro daqui pra baixo passa por reivindicarFalhaDoReact +
+  // handleTechFailure e devolve como `react_refund` (lib/react/estorno.ts).
   if (cobra) {
     await debitCredits({
       userId,
       amount: custo,
       kind: "video",
-      refType: "react_job",
+      refType: REACT_DEBIT_REF_TYPE,
       refId: jobId,
       note: `React ${segundos}s (${motor})`,
     });
@@ -206,10 +214,24 @@ export async function POST(request: NextRequest) {
       ? await trazerParaR2(audioUrl, `${userId}/react/${jobId}/fala.mp3`, "audio/mpeg")
       : null;
     if (!audioKey) {
-      await admin
-        .from("react_jobs")
-        .update({ status: "erro", erro: "Falta o áudio da fala.", atualizado_em: new Date().toISOString() } as never)
-        .eq("id", jobId);
+      // O débito já saiu lá em cima — job que morre AQUI sem estorno é aluno
+      // pagando por nada (o buraco fechado em 22/09). Só o vencedor do claim
+      // dispara a contingência; o estorno em si é idempotente por contagem.
+      const reivindicou = await reivindicarFalhaDoReact(admin, jobId, "Falta o áudio da fala.");
+      if (reivindicou) {
+        await handleTechFailure({
+          feature: "Vídeo React",
+          userId,
+          refId: jobId,
+          rawError: "job criado sem audio_url (aluno pulou o passo da voz)",
+          debitRefType: REACT_DEBIT_REF_TYPE,
+          refundRefType: REACT_REFUND_REF_TYPE,
+          // Erro de INPUT (faltou gerar o áudio), não falha técnica nossa:
+          // estorna sem acordar o suporte — mesma distinção do studio/finalize.
+          alertSupport: false,
+          userInputError: true,
+        });
+      }
       return badRequest("Gere o áudio antes (passo da voz).");
     }
 
@@ -249,10 +271,20 @@ export async function POST(request: NextRequest) {
       .eq("id", jobId);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "falha ao baixar o viral";
-    await admin
-      .from("react_jobs")
-      .update({ status: "erro", erro: msg, atualizado_em: new Date().toISOString() } as never)
-      .eq("id", jobId);
+    // Falha técnica com débito já feito: erro + estorno + e-mail pro suporte,
+    // pelo mesmo caminho do Vídeo Clone (handleTechFailure é best-effort e
+    // idempotente por contagem — nunca devolve em dobro, nunca derruba a rota).
+    const reivindicou = await reivindicarFalhaDoReact(admin, jobId, msg);
+    if (reivindicou) {
+      await handleTechFailure({
+        feature: "Vídeo React",
+        userId,
+        refId: jobId,
+        rawError: msg,
+        debitRefType: REACT_DEBIT_REF_TYPE,
+        refundRefType: REACT_REFUND_REF_TYPE,
+      });
+    }
     return serverError(msg);
   }
 
@@ -423,32 +455,46 @@ export async function GET(request: NextRequest) {
         return jsonOk(await comVideo({ ...data, status: "pronto", r2_key: key }));
       }
       if (["FAILED", "CANCELLED", "TIMED_OUT"].includes(st.status)) {
-        await admin
-          .from("react_jobs")
-          .update({
-            status: "erro",
-            erro: st.error ?? `clone ${st.status}`,
-            atualizado_em: new Date().toISOString(),
-          } as never)
-          .eq("id", id);
+        const rawError = st.error ?? `clone ${st.status}`;
+        // O poll roda em TODA aba aberta: sem o gate, duas abas em corrida
+        // liam "0 estornos" juntas e devolviam em dobro. Só quem venceu a
+        // transição dispara a contingência (estorno react_refund + suporte).
+        const reivindicou = await reivindicarFalhaDoReact(admin, id, rawError);
+        if (reivindicou) {
+          await handleTechFailure({
+            feature: "Vídeo React",
+            userId: gate.auth.user_id,
+            refId: id,
+            jobId: data.clone_job_id,
+            rawError,
+            debitRefType: REACT_DEBIT_REF_TYPE,
+            refundRefType: REACT_REFUND_REF_TYPE,
+          });
+        }
         return jsonOk({ ...data, status: "erro", erro: st.error ?? st.status, thumb_url: thumbUrl });
       }
     } catch (e) {
       console.error("[react/gerar:get]", e instanceof Error ? e.message : e);
-      await admin
-        .from("react_jobs")
-        .update({
-          status: "erro",
-          // O FIM da mensagem é onde mora o stderr do ffmpeg ("Command
-          // failed: <comando>\n<stderr>") — guardar o começo escondia a
-          // causa real (caso montagem 17/08, 2 falhas ilegíveis).
-          erro:
-            e instanceof Error
-              ? (e.message.length > 600 ? "…" : "") + e.message.slice(-600)
-              : "falha na montagem",
-          atualizado_em: new Date().toISOString(),
-        } as never)
-        .eq("id", id);
+      // O FIM da mensagem é onde mora o stderr do ffmpeg ("Command
+      // failed: <comando>\n<stderr>") — guardar o começo escondia a
+      // causa real (caso montagem 17/08, 2 falhas ilegíveis).
+      const erroCurto =
+        e instanceof Error
+          ? (e.message.length > 600 ? "…" : "") + e.message.slice(-600)
+          : "falha na montagem";
+      const reivindicou = await reivindicarFalhaDoReact(admin, id, erroCurto);
+      // Mesmo gate do ramo FAILED acima: só o vencedor estorna e avisa.
+      if (reivindicou) {
+        await handleTechFailure({
+          feature: "Vídeo React",
+          userId: gate.auth.user_id,
+          refId: id,
+          jobId: data.clone_job_id,
+          rawError: e instanceof Error ? e.message : "falha na montagem",
+          debitRefType: REACT_DEBIT_REF_TYPE,
+          refundRefType: REACT_REFUND_REF_TYPE,
+        });
+      }
       return jsonOk({ ...data, status: "erro" });
     }
   }
