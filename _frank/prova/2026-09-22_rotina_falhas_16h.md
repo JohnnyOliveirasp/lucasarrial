@@ -12,9 +12,10 @@ de hoje** — inclusive um "a taxa subiu 25x" que eu mesmo cheguei a medir e que
 **não sobrevive** à correção do instrumento.
 
 **Cartões fechados: 0. Alunos escritos: 0 (o do #15 já fora escrito às 14:46Z).
-Fix em produção: 0 (PR pedido, card `dd73891e`). Dinheiro devolvido: 0 (estorno
-automático já cobria). Escritas em banco: 2 (notas do `#15` e do `#506`).
-Escalada urgente ao grupo: 1 (`#506`).**
+Fix em produção: 0 — mas **PR #404 aberto e verificado por mim** (card
+`dd73891e`, aprovado no gate do gerente). Dinheiro devolvido: 0 (estorno
+automático já cobria). Escritas em banco: 3 (2 notas no `#15`, 1 no `#506`).
+Posts no grupo: 2 (`#506` urgente, e o PR do `#15`).**
 
 ---
 
@@ -144,6 +145,45 @@ e deixa o retry rodar, em vez de queimar os 640s do teto. Branch `feat/` + PR,
 watchdog em produção e (b) contagem que **inclua os curados por retry**. Fechar
 por silêncio de status é o erro que já custou duas reaberturas.
 
+### 1.8 O conserto saiu no mesmo turno — **PR #404**, verificado por mim
+
+Branch `feat/15-watchdog-heartbeat-congelado`, commit `dd7b9365`, **aberto, fora
+de rascunho, aguardando merge do Johnny**. Card `dd73891e` passou o gate do
+gerente.
+
+Quando o pulso ativo passa de ~105s, o vigia loga erro **nomeado**, grava a fase
+em `qa.fase_corrente` **antes** de morrer e mata o worker — mesmo efeito do
+`executionTimeout` que já mata esses jobs, mas em ~105s em vez de 640s e **com
+rastro**. O retry existente entra muito mais cedo.
+
+> **O achado de projeto que eu tinha deixado passar:** como `visto_em` e
+> `running_s` param **juntos**, quem congela é o **processo inteiro** (hang em
+> código nativo segurando o GIL trava todas as threads Python de uma vez). Um
+> watchdog em **thread** congelaria junto com o heartbeat que deveria vigiar.
+> Por isso o vigia é **processo filho**. Decorre direto do trace da `9555c0d0`.
+
+**Verificação que eu mesmo rodei** (sem GPU, sem rede, sem tocar em aluno):
+
+| | |
+|---|---|
+| `test_watchdog_travado.py` (novo) | **27 passed**, exit 0 |
+| regressão em `origin/main` | **3 failed, 184 passed** |
+| regressão no **branch** | **3 failed, 184 passed** |
+
+**Idêntico** → as 3 falhas são **pré-existentes na main**, não do conserto.
+Registro o tropeço: a primeira rodada deu "7 failed", mas era `numpy`/`requests`
+faltando **no meu venv** — erro de coleta do ambiente, não regressão. Só virou
+número depois de instalar as deps **e rodar a base como controle**.
+
+Limites conferidos por `diff --name-only`: **não** tocou `execucao.ts`, **sem**
+migration, **sem** `.sql`. O teto de 640s segue como estava.
+
+**Limite honesto que o próprio conserto declara:** o gatilho é **ausência de
+pulso** — o modo de pane medido. Um hang só da thread principal, com heartbeat
+vivo publicando `running_s` crescente, **não** dispara o vigia e continua caindo
+no teto. Cobrir isso exigiria régua de duração máxima por fase: outra decisão,
+outra distribuição a medir. Não foi prometido nem feito.
+
 ---
 
 ## 2. Item com relógio: `#506` — repinguei, contra a decisão da ronda anterior
@@ -184,6 +224,7 @@ do Johnny** — não decidi por ele.
 
 ## 4. Para a próxima ronda
 
+0. **`#15`: PR #404 esperando merge.** Card "completed" NÃO é produção — só a main deploya, e a main não tem isto. Ao fechar, some os curados por retry.
 1. **`#506`: se amanhecer 23/09 sem resposta, a janela dos TRÊS fechou.**
    Registre como fato e trate como exceção (família do `#207`). **Não invente
    prazo novo.** Os dois de 28/09 ainda têm margem — não misture.
