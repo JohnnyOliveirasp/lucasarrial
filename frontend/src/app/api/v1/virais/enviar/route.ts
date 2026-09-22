@@ -1,18 +1,23 @@
 /**
  * POST /api/v1/virais/enviar — Vídeos Virais 1.0 (pedido do Johnny 21/09).
  *
- * O aluno cola o LINK de um post do Instagram ou do TikTok, marca o
- * consentimento e o vídeo entra no acervo que TODOS veem — continuando
- * visível na galeria dele.
+ * DOIS caminhos (ordem do Johnny 22/09: "as pessoas precisam subir o vídeo na
+ * plataforma que quiserem, seja o vídeo por link ou o vídeo por upload"):
+ *   1. LINK de um post do Instagram/TikTok — a casa lê e baixa;
+ *   2. ARQUIVO, que o navegador já subiu pro R2 (ver /virais/upload-url).
+ * Nos dois, o consentimento é obrigatório e o vídeo entra no acervo que TODOS
+ * veem, continuando visível na galeria de quem enviou.
  *
  * Decisões que estão embutidas aqui:
  *  • Sem consentimento não entra. Não é aviso na tela: é regra do servidor,
  *    porque a tela pode ser contornada e a prova de direito autoral não.
  *  • Sem moderação, de propósito (ordem do Johnny): "o problema é do aluno,
  *    ele se responsabiliza". O freio é o botão de remover do admin.
- *  • Nada de Apify aqui: o yt-dlp já está no servidor, lê Instagram e TikTok
- *    e custa ZERO por envio. O Apify cobra US$ 0,0037 por vídeo e só faz
- *    TikTok — não faz sentido pagar pra ler um link que já temos como ler.
+ *  • Nada de Apify (decisão do Johnny 22/09: "não vamos liberar para as
+ *    pessoas usarem o Apify mais, elas vão trazer os vídeos"). O link usa só o
+ *    caminho grátis (yt-dlp); quando ele não abrir — e o leitor de TikTok está
+ *    quebrado desde 21/09, medido — a resposta diz pro aluno mandar o arquivo,
+ *    em vez de a casa pagar por envio.
  *  • O mesmo viral enviado duas vezes NÃO duplica: a chave é
  *    (plataforma, video_id). Se a casa já tinha garimpado aquele vídeo, o
  *    envio do aluno só o torna público e registra quem trouxe.
@@ -27,6 +32,8 @@ import { guardarThumb } from "@/lib/virais/thumb";
 import { consentimentoRegistrado } from "@/lib/virais/consentimento";
 import { LinkViralError, lerDadosDoLink, lerLink } from "@/lib/virais/link-do-aluno";
 import { baixarViralDaComunidade } from "@/lib/virais/download-comunidade";
+import { LIMITE_VIRAL, recusaPorTamanho } from "@/lib/virais/limites";
+import { tamanhoNoR2 } from "@/lib/virais/upload-viral";
 
 /** O download roda dentro da requisição; 80MB em rede ruim pede folga. */
 export const maxDuration = 300;
@@ -36,7 +43,7 @@ export async function POST(request: NextRequest) {
   const auth = await authenticate(request);
   if (!auth) return unauthorized();
 
-  let body: { url?: unknown; consentimento?: unknown };
+  let body: { url?: unknown; consentimento?: unknown; arquivo_key?: unknown; titulo?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -47,12 +54,49 @@ export async function POST(request: NextRequest) {
     return badRequest("Marque o consentimento para enviar o vídeo.");
   }
 
-  const link = lerLink(typeof body.url === "string" ? body.url : "");
-  if (!link) {
-    return badRequest("Cole o link de um post do Instagram (reel) ou do TikTok.");
+  const admin = getAdmin();
+  const consentimento = consentimentoRegistrado();
+
+  // ───── Caminho 2: ARQUIVO já enviado pro R2 pelo navegador ─────
+  const arquivoKey = typeof body.arquivo_key === "string" ? body.arquivo_key.trim() : "";
+  if (arquivoKey) {
+    // A chave carrega o dono no caminho (virais/comunidade/upload/<user>/…):
+    // sem esta checagem, um aluno poderia publicar o arquivo de outro.
+    if (!arquivoKey.startsWith(`virais/comunidade/upload/${auth.user_id}/`)) {
+      return badRequest("Arquivo inválido para esta conta.");
+    }
+    // Tamanho conferido contra o objeto REAL: o navegador informa o que quiser.
+    const bytes = await tamanhoNoR2(arquivoKey);
+    if (bytes === null) return badRequest("Não encontrei o arquivo enviado. Tente de novo.");
+    if (bytes > LIMITE_VIRAL.bytes) return badRequest(recusaPorTamanho(bytes));
+
+    const titulo = typeof body.titulo === "string" ? body.titulo.trim().slice(0, 300) : null;
+    const { data: criado, error } = await admin
+      .from("viral_videos")
+      .insert({
+        plataforma: "upload",
+        // Sem post de origem: a identidade é a própria chave do arquivo.
+        video_id: arquivoKey.split("/").pop()?.replace(/\.mp4$/, "") ?? arquivoKey,
+        url: "",
+        legenda: titulo,
+        r2_key: arquivoKey,
+        download_status: "pronto",
+        enviado_por: auth.user_id,
+        enviado_em: new Date().toISOString(),
+        consentimento_texto: consentimento,
+        publico: true,
+      })
+      .select("id")
+      .single();
+    if (error || !criado) return serverError("Não consegui salvar esse vídeo agora.");
+    return jsonOk({ id: (criado as { id: string }).id, ja_existia: false, origem: "upload" });
   }
 
-  const admin = getAdmin();
+  // ───── Caminho 1: LINK ─────
+  const link = lerLink(typeof body.url === "string" ? body.url : "");
+  if (!link) {
+    return badRequest("Cole o link de um post do Instagram (reel) ou do TikTok — ou envie o arquivo do vídeo.");
+  }
 
   try {
     // 1) Dados do post, sem baixar nada ainda (é aqui que link morto aparece).
@@ -67,8 +111,6 @@ export async function POST(request: NextRequest) {
       .eq("plataforma", link.plataforma)
       .eq("video_id", videoId)
       .maybeSingle();
-
-    const consentimento = consentimentoRegistrado();
 
     if (existente) {
       const ja = existente as {
