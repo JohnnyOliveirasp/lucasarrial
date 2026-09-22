@@ -27,7 +27,15 @@ import { ReactPassoSaida } from "./react-passo-saida";
 import type { ReactDraft } from "./react-tipos";
 import { DRAFT_VAZIO, PASSOS } from "./react-tipos";
 
-const DRAFT_KEY = "fc-react-draft-v1";
+/**
+ * Rascunho SEPARADO por fonte (22/09, visto em produção): as duas telas do
+ * React dividiam a mesma chave, então um viral escolhido no garimpo da casa
+ * aparecia como "Escolhido" na tela do aluno — vídeo que ele não pode usar.
+ * Cada tela guarda o seu.
+ */
+const DRAFT_KEY_BASE = "fc-react-draft-v1";
+const chaveDoRascunho = (fonte: string) =>
+  fonte === "comunidade" ? `${DRAFT_KEY_BASE}-comunidade` : DRAFT_KEY_BASE;
 
 /**
  * `fonte` (22/09): de onde sai o vídeo do passo R0.
@@ -38,6 +46,7 @@ const DRAFT_KEY = "fc-react-draft-v1";
 export function ReactWizard({ fonte = "garimpo" }: { fonte?: "garimpo" | "comunidade" }) {
   const [draft, setDraft] = useState<ReactDraft>(DRAFT_VAZIO);
   const [carregado, setCarregado] = useState(false);
+  const DRAFT_KEY = chaveDoRascunho(fonte);
 
   useEffect(() => {
     try {
