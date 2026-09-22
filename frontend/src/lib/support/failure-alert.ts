@@ -14,6 +14,10 @@ import { sendEmail, escapeHtml } from "@/lib/email/resend";
 // Lógica pura da decisão "nasce fechada?" — mora fora daqui porque este módulo
 // é server-only e o teste dela precisa rodar no `node --test` (sem alias `@/`).
 import { isModerationBlock, rajadaNasceFechada } from "./rajada-nasce-fechada.ts";
+// Motor do estorno por contagem — extraído (22/09) pelo mesmo motivo acima:
+// o teste do react_refund precisa exercitar O MESMO código que roda aqui,
+// não um espelho que envelhece separado.
+import { estornarDebitoIdempotente } from "./estorno-idempotente.ts";
 
 export const SUPPORT_EMAIL = "suporte@fastcloner.com";
 
@@ -73,38 +77,13 @@ async function refundOriginalDebit(args: {
   debitRefType: string;
   refundRefType: string;
 }): Promise<string> {
-  const admin = getAdmin();
-
-  const { data: debits, count: debitCount } = await admin
-    .from("credit_transactions")
-    .select("amount", { count: "exact" })
-    .eq("user_id", args.userId)
-    .eq("ref_type", args.debitRefType)
-    .eq("ref_id", args.refId)
-    .lt("amount", 0)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  const debit = (debits as { amount: number }[] | null)?.[0];
-  if (!debit) return "nada cobrado (sem débito no extrato)";
-
-  const { count: refundCount } = await admin
-    .from("credit_transactions")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", args.userId)
-    .eq("ref_type", args.refundRefType)
-    .eq("ref_id", args.refId);
-  if ((refundCount ?? 0) >= (debitCount ?? 1)) return "estorno já aplicado anteriormente";
-
-  const amount = Math.abs(debit.amount);
-  const r = await addExtraCredits({
-    userId: args.userId,
-    amount,
-    refType: args.refundRefType,
-    refId: args.refId,
-  });
-  return r.ok
-    ? `estorno de ${amount.toLocaleString("pt-BR")} créditos aplicado automaticamente`
-    : "ESTORNO FALHOU — aplicar manualmente!";
+  // O corpo mora em estorno-idempotente.ts (extraído 22/09, sem mudança de
+  // comportamento) — lá está testável sem o alias `@/`; aqui entram as
+  // dependências reais: getAdmin() e a RPC add_extra_credits.
+  return estornarDebitoIdempotente(
+    { db: getAdmin(), creditar: addExtraCredits },
+    args,
+  );
 }
 
 /** Rajada = 3+ falhas (estornos) do MESMO aluno na MESMA ferramenta em 15min. */

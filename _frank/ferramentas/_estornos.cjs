@@ -126,6 +126,20 @@ const REF_TYPES_ESTORNO = [
   // de so na varredura — enquanto for so varredura, a janela entre gravar e
   // acusar continua existindo, e nela cabe um pagamento em dobro.
   "image_refund_gate371",
+  // 22/09, abertura do React aos alunos: PRIMEIRA entrada que chega ANTES da
+  // primeira linha existir no banco (medido na hora de abrir o card:
+  // `ref_type ilike '%react%'` = 0 linhas; 1 unico react_job na historia,
+  // status pronto). As cinco reincidencias acima (#185, #342, edicao_broll,
+  // video_clip, gate371) entraram DEPOIS de o falso negativo ja estar armado;
+  // desta vez o refundRefType e a lista nascem na MESMA entrega — o conserto
+  // estrutural que as notas de 19-20/09 pedem.
+  // Quem grava: frontend/src/lib/support/failure-alert.ts (via RPC
+  // add_extra_credits), disparado pelos caminhos de falha de
+  // frontend/src/app/api/v1/react/gerar/route.ts com as chaves de
+  // frontend/src/lib/react/estorno.ts:REACT_REFUND_REF_TYPE. O debito casado
+  // e ref_type "react_job" (gerar/route.ts, debitCredits), ref_id =
+  // react_jobs.id — casar o ref_id e somar o sinal continua sendo a prova.
+  "react_refund",
 ];
 
 /**
@@ -176,6 +190,7 @@ const POR_FEATURE = {
   treino_voz: "voice_train_refund",
   cena_studio: "studio_scene_refund",
   audio_studio: "studio_audio_refund",
+  react: "react_refund",
 };
 
 function ehEstorno(refType) {

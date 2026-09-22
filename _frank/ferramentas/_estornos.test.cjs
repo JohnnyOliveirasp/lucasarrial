@@ -111,3 +111,43 @@ test("CONTROLE POSITIVO: os 25 tipos medidos no banco em 10/09 estao todos cadas
   assert.equal(MEDIDOS_10_09.length, 25, "a medicao de 10/09 tinha 25 ref_type positivos");
   assert.deepEqual(classificarDesconhecidos(MEDIDOS_10_09), []);
 });
+
+test("22/09: react_refund conta como estorno — cadastrado ANTES da primeira linha existir", () => {
+  // O React abriu aos alunos em 22/09 com cobranca (300 fixos + o segundo do
+  // clone) e o estorno nasceu na MESMA entrega que este cadastro. Medido na
+  // abertura do card: `ref_type ilike '%react%'` = 0 linhas no ledger — e a
+  // primeira vez que a lista chega ANTES do falso negativo, nao depois.
+  assert.equal(ehEstorno("react_refund"), true);
+  assert.deepEqual(classificarDesconhecidos(["react_refund"]), []);
+});
+
+test("MUTACAO 22/09: sem react_refund na lista, a varredura leria o estorno como NAO estornado", () => {
+  // A prova pedida pelo card: o item da lista nao e decoracao. Um mutante da
+  // lista SEM a entrada reproduz exatamente o #185/#342 no tipo novo:
+  // ehEstorno('react_refund') daria false — quem perguntasse "o React ja foi
+  // ressarcido?" leria NAO e pagaria em dobro — e o guarda por exclusao
+  // acusaria o tipo como desconhecido (o barulho que denuncia a omissao).
+  const listaMutante = REF_TYPES_ESTORNO.filter((t) => t !== "react_refund");
+  assert.equal(
+    listaMutante.length,
+    REF_TYPES_ESTORNO.length - 1,
+    "controle: a entrada existe na lista real (senao o mutante seria igual ao original)",
+  );
+
+  const ehEstornoMutante = (t) => listaMutante.includes(String(t ?? ""));
+  assert.equal(
+    ehEstornoMutante("react_refund"),
+    false,
+    "no mutante, o estorno pago le como NAO estornado — o falso negativo que paga em dobro",
+  );
+
+  const classificarMutante = (ts) =>
+    [...new Set(ts)]
+      .filter((t) => t)
+      .filter((t) => !listaMutante.includes(t) && !NAO_SAO_DEVOLUCAO.includes(t));
+  assert.deepEqual(
+    classificarMutante(["react_refund"]),
+    ["react_refund"],
+    "o guarda por exclusao TEM que acusar o tipo ausente",
+  );
+});
