@@ -175,6 +175,64 @@ que eu esteja tratando eu mando sozinho, e **não segurei nenhuma** nesta ronda.
 
 ---
 
+## 1.6 Resgatei um experimento que estava sendo perdido hoje — e ele derruba o par cego de n=24
+
+Encontrei `_frank/ferramentas/2026-09-22_controle_embutido_decapitada.cjs`
+**untracked** no git, sem menção em nenhum log. Foi escrito por uma ronda de hoje
+às **14:00Z**, construiu um lote de controle **embutido** deste cartão (4
+adulterados + 3 intactos + 5 reais) e **nada disso foi registrado**: o gabarito só
+é impresso no **stdout** e morreu com aquele terminal. Sobraram 12 mp3 anônimos em
+`/tmp` que a próxima limpeza apagaria.
+
+**Recuperado**, porque o embaralho da ferramenta é determinístico de propósito:
+re-rodei com os mesmos argumentos e reconstruí o lote. **`md5sum` dos 12 arquivos
+contra os de 14:00Z: 12/12 idênticos** — é o mesmo lote, não um parecido. Gabarito
+e método agora estão na main:
+`_frank/prova/2026-09-22_controle_embutido_gabarito.md`.
+
+**O resultado: não houve escuta.** Mandei os 12 ao `olho` num pedido só (a carga é
+o ponto do teste), com uma regra que os testes anteriores não tinham — *"se você
+não conseguir de fato ouvir, escreva NAO OUVI; nunca carimbe SEM CORTE num
+arquivo que você não ouviu"*. Resposta em **9 segundos: `NAO OUVI` nos 12**,
+`OUVI DE VERDADE: 0 de 12`. Sondagem de um arquivo só: **vazia**, 3s. Instrumento
+alternativo também fora: `analyze_video` da Z.AI devolveu **HTTP 429 —
+"Insufficient balance"**.
+
+**O que isso prova.** O cabeçalho da ferramenta de 14:00Z registrou que o par cego
+de **n=24** daquele dia voltou com **23 de 24 "SEM CORTE", todos "confiança
+alta"**, inclusive gerações com decapitação **confirmada offline** (uma com
+cinco). Aquela ronda levantou duas hipóteses e disse, com razão, que o teste não
+as separava: **(a)** a régua marca o que o ouvido não ouve; **(b)** o ouvido
+degrada sob carga. Com a escotilha do `NAO OUVI`, o mesmo ouvido nas mesmas
+condições diz que **não ouviu nada** — é **(b)**, e pior que a suspeita: não era
+perda de sensibilidade, era **resposta confiante sem escuta nenhuma**.
+
+> **O par cego de n=24 de 22/09 está VAZIO DE INFORMAÇÃO** — não pode ser citado
+> nem a favor nem contra a régua. É o desfecho que a própria ferramenta previu por
+> escrito.
+
+**O que isso NÃO prova:** não invalida o controle positivo de **21/09**, onde o
+ouvido achou 3 de 3 cortes fabricados **com o segundo certo (10–50 ms)** e
+preservou 2 de 2 intactos — impossível sem escuta real. Ele **funcionou em 21/09 e
+não funciona agora**. E não decide se a régua infla.
+
+**Alcance além deste cartão — atinge a ordem de 17/09.** Aquela ordem transformou
+"precisa ver/ouvir" de **parada** em **despacho**, com o veredito voltando escrito
+na nota do card. Se o ouvido devolve veredito confiante **sem ter ouvido**, o
+despacho passa a produzir **laudo falso** em vez de parada — e isso é **pior** que
+a parada que a ordem aboliu, porque *parece* resolvido.
+
+> **Regra que fica, e que já se pagou hoje:** todo despacho de percepção leva a
+> escotilha `NAO OUVI`/`NAO VI` **e** um controle positivo **embutido no mesmo
+> lote**. Laudo de percepção sem controle embutido não entra em nota de cartão.
+
+**Bloqueio declarado com motivo concreto** (ordem de 17/09, opção 2): a escuta
+ponto a ponto deste cartão está bloqueada hoje por **falta de instrumento** —
+`olho` devolve `NAO OUVI`/vazio, Z.AI sem saldo, 9 operários fora. Não inventei
+laudo e não dei a escuta por feita.
+
+---
+
 ## 2. Conserto escrito que está fora do ar — o número
 
 O passo de fim de ronda por `git branch` continua inútil neste repo (~190 falsos
@@ -200,12 +258,18 @@ registrado com a medição, não como impressão:
   Anthropic responderam **`Not logged in · Please run /login`**:
   `coder`, `qa`, `gerente`, `critic`, `analyst`, `strategist`, `generalist`,
   `carol` e o `social`-Sonnet — **9 de 13**;
-- seguem de pé apenas `olho` e `pesquisa` (Gemini via OpenRouter, responderam
-  "OK") e o `glm`.
+- responderam "OK" apenas `olho` e `pesquisa` (Gemini via OpenRouter) e o `glm`.
+
+**E o `olho` está de pé só no ping.** Minutos depois, na tarefa real (§1.6), ele
+devolveu `NAO OUVI` em 12 de 12 arquivos e **resposta vazia** numa sondagem de um
+arquivo só. Ou seja: responde "OK" a um ping de texto e **não executa percepção**.
+O instrumento de reserva, `analyze_video` da Z.AI, está **sem saldo** (HTTP 429).
 
 **Custo concreto pra próxima ronda:** sem o `/login` do Johnny, a casa **não tem
-quem escreva código, quem teste em navegador, nem quem revise entrega**. Foi por
-isso que a revisão do #408 saiu na minha mão. Postado no grupo.
+quem escreva código, quem teste em navegador, nem quem revise entrega** — e, com o
+`olho` mudo e a Z.AI sem saldo, **não tem ouvido nem olho**, que é a perna que a
+ordem de 17/09 depende. Foi por isso que a revisão do #408 saiu na minha mão.
+Postado no grupo.
 
 ---
 
