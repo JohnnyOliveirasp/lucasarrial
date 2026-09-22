@@ -7,8 +7,11 @@
  * o clone e a montagem acontecem em seguida, como no resto do app.
  */
 import type { NextRequest } from "next/server";
-import { gateAdmin } from "@/lib/admin/api";
-import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
+import { gateReact } from "@/lib/react/gate";
+import { custoDoReact, semSaldo } from "@/lib/react/preco";
+import { bypassesBilling } from "@/lib/credits/access";
+import { debitCredits, getBalance } from "@/lib/credits/service";
+import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { deleteByPrefix } from "@/lib/r2/delete";
@@ -43,7 +46,7 @@ const LAYOUTS = new Set(["recorte", "viral-em-cima", "viral-embaixo"]);
 const PALAVRAS_POR_SEGUNDO = 2.5;
 
 export async function POST(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateReact(request);
   if ("res" in gate) return gate.res;
 
   let b: Record<string, unknown>;
@@ -124,6 +127,22 @@ export async function POST(request: NextRequest) {
   const medido = audioUrl ? await duracaoDeUrl(audioUrl) : null;
   const segundos = medido ? Math.ceil(medido + 0.35) : estimado;
 
+  // ───── CRÉDITO (22/09): o passo caro finalmente cobra ─────
+  // Tem que ser DEPOIS de saber os segundos (o preço depende deles) e ANTES
+  // de criar o job: job criado é GPU disparada, e cobrar depois de gastar é
+  // como o aluno fica negativo sem entender por quê.
+  const custo = custoDoReact(motor, segundos);
+  const cobra = !bypassesBilling(gate.auth.email);
+  if (cobra) {
+    const saldo = await getBalance(userId);
+    if (saldo.total < custo) {
+      return jsonError("insufficient_credits", semSaldo(custo, saldo.total), 402, {
+        balance: saldo.total,
+        cost: custo,
+      });
+    }
+  }
+
   const { data: job, error } = await admin
     .from("react_jobs")
     .insert({
@@ -147,6 +166,19 @@ export async function POST(request: NextRequest) {
     return serverError("Não consegui criar o pedido.");
   }
   const jobId = (job as { id: string }).id;
+
+  // Debita com o job na mão: o `refId` é ele, então um estorno futuro sabe
+  // exatamente qual React devolver.
+  if (cobra) {
+    await debitCredits({
+      userId,
+      amount: custo,
+      kind: "video",
+      refType: "react_job",
+      refId: jobId,
+      note: `React ${segundos}s (${motor})`,
+    });
+  }
 
   // O mp4 do viral é a única peça que dá pra garantir agora — e é rápida.
   // É AQUI que o arquivo nasce: guardar na prateleira nunca baixou nada.
@@ -234,7 +266,7 @@ export async function POST(request: NextRequest) {
  * fala daquele pedido não servem pra mais nada.
  */
 export async function DELETE(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateReact(request);
   if ("res" in gate) return gate.res;
   const id = (request.nextUrl.searchParams.get("job") ?? "").trim();
   if (!id) return badRequest("Faltou o id do pedido.");
@@ -260,7 +292,7 @@ export async function DELETE(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const gate = await gateAdmin(request);
+  const gate = await gateReact(request);
   if ("res" in gate) return gate.res;
   const pedido = (request.nextUrl.searchParams.get("job") ?? "").trim();
   const viralParam = (request.nextUrl.searchParams.get("viral") ?? "").trim();

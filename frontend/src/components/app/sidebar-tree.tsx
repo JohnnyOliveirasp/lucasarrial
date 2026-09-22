@@ -226,6 +226,16 @@ export function SidebarTree({
       locked: false,
       lockTitle: "",
     },
+    // 🎬 React (22/09, ordem do Johnny): o wizard saiu da pré-produção pros
+    // alunos. A cópia da casa continua em /app/lab/react, apontando pro
+    // garimpo — esta aqui lê o acervo da turma e o upload da própria pessoa.
+    {
+      href: "/app/videos/react",
+      icon: Clapperboard,
+      label: "React",
+      locked: false,
+      lockTitle: "",
+    },
   ];
 
   return (

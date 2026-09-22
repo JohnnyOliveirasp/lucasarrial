@@ -29,7 +29,13 @@ import { DRAFT_VAZIO, PASSOS } from "./react-tipos";
 
 const DRAFT_KEY = "fc-react-draft-v1";
 
-export function ReactWizard() {
+/**
+ * `fonte` (22/09): de onde sai o vídeo do passo R0.
+ *  • "garimpo"   → prateleira do acervo pago da casa (pré-produção, admin);
+ *  • "comunidade"→ acervo enviado pelos alunos + upload privado da pessoa.
+ * O resto do wizard é igual nos dois — é o MESMO motor, com outra origem.
+ */
+export function ReactWizard({ fonte = "garimpo" }: { fonte?: "garimpo" | "comunidade" }) {
   const [draft, setDraft] = useState<ReactDraft>(DRAFT_VAZIO);
   const [carregado, setCarregado] = useState(false);
 
@@ -116,7 +122,7 @@ export function ReactWizard() {
       </ol>
 
       <div className="rounded-[var(--radius)] border border-[var(--hairline)] bg-[var(--surface)] p-4">
-        {draft.passo === 0 && <ReactPassoVideo draft={draft} update={update} />}
+        {draft.passo === 0 && <ReactPassoVideo draft={draft} update={update} fonte={fonte} />}
         {draft.passo === 1 && <ReactPassoAvatar draft={draft} update={update} />}
         {draft.passo === 2 && <ReactPassoRoteiro draft={draft} update={update} />}
         {draft.passo === 3 && <ReactPassoAjuste draft={draft} update={update} />}

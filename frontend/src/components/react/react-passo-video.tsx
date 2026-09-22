@@ -3,35 +3,150 @@
 /**
  * R0 — qual viral você vai comentar.
  *
- * Vem da PRATELEIRA (Meus Virais). Prateleira vazia manda garimpar em vez de
- * pedir link: o acervo é o ponto de partida do produto.
+ * DUAS FONTES (pedido do Johnny 22/09), escolhidas pela prop `fonte`:
+ *  • "garimpo" (pré-produção, admin): a prateleira do acervo pago da casa —
+ *    exatamente como era, sem mudar nada pra quem já usa;
+ *  • "comunidade" (alunos): o acervo que a turma enviou + o vídeo que a
+ *    própria pessoa subir aqui, que fica PRIVADO dela.
+ *
+ * O upload daqui nasce privado de propósito: "este vídeo que ela subir não vai
+ * para os virais de todos, fica somente para a pessoa que subiu".
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@/i18n/navigation";
 import { compacto } from "@/components/lab/virais-estilo";
+import { LIMITE_VIRAL, recusaPorDuracao, recusaPorTamanho } from "@/lib/virais/limites";
 import type { ReactDraft, ViralEscolhido } from "./react-tipos";
+
+type Fonte = "garimpo" | "comunidade";
+
+/** O card da comunidade no formato que o wizard entende. */
+type LinhaComunidade = {
+  id: string;
+  url: string;
+  autor: string | null;
+  thumbUrl: string | null;
+  duracaoSegundos: number | null;
+  likes: number | null;
+  videoUrl: string | null;
+  publico: boolean;
+};
+
+const daComunidade = (v: LinhaComunidade): ViralEscolhido => ({
+  id: v.id,
+  url: v.url,
+  autor: v.autor,
+  thumb_url: v.thumbUrl,
+  duracao_seg: v.duracaoSegundos,
+  likes: v.likes ?? 0,
+  // Vídeo do acervo da turma já está no nosso R2: nada pra baixar depois.
+  download_status: v.videoUrl ? "pronto" : "",
+});
+
+/** Duração sem subir nada: o navegador lê do cabeçalho do arquivo. */
+async function duracaoDoArquivo(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve(Number.isFinite(v.duration) ? v.duration : null);
+    };
+    v.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    v.src = url;
+  });
+}
 
 export function ReactPassoVideo({
   draft,
   update,
+  fonte = "garimpo",
 }: {
   draft: ReactDraft;
   update: (m: Partial<ReactDraft>) => void;
+  fonte?: Fonte;
 }) {
   const [lista, setLista] = useState<ViralEscolhido[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [subindo, setSubindo] = useState<string | null>(null);
+  const [erroUpload, setErroUpload] = useState<string | null>(null);
+  const inputArquivo = useRef<HTMLInputElement>(null);
+
+  const carregar = useCallback(async () => {
+    try {
+      const rota =
+        fonte === "comunidade"
+          ? "/api/v1/virais/comunidade?pagina=1&meus_privados=1"
+          : "/api/v1/virais/videos?meus=1&limite=120&ordem=score";
+      const r = await fetch(rota, { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) setLista([]);
+      else if (fonte === "comunidade") setLista((j.videos ?? []).map(daComunidade));
+      else setLista(j.videos ?? []);
+    } finally {
+      setCarregando(false);
+    }
+  }, [fonte]);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const r = await fetch("/api/v1/virais/videos?meus=1&limite=120&ordem=score");
-        const j = await r.json();
-        setLista(r.ok ? (j.videos ?? []) : []);
-      } finally {
-        setCarregando(false);
-      }
-    })();
-  }, []);
+    void carregar();
+  }, [carregar]);
+
+  /** Upload do próprio vídeo — PRIVADO: não entra no acervo de todos. */
+  async function enviarMeuVideo(f: File | null) {
+    if (!f) return;
+    setErroUpload(null);
+    if (f.size > LIMITE_VIRAL.bytes) {
+      setErroUpload(recusaPorTamanho(f.size));
+      return;
+    }
+    const seg = await duracaoDoArquivo(f);
+    if (seg !== null && seg > LIMITE_VIRAL.segundos) {
+      setErroUpload(recusaPorDuracao(seg));
+      return;
+    }
+    try {
+      setSubindo("preparando…");
+      const r1 = await fetch("/api/v1/virais/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content_type: f.type || "video/mp4",
+          bytes: f.size,
+          filename: f.name,
+        }),
+      });
+      const j1 = await r1.json();
+      if (!r1.ok) throw new Error(j1?.error?.message || "Não consegui preparar o envio.");
+
+      setSubindo("enviando " + (f.size / 1024 / 1024).toFixed(0) + " MB…");
+      const put = await fetch(j1.upload_url as string, {
+        method: "PUT",
+        headers: { "Content-Type": f.type || "video/mp4" },
+        body: f,
+      });
+      if (!put.ok) throw new Error("O envio do arquivo falhou.");
+
+      setSubindo("guardando…");
+      const r2 = await fetch("/api/v1/virais/enviar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ arquivo_key: j1.key, titulo: f.name, privado: true }),
+      });
+      const j2 = await r2.json();
+      if (!r2.ok) throw new Error(j2?.error?.message || "Não consegui guardar o vídeo.");
+      await carregar();
+      if (inputArquivo.current) inputArquivo.current.value = "";
+    } catch (e) {
+      setErroUpload(e instanceof Error ? e.message : "Não consegui enviar o vídeo.");
+    } finally {
+      setSubindo(null);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -40,21 +155,58 @@ export function ReactPassoVideo({
           Qual vídeo você vai comentar?
         </h2>
         <p className="mt-0.5 text-[12.5px] text-[var(--mute)]">
-          Escolha um dos virais que você guardou. O arquivo só é baixado quando o React
-          for gerado — guardar não baixa nada.
+          {fonte === "comunidade"
+            ? "Escolha um viral que a turma enviou — ou mande o seu, que fica só na sua conta."
+            : "Escolha um dos virais que você guardou. O arquivo só é baixado quando o React for gerado — guardar não baixa nada."}
         </p>
       </div>
+
+      {fonte === "comunidade" && (
+        <div className="flex flex-col gap-1 rounded-[var(--radius-sm)] border border-dashed border-[var(--hairline-strong)] px-3 py-2.5">
+          <label className="flex cursor-pointer flex-wrap items-center gap-2 text-[12.5px] text-[var(--mute)]">
+            <span className="font-medium text-[var(--ink)]">Usar um vídeo meu:</span>
+            <input
+              ref={inputArquivo}
+              type="file"
+              accept="video/mp4,video/quicktime,video/webm"
+              disabled={!!subindo}
+              onChange={(e) => void enviarMeuVideo(e.target.files?.[0] ?? null)}
+              className="text-[11px] file:mr-2 file:rounded file:border-0 file:bg-[var(--surface-elevated)] file:px-2 file:py-1 file:text-[11px] file:text-[var(--ink)]"
+            />
+          </label>
+          <span className="font-mono text-[10.5px] text-[var(--ash)]">
+            fica só na sua conta, não entra no acervo da turma · até {LIMITE_VIRAL.mb} MB e{" "}
+            {LIMITE_VIRAL.segundos / 60} minutos
+          </span>
+          {subindo && <span className="font-mono text-[10.5px] text-[var(--ash)]">{subindo}</span>}
+          {erroUpload && (
+            <span className="text-[11.5px] text-[var(--status-error)]">{erroUpload}</span>
+          )}
+        </div>
+      )}
 
       {carregando ? (
         <p className="text-[13px] text-[var(--mute)]">Carregando sua prateleira…</p>
       ) : lista.length === 0 ? (
         <div className="rounded-[var(--radius-sm)] border border-dashed border-[var(--hairline-strong)] p-6 text-center">
           <p className="text-[13.5px] text-[var(--mute)]">
-            Sua prateleira está vazia. Garimpe na{" "}
-            <Link href="/app/lab/virais" className="font-medium text-[var(--ink)] underline">
-              Galeria de Vídeos Virais
-            </Link>{" "}
-            e guarde os que quiser usar.
+            {fonte === "comunidade" ? (
+              <>
+                Nenhum viral por aqui ainda. Mande um em{" "}
+                <Link href="/app/videos/virais" className="font-medium text-[var(--ink)] underline">
+                  Vídeos · Virais
+                </Link>{" "}
+                ou envie o seu no campo acima.
+              </>
+            ) : (
+              <>
+                Sua prateleira está vazia. Garimpe na{" "}
+                <Link href="/app/lab/virais" className="font-medium text-[var(--ink)] underline">
+                  Galeria de Vídeos Virais
+                </Link>{" "}
+                e guarde os que quiser usar.
+              </>
+            )}
           </p>
         </div>
       ) : (

@@ -26,11 +26,16 @@ export async function GET(request: NextRequest) {
   const params = new URL(request.url).searchParams;
   const pagina = Math.max(1, Number(params.get("pagina") ?? 1) || 1);
   const apenasMeus = params.get("meus") === "1";
+  // O passo do vídeo no React pede isto: o acervo de todos MAIS o que eu subi
+  // só pra mim. Na galeria comum fica falso, senão meu vídeo privado apareceria
+  // no meio do acervo coletivo.
+  const incluirMeusPrivados = params.get("meus_privados") === "1";
 
   try {
     const { videos, total } = await listarComunidade(getAdmin(), {
       userId: auth.user_id,
       apenasMeus,
+      incluirMeusPrivados,
       limite: POR_PAGINA,
       offset: (pagina - 1) * POR_PAGINA,
     });
