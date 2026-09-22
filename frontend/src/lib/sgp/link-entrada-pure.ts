@@ -42,8 +42,43 @@ export type ResultadoLinkDeEntrada =
 export const DESTINO_PADRAO = "/app";
 
 /**
+ * Em QUAL host o aluno entra — e por que NÃO é o mesmo host do painel.
+ *
+ * Cookie de sessão é por HOST, não por aba. Enquanto o link de entrada abria
+ * em `fastcloner.com` (o mesmo host do /admin), o `verifyOtp` gravava a sessão
+ * do aluno POR CIMA da sessão da atendente: a aba do /admin continuava aberta,
+ * mas o clique seguinte já viajava como o aluno e voltava "Acesso restrito a
+ * administradores" (Karen, 22/09). "Abrir em aba nova" nunca protegeu nada.
+ *
+ * Solução sem inventar segunda sessão no mesmo host: o aluno entra pelo
+ * `www.`, que nginx e Cloudflare já servem com o MESMO app (medido 22/09:
+ * 200, sem redirect). O cookie de `www.fastcloner.com` não enxerga o de
+ * `fastcloner.com` nem o contrário — cada sessão fica na sua casa. O
+ * `auth/callback` honra o host da request por isso (ver `baseUrlPublica`).
+ *
+ * Regra: host de DOIS rótulos (apex, `fastcloner.com`) ganha `www.`; qualquer
+ * outro (localhost, `www.` já presente, subdomínio de staging, IP) fica como
+ * está, porque ali não há garantia de um irmão servindo o app.
+ */
+export function casaDoAluno(site: string): string {
+  const base = (site ?? "").trim().replace(/\/+$/, "");
+  let u: URL;
+  try {
+    u = new URL(base);
+  } catch {
+    return base;
+  }
+  const rotulos = u.hostname.split(".");
+  const ehIp = /^\d+(\.\d+){3}$/.test(u.hostname);
+  if (rotulos.length !== 2 || ehIp) return base;
+  u.hostname = `www.${u.hostname}`;
+  return u.origin;
+}
+
+/**
  * @param propriedades  `data.properties` devolvido pelo `generateLink`.
- * @param site          URL pública do site (barra final é tolerada).
+ * @param site          URL pública do site (barra final é tolerada). O link
+ *                      sai na casa do ALUNO (`casaDoAluno`), não na do painel.
  * @param next          Caminho interno pós-login. Qualquer coisa que não
  *                      comece com "/" é descartada em favor do padrão — o
  *                      callback faz a mesma guarda contra open-redirect.
@@ -53,7 +88,7 @@ export function montarLinkDeEntrada(
   site: string,
   next: string = DESTINO_PADRAO,
 ): ResultadoLinkDeEntrada {
-  const base = (site ?? "").trim().replace(/\/+$/, "");
+  const base = casaDoAluno(site);
   if (!base) {
     return { ok: false, erro: "Sem URL do site para montar o link de entrada" };
   }

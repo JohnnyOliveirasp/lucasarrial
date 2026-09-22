@@ -11,7 +11,9 @@
  *    deslogado, não recebe e-mail e continua entrando com a senha dele;
  *  - funciona pra quem entrou pelo Google ou nunca definiu senha — que era
  *    justamente o "parado por login/senha" da planilha;
- *  - o link é de uso único e expira sozinho.
+ *  - o link é de uso único e expira sozinho;
+ *  - o link abre no `www.` (`casaDoAluno`): cookie é por HOST, e no mesmo
+ *    host a sessão do aluno tomava a da atendente (Karen, 22/09).
  *
  * GRUPO FECHADO: abre conta de quem TEM PEDIDO no SGP **ou** COMPROU o SGP na
  * Hotmart e nunca começou (18/09: o botão tinha que aparecer na grid inteira,

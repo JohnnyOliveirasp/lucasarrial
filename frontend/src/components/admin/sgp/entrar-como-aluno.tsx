@@ -5,8 +5,11 @@
  * comprador do SGP e mexer nas fotos/áudio dele (o trabalho feito-pra-você que
  * antes dependia da senha anotada na planilha).
  *
- * Abre em ABA NOVA de propósito: a sessão do aluno não pode derrubar a sessão
- * de admin da atendente na mesma aba — ela perderia a fila de trabalho.
+ * Abre em aba nova pra atendente não perder a fila — mas aba nova NÃO protege
+ * a sessão: cookie é por host. Quem protege é o link sair no `www.`
+ * (`casaDoAluno` em lib/sgp/link-entrada-pure.ts). Em 22/09 a Karen clicou,
+ * a sessão do aluno tomou a dela no host do painel, e o clique seguinte
+ * voltou "Acesso restrito a administradores".
  *
  * O link é de uso único e some daqui assim que é usado: nada é guardado.
  *
@@ -44,7 +47,14 @@ export function EntrarComoAluno({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.link) {
-        throw new Error(json?.error?.message || "Não consegui abrir a conta deste aluno");
+        const msg = json?.error?.message || "Não consegui abrir a conta deste aluno";
+        // 403 com sessão viva = a sessão de admin foi trocada por outra (um
+        // link de aluno aberto no host do painel). Dizer o caminho de volta.
+        throw new Error(
+          res.status === 403
+            ? `${msg}. Sua sessão pode ter virado a de um aluno: saia da conta e entre de novo no /admin.`
+            : msg,
+        );
       }
       window.open(json.link as string, "_blank", "noopener,noreferrer");
       setEstado("parado");

@@ -10,6 +10,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAdmin } from "@/lib/db/admin";
 import { claimPurchasesOnLogin } from "@/lib/payments/claim";
+import { baseUrlPublica } from "@/lib/auth/base-url-publica";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 /**
@@ -63,9 +64,9 @@ export async function GET(request: NextRequest) {
   const requestedNext = searchParams.get("next") || "/app/dashboard";
   const next = requestedNext.startsWith("/") ? requestedNext : "/app/dashboard";
 
-  // Atrás do nginx, `origin` (de request.url) vira o host interno
-  // (localhost:3002), o que vazava no redirect. Usamos a URL pública.
-  const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? origin).replace(/\/+$/, "");
+  // URL pública (atrás do nginx `origin` é localhost:3002) — e, se a request
+  // veio pelo `www.`, fica no `www.`: é lá que o cookie recém-gravado mora.
+  const baseUrl = baseUrlPublica(request.headers, origin, process.env.NEXT_PUBLIC_SITE_URL);
 
   const supabase = await createClient();
 
