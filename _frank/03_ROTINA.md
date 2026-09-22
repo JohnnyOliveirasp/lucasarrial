@@ -276,6 +276,41 @@ Isto aqui é pra você fechar MAIS, não pra fechar mais rápido do que resolve.
 o backlog não baixar porque os casos são difíceis, isso é uma resposta legítima
 — escreva no relatório qual passo emperrou em cada um.
 
+## ⛔ "Pagou + tem saldo + `access_until` vencido" NÃO é pagante trancado
+
+Quatro vezes a casa montou esta consulta e quatro vezes ela deu um número
+grande e falso: **147** (18/08), **68** (19/08), **265** (19/09) e **116**
+(22/09, este). Todas morreram na conferência. Se você está prestes a escrever
+"N pagantes trancados com X milhões de créditos presos", pare e leia isto
+primeiro — o número que você tem na mão provavelmente é este erro.
+
+**Por que é falso, medido no fonte da main em 22/09:**
+
+- `app/[locale]/app/layout.tsx:95-101` — comentário no próprio código:
+  *"Entrada LIVRE: todo usuário logado entra na plataforma e vê os menus. O
+  paywall não bloqueia mais o acesso."* Não há redirect por assinatura.
+- `voices/[id]/start-training/route.ts:101-121` e
+  `voices/[id]/generate/route.ts:175-191` — o **402 só dispara em
+  `bal.total < COST`**. O `hasActiveAccess` dali não barra nada: escolhe o
+  **texto do CTA** do popup ("comprar avulso" × "assinar").
+- `voice-cloning/page.tsx:53`, `roteiro/page.tsx:52`, `images/page.tsx` — de
+  novo escrito no fonte: *"`subscribed` continua existindo SÓ pra escolher o
+  texto do aviso e o CTA"*.
+
+**Conclusão: `access_until` vencido não fecha porta nenhuma. O gate de GASTO é
+SALDO.** Quem parou de pagar entra e gasta o que comprou até acabar — que é
+exatamente a REGRA FINAL DE CRÉDITO (20/08). A regra **está honrada em
+produção**; o que mente é a consulta.
+
+Some a isso a **fronteira das 12:00** (o `pagante_trancado.cjs` explica): todo
+dia ao meio-dia UTC um lote inteiro "vence" no mesmo segundo em que a cobrança
+nova fica devida. Em 22/09 eram **28 dos 144** — só de contaminação de lote.
+
+> **A pergunta certa**, quando alguém suspeita de pagante trancado, é a do
+> `pagante_trancado.cjs`: *última recorrência APPROVED/COMPLETE na Hotmart viva
+> E acesso vencido*. Essa sim é bug nosso e é dinheiro. Qualquer outra forma da
+> pergunta mede o tamanho do lote do dia, não o tamanho do problema.
+
 ## ⚠️ Três armadilhas que já custaram caro numa varredura
 
 1. **Consulta que erra volta VAZIA.** Pedir uma coluna que não existe faz o
