@@ -168,39 +168,70 @@ export async function debitCreditsOnboarding(args: {
 }
 
 /**
- * ESTE TREINO FOI COBRADO? Olha o extrato, não o perfil do aluno.
+ * QUANTO DESTE TREINO AINDA NÃO FOI DEVOLVIDO? Olha o extrato INTEIRO, não o
+ * perfil do aluno — e não só a perna do débito.
  *
- * A linha procurada é a que `start-training` e `onboarding/treino.ts` gravam
- * com o MESMO shape (`kind='training'`, `ref_type='voice'`, `ref_id=<voiceId>`,
- * `amount` negativo) — é justamente essa igualdade de shape que os dois
- * arquivos documentam como contrato para o estorno casar.
+ * As linhas procuradas são as que `start-training` e `onboarding/treino.ts`
+ * gravam com o MESMO shape (`kind='training'`, `ref_type='voice'`,
+ * `ref_id=<voiceId>`, `amount` negativo) e as que o estorno grava
+ * (`ref_type='voice_train_refund'`, mesmo `ref_id`) — é justamente essa
+ * igualdade de shape que os arquivos documentam como contrato.
  *
  * Existe porque `bypassesBilling` deixou de ser um proxy confiável de "houve
  * cobrança": o onboarding do SGP entrega treino SEM debitar. Inferir cobrança
  * a partir de quem é o aluno passaria a CONCEDER crédito em vez de devolver.
  *
- * Conservador no erro: se a consulta falhar, responde `false` (não estorna).
- * Deixar de devolver é reclamação que o suporte resolve; conceder crédito que
- * nunca saiu é dinheiro criado do nada e ninguém percebe.
+ * ⚠️ POR QUE É SALDO E NÃO EXISTÊNCIA (incidente #469). Até 22/09 esta pergunta
+ * era `houveDebitoDeTreino` — de EXISTÊNCIA ("há débito?"). Existência não se
+ * gasta: quando o treino da MESMA voz falha duas vezes ela responde `true` nas
+ * DUAS, e a casa estorna 10.000 contra um débito de 10.000 que já tinha sido
+ * estornado. Medido em produção na voz `600173a6` (18/09): 1 débito de −10.000
+ * às 14:43:26Z e DOIS estornos de +10.000 (14:44:28Z e 15:31:18Z) — 10.000
+ * créditos criados do nada, e a guarda que existia pra impedir exatamente isso
+ * passou batido porque perguntava a coisa errada. Saldo SE GASTA: o segundo
+ * estorno encontra 0 e não acontece. A simetria de 17/08 documentada em
+ * `onboarding-cobranca.ts` fica intacta — a decisão continua saindo do extrato.
+ *
+ * Conservador no erro: se qualquer das duas consultas falhar, responde `0`
+ * (não estorna). Deixar de devolver é reclamação que o suporte resolve;
+ * conceder crédito que nunca saiu é dinheiro criado do nada e ninguém percebe.
+ * ⚠️ Nunca inverta para "na dúvida, devolve" — e repare que o erro perigoso é
+ * o da perna dos ESTORNOS: sem saber o que já voltou, devolver é apostar.
  */
-export async function houveDebitoDeTreino(
+export async function saldoDeTreinoPendente(
   userId: string,
   voiceId: string,
-): Promise<boolean> {
-  const { data, error } = await getAdmin()
+): Promise<number> {
+  const admin = getAdmin();
+
+  const { data: debitos, error: errDeb } = await admin
     .from("credit_transactions")
-    .select("id")
+    .select("amount")
     .eq("user_id", userId)
     .eq("kind", "training")
     .eq("ref_type", "voice")
     .eq("ref_id", voiceId)
-    .lt("amount", 0)
-    .limit(1);
-  if (error) {
-    console.error("[credits] houveDebitoDeTreino falhou:", error.message);
-    return false;
+    .lt("amount", 0);
+  if (errDeb) {
+    console.error("[credits] saldoDeTreinoPendente/debitos falhou:", errDeb.message);
+    return 0;
   }
-  return (data?.length ?? 0) > 0;
+
+  const { data: estornos, error: errEst } = await admin
+    .from("credit_transactions")
+    .select("amount")
+    .eq("user_id", userId)
+    .eq("ref_type", "voice_train_refund")
+    .eq("ref_id", voiceId)
+    .gt("amount", 0);
+  if (errEst) {
+    console.error("[credits] saldoDeTreinoPendente/estornos falhou:", errEst.message);
+    return 0;
+  }
+
+  const cobrado = (debitos ?? []).reduce((s, l) => s + Math.abs(Number(l.amount) || 0), 0);
+  const devolvido = (estornos ?? []).reduce((s, l) => s + (Number(l.amount) || 0), 0);
+  return Math.max(0, cobrado - devolvido);
 }
 
 /** Recarrega os créditos da assinatura (reset, não acumula). Chamar no ciclo aprovado. */

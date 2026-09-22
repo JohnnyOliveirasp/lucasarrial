@@ -9,7 +9,7 @@
 import { logger } from "@/lib/logger/server";
 import { getAdmin } from "@/lib/db/admin";
 import { buildAutoReferenceKey } from "@/lib/r2/presigned";
-import { addExtraCredits, houveDebitoDeTreino } from "@/lib/credits/service";
+import { addExtraCredits, saldoDeTreinoPendente } from "@/lib/credits/service";
 import { TRAINING_CREDIT_COST } from "@/lib/credits/config";
 import { deveEstornarTreino } from "@/lib/credits/onboarding-cobranca";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
@@ -630,9 +630,12 @@ export async function finalizeTraining(args: {
    * exatamente por isso que ele podia mentir (caso ricardoolito, 15/09:
    * "seus créditos foram devolvidos" numa voz sem uma única linha de débito).
    *
-   * O estorno continua sendo decidido pelo EXTRATO (`houveDebitoDeTreino` por
-   * ref_id/ref_type), não por inferência sobre quem é o aluno — a simetria de
-   * 17/08 documentada em `onboarding-cobranca.ts` segue intacta.
+   * O estorno continua sendo decidido pelo EXTRATO (`saldoDeTreinoPendente`
+   * por ref_id/ref_type), não por inferência sobre quem é o aluno — a simetria
+   * de 17/08 documentada em `onboarding-cobranca.ts` segue intacta. Desde
+   * 22/09 a pergunta é de SALDO e não de existência: a versão anterior
+   * (`houveDebitoDeTreino`) devolvia de novo a cada falha da mesma voz, que é
+   * o incidente #469.
    *
    * ⚠️ `escalateStuckUser` continua DEPOIS de tudo, de propósito: ele conta
    * `credit_transactions` com ref_type `voice_train_refund` na janela, então
@@ -651,17 +654,22 @@ export async function finalizeTraining(args: {
       .maybeSingle();
     userEmail = (profile as { email?: string } | null)?.email ?? null;
 
-    const temDebito = await houveDebitoDeTreino(userId, voiceId);
+    const pendente = await saldoDeTreinoPendente(userId, voiceId);
     const billed = deveEstornarTreino({
       bypass: bypassesBilling(userEmail),
-      temDebito,
+      pendente,
     });
 
     let estornoOk = false;
     if (billed) {
+      // ⚠️ `Math.min`, e não `TRAINING_CREDIT_COST` fixo: devolve-se o que
+      // AINDA falta, nunca o preço de tabela. Se um débito parcial — ou um
+      // preço diferente do de ontem — deixou o pendente menor que o custo
+      // atual, devolver o valor cheio recria o #469 por outro caminho:
+      // dinheiro que nunca saiu voltando como crédito.
       const r = await addExtraCredits({
         userId,
-        amount: TRAINING_CREDIT_COST,
+        amount: Math.min(TRAINING_CREDIT_COST, pendente),
         refType: "voice_train_refund",
         refId: voiceId,
       });

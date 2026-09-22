@@ -56,20 +56,29 @@ export function deveCobrarOnboarding(args: {
 }
 
 /**
- * Estorna o treino que falhou?
+ * Estorna o treino que falhou? E quanto ainda cabe estornar?
  *
- * SÓ devolve o que de fato saiu. `temDebito` é a existência da linha de débito
- * (`kind='training'`, `ref_type='voice'`, `ref_id=<voiceId>`) no extrato — a
- * mesma linha que `treino.ts` e o `start-training` gravam. Sem linha, não
- * houve cobrança, e "estornar" seria CONCEDER crédito novo.
+ * SÓ devolve o que de fato saiu E AINDA NÃO VOLTOU. `pendente` é o saldo do
+ * par débito/estorno daquela voz no extrato (`saldoDeTreinoPendente`): os
+ * débitos (`kind='training'`, `ref_type='voice'`, `ref_id=<voiceId>`) que
+ * `treino.ts` e o `start-training` gravam, MENOS os estornos já feitos
+ * (`ref_type='voice_train_refund'`, mesmo `ref_id`). Sem saldo, não há o que
+ * devolver, e "estornar" seria CONCEDER crédito novo.
+ *
+ * ⚠️ ISTO ERA `temDebito` (existência) ATÉ 22/09, e a troca é o conserto do
+ * incidente #469. Existência não se gasta: na SEGUNDA falha da mesma voz ela
+ * respondia `true` de novo e a casa devolvia 10.000 contra um débito de 10.000
+ * já estornado. Medido na voz `600173a6` (18/09): 1 débito, 2 estornos, 10.000
+ * criados do nada. Se alguém um dia reescrever isto para uma pergunta de
+ * sim/não, o bug volta inteiro — a pergunta PRECISA ser de saldo.
  *
  * `bypass` fica como segunda trava (cinto e suspensório): equipe não é cobrada,
  * então também não recebe estorno, mesmo que alguma linha antiga exista.
  */
 export function deveEstornarTreino(args: {
   bypass: boolean;
-  temDebito: boolean;
+  pendente: number;
 }): boolean {
   if (args.bypass) return false;
-  return args.temDebito;
+  return args.pendente > 0;
 }

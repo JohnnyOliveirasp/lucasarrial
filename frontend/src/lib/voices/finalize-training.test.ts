@@ -119,7 +119,7 @@ test("os logs do trainer são truncados em 8000 chars, pelo FIM", () => {
  */
 
 test("o desfecho (estorno + chamado) é apurado ANTES da mensagem do aluno", () => {
-  const posEstorno = FONTE.indexOf("const temDebito = await houveDebitoDeTreino");
+  const posEstorno = FONTE.indexOf("const pendente = await saldoDeTreinoPendente");
   const posChamado = FONTE.indexOf("chamado = await abrirChamadoDaFalhaTecnica");
   const posMensagem = FONTE.indexOf("const errorMessage = success");
   assert.ok(posEstorno > 0 && posChamado > 0 && posMensagem > 0, "sumiu alguma das três etapas");
@@ -148,10 +148,36 @@ test("a mensagem do aluno não afirma estorno nem equipe por texto fixo", () => 
 });
 
 test("o estorno continua decidido pelo EXTRATO, não por quem é o aluno", () => {
-  // A simetria de 17/08 (onboarding-cobranca.ts): sem linha de débito para
+  // A simetria de 17/08 (onboarding-cobranca.ts): sem saldo pendente para
   // esta voz, não há o que estornar. Trocar isto por bypassesBilling sozinho
   // devolve 10.000 créditos REAIS a quem nunca pagou.
-  assert.match(FONTE, /deveEstornarTreino\(\{\s*bypass: bypassesBilling\(userEmail\),\s*temDebito,/);
+  assert.match(FONTE, /deveEstornarTreino\(\{\s*bypass: bypassesBilling\(userEmail\),\s*pendente,/);
+});
+
+test("REGRESSÃO #469: a decisão é por SALDO pendente, não por existência de débito", () => {
+  // O #469: `houveDebitoDeTreino` respondia `true` a cada falha da mesma voz
+  // porque existência não se gasta — 1 débito, 2 estornos, 10.000 do nada
+  // (voz 600173a6, 18/09). Se alguém reintroduzir a pergunta de sim/não, o
+  // bug volta inteiro e em silêncio, porque crédito que sobra ninguém reporta.
+  // A trava é contra a CHAMADA, não contra a menção: o comentário do fonte
+  // cita `houveDebitoDeTreino` de propósito, pra contar por que ela saiu.
+  // Proibir a palavra apagaria a história e o próximo refactor repetiria o bug
+  // por não saber que ele existiu.
+  assert.ok(
+    !/await\s+houveDebitoDeTreino\s*\(/.test(FONTE),
+    "a guarda por EXISTÊNCIA de débito voltou a ser CHAMADA — é exatamente o #469",
+  );
+  assert.ok(
+    !/import\s*\{[^}]*houveDebitoDeTreino/.test(FONTE),
+    "o import da guarda por existência voltou — ela não tem mais chamador",
+  );
+  assert.match(FONTE, /const pendente = await saldoDeTreinoPendente\(userId, voiceId\)/);
+});
+
+test("REGRESSÃO #469: nunca se devolve mais que o pendente", () => {
+  // Devolver `TRAINING_CREDIT_COST` fixo recria o defeito por outro caminho
+  // quando o pendente é menor que o preço de tabela.
+  assert.match(FONTE, /amount: Math\.min\(TRAINING_CREDIT_COST, pendente\)/);
 });
 
 test("escalateStuckUser continua DEPOIS do estorno (a régua de rajada conta o estorno)", () => {
