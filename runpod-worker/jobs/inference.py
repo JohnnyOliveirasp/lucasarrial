@@ -111,6 +111,14 @@ class InferenceJob:
             "tail_interno_checked": 0, "tail_interno_flagged": 0,
             "tail_interno_none": 0, "tail_interno_sombra": 0,
             "tail_interno_word_flagged": 0,
+            # POSICAO DA FRONTEIRA (f8587cef/#234, 22/09): crossfade em ms da
+            # montagem, gravado pra quem le `tail_interno_entregue_pos_s`
+            # (tts_qa/loop.py) poder corrigir o desvio — o crossfade ENCURTA o
+            # audio final em ~(n_fronteiras x crossfade), entao cada offset
+            # gravado e' limite SUPERIOR da posicao real. Os campos t_s/pos_s
+            # em si nascem dentro de `registrar_tail_interno`, junto com a
+            # primeira duracao medida (ausencia = duracao nao medida).
+            "tail_interno_pos_crossfade_ms": self.cfg.crossfade_ms,
             # CURA DO FIM (#234, 06/09) — a cura tem SEIS desfechos e ate hoje
             # so o SUCESSO (`tail_healed`) tinha contador. Medido na ronda de
             # 06/09: a cura so entrega resultado em 9 de 154 geracoes com a
@@ -563,7 +571,12 @@ class InferenceJob:
                     # Este audio e' o que vai pro aluno (aprovado ou entregue
                     # pela escotilha de lacuna espalhada): registra.
                     registrar_cobertura(self.qa_stats, coverage)
-                    registrar_tail_interno(self.qa_stats, tail_interno)
+                    # `dur_s` ANTES da pausa de paragrafo (concatenada abaixo,
+                    # depois do registro) — o offset gravado e' aproximacao
+                    # assumida, ver "HONESTIDADE DA MEDIDA" em registrar_tail_interno.
+                    registrar_tail_interno(
+                        self.qa_stats, tail_interno,
+                        dur_s=(seg.size / self.sample_rate) if self.sample_rate else None)
                     registrar_faltantes(self.qa_stats, faltantes,
                                         self.cfg.qa_faltantes_amostra_max)
                     registrar_grafias(self.qa_stats, grafias,
@@ -655,7 +668,11 @@ class InferenceJob:
                     # Este sub-pedaco entra no audio final: e ELE que o aluno
                     # recebe, nao o chunk original que reprovou.
                     registrar_cobertura(self.qa_stats, cov)
-                    registrar_tail_interno(self.qa_stats, tail_interno)
+                    # No resgate quem entrega e' o SUB-PEDACO: a duracao dele e'
+                    # o que anda o relogio de `tail_interno_entregue_pos_s`.
+                    registrar_tail_interno(
+                        self.qa_stats, tail_interno,
+                        dur_s=(seg.size / self.sample_rate) if self.sample_rate else None)
                     registrar_faltantes(self.qa_stats, faltantes,
                                         self.cfg.qa_faltantes_amostra_max)
                     registrar_grafias(self.qa_stats, grafias,
@@ -708,7 +725,10 @@ class InferenceJob:
                      pedaco=k, coverage=cov, maior_lacuna=lacuna)
                 return None
             registrar_cobertura(self.qa_stats, cov)
-            registrar_tail_interno(self.qa_stats, tail_interno)
+            # Nivel 2: idem — o pedaco entregue e' este `seg`.
+            registrar_tail_interno(
+                self.qa_stats, tail_interno,
+                dur_s=(seg.size / self.sample_rate) if self.sample_rate else None)
             registrar_faltantes(self.qa_stats, faltantes,
                                 self.cfg.qa_faltantes_amostra_max)
             registrar_grafias(self.qa_stats, grafias,

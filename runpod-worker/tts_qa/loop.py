@@ -159,7 +159,12 @@ def registrar_cobertura(qa_stats: dict, best_coverage: "float | None") -> None:
     qa_stats["coverage_medio"] = round(soma / n, 4)
 
 
-def registrar_tail_interno(qa_stats: dict, tail_interno: "bool | None") -> None:
+def registrar_tail_interno(
+    qa_stats: dict,
+    tail_interno: "bool | None",
+    dur_s: "float | None" = None,
+    amostra_max: int = 40,
+) -> None:
     """Acumula o veredito de FRONTEIRA INTERNA do pedaco ENTREGUE (#234).
 
     DUAS METRICAS DIFERENTES, e confundi-las foi o defeito que este codigo
@@ -195,6 +200,44 @@ def registrar_tail_interno(qa_stats: dict, tail_interno: "bool | None") -> None:
                                  desligado, ou medida inconclusiva/audio mudo).
                                  Fecha a conta: entregues = n + sem_veredito.
 
+    POSICAO DA FRONTEIRA (f8587cef/#234, 22/09) — o contador acima diz QUE uma
+    fronteira reprovada foi entregue, mas nao ONDE no audio; foi isso que
+    impediu a ronda de 21/09 de mandar um ouvido conferir ponto a ponto as 4
+    geracoes discordantes. Quando o chamador passa `dur_s` (duracao em segundos
+    do pedaco entregue), dois campos novos nascem JUNTOS na primeira chamada
+    com duracao (ausentes = codigo antigo / duracao nao medida; presentes com
+    lista vazia = mediu e nenhuma fronteira reprovou — a mesma disciplina
+    numerador-nasce-com-denominador do resto deste arquivo):
+
+      tail_interno_entregue_t_s   — relogio de entrega: soma das duracoes de
+                                    TODOS os pedacos ja registrados, inclusive
+                                    os sem veredito. Inclusive de proposito:
+                                    um pedaco mudo/inconclusivo no MEIO do
+                                    arquivo ocupa tempo, e pular a duracao
+                                    dele deslocaria toda posicao seguinte.
+      tail_interno_entregue_pos_s — offsets (fim do pedaco atual, em s) das
+                                    fronteiras com veredito True, na ordem de
+                                    entrega, com teto `amostra_max` (mesmo
+                                    padrao de `registrar_faltantes`: as
+                                    PRIMEIRAS; `entregue` ao lado denuncia
+                                    quando a amostra esta cortada).
+
+    ⚠️ HONESTIDADE DA MEDIDA — estes offsets sao APROXIMACAO, nao timestamp
+    exato no arquivo final:
+      - a montagem aplica CROSSFADE entre pedacos, que ENCURTA o audio: a
+        posicao real fica ~(n_fronteiras_anteriores x crossfade) ANTES do
+        offset gravado. O chamador grava o crossfade usado em
+        `tail_interno_pos_crossfade_ms` (inference.py) pra quem le poder
+        corrigir;
+      - pausa de paragrafo e silencio entre chunks sao concatenados DEPOIS
+        do registro e ALONGAM o audio: quando existem, a posicao real fica
+        DEPOIS do offset gravado.
+    Ou seja: use como guia pra apontar o ouvido humano na regiao certa
+    (±poucos segundos), nunca como corte automatico por timestamp.
+
+    `dur_s=None` (default) = comportamento anterior, inalterado: so os
+    contadores, nenhum campo novo criado.
+
     ⚠️ QUEM CHAMA E' O CHAMADOR, DE PROPOSITO — mesma razao de
     `registrar_cobertura` (leia o aviso de la, 26/08): o audio julgado dentro
     de `run_chunk_qa` ainda pode ser jogado fora pelo resgate por subdivisao, e
@@ -207,6 +250,14 @@ def registrar_tail_interno(qa_stats: dict, tail_interno: "bool | None") -> None:
     job, os pedacos ja registrados continuam na conta e o aluno nao recebeu
     nada — leia estes campos filtrando por `status='ready'`.
     """
+    if dur_s is not None:
+        # O relogio anda pra TODO pedaco com duracao medida — inclusive sem
+        # veredito (ver docstring: pedaco mudo no meio do arquivo ocupa tempo).
+        # A lista nasce junto, mesmo vazia: ausente != "mediu e nada reprovou".
+        qa_stats["tail_interno_entregue_t_s"] = round(
+            qa_stats.get("tail_interno_entregue_t_s", 0.0) + float(dur_s), 3
+        )
+        qa_stats.setdefault("tail_interno_entregue_pos_s", [])
     if tail_interno is None:
         qa_stats["tail_interno_entregue_sem_veredito"] = (
             qa_stats.get("tail_interno_entregue_sem_veredito", 0) + 1
@@ -219,6 +270,13 @@ def registrar_tail_interno(qa_stats: dict, tail_interno: "bool | None") -> None:
     qa_stats["tail_interno_entregue"] = (
         qa_stats.get("tail_interno_entregue", 0) + (1 if tail_interno else 0)
     )
+    if tail_interno and dur_s is not None:
+        # Fronteira reprovada ENTREGUE: apenda o fim do pedaco atual (limite
+        # superior — ver "HONESTIDADE DA MEDIDA" acima). Teto obrigatorio, o
+        # mesmo motivo do `registrar_faltantes`: qa_stats vira jsonb no banco.
+        pos = qa_stats["tail_interno_entregue_pos_s"]
+        if len(pos) < max(0, int(amostra_max)):
+            pos.append(qa_stats["tail_interno_entregue_t_s"])
 
 
 def registrar_faltantes(qa_stats: dict, faltantes, amostra_max: int = 20) -> None:
