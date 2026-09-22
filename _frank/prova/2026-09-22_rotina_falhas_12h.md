@@ -212,3 +212,57 @@ que é regra 9-D e é urgente.
   inventada no #245 (hoje, no meio da ronda).
 - **Uma decisão esperando o Johnny**, com número na mão e separada em (A)
   barata e (B) cara.
+
+---
+
+## 7. ADENDO — o passo fixo de fim de ronda achou conserto aberto há 5 dias
+
+Ao conferir se ficou **fix preso em branch** (passo fixo), achei — **depois** de
+já ter escalado:
+
+**PR #323** — *"#446: função de estorno ausente para de derrubar o webhook
+(ponte até a `scripts/111`)"*, branch `feat/446-estorno-nao-derruba-webhook`
+(head `82e1c2ff`, no origin). **Aberto em 17/09 10:55Z — 5 dias.**
+`isDraft=false`, **sem review**, **nenhum check de CI rodado**.
+
+**Ele é a ponte:** faz o webhook parar de quebrar **mesmo com a migration
+ausente**. Resolve a parte urgente **sem DDL e sem tirar crédito de ninguém**.
+Foi aberto no **mesmo dia** em que o #446 nasceu, e ficou parado enquanto o
+defeito seguia: o caso do `mkt.drrigatti` é de 21/09, **4 dias depois do PR
+existir**.
+
+### Conferi se o branch está podre, porque a casa já levou esse susto
+
+246 commits atrás da main — **mas** nos **dois** arquivos que ele toca
+(`webhooks/hotmart/route.ts` e `lib/credits/refund.ts`) a main andou **um único
+commit** desde a base `20804362`: o `24e42a00` (#381). Deriva pequena e
+**nomeada**. **Não** é o caso dos branches marcados "não mergear"
+(`onedrive-401`, `trava-foto-nova-8379549c`, `fix-image-upload-retry`, as 2 da
+cura de referência) — naqueles o arquivo tinha sido movido em vários commits.
+Este dá rebase.
+
+**Não mergeei, não rebaseei, não rodei CI.**
+
+### Recomendação revisada, em ordem de risco crescente (emenda enviada ao grupo)
+
+1. **Mergear o PR #323** — para a quebra hoje, sem DDL, sem mexer em saldo.
+   Se for feito só isto, **já para de piorar**.
+2. **Aplicar `scripts/111`** — faz a regra de 18/08 ter efeito nos estornos novos.
+3. **Decidir os 1.456.335 cr** das 10 contas — única parte que mexe em saldo de
+   aluno e a única irreversível.
+
+Ofereci revisar o #323 contra a main de hoje e trazer veredito, **sem mergear**.
+
+### A lição, e ela é minha
+
+O #446 passou **5 dias** sendo escalado como "decisão do Johnny" enquanto
+**metade dele tinha PR aberto esperando review**. Escalar não dispensa perguntar
+**"já existe conserto em algum lugar?"**. Quem achou foi o passo fixo de fim de
+ronda — ele não é burocracia.
+
+## 8. Outros estados conferidos
+
+- **PR #398** (fix do #469, estorno de treino por saldo pendente, da ronda das
+  10h40Z): **segue OPEN, não mergeado**. Enquanto não mergear, cada treino que
+  falhar 2× segue criando 10.000 cr. Registro pra não parecer coberto.
+- `git log origin/main..HEAD` → **vazio**. Nada meu preso fora da main.
