@@ -139,5 +139,25 @@ Ambos foram ao grupo nesta ronda.
 ## Fim de ronda
 
 - worktree de inspeção do #214 removido; repo de volta na `main`.
-- `git log --oneline origin/main..HEAD` vazio depois do push deste log.
+- `git log --oneline origin/main..HEAD` **vazio** depois do push deste log.
 - Nenhum código tocado nesta ronda: só leitura, uma nota de incidente e este log.
+
+### ⚠️ O passo de conferência de branch do manual não é usável neste repo
+
+O fim de ronda manda rodar `git branch` + `git rev-list main..<branch>` pra
+garantir que não ficou fix preso em branch (a lição de 19/08, quando um fix de
+aluno ficou 9h preso assim). **Rodei, e ele acusa ~190 branches com "commit fora
+da main".**
+
+Isso **não** são 190 fixes presos. É a **mesma armadilha do squash** que me pegou
+no #293, agora em escala: como o merge por squash reescreve o sha, o head de
+todo branch já mergeado fica "fora da main" pra sempre. O check, como está
+escrito, tem ~100% de falso positivo e por isso não consegue apontar o caso real
+que ele existe pra pegar.
+
+O que de fato responde a pergunta "tem conserto pronto que não está no ar?" é a
+lista de **PR aberto** (`gh pr list --state open` → **57**, mais antigo de 19/08),
+mais conferência por **conteúdo** na `origin/main` pra cada suspeita. Deixo
+registrado porque seguir o passo ao pé da letra produz um alarme de 190 que
+ninguém consegue usar — e alarme que ninguém usa é como a classe do #312 chegou
+a 33 pessoas sem ninguém ver.
