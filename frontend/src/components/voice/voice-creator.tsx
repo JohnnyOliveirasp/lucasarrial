@@ -62,6 +62,17 @@ function extensaoDe(nome: string): string {
 }
 
 /**
+ * Nomes de arquivo pra dentro de uma mensagem de erro: até 5 por extenso,
+ * acima disso reticências — mesmo teto do aviso de descartados
+ * (NOMES_DESCARTADOS_EXIBIDOS), pra mensagem não virar parágrafo.
+ */
+const NOMES_EM_ERRO_EXIBIDOS = 5;
+function nomesParaMensagem(nomes: string[]): string {
+  const mostrados = nomes.slice(0, NOMES_EM_ERRO_EXIBIDOS).join(", ");
+  return nomes.length > NOMES_EM_ERRO_EXIBIDOS ? `${mostrados}…` : mostrados;
+}
+
+/**
  * Assinatura de um áudio para efeito de repetição: **nome + tamanho**.
  *
  * NÃO entra `lastModified`. Ele parece identificar o arquivo, mas os takes do
@@ -160,6 +171,19 @@ export function VoiceCreator() {
   // Allan/Alana) — mesma vida dos takes do celular: entram no treino e são
   // apagadas do R2 depois do envio.
   const serverClipKeys = useRef<string[]>([]);
+  /**
+   * Envio em andamento sobrevive a uma falha PARCIAL (#526): a voz criada e o
+   * slot presigned de cada arquivo ficam aqui pra um retry com a MESMA lista
+   * reaproveitar tudo e reenviar só o que faltou. Sem isto, cada clique em
+   * Treinar criava OUTRA voz (a anterior virava órfã em "uploading") e
+   * re-subia até o que já tinha chegado. Zera quando o envio fecha ou quando
+   * a lista de arquivos muda.
+   */
+  const envioRef = useRef<{
+    voiceId: string;
+    slotPorArquivo: Map<string, { index: number; key: string; upload_url: string }>;
+    fileIds: string[];
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -603,44 +627,80 @@ export function VoiceCreator() {
     setOverallProgress(0);
     setError(null);
 
-    // 1. Pede backend pra criar voice + presigned URLs
-    let response: Response;
-    try {
-      response = await fetch("/api/v1/voices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          files: files.map((f) => ({
-            filename: f.file.name,
-            content_type: f.file.type || "audio/mpeg",
-            size_bytes: f.file.size,
-          })),
-        }),
-      });
-    } catch {
-      setStep("upload");
-      setBusy(false);
-      setError(t("errors.network"));
-      return;
+    // 1. Voz + presigned URLs — REAPROVEITADOS num retry com a MESMA lista
+    // de arquivos (#526). Criar voz nova a cada clique jogava fora o que já
+    // tinha subido, deixava a voz anterior órfã em "uploading" e não existia
+    // caminho nenhum pra "reenviar só o que faltou". Os presigned valem 6h,
+    // então o retry cabe na janela com folga.
+    const idsAtuais = files.map((f) => f.id);
+    const reuso =
+      envioRef.current !== null &&
+      envioRef.current.fileIds.length === idsAtuais.length &&
+      envioRef.current.fileIds.every((fid, i) => fid === idsAtuais[i]);
+
+    if (!reuso) {
+      envioRef.current = null;
+      let response: Response;
+      try {
+        response = await fetch("/api/v1/voices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            files: files.map((f) => ({
+              filename: f.file.name,
+              content_type: f.file.type || "audio/mpeg",
+              size_bytes: f.file.size,
+            })),
+          }),
+        });
+      } catch {
+        setStep("upload");
+        setBusy(false);
+        setError(t("errors.network"));
+        return;
+      }
+
+      if (!response.ok) {
+        setStep("upload");
+        setBusy(false);
+        const body = await response.json().catch(() => ({}));
+        setError(body?.error?.message || t("errors.generic"));
+        return;
+      }
+
+      const json = await response.json();
+      const slots: Array<{ index: number; key: string; upload_url: string }> =
+        json.upload_slots;
+      envioRef.current = {
+        voiceId: json.voice.id as string,
+        // slot → file pelo index (mesma ordem do POST), guardado por id pra
+        // sobreviver a um retry em que só um subconjunto volta pro pool.
+        slotPorArquivo: new Map(files.map((f, i) => [f.id, slots[i]])),
+        fileIds: idsAtuais,
+      };
     }
 
-    if (!response.ok) {
-      setStep("upload");
-      setBusy(false);
-      const body = await response.json().catch(() => ({}));
-      setError(body?.error?.message || t("errors.generic"));
-      return;
-    }
+    const envio = envioRef.current;
+    if (!envio) return; // impossível — o bloco acima acabou de preencher
+    const voiceId = envio.voiceId;
+    const slotDe = (fileId: string) => envio.slotPorArquivo.get(fileId);
 
-    const json = await response.json();
-    const voiceId: string = json.voice.id;
-    const slots: Array<{ index: number; key: string; upload_url: string }> =
-      json.upload_slots;
-
-    // 2. Mapeia slot → file pelo index (mesma ordem)
+    // 2. Só sobe o que ainda não chegou: num retry, quem já está "done" fica
+    // quieto — reenviar só o que faltou é a metade do conserto do #526.
+    const pendentes = files.filter((f) => f.state !== "done");
     setFiles((prev) =>
-      prev.map((f, i) => ({ ...f, key: slots[i]?.key, state: "uploading" })),
+      prev.map((f) =>
+        f.state === "done"
+          ? f
+          : {
+              ...f,
+              key: slotDe(f.id)?.key,
+              state: "uploading",
+              progress: 0,
+              error: undefined,
+            },
+      ),
     );
 
     // 3. Upload browser → R2 (até UPLOAD_CONCURRENCY simultâneos, com retry)
@@ -648,14 +708,21 @@ export function VoiceCreator() {
     // A partir daqui quem corre é a banda do aluno: é a única fase em que
     // contar arquivo e mostrar porcentagem significa alguma coisa.
     setFase("enviando");
-    const results = await runPool(files, UPLOAD_CONCURRENCY, (f, i) =>
-      uploadOne(f, slots[i], setFiles, setOverallProgress, files.length),
+    const results = await runPool(pendentes, UPLOAD_CONCURRENCY, (f) =>
+      uploadOne(f, slotDe(f.id), setFiles, setOverallProgress, files.length),
     );
 
-    const failed = results.filter((r) => r.status === "rejected").length;
-    if (failed > 0) {
+    const falhados = pendentes.filter((_, i) => results[i]?.status === "rejected");
+    if (falhados.length > 0) {
       setBusy(false);
-      setError(t("errors.uploadFailed", { count: failed }));
+      // Diz QUAIS falharam, não só quantos: "2 arquivos falharam" sem nome
+      // não dá ação nenhuma ao aluno (#526). O mesmo botão reenvia só eles.
+      setError(
+        t("errors.uploadFailedNamed", {
+          count: falhados.length,
+          names: nomesParaMensagem(falhados.map((f) => f.file.name)),
+        }),
+      );
       return;
     }
 
@@ -663,8 +730,11 @@ export function VoiceCreator() {
     // era EXATAMENTE esta janela que ficava muda no #289.
     setFase("finalizando");
 
-    // 4. Avisa backend que terminou — manda também durações medidas no browser
-    const uploadedKeys = slots.map((s) => s.key);
+    // 4. Avisa backend que terminou — manda também durações medidas no
+    // browser. O servidor CONFERE no bucket o que realmente chegou: XHR com
+    // status 200 é alegação, não prova (#526 — a Hellen "enviou" 7 e só 2
+    // existiam no R2, e a recusa culpou a duração da fala dela).
+    const uploadedKeys = files.map((f) => slotDe(f.id)?.key ?? "");
     const clientDurations = files.map((f) => f.duration ?? 0);
     const completeResp = await fetch(
       `/api/v1/voices/${voiceId}/uploads-complete`,
@@ -679,11 +749,49 @@ export function VoiceCreator() {
     );
 
     if (!completeResp.ok) {
-      setBusy(false);
       const body = await completeResp.json().catch(() => ({}));
+      const chavesPerdidas: string[] = Array.isArray(
+        body?.error?.details?.missing_keys,
+      )
+        ? body.error.details.missing_keys
+        : [];
+      if (completeResp.status === 409 && chavesPerdidas.length > 0) {
+        // O bucket desmentiu o XHR: estes arquivos NÃO chegaram, mesmo com o
+        // PUT dizendo 200. Voltam pra fila (o mesmo clique em Treinar reenvia
+        // só eles) e a tela nomeia cada um — nunca seguir calado, e nunca
+        // deixar o servidor recusar por "áudio curto" um envio pela metade.
+        const perdidas = new Set(chavesPerdidas);
+        const nomes = files
+          .filter((f) => {
+            const k = slotDe(f.id)?.key;
+            return k !== undefined && perdidas.has(k);
+          })
+          .map((f) => f.file.name);
+        setFiles((prev) =>
+          prev.map((f) => {
+            const k = slotDe(f.id)?.key;
+            return k !== undefined && perdidas.has(k)
+              ? { ...f, state: "idle", progress: 0 }
+              : f;
+          }),
+        );
+        setBusy(false);
+        setError(
+          t("errors.incompleteUpload", {
+            count: nomes.length,
+            names: nomesParaMensagem(nomes),
+          }),
+        );
+        return;
+      }
+      setBusy(false);
       setError(body?.error?.message || t("errors.generic"));
       return;
     }
+
+    // O envio fechou de verdade — a voz seguiu de status; não há mais o que
+    // reaproveitar (um próximo envio é outra voz).
+    envioRef.current = null;
 
     // Gravações do Gravador enviadas com sucesso → limpa o IndexedDB
     // (best-effort; se falhar, só reapareceriam pré-carregadas).
