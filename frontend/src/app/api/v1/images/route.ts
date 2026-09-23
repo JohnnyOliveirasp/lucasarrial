@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 import { authenticate } from "@/lib/api/auth";
 import { badRequest, jsonOk, serverError, unauthorized } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
+import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import {
   apagarDoHistorico,
   type ExtratoDoRef,
@@ -286,6 +287,55 @@ export async function DELETE(request: NextRequest) {
       `[images:delete] ESTORNO NÃO CONFIRMADO — delete abortado. user=${auth.user_id} ` +
         `ids=${resultado.bloqueados.join(",")}`,
     );
+    /**
+     * ABRE CHAMADO DE VERDADE (#527, 23/09).
+     *
+     * O `console.error` acima era a ÚNICA coisa que acontecia aqui — e duas
+     * linhas abaixo a casa diz ao aluno, no card E na resposta, que "o suporte
+     * já foi avisado". Medido em 23/09: NENHUM cron do Hetzner lê o stdout do
+     * app (todos os sweeps são movidos por banco), então ninguém era avisado.
+     * Promessa falsa por chamada faltando, exatamente no caminho em que o
+     * dinheiro NÃO voltou.
+     *
+     * A assinatura leva os ids ORDENADOS: o mesmo lote bloqueado tem de casar
+     * no chamado que já existe (a função dedupa por igualdade exata), e sem o
+     * sort a mesma falha viraria chamado novo só porque o array veio em outra
+     * ordem.
+     *
+     * `tecnico` porque existe ação NOSSA que resolve: devolver na mão os
+     * créditos que o estorno automático não devolveu.
+     *
+     * Best-effort de propósito: se abrir o chamado falhar, o aluno AINDA
+     * precisa receber o card corrigido e o erro. Falha aqui não pode derrubar
+     * o que vem depois — mas também não some, porque cai no console com
+     * marcador próprio.
+     */
+    try {
+      await abrirChamadoReportado({
+        signature: `images:estorno-nao-confirmado:${auth.user_id}:${[...resultado.bloqueados]
+          .sort()
+          .join(",")}`,
+        title: `Estorno de imagem NÃO confirmado — ${resultado.bloqueados.length} geração(ões) cobradas sem devolução`,
+        description:
+          `O aluno tentou apagar geração(ões) de imagem que falharam, e o estorno automático ` +
+          `NÃO pôde ser confirmado no extrato. O delete foi abortado de propósito: o card fica ` +
+          `como prova da cobrança.\n\n` +
+          `user_id: ${auth.user_id}\n` +
+          `image_generations bloqueadas: ${resultado.bloqueados.join(", ")}\n\n` +
+          `⚠️ O QUE FAZER: conferir o extrato desse aluno por ref_type='image_refund' CASADO ` +
+          `com o ref_id de cada geração (NUNCA por kind — o estorno grava kind='extra_purchase') ` +
+          `e devolver na mão o que não voltou. A mensagem no card já diz a ele que o suporte foi ` +
+          `avisado.`,
+        reportedBy: "images-delete",
+        categoria: "tecnico",
+        kind: "billing",
+        cause: "estorno_nao_confirmado",
+        affectedEmails: auth.email ? [auth.email] : undefined,
+        sampleError: `delete abortado: estorno não confirmado para ${resultado.bloqueados.length} id(s)`,
+      });
+    } catch (e) {
+      console.error("[images:delete] falhou ao abrir chamado do estorno não confirmado:", e);
+    }
     // A mensagem que failImageGeneration deixou na row promete "créditos
     // devolvidos automaticamente". Como NÃO foram, corrige o texto: card que
     // mente sobre estorno é como não ter estornado — o aluno não reclama e a
