@@ -426,12 +426,25 @@ def intrusao_sistemica(qa_stats: dict, fracao_min: float, checadas_min: int) -> 
       flagged == checked (100%), qualquer n   -> 7 casos, mas 5 sao textos
         curtos de 1 chunk (33-227 chars, checked 3-4) onde "100%" e so o
         mesmo chunk retentado 3x — sinal fraco demais pra custar uma falha;
-      fracao >= 0.9 E checked >= 5 (ESTA)     -> 5 casos (0,64% das entregas;
-        4 de 245 alunos ativos), todos com a assinatura severa: texto longo,
-        muitas regens, quase toda checagem acusando. Inclui os 2 confirmados
-        por reclamacao (65f26a72 e be84aa8f) e 3 do mesmo padrao que a regua
-        estrita de 100% deixaria passar (33/36, 18/19 e 15/16 — dois da MESMA
-        aluna do caso confirmado de 15/09, reincidindo em 21/09).
+      fracao >= 0.9 E checked >= 5 (ESTA)     -> 5 casos de 3 ALUNOS
+        distintos (0,64% das entregas; raqueldejuli aparece 3x — e
+        reincidencia da mesma aluna, nao alcance maior), todos com a
+        assinatura severa: texto longo, muitas regens, quase toda checagem
+        acusando. Inclui os 2 confirmados por reclamacao (65f26a72 e
+        be84aa8f) e 3 do mesmo padrao que a regua estrita de 100% deixaria
+        passar (33/36, 18/19 e 15/16 — dois da MESMA aluna do caso
+        confirmado de 15/09, reincidindo em 21/09).
+
+    Denominador de alunos (documentado porque a fracao so vale se a query
+    for reproduzivel): count(DISTINCT user_id) sobre a MESMA populacao das
+    entregas — generations com status='ready', qa ? 'intrusion_checked',
+    created_at >= now() - interval '14 days'. Em 23/09 isso dava ~245
+    alunos (a janela desliza com now(): no mesmo dia mediu-se 776/245,
+    774 e 775/244 em horas diferentes). Os 3 alunos atingidos sao estaveis
+    — o conjunto dos 5 casos nao muda nem alargando a janela pra 16 dias.
+    NAO e "alunos ativos" em sentido de assinatura: e alunos com entrega
+    ready E telemetria de intrusao na janela, o unico denominador
+    comparavel com o numerador.
 
     Devolve um dict com os numeros (pro payload de falha) quando a geracao e
     sistemica, None quando nao. `fracao_min <= 0` desliga (valvula, mesmo

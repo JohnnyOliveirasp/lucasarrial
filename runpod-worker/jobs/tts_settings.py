@@ -162,9 +162,11 @@ class TtsSettings:
     pega a assinatura severa do caso 65f26a72 (18/18 checagens acusando, frase
     fora do texto repetida a cada paragrafo, entregue e cobrada). Regua MEDIDA
     antes de escolhida, contra 776 entregas de 14 dias: 0.9/5 reprova 5
-    (0,64%; 4 de 245 alunos), todas com a assinatura severa — os numeros e as
-    alternativas descartadas estao no docstring de `intrusao_sistemica`
-    (tts_qa/loop.py). TTS_INTRUSION_FAIL_FRACAO=0 desliga sem deploy."""
+    geracoes de 3 ALUNOS distintos (0,64% das entregas; 3 de ~245 alunos com
+    entrega na janela — denominador documentado no docstring de
+    `intrusao_sistemica`), todas com a assinatura severa — os numeros e as
+    alternativas descartadas estao no mesmo docstring (tts_qa/loop.py).
+    TTS_INTRUSION_FAIL_FRACAO=0 desliga sem deploy."""
 
     tail_qa_interno_enabled: bool
     tail_qa_interno_modo: str
