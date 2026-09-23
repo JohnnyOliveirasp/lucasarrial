@@ -1859,6 +1859,16 @@
       "selectedImage": "Foto seleccionada",
       "selectedVideo": "Video seleccionado (Reel)",
       "change": "cambiar"
+    },
+    "trial": {
+      "label": "Publicar como Reels de prueba",
+      "help": "Instagram muestra el Reel solo a quienes NO te siguen. Sirve para probar un contenido sin mostrarlo a tu público. Si funciona bien, después decides si lo publicas en tu perfil.",
+      "strategy": "Cuándo pasa a ser publicación normal:",
+      "strategies": {
+        "MANUAL": "Solo cuando yo lo indique",
+        "SS_PERFORMANCE": "Automático, si funciona bien"
+      },
+      "onlyReel": "Disponible solo para video (Reels)."
     }
   },
   "edicao": {

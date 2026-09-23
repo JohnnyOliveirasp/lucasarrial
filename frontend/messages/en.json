@@ -1859,6 +1859,16 @@
       "selectedImage": "Photo selected",
       "selectedVideo": "Video selected (Reel)",
       "change": "change"
+    },
+    "trial": {
+      "label": "Publish as a trial Reel",
+      "help": "Instagram shows the Reel only to people who do NOT follow you. Use it to test content without showing it to your audience. If it performs well, you decide later whether to post it on your profile.",
+      "strategy": "When it becomes a normal post:",
+      "strategies": {
+        "MANUAL": "Only when I say so",
+        "SS_PERFORMANCE": "Automatically, if it performs well"
+      },
+      "onlyReel": "Available for video (Reels) only."
     }
   },
   "edicao": {
