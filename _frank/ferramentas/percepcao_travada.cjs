@@ -133,10 +133,41 @@ const STATUS_VARRIDOS = ["open", "investigating", "aguardando_aluno"];
  * PROXIMA nota ao despachar, que e onde o detector le. Se este custo
  * aparecer medido, o conserto e refinar o anulador, nao remove-lo.
  */
+/**
+ * QUARTO DEFEITO, MEDIDO NA RONDA DE 23/09 ~00h40Z: o anulador nao trata
+ * NEGACAO. O #518 (b4d64e4a, Junqueira) entrou na lista como pendencia
+ * enquanto a sua ULTIMA nota diz, com todas as letras, o CONTRARIO:
+ *
+ *   "...e NAO PEDI OUVIDO HUMANO porque ele proprio ja deu o veredito de
+ *    ouvido que o caso precisava - eu nao ouco e nao afirmo nada sobre
+ *    como o audio saiu."
+ *
+ * A marca casou por 'ouvido humano' DENTRO de "nao pedi ouvido humano".
+ * Nenhum CUMPRIMENTOS anterior pega isto: nao ha verbo em primeira pessoa
+ * ("olhei"/"assisti"/"ouvi" — e "ouvi" tem word boundary, entao nao casa
+ * "ouvido"), nao ha "despacho cumprido" e nao ha "falso positivo".
+ *
+ * E a MESMA familia dos tres anteriores — a nota fala SOBRE a marca em vez
+ * de pedir — mas por uma porta nova: antes era CITACAO e RELATO, agora e
+ * RECUSA EXPLICITA. Custo real: com 1 so card na classe, um falso positivo
+ * e 100% do numero do relatorio. A ronda de 22/09 23h reportou "0"; esta
+ * teria reportado "1" e mandado despachar percepcao de um caso em que o
+ * proprio aluno ja tinha dado o veredito de ouvido.
+ *
+ * ⚠️ O QUE **NAO** ENTRA AQUI, DE PROPOSITO: "eu nao ouco" / "eu nao
+ * enxergo" sozinhos. Essas frases sao o PEDIDO DE SOCORRO — sao exatamente
+ * a marca do controle positivo #310. Anular por elas cegaria o detector
+ * inteiro. So se desconta a RECUSA NOMINAL ("nao pedi X") e o veredito ja
+ * dado, que sao afirmacoes de que a pendencia NAO existe.
+ */
 const CUMPRIMENTOS = [
   /\bolhei\b/, /\bassisti\b/, /\bouvi\b/,
   /despacho cumprido/, /percepcao (ja foi |foi )?cumprida/,
   /nao e caso de percepcao/, /falso positivo/, /o que foi feito/,
+  // 23/09 — recusa explicita e veredito ja dado (ver bloco acima)
+  /nao pedi (ouvido|olho|percepcao)/,
+  /ja deu o veredito/,
+  /ninguem precisa olhar nada de novo/,
 ];
 
 /** Cita entre aspas/colchetes, span limitado (sem \n, teto de chars). */
@@ -203,7 +234,21 @@ if (require.main === module) (async () => {
     console.error("O filtro quebrou. Qualquer zero desta varredura seria cegueira, nao saude.");
     process.exit(1);
   }
-  console.log(`controle positivo OK (#310 reencontrado pela marca) · ${data.length} incidentes varridos\n`);
+  // CONTROLE NEGATIVO (23/09): o #518 recusa percepcao por escrito ("NAO PEDI
+  // OUVIDO HUMANO ... ele proprio ja deu o veredito"). Ele NAO pode contar como
+  // pendencia. Se voltar a contar, o anulador de negacao regrediu e o numero
+  // volta a mentir pra cima — morre aqui, nao imprime.
+  const negativo = data.find((i) => i.numero === 518);
+  if (negativo && Array.isArray(negativo.agent_notes) && negativo.agent_notes.length) {
+    const ultimaNeg = negativo.agent_notes[negativo.agent_notes.length - 1];
+    if (marcaDe(ultimaNeg?.note)) {
+      console.error("ABORTA: o controle negativo (#518, 'NAO PEDI OUVIDO HUMANO') voltou a contar como pendencia.");
+      console.error("O anulador de negacao regrediu. Qualquer numero desta varredura estaria inflado.");
+      process.exit(1);
+    }
+  }
+
+  console.log(`controle positivo OK (#310) · controle negativo OK (#518 descontado) · ${data.length} incidentes varridos\n`);
 
   const travados = travadosDe(data);
 

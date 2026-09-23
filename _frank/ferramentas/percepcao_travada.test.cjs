@@ -243,6 +243,24 @@ test("#438 real: frase da ordem CITADA entre aspas NAO casa (citacao nao e pedid
   assert.equal(travadosDe([REAL(438, STATUS_438, AT_438, NOTA_438)]).length, 0);
 });
 
+// QUARTO DEFEITO (23/09): NEGACAO. O texto real da emenda do vigia no #518.
+// A marca 'ouvido humano' casava DENTRO de "NAO PEDI OUVIDO HUMANO" — a nota
+// RECUSA a percepcao e o detector a contava como pendencia.
+const NOTA_518 = "VIGIA 23/09 - EMENDA da nota anterior (ela tinha 2047 chars e o add_note corta em 2000; o fim ficou pela metade). O paragrafo final, inteiro:\n\nO QUE FAZER: NAO mandar carta. Ele disse que vai testar num video serio e dar retorno - e a quarta mensagem da mesma conversa e ele ja foi respondido duas vezes. A bola esta com ele. Nao gastei GPU, nao rodei retreino, nao mexi em credito (os 10.000 cr do treino que ele mesmo pediu em 21/09 23:48 seguem como estao, decisao ja registrada na nota das 00:26Z de 22/09), nao mudei status, e NAO PEDI OUVIDO HUMANO porque ele proprio ja deu o veredito de ouvido que o caso precisava - eu nao ouco e nao afirmo nada sobre como o audio saiu.";
+
+test("#518 real: 'NAO PEDI OUVIDO HUMANO ... ja deu o veredito' e RECUSA, NAO casa", () => {
+  assert.equal(travadosDe([REAL(518, "open", "2026-09-23T00:16:47.527Z", NOTA_518)]).length, 0);
+});
+
+test("anulador de negacao NAO pode engolir o pedido nu: 'eu nao ouco' sozinho CONTINUA casando", () => {
+  // Esta e a fronteira perigosa: 'eu nao ouco' aparece nos DOIS textos.
+  // No #518 vem junto da recusa nominal ("nao pedi ouvido humano"); sozinho,
+  // e o pedido de socorro (#310). O que importa aqui e que a marca CONTINUA
+  // existindo — QUAL das marcas casa primeiro e ordem do MARCAS, nao criterio.
+  assert.ok(marcaDe("eu nao ouco o audio dela, preciso de ouvido humano aqui"));
+  assert.equal(marcaDe("eu nao ouco o audio dela"), "nao ouco");
+});
+
 test("CONTROLE #310 real: a nota do EXECUTOR de 09/09 ('Nao ouco nem enxergo') CONTINUA casando", () => {
   const t = travadosDe([REAL(310, "investigating", "2026-09-09T14:26:13.041Z", NOTA_310_EXECUTOR)]);
   assert.equal(t.length, 1, "o anulador de relato NAO pode cegar o detector pra pedido de verdade");
