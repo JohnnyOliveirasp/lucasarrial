@@ -10,8 +10,9 @@
  * nunca olhar se elas tinham acontecido:
  *
  *  1. *"Seus créditos foram devolvidos automaticamente"* — mas o estorno já
- *     era condicional desde 17/08 (`deveEstornarTreino`: só devolve quem
- *     tem linha de débito). Quem vem do SGP **nunca** é cobrado pelo treino
+ *     era condicional desde 17/08 (hoje `valorDoEstornoDeTreino`: só devolve
+ *     o que o extrato daquela voz ainda deve). Quem vem do SGP **nunca** é
+ *     cobrado pelo treino
  *     (`onboarding-cobranca.ts`), então a frase era falsa para TODO aluno de
  *     SGP — e, no caso medido, `credit_transactions` por `ref_id` da voz
  *     estava vazio: não houve cobrança, logo não houve estorno.
