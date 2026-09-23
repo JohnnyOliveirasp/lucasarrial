@@ -31,7 +31,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const FONTE = readFileSync(
@@ -168,6 +168,71 @@ test("a data de hoje vai junto no system prompt (#323)", () => {
     /\$\{blocoHoje\(agora\)\}/,
     "buildAgentSystem parou de embutir a data de hoje — a Fast volta a ficar cega pro calendário",
   );
+});
+
+test("o manual proíbe afirmar ato operacional que a Fast não executa (#528)", () => {
+  // 22/09 22:55Z, uid 3245: um minuto depois de o aluno aceitar o refazer por
+  // conta da casa, a Fast escreveu "Já coloquei pra rodar aqui. Deve ficar
+  // pronto em alguns minutos e eu te aviso neste e-mail assim que estiver".
+  // NENHUMA geração foi criada — a última do aluno era ANTERIOR à própria
+  // carta — e ele esperou 13h em silêncio, sem cobrar, porque promessa com
+  // prazo e com "eu te aviso" desliga a pessoa da conferência.
+  //
+  // A proibição existia só pra DINHEIRO (o "NUNCA afirme que o estorno dela já
+  // saiu", chamado 47, testado acima). Esta generaliza pra qualquer ato.
+  const corpo = FONTE.slice(FONTE.indexOf("export function buildAgentSystem"));
+  assert.match(
+    corpo,
+    /NUNCA AFIRME TER PRATICADO UM ATO QUE VOCÊ NÃO EXECUTA/,
+    "sumiu a proibição de afirmar ato operacional não executado (#528)",
+  );
+  for (const [exemplo, nome] of [
+    [/já coloquei pra rodar/i, "o ato enfileirar geração"],
+    [/já estornei/i, "o ato estornar"],
+    [/já avisei a equipe/i, "o ato avisar a equipe"],
+  ] as const) {
+    assert.match(
+      corpo,
+      exemplo,
+      `a regra parou de citar ${nome} como frase proibida`,
+    );
+  }
+  // O remédio tem que ser POSITIVO: sem a saída (providenciar + escalar), a
+  // regra vira só "não diga isso" e o modelo improvisa outra coisa.
+  assert.match(
+    corpo,
+    /ESCALAR-TECNICO/,
+    "a regra proíbe o ato mas não diz por onde escalar",
+  );
+});
+
+test("a Fast continua sem NENHUM caminho que pratique esses atos (#528)", () => {
+  // ⚠️ ESTE é o teste que impede a tautologia: o de cima só lê o manual, e
+  // manual que fala de si mesmo não mede nada. A regra 9 só está CORRETA
+  // enquanto for verdade que a Fast não executa. Se alguém der a ela uma
+  // ferramenta de verdade (enfileirar geração, estornar), este teste cai e
+  // obriga a revisitar a regra em vez de deixar o manual mentindo ao contrário.
+  //
+  // Medido em 23/09 na main 38e61d6: em src/lib/agent/ não há insert em
+  // generations/image_generations nem chamada às rotas de generate. account.ts
+  // só LÊ (recent("generations", ...)).
+  const dir = fileURLToPath(new URL(".", import.meta.url));
+  const fontes = readdirSync(dir)
+    .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
+    .map((f) => [f, readFileSync(dir + f, "utf8")] as const);
+  assert.ok(fontes.length > 0, "não achei os fontes de src/lib/agent/");
+  for (const [nome, src] of fontes) {
+    assert.doesNotMatch(
+      src,
+      /from\(\s*["'](?:image_)?generations["']\s*\)[\s\S]{0,80}\.insert\(/,
+      `${nome} passou a CRIAR linha de geração — a regra 9 do manual diz que a Fast não faz isso`,
+    );
+    assert.doesNotMatch(
+      src,
+      /["'`][^"'`]*\/api\/v1\/[^"'`]*generate[^"'`]*["'`]/,
+      `${nome} passou a chamar uma rota de generate — a regra 9 do manual diz que a Fast não faz isso`,
+    );
+  }
 });
 
 /* ────────────────────────────────────────────────────────────────────────────
