@@ -15,6 +15,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { socialPublisherEnabled, socialPublisherEnabledFor, type PlataformaSocial } from "@/lib/social/access";
 import { resolvePublishSource, type PublishSource } from "@/lib/social/media-sources";
 import { resolveMediaUrl, startPublication } from "@/lib/social/publisher";
+import { validarTrialReel } from "@/lib/social/trial-reel-pure";
 import type { PublicationRow } from "@/lib/db/types";
 
 const CAPTION_MAX = 2200; // limite do Instagram (erro 2207010)
@@ -37,6 +38,9 @@ export async function POST(request: NextRequest) {
       disable_comment?: boolean;
       brand_content?: boolean;
       brand_organic?: boolean;
+      /** Instagram: publicar como Trial Reel (trial_params na v23.0). */
+      is_trial?: boolean;
+      graduation_strategy?: string;
     };
   };
   try {
@@ -112,7 +116,7 @@ export async function POST(request: NextRequest) {
   }
 
   // TikTok: opções de compliance vindas do popup (privacidade + publi).
-  const platformOptions =
+  let platformOptions: Record<string, unknown> | null =
     account.platform === "tiktok" && body.platform_options
       ? {
           privacy_level: String(body.platform_options.privacy_level ?? "SELF_ONLY"),
@@ -121,6 +125,20 @@ export async function POST(request: NextRequest) {
           brand_organic: Boolean(body.platform_options.brand_organic),
         }
       : null;
+
+  // Instagram: Trial Reel (provado na v23.0 em 22/09 — trial-reel-pure.ts).
+  // Validação NOSSA antes de gastar chamada na Meta: um único vídeo .mp4,
+  // estratégia MANUAL|SS_PERFORMANCE (default MANUAL). Vai pra coluna jsonb
+  // platform_options que já existe — sem migration.
+  if (account.platform === "instagram" && body.platform_options?.is_trial) {
+    const v = validarTrialReel({
+      kind: mediaType,
+      mediaUrls: [mediaUrl],
+      graduationStrategy: body.platform_options.graduation_strategy ?? null,
+    });
+    if (!v.ok) return badRequest(v.erro);
+    platformOptions = { is_trial: true, graduation_strategy: v.strategy };
+  }
 
   const { data: created, error } = await admin
     .from("publications")

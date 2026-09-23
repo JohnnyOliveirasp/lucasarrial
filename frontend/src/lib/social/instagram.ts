@@ -11,6 +11,7 @@
  *
  * Server-only; tokens nunca chegam ao client.
  */
+import { ehEstrategiaValida, montarTrialParams, ERRO_ESTRATEGIA } from "./trial-reel-pure.ts";
 
 const OAUTH_HOST = "https://www.instagram.com";
 const API_HOST = "https://api.instagram.com";
@@ -23,14 +24,18 @@ export const IG_SCOPES = [
   "instagram_business_content_publish",
 ] as const;
 
+// Sem parameter properties de propósito: o `node --test` (type stripping) não
+// aceita `constructor(readonly x: …)` e o teste do Trial Reel importa este
+// módulo direto. Mesma assinatura, mesmo comportamento.
 export class InstagramError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: number,
-    readonly subcode?: number,
-  ) {
+  readonly status: number;
+  readonly code?: number;
+  readonly subcode?: number;
+  constructor(message: string, status: number, code?: number, subcode?: number) {
     super(message);
+    this.status = status;
+    this.code = code;
+    this.subcode = subcode;
   }
 }
 
@@ -148,11 +153,23 @@ export async function getProfile(token: string): Promise<{ igUserId: string; use
 
 export type IgMediaKind = "reel" | "image" | "story";
 
-/** Cria o container de mídia. Reel/story de vídeo processam async (poll). */
+/**
+ * Cria o container de mídia. Reel/story de vídeo processam async (poll).
+ *
+ * `trial` marca o Reel como Trial Reel (provado na v23.0 em 22/09 — ver
+ * trial-reel-pure.ts): vai como trial_params na MESMA chamada POST
+ * /{ig-user-id}/media, sem endpoint novo. Só se aplica a kind="reel" — story
+ * e imagem NUNCA levam trial_params, mesmo que o campo venha preenchido.
+ */
 export async function createContainer(
   token: string,
   igUserId: string,
-  input: { kind: IgMediaKind; mediaUrl: string; caption?: string | null },
+  input: {
+    kind: IgMediaKind;
+    mediaUrl: string;
+    caption?: string | null;
+    trial?: { graduationStrategy: string } | null;
+  },
 ): Promise<string> {
   const params = new URLSearchParams({ access_token: token });
   if (input.kind === "image") {
@@ -160,6 +177,15 @@ export async function createContainer(
   } else {
     params.set("media_type", input.kind === "story" ? "STORIES" : "REELS");
     params.set("video_url", input.mediaUrl);
+  }
+  if (input.trial && input.kind === "reel") {
+    // Guarda final antes da Meta: valor fora de MANUAL/SS_PERFORMANCE é 400
+    // NOSSO, com frase clara — nunca repassar lixo pra Meta (a rota já
+    // validou, isto é o backstop provado pelo teste de mutação).
+    if (!ehEstrategiaValida(input.trial.graduationStrategy)) {
+      throw new InstagramError(ERRO_ESTRATEGIA, 400);
+    }
+    params.set("trial_params", montarTrialParams(input.trial.graduationStrategy));
   }
   if (input.caption && input.kind !== "story") params.set("caption", input.caption);
   const data = await graphCall<{ id: string }>(`/${GRAPH_VERSION}/${igUserId}/media`, {

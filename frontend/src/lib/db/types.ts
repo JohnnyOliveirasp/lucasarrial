@@ -712,7 +712,10 @@ export type PublicationRow = {
   container_id: string | null;
   platform_post_id: string | null;
   permalink: string | null;
-  /** TikTok: { privacy_level, disable_comment, brand_content, brand_organic }. */
+  /**
+   * TikTok: { privacy_level, disable_comment, brand_content, brand_organic }.
+   * Instagram: { is_trial, graduation_strategy } — Trial Reel (trial-reel-pure.ts).
+   */
   platform_options: Record<string, unknown> | null;
   attempts: number;
   error: string | null;

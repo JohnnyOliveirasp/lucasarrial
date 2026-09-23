@@ -20,6 +20,7 @@ import {
   InstagramError,
 } from "@/lib/social/instagram";
 import { advanceTikTokPublication, startTikTokPublication } from "@/lib/social/tiktok-publish";
+import { DEFAULT_GRADUATION_STRATEGY } from "@/lib/social/trial-reel-pure";
 import type { PublicationRow, SocialAccountRow } from "@/lib/db/types";
 
 const MAX_ATTEMPTS = 3;
@@ -72,10 +73,22 @@ export async function startPublication(pub: PublicationRow): Promise<void> {
   }
   try {
     const token = decryptToken(account.access_token_encrypted);
+    // Instagram: Trial Reel vem de platform_options ({is_trial,
+    // graduation_strategy}), gravado na criação da publicação — o agendado
+    // passa por aqui via sweeper com as mesmas opções. Só reel leva trial;
+    // createContainer ainda tem a guarda final da estratégia.
+    const opts = (pub.platform_options ?? {}) as {
+      is_trial?: boolean;
+      graduation_strategy?: string;
+    };
     const containerId = await createContainer(token, account.account_ref, {
       kind: pub.media_type,
       mediaUrl: await resolveMediaUrl(pub.media_url),
       caption: pub.caption,
+      trial:
+        opts.is_trial && pub.media_type === "reel"
+          ? { graduationStrategy: opts.graduation_strategy ?? DEFAULT_GRADUATION_STRATEGY }
+          : null,
     });
     await patch(pub.id, { status: "processing", container_id: containerId, attempts: pub.attempts + 1 });
   } catch (e) {
