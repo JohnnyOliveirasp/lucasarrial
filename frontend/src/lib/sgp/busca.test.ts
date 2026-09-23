@@ -27,6 +27,7 @@ import {
   normalizarTexto,
   palavrasDaBusca,
   soDigitos,
+  temLetra,
   type AlvoBusca,
 } from "./busca.ts";
 
@@ -196,4 +197,66 @@ test("filtrarBusca recorta pelo alvo que a aba souber montar", () => {
   }));
   assert.equal(r.length, 1);
   assert.equal(r[0].nome, "Maria da Conceição");
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * REGRA 6 — dígito DENTRO de e-mail não pode virar busca de telefone.
+ *
+ * Defeito real, 23/09: o time digitou "marcolovison1@icloud.com" na aba
+ * "Todos os compradores" e a tela devolveu 477 dos 578. Causa: a regra 4
+ * mandava os dígitos de qualquer palavra pro telefone, e o "1" do
+ * "marcolovison1" virou "telefone que contenha 1" — quase todo celular tem.
+ * O time leu isso como "o sistema não pesquisa".
+ *
+ * É um defeito INTERMITENTE por natureza: e-mail sem dígito nenhum sempre
+ * funcionou. Por isso os testes abaixo cobrem os DOIS, senão o caso que
+ * funciona sozinho dá a falsa impressão de que a busca está boa.
+ * ──────────────────────────────────────────────────────────────────────────*/
+
+test("regra 6: e-mail COM dígito não casa com quem só tem aquele dígito no telefone", () => {
+  const igor = { nome: "Igor Figaro Nunes", email: "igor@gmail.com", telefone: "(11) 99812-2812" };
+  assert.equal(
+    casaBusca("marcolovison1@icloud.com", igor),
+    false,
+    "o '1' do e-mail voltou a virar busca de telefone — é o defeito de 23/09",
+  );
+});
+
+test("regra 6: o dono do e-mail continua sendo achado", () => {
+  // O conserto não pode custar o caso de uso: quem tem aquele e-mail acha.
+  const marco = { nome: "Marco", email: "marcolovison1@icloud.com", telefone: "(11) 97777-7777" };
+  assert.equal(casaBusca("marcolovison1@icloud.com", marco), true);
+});
+
+test("regra 6: palavra sem letra CONTINUA sendo telefone (regra 3 intacta)", () => {
+  const maria = { nome: "Maria", email: "m@x.com", telefone: "5511999998888" };
+  assert.equal(casaBusca("99998888", maria), true, "digitar só o final parou de achar");
+  assert.equal(casaBusca("(11) 99999-8888", maria), true, "colar do WhatsApp parou de achar");
+  assert.equal(casaBusca("5511999998888", maria), true, "colar com DDI parou de achar");
+});
+
+test("regra 6: 'joao2010' segue achável pelo e-mail (a regra 4 não foi perdida)", () => {
+  const joao = { nome: "João", email: "joao2010@gmail.com", telefone: null };
+  assert.equal(
+    casaBusca("joao2010", joao),
+    true,
+    "o motivo de existir da regra 4 morreu junto com o conserto",
+  );
+});
+
+test("regra 6: palavra com letra zera os dígitos na leitura do termo", () => {
+  // Direto na régua, pra falha apontar a causa em vez de só o sintoma.
+  assert.deepEqual(palavrasDaBusca("marcolovison1@icloud.com"), [
+    { texto: "marcolovison1@icloud.com", digitos: "" },
+  ]);
+  assert.deepEqual(palavrasDaBusca("(11) 99999-8888"), [
+    { texto: "(11)", digitos: "11" },
+    { texto: "99999-8888", digitos: "999998888" },
+  ]);
+});
+
+test("regra 6: nome acentuado não é confundido com telefone", () => {
+  // `\p{L}` e não `[a-z]`: "José2010" tem letra fora do ASCII.
+  assert.equal(temLetra("José2010"), true);
+  assert.equal(temLetra("(11)99999-8888"), false);
 });
