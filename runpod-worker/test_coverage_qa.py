@@ -1264,5 +1264,71 @@ class SplitBelowSentenceTest(unittest.TestCase):
         self.assertEqual(tts_text.split_below_sentence("   ", 70), [])
 
 
+class IntrusaoSistemicaTest(unittest.TestCase):
+    """intrusao_sistemica (#530, 23/09): o veredito de geracao inteira.
+
+    Os numeros dos testes sao as ASSINATURAS REAIS medidas nas 776 entregas
+    de 14 dias (23/09) — cada caso aqui existe no banco, nao e' inventado.
+    Regua default: fracao >= 0.9 com checked >= 5.
+    """
+
+    FRACAO, MIN_CHK = 0.9, 5
+
+    def _stats(self, checked, flagged):
+        return {"intrusion_checked": checked, "intrusion_flagged": flagged}
+
+    def test_caso_indice_65f26a72_reprova(self):
+        # 18/18 checagens acusando, entregue e cobrado 684 cr: o caso que
+        # motivou o gate. Tem que reprovar.
+        v = tts_qa.intrusao_sistemica(self._stats(18, 18), self.FRACAO, self.MIN_CHK)
+        self.assertIsNotNone(v)
+        self.assertEqual(v["intrusion_fracao"], 1.0)
+
+    def test_caso_be84aa8f_reprova(self):
+        # 24/24 (15/09, texto de 838 chars).
+        self.assertIsNotNone(
+            tts_qa.intrusao_sistemica(self._stats(24, 24), self.FRACAO, self.MIN_CHK))
+
+    def test_quase_100_pct_severo_reprova(self):
+        # 33/36 (23/09) e 15/16 (21/09): a regua estrita de flagged == checked
+        # deixaria os dois passar — e' por isso que a fracao e' 0.9, nao 1.0.
+        self.assertIsNotNone(
+            tts_qa.intrusao_sistemica(self._stats(36, 33), self.FRACAO, self.MIN_CHK))
+        self.assertIsNotNone(
+            tts_qa.intrusao_sistemica(self._stats(16, 15), self.FRACAO, self.MIN_CHK))
+
+    def test_texto_curto_100_pct_nao_reprova(self):
+        # 3/3 e 4/4: textos de 1 chunk (33-227 chars) onde "100%" e' o mesmo
+        # chunk retentado 3x. Sao 5 das 7 geracoes a 100% — sinal fraco, o
+        # min_checked=5 existe pra elas NAO cairem.
+        self.assertIsNone(
+            tts_qa.intrusao_sistemica(self._stats(3, 3), self.FRACAO, self.MIN_CHK))
+        self.assertIsNone(
+            tts_qa.intrusao_sistemica(self._stats(4, 4), self.FRACAO, self.MIN_CHK))
+
+    def test_intrusao_parcial_comum_nao_reprova(self):
+        # A media da populacao e' 2,46 sinalizados (fracao 17,6%): intrusao
+        # parcial e' o dia a dia do gate MACIO e nunca pode falhar o job.
+        self.assertIsNone(
+            tts_qa.intrusao_sistemica(self._stats(18, 3), self.FRACAO, self.MIN_CHK))
+        self.assertIsNone(
+            tts_qa.intrusao_sistemica(self._stats(10, 8), self.FRACAO, self.MIN_CHK))
+
+    def test_sem_checagem_nao_reprova(self):
+        self.assertIsNone(
+            tts_qa.intrusao_sistemica(self._stats(0, 0), self.FRACAO, self.MIN_CHK))
+        self.assertIsNone(tts_qa.intrusao_sistemica({}, self.FRACAO, self.MIN_CHK))
+
+    def test_valvula_fracao_zero_desliga(self):
+        # TTS_INTRUSION_FAIL_FRACAO=0: nem o caso-indice reprova.
+        self.assertIsNone(tts_qa.intrusao_sistemica(self._stats(18, 18), 0.0, self.MIN_CHK))
+        self.assertIsNone(tts_qa.intrusao_sistemica(self._stats(18, 18), -1.0, self.MIN_CHK))
+
+    def test_payload_traz_os_numeros(self):
+        v = tts_qa.intrusao_sistemica(self._stats(36, 33), self.FRACAO, self.MIN_CHK)
+        self.assertEqual(v, {"intrusion_checked": 36, "intrusion_flagged": 33,
+                             "intrusion_fracao": 0.9167})
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

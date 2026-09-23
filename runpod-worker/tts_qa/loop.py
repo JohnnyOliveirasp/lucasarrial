@@ -403,6 +403,57 @@ def registrar_grafias(qa_stats: dict, grafias, amostra_max: int = 20) -> None:
         qa_stats["grafia_amostra"] = list(grafias[:max(0, int(amostra_max))])
 
 
+def intrusao_sistemica(qa_stats: dict, fracao_min: float, checadas_min: int) -> "dict | None":
+    """Veredito de INTRUSAO SISTEMICA da geracao inteira (#530, 23/09).
+
+    O gate de intrusao por tentativa e MACIO de proposito (peso 50 no score,
+    nunca falha o job — ver o comentario no laco de `run_chunk_qa`): intrusao
+    PARCIAL e comum (media 2,46 pedacos sinalizados por geracao entregue,
+    fracao media 17,6%, medido em 776 geracoes ready de 14 dias em 23/09) e
+    reprovar por ela seria a tempestade de 19/08 de novo.
+
+    O que o gate macio NAO cobre: a geracao onde TODO pedaco, em TODA
+    tentativa, acusa conteudo fora do texto. Caso-indice 65f26a72 (23/09):
+    18 de 18 checagens sinalizadas, cobertura PERFEITA (faltantes_total 0,
+    coverage_medio 1.0), entregue e cobrada 684 cr — o aluno ouviu uma frase
+    que nao esta no texto dele repetida a cada paragrafo. O QA de cobertura
+    nao ve porque nada FALTA; SOBRA. Regenerar nao resolveu (12 regens): e
+    defeito sistematico do par voz/texto, nao azar de tentativa — por isso o
+    remedio e falhar o job (o webhook estorna sozinho via handleTechFailure),
+    nunca entregar e cobrar em silencio.
+
+    A regua foi medida ANTES de ser escolhida, contra as 776 entregas:
+      flagged == checked (100%), qualquer n   -> 7 casos, mas 5 sao textos
+        curtos de 1 chunk (33-227 chars, checked 3-4) onde "100%" e so o
+        mesmo chunk retentado 3x — sinal fraco demais pra custar uma falha;
+      fracao >= 0.9 E checked >= 5 (ESTA)     -> 5 casos (0,64% das entregas;
+        4 de 245 alunos ativos), todos com a assinatura severa: texto longo,
+        muitas regens, quase toda checagem acusando. Inclui os 2 confirmados
+        por reclamacao (65f26a72 e be84aa8f) e 3 do mesmo padrao que a regua
+        estrita de 100% deixaria passar (33/36, 18/19 e 15/16 — dois da MESMA
+        aluna do caso confirmado de 15/09, reincidindo em 21/09).
+
+    Devolve um dict com os numeros (pro payload de falha) quando a geracao e
+    sistemica, None quando nao. `fracao_min <= 0` desliga (valvula, mesmo
+    padrao das outras chaves de QA). Quem decide falhar e o CHAMADOR — esta
+    funcao so mede, pelo mesmo motivo de `registrar_cobertura`.
+    """
+    if fracao_min is None or fracao_min <= 0:
+        return None
+    checked = qa_stats.get("intrusion_checked") or 0
+    flagged = qa_stats.get("intrusion_flagged") or 0
+    if checked < max(1, checadas_min):
+        return None
+    fracao = flagged / checked
+    if fracao < fracao_min:
+        return None
+    return {
+        "intrusion_checked": checked,
+        "intrusion_flagged": flagged,
+        "intrusion_fracao": round(fracao, 4),
+    }
+
+
 def run_chunk_qa(
     seg,
     idx: int,

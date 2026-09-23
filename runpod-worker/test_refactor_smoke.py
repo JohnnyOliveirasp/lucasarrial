@@ -419,6 +419,43 @@ class InferenciaPontaAPontaTest(unittest.TestCase):
         # pode encostar neste caso, que e' o que a escotilha existe pra salvar.
         self.assertEqual(r["qa"].get("coverage_espalhada_piso", 0), 0)
 
+    def test_intrusao_SISTEMICA_derruba_o_job_sem_subir_audio(self):
+        # #530 (caso 65f26a72, 23/09): o whisper ouve o texto INTEIRO (cobertura
+        # perfeita, nada falta) MAIS uma frase que nao esta no texto do aluno —
+        # em toda tentativa de todo chunk. O QA de cobertura nao ve (sobra, nao
+        # falta) e ate 23/09 isso saia [ready] e era COBRADO (684 cr). Agora o
+        # veredito de geracao inteira (intrusao_sistemica) falha o job, e o
+        # webhook estorna sozinho.
+        def ouviu_com_intrusa(seg, sr, m, lang, label):
+            w = tts_qa.norm_words(FakeVoxCPM.gerados[-1], lang)
+            return w + ["curta", "compartilhe", "inscrevase"]
+
+        with mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=ouviu_com_intrusa):
+            r = handler.handler({"input": _clone_job()})
+        self.assertIn("qa_intrusion", r["error"])
+        self.assertNotIn("audio_base64", r)
+        qa = r["qa"]
+        # A assinatura do caso-indice: TODA checagem acusou, com n suficiente.
+        self.assertGreaterEqual(qa["intrusion_checked"], 5)
+        self.assertEqual(qa["intrusion_flagged"], qa["intrusion_checked"])
+        self.assertEqual(r["intrusion_fracao"], 1.0)
+        # E o gate macio TENTOU limpar antes de desistir (regens > 0).
+        self.assertGreater(qa["regens"], 0)
+
+    def test_valvula_TTS_INTRUSION_FAIL_FRACAO_0_entrega_como_antes(self):
+        # A valvula desliga o gate sistemico SEM deploy — o comportamento volta
+        # ao de antes de 23/09 (entrega com a telemetria acusando).
+        def ouviu_com_intrusa(seg, sr, m, lang, label):
+            w = tts_qa.norm_words(FakeVoxCPM.gerados[-1], lang)
+            return w + ["curta", "compartilhe", "inscrevase"]
+
+        with mock.patch.dict(os.environ, {"TTS_INTRUSION_FAIL_FRACAO": "0"}), \
+             mock.patch.object(tts_qa.loop, "transcribe_seg", side_effect=ouviu_com_intrusa):
+            r = handler.handler({"input": _clone_job()})
+        self.assertNotIn("error", r)
+        self.assertGreater(len(r["audio_base64"]), 0)
+        self.assertEqual(r["qa"]["intrusion_flagged"], r["qa"]["intrusion_checked"])
+
     def test_buraco_espalhado_ABAIXO_DO_PISO_vai_pro_RESGATE(self):
         """Incidente 702cc916 (04/09): a escotilha entregou cobertura 0,333.
 
