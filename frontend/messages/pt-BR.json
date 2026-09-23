@@ -172,7 +172,8 @@
         "partialAddBoth": "{duplicates} duplicado(s) + {ignored} acima do limite foram ignorados",
         "unsupportedSkipped": "{count} arquivo(s) ficaram de fora por não serem um formato de áudio reconhecido: {names}",
         "network": "Falha de rede. Verifique sua conexão.",
-        "uploadFailed": "{count} arquivo(s) falharam ao subir. Tente de novo.",
+        "uploadFailedNamed": "{count} arquivo(s) falharam ao subir: {names}. Nada se perdeu do seu lado — clique em Treinar de novo para reenviar só esses.",
+        "incompleteUpload": "{count} arquivo(s) não chegaram até nós: {names}. A falha foi do envio, não da sua gravação — clique em Treinar de novo para reenviar só o que faltou.",
         "generic": "Algo deu errado. Tente novamente.",
         "measureFailed": {
           "timeout": "demorou demais pra ler a duração",
