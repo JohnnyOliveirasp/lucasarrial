@@ -14,7 +14,8 @@ import { badRequest, forbidden, jsonOk, serverError, unauthorized } from "@/lib/
 import { getAdmin } from "@/lib/db/admin";
 import { socialPublisherEnabled, socialPublisherEnabledFor, type PlataformaSocial } from "@/lib/social/access";
 import { resolvePublishSource, type PublishSource } from "@/lib/social/media-sources";
-import { resolveMediaUrl, startPublication } from "@/lib/social/publisher";
+import { carregarTrialsAnteriores, resolveMediaUrl, startPublication } from "@/lib/social/publisher";
+import { decidirEnvioTrial } from "@/lib/social/trial-guardrails-pure";
 import { validarTrialReel } from "@/lib/social/trial-reel-pure";
 import type { PublicationRow } from "@/lib/db/types";
 
@@ -137,6 +138,16 @@ export async function POST(request: NextRequest) {
       graduationStrategy: body.platform_options.graduation_strategy ?? null,
     });
     if (!v.ok) return badRequest(v.erro);
+    // Guardrails (limite diário/espaçamento/breaker/dedupe): checagem de
+    // CORTESIA — erro amigável agora, sem criar a linha. A checagem que VALE
+    // é a do envio (publisher.startPublication), porque agendado só sai pelo
+    // sweeper — sem ela, 10 agendados pra mesma hora passariam todos.
+    const decisao = decidirEnvioTrial({
+      agora: scheduledAt ?? new Date().toISOString(),
+      mediaUrl,
+      anteriores: await carregarTrialsAnteriores(accountId),
+    });
+    if (!decisao.permitido) return badRequest(decisao.erro);
     platformOptions = { is_trial: true, graduation_strategy: v.strategy };
   }
 

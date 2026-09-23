@@ -21,6 +21,11 @@ import {
 } from "@/lib/social/instagram";
 import { advanceTikTokPublication, startTikTokPublication } from "@/lib/social/tiktok-publish";
 import { DEFAULT_GRADUATION_STRATEGY } from "@/lib/social/trial-reel-pure";
+import {
+  decidirEnvioTrial,
+  decidirRetryTrial,
+  type TrialAnterior,
+} from "@/lib/social/trial-guardrails-pure";
 import type { PublicationRow, SocialAccountRow } from "@/lib/db/types";
 
 const MAX_ATTEMPTS = 3;
@@ -52,6 +57,44 @@ async function patch(pubId: string, fields: Record<string, unknown>): Promise<vo
     .eq("id", pubId);
 }
 
+/**
+ * Trials ANTERIORES da conta (últimos 30 dias), no formato do módulo puro de
+ * guardrails. 30 dias limita o tamanho da consulta — dedupe além disso é
+ * aceitável, as janelas das outras regras são de 24h. Exportado pra rota
+ * /api/v1/social/publish fazer a checagem de cortesia com a MESMA fonte.
+ */
+export async function carregarTrialsAnteriores(
+  accountId: string,
+  excetoPubId?: string,
+): Promise<TrialAnterior[]> {
+  const desde = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+  let query = getAdmin()
+    .from("publications")
+    .select("id, media_url, status, created_at, updated_at, platform_options")
+    .eq("account_id", accountId)
+    .eq("platform", "instagram")
+    .eq("media_type", "reel")
+    .eq("platform_options->>is_trial", "true")
+    .gte("created_at", desde)
+    .limit(500);
+  if (excetoPubId) query = query.neq("id", excetoPubId);
+  const { data } = await query;
+  return ((data ?? []) as Array<{
+    media_url: string;
+    status: TrialAnterior["status"];
+    created_at: string;
+    updated_at: string;
+    platform_options: Record<string, unknown> | null;
+  }>).map((row) => ({
+    mediaUrl: row.media_url,
+    status: row.status,
+    criadaEm: row.created_at,
+    atualizadaEm: row.updated_at,
+    enviadaEm: (row.platform_options?.trial_sent_at as string | undefined) ?? null,
+    bloqueadaPorGuardrail: Boolean(row.platform_options?.guardrail_block),
+  }));
+}
+
 /** Token expirado/revogado → marca a conta e a publicação de uma vez. */
 async function failForAuth(pub: PublicationRow, message: string): Promise<void> {
   await getAdmin()
@@ -71,29 +114,101 @@ export async function startPublication(pub: PublicationRow): Promise<void> {
   if (account.platform === "tiktok") {
     return startTikTokPublication(pub, account, await resolveMediaUrl(pub.media_url));
   }
+  // Instagram: Trial Reel vem de platform_options ({is_trial,
+  // graduation_strategy}), gravado na criação da publicação — o agendado
+  // passa por aqui via sweeper com as mesmas opções. Só reel leva trial;
+  // createContainer ainda tem a guarda final da estratégia.
+  const opts = (pub.platform_options ?? {}) as {
+    is_trial?: boolean;
+    graduation_strategy?: string;
+    trial_sent_at?: string;
+    guardrail_block?: string;
+  };
+  const ehTrial = Boolean(opts.is_trial) && pub.media_type === "reel";
+  // GUARDRAILS dos Trial Reels — AQUI, no envio, é a checagem que VALE
+  // (a rota só dá erro amigável na criação): agendado chega por este mesmo
+  // caminho via sweeper. SÓ trial passa pela decisão — Reel normal segue
+  // publicando mesmo com o breaker da conta aberto (regra 3).
+  if (ehTrial) {
+    const anteriores = await carregarTrialsAnteriores(pub.account_id, pub.id);
+    const decisao = decidirEnvioTrial({
+      agora: new Date().toISOString(),
+      mediaUrl: pub.media_url,
+      anteriores,
+    });
+    if (!decisao.permitido) {
+      if (decisao.liberadoEm === null) {
+        // Permanente (dedupe) → failed com motivo legível. guardrail_block
+        // marca que a falha é NOSSA — não abre o circuit breaker da conta.
+        await patch(pub.id, {
+          status: "failed",
+          error: decisao.erro,
+          platform_options: { ...opts, guardrail_block: decisao.regra },
+        });
+      } else {
+        // Transitório (breaker/limite/espaçamento) → NUNCA failed silencioso:
+        // continua ready com o motivo em error, e scheduled_at = liberadoEm
+        // faz o sweeper retomar sozinho na hora certa (a query do sweep é
+        // lte(scheduled_at, now)).
+        await patch(pub.id, {
+          status: "ready",
+          scheduled_at: decisao.liberadoEm,
+          error: decisao.erro,
+        });
+      }
+      return;
+    }
+  }
   try {
     const token = decryptToken(account.access_token_encrypted);
-    // Instagram: Trial Reel vem de platform_options ({is_trial,
-    // graduation_strategy}), gravado na criação da publicação — o agendado
-    // passa por aqui via sweeper com as mesmas opções. Só reel leva trial;
-    // createContainer ainda tem a guarda final da estratégia.
-    const opts = (pub.platform_options ?? {}) as {
-      is_trial?: boolean;
-      graduation_strategy?: string;
-    };
     const containerId = await createContainer(token, account.account_ref, {
       kind: pub.media_type,
       mediaUrl: await resolveMediaUrl(pub.media_url),
       caption: pub.caption,
-      trial:
-        opts.is_trial && pub.media_type === "reel"
-          ? { graduationStrategy: opts.graduation_strategy ?? DEFAULT_GRADUATION_STRATEGY }
-          : null,
+      trial: ehTrial
+        ? { graduationStrategy: opts.graduation_strategy ?? DEFAULT_GRADUATION_STRATEGY }
+        : null,
     });
-    await patch(pub.id, { status: "processing", container_id: containerId, attempts: pub.attempts + 1 });
+    await patch(pub.id, {
+      status: "processing",
+      container_id: containerId,
+      attempts: pub.attempts + 1,
+      error: null,
+      // trial_sent_at é a fonte do limite diário e do espaçamento (módulo
+      // puro lê daqui) — gravado no MESMO patch que confirma o envio.
+      ...(ehTrial
+        ? { platform_options: { ...opts, trial_sent_at: new Date().toISOString() } }
+        : {}),
+    });
   } catch (e) {
     if (e instanceof InstagramError && (e.status === 401 || e.code === 190)) {
       await failForAuth(pub, friendlyInstagramError(e));
+      return;
+    }
+    if (ehTrial) {
+      // Regra 5: trial só retenta em HTTP 429, com backoff exponencial.
+      // Restrição de recurso (2207001/2207042/2207051 etc.) NUNCA retenta —
+      // retentar restrição transforma aviso da Meta em bloqueio. O failed
+      // resultante abre o circuit breaker (regra 3) na próxima decisão.
+      const d = decidirRetryTrial({
+        httpStatus: e instanceof InstagramError ? e.status : null,
+        attempts: pub.attempts + 1,
+      });
+      if (d.retry) {
+        const min = Math.round(d.backoffMs / 60000);
+        await patch(pub.id, {
+          status: "ready",
+          attempts: pub.attempts + 1,
+          scheduled_at: new Date(Date.now() + d.backoffMs).toISOString(),
+          error: `O Instagram pediu uma pausa (429). Nova tentativa automática em ~${min} min.`,
+        });
+      } else {
+        await patch(pub.id, {
+          status: "failed",
+          attempts: pub.attempts + 1,
+          error: friendlyInstagramError(e),
+        });
+      }
       return;
     }
     const retry = pub.attempts + 1 < MAX_ATTEMPTS;
