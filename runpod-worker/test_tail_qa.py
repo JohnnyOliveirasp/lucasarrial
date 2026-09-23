@@ -540,6 +540,79 @@ class RegistrarTailInternoTest(unittest.TestCase):
         self.assertNotIn("tail_interno_entregue", s)
 
 
+class PosicaoDaFronteiraTest(unittest.TestCase):
+    """Posicao da fronteira reprovada (f8587cef/#234, 22/09): `dur_s` acumula
+    um relogio de entrega e o veredito True apenda o offset (fim do pedaco).
+    """
+
+    def test_sem_duracao_e_o_comportamento_de_hoje(self):
+        """`dur_s` ausente = codigo antigo, byte a byte: so contadores, nenhum
+        campo novo nasce."""
+        from tts_qa.loop import registrar_tail_interno
+        s = {}
+        for v in (True, False, None):
+            registrar_tail_interno(s, v)
+        self.assertEqual(s["tail_interno_entregue"], 1)
+        self.assertEqual(s["tail_interno_entregue_n"], 2)
+        self.assertEqual(s["tail_interno_entregue_sem_veredito"], 1)
+        self.assertNotIn("tail_interno_entregue_t_s", s)
+        self.assertNotIn("tail_interno_entregue_pos_s", s)
+
+    def test_posicao_acumulada_correta_com_tres_pedacos(self):
+        """3 pedacos entregues (2.5s True, 3.0s False, 4.5s True): o relogio
+        soma tudo e as posicoes marcam o FIM dos pedacos reprovados."""
+        from tts_qa.loop import registrar_tail_interno
+        s = {}
+        registrar_tail_interno(s, True, dur_s=2.5)
+        registrar_tail_interno(s, False, dur_s=3.0)
+        registrar_tail_interno(s, True, dur_s=4.5)
+        self.assertEqual(s["tail_interno_entregue_t_s"], 10.0)
+        self.assertEqual(s["tail_interno_entregue_pos_s"], [2.5, 10.0])
+        # Os contadores continuam intactos ao lado da posicao.
+        self.assertEqual(s["tail_interno_entregue"], 2)
+        self.assertEqual(s["tail_interno_entregue_n"], 3)
+
+    def test_veredito_none_nao_grava_posicao_mas_o_relogio_anda(self):
+        """Sem veredito: NENHUMA posicao gravada e nenhum contador de veredito
+        criado — mas o relogio anda, porque um pedaco mudo/inconclusivo no MEIO
+        do arquivo ocupa tempo e pular a duracao dele deslocaria toda posicao
+        seguinte (e' o que faz o offset do proximo True sair certo)."""
+        from tts_qa.loop import registrar_tail_interno
+        s = {}
+        registrar_tail_interno(s, None, dur_s=5.0)
+        self.assertEqual(s["tail_interno_entregue_pos_s"], [])
+        self.assertNotIn("tail_interno_entregue_n", s)
+        self.assertNotIn("tail_interno_entregue", s)
+        self.assertEqual(s["tail_interno_entregue_sem_veredito"], 1)
+        self.assertEqual(s["tail_interno_entregue_t_s"], 5.0)
+        # O True seguinte marca o fim do proprio pedaco, contando o tempo do
+        # pedaco sem veredito que veio antes.
+        registrar_tail_interno(s, True, dur_s=2.0)
+        self.assertEqual(s["tail_interno_entregue_pos_s"], [7.0])
+
+    def test_lista_nasce_vazia_junto_com_o_relogio(self):
+        """Mediu duracao e nada reprovou: lista PRESENTE e vazia — ausente
+        significaria "nao mediu", a armadilha padrao deste arquivo."""
+        from tts_qa.loop import registrar_tail_interno
+        s = {}
+        registrar_tail_interno(s, False, dur_s=1.5)
+        self.assertEqual(s["tail_interno_entregue_pos_s"], [])
+        self.assertEqual(s["tail_interno_entregue_t_s"], 1.5)
+
+    def test_teto_de_amostra_para_de_apendar_mas_relogio_e_contador_seguem(self):
+        from tts_qa.loop import registrar_tail_interno
+        s = {}
+        for _ in range(45):
+            registrar_tail_interno(s, True, dur_s=1.0, amostra_max=40)
+        self.assertEqual(len(s["tail_interno_entregue_pos_s"]), 40)
+        # A amostra guarda as PRIMEIRAS posicoes (padrao registrar_faltantes)...
+        self.assertEqual(s["tail_interno_entregue_pos_s"][:3], [1.0, 2.0, 3.0])
+        self.assertEqual(s["tail_interno_entregue_pos_s"][-1], 40.0)
+        # ...e `entregue` ao lado denuncia o corte: 45 > 40.
+        self.assertEqual(s["tail_interno_entregue"], 45)
+        self.assertEqual(s["tail_interno_entregue_t_s"], 45.0)
+
+
 # ⚠️ Fica no FIM do arquivo de proposito: ate 02/09 este `unittest.main()`
 # estava no meio (logo apos FimAbruptoTest) e, rodando o arquivo direto
 # (`python3 test_tail_qa.py`), as classes definidas DEPOIS nem existiam ainda —
