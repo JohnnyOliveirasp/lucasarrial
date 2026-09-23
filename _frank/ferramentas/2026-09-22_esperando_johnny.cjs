@@ -83,12 +83,36 @@ const CONTROLE = {
   "ffbfdfc4": "#214 migration 111 nao aplicada",
   "8b8fc4c8": "#216 mao humana no painel da Hotmart",
   "7ed72ad0": "     7.455 cr: decisao de classe",
+  // PISO SUBIU em 23/09 17hZ (Frank) — entrada nova, com o motivo por escrito
+  // como a regra acima exige. Este cartao estava parado no Johnny ha 21 dias,
+  // escalado por escrito desde 21/09 18:59Z, e a varredura NAO O VIA: a nota
+  // dele diz "a decisao (a)manter/(b)falhar sem cobrar/(c)entregar avisando e
+  // do Johnny", com as opcoes a/b/c NO MEIO, e a marca antiga exigia
+  // "decisao ... do johnny" coladas. Era o "QUEM ANOTA, ESCONDE" do cabecalho
+  // acontecendo justamente no cartao que mais pesa — e ele que trava tambem a
+  // decisao do #37bacb68 (22 alunos). Entra como controle pra nao sumir calado
+  // de novo.
+  "702cc916": "#226 portao: (a)manter/(b)falhar sem cobrar/(c)entregar avisando",
 };
 
 // Marcas de "parado no Johnny". Deliberadamente especificas: prefiro falso
 // NEGATIVO a inflar a classe (classe inflada vira lista que ninguem ataca).
 const MARCAS = [
-  /decis[aã]o\s+(?:e\s+)?d[oe]\s+johnny/i,
+  // ALARGADA em 23/09 17hZ (Frank), com medicao antes de subir. A versao
+  // antiga (`decis[aã]o\s+(?:e\s+)?d[oe]\s+johnny`) exigia as palavras
+  // COLADAS e perdia a forma mais comum de escrever a frase nesta casa, que e
+  // nomear as opcoes no meio: "a decisao (a)manter/(b)falhar/(c)entregar E DO
+  // JOHNNY". O gap e limitado a 160 chars e NAO atravessa ponto final nem
+  // quebra de linha, pra nao casar duas frases distintas ("...tomei a decisao.
+  // O resto do Johnny...").
+  // MEDIDO ANTES DE APLICAR, na fila inteira (142 cartoes): ganho de 5, e os
+  // 5 lidos A MAO, um a um — 702cc916 ("(a)manter/(b)falhar... e do Johnny"),
+  // 1a37605a ("DECISAO COMERCIAL, que e do Johnny"), 719c9af6 ("decisao de
+  // produto/preco/estorno e do Johnny", 9 alunos), 555a1cee ("decisao de
+  // dinheiro do Johnny") e f8a71e43 ("decisao comercial nova = #173, do
+  // Johnny"). CINCO verdadeiros, ZERO ruido. Por isso o alargamento sobe: ele
+  // nao infla a classe, so para de esconder.
+  /decis[aã]o\b[^.\n]{0,160}?\b[eé]?\s*d[oe]\s+johnny/i,
   /pend[eê]ncia\s+johnny/i,
   /depende\s+d[oe]\s+johnny/i,
   /(?:s[oó]|apenas)\s+(?:o\s+)?johnny/i,
