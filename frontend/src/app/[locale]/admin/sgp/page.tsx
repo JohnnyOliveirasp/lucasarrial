@@ -103,6 +103,12 @@ const CORES_SITUACAO: Record<SituacaoSgp, string> = {
   // existe e o aluno pode não saber. Deixá-lo verde manteria a tela dizendo
   // "acabou" exatamente nos 82 casos que o recado veio corrigir.
   pronto: "border-[var(--status-warn)]/40 bg-[var(--status-warn)]/10 text-[var(--status-warn)]",
+  // AVISO NÃO CONFIRMADO é AMARELO TAMBÉM, e de propósito: é pendência do mesmo
+  // jeito que GERADO. O que muda é só o quanto já sabemos (o e-mail automático
+  // saiu), não se alguém ainda precisa agir. Verde aqui seria repetir o erro do
+  // recado 6 com uma palavra mais longa.
+  aviso_nao_confirmado:
+    "border-[var(--status-warn)]/30 bg-[var(--status-warn)]/5 text-[var(--status-warn)]",
   aguardando: "border-[var(--hairline-strong)] bg-[var(--surface-deep)] text-[var(--mute)]",
   erro: "border-[var(--status-error)]/40 bg-[var(--status-error)]/10 text-[var(--status-error)]",
 };
@@ -645,6 +651,29 @@ export default function SgpPage() {
         </div>
       )}
 
+      {/* O MESMO ARGUMENTO do banner acima, aplicado ao bucket que a correção de
+          16/09 criou: o e-mail automático ter saído não é o aluno ter sabido, e
+          esse aluno também não reclama do que não sabe que existe. Banner
+          próprio (e não uma linha no de cima) porque a AÇÃO é outra: ali é
+          "avise", aqui é "confirme e registre". */}
+      {resumoVisivel && resumoVisivel.situacoes.aviso_nao_confirmado > 0 && (
+        <div className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--status-warn)]/30 bg-[var(--status-warn)]/5 px-4 py-3.5">
+          <MessageCircle className="size-5 shrink-0 text-[var(--status-warn)]" />
+          <span className="text-[14px] text-[var(--ink)]">
+            <strong>{resumoVisivel.situacoes.aviso_nao_confirmado}</strong> clone(s) prontos onde o
+            e-mail automático saiu mas NINGUÉM confirmou que o aluno soube — envio não é leitura, e
+            não prova nem que ele consegue acessar.{" "}
+            <button
+              type="button"
+              onClick={() => alternarFiltro("situacao", "aviso_nao_confirmado")}
+              className="underline underline-offset-2 transition-colors hover:text-[var(--status-warn)]"
+            >
+              ver quem é
+            </button>
+          </span>
+        </div>
+      )}
+
       {/* Os três buckets da planilha primeiro, a etapa detalhada depois: é a
           ordem em que o time lê — "quantos estão quebrados?" antes de "quantos
           estão gravando o áudio?". */}
@@ -667,6 +696,16 @@ export default function SgpPage() {
             n={resumoVisivel.situacoes.entregue}
             ativo={filtro?.tipo === "situacao" && filtro.valor === "entregue"}
             onClick={() => alternarFiltro("situacao", "entregue")}
+          />
+          {/* O bucket que a correção de 16/09 criou: o e-mail automático saiu,
+              mas ninguém confirmou com o aluno. Fica ENTRE entregue e gerado
+              porque é exatamente isso que ele é — mais do que "não sabemos
+              nada", menos do que "alguém falou com ele". */}
+          <Contador
+            rotulo="AVISO NÃO CONFIRMADO"
+            n={resumoVisivel.situacoes.aviso_nao_confirmado}
+            ativo={filtro?.tipo === "situacao" && filtro.valor === "aviso_nao_confirmado"}
+            onClick={() => alternarFiltro("situacao", "aviso_nao_confirmado")}
           />
           <Contador
             rotulo="GERADO"

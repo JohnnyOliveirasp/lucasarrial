@@ -196,7 +196,19 @@ test("quem já recebeu o clone E FOI AVISADO nunca conta como parado, por mais a
     // ⚠️ O CARIMBO PASSOU A SER OBRIGATÓRIO EM 15/09 (recado 6). Antes este
     // teste passava só com `status = 'pronto'` — e era exatamente essa regra que
     // fazia a tela chamar de "entregue" quem ninguém tinha avisado.
-    avisos: new Map([[p.id, { em: iso(AGORA - 59 * 24 * H), canal: "e-mail", por: "o sistema" }]]),
+    // `fonte: "time"` desde 16/09: o carimbo automático deixou de afirmar
+    // entrega sozinho — ele vira AVISO NÃO CONFIRMADO, que é pendência.
+    avisos: new Map([
+      [
+        p.id,
+        {
+          em: iso(AGORA - 59 * 24 * H),
+          canal: "WhatsApp",
+          por: "atendente@fast.com",
+          fonte: "time" as const,
+        },
+      ],
+    ]),
   });
   assert.equal(linha.entregue, true);
   assert.equal(linha.parado, false);
@@ -365,7 +377,19 @@ test("ordem: quem espera há mais tempo primeiro, entregues no fim", () => {
       pedidos: [entregue],
       agora: AGORA,
       // Desde 15/09 é o CARIMBO que manda alguém pro fim da lista, não o status.
-      avisos: new Map([[entregue.id, { em: iso(AGORA - 49 * 24 * H), canal: "e-mail", por: "o sistema" }]]),
+      avisos: new Map([
+        [
+          entregue.id,
+          {
+            em: iso(AGORA - 49 * 24 * H),
+            canal: "WhatsApp",
+            por: "atendente@fast.com",
+            // 16/09: só o carimbo de GENTE manda pro fim da lista. O do
+            // sistema vira AVISO NÃO CONFIRMADO, que ainda é pendência.
+            fonte: "time" as const,
+          },
+        ],
+      ]),
     }),
   );
   assert.deepEqual(linhas.map((l) => l.chave), ["antigo@x.com", "recente@x.com", "entregue@x.com"]);
