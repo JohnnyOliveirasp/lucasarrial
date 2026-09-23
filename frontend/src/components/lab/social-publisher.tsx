@@ -51,6 +51,11 @@ export function SocialPublisher({ platform = "instagram" }: { platform?: "instag
   const [scheduledAt, setScheduledAt] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Instagram · Reels de teste (trial_params). O backend já valida e grava em
+  // publications.platform_options; aqui é só a escolha do aluno.
+  const [igTrial, setIgTrial] = useState(false);
+  const [igStrategy, setIgStrategy] = useState("MANUAL");
+
   // TikTok: opções do criador (privacidade permitida) + escolhas do post.
   const [ttPrivacyOptions, setTtPrivacyOptions] = useState<string[]>([]);
   const [ttPrivacy, setTtPrivacy] = useState("SELF_ONLY");
@@ -210,6 +215,11 @@ export function SocialPublisher({ platform = "instagram" }: { platform?: "instag
           source: picked.source,
           caption: caption.trim() || undefined,
           scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+          // Trial Reel só sai quando a mídia ESCOLHIDA AGORA é reel. Derivar de
+          // `podeTrial` (e não só do checkbox) é de propósito: se o aluno marcar
+          // "teste", trocar pra uma imagem e publicar, o estado velho mandaria
+          // is_trial numa imagem e a API devolveria erro de validação — culpando
+          // ele por uma escolha que a tela nem mostrava mais.
           platform_options: isTiktok
             ? {
                 privacy_level: ttPrivacy,
@@ -217,7 +227,9 @@ export function SocialPublisher({ platform = "instagram" }: { platform?: "instag
                 brand_organic: ttBrandOrganic,
                 brand_content: ttBrandContent,
               }
-            : undefined,
+            : podeTrial && igTrial
+              ? { is_trial: true, graduation_strategy: igStrategy }
+              : undefined,
         }),
       });
       const json = await res.json();
@@ -229,6 +241,10 @@ export function SocialPublisher({ platform = "instagram" }: { platform?: "instag
       setCaption("");
       setCaptionIdea("");
       setScheduledAt("");
+      // sem isto, "Reels de teste" fica grudado e a PRÓXIMA publicação sai como
+      // teste sem o aluno ter pedido — o tipo de erro que só aparece depois.
+      setIgTrial(false);
+      setIgStrategy("MANUAL");
       setNotice(scheduledAt ? t("notice.scheduled") : t("notice.sent"));
       await load();
     } finally {
@@ -240,6 +256,8 @@ export function SocialPublisher({ platform = "instagram" }: { platform?: "instag
 
   const activeAccounts = accounts.filter((a) => a.status === "active");
   const isTiktok = platform === "tiktok";
+  /** Reels de teste é recurso de REEL no Instagram — imagem e story não têm. */
+  const podeTrial = !isTiktok && picked?.mediaType === "reel";
 
   return (
     <div className="flex max-w-3xl flex-col gap-5">
@@ -306,6 +324,35 @@ export function SocialPublisher({ platform = "instagram" }: { platform?: "instag
               </select>
             )}
             <SocialMediaPicker value={picked} onChange={setPicked} />
+            {podeTrial && (
+              <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-[var(--hairline)] p-3">
+                <label className="flex items-center gap-2 text-[12.5px] text-[var(--ink)]">
+                  <input
+                    type="checkbox"
+                    checked={igTrial}
+                    onChange={(e) => setIgTrial(e.target.checked)}
+                  />
+                  {t("trial.label")}
+                </label>
+                <p className="text-[11.5px] leading-snug text-[var(--mute)]">{t("trial.help")}</p>
+                {igTrial && (
+                  <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
+                    {t("trial.strategy")}
+                    <select
+                      value={igStrategy}
+                      onChange={(e) => setIgStrategy(e.target.value)}
+                      className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-deep)] px-2 py-1.5 text-[12.5px] text-[var(--ink)]"
+                    >
+                      {["MANUAL", "SS_PERFORMANCE"].map((s) => (
+                        <option key={s} value={s}>
+                          {t(`trial.strategies.${s}` as never)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+            )}
             {isTiktok && (
               <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-[var(--hairline)] p-3">
                 <label className="flex items-center gap-2 text-[12.5px] text-[var(--mute)]">
