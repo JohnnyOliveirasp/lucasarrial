@@ -635,6 +635,21 @@ export function ImageStudio({
     if (pollRef.current) clearInterval(pollRef.current);
     const deadline = Date.now() + POLL_CEILING_MS;
     pollRef.current = setInterval(async () => {
+      // Teto (#477) PRIMEIRO, antes de qualquer caminho que possa sair cedo.
+      // Ele NÃO pode ficar depois do try: o `if (!r.ok) return` abaixo é um
+      // `return` do próprio callback, então um GET que falha SEMPRE (404 da row
+      // apagada, 500) pulava o teto e a tela girava pra sempre — exatamente o
+      // caso do #477, em que o aluno apagou a row pra escapar do spinner e o
+      // GET passou a devolver 404. Medido antes de mover: com !r.ok fixo, o
+      // teto nunca disparava; com 200+generating, disparava.
+      if (Date.now() >= deadline) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        setSlow(t("slow.notice", { min: Math.round(POLL_CEILING_MS / 60000) }));
+        setStep("form");
+        onGenerated?.();
+        return;
+      }
       try {
         const r = await fetch(`/api/v1/images/${id}`, { cache: "no-store" });
         if (!r.ok) return;
@@ -650,15 +665,6 @@ export function ImageStudio({
         }
       } catch {
         /* ignore */
-      }
-      // Teto (#477): fora do try, pra valer TAMBÉM quando o GET volta !ok ou
-      // estoura — eram justamente esses os caminhos que giravam calados.
-      if (Date.now() >= deadline) {
-        if (pollRef.current) clearInterval(pollRef.current);
-        pollRef.current = null;
-        setSlow(t("slow.notice", { min: Math.round(POLL_CEILING_MS / 60000) }));
-        setStep("form");
-        onGenerated?.();
       }
     }, 3000);
   }
