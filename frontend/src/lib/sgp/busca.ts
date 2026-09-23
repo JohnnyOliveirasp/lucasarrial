@@ -27,6 +27,17 @@
  *     colar do WhatsApp, digitar com parêntese ou digitar só os 8 finais acha.
  *  4. PALAVRA COM DÍGITO TENTA OS DOIS LADOS. "joao2010" é e-mail de gente de
  *     verdade; se dígito só olhasse telefone, esse aluno ficaria inachável.
+ *  6. SÓ PALAVRA SEM LETRA VIRA BUSCA DE TELEFONE (23/09). A regra 4 mandava os
+ *     dígitos de QUALQUER palavra pro telefone, e isso quebrou a busca por
+ *     e-mail na mão do time: "marcolovison1@icloud.com" tem um "1", virava
+ *     "telefone que contenha 1", e casou com 477 dos 578 compradores — todo
+ *     mundo cujo celular tem o dígito 1. A tela parecia filtrada e trazia gente
+ *     que não tinha nada a ver, então o time lia "o sistema não pesquisa".
+ *     Repare que o defeito é INTERMITENTE por natureza: e-mail sem dígito
+ *     nenhum sempre funcionou, e por isso ninguém tinha fechado a causa.
+ *     A regra 4 continua valendo no que ela queria: "joao2010" segue achável,
+ *     porque o lado do TEXTO já procura em nome e e-mail. O que sai é só o
+ *     contrário — palavra com letra deixar de ser procurada como telefone.
  *  5. SEM TELEFONE NUNCA CASA. Na tela o vazio vira "—"; se ele virasse texto
  *     buscável, uma busca qualquer traria todo mundo que não tem telefone.
  */
@@ -44,6 +55,18 @@ export function normalizarTexto(bruto: string | null | undefined): string {
       .toLowerCase()
       .trim()
   );
+}
+
+/**
+ * A palavra tem alguma LETRA? (regra 6)
+ *
+ * `\p{L}` com a flag `u` pega letra de qualquer alfabeto, acentuada inclusive —
+ * então "joão2010" e "José" contam como texto, e "(11)99999-8888" não. Usar
+ * `[a-z]` aqui deixaria passar nome acentuado que só tem letra fora do ASCII.
+ */
+export function temLetra(bruto: string | null | undefined): boolean {
+  if (typeof bruto !== "string") return false;
+  return /\p{L}/u.test(bruto);
 }
 
 /** Só os dígitos: "(11) 99999-8888" → "11999998888". */
@@ -75,7 +98,14 @@ export function palavrasDaBusca(termo: string | null | undefined): Palavra[] {
   if (typeof termo !== "string") return [];
   return termo
     .split(/\s+/)
-    .map((p) => ({ texto: normalizarTexto(p), digitos: soDigitos(p) }))
+    .map((p) => ({
+      texto: normalizarTexto(p),
+      // Regra 6: se a palavra tem LETRA, ela não é telefone — é nome ou e-mail.
+      // Zerar os dígitos aqui (e não dentro do casaBusca) é de propósito: assim
+      // existe UM lugar só onde se decide "isto é um telefone digitado", e o
+      // resto do módulo não precisa saber da regra.
+      digitos: temLetra(p) ? "" : soDigitos(p),
+    }))
     .filter((p) => p.texto !== "" || p.digitos !== "");
 }
 
