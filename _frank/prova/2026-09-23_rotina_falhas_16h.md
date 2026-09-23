@@ -161,7 +161,7 @@ inexistente afeta 0 linhas em silêncio".
 
 1. ⏰ **Cobrança do Eduardo (`GGMWWE5Q`) em 26/09 — 3 dias.** Decisão de dinheiro, 4ª escalada.
 2. 🔁 **Resposta do Eduardo** — promessa de ato feita hoje; conferir na próxima ronda.
-3. 🔴 **Frota morta, 7ª ronda seguida.** `refreshToken` de comprimento zero, vencido em 18/09; sem `ANTHROPIC_API_KEY`. Não há caminho não-interativo — só o Johnny refazendo `/login`. Sem `olho` e sem `qa`, a ronda não testa tela nenhuma.
+3. ✅ **A FROTA VOLTOU — e eu quase repeti uma mentira herdada.** Ver §6.
 4. **PR #404** — "pode" do Johnny. Provado em 15h: sem conflito, suite verde.
 5. **PR #214** — "pode" + semear o dedupe na MESMA janela.
 6. **10.000 cr do `b706b32e`** — código em produção, falta a decisão.
@@ -171,3 +171,45 @@ inexistente afeta 0 linhas em silêncio".
 10. **Hellen (`2609241a`)** — defeito de classe consertado; a entrega dela não aconteceu.
 11. **77 cartas anteriores a 14/09** — sem decisão de escrituração.
 12. **Dívida de teste do #403** — a pureza do snapshot não está presa por teste.
+13. **`olho` mudo** — card `4b645b24`, causa SEPARADA (provedor), ver §6.
+
+---
+
+## 6. A frota voltou — e o quase-erro que isso expôs em mim
+
+Escrevi neste mesmo log, de primeira, *"Frota morta, 7ª ronda seguida"*. **Copiei
+da ronda das 15h sem medir.** Fui conferir antes de fechar e está **errado**:
+
+`~/.claude/.credentials.json` foi reescrito **hoje às 14:58:02Z**, com
+`accessToken` e `refreshToken` de **108 chars** cada, `expiresAt` 23/09 22:58Z e
+`refreshTokenExpiresAt` **21/10**. O Johnny refez o `/login`.
+
+**Por que ninguém viu:** a ronda das 15h rodou de 14h40 a 15h05Z e o login caiu
+**14:58Z — no meio dela**. A medição dela era verdadeira quando foi feita e
+ficou velha 7 minutos depois. O erro não foi dela; **o erro seria meu**, por
+herdar a conclusão em vez de refazer a medição de um estado que muda sozinho.
+
+> A regra que fica: estado externo que pode mudar sem aviso (credencial, build,
+> assinatura, caixa) **se mede na ronda em que se cita**. Herdar medição de
+> estado vivo é como marcar `fixed` sem conferir o banco.
+
+**Conferido por execução, não por arquivo** (arquivo bonito não prova que o
+worker responde):
+
+| worker | modelo | veredito |
+|---|---|---|
+| `generalist` | Claude Sonnet 5 | ✅ respondeu (4s) |
+| `qa` | Claude Sonnet 5 | ✅ respondeu (4s) |
+| `olho` | Gemini 3.7 Flash (OpenRouter) | ❌ **vazio**, `stop_reason=end_turn`, 0 tokens de saída |
+
+**O `olho` continua mudo, mas a causa é OUTRA** e não pode ser confundida com a
+credencial: os workers da assinatura Claude voltaram juntos, e só o que passa
+pelo OpenRouter falhou — erro do provedor engolido pelo engine (o próprio
+`delegate-cli` sugere "OpenRouter sem créditos"). É o card `4b645b24`, que já
+existia antes do apagão e sobreviveu a ele.
+
+**O que isso destrava agora:** `qa` de volta significa que a ronda **pode testar
+tela outra vez** — 6 rondas seguidas declararam "não testei tela nenhuma". E
+destrava o passo (b) do `f8587cef`, que estava parado por falta de ouvido.
+**O que NÃO destrava:** percepção de imagem/vídeo/áudio pelo `olho`; enquanto o
+`4b645b24` não cair, o caminho que funciona segue sendo whisper-1 direto.
