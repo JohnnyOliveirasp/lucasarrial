@@ -149,13 +149,16 @@ class InferenceJob:
         # queimado — hoje esse número só é persistido no FIM do job e morre com
         # o SIGKILL (19 de 19 timeouts medidos com regens NULO), justamente
         # quando ele é a informação que explica o estouro.
-        # Passamos o dict VIVO de propósito: a leitura tem que ser do valor de
-        # AGORA, não do congelado na entrada da fase. Quem limpa o provedor é
+        # O provedor lê o estado VIVO de propósito: a leitura tem que ser do
+        # valor de AGORA, não do congelado na entrada da fase. Desde o card
+        # feat/heartbeat-setup-s ele é um método (não mais `lambda:
+        # self.qa_stats`) porque `since_t0_s` precisa ser RECALCULADO a cada
+        # leitura — ver `_stats_para_heartbeat`. Quem limpa o provedor é
         # `set_current_job(None)`, no finally do handler.
         # É a PRIMEIRA coisa do run(): um job que pendura já no download do
         # LoRA (caso 86254b30, abaixo) também precisa do contador visível.
         try:
-            _set_job_stats_provider(lambda: self.qa_stats)
+            _set_job_stats_provider(self._stats_para_heartbeat)
         except Exception:
             pass  # telemetria jamais derruba uma geração de aluno
 
@@ -181,6 +184,14 @@ class InferenceJob:
         with _phase("inference.setup.model"):
             self.model, self.sample_rate = carregar_modelo(self.inp, lora_path)
         self.setup_s = round(time.monotonic() - t_setup, 2)
+        # #15 (feat/heartbeat-setup-s): publica no dict VIVO que o heartbeat
+        # lê, para que `setup_s` chegue a generations.qa.fase_corrente.meta
+        # TAMBÉM num job morto por SIGKILL — hoje `qa.setup_s` só é persistido
+        # no SUCESSO, e a morte por executionTimeout apaga justamente o número
+        # que separa "setup comeu a base do teto" de "worker degradado".
+        # Publicado SÓ AQUI (não no __init__): chave ausente = "ainda no
+        # setup", sem a ambiguidade de um 0.0 que também poderia ser medição.
+        self.qa_stats["setup_s"] = self.setup_s
         self._medir_em_amostras()
         self._definir_regua_de_ritmo()
 
@@ -209,6 +220,29 @@ class InferenceJob:
         # com GPU limpa.
         self._soltar_modelo()
         return self._entregar(wav, elapsed)
+
+    def _stats_para_heartbeat(self) -> dict:
+        """Contadores acumulados do job pro heartbeat (#15) — leitura AO VIVO.
+
+        Devolve os contadores do qa_stats MAIS `since_t0_s`, recalculado A
+        CADA LEITURA: é o valor de AGORA, não o congelado na entrada da fase —
+        um número estático seria justamente o defeito que o provedor existe
+        pra evitar. Antes de `self.t0` existir a chave simplesmente NÃO entra
+        (chave ausente = "ainda no setup", sem a ambiguidade de 0/None, que
+        são indistinguíveis de "mediu e deu zero"). `setup_s` já mora no
+        próprio qa_stats (publicado no run() assim que medido) e viaja junto.
+
+        Concorrência: roda na thread daemon do heartbeat enquanto a thread
+        principal muta o qa_stats. O `{**dict}` copia sob o GIL sem executar
+        código Python no meio (chaves str, valores builtin) — nunca a
+        iteração Python que levantaria "dict changed size during iteration".
+        E `_stats_do_job` (worker_log) embrulha esta chamada em try/except:
+        qualquer azar vira `{}` num tick, jamais um job de aluno derrubado.
+        """
+        stats = {**self.qa_stats}
+        if self.t0:
+            stats["since_t0_s"] = round(time.monotonic() - self.t0, 1)
+        return stats
 
     def _medir_em_amostras(self) -> None:
         """Os tempos em ms viram nº de amostras (dependem do sample_rate)."""
