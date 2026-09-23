@@ -1843,6 +1843,7 @@
       "captionPlaceholder": "Descripción + hashtags (opcional)",
       "captionIdeaPlaceholder": "💡 Idea para la descripción (opcional) — tema, tono, mensaje…",
       "captionFail": "No pude generar la descripción ahora — escribe la tuya.",
+      "captionNeedIdea": "Dame una idea para la descripción (tema, tono, mensaje) en el campo de abajo — sin ella no tengo qué decir sobre este contenido.",
       "doneSent": "¡Enviado a Instagram! ⚙️ Síguelo en el Publicador.",
       "doneScheduled": "¡Programado! 📅 Síguelo en el Publicador.",
       "close": "Cerrar"

@@ -1843,6 +1843,7 @@
       "captionPlaceholder": "Caption + hashtags (optional)",
       "captionIdeaPlaceholder": "💡 Caption idea (optional) — theme, tone, message…",
       "captionFail": "Could not generate a caption right now — write your own.",
+      "captionNeedIdea": "Give me a caption idea (theme, tone, message) in the field below — without it I have nothing to say about this content.",
       "doneSent": "Sent to Instagram! ⚙️ Track it in the Publisher.",
       "doneScheduled": "Scheduled! 📅 Track it in the Publisher.",
       "close": "Close"

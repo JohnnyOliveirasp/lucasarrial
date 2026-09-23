@@ -187,6 +187,9 @@ export function SocialPublisher({ platform = "instagram" }: { platform?: "instag
       const j = await res.json();
       const text = j?.data?.caption ?? j?.caption ?? "";
       if (text) setCaption(text);
+      // Vazio com a API ok e sem ideia = não sobrou assunto no contexto
+      // (só diretiva técnica): pedir uma ideia, não fingir que "falhou".
+      else if (res.ok && !captionIdea.trim()) setError(t("modal.captionNeedIdea"));
       else setError(t("modal.captionFail"));
     } finally {
       setCaptionBusy(false);
