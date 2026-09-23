@@ -25,9 +25,11 @@
  * ARMADILHA 1 — `elapsed_seconds` MUDA DE SIGNIFICADO
  *   sucesso: NAO inclui o setup.   falha: INCLUI o setup.
  *   Logo `(elapsed - setup)/chunks` da NEGATIVO no sucesso. Medido em 22/09:
- *   159 de 829 jobs ficariam com s/chunk negativo nessa formula. O script
- *   imprime essa contagem como controle positivo: se ela vier 0, a premissa
- *   mudou e o resto da saida nao vale.
+ *   159 de 829 jobs ficariam com s/chunk negativo nessa formula. Esses numeros
+ *   estao na constante CENSO abaixo e sao COBRADOS como controle positivo: o
+ *   script confere item por item e ABORTA se faltar qualquer um — nao so no
+ *   zero. Achar 1 de 5 e pior que achar 0: a saida continua plausivel, so que
+ *   medida numa base mutilada. Ao abortar ele diz QUAIS sumiram, com id.
  *
  * ARMADILHA 2 — s/chunk GLOBAL e enviesado por tamanho
  *   O overhead fixo por job nao se amortiza em texto curto. Medido em 22/09:
@@ -51,8 +53,44 @@ function exigir(rotulo, error) {
 const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
 const faixaDe = (c) => (c <= 1 ? "1" : c <= 3 ? "2-3" : c <= 6 ? "4-6" : c <= 10 ? "7-10" : "11+");
 const chunksDe = (texto) => Math.max(1, Math.ceil((texto || "").length / 160));
+const eMorteTimeout = (g) => g.status === "failed" && String(g.error_message || "").includes("executionTimeout");
 
 const DESDE = process.env.DESDE || "2026-09-08T00:00:00Z";
+
+/* ---------------------------------------------------------------------------
+ * CENSO DE 22/09 — a LISTA ESPERADA do controle positivo.
+ *
+ * O controle positivo NAO pergunta "achei alguma coisa?". Pergunta "achei TUDO
+ * que ja foi contado nesta janela?". A diferenca importa porque o modo de falha
+ * real deste script nunca foi dar zero: foi dar POUCO. Filtro que perde parte da
+ * populacao continua imprimindo tabela bonita, so que menor — e todo numero que
+ * sai dali (p99 por faixa, taxa de lentos, "Nx o maximo da faixa") fica
+ * OTIMISTA, com vies sempre PRA BAIXO: menos sucessos na faixa => maximo da
+ * faixa menor => menos lentos => menos motivo pra suspeitar do worker.
+ *
+ * >>> QUEM QUISER BAIXAR QUALQUER PISO DAQUI tem que reescrever o item nesta
+ *     lista E escrever aqui mesmo o motivo, com data e quem assinou. O piso so
+ *     desce POR ESCRITO. Baixar piso "so pra rodar hoje" e exatamente como o
+ *     cartao #15 nomeou causa errada tres vezes.
+ *
+ * Historico de alteracoes do piso (append-only):
+ *   2026-09-22 — censo inicial, medido na janela 2026-09-08 (Frank).
+ * ------------------------------------------------------------------------- */
+const CENSO = {
+  janela: "2026-09-08T00:00:00Z",
+  medidoEm: "2026-09-22",
+  itens: [
+    { id: "comSetup", esperado: 829,
+      rotulo: "jobs ready com elapsed_seconds e qa.setup_s numerico (populacao do controle)" },
+    { id: "negativos", esperado: 159,
+      rotulo: "desses, os que dariam s/chunk NEGATIVO em (elapsed-setup)/chunks" },
+    // piso estrutural, nao censo: este script existe pra julgar morte por
+    // timeout. Zero mortes na janela = o filtro de error_message parou de casar,
+    // nao = janela limpa (a janela cobre as mortes que abriram o cartao).
+    { id: "mortesTimeout", esperado: 1,
+      rotulo: "geracoes failed com executionTimeout no error_message (o veredito)" },
+  ],
+};
 
 (async () => {
   const s = supa();
@@ -70,19 +108,72 @@ const DESDE = process.env.DESDE || "2026-09-08T00:00:00Z";
   console.log(`${todas.length} geracoes lidas\n`);
 
   // ---- CONTROLE da armadilha 1 -------------------------------------------
+  // Gate: compara o REENCONTRADO com a LISTA ESPERADA (CENSO) e para se faltar
+  // QUALQUER item. Rodar sem o censo casado nao e "rodar com menos dado", e
+  // rodar com numero otimista sem aviso.
+  if (DESDE !== CENSO.janela) {
+    console.error(`\n❌ CONTROLE POSITIVO INAPLICAVEL: DESDE=${DESDE} != janela do censo (${CENSO.janela}).`);
+    console.error(`   Os pisos de ${CENSO.itens.map(i => i.esperado).join("/")} foram CONTADOS na janela do censo (${CENSO.medidoEm}).`);
+    console.error("   Em outra janela eles nao protegem de nada: a populacao muda por motivo");
+    console.error("   legitimo e o controle deixa de distinguir 'janela menor' de 'filtro quebrado'.");
+    console.error("   Recenseie a janela nova e reescreva CENSO (valor + motivo + data) antes.");
+    process.exit(2);
+  }
+
   let negativos = 0, comSetup = 0;
+  const descartados = [];               // ready que NAO entrou no controle, com motivo
   for (const g of todas) {
-    if (g.status !== "ready" || !g.elapsed_seconds) continue;
+    if (g.status !== "ready") continue;
+    if (!g.elapsed_seconds) { descartados.push({ g, motivo: "elapsed_seconds vazio/zero" }); continue; }
     const st = g.qa && typeof g.qa.setup_s === "number" ? g.qa.setup_s : null;
-    if (st === null) continue;
+    if (st === null) { descartados.push({ g, motivo: "qa.setup_s ausente ou nao-numerico" }); continue; }
     comSetup++;
     if (g.elapsed_seconds - st < 0) negativos++;
   }
-  console.log("── CONTROLE 1 (elapsed muda de significado)");
+
+  const reencontrado = { comSetup, negativos, mortesTimeout: todas.filter(eMorteTimeout).length };
+  console.log(`── CONTROLE 1 (elapsed muda de significado) — lista esperada do censo de ${CENSO.medidoEm}`);
   console.log(`   ${negativos} de ${comSetup} jobs com setup dariam s/chunk NEGATIVO em (elapsed-setup)/chunks`);
-  if (negativos === 0) {
-    console.log("   ⚠️  ZERO negativos: a premissa mudou (elapsed talvez passe a incluir setup).");
-    console.log("       PARE e remeça a leitura — o resto desta saida nao vale.");
+  const sumiram = [];
+  for (const it of CENSO.itens) {
+    const n = reencontrado[it.id];
+    const ok = n >= it.esperado;
+    console.log(`   ${ok ? "✔" : "✗"} ${it.id.padEnd(14)} esperado >= ${String(it.esperado).padStart(4)}   reencontrado ${String(n).padStart(4)}${ok ? "" : `   FALTAM ${it.esperado - n}`}`);
+    if (!ok) sumiram.push({ ...it, reencontrado: n, faltam: it.esperado - n });
+  }
+
+  if (sumiram.length) {
+    console.error("\n❌ CONTROLE POSITIVO FALHOU — a varredura PARA AQUI.");
+    console.error(`   Sumiram ${sumiram.length} item(ns) da lista esperada:`);
+    for (const it of sumiram) {
+      console.error(`     - ${it.id}  (${it.rotulo})`);
+      console.error(`       esperado >= ${it.esperado} · reencontrado ${it.reencontrado} · faltam ${it.faltam}`);
+    }
+    if (negativos === 0) {
+      console.error("   ZERO negativos em especial: ou o filtro quebrou, ou a premissa mudou");
+      console.error("   (elapsed talvez passe a INCLUIR o setup tambem no sucesso). Confira qual");
+      console.error("   dos dois antes de tocar no piso — sao consertos opostos.");
+    }
+    console.error("\n   POR QUE ISSO MATA A VARREDURA:");
+    console.error("   o censo diz que esses itens ESTAO na janela. Se o filtro nao reencontra um");
+    console.error("   item conhecido, ele esta perdendo populacao silenciosamente — e ai TODO");
+    console.error("   numero abaixo sairia OTIMISTA, com vies sempre PRA BAIXO: menos sucessos na");
+    console.error("   faixa => p99 e MAXIMO da faixa menores => menos jobs marcados 'lento' =>");
+    console.error("   razao 'Nx o maximo da faixa' encolhida => o worker degradado passa por sao.");
+    console.error("   Imprimir isso seria repetir, com numero novo, o erro de 21/09.");
+    if (descartados.length) {
+      const AMOSTRA = 40;
+      console.error(`\n   ready DESCARTADOS do controle (${descartados.length}; mostrando ate ${AMOSTRA}) — comece o diagnostico por estes:`);
+      for (const d of descartados.slice(0, AMOSTRA)) {
+        console.error(`     ${d.g.created_at.slice(0, 16)}  ${d.g.id}  ${d.motivo}`);
+      }
+      if (descartados.length > AMOSTRA) console.error(`     ... e mais ${descartados.length - AMOSTRA}.`);
+    } else {
+      console.error("\n   nenhum ready foi descartado por campo faltando: a perda esta ANTES do");
+      console.error("   controle (janela, paginacao ou o proprio SELECT), nao nos campos.");
+    }
+    console.error("\n   Baixar piso so por escrito: edite CENSO no topo deste arquivo com o valor");
+    console.error("   novo, o motivo, a data e quem assinou. Sem isso, conserte o filtro.");
     process.exit(2);
   }
   console.log("   ✔ confirma: no SUCESSO elapsed NAO inclui setup. Formula usada: elapsed/chunks.\n");
@@ -137,8 +228,10 @@ const DESDE = process.env.DESDE || "2026-09-08T00:00:00Z";
 
   // ---- o veredito: mortes por timeout contra a faixa ---------------------
   console.log("\n── MORTES POR TIMEOUT x a FAIXA delas (o controle que nao depende do setup)");
-  const mortos = todas.filter(g => g.status === "failed" && String(g.error_message || "").includes("executionTimeout"));
-  if (!mortos.length) console.log("   nenhuma morte por executionTimeout na janela.");
+  // mesmo predicado do CONTROLE 1 (item mortesTimeout) de proposito: se os dois
+  // divergirem, o controle passa a proteger uma populacao que nao e esta.
+  const mortos = todas.filter(eMorteTimeout);
+  if (!mortos.length) console.log("   nenhuma morte por executionTimeout na janela.");  // inalcancavel: o CONTROLE 1 ja abortou
   for (const g of mortos) {
     const ch = chunksDe(g.text_raw), f = faixaDe(ch);
     const fase = g.qa && g.qa.fase_corrente ? g.qa.fase_corrente : null;

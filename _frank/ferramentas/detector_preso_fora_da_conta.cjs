@@ -128,20 +128,95 @@ async function paginar(db, tabela, sel, aplica) {
   // Um zero so vale se o instrumento sabe dizer SIM. Aqui o detector e obrigado
   // a reencontrar casos de e-mail divergente que JA estao vinculados: se ele
   // nao acha nem os conhecidos, o "nenhum preso" e cegueira, nao boa noticia.
+  //
+  // O ESPERADO E' ESCRITO A MAO, NAO DERIVADO DA CONSULTA. Se o gabarito saisse
+  // dos mesmos dados que ele julga, a consulta encolher encolheria o gabarito
+  // junto e ate um "6/6" poderia ser falso. Por isso: lista fixa + piso fixo.
+  //
+  // ⚠️ O PISO SO DESCE POR ESCRITO. Quem BAIXAR de proposito (tirar alguem de
+  // CONTROLE_ESPERADO, reduzir CONTROLE_TOTAL_ESPERADO ou CONTROLE_PISO_ACHADOS)
+  // tem que reescrever a lista AQUI e deixar o motivo AQUI, nesta mesma linha do
+  // caso (reembolsado? perfil teve o display_name corrigido? regra de nome
+  // mudou?). Piso que cai sem justificativa escrita e detector desligado em
+  // silencio — e ninguem depois consegue saber se a queda foi decisao ou defeito.
+  const CONTROLE_ESPERADO = [
+    {
+      nome: "Nassara Borges Mesquita Oliveira",
+      deve: "ACHA",
+      porque:
+        'encurtou o nome na conta ("Nássara Mesquita") — e o caso que obriga a regra a NAO ser igualdade exata',
+    },
+    {
+      nome: "Moyses Filipe B. Martins",
+      deve: "PERDE",
+      porque:
+        'conta de empresa "Equipe Qooqi" — recusa LEGITIMA: e o 6o caso, o que a regra tem que continuar nao pegando',
+    },
+    // NOMINAR OS OUTROS 4: o universo medido em 04/09 tem 6 casos, so 2 estao
+    // nomeados aqui. Na proxima rodada, copie do dump ACHA/PERDE abaixo o nome e
+    // o id dos 4 restantes e acrescente nesta lista — enquanto eles nao tiverem
+    // nome, o unico guarda deles e o piso numerico logo abaixo, que detecta
+    // sumico mas nao diz QUEM sumiu.
+  ];
+  // Universo conhecido (medido em 04/09): 6 casos de e-mail divergente ja
+  // vinculados, dos quais a chave de nome reencontra 5 — o 6o e a conta de
+  // empresa acima. Estes dois numeros sao o gabarito, nao saem dos dados.
+  const CONTROLE_TOTAL_ESPERADO = 6;
+  const CONTROLE_PISO_ACHADOS = 5;
+
   const controle = comDono
     .filter((e) => e.status === "active" && e.raw_event?.buyer?.name)
     .map((e) => ({ e, p: porId.get(e.user_id) }))
-    .filter(({ e, p }) => p && norm(e.buyer_email) !== norm(p.email));
-  const controleOk = controle.filter(({ e, p }) => mesmaPessoa(e.raw_event.buyer.name, p.display_name));
+    .filter(({ e, p }) => p && norm(e.buyer_email) !== norm(p.email))
+    .map(({ e, p }) => ({ e, p, ok: mesmaPessoa(e.raw_event.buyer.name, p.display_name) }));
+  const controleOk = controle.filter((c) => c.ok);
+  const idDe = ({ e }) => e.external_id ?? e.id;
+  const descreve = (c) => `"${c.e.raw_event.buyer.name}" (${idDe(c)}) x perfil "${c.p.display_name}"`;
+
   console.log(
-    `\nCONTROLE POSITIVO: ${controleOk.length}/${controle.length} casos conhecidos de e-mail divergente reencontrados pela chave de nome`,
+    `\nCONTROLE POSITIVO: ${controleOk.length}/${controle.length} casos de e-mail divergente reencontrados pela chave de nome (gabarito escrito a mao: ${CONTROLE_PISO_ACHADOS}/${CONTROLE_TOTAL_ESPERADO})`,
   );
-  for (const { e, p } of controle) {
-    const ok = mesmaPessoa(e.raw_event.buyer.name, p.display_name);
-    console.log(`  ${ok ? "ACHA " : "PERDE"} | "${e.raw_event.buyer.name}" x "${p.display_name}"`);
+  for (const c of controle) {
+    console.log(`  ${c.ok ? "ACHA " : "PERDE"} | ${idDe(c)} | "${c.e.raw_event.buyer.name}" x "${c.p.display_name}"`);
   }
-  if (!controleOk.length && controle.length) {
-    throw new Error("detector CEGO: nao reencontrou nenhum caso conhecido — nao confie no resultado");
+
+  // Confere item a item contra a LISTA esperada, nao contra um total qualquer.
+  const faltaram = [];
+  for (const esp of CONTROLE_ESPERADO) {
+    const achado = controle.find((c) => norm(c.e.raw_event.buyer.name) === norm(esp.nome));
+    if (!achado) {
+      faltaram.push(`SUMIU DA CONSULTA: "${esp.nome}" — esperado ${esp.deve}. ${esp.porque}`);
+    } else if ((esp.deve === "ACHA") !== achado.ok) {
+      faltaram.push(
+        `VEREDITO MUDOU: ${descreve(achado)} — esperado ${esp.deve}, obtido ${achado.ok ? "ACHA" : "PERDE"}. ${esp.porque}`,
+      );
+    }
+  }
+  // O universo tambem nao pode encolher: menos casos conhecidos = menos gabarito.
+  if (controle.length < CONTROLE_TOTAL_ESPERADO) {
+    faltaram.push(
+      `UNIVERSO ENCOLHEU: a consulta trouxe ${controle.length} casos de e-mail divergente, o gabarito tem ${CONTROLE_TOTAL_ESPERADO}. ` +
+        `Presentes agora: ${controle.map(descreve).join(" ; ") || "(nenhum — o controle rodou VAZIO, entao nao houve controle nenhum)"}. ` +
+        `Faltam ${CONTROLE_TOTAL_ESPERADO - controle.length}: compare esta lista com os 6 de 04/09 para ver quem caiu.`,
+    );
+  }
+  if (controleOk.length < CONTROLE_PISO_ACHADOS) {
+    const perdidos = controle.filter((c) => !c.ok);
+    faltaram.push(
+      `PISO FURADO: a chave de nome reencontrou ${controleOk.length}, o piso e ${CONTROLE_PISO_ACHADOS}. ` +
+        `Recusados nesta rodada: ${perdidos.map(descreve).join(" ; ") || "(nenhum recusado — entao a perda foi na consulta, nao na chave)"}`,
+    );
+  }
+  if (faltaram.length) {
+    console.error("\nCONTROLE POSITIVO FURADO — quem sumiu:");
+    for (const f of faltaram) console.error(`  ✗ ${f}`);
+    throw new Error(
+      "controle positivo furado: o detector perdeu caso(s) conhecido(s) listado(s) acima. " +
+        "A varredura NAO pode rodar assim — a chave que nao reencontra quem JA sabemos que existe tambem nao reencontra " +
+        "quem ainda nao sabemos, entao qualquer numero impresso abaixo seria OTIMISTA: o vies e sempre pra baixo " +
+        "(preso que a chave nao casa vira 'nenhum preso', e o silencio passa por boa noticia). " +
+        "Conserte a chave, ou — se a queda for decisao consciente — reescreva CONTROLE_ESPERADO/o piso com o motivo escrito ali.",
+    );
   }
 
   const presos = [];

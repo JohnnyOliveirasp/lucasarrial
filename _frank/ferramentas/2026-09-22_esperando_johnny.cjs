@@ -36,10 +36,12 @@
  *      MENTE quando quem deve o proximo passo e a casa — foi o que escondeu o
  *      #216 por 20 dias e o que custou os R$97 do #207.
  *
- * ⚠️ CONTROLE POSITIVO, e o script ABORTA se ele zerar. Zero de instrumento
- * cego ja fez a casa reportar saude onde havia fila. O controle sao os quatro
- * cartoes do cabecalho: se a varredura nao reencontra os que EU li a mao nesta
- * ronda, o filtro quebrou e nenhum numero desta saida vale.
+ * ⚠️ CONTROLE POSITIVO, e o script ABORTA se FALTAR QUALQUER UM dele (nao so
+ * se zerar). Numero de instrumento cego ja fez a casa reportar saude onde havia
+ * fila. O controle sao os quatro cartoes do cabecalho: se a varredura nao
+ * reencontra TODOS os que EU li a mao nesta ronda, o filtro encolheu — e o
+ * encolhimento so erra pra baixo, entao nenhum numero desta saida vale.
+ * Baixar esse piso de proposito exige reescrever a lista CONTROLE e o motivo.
  *
  * ⚠️⚠️ LIMITE GRAVE, MEDIDO NA PROPRIA RONDA QUE ESCREVEU ISTO. Ler so a
  * ULTIMA nota (criterio 1) tem um preco: QUEM ANOTA, ESCONDE. Nesta ronda eu
@@ -66,7 +68,16 @@ const AGORA = new Date();
 const dias = (iso) => Math.floor((AGORA - new Date(iso)) / 86400000);
 
 // Os 4 que eu li a mao na ronda de 22/09 17hZ e confirmei parados no Johnny.
-// Servem de controle positivo: a varredura TEM que reencontrar estes.
+// Servem de controle positivo: a varredura TEM que reencontrar TODOS estes.
+// Nao e "pelo menos um": e a lista inteira. Perder UM ja prova que o filtro
+// encolheu, e o vies do encolhimento e sempre pra baixo (ver o aborto abaixo).
+//
+// ⚠️ PISO SO DESCE POR ESCRITO: se alguem decidir DE PROPOSITO baixar esta
+// exigencia (um cartao foi resolvido de verdade, mudou de dono, saiu do banco),
+// tem que REESCREVER esta lista aqui e deixar o MOTIVO escrito nesta mesma
+// linha, com data. Comentar o aborto, afrouxar a contagem ou "deixar passar por
+// hoje" sem mexer aqui e como apagar o instrumento: a proxima ronda nao tem
+// como saber que o piso caiu nem por que.
 const CONTROLE = {
   "d3d8d1b2": "#15  PR #404 esperando merge",
   "ffbfdfc4": "#214 migration 111 nao aplicada",
@@ -207,20 +218,65 @@ function casa(texto) {
   exigir("incidents todos (controle)", e2);
 
   // ---- CONTROLE POSITIVO ----
+  // Confere a lista ESPERADA inteira, item a item. Qualquer ausencia aborta —
+  // nao existe "maioria reencontrada": ver o bloco do CONTROLE la em cima.
+  const esperadosControle = Object.entries(CONTROLE);
   const achadosControle = [];
-  for (const [prefixo, rotulo] of Object.entries(CONTROLE)) {
+  const faltantesControle = [];
+  for (const [prefixo, rotulo] of esperadosControle) {
     const row = todos.find((r) => String(r.id).startsWith(prefixo));
-    if (!row) continue;
-    if (casa(ultimaNota(row))) achadosControle.push(`${prefixo} ${rotulo}`);
+    if (!row) {
+      faltantesControle.push({
+        prefixo,
+        rotulo,
+        causa: "cartao NAO EXISTE no resultado da consulta (sumiu do banco ou o id mudou)",
+      });
+      continue;
+    }
+    const nota = ultimaNota(row);
+    if (!casa(nota)) {
+      const trecho = String(nota || "").replace(/\s+/g, " ").trim().slice(0, 120);
+      faltantesControle.push({
+        prefixo,
+        rotulo,
+        causa: `existe, mas NENHUMA marca casou com a ultima nota${trecho ? `: "${trecho}"` : " (ultima nota vazia)"}`,
+      });
+      continue;
+    }
+    achadosControle.push(`${prefixo} ${rotulo}`);
   }
-  if (achadosControle.length === 0) {
-    console.error("\n❌ CONTROLE POSITIVO ZEROU: nenhum dos 4 cartoes lidos a mao");
-    console.error("   em 22/09 17hZ foi reencontrado pela marca. O filtro quebrou.");
-    console.error("   NAO reporte zero — o instrumento esta cego.");
+
+  if (faltantesControle.length > 0) {
+    console.error(
+      `\n❌ CONTROLE POSITIVO INCOMPLETO: ${faltantesControle.length} de ${esperadosControle.length} cartoes` +
+        " lidos a mao em 22/09 17hZ NAO foram reencontrados."
+    );
+    console.error("\n   SUMIRAM (estes sao os que voce tem que investigar):");
+    for (const f of faltantesControle) {
+      console.error(`     · ${f.prefixo} ${f.rotulo}`);
+      console.error(`         motivo: ${f.causa}`);
+    }
+    if (achadosControle.length) {
+      console.error("\n   Ainda reencontrados (nao consolam, so delimitam a quebra):");
+      for (const a of achadosControle) console.error(`     · ${a}`);
+    }
+    console.error("\n   POR QUE ISTO MATA A VARREDURA: estes 4 cartoes sao os UNICOS casos");
+    console.error("   que alguem conferiu a mao e sabe, de fato, que estao parados no Johnny.");
+    console.error("   Se o filtro perde um caso CONHECIDO, ele esta perdendo tambem um numero");
+    console.error("   desconhecido de casos que ninguem conferiu — e nao ha como saber quantos.");
+    console.error("   O erro so anda num sentido: a marca deixa de casar, o cartao some da lista,");
+    console.error("   o total impresso CAI. O vies e sempre pra baixo, nunca pra cima. Portanto");
+    console.error("   QUALQUER numero desta saida seria otimista: uma fila menor do que a real,");
+    console.error("   lida como 'a casa esta melhorando'. Foi exatamente assim que o #216 ficou");
+    console.error("   20 dias invisivel. NAO reporte nada desta rodada; conserte a marca primeiro.");
+    console.error("\n   Se o piso DEVE mesmo cair (cartao resolvido/reendereçado de verdade),");
+    console.error("   reescreva a lista CONTROLE no topo deste arquivo com o motivo e a data.");
+    console.error("   O piso so desce por escrito.");
     process.exit(1);
   }
+
   console.log(
-    `controle positivo OK (${achadosControle.length}/4 reencontrados) · ${todos.length} incidentes varridos`
+    `controle positivo OK (${achadosControle.length}/${esperadosControle.length} reencontrados) · ${todos.length} incidentes varridos`
   );
 
   // ---- A CLASSE ----

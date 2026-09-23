@@ -38,10 +38,21 @@
  * ficou entre **+6,3s e +117,9s** — o estorno cai logo depois da morte, nunca
  * antes, nunca muito depois.
  *
- * Toda rodada revalida isso nas mortes visíveis da janela. Se a relação
- * quebrar (estorno ANTES do fim, ou muito depois), o relógio não é mais
- * relógio e a ferramenta ABORTA em vez de devolver número. Instrumento cego
- * devolvendo zero foi o que já fez a casa relatar "pagante sem acesso: 0".
+ * Toda rodada revalida isso nas mortes visíveis da janela, em DUAS etapas:
+ *
+ *   1. A LISTA (`CONTROLE_ESPERADO`). Aquelas mortes têm NOME: cada uma foi
+ *      registrada com id na ronda de 15/09. A rodada tem que REENCONTRAR cada
+ *      uma delas, uma a uma, e ABORTA dizendo QUAIS sumiram se faltar
+ *      qualquer uma. Conferir só a FAIXA dos sobreviventes não serve: quem
+ *      perde 5 dos 9 continua com 4 dentro da faixa, e o script diria
+ *      "relógio válido" enquanto CONFIRMADAS e PLACAR caem 5 calados. E a
+ *      entrada do controle é `video_clones` — a MESMA tabela que este arquivo
+ *      prova que erode (§ acima: 7 gerações viraram 5 em um dia). Sem lista
+ *      nominal, o controle é conferido pela peneira que ele deveria vigiar.
+ *   2. A FAIXA. Se a relação quebrar (estorno ANTES do fim, ou muito depois),
+ *      o relógio não é mais relógio e a ferramenta ABORTA em vez de devolver
+ *      número. Instrumento cego devolvendo zero foi o que já fez a casa
+ *      relatar "pagante sem acesso: 0".
  *
  * ── O QUE ELE NÃO FAZ ─────────────────────────────────────────────────────
  * Não escreve, não estorna, não manda e-mail, não fecha cartão. Só lê.
@@ -72,6 +83,51 @@ const PROJECT = "yizerthyrgrajivlotcw";
 // Vem da separação medida em 15/09: crash morre entre 1s e 64s; a menor morte
 // de teto conhecida levou 1.654,7s. Não existe nada no meio.
 const PISO_HISTORICO = 1200;
+
+// ── BASELINE NOMINAL DO CONTROLE POSITIVO ──────────────────────────────────
+// A banda +6,3s a +117,9s não saiu de uma contagem, saiu DESTAS mortes, cada
+// uma com id. Fontes, para quem quiser refazer:
+//   _frank/prova/2026-09-15_vigia_20h.md §1.2 (a tabela por id das oito)
+//   _frank/prova/2026-09-15_rotina_falhas_21h.md §6 e §7 ("9 linhas terminais
+//   desde 14/09"; a nona é a `492cd0de`, ver BAIXAS_DO_BASELINE abaixo)
+//
+// ⚠️ ESTA LISTA É O PISO DO CONTROLE, E O PISO SÓ DESCE POR ESCRITO. Quem
+// BAIXAR o piso de propósito — tirar um item daqui por qualquer motivo,
+// inclusive "a linha sumiu e não volta" — TEM QUE reescrever esta lista E
+// registrar o item em BAIXAS_DO_BASELINE com data, motivo e prova. Apagar
+// item daqui em silêncio para a rodada "passar" é o mesmo vício que esta
+// ferramenta existe para medir: o número cai e ninguém percebe.
+//
+// `quando` é usado para saber se o item cai DENTRO da janela pedida: rodada
+// com `desde` posterior não exige o que é legitimamente anterior a ela.
+const CONTROLE_ESPERADO = [
+  { id: "a986e93f", quando: "2026-09-14T19:01Z", aluno: "(e-mail não registrado na ronda)", elapsed: 3127.566 },
+  { id: "d3cf02ba", quando: "2026-09-14T20:45Z", aluno: "(e-mail não registrado na ronda)", elapsed: 2074.944 },
+  { id: "dbeb63dc", quando: "2026-09-14T20:48Z", aluno: "(e-mail não registrado na ronda)", elapsed: 3459.396 },
+  { id: "28f8f834", quando: "2026-09-14T21:48Z", aluno: "(e-mail não registrado na ronda)", elapsed: 2612.762 },
+  { id: "6e3fa73c", quando: "2026-09-14T22:44Z", aluno: "(e-mail não registrado na ronda)", elapsed: 3812.998 },
+  { id: "999fa01a", quando: "2026-09-15T03:24Z", aluno: "wendellaraujo", elapsed: 2952.042 },
+  { id: "b69471fe", quando: "2026-09-15T18:44Z", aluno: "nettosl@terra", elapsed: 1654.741 },
+  { id: "ea0ddd9f", quando: "2026-09-15T19:29Z", aluno: "gabriel.reis2212.pt (480p-v2)", elapsed: 1808.584 },
+];
+
+// Itens que JÁ SAÍRAM do baseline. O piso desceu de 9 para 8 — e desceu AQUI,
+// por escrito, com a prova do lado. Isto fica impresso em toda rodada de
+// propósito: ninguém deve poder ler "8 de 8 reencontradas" e achar que o
+// baseline sempre foi 8.
+const BAIXAS_DO_BASELINE = [
+  {
+    id: "492cd0de",
+    quando: "2026-09-15T19:33Z",
+    aluno: "alexandre@novaconexao.com",
+    motivo:
+      "a 9ª morte. Às 21hZ de 15/09 a linha AINDA EXISTIA (medida: elapsed 2770,168s " +
+      "contra teto de 2760s) e entrou na banda do controle; às 22hZ a mesma consulta " +
+      "devolvia ZERO linhas para o id. Foi APAGADA e não volta, então não dá para exigir " +
+      "que seja reencontrada. Continua contada pelo dinheiro, como órfã. " +
+      "Prova: _frank/prova/2026-09-15_vigia_22h.md §1.1.",
+  },
+];
 
 async function sql(query) {
   const token = process.env.SUPABASE_ACCESS_TOKEN;
@@ -117,10 +173,70 @@ const fmt = (s) => {
 
   // ── CONTROLE POSITIVO ───────────────────────────────────────────────────
   const comAtraso = visiveis.filter((v) => v.atraso != null && v.elapsed_seconds != null);
+
+  // 1) A LISTA: quais voltaram, não quantos. Contagem sozinha não detecta
+  //    troca nem perda parcial; a faixa sozinha aprova os sobreviventes.
+  const pref = (id) => String(id ?? "").slice(0, 8);
+  const naTabela = new Set(visiveis.map((v) => pref(v.id)));
+  const comRelogio = new Set(comAtraso.map((v) => pref(v.id)));
+  const exigidos = CONTROLE_ESPERADO.filter((e) => e.quando >= desde);
+  const sumidos = exigidos.filter((e) => !comRelogio.has(e.id));
+
+  if (BAIXAS_DO_BASELINE.length) {
+    console.log(
+      `\n📉 O baseline do controle JÁ FOI REBAIXADO ${BAIXAS_DO_BASELINE.length}× (de ${
+        CONTROLE_ESPERADO.length + BAIXAS_DO_BASELINE.length
+      } para ${CONTROLE_ESPERADO.length}), por escrito:`,
+    );
+    for (const b of BAIXAS_DO_BASELINE) {
+      console.log(`   · ${b.id} · ${b.quando} · ${b.aluno}`);
+      console.log(`     ${b.motivo}`);
+    }
+  }
+
+  if (!exigidos.length) {
+    console.log(`\n⚠️  CONTROLE POSITIVO POR LISTA NÃO RODOU: a janela pedida (desde ${desde})`);
+    console.log(`   não cobre nenhum item do baseline, que vive em 14–15/09. Nesta rodada`);
+    console.log(`   NADA foi exigido de volta: os números abaixo não têm controle nominal.`);
+    console.log(`   Para rodar o controle, use a janela padrão (desde 2026-09-14).`);
+  } else if (sumidos.length) {
+    console.error(
+      `\n❌ ABORTADO: o controle positivo reencontrou ${exigidos.length - sumidos.length} de ${exigidos.length} morte(s) conhecida(s) da janela.`,
+    );
+    console.error(`\n   SUMIU (cada uma destas já foi medida com id nesta MESMA janela):`);
+    for (const e of sumidos) {
+      const onde = naTabela.has(e.id)
+        ? "linha ainda existe em video_clones, mas PERDEU atraso/elapsed — sem relógio, fica fora do controle"
+        : "SEM linha em video_clones — a linha foi APAGADA";
+      console.error(`   · ${e.id} · ${e.quando} · ${e.aluno} · morreu aos ${e.elapsed}s`);
+      console.error(`     ${onde}`);
+    }
+    console.error(`\n   POR QUE ISSO MATA A VARREDURA, e não é só um alarme chato:`);
+    console.error(`   o filtro que deveria reencontrar um item CONHECIDO não o reencontrou.`);
+    console.error(`   Se ele perde o que a gente sabe que existe, ele também está perdendo`);
+    console.error(`   o que a gente não sabe — e qualquer número impresso depois disto seria`);
+    console.error(`   OTIMISTA. O viés é SEMPRE PRA BAIXO: some morte de CONFIRMADAS, some`);
+    console.error(`   morte do PLACAR, e o piso de classificação sobe junto (ele sai da menor`);
+    console.error(`   morte visível), empurrando órfão de COMPATÍVEL para NÃO CLASSIFICADA.`);
+    console.error(`   Cada perda encolhe o número duas vezes, e nunca para cima.`);
+    console.error(`\n   NÃO "conserte" isto apagando o item da lista para a rodada passar.`);
+    console.error(`   Se a linha sumiu de verdade e não volta, o piso do controle DESCE — e`);
+    console.error(`   desce POR ESCRITO: mova o item de CONTROLE_ESPERADO para`);
+    console.error(`   BAIXAS_DO_BASELINE neste arquivo, com data, motivo e a prova.`);
+    process.exit(1);
+  } else {
+    console.log(
+      `\n🔬 Controle positivo (lista): ${exigidos.length} de ${exigidos.length} morte(s) conhecida(s) reencontrada(s) — ${exigidos
+        .map((e) => e.id)
+        .join(", ")}.`,
+    );
+  }
+
+  // 2) A FAIXA: o estorno ainda acompanha o fim do job?
   if (comAtraso.length) {
     const difs = comAtraso.map((v) => Number(v.atraso) - Number(v.elapsed_seconds));
     const min = Math.min(...difs), max = Math.max(...difs);
-    console.log(`\n🔬 Controle positivo: ${comAtraso.length} morte(s) visível(is) com estorno.`);
+    console.log(`\n🔬 Controle positivo (faixa): ${comAtraso.length} morte(s) visível(is) com estorno.`);
     console.log(`   atraso − elapsed: ${min.toFixed(1)}s a ${max.toFixed(1)}s (esperado: +0s a +600s)`);
     if (min < 0 || max > 600) {
       console.error(`\n❌ ABORTADO: o estorno deixou de acompanhar o fim do job.`);
@@ -130,7 +246,11 @@ const fmt = (s) => {
     }
     console.log(`   ✅ relógio válido.`);
   } else {
+    // Sem baseline exigível nesta janela (senão a etapa 1 já teria abortado),
+    // e sem nenhuma morte visível para medir. O piso cai para o histórico logo
+    // abaixo e DIZ que caiu — mas fique com isto: nada foi validado aqui.
     console.log(`\n⚠️  Nenhuma morte visível com estorno na janela: controle positivo NÃO rodou.`);
+    console.log(`   Nenhum número desta rodada está coberto por controle.`);
   }
 
   const pisoMedido = comAtraso.length

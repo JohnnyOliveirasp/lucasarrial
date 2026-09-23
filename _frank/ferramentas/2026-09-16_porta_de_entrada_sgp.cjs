@@ -20,8 +20,16 @@
  * ⚠️ O link do Supabase tem validade (padrao 1h para recovery). Nao gere em
  * lote de madrugada esperando que sirva de manha — gere e mande na hora.
  *
+ * ⚠️ CONTROLE POSITIVO POR LISTA FIXA, e ABORTA. Ate 23/09 o controle daqui era
+ * uma CONTAGEM que so abortava no ZERO (`if (entraram === 0)`): perder 3 de 4
+ * alunos conhecidos passava calado e o script ainda imprimia numero — o mesmo
+ * defeito do `esperando_johnny.cjs` ("OK (3/4)"). Agora ele compara nome por
+ * nome com `CONTROLE_ESPERADOS` e morre se faltar QUALQUER UM, dizendo quem
+ * sumiu. Lista vazia tambem aborta: sem piso escrito, nao imprime numero.
+ *
  * uso:
  *   node 2026-09-16_porta_de_entrada_sgp.cjs --listar
+ *   node 2026-09-16_porta_de_entrada_sgp.cjs --semear-controle           (le prod, so imprime a lista pra voce colar)
  *   node 2026-09-16_porta_de_entrada_sgp.cjs --link aluno@x.com          (so gera, nao manda)
  *   node 2026-09-16_porta_de_entrada_sgp.cjs --enviar aluno@x.com --dry-run
  *   node 2026-09-16_porta_de_entrada_sgp.cjs --enviar aluno@x.com --confirmar
@@ -48,6 +56,49 @@ const db = createClient(URL, KEY, { auth: { persistSession: false } });
 const SITE = "https://fastcloner.com";
 const REDIRECT = `${SITE}/auth/callback?next=${encodeURIComponent("/reset-password")}`;
 
+/**
+ * ── O PISO DO CONTROLE POSITIVO ───────────────────────────────────────────
+ * Alunos que EU SEI que estao em `sgp_pedidos` com status 'pronto' E que JA
+ * ENTRARAM (`last_sign_in_at` preenchido). Nao e amostra nem contagem: e uma
+ * LISTA NOMINAL, e a varredura e obrigada a reencontrar TODOS eles antes de
+ * ter direito de imprimir um numero.
+ *
+ * `last_sign_in_at` so anda pra frente — quem ja entrou nao "desentra". Entao
+ * um item desta lista faltar nunca e noticia sobre o aluno: e o instrumento
+ * cego (paginacao estourada, cache envenenado, campo que parou de ser
+ * preenchido, consulta que mudou de forma).
+ *
+ * ⚠️ BAIXAR O PISO SO POR ESCRITO, AQUI. Se voce tirar um nome desta lista
+ * (ou encurta-la), REESCREVA a lista e deixe na linha o MOTIVO e a DATA —
+ * ex.: "// removido 30/09: conta apagada a pedido do titular (#512)". Piso
+ * que desce sem justificativa escrita e o defeito que este bloco existe pra
+ * impedir: quanto menor a lista, menos o controle enxerga. Nunca esvazie "so
+ * pra o script voltar a rodar" — lista vazia ABORTA de proposito.
+ *
+ * Como preencher: `--semear-controle` le producao e imprime as linhas prontas
+ * pra colar aqui (email + id + carimbo do login). Escolha 3 ou 4 dos mais
+ * ANTIGOS (coorte velha nao muda mais) e escreva a nota de cada um.
+ */
+const CONTROLE_ESPERADOS = [
+  // SEMEADO em 23/09 pelo Frank, com `--semear-controle` rodado contra producao.
+  //
+  // POR QUE ESTES QUATRO: sao contas que JA ENTRARAM (tem login), e escolhi as
+  // de entrada mais ANTIGA de proposito — quanto mais velha a entrada, menor a
+  // chance de o estado mudar e o controle abortar por motivo legitimo em vez de
+  // por filtro quebrado. Controle que pisca sozinho vira ruido e acaba comentado.
+  // Peguei duas do inicio de setembro e duas de 19/09 para a ancora nao ficar
+  // toda no mesmo dia: se um so dia sumir da consulta, ainda sobra quem acuse.
+  //
+  // O QUE ELES PROVAM: que a varredura ainda enxerga quem entrou. Eles atravessam
+  // o MESMO caminho da lista `fora`, entao perder um conhecido significa estar
+  // perdendo desconhecidos junto — e o vies e sempre pra baixo (parece que tem
+  // menos gente presa do lado de fora do que realmente tem).
+  { email: "contatogrupoavip@gmail.com", id: "89f57f2e-f0b9-4739-acf4-5edf68ef9a90", entrou_em: "2026-09-06T16:55:00.17924Z", nota: "entrada mais antiga da amostra (06/09) — ancora que nao deve mudar" },
+  { email: "ritabernardino71@gmail.com", id: "5cee2e1a-8725-40cd-ae38-d5c36bbf37c3", entrou_em: "2026-09-07T10:26:06.36353Z", nota: "segunda mais antiga (07/09) — ancora que nao deve mudar" },
+  { email: "mauro.inforsato@prouddigital.com.br", id: "15577d40-5b27-4b3c-9feb-f7a53fa37cbe", entrou_em: "2026-09-19T02:48:28.94716Z", nota: "19/09 — segunda data, pra ancora nao ficar toda no mesmo dia" },
+  { email: "unternehmerdigital@gmail.com", id: "e9602a39-42cd-4869-a3f6-c1b731ccb99b", entrou_em: "2026-09-19T12:48:13.322557Z", nota: "19/09 — segunda data, pra ancora nao ficar toda no mesmo dia" },
+];
+
 /** Quem esta do lado de fora: pedido SGP pronto + conta que nunca logou. */
 async function listar() {
   const { data, error } = await db.rpc("exec_sql_json", {}).then(
@@ -62,11 +113,29 @@ async function listar() {
   if (e1) throw new Error(`sgp_pedidos: ${e1.message}`);
 
   const fora = [];
+  let entraram = 0;
+  let semConta = 0;
+  let pulados = 0;
+  // UM laco so. Antes eram dois (um pra `fora`, outro pra contar `entraram`) e
+  // o segundo nao tinha o filtro de e-mail invalido — as duas contagens nem
+  // varriam o mesmo conjunto. Contar aqui dentro faz o denominador ser o mesmo
+  // por construcao. Os baldes `semConta`/`pulados` existem pra que
+  // entraram + fora + semConta + pulados feche com totalPronto: `continue`
+  // mudo ja derrubou aluno da conta sem ninguem notar.
   for (const p of pedidos) {
-    if (!p.email || /\.invalid$/i.test(p.email)) continue;
+    if (!p.email || /\.invalid$/i.test(p.email)) {
+      pulados++;
+      continue;
+    }
     const u = await acharUsuario(p.email);
-    if (!u) continue;
-    if (u.last_sign_in_at) continue;
+    if (!u) {
+      semConta++;
+      continue;
+    }
+    if (u.last_sign_in_at) {
+      entraram++;
+      continue;
+    }
     fora.push({
       email: p.email,
       voz_pronta_em: p.voz_pronta_em,
@@ -76,39 +145,128 @@ async function listar() {
   }
   fora.sort((a, b) => String(a.voz_pronta_em).localeCompare(String(b.voz_pronta_em)));
 
-  // CONTROLE POSITIVO: se ninguem do 'pronto' tiver last_sign_in_at, o campo
-  // parou de ser preenchido e a lista acima e lixo. Aborta em vez de mentir.
-  let entraram = 0;
-  for (const p of pedidos) {
-    const u = await acharUsuario(p.email);
-    if (u?.last_sign_in_at) entraram++;
-  }
-  if (entraram === 0) {
+  const controle = await conferirControle(pedidos);
+  return { fora, entraram, semConta, pulados, controle, totalPronto: pedidos.length };
+}
+
+/**
+ * CONTROLE POSITIVO: reencontrar NOMINALMENTE cada item de CONTROLE_ESPERADOS.
+ * Aborta se faltar QUALQUER UM — nao no zero, no PRIMEIRO que sumir.
+ *
+ * Duas exigencias por item, checadas em separado pra que o erro diga onde
+ * quebrou: (1) o e-mail tem que estar na fatia 'pronto' que a consulta
+ * devolveu; (2) `acharUsuario` tem que devolver a conta COM `last_sign_in_at`.
+ *
+ * A busca aqui vai com `semCache: true` de proposito: o cache memoriza null, e
+ * um controle que le o mesmo null envenenado da medicao nao e controle — ele
+ * degrada junto com o instrumento que deveria vigiar.
+ */
+async function conferirControle(pedidos) {
+  if (!CONTROLE_ESPERADOS.length) {
     throw new Error(
-      "CONTROLE POSITIVO ZEROU: nenhum pedido 'pronto' tem last_sign_in_at. " +
-        "O campo parou de ser preenchido — a medicao inteira e lixo. Nao use.",
+      "CONTROLE POSITIVO SEM PISO: `CONTROLE_ESPERADOS` esta VAZIA, entao a " +
+        "comparacao passaria por vacuidade e eu imprimiria um numero que nada " +
+        "sustenta. Rode `--semear-controle`, escolha 3 ou 4 dos alunos 'pronto' " +
+        "MAIS ANTIGOS que ja entraram e cole as linhas no topo deste arquivo, " +
+        "com a nota de cada um. Enquanto nao houver piso escrito, nao imprimo.",
     );
   }
-  return { fora, entraram, totalPronto: pedidos.length };
+
+  const naFatia = new Set(pedidos.map((p) => String(p.email || "").toLowerCase()));
+  const sumiram = [];
+  const reencontrados = [];
+
+  for (const esp of CONTROLE_ESPERADOS) {
+    const k = String(esp.email || "").toLowerCase();
+    const rotulo = `${esp.email} (id ${esp.id ?? "?"}${esp.nota ? ` · ${esp.nota}` : ""})`;
+    if (!naFatia.has(k)) {
+      sumiram.push(`${rotulo}\n      -> sumiu de sgp_pedidos status='pronto': a consulta nao o devolveu`);
+      continue;
+    }
+    let u = null;
+    try {
+      u = await acharUsuario(k, { semCache: true });
+    } catch (e) {
+      sumiram.push(`${rotulo}\n      -> acharUsuario LANCOU: ${e.message}`);
+      continue;
+    }
+    if (!u) {
+      sumiram.push(`${rotulo}\n      -> acharUsuario devolveu null: a varredura do auth nao achou a conta`);
+      continue;
+    }
+    if (!u.last_sign_in_at) {
+      sumiram.push(
+        `${rotulo}\n      -> conta achada (id ${u.id}) mas last_sign_in_at VAZIO ` +
+          `(entrou em ${esp.entrou_em ?? "?"}): o campo parou de ser preenchido`,
+      );
+      continue;
+    }
+    reencontrados.push({ email: k, id: u.id, last_sign_in_at: u.last_sign_in_at });
+  }
+
+  if (sumiram.length) {
+    throw new Error(
+      `CONTROLE POSITIVO FALHOU: reencontrei ${reencontrados.length} de ` +
+        `${CONTROLE_ESPERADOS.length} conhecidos. SUMIRAM ${sumiram.length}:\n` +
+        sumiram.map((s) => `  - ${s}`).join("\n") +
+        "\n\n  POR QUE ISSO MATA A VARREDURA: esses nomes atravessam exatamente o " +
+        "mesmo caminho da lista FORA (sgp_pedidos 'pronto' -> acharUsuario -> " +
+        "last_sign_in_at). Se o caminho perdeu quem eu SEI que esta la, ele " +
+        "tambem esta perdendo quem eu nao sei — e o vies e SEMPRE PRA BAIXO: " +
+        "quem some da varredura some da lista FORA, nunca entra nela. Entao " +
+        "qualquer numero impresso agora seria OTIMISTA — menos aluno preso do " +
+        "lado de fora do que a realidade, e aluno que ninguem vai procurar. " +
+        "Conserte o instrumento (ou, se a perda for legitima, reescreva " +
+        "CONTROLE_ESPERADOS com o motivo e a data) antes de rodar de novo.",
+    );
+  }
+  return reencontrados;
 }
 
 const _cache = new Map();
-async function acharUsuario(email) {
+const TETO_PAGINAS = 40;
+const POR_PAGINA = 200;
+/**
+ * `semCache: true` ignora o que ja esta memorizado e varre de novo. Serve ao
+ * controle positivo: o cache guarda tambem os MISS (null), entao um miss virava
+ * permanente e qualquer segundo laco reusava o mesmo null.
+ */
+async function acharUsuario(email, { semCache = false } = {}) {
   const k = String(email || "").toLowerCase();
-  if (_cache.has(k)) return _cache.get(k);
+  if (!semCache && _cache.has(k)) return _cache.get(k);
   let achado = null;
+  let listaAcabou = false;
   // listUsers pagina de 50 em 50; filtramos no cliente porque o filtro por
   // email do admin nao e exato em todas as versoes.
-  for (let page = 1; page <= 40 && !achado; page++) {
-    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 });
+  for (let page = 1; page <= TETO_PAGINAS && !achado; page++) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: POR_PAGINA });
     if (error) throw new Error(`listUsers: ${error.message}`);
-    if (!data.users.length) break;
+    if (!data.users.length) {
+      listaAcabou = true;
+      break;
+    }
     for (const u of data.users) {
       if (String(u.email || "").toLowerCase() === k) achado = u;
       if (!_cache.has(String(u.email || "").toLowerCase()))
         _cache.set(String(u.email || "").toLowerCase(), u);
     }
-    if (data.users.length < 200) break;
+    if (data.users.length < POR_PAGINA) {
+      listaAcabou = true;
+      break;
+    }
+  }
+  // Teto estourado SEM a lista ter acabado: "nao tem conta" aqui seria
+  // ignorancia vendida como medicao — e null silencioso derruba o aluno do
+  // relatorio sem ruido, sempre pra baixo. Lanca.
+  if (!achado && !listaAcabou) {
+    throw new Error(
+      `VARREDURA DO AUTH ESTOUROU O TETO procurando ${k || "(email vazio)"}: ` +
+        `${TETO_PAGINAS} paginas x ${POR_PAGINA} = ${TETO_PAGINAS * POR_PAGINA} contas e a ` +
+        `lista NAO acabou. Nao sei se a conta existe, e "nao existe" seria mentira ` +
+        `otimista (o aluno sumiria da lista FORA em silencio). Suba TETO_PAGINAS ` +
+        `neste arquivo ou troque a varredura por busca direta antes de confiar em ` +
+        `qualquer numero daqui.`,
+    );
   }
   _cache.set(k, achado);
   return achado;
@@ -172,9 +330,40 @@ o de cima. Sinto muito pela volta que isso te fez dar.</p>
     return i >= 0 ? argv[i + 1] : null;
   };
 
+  // Le producao e imprime as linhas prontas pra colar em CONTROLE_ESPERADOS.
+  // Nao escreve nada, nao manda nada: quem fixa o piso e a pessoa, no arquivo.
+  if (tem("--semear-controle")) {
+    const { data: pedidos, error } = await db
+      .from("sgp_pedidos")
+      .select("email,status,voz_pronta_em")
+      .eq("status", "pronto");
+    if (error) throw new Error(`sgp_pedidos: ${error.message}`);
+    const linhas = [];
+    for (const p of pedidos) {
+      if (!p.email || /\.invalid$/i.test(p.email)) continue;
+      const u = await acharUsuario(p.email);
+      if (!u?.last_sign_in_at) continue;
+      linhas.push({ email: p.email.toLowerCase(), id: u.id, entrou_em: u.last_sign_in_at, pronto: p.voz_pronta_em });
+    }
+    linhas.sort((a, b) => String(a.pronto).localeCompare(String(b.pronto)));
+    console.log(`// candidatos a CONTROLE_ESPERADOS (${linhas.length}), do mais ANTIGO pro mais novo.`);
+    console.log("// Pegue 3 ou 4 do topo, escreva a nota de cada um e cole no arquivo.");
+    for (const l of linhas) {
+      console.log(
+        `  { email: ${JSON.stringify(l.email)}, id: ${JSON.stringify(l.id)}, ` +
+          `entrou_em: ${JSON.stringify(l.entrou_em)}, nota: "pronto em ${l.pronto} — ESCREVA AQUI o porque" },`,
+      );
+    }
+    return;
+  }
+
   if (tem("--listar")) {
-    const { fora, entraram, totalPronto } = await listar();
-    console.log(`pedidos 'pronto': ${totalPronto} · JA ENTRARAM: ${entraram} (controle positivo) · FORA: ${fora.length}`);
+    const { fora, entraram, semConta, pulados, controle, totalPronto } = await listar();
+    console.log(
+      `pedidos 'pronto': ${totalPronto} · JA ENTRARAM: ${entraram} · FORA: ${fora.length}` +
+        ` · sem conta no auth: ${semConta} · e-mail invalido/vazio: ${pulados}` +
+        `\ncontrole positivo: ${controle.length}/${CONTROLE_ESPERADOS.length} conhecidos reencontrados (qualquer falta aborta)`,
+    );
     for (const f of fora) {
       const dias = ((Date.now() - new Date(f.voz_pronta_em)) / 86400000).toFixed(1);
       console.log(
@@ -192,7 +381,9 @@ o de cima. Sinto muito pela volta que isso te fez dar.</p>
 
   const alvo = valor("--enviar");
   if (!alvo) {
-    console.log("uso: --listar | --link <email> | --enviar <email> [--dry-run|--confirmar]");
+    console.log(
+      "uso: --listar | --semear-controle | --link <email> | --enviar <email> [--dry-run|--confirmar]",
+    );
     process.exit(1);
   }
   const u = await acharUsuario(alvo);
