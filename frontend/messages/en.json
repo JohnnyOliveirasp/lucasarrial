@@ -458,6 +458,9 @@
         "label": "Generating your image…",
         "hint": "It can take from a few seconds to ~1 min. You can follow it in the history below."
       },
+      "slow": {
+        "notice": "The image has been running for over {min} minutes and hasn't come back from the generator yet. It's still queued and will show up in the history below as soon as it finishes — don't generate again, as each generation is charged separately. If it never shows up, get in touch and we'll check your charge."
+      },
       "refs": {
         "label": "1. Your photos (reference)",
         "hint": "The main photo is the face anchor: the result keeps its face. Use sharp, well-lit photos. Under Extra photos you can add more angles of the SAME person (better likeness) or bring in a DIFFERENT photo to compose with — a scene, a setting, an object, an outfit.",

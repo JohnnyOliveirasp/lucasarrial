@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-import { ImagePlus, Sparkles, Wand2, Download, Film, X, Loader2, ShieldAlert } from "lucide-react";
+import { ImagePlus, Sparkles, Wand2, Download, Film, X, Loader2, ShieldAlert, Clock3 } from "lucide-react";
 import { SupportError } from "@/components/ui/support-error";
 import { PaywallModal } from "@/components/app/paywall-modal";
 import { AudioGeneratingIndicator } from "@/components/voice/audio-generating-indicator";
@@ -46,6 +46,22 @@ type RefImage = { id: string; preview: string; key: string | null; uploading: bo
 /** Item da aba "Imagens de Referência" como o GET /api/v1/images/refs devolve. */
 type ReferenciaDoBanco = { key: string; url: string; at: string | null };
 type Step = "form" | "submitting" | "polling" | "done" | "error";
+/**
+ * Teto do acompanhamento na tela (incidente #477, 19/09). O poll de 3s NÃO
+ * tinha fim: enquanto a row ficasse em pending/generating — inclusive pra
+ * sempre, quando a task do Kie nunca chega a estado terminal — a tela girava
+ * o "Gerando sua imagem…" sem nunca dizer nada. O aluno cesarsantos.gestor@
+ * esperou 2min+ olhando o spinner, com o crédito já debitado, e não tinha como
+ * saber se devia esperar ou tentar de novo.
+ *
+ * 5 min é 5x a promessa que a própria tela faz ("alguns segundos a ~1 min") e
+ * fica bem acima do caso normal. Passou disso, a tela PARA de girar e devolve o
+ * formulário com um aviso — ela não declara fracasso nenhum (a geração pode
+ * mesmo estar na fila do Kie, que já passou de 1h em 28/07) e não promete
+ * estorno: quem finaliza e estorna é o servidor (webhook, poll do histórico ou
+ * o sweep de 5min), e o histórico logo abaixo continua acompanhando sozinho.
+ */
+const POLL_CEILING_MS = 5 * 60 * 1000;
 type ImageDto = {
   id: string;
   status: "pending" | "generating" | "ready" | "failed";
@@ -254,6 +270,8 @@ export function ImageStudio({
   const [paywallDetail, setPaywallDetail] = useState<string | null>(null);
 
   const [result, setResult] = useState<ImageDto | null>(null);
+  // Aviso de "passou do teto" (#477) — texto neutro no formulário, não é erro.
+  const [slow, setSlow] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const cost = imageCreditCost(resolution);
@@ -613,8 +631,25 @@ export function ImageStudio({
 
   function poll(id: string) {
     setStep("polling");
+    setSlow(null);
     if (pollRef.current) clearInterval(pollRef.current);
+    const deadline = Date.now() + POLL_CEILING_MS;
     pollRef.current = setInterval(async () => {
+      // Teto (#477) PRIMEIRO, antes de qualquer caminho que possa sair cedo.
+      // Ele NÃO pode ficar depois do try: o `if (!r.ok) return` abaixo é um
+      // `return` do próprio callback, então um GET que falha SEMPRE (404 da row
+      // apagada, 500) pulava o teto e a tela girava pra sempre — exatamente o
+      // caso do #477, em que o aluno apagou a row pra escapar do spinner e o
+      // GET passou a devolver 404. Medido antes de mover: com !r.ok fixo, o
+      // teto nunca disparava; com 200+generating, disparava.
+      if (Date.now() >= deadline) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+        setSlow(t("slow.notice", { min: Math.round(POLL_CEILING_MS / 60000) }));
+        setStep("form");
+        onGenerated?.();
+        return;
+      }
       try {
         const r = await fetch(`/api/v1/images/${id}`, { cache: "no-store" });
         if (!r.ok) return;
@@ -626,6 +661,7 @@ export function ImageStudio({
           setStep(image.status === "ready" ? "done" : "error");
           if (image.status === "failed") setError(image.error_message || t("errors.generationFailed"));
           onGenerated?.();
+          return;
         }
       } catch {
         /* ignore */
@@ -638,6 +674,7 @@ export function ImageStudio({
     setStep("submitting");
     setError(null);
     setBlocked(null);
+    setSlow(null);
     setNoCredits(false);
     // Trava 8379549c: antes de cobrar, confere no SERVIDOR se tem foto nova
     // fora do quadro. "Gerar mesmo assim" (staleBypassRef) pula UMA vez.
@@ -1093,6 +1130,16 @@ export function ImageStudio({
             })}
           </div>
         </div>
+
+        {slow && (
+          <div
+            role="status"
+            className="flex items-start gap-2.5 rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3.5 py-3"
+          >
+            <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--silver)]" />
+            <p className="text-[13px] leading-snug text-[var(--body)]">{slow}</p>
+          </div>
+        )}
 
         {blocked && (
           <div
