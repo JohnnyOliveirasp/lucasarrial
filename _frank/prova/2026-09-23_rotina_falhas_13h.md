@@ -135,9 +135,38 @@ por que só nessas e **não** afirmo a taxa da população inteira a partir dela
 
 O texto do Diego tem cara de modelo da casa ("Olá! Este é um teste de voz…").
 Se a plataforma o oferecesse, o defeito seria de todo aluno novo que clicasse
-no exemplo. **Fui ver: grep no fonte do frontend não acha esse texto em lugar
-nenhum**, e só 4 gerações na base inteira o usam — as 4 do Diego. Não é modelo
-nosso. Onde ele arrumou o texto eu não sei, e não invento.
+no exemplo. **Fui ver: o texto não está no repositório**, e só 4 gerações na
+base inteira o usam — as 4 do Diego. Não é modelo nosso. Onde ele arrumou o
+texto eu não sei, e não invento.
+
+> ### ⚠️ CORREÇÃO DA MESMA RONDA — a conclusão ficou, a prova teve que ser refeita
+>
+> Quando publiquei isto acima, uma das duas buscas que eu usei era um
+> **`grep -r` de bash varrendo a raiz do repositório**. Fui controlá-la depois
+> (porque era um ZERO que CONCORDAVA com a minha conclusão, e essa é
+> exatamente a hora de desconfiar) e ela **REPROVOU no controle positivo**:
+> procurando `fraseDeAcessoParaAgente`, string que eu *sabia* estar no repo —
+> eu tinha acabado de ler o arquivo — ela devolveu **nada**. Nunca terminou a
+> varredura no tempo dado, e o `2>/dev/null` escondia isso.
+>
+> Refeito com **ripgrep**, que passou no mesmo controle (**6 arquivos** para a
+> string conhecida): o texto do Diego **continua não existindo no repositório**
+> — buscado por 4 trechos distintos, inclusive o da lista de números.
+>
+> **A conclusão não mudou. O que mudou é que agora ela tem prova.** Publiquei
+> apoiado, em parte, num instrumento cego, e acertei por sorte.
+>
+> **Régua (vale mais que o caso):** *zero que concorda com a sua hipótese não
+> vale nada sem controle positivo — e "eu acabei de ler esse arquivo" é o
+> controle positivo mais barato que existe.* É a MESMA lição do base64 de
+> 18/09 e do bloco de exclusão do item 7 desta ronda. **Três vezes na mesma
+> família, a terceira dentro da ronda que escreveu a régua.**
+>
+> O que segurou a conclusão de pé não foi o grep, e isso importa: foi a
+> evidência independente de que **só 4 gerações em 1.791 usam o texto, e as 4
+> são da mesma voz**. Se a casa oferecesse o texto, ele apareceria espalhado
+> por muitos alunos. Sempre que der, prenda a conclusão na evidência que não
+> depende da ferramenta que você não controlou.
 
 ---
 
