@@ -13,6 +13,17 @@
  *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html --dry-run
  *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html --chave video-clone-voltou
  *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html --forcar
+ *   node _frank/ferramentas/enviar_email.cjs aluno@x.com "Assunto" corpo.html --em-resposta-a "<id-da-carta-do-aluno@dominio>"
+ *
+ * --em-resposta-a <message-id> (#559): quando a carta RESPONDE um e-mail do
+ * aluno, passe aqui o Message-ID da carta DELE (com os <>). A mensagem sai
+ * com In-Reply-To e References — mesmo padrão do mail-smtp.ts:151 que a Fast
+ * usa — e o cliente de e-mail do aluno agrupa a resposta na conversa em vez
+ * de mostrá-la solta. A cópia gravada em Enviados leva os mesmos cabeçalhos
+ * (o APPEND grava a mensagem como montada), então a thread fica certa dos
+ * dois lados. ⚠️ Isso melhora o RECONHECIMENTO da resposta, não a entrega:
+ * carta fora de thread sempre chegou na caixa — só aparecia desgarrada.
+ * Sem a flag, nada muda: a mensagem sai byte a byte como sempre saiu.
  *
  * --dry-run é o ENSAIO: imprime destinatário, remetente, assunto, bcc e o
  * corpo inteiro SEM enviar nada. E-mail não tem desfazer — destinatário
@@ -51,6 +62,7 @@ const dryRun = argv.includes("--dry-run");
 const forcar = argv.includes("--forcar");
 let bcc = null;
 let chaveExplicita = null;
+let emRespostaA = null;
 let janelaHoras = Number(process.env.DEDUPE_EMAIL_HORAS ?? envios.JANELA_PADRAO_HORAS);
 const posicionais = [];
 for (let i = 0; i < argv.length; i++) {
@@ -70,12 +82,23 @@ for (let i = 0; i < argv.length; i++) {
     i++;
     continue;
   }
+  if (argv[i] === "--em-resposta-a") {
+    emRespostaA = argv[i + 1] || null;
+    i++;
+    continue;
+  }
   posicionais.push(argv[i]);
 }
 const [dest, assunto, arquivo] = posicionais;
 
 if (!dest || !assunto || !arquivo) {
-  console.error('uso: node enviar_email.cjs <destino> "<assunto>" <corpo.html> [--bcc <email>] [--chave <slug>] [--janela <horas>] [--forcar] [--dry-run]');
+  console.error('uso: node enviar_email.cjs <destino> "<assunto>" <corpo.html> [--bcc <email>] [--chave <slug>] [--janela <horas>] [--em-resposta-a "<message-id>"] [--forcar] [--dry-run]');
+  process.exit(1);
+}
+// Flag presente sem valor não pode virar "sem thread" em silêncio: quem pediu
+// resposta-na-conversa e não conferir os cabeçalhos nunca descobriria (#559).
+if (argv.includes("--em-resposta-a") && !emRespostaA) {
+  console.error('--em-resposta-a exige o Message-ID da carta do aluno, ex.: --em-resposta-a "<abc@dominio>"');
   process.exit(1);
 }
 if (!Number.isFinite(janelaHoras) || janelaHoras < 0) {
@@ -91,9 +114,9 @@ if (!PASS) {
   process.exit(1);
 }
 
-const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
-/** Assunto com acento precisa virar encoded-word (RFC 2047). */
-const cabecalho = (s) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${b64(s)}?=`);
+// A montagem da mensagem (cabeçalhos + corpo base64) mora em _montar_mensagem.cjs
+// pra ser testável sem SMTP nem banco — fonte única, não duplique aqui (#559).
+const { montarMensagem, b64 } = require(path.join(__dirname, "_montar_mensagem.cjs"));
 
 class Smtp {
   constructor() {
@@ -448,6 +471,7 @@ function descreverAnterior(a) {
     console.log(`Assunto:      ${assunto}`);
     console.log(`Chave:        ${chave} (janela ${janelaHoras}h) — liberado pela trava`);
     if (bcc) console.log(`Bcc:          ${bcc}`);
+    if (emRespostaA) console.log(`Em resposta a: ${emRespostaA} (sai com In-Reply-To/References)`);
     console.log("--- CORPO INTEIRO ---");
     console.log(html);
     console.log("--- FIM DO CORPO ---");
@@ -462,32 +486,10 @@ function descreverAnterior(a) {
   // que a gente confirma que a cópia entrou em Enviados e que a retentativa não
   // grava duas vezes.
   const messageId = `<frank-${Date.now()}-${Math.random().toString(36).slice(2)}@fastcloner.com>`;
-  const mensagem = [
-    `From: Fast - FastCloner <${USER}>`,
-    `To: ${dest}`,
-    ...(bcc ? [`Bcc: ${bcc}`] : []),
-    `Subject: ${cabecalho(assunto)}`,
-    // Date/Message-ID: sem eles a cópia gravada em enviados fica sem data e
-    // sem identidade — o servidor SMTP até completa em trânsito, mas o APPEND
-    // grava a mensagem exatamente como está aqui.
-    `Date: ${new Date().toUTCString()}`,
-    `Message-ID: ${messageId}`,
-    "MIME-Version: 1.0",
-    'Content-Type: text/html; charset="UTF-8"',
-    // ⚠️ SEM ESTA LINHA O ALUNO LÊ "vocÃª". Medido em 25/08 no e-mail do
-    // Luciano (enviados uid 103): o cabeçalho dizia charset UTF-8, mas o corpo
-    // saía em bytes 8-bit CRUS, sem declarar codificação de transferência. O
-    // padrão quando este campo falta é 7bit, que proíbe byte acima de 127 —
-    // então cada acento vira dois caracteres sujos e sobra pro cliente
-    // adivinhar. O mailer da Fast (frontend/src/lib/agent/mail-smtp.ts:141)
-    // sempre mandou base64, e por isso na MESMA pasta de enviados os e-mails
-    // DELA apareciam limpos e os NOSSOS não. Vale pra todo e-mail que este
-    // script mandou pra aluno antes desta data.
-    "Content-Transfer-Encoding: base64",
-    "",
-    // Base64 quebrado em 76 colunas (limite do MIME).
-    b64(html).replace(/(.{76})/g, "$1\r\n"),
-  ].join("\r\n");
+  // A MESMA string vai pro SMTP (smtp.enviar) e pro APPEND em Enviados
+  // (gravarEmEnviados): com --em-resposta-a, a thread fica certa pro aluno E
+  // pra nossa cópia, sem passo extra.
+  const mensagem = montarMensagem({ user: USER, dest, bcc, assunto, html, messageId, emRespostaA });
 
   const smtp = new Smtp();
   await smtp.conectar();
