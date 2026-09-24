@@ -93,6 +93,27 @@ const CONTROLE = {
   // decisao do #37bacb68 (22 alunos). Entra como controle pra nao sumir calado
   // de novo.
   "702cc916": "#226 portao: (a)manter/(b)falhar sem cobrar/(c)entregar avisando",
+  // PISO SUBIU em 23/09 ~21hZ (coder, card da ronda qa_coverage) — 3 cartoes de
+  // decisao do Johnny que a triagem manual de 23/09 20hZ achou e o script NAO
+  // contava no conferido. Entram como controle pra nao sumirem calado de novo:
+  //
+  // ce8ba48b: o TITULO diz literalmente "DECISAO DO JOHNNY: 62.040 cr de
+  //   estorno do #485 acima do teto". Sumiu de TODOS os baldes entre 20/09 e
+  //   23/09 16hZ porque a ultima nota (20/09 02:25Z) nao repetia marca nenhuma
+  //   e o script nunca olhava o titulo — era o "QUEM ANOTA, ESCONDE" batendo
+  //   no cartao cujo proprio titulo gritava a marca. Curado varrendo o titulo
+  //   (ver marcaDoCartao abaixo).
+  "ce8ba48b": "62.040 cr de estorno do #485 acima do teto (titulo e a marca)",
+  // df008dcf: decisao explicita de 16/09 ("honrar a promessa e devolver o
+  //   trial de R$0, ou manter o gate?") segue viva — a nota de 23/09 19:46Z
+  //   diz "antes da palavra do Johnny" e o aluno voltou perguntando EXATAMENTE
+  //   a decisao parada. Nenhuma marca antiga casava; entrou a marca
+  //   "palavra do Johnny" (medida na fila inteira: ganho de 1, este).
+  "df008dcf": "honrar promessa do trial R$0 (e-mail novo do aluno) ou manter o gate",
+  // b706b32e: nota de 23/09 10:55Z: "o cartao segue investigating por UM
+  //   motivo so: falta DECISAO DO JOHNNY sobre os 10.000 cr". A marca ja
+  //   casava; faltava a triagem — caia em NAO TRIADO em vez de conferido.
+  "b706b32e": "10.000 cr excedentes (ref 600173a6); codigo ja em producao",
 };
 
 // Marcas de "parado no Johnny". Deliberadamente especificas: prefiro falso
@@ -118,6 +139,13 @@ const MARCAS = [
   /(?:s[oó]|apenas)\s+(?:o\s+)?johnny/i,
   /esperando\s+(?:o\s+)?johnny/i,
   /aguardand[oe]\s+(?:o\s+)?johnny/i,
+  // ENTROU em 23/09 ~21hZ (coder), MEDIDA ANTES DE APLICAR na fila inteira
+  // (141 cartoes em espera): ganho de exatamente 1 — df008dcf, cuja nota de
+  // 23/09 19:46Z escreve "antes da palavra do Johnny" para a decisao de 16/09
+  // que segue parada ("honrar a promessa do trial R$0 ou manter o gate").
+  // ZERO ruido no resto da fila. "Palavra do Johnny" e a forma desta casa de
+  // dizer "falta ele decidir" sem usar a palavra "decisao".
+  /palavra\s+d[oe]\s+johnny/i,
   // Regras de alcada: 9-A (mexer em saldo e sempre do Johnny), 9-B (acima do
   // teto de 20.000/caso), 9-C (reembolso). Citar a regra JA e dizer "nao e
   // minha alcada" — por isso contam como marca.
@@ -179,6 +207,27 @@ const TRIAGEM = {
   e811cbc7: ["FALSO", "espera ocorrencia nova pra provar cura; card do coder acdae9ff"],
   a6e21646: ["FALSO", "pergunta aberta do aluno; 9-C so se ele pedir — bola e dele"],
 
+  // --- Terceira leva, triagem manual de 23/09 20hZ (ronda + vigia), encodada
+  //     em 23/09 ~21hZ (coder). Os 3 REAL abaixo tambem entraram no CONTROLE
+  //     la em cima — perder qualquer um deles volta a abortar a rodada. ---
+  ce8ba48b: ["REAL", "9-B: 62.040 cr de estorno do #485 acima do teto (2 alunos)"],
+  df008dcf: ["REAL", "honrar promessa do trial R$0 (e-mail novo do aluno) ou manter o gate — desde 16/09"],
+  b706b32e: ["REAL", "10.000 cr excedentes (ref 600173a6); codigo ja em producao, so falta ele"],
+  // Os 4 abaixo casam marca por CITACAO: a ultima nota fala de decisao do
+  // Johnny sobre OUTROS cartoes (ou nega: "NAO esta parado em decisao do
+  // Johnny") ao justificar a escolha do cartao da ronda. Sao investigacao
+  // ATIVA das rondas de 23/09, nao espera por decisao — a triagem de 23/09
+  // 20hZ conferiu os 4 a mao. Mesma doenca do b0ddd483 da leva de 22/09.
+  "37bacb68": ["FALSO", "nota diz que NAO esta parado no Johnny; investigacao ativa (qa_coverage)"],
+  f8587cef: ["FALSO", "cita 'em decisao do Johnny' sobre OUTROS cartoes; investigacao ativa"],
+  f1ada07e: ["FALSO", "9-C citado como instrucao condicional no titulo; medicao ativa na Hotmart"],
+  // 719c9af6: a medicao de 23/09 17hZ (comentario das MARCAS) tinha lido a
+  // frase "decisao de produto/preco/estorno e do Johnny" como pedido vivo.
+  // A triagem de 23/09 20hZ SUPERSEDE aquela leitura: o cartao esta em
+  // trabalho ativo (classe medida 9/9 videos assistidos em 22/09) e a frase
+  // e moldura do problema, nao pedido concreto na mesa. Vale a mais nova.
+  "719c9af6": ["FALSO", "trabalho ativo (9/9 videos medidos); 'decisao do Johnny' e moldura, nao pedido vivo"],
+
   // --- CONTESTADO: as leituras divergiram. Fora do numero de cima. ---
   ffbfdfc4: ["CONTESTADO", "decisao consolidada no #446/66c5c55a — levar junto duplicaria a pergunta"],
   acac6983: ["CONTESTADO", "piso de 400 cr / preco do teste: decisao futura ou pedido vivo?"],
@@ -223,13 +272,30 @@ function casa(texto) {
   return null;
 }
 
+// A marca de um cartao mora na ULTIMA nota (criterio 1) OU no TITULO.
+//
+// POR QUE O TITULO ENTROU (23/09 ~21hZ, coder). O criterio 1 proibe varrer a
+// PILHA de notas porque pilha e HISTORICO — foi assim que o SQL de 17/09
+// devolveu 41 falsos onde havia 1. O titulo NAO e historico: e o estado
+// declarado do cartao, o que ele E enquanto estiver aberto. O ce8ba48b tinha
+// no titulo, com todas as letras, "DECISAO DO JOHNNY: 62.040 cr ... acima do
+// teto" — e sumiu de TODOS os baldes por 3 dias porque a ultima nota (20/09)
+// nao repetia marca nenhuma. Era a doenca do "QUEM ANOTA, ESCONDE" (ver o
+// LIMITE GRAVE no cabecalho) no unico lugar que nenhuma nota nova consegue
+// esconder. MEDIDO ANTES DE APLICAR, na fila inteira (141 cartoes): varrer o
+// titulo nao adiciona NENHUM cartao alem dos que a nota ja pegava hoje —
+// zero inflacao; so imunidade contra a proxima nota sem marca.
+function marcaDoCartao(r) {
+  return casa(ultimaNota(r)) || casa(String(r.title || ""));
+}
+
 (async () => {
   const db = supa();
 
   // Universo 1: a fila que espera (o que a ordem quer).
   const { data: fila, error: e1 } = await db
     .from("incidents")
-    .select("id,created_at,last_seen_at,status,signature,affected_emails,agent_notes")
+    .select("id,created_at,last_seen_at,status,signature,title,affected_emails,agent_notes")
     .in("status", ["open", "investigating", "aguardando_aluno"])
     .order("created_at", { ascending: true });
   exigir("incidents em espera", e1);
@@ -237,7 +303,7 @@ function casa(texto) {
   // Universo 2: TODOS os status, so para o controle positivo.
   const { data: todos, error: e2 } = await db
     .from("incidents")
-    .select("id,agent_notes")
+    .select("id,title,agent_notes")
     .order("created_at", { ascending: true });
   exigir("incidents todos (controle)", e2);
 
@@ -257,13 +323,13 @@ function casa(texto) {
       });
       continue;
     }
-    const nota = ultimaNota(row);
-    if (!casa(nota)) {
+    if (!marcaDoCartao(row)) {
+      const nota = ultimaNota(row);
       const trecho = String(nota || "").replace(/\s+/g, " ").trim().slice(0, 120);
       faltantesControle.push({
         prefixo,
         rotulo,
-        causa: `existe, mas NENHUMA marca casou com a ultima nota${trecho ? `: "${trecho}"` : " (ultima nota vazia)"}`,
+        causa: `existe, mas NENHUMA marca casou com a ultima nota NEM com o titulo${trecho ? `; ultima nota: "${trecho}"` : " (ultima nota vazia)"}`,
       });
       continue;
     }
@@ -284,7 +350,7 @@ function casa(texto) {
       console.error("\n   Ainda reencontrados (nao consolam, so delimitam a quebra):");
       for (const a of achadosControle) console.error(`     · ${a}`);
     }
-    console.error("\n   POR QUE ISTO MATA A VARREDURA: estes 4 cartoes sao os UNICOS casos");
+    console.error(`\n   POR QUE ISTO MATA A VARREDURA: estes ${esperadosControle.length} cartoes sao os UNICOS casos`);
     console.error("   que alguem conferiu a mao e sabe, de fato, que estao parados no Johnny.");
     console.error("   Se o filtro perde um caso CONHECIDO, ele esta perdendo tambem um numero");
     console.error("   desconhecido de casos que ninguem conferiu — e nao ha como saber quantos.");
@@ -306,7 +372,7 @@ function casa(texto) {
   // ---- A CLASSE ----
   const presos = [];
   for (const r of fila) {
-    const marca = casa(ultimaNota(r));
+    const marca = marcaDoCartao(r);
     if (marca) presos.push({ ...r, marca });
   }
 
