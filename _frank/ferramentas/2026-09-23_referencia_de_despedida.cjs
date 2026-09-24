@@ -74,10 +74,34 @@ function scoreTranscript(text) {
 
 // Vocabulario de ENCERRAMENTO. Deliberadamente estreito: prefiro perder caso
 // a inflar o numero. "obrigado" sozinho NAO entra (aparece em qualquer fala).
+//
+// ⚠️ CORRIGIDO NA RONDA DE 24/09 ~12hZ — a versao de 23/09 INFLAVA o numero.
+// Auditei as 10 marcadas lendo o transcript INTEIRO e vendo qual regra disparou:
+// so 4 eram encerramento de verdade. As outras 6 eram falso positivo, e 5 delas
+// vieram de UMA regra sozinha, /\bcansad[ao]\b/ — que marcou 5 e acertou ZERO:
+//   27f22432 "voltou para casa menos cansado"      (narrando uma viagem)
+//   2ec55e46 "cheguei bem cansada em casa"          (roteiro de rotina do dia)
+//   f2496819 "Tem gente que chega cansada"          (descrevendo alunos)
+//   c176dfe5 "voce ja acordou cansado e pensou"     (copy de anuncio)
+//   8f640ad4 "so fiquei cansada no final"           (contando um passeio)
+// "cansado" e palavra de CONTEUDO, nao de encerramento. SAIU.
+// A 6a era /\bvou finaliz/ solta: 1477c630 "vou finalizar semana que vem com
+// voces, depois do feriado" — ele fala de terminar um FEEDBACK, nao a gravacao.
+// Por isso "vou finalizar/encerrar" agora exige a GRAVACAO por perto (<=30 chars).
+//
+// LICAO DE INSTRUMENTO QUE FICA: o controle positivo (as 3 vozes da Aline) NAO
+// pegou nada disso, porque o texto dela casa em TRES regras boas ao mesmo tempo
+// — o controle passava verde com a regra podre do lado. Controle positivo em um
+// caso so valida o caminho daquele caso, nao a marca inteira. Por isso o
+// CTRL_NEG abaixo agora carrega os 6 falsos positivos nomeados: eles sao a
+// unica trava que impede a marca de voltar a casar com qualquer coisa.
+const PERTO_DA_GRAVACAO = "(?=.{0,30}\\b(grava|gravac|gravaç|audio|áudio|leitura|v[ií]deo|aqui)\\b)";
 const DESPEDIDA = [
-  /\bvou finaliz/i, /\bvou encerr/i, /\bfecho aqui\b/i, /\bja esta bom\b/i, /\bjá está bom\b/i,
+  new RegExp("\\bvou finaliz\\w*\\b" + PERTO_DA_GRAVACAO, "i"),
+  new RegExp("\\bvou encerr\\w*\\b" + PERTO_DA_GRAVACAO, "i"),
+  /\bfecho aqui\b/i, /\bja esta bom\b/i, /\bjá está bom\b/i,
   /\be isso (ai|a[ií])?\b.{0,40}\b(acabou|fim|final)\b/i, /\bpor hoje e so\b/i, /\bpor hoje é só\b/i,
-  /\bdando.{0,12}enjoo\b/i, /\bcansad[ao]\b/i, /\bultima (gravacao|gravação|leitura)\b/i,
+  /\bdando.{0,12}enjoo\b/i, /\bultima (gravacao|gravação|leitura)\b/i,
   /\bacho que (ja|já) (esta|está|deu)\b/i, /\bterminando aqui\b/i, /\bfinalizo\b/i,
 ];
 const ehDespedida = (t) => DESPEDIDA.some((r) => r.test(t || ""));
@@ -86,8 +110,20 @@ const LIMITE = (() => { const i = process.argv.indexOf("--limite"); return i > 0
 const RUIM = 25; // score acima disto = candidata. O da Aline media 12,5 e era pessimo
                  // pra OUVIR: por isso a familia "despedida" e contada separada do score.
 
-const CTRL_POS = ["42fe4302", "b265951f", "d43ba768"]; // as 3 da Aline ainda com cauda
-const CTRL_NEG = ["20269220", "46ab5f25"];             // as 2 dela ja curadas
+// CTRL_POS: encerramento REAL, conferido lendo o transcript inteiro (24/09).
+//   42fe4302/b265951f/d43ba768 = as 3 da Aline ainda com cauda ("fecho aqui")
+//   8225f199 = CHRIS 03, 2o aluno da classe, achado em 24/09:
+//              "vou encerrar essa gravacao ja se foram 28 minutos, tudo bem eu
+//               vou juntar esses 28 minutos com os outros 20" — ele nao esta
+//              falando, esta administrando arquivo. Entrou no controle porque e
+//              o UNICO caso que exercita a regra "vou encerr + gravacao perto";
+//              sem ele, a regra nova podia morrer sem ninguem notar.
+const CTRL_POS = ["42fe4302", "b265951f", "d43ba768", "8225f199"];
+// CTRL_NEG: 20269220/46ab5f25 = as 2 da Aline JA CURADAS. Os 6 seguintes sao os
+// falsos positivos medidos em 24/09 (5 da regra "cansado", 1 do "vou finalizar"
+// solto). Se QUALQUER um deles voltar a aparecer, a marca voltou a inflar.
+const CTRL_NEG = ["20269220", "46ab5f25",
+  "27f22432", "2ec55e46", "f2496819", "c176dfe5", "8f640ad4", "1477c630"];
 
 (async () => {
   const db = supa();
