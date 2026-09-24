@@ -12,12 +12,21 @@
  *      padrão, configurável por env (SOCIAL_ESPACAMENTO_TRIAL_MIN, em
  *      minutos). Post NORMAL tem espaçamento próprio de 1h por padrão
  *      (SOCIAL_ESPACAMENTO_NORMAL_MIN) — decidirEnvioNormal, abaixo.
- *   3. Circuit breaker de 24h: um Trial Reel FALHOU → pausa SÓ os trials
- *      daquela conta por 24h. Reel NORMAL continua publicando (cortar o
- *      normal junto puniria o aluno por defeito nosso) — por isso o
- *      publisher só chama esta decisão quando is_trial está ligado.
- *   4. Dedupe: o MESMO vídeo (media_url) já enviado como trial naquela
- *      conta → recusa permanente (o aluno escolhe outro vídeo).
+ *   3. Circuit breaker: 3 falhas CONSECUTIVAS da mesma conta ("consecutivas"
+ *      = sem nenhum trial publicado com sucesso no meio; um sucesso ZERA a
+ *      contagem) → pausa SÓ os trials daquela conta por 24h desde a última
+ *      falha. Falha causada por guardrail NOSSO (guardrail_block) não conta.
+ *      Reel NORMAL continua publicando (cortar o normal junto puniria o
+ *      aluno por defeito nosso) — por isso o publisher só chama esta
+ *      decisão quando is_trial está ligado. A mensagem do breaker OFERECE
+ *      publicar os pendentes como Reel normal, mas NUNCA reenvia sozinha.
+ *   4. Dedupe por CONTEÚDO, janela de 7 dias: recusa quando, na MESMA conta
+ *      e nos últimos 7 dias, coincidir (a) o sha256 do VÍDEO, OU (b) o hash
+ *      da LEGENDA normalizada (minúscula, sem acento, sem espaço duplicado,
+ *      sem emoji), OU (c) a media_url normalizada (fallback barato que
+ *      também cobre linhas antigas sem hash). A janela de 7 dias AFROUXA de
+ *      propósito o dedupe antigo (que era permanente por url): o mesmo
+ *      vídeo volta a ser publicável depois de 7 dias.
  *   5. Retry com backoff SOMENTE em HTTP 429. Erro de restrição NUNCA é
  *      retentado — retentar restrição é o que transforma um aviso da Meta
  *      em bloqueio (decidirRetryTrial).
@@ -31,11 +40,14 @@
  * SEM migration e SEM estado extra: tudo é derivado da própria tabela
  * publications (created_at, updated_at, status, media_url,
  * platform_options->>'is_trial'). O momento do envio fica em
- * platform_options.trial_sent_at (gravado pelo publisher ao criar o
- * container); o breaker é derivado dos trials failed nas últimas 24h,
- * EXCLUINDO os que nós mesmos barramos por guardrail
- * (platform_options.guardrail_block) — bloqueio nosso não é falha da Meta
- * e não pode abrir o breaker.
+ * platform_options.trial_sent_at; os hashes de conteúdo do dedupe ficam em
+ * platform_options.video_sha256 e platform_options.caption_hash (gravados
+ * pelo publisher no MESMO patch do envio — quem nunca foi enviado não tem
+ * hash e não entra no dedupe); o breaker é derivado da SEQUÊNCIA de
+ * desfechos (failed/published, ordenados por updated_at) dos trials da
+ * conta, EXCLUINDO os que nós mesmos barramos por guardrail
+ * (platform_options.guardrail_block) — bloqueio nosso não é falha da Meta,
+ * não conta como falha e não zera a contagem.
  *
  * Módulo PURO de propósito (zero imports, zero alias @/, zero Date.now):
  * roda direto no `node --test` e é a ÚNICA fonte das constantes — publisher
@@ -53,6 +65,10 @@ export const ENV_ESPACAMENTO_NORMAL = "SOCIAL_ESPACAMENTO_NORMAL_MIN";
 export const BREAKER_MS = 24 * 60 * 60 * 1000;
 /** Cota da Meta estourada → re-checa em 1h (a janela dela é deslizante de 24h). */
 export const COTA_META_RETRY_MS = 60 * 60 * 1000;
+/** Regra 3: o breaker só abre na 3ª falha REAL consecutiva (sucesso zera). */
+export const FALHAS_CONSECUTIVAS_BREAKER = 3;
+/** Regra 4: dedupe por conteúdo olha só os últimos 7 dias (antes: permanente). */
+export const JANELA_DEDUPE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Mesmo teto do publisher (MAX_ATTEMPTS): 3 tentativas no total. */
 export const MAX_TENTATIVAS_TRIAL = 3;
 export const BACKOFF_429_BASE_MS = 15 * 60 * 1000; // 15min, dobra a cada tentativa
@@ -96,6 +112,10 @@ export type TrialAnterior = {
   atualizadaEm: string;
   /** platform_options.guardrail_block presente → falha NOSSA (dedupe), não da Meta. */
   bloqueadaPorGuardrail?: boolean;
+  /** platform_options.video_sha256 — sha256 hex do ARQUIVO, gravado no envio. */
+  videoHash?: string | null;
+  /** platform_options.caption_hash — sha256 hex da legenda NORMALIZADA, gravado no envio. */
+  legendaHash?: string | null;
 };
 
 export type RegraGuardrail = "dedupe" | "circuit_breaker" | "limite_diario" | "espacamento";
@@ -107,7 +127,12 @@ export type DecisaoTrial =
       regra: RegraGuardrail;
       /** Frase legível pro aluno (vai em publications.error). */
       erro: string;
-      /** ISO de quando poderá sair; null = nunca (dedupe é permanente). */
+      /**
+       * ISO de quando poderá sair; null = sem reagendamento automático.
+       * Dedupe devolve null DE PROPÓSITO mesmo com a janela de 7 dias:
+       * reagendar uma duplicata pra sair sozinha dias depois publicaria
+       * sem o aluno mandar — ele repete a publicação quando quiser.
+       */
       liberadoEm: string | null;
     };
 
@@ -118,6 +143,29 @@ export type DecisaoTrial =
  */
 export function chaveDedupe(mediaUrl: string): string {
   return mediaUrl.replace(/^r2-cleaned:\/\//, "r2://");
+}
+
+/**
+ * Normalização da legenda pro dedupe por conteúdo (regra 4b): minúscula,
+ * sem acento, sem emoji, espaços colapsados. "Óla  MUNDO! 😀" e "ola mundo!"
+ * viram a MESMA string — trocar caixa/acento/emoji não escapa do dedupe.
+ * Legenda vazia (ou que vira vazia depois da limpeza) retorna "" e NÃO
+ * participa do dedupe — senão todo trial sem legenda colidiria com todo
+ * outro trial sem legenda.
+ *
+ * O sha256 desta string é o que vai pro banco (caption_hash) — o hash em si
+ * fica fora daqui (node:crypto) pra este módulo continuar puro; comparar
+ * hashes iguais === comparar normalizadas iguais.
+ */
+export function normalizarLegenda(caption: string | null | undefined): string {
+  if (!caption) return "";
+  return caption
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // acentos (marcas combinantes)
+    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu, "") // emoji + seletores/ZWJ
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -164,6 +212,14 @@ export function decidirEnvioTrial(input: {
   agora: string;
   /** media_url do trial que quer sair. */
   mediaUrl: string;
+  /**
+   * sha256 hex do ARQUIVO deste trial (regra 4a). null = não foi possível
+   * hashear (rota de cortesia não baixa o vídeo; download falhou no envio)
+   * → a checagem por vídeo é pulada, legenda e media_url continuam valendo.
+   */
+  videoHash?: string | null;
+  /** sha256 hex da legenda NORMALIZADA deste trial (regra 4b). null = sem legenda. */
+  legendaHash?: string | null;
   /** Trials anteriores DA MESMA CONTA (a atual publicação fora da lista). */
   anteriores: TrialAnterior[];
   /** Espaçamento efetivo em ms (resolverEspacamentoMs); ausente = padrão 2h. */
@@ -172,44 +228,65 @@ export function decidirEnvioTrial(input: {
   const agoraMs = Date.parse(input.agora);
   const espacamentoMs = input.espacamentoMs ?? ESPACAMENTO_TRIAL_PADRAO_MIN * 60_000;
 
-  // 4. DEDUPE — mesmo vídeo já foi (ou está indo) como trial nesta conta.
-  //    failed não conta: re-tentar um vídeo que falhou é legítimo.
+  // 4. DEDUPE por CONTEÚDO, janela de 7 dias — mesmo vídeo (sha256), mesma
+  //    legenda normalizada OU mesma media_url já foi (ou está indo) como
+  //    trial nesta conta nos últimos 7 dias. failed não conta: re-tentar um
+  //    vídeo que falhou é legítimo. Hash ausente de um dos lados não casa —
+  //    basta UM dos três critérios pra barrar.
   const chave = chaveDedupe(input.mediaUrl);
-  const duplicata = input.anteriores.find(
-    (t) =>
-      chaveDedupe(t.mediaUrl) === chave &&
-      (t.status === "processing" || t.status === "published"),
-  );
+  const duplicata = input.anteriores.find((t) => {
+    if (t.status !== "processing" && t.status !== "published") return false;
+    const envioMs = momentoEnvio(t);
+    if (envioMs === null || agoraMs - envioMs >= JANELA_DEDUPE_MS) return false;
+    const mesmoVideo = Boolean(input.videoHash && t.videoHash && t.videoHash === input.videoHash);
+    const mesmaLegenda = Boolean(
+      input.legendaHash && t.legendaHash && t.legendaHash === input.legendaHash,
+    );
+    return mesmoVideo || mesmaLegenda || chaveDedupe(t.mediaUrl) === chave;
+  });
   if (duplicata) {
     return {
       permitido: false,
       regra: "dedupe",
       erro:
-        "Este vídeo já foi publicado como Reel de teste nesta conta. " +
-        "Escolha outro vídeo ou publique como Reel normal.",
+        "Este conteúdo (mesmo vídeo ou mesma legenda) já foi publicado como " +
+        "Reel de teste nesta conta nos últimos 7 dias. Escolha outro vídeo/" +
+        "legenda ou publique como Reel normal.",
       liberadoEm: null,
     };
   }
 
-  // 3. CIRCUIT BREAKER — algum trial da conta falhou nas últimas 24h
-  //    (falha REAL, não bloqueio nosso de guardrail).
-  const falhas = input.anteriores.filter(
-    (t) => t.status === "failed" && !t.bloqueadaPorGuardrail,
-  );
+  // 3. CIRCUIT BREAKER — 3 falhas REAIS consecutivas da conta (sem nenhum
+  //    trial publicado com sucesso no meio; sucesso ZERA a contagem) e a
+  //    última há menos de 24h. Bloqueio nosso de guardrail não é evento:
+  //    não conta como falha e não zera. Ordenação por atualizadaEm =
+  //    momento do DESFECHO (falha ou publish).
+  const desfechos = input.anteriores
+    .filter(
+      (t) =>
+        (t.status === "failed" && !t.bloqueadaPorGuardrail) || t.status === "published",
+    )
+    .map((t) => ({ falha: t.status === "failed", ms: Date.parse(t.atualizadaEm) }))
+    .filter((e) => !Number.isNaN(e.ms))
+    .sort((a, b) => a.ms - b.ms);
+  let falhasSeguidas = 0;
   let ultimaFalhaMs = -Infinity;
-  for (const f of falhas) {
-    const ms = Date.parse(f.atualizadaEm);
-    if (!Number.isNaN(ms) && ms > ultimaFalhaMs) ultimaFalhaMs = ms;
+  for (let i = desfechos.length - 1; i >= 0; i--) {
+    if (!desfechos[i].falha) break; // sucesso zera a contagem
+    falhasSeguidas++;
+    if (desfechos[i].ms > ultimaFalhaMs) ultimaFalhaMs = desfechos[i].ms;
   }
-  if (agoraMs - ultimaFalhaMs < BREAKER_MS) {
+  if (falhasSeguidas >= FALHAS_CONSECUTIVAS_BREAKER && agoraMs - ultimaFalhaMs < BREAKER_MS) {
     const liberadoEm = new Date(ultimaFalhaMs + BREAKER_MS).toISOString();
     return {
       permitido: false,
       regra: "circuit_breaker",
       erro:
-        "Reels de teste desta conta estão pausados por 24h após uma falha " +
-        "(proteção contra restrição do Instagram). Reels normais continuam " +
-        `publicando. Liberado em ${formatarHorario(liberadoEm)}.`,
+        `Reels de teste desta conta estão pausados: ${falhasSeguidas} falhas ` +
+        "seguidas (proteção contra restrição do Instagram). Reabre em " +
+        `${formatarHorario(liberadoEm)}. Os pendentes podem ser reenviados ` +
+        "como Reel NORMAL, que não é afetado por esta pausa — nada é " +
+        "reenviado sozinho.",
       liberadoEm,
     };
   }

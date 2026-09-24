@@ -15,6 +15,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { socialPublisherEnabled, socialPublisherEnabledFor, type PlataformaSocial } from "@/lib/social/access";
 import { resolvePublishSource, type PublishSource } from "@/lib/social/media-sources";
 import { carregarTrialsAnteriores, resolveMediaUrl, startPublication } from "@/lib/social/publisher";
+import { hashLegenda } from "@/lib/social/trial-conteudo";
 import { decidirEnvioTrial, resolverEspacamentoMs } from "@/lib/social/trial-guardrails-pure";
 import { validarTrialReel } from "@/lib/social/trial-reel-pure";
 import type { PublicationRow } from "@/lib/db/types";
@@ -145,6 +146,11 @@ export async function POST(request: NextRequest) {
     const decisao = decidirEnvioTrial({
       agora: scheduledAt ?? new Date().toISOString(),
       mediaUrl,
+      // Cortesia NÃO baixa o vídeo (videoHash null → checagem por arquivo é
+      // pulada aqui); a legenda é barata e já pega duplicata na criação. O
+      // hash do arquivo roda na checagem que VALE, no publisher.
+      videoHash: null,
+      legendaHash: hashLegenda(caption),
       anteriores: await carregarTrialsAnteriores(accountId),
       espacamentoMs: resolverEspacamentoMs("trial", process.env),
     });
