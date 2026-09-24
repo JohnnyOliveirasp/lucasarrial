@@ -25,6 +25,61 @@ import soundfile as sf
 # referencia. Penalizados com peso maior na ULTIMA palavra (eco mais forte).
 _BAD_EDGE = {"entao", "então", "nao", "não", "ta", "tá", "ne", "né"}
 
+# ── ENCERRAMENTO / meta-gravacao (incidente cfa488b5, 24/09) ────────────────
+# Duas vozes de producao sairam clonadas do trecho em que o aluno esta
+# ENCERRANDO a gravacao — falando SOBRE o arquivo, nao falando:
+#   Aline (42fe4302/b265951f/d43ba768, score 12,5): "...vou finalizar, que ja
+#     esta dando ate um pouquinho de enjoo. Acho que ja esta bom. Entao eu
+#     fecho aqui, agradeco."
+#   CHRIS 03 (8225f199, score 9,0): "...vou encerrar essa gravacao ja se
+#     foram 28 minutos..."
+# O VoxCPM clona o ESTILO da referencia: o modelo vira a pessoa querendo parar
+# de gravar. Retreinar o mesmo audio cai no mesmo trecho (Aline treinou 5x,
+# 50.000 creditos, 4 vozes iguais). A penalidade e ADITIVA e sozinha ja passa
+# do corte de candidata ruim (70 > 25): a janela de encerramento perde para
+# QUALQUER outra janela do mesmo audio — nao descarta a voz, so prefere outro
+# trecho do mesmo material. So pt-BR, como o resto do vocabulario de bordao.
+#
+# Vocabulario auditado em 24/09 contra 1405 vozes de producao (portado de
+# _frank/ferramentas/2026-09-23_referencia_de_despedida.cjs, versao corrigida
+# da ronda de 24/09 — 4 casos reais confirmados, 6 falsos positivos nomeados
+# como controle negativo). Duas exclusoes deliberadas, medidas la:
+#   - "cansado/cansada" NAO entra: marcou 5 vozes e acertou ZERO (era palavra
+#     de CONTEUDO: "voltou para casa menos cansado", "voce ja acordou
+#     cansado"). Infla o numero e nao pega nada.
+#   - "vou finalizar/encerrar" SOMENTE com a gravacao por perto (<=30 chars:
+#     grava*/audio/leitura/video/aqui). Sem essa exigencia a marca pega "vou
+#     finalizar semana que vem com voces" — assunto do aluno, nao
+#     encerramento. Essa exigencia e o que separa os 4 reais dos 6 falsos.
+# Nota de porte: o cjs roda regex ASCII do JS, onde `\bgrava\b` casa dentro de
+# "gravação" (ç nao e word char la). Em Python \w e Unicode, entao o radical e
+# explicito: grava\w* com guarda (?!ta) p/ nao casar "gravata".
+_PERTO_DA_GRAVACAO = r"(?=.{0,30}\b(grava(?!ta)\w*|[aá]udio|leitura|v[ií]deo|aqui)\b)"
+_DESPEDIDA_RES = [
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"\bvou finaliz\w*\b" + _PERTO_DA_GRAVACAO,
+        r"\bvou encerr\w*\b" + _PERTO_DA_GRAVACAO,
+        r"\bfecho aqui\b",
+        r"\bj[aá] est[aá] bom\b",
+        r"\be isso (ai|a[ií])?\b.{0,40}\b(acabou|fim|final)\b",
+        r"\bpor hoje [eé] s[oó]\b",
+        r"\bdando.{0,12}enjoo\b",
+        r"\b[uú]ltima (grava[cç][aã]o|gravacao|leitura)\b",
+        r"\bacho que j[aá] (est[aá]|deu)\b",
+        r"\bterminando aqui\b",
+        r"\bfinalizo\b",
+    )
+]
+# Sozinha ja fica acima do corte de candidata ruim (25): encerramento perde de
+# qualquer janela "normal" do mesmo audio.
+_DESPEDIDA_PENALTY = 70.0
+
+
+def _transcript_encerra_gravacao(text: str) -> bool:
+    """True se o transcript e fala de ENCERRAMENTO/meta-gravacao (pt-BR)."""
+    return any(r.search(text or "") for r in _DESPEDIDA_RES)
+
 
 def score_reference_transcript(transcript: str, language: str = "pt") -> float:
     """Score de RISCO da referencia: quanto MENOR, melhor (menos bordao).
@@ -58,6 +113,10 @@ def score_reference_transcript(transcript: str, language: str = "pt") -> float:
         score += len(re.findall(r"\b(entao|então)\b", lower)) * 8
         score += len(re.findall(r"\b(nao|não)\b", lower)) * 10
         score += len(re.findall(r"\b(ta|tá|ne|né)\b", lower)) * 6
+        # ENCERRAMENTO (cfa488b5): trecho em que o aluno administra a
+        # gravacao em vez de falar. Termo ADITIVO — nao mexe nos pesos acima.
+        if _transcript_encerra_gravacao(lower):
+            score += _DESPEDIDA_PENALTY
     # FRASE-TEMA repetida (caso "me levantar" 2026-07-16): se o bi/trigrama
     # FINAL da referencia aparece de novo no corpo, o continuation ecoa essa
     # frase nas emendas da geracao. Vale pra qualquer idioma.
