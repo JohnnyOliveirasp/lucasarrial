@@ -598,6 +598,7 @@ export function linhaDeNaoIniciado(c: LinhaComprador): LinhaPainel {
     concluido: false,
     concluidoTexto: null,
     concluidoMotivo: null,
+    concluidoAutomatico: false,
     conclusaoSuperada: false,
     erroManualTexto: null,
     erroManualMotivo: null,

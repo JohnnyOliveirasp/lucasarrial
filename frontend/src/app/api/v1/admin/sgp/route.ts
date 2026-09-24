@@ -25,6 +25,7 @@ import {
   COLUNAS_AVISO,
   COLUNAS_COBRANCA,
   COLUNAS_CONCLUSAO,
+  COLUNAS_CONCLUSAO_AUTO,
   COLUNAS_ERRO_MANUAL,
   criarFilaComFallback,
   silencioHorasConfigurado,
@@ -72,6 +73,10 @@ const buscar = criarFilaComFallback<SgpPedidoRow>(
     { nome: "cobranca", colunas: COLUNAS_COBRANCA },
     { nome: "erroManual", colunas: COLUNAS_ERRO_MANUAL },
     { nome: "conclusao", colunas: COLUNAS_CONCLUSAO },
+    // A 119 marca a conclusão que fechou SOZINHA. Grupo próprio, separado da
+    // 110: sem isso, aplicar uma e não a outra derrubaria o botão "Concluir
+    // atendimento", que já funciona, por causa de uma coluna alheia.
+    { nome: "conclusaoAuto", colunas: COLUNAS_CONCLUSAO_AUTO },
     // A 116 ainda não foi aplicada — cai sozinha, como as outras três. Sem ela
     // o corte GERADO/ENTREGUE continua funcionando pelo carimbo do sistema.
     { nome: "aviso", colunas: COLUNAS_AVISO },

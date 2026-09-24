@@ -344,6 +344,27 @@ export function lerErroManual(p: SgpPedidoRow, agora: number): ErroManual | null
   };
 }
 
+/**
+ * O autor que o FECHAMENTO AUTOMÁTICO grava em `concluido_por`.
+ *
+ * É uma CONSTANTE compartilhada de propósito: quem escreve (o sweeper, em
+ * lib/sgp/conclusao-sweep.ts) e quem lê (`lerConclusao`, logo abaixo) usam esta
+ * mesma string, e a comparação é por IGUALDADE EXATA, nunca por `includes`.
+ * Adivinhar "isto parece automático" por pedaço de texto é o erro que já custou
+ * caro nesta casa — e aqui ele seria pior que caro: um atendente cujo nome
+ * casasse com o pedaço viraria "o sistema" na tela.
+ *
+ * ⚠️ POR QUE EXISTE, se a migration 119 traz uma coluna booleana pra isso: porque
+ * a 119 pode nunca ser aplicada (quem aplica é o Johnny). Sem o sentinela, uma
+ * conclusão automática apareceria na tela como se alguém do time tivesse olhado
+ * o caso — que é exatamente a informação errada pra dar a quem trabalha nela.
+ * O booleano é o campo ESTRUTURADO (pra contar em SQL); isto é a rede que mantém
+ * a TELA honesta enquanto ele não existe. Nunca um substituto do outro.
+ *
+ * Nenhum e-mail de gente pode colidir: tem espaço e parênteses.
+ */
+export const SGP_CONCLUSAO_AUTOMATICA_AUTOR = "o sistema (fechamento automático)";
+
 /** O "atendimento concluído" declarado por gente (migration 110). */
 export type Conclusao = {
   em: string;
@@ -352,6 +373,13 @@ export type Conclusao = {
   /** O que a pessoa escreveu ao concluir. `null` quando não escreveu nada. */
   motivo: string | null;
   desdeMs: number;
+  /**
+   * Fechou SOZINHO (7 dias após a entrega, sem reclamação) — ninguém do time
+   * olhou este caso. A tela precisa dizer isso com todas as letras: "concluído
+   * por fulano@" e "fechou sozinho" são garantias muito diferentes, e tratá-las
+   * como a mesma etiqueta é o jeito de o fechamento automático virar tapete.
+   */
+  automatica: boolean;
   /**
    * O PEDIDO ANDOU depois da conclusão — a declaração virou histórico.
    *
@@ -388,11 +416,15 @@ export function lerConclusao(p: SgpPedidoRow, agora: number): Conclusao | null {
   // também não pode sumir com a marca, então cai num tempo zerado e a marca fica.
   const legivel = Number.isFinite(em);
   const mexeuDepois = legivel && new Date(p.atualizado_em).getTime() > em;
+  const por = p.concluido_por?.trim() || "alguém do time";
   return {
     em: p.concluido_em,
-    por: p.concluido_por?.trim() || "alguém do time",
+    por,
     motivo: p.concluido_motivo?.trim() || null,
     desdeMs: legivel ? Math.max(0, agora - em) : 0,
+    // A coluna estruturada (119) manda quando existe; o sentinela responde
+    // enquanto ela não for aplicada. Igualdade EXATA nos dois casos.
+    automatica: p.concluido_automatico === true || por === SGP_CONCLUSAO_AUTOMATICA_AUTOR,
     // Data ilegível conta como superada: dado torto nunca pode calar um alerta
     // (é a mesma regra que `lerCobranca` já aplica).
     superada: !legivel || mexeuDepois,
@@ -597,6 +629,12 @@ export type LinhaPainel = {
   /** O que o atendente escreveu ao concluir. `null` = concluiu sem escrever. */
   concluidoMotivo: string | null;
   /**
+   * A conclusão veio do FECHAMENTO AUTOMÁTICO (7 dias após a entrega, sem
+   * reclamação) e não de um clique de gente. A tela escreve isso na linha: um
+   * caso que ninguém olhou não pode parecer um caso tratado.
+   */
+  concluidoAutomatico: boolean;
+  /**
    * Foi concluído, mas o pedido ANDOU depois: a marca virou histórico e parou
    * de calar o alerta. A linha volta a se comportar como não concluída.
    */
@@ -731,9 +769,17 @@ export function oQueFazer(
   // Mas a frase NÃO pode parar em "nada a fazer" quando o aluno pagou e não
   // recebeu — aí ela diz as duas coisas, porque as duas são verdade.
   if (conclusao && !conclusao.superada) {
-    const quem = `${conclusao.por} concluiu este atendimento há ${tempoHumano(conclusao.desdeMs)}`;
-    const porque = conclusao.motivo ? ` (“${conclusao.motivo}”)` : "";
-    const base = `Nada a fazer: ${quem}${porque}.`;
+    // Fechamento automático NÃO pode se apresentar como decisão de gente. A
+    // frase diz que NINGUÉM olhou e que basta reabrir — senão o atendente lê
+    // "alguém tratou isto" onde só houve um relógio vencendo.
+    const quem = conclusao.automatica
+      ? `este atendimento fechou sozinho há ${tempoHumano(conclusao.desdeMs)}, ` +
+        `${SGP_CONCLUSAO_AUTOMATICA_DIAS} dias depois da entrega e sem reclamação registrada — ` +
+        `ninguém do time olhou o caso`
+      : `${conclusao.por} concluiu este atendimento há ${tempoHumano(conclusao.desdeMs)}`;
+    const porque = conclusao.motivo && !conclusao.automatica ? ` (“${conclusao.motivo}”)` : "";
+    const reabrir = conclusao.automatica ? " Se o aluno voltar, é só reabrir." : "";
+    const base = `Nada a fazer: ${quem}${porque}.${reabrir}`;
     if (p.status === "pronto" && !p.erro?.trim()) {
       if (entregue) return base;
       // Encerrar o atendimento não avisa ninguém. Sem o carimbo, o time fechou
@@ -915,10 +961,13 @@ export function montarLinha(
     relogioParado,
     concluido,
     concluidoTexto: fim
-      ? `concluído há ${tempoHumano(fim.desdeMs)} por ${fim.por}` +
+      ? (fim.automatica
+          ? `fechado automaticamente há ${tempoHumano(fim.desdeMs)} (ninguém do time olhou)`
+          : `concluído há ${tempoHumano(fim.desdeMs)} por ${fim.por}`) +
         (fim.superada ? " — mas o aluno mexeu depois" : "")
       : null,
     concluidoMotivo: fim?.motivo ?? null,
+    concluidoAutomatico: !!fim?.automatica,
     conclusaoSuperada: !!fim?.superada,
     erroManualTexto: erroManual
       ? `marcado há ${tempoHumano(erroManual.desdeMs)} por ${erroManual.por}`
@@ -989,6 +1038,15 @@ export type ResumoPainel = {
   /** Atendimentos que o time declarou encerrados e que o pedido não desmentiu. */
   concluidos: number;
   /**
+   * Destes, quantos fecharam SOZINHOS (sem ninguém do time olhar).
+   *
+   * Está aqui pra que o fechamento automático seja AUDITÁVEL de fora, sem
+   * ninguém precisar abrir o banco: sai na resposta da rota junto com o resto.
+   * Se este número virar a maioria dos `concluidos`, o time parou de tratar caso
+   * e passou a deixar o relógio tratar — e isso tem que dar pra ver.
+   */
+  concluidosAutomaticamente: number;
+  /**
    * ⚠️ O CONTADOR QUE GUARDA A DECISÃO DE PRECEDÊNCIA (ver `situacao`, trava b).
    *
    * Concluídos cujo PEDIDO não está entregue e limpo — ou seja, gente que pagou
@@ -1038,6 +1096,7 @@ export function resumir(linhas: LinhaPainel[]): ResumoPainel {
     // COBRADO do topo responde "quantos estão SÓ esperando o aluno".
     cobrados: linhas.filter((l) => l.silenciado).length,
     concluidos: linhas.filter((l) => l.concluido).length,
+    concluidosAutomaticamente: linhas.filter((l) => l.concluido && l.concluidoAutomatico).length,
     // `!== "entregue"` e não `!== "pronto"`: com o corte novo, "pronto" passou a
     // significar GERADO SEM AVISO, que é exatamente uma pendência. Deixar a
     // comparação antiga aqui faria o contador de auditoria parar de contar

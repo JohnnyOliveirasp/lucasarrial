@@ -138,6 +138,18 @@ export type SgpPedidoRow = {
   concluido_por?: string | null;
   concluido_motivo?: string | null;
   /**
+   * A conclusão veio do FECHAMENTO AUTOMÁTICO (migration 119, NÃO APLICADA) —
+   * 7 dias depois da ENTREGA, sem reclamação registrada. OPCIONAL pelo mesmo
+   * motivo das anteriores.
+   *
+   * ⚠️ NÃO é redundante com `concluido_por`. Este é o campo ESTRUTURADO, pra
+   * contar em SQL sem casar texto ("quantos casos o relógio fechou no mês?").
+   * Enquanto a 119 não entra, quem responde é a igualdade EXATA de
+   * `concluido_por` com `SGP_CONCLUSAO_AUTOMATICA_AUTOR` (ver painel.ts): isso
+   * mantém a TELA honesta, mas não dá uma consulta decente.
+   */
+  concluido_automatico?: boolean | null;
+  /**
    * "Avisei o aluno" do time no /admin/sgp (migration 116, NÃO APLICADA).
    * OPCIONAIS pelo mesmo motivo das anteriores.
    *
