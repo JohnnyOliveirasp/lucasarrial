@@ -62,7 +62,9 @@
  *
  * SO LEITURA. Nao escreve, nao fecha, nao muda status, nao manda e-mail.
  */
+const { execFileSync } = require("node:child_process");
 const { supa } = require("./_comum.cjs");
+const { casarPrsComCartoes } = require("./_pr_cartao.cjs");
 
 const AGORA = new Date();
 const dias = (iso) => Math.floor((AGORA - new Date(iso)) / 86400000);
@@ -186,6 +188,18 @@ const NOTA_NEUTRA = [
   // falar; nao decide nada e nao tira nada do colo do Johnny. Mesma familia do
   // BOILERPLATE acima, so que em nota inteira.
   /o\s+aluno\s+mandou\s+outro\s+e-?mail\s+e\s+a\s+fast\s+n[aã]o\s+respondeu/i,
+  // Nota automatica do passo pos-merge (`pos_merge_nota_no_cartao.cjs`,
+  // incidente 0398d161, 24/09). Ela avisa que um PR nomeando o cartao MERGEOU
+  // e exige visita humana — nao decide nada e NAO tira o cartao do colo do
+  // Johnny. Respondida a pergunta da lista: se o cartao estava parado no
+  // Johnny antes dela, continua parado depois (quem confirma a cura e a
+  // VISITA, nao o merge). Sem esta linha, o proprio mecanismo criado pra dar
+  // visibilidade cegaria esta fila em lote — o retrofit #415, de novo, agora
+  // automatizado a cada merge. O estado "merge aconteceu" NAO se perde com o
+  // pulo: ele entra nesta saida pelo marcador de merge abaixo (parte 2 do
+  // 0398d161), que le o gh direto (dado vivo), nao a pilha de notas. Ha teste
+  // amarrando este padrao ao formato real da nota: `_pr_cartao.test.cjs`.
+  /^\[pos-merge PR #\d+\]/i,
 ];
 
 const ehNeutra = (texto) => !!texto && NOTA_NEUTRA.some((p) => p.test(texto));
@@ -446,9 +460,40 @@ function casa(texto) {
     else baldes[t[0]].push({ ...p, motivo: t[1] });
   }
 
+  // ---- PARTE 2 do 0398d161: merge SINALIZA, nunca esconde ----
+  // A ordem original pedia "esconder da fila o item cujo PR nomeado ja
+  // mergeou". RECUSADO, e o motivo e medido: em 24/09 esta mesma fila
+  // escondeu 4 cartoes por outro motivo (#554), o total caiu e a queda foi
+  // lida como melhora — o vies desta fila so anda pra baixo. Entao o item
+  // CONTINUA na lista, com o aviso colado; quem le decide. E o aviso vem do
+  // gh (dado VIVO), nao das notas: nota e historico e ja deu 3 falsos em 5.
+  // gh fora do ar NAO derruba a varredura (a fila vale sozinha) — mas grita,
+  // porque marcador ausente em silencio e o mesmo defeito com outra roupa.
+  let mergePorCartao = new Map();
+  try {
+    const prsMergeados = JSON.parse(
+      execFileSync("gh", ["pr", "list", "--state", "merged", "--limit", "400",
+        "--json", "number,title,mergedAt"], { maxBuffer: 1e9 }).toString(),
+    );
+    mergePorCartao = casarPrsComCartoes(prsMergeados, fila);
+  } catch (e) {
+    console.error(
+      `\n⚠️  MARCADOR DE MERGE INDISPONIVEL nesta rodada (gh falhou: ${String(e.message).slice(0, 120)}).` +
+        "\n   A fila abaixo vale, mas SEM o aviso de 'PR ja mergeou' — nao conclua que nenhum mergeou.",
+    );
+  }
+
+  const marcaMerge = (p) => {
+    const pares = mergePorCartao.get(String(p.id)) || [];
+    return pares
+      .map(({ pr }) => `\n        ⚠️ PR #${pr.number} ja mergeou em ${String(pr.mergedAt).slice(0, 16)}Z — provavelmente resolvido, confirme`)
+      .join("");
+  };
+
   const linha = (p) =>
     `  ${String(p.id).slice(0, 8)} · ${String(dias(p.created_at)).padStart(3)}d · ` +
-    `${String((p.affected_emails || []).length).padStart(2)} aluno(s) · ${p.motivo}`;
+    `${String((p.affected_emails || []).length).padStart(2)} aluno(s) · ${p.motivo}` +
+    marcaMerge(p);
 
   console.log(`\nmarca crua: ${presos.length} cartoes — ANTES da triagem (a marca infla ~33%)`);
 
