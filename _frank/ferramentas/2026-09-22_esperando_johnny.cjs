@@ -79,7 +79,13 @@ const dias = (iso) => Math.floor((AGORA - new Date(iso)) / 86400000);
 // hoje" sem mexer aqui e como apagar o instrumento: a proxima ronda nao tem
 // como saber que o piso caiu nem por que.
 const CONTROLE = {
-  "d3d8d1b2": "#15  PR #404 esperando merge",
+  // ⚠️ #15 FECHADO em 24/09 21hZ (PR #404 mergeado, watchdog no ar). FICA na
+  // lista de proposito: o controle positivo testa o MATCHER, nao a fila viva —
+  // ele varre `todos` (todos os status), e um cartao fechado com a marca
+  // intacta na ultima nota serve igual. Tirar daqui baixaria o piso sem ganho.
+  // Se um dia a ultima nota dele mudar e o controle acusar, NAO e cegueira de
+  // fila: e so este cartao. Leia antes de sair mexendo na lista.
+  "d3d8d1b2": "#15  PR #404 esperando merge (cartao FECHADO em 24/09; segue como controle do matcher)",
   "ffbfdfc4": "#214 migration 111 nao aplicada",
   "8b8fc4c8": "#216 mao humana no painel da Hotmart",
   "7ed72ad0": "     7.455 cr: decisao de classe",
@@ -134,6 +140,57 @@ const BOILERPLATE = [
 ];
 
 /**
+ * ⚠️ NOTA NEUTRA — escrita em LOTE que NAO fala do estado do caso (24/09 21h45Z).
+ *
+ * O QUE ACONTECEU. Em 24/09 17:48Z um retrofit automatico (#415) carimbou a
+ * mesma nota em 21 cartoes vivos de uma vez. Como `ultimaNota()` le so
+ * `agent_notes[-1]`, o carimbo virou a ultima nota de todos eles e 4 cartoes
+ * parados no Johnny sumiram da varredura — TRES deles dinheiro de aluno
+ * (#245, #263, #307) — e o controle positivo passou a ABORTAR (#554).
+ *
+ * O cabecalho deste arquivo ja previa isso em 22/09 ("LIMITE GRAVE — QUEM
+ * ANOTA, ESCONDE") e prescrevia disciplina: quem anotar cartao parado no
+ * Johnny repete na nota o que falta. A licao de 24/09 e que **disciplina
+ * humana nao sobrevive a escrita automatica em lote**: uma rodada de retrofit
+ * quebrou a regra em 21 cartoes sem ninguem desobedecer de proposito.
+ *
+ * A CURA, E O QUE ELA DELIBERADAMENTE NAO E. `ultimaNota()` passa a ANDAR PRA
+ * TRAS enquanto a nota for NEUTRA. Neutra nao e sinonimo de "em lote", e essa
+ * distincao e o ponto inteiro:
+ *
+ *   MEDIDO em 24/09 com `2026-09-24_nota_em_lote.cjs` (instrumento irmao, so
+ *   leitura, que acha escrita em lote pelo DADO — mesmo texto em N cartoes):
+ *   4 textos em lote nos cartoes vivos. Destes, apenas 2 sao neutros. Os
+ *   outros 2 MUDAM O ESTADO e NAO podem ser pulados:
+ *     · "CONSERTO EM PRODUCAO === PR #331 ... MERGEADO" (3 cartoes)
+ *     · "RONDA 13/09 ... CANAL ENCONTRADO - ficha deixa de ser beco sem saida" (5)
+ *   Pular esses ressuscitaria estado velho — exatamente a doenca de varrer a
+ *   pilha inteira (41 falsos onde havia 1) que o criterio 1 existe pra evitar.
+ *
+ * POR ISSO A LISTA E CONFERIDA A MAO, e nao derivada automaticamente de "e
+ * lote". O `nota_em_lote.cjs` SURFACE candidatos; quem inclui um aqui LE a nota
+ * e responde: "se o cartao estava parado no Johnny antes desta nota, ele
+ * continua parado depois dela?" So entra se a resposta for sim.
+ *
+ * O piso so desce por escrito, como o CONTROLE: incluir padrao aqui exige
+ * motivo e data nesta mesma lista.
+ */
+const NOTA_NEUTRA = [
+  // Retrofit da trava do humano (#415), 24/09 17:48Z, 21 cartoes. A propria
+  // nota declara: "NADA MAIS foi tocado — nem status, nem credito, nem acesso,
+  // nem texto de nota", e o #554 conferiu que e verdade. Fala de MARCA no
+  // registro, nunca do desfecho do caso.
+  /retrofit\s+da\s+trava\s+do\s+humano/i,
+  // Carimbo automatico da Fast quando o aluno escreve de novo num chamado que
+  // ja esta com o time (10 cartoes, desde 16/09). Registra que o aluno voltou a
+  // falar; nao decide nada e nao tira nada do colo do Johnny. Mesma familia do
+  // BOILERPLATE acima, so que em nota inteira.
+  /o\s+aluno\s+mandou\s+outro\s+e-?mail\s+e\s+a\s+fast\s+n[aã]o\s+respondeu/i,
+];
+
+const ehNeutra = (texto) => !!texto && NOTA_NEUTRA.some((p) => p.test(texto));
+
+/**
  * TRIAGEM DE 22/09 17hZ — o resultado da conferencia a mao, encodado.
  *
  * A marca crua devolveu 30 cartoes. Li 6 a mao e dois deles eram falso
@@ -155,7 +212,11 @@ const TRIAGEM = {
   d3d8d1b2: ["REAL", "merge do PR #404 (watchdog do #15)"],
   "8b8fc4c8": ["REAL", "mao no painel Hotmart: cancelar assinatura da Fabiana"],
   "7ed72ad0": ["REAL", "estornar ou nao os 7.455 cr (decisao de classe)"],
-  "702cc916": ["REAL", "entrega abaixo do piso de QA: manter/falhar/avisar"],
+  // PESO CORRIGIDO em 24/09 22hZ: o cartao mostra 1 aluno em affected_emails,
+  // mas a decisao que ele carrega e a MESMA que trava o #52 (37bacb68, 22
+  // alunos, o mais velho da casa). Quem ler "1 aluno" subdimensiona a unica
+  // pergunta que destrava os dois. Somados e sem repetir ninguem: 23.
+  "702cc916": ["REAL", "⚖️ entrega abaixo do piso de QA: manter/falhar/avisar — trava tambem o #52 (23 alunos no total)"],
   "52b22304": ["REAL", "9-A: devolver credito das geracoes que nosso laudo chamou de fracas"],
   "5c68eb33": ["REAL", "9-C: devolver ou nao os R$97 de 08/08"],
   ab5644be: ["REAL", "9-A: estorno das animacoes sobrescritas (84.720 cr)"],
@@ -179,7 +240,26 @@ const TRIAGEM = {
   e811cbc7: ["FALSO", "espera ocorrencia nova pra provar cura; card do coder acdae9ff"],
   a6e21646: ["FALSO", "pergunta aberta do aluno; 9-C so se ele pedir — bola e dele"],
 
+  // --- Terceira leva, triada a mao na ronda de 24/09 ~22hZ. Entraram na
+  //     varredura por dois motivos distintos, ambos registrados: (i) a regra
+  //     NOTA_NEUTRA parou de deixar o carimbo de lote enterrar o estado, e
+  //     (ii) o alargamento das MARCAS de 23/09. So entra aqui o que eu li
+  //     INTEIRO; o que li pela metade fica NAO TRIADO de proposito. ---
+  f1ada07e: ["REAL", "⏰ 9-C: reembolso Carlos R$194 + Nassara, e 'pode' do Leandro ANTES de 28/09 (cobranca dupla futura)"],
+  ce8ba48b: ["REAL", "9-B acima do teto: 62.040 cr de estorno do #485 — o titulo do cartao ja diz 'DECISAO DO JOHNNY'"],
+  "719c9af6": ["REAL", "decisao de produto/preco/estorno (lido a mao em 23/09 17hZ, ver bloco MARCAS)"],
+  "555a1cee": ["REAL", "9-A/9-C: pagou R$291 e nao recebeu nada — decisao de dinheiro (lido a mao 23/09 17hZ)"],
+  // FALSOS desta leva: cartao meu, ou ja resolvido, ou dono que nao e o Johnny.
+  e693222b: ["FALSO", "#554 e o cartao DESTA ferramenta — dono sou eu, e foi trabalhado em 24/09 21h45Z"],
+  "37c2b55c": ["FALSO", "'triado, sem acionamento'; contorno ja em producao, aluno Christian curado"],
+
   // --- CONTESTADO: as leituras divergiram. Fora do numero de cima. ---
+  // Mesmo criterio ja aplicado ao ffbfdfc4: a pergunta existe, mas ja esta
+  // sendo feita em OUTRO cartao. Levar os dois duplica a pergunta ao Johnny.
+  "37bacb68": [
+    "CONTESTADO",
+    "#52: 22 alunos, mas travado na MESMA decisao (a)/(b)/(c) do 702cc916 — 1 pergunta, nao 2",
+  ],
   ffbfdfc4: ["CONTESTADO", "decisao consolidada no #446/66c5c55a — levar junto duplicaria a pergunta"],
   acac6983: ["CONTESTADO", "piso de 400 cr / preco do teste: decisao futura ou pedido vivo?"],
   "980da40f": ["CONTESTADO", "cr acima do teto, mas ja na mesa do Hercules"],
@@ -205,11 +285,27 @@ function exigir(rotulo, error) {
   }
 }
 
+// Quantas notas neutras seguidas se aceita pular. Teto baixo de proposito: se
+// um cartao tiver uma PILHA de carimbos por cima, isso e achado pra investigar
+// (outro lote cego), nao coisa pra varrer em silencio. Estourar o teto devolve
+// a nota crua — o vies volta a ser pra baixo, que e o lado seguro.
+const TETO_NEUTRAS = 5;
+
+// Conta, so pra relatorio: quantos cartoes so aparecem porque andamos pra tras.
+const resgatados = [];
+
 function ultimaNota(r) {
   const n = r.agent_notes;
   if (!Array.isArray(n) || n.length === 0) return null;
-  const u = n[n.length - 1];
-  return (u && (u.note || "")) || "";
+  let i = n.length - 1;
+  let pulos = 0;
+  while (i >= 0 && pulos < TETO_NEUTRAS && ehNeutra(n[i] && n[i].note)) {
+    i--;
+    pulos++;
+  }
+  if (i < 0) return "";
+  if (pulos > 0) resgatados.push({ id: String(r.id).slice(0, 8), numero: r.numero, pulos });
+  return (n[i] && (n[i].note || "")) || "";
 }
 
 function casa(texto) {
@@ -229,7 +325,7 @@ function casa(texto) {
   // Universo 1: a fila que espera (o que a ordem quer).
   const { data: fila, error: e1 } = await db
     .from("incidents")
-    .select("id,created_at,last_seen_at,status,signature,affected_emails,agent_notes")
+    .select("id,numero,created_at,last_seen_at,status,signature,affected_emails,agent_notes")
     .in("status", ["open", "investigating", "aguardando_aluno"])
     .order("created_at", { ascending: true });
   exigir("incidents em espera", e1);
@@ -237,7 +333,7 @@ function casa(texto) {
   // Universo 2: TODOS os status, so para o controle positivo.
   const { data: todos, error: e2 } = await db
     .from("incidents")
-    .select("id,agent_notes")
+    .select("id,numero,agent_notes")
     .order("created_at", { ascending: true });
   exigir("incidents todos (controle)", e2);
 
@@ -308,6 +404,37 @@ function casa(texto) {
   for (const r of fila) {
     const marca = casa(ultimaNota(r));
     if (marca) presos.push({ ...r, marca });
+  }
+
+  // ---- O QUE A REGRA DA NOTA NEUTRA MUDOU, DECLARADO ----
+  // Numero que anda sem explicacao e numero em que ninguem confia. Se a fila
+  // cresce porque passamos a enxergar o que estava enterrado, isso vai escrito:
+  // NAO e piora da casa, e o fim de uma cegueira.
+  //
+  // ⚠️ ESTE BLOCO TEM QUE FICAR DEPOIS DO LACO DA CLASSE. Ele nasceu ACIMA
+  // dele em 24/09 e saiu MENTINDO: como `resgatados` so se enche quando
+  // `ultimaNota()` roda, imprimir antes do laco mostrava apenas os cartoes do
+  // CONTROLE (1 de 4 — so o #216). Os outros tres, que sao justamente os de
+  // dinheiro de aluno (#245, #263, #307), eram resgatados de verdade e
+  // apareciam na lista final, mas NAO constavam no aviso. Ou seja: o proprio
+  // aviso criado pra matar o vies pra baixo tinha o vies pra baixo. Pego
+  // relendo a saida contra o `nota_em_lote.cjs`, nao pelo teste.
+  // So conta quem ANDOU PRA TRAS **e** acabou na classe. Andar pra tras em
+  // cartao que nao casa marca nenhuma nao "revelou" nada — dizer que revelou
+  // inflaria o efeito do proprio conserto (22 em vez de 4), e numero inflado a
+  // favor de quem mexeu e a versao espelhada do vies que isto combate.
+  const naClasse = new Set(presos.map((p) => String(p.id).slice(0, 8)));
+  const unicos = [...new Map(resgatados.map((x) => [x.id, x])).values()].filter((x) => naClasse.has(x.id));
+  if (unicos.length) {
+    console.log(
+      `\n🔎 ${unicos.length} cartao(oes) so aparecem porque a regra NOTA_NEUTRA andou pra tras` +
+        ` (carimbo de lote por cima do estado real; ${resgatados.length} cartoes tiveram carimbo, ` +
+        `${unicos.length} viraram fila):`
+    );
+    for (const u of unicos.sort((a, b) => (a.numero || 0) - (b.numero || 0))) {
+      console.log(`     · ${u.id} ${u.numero ? `#${u.numero}` : ""} — ${u.pulos} nota(s) neutra(s) puladas`);
+    }
+    console.log("   Nao confunda com fila crescendo: e fila que estava escondida.");
   }
 
   // ---- APLICA A TRIAGEM CONFERIDA A MAO ----

@@ -1,0 +1,1477 @@
+{
+  "gerado_em": "2026-09-24T20:27:39.041Z",
+  "cartao": "75c33ee1-4e1d-496d-9f1c-81027ea40b0e",
+  "corte_aprovado": "2026-09-17T16:37:25+00:00",
+  "numero_aprovado": {
+    "despachos": 398,
+    "creditos": 1010200,
+    "alunos": 183
+  },
+  "perfis_sumidos": [],
+  "perfis": [
+    {
+      "id": "8714c16e-4fae-4a86-99c6-77fcaf3d73ec",
+      "email": "21cortez.c@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 31510,
+      "credits_extra": 0,
+      "saldo_total": 31510
+    },
+    {
+      "id": "0a9ae6b1-8e4d-4e92-aa17-a1d10a384221",
+      "email": "acalbamonte@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 122880,
+      "credits_extra": 0,
+      "saldo_total": 122880
+    },
+    {
+      "id": "b8b2c70a-a816-4067-982b-32ad4b0bce58",
+      "email": "acarpegiani@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 7570,
+      "saldo_total": 7570
+    },
+    {
+      "id": "70930243-9b21-4a9b-adc8-a295a21c35a4",
+      "email": "acommoreira@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 0,
+      "saldo_total": 0
+    },
+    {
+      "id": "b271fe76-523f-4e61-adb3-7c1e7da718df",
+      "email": "acostalr@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 110252,
+      "credits_extra": 0,
+      "saldo_total": 110252
+    },
+    {
+      "id": "4dbbbd95-6243-4030-a29b-6adbe84f0d68",
+      "email": "adrianoloureto@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 0,
+      "saldo_total": 0
+    },
+    {
+      "id": "ef8908c0-1e7e-4daf-acba-43213ebf09ee",
+      "email": "adsmparts@mercadoparts.com.br",
+      "plan": "pro",
+      "credits_subscription": 62986,
+      "credits_extra": 10900,
+      "saldo_total": 73886
+    },
+    {
+      "id": "27c49318-5bd8-4585-8cf9-aa0b8cdf3a57",
+      "email": "adv.pmss@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 0,
+      "credits_extra": 21588,
+      "saldo_total": 21588
+    },
+    {
+      "id": "418fa570-03fb-4132-81c5-3e4423627091",
+      "email": "afraniosilvaadvogados@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 76944,
+      "credits_extra": 0,
+      "saldo_total": 76944
+    },
+    {
+      "id": "565f0eac-5203-4dbc-aa3b-1a345e7e6fdd",
+      "email": "ag5440708@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 52880,
+      "credits_extra": 0,
+      "saldo_total": 52880
+    },
+    {
+      "id": "4fed32b7-426b-47ad-a12c-400dcbd5a25f",
+      "email": "alcidessabino22@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 12693,
+      "credits_extra": 0,
+      "saldo_total": 12693
+    },
+    {
+      "id": "1359bc65-b430-48b0-bc08-b3cdc73298c2",
+      "email": "amanda@mira-move.com",
+      "plan": "pro",
+      "credits_subscription": 295260,
+      "credits_extra": 0,
+      "saldo_total": 295260
+    },
+    {
+      "id": "7d5e50f0-6b65-4483-9cbf-e86d25f24f1b",
+      "email": "appseguropt@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 191045,
+      "credits_extra": 0,
+      "saldo_total": 191045
+    },
+    {
+      "id": "a472b28e-56dd-4be7-ad20-2a2ec400fff4",
+      "email": "arthur@cordeiroac.adv.br",
+      "plan": "pro",
+      "credits_subscription": 227743,
+      "credits_extra": 0,
+      "saldo_total": 227743
+    },
+    {
+      "id": "f3c0c474-1506-423b-9de4-b19c57eb1b65",
+      "email": "arthurpetkowiczr@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 138455,
+      "credits_extra": 26491,
+      "saldo_total": 164946
+    },
+    {
+      "id": "495b2a4c-f4db-4017-9f9a-0f52893ee63e",
+      "email": "avatarlanes@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 136874,
+      "credits_extra": 525,
+      "saldo_total": 137399
+    },
+    {
+      "id": "3da86f5b-8c7c-4a8f-a7fb-e633a7b9143f",
+      "email": "beatrizsrl021@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 100000,
+      "credits_extra": 0,
+      "saldo_total": 100000
+    },
+    {
+      "id": "29bbef38-7592-47e1-bd30-0b0f7da978d9",
+      "email": "betti.andre1980@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 63768,
+      "credits_extra": 0,
+      "saldo_total": 63768
+    },
+    {
+      "id": "dbacd372-1bcd-448e-a369-a1bc1a4c0905",
+      "email": "bilaherrmann@gmail.com",
+      "plan": "free",
+      "credits_subscription": 34251,
+      "credits_extra": 16375,
+      "saldo_total": 50626
+    },
+    {
+      "id": "495d0a3a-912c-4c5f-97b2-fb36ee10d3d0",
+      "email": "braulioesperantina@yahoo.com.br",
+      "plan": "pro",
+      "credits_subscription": 65199,
+      "credits_extra": 0,
+      "saldo_total": 65199
+    },
+    {
+      "id": "60642e7e-374b-428e-a618-a58b34eb42df",
+      "email": "bruno.moura@rtcountdigital.com.br",
+      "plan": "pro",
+      "credits_subscription": 100000,
+      "credits_extra": 1027,
+      "saldo_total": 101027
+    },
+    {
+      "id": "b2cba38a-668c-4c6a-93bb-e7cc67af1265",
+      "email": "brunodalcum@gmail.com",
+      "plan": "free",
+      "credits_subscription": 64697,
+      "credits_extra": 0,
+      "saldo_total": 64697
+    },
+    {
+      "id": "cd4367be-e157-4c08-9d24-79b3d5c5ffea",
+      "email": "brunorolimdebrito@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 100000,
+      "credits_extra": 40965,
+      "saldo_total": 140965
+    },
+    {
+      "id": "88bb8a0f-463e-403e-b520-b502d52e7f9a",
+      "email": "caiofgoes@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 159660,
+      "credits_extra": 0,
+      "saldo_total": 159660
+    },
+    {
+      "id": "166b9b3a-5fb3-4ce6-bc47-b23ac38d00e7",
+      "email": "carloss.caporale@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 234120,
+      "credits_extra": 0,
+      "saldo_total": 234120
+    },
+    {
+      "id": "4cf1d2d2-94fb-4d9a-acfc-77db434a7755",
+      "email": "carolinamenezesferreira2@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 167987,
+      "credits_extra": 6280,
+      "saldo_total": 174267
+    },
+    {
+      "id": "c19217c8-c8e6-459c-b779-5e343bed8ba0",
+      "email": "casamaecohab@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 62723,
+      "credits_extra": 10111,
+      "saldo_total": 72834
+    },
+    {
+      "id": "6ac6bfe4-4d1b-4126-9ee5-564e42baa9a5",
+      "email": "casatumca@gmail.com",
+      "plan": "free",
+      "credits_subscription": 100000,
+      "credits_extra": 40000,
+      "saldo_total": 140000
+    },
+    {
+      "id": "49d1b9d1-4e44-4bba-ba8b-100a3364fb1e",
+      "email": "christinatheodoro19@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 145960,
+      "credits_extra": 0,
+      "saldo_total": 145960
+    },
+    {
+      "id": "cf8c247e-6090-449c-9f4b-4661c0e26000",
+      "email": "christopher_mendonca@outlook.com",
+      "plan": "pro",
+      "credits_subscription": 68084,
+      "credits_extra": 0,
+      "saldo_total": 68084
+    },
+    {
+      "id": "bc7f5dd4-620f-45d4-adaa-31bb318478b6",
+      "email": "cienciadosax@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 0,
+      "credits_extra": 321,
+      "saldo_total": 321
+    },
+    {
+      "id": "936a7f32-9ee2-416c-9682-ccaefcd3a184",
+      "email": "cintiacorretora.cc@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 300000,
+      "credits_extra": 0,
+      "saldo_total": 300000
+    },
+    {
+      "id": "1f1606e4-6647-4193-b482-6726130bf2b9",
+      "email": "claudionirqs@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 46334,
+      "credits_extra": 0,
+      "saldo_total": 46334
+    },
+    {
+      "id": "6cb32dbb-a285-4fa9-8c3d-ff61379aff9f",
+      "email": "clonedigitaldaniel@gmail.com",
+      "plan": "free",
+      "credits_subscription": 33037,
+      "credits_extra": -10000,
+      "saldo_total": 23037
+    },
+    {
+      "id": "657fbb11-3753-462e-bea7-68acd945ea84",
+      "email": "contato@terapiadaarte.com.br",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 0,
+      "saldo_total": 0
+    },
+    {
+      "id": "bdf44e03-726c-4de8-be9d-268dc3bc2871",
+      "email": "contatoabreu25@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 8112,
+      "saldo_total": 8112
+    },
+    {
+      "id": "2a91d73a-9ae4-4935-bd5d-3ef5d3a1034c",
+      "email": "correabarbozaadv@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 200000,
+      "credits_extra": 3165,
+      "saldo_total": 203165
+    },
+    {
+      "id": "dfd8b9d9-ef9c-4d7d-849d-e9030158205c",
+      "email": "cristianemartins80@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 226665,
+      "credits_extra": 525,
+      "saldo_total": 227190
+    },
+    {
+      "id": "9a289b82-3d13-481a-87d6-e970d02e56ef",
+      "email": "cristina.alvesteixeira@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 100000,
+      "credits_extra": 4760,
+      "saldo_total": 104760
+    },
+    {
+      "id": "87b9abd7-9468-4d03-b876-03ab1e868695",
+      "email": "dacmedia16@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 0,
+      "saldo_total": 0
+    },
+    {
+      "id": "e94d1e57-3849-477d-8583-5c15608def87",
+      "email": "dallagnol.odontologia@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 0,
+      "saldo_total": 0
+    },
+    {
+      "id": "cb2a4cc3-b7f0-424f-b713-bfdd3428e56b",
+      "email": "danielvsferreira@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 139825,
+      "credits_extra": 525,
+      "saldo_total": 140350
+    },
+    {
+      "id": "3a212d70-20ab-4a1b-8562-3447ee779ec2",
+      "email": "deividvilela.sismaster@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 220538,
+      "credits_extra": 0,
+      "saldo_total": 220538
+    },
+    {
+      "id": "9894b5d6-6ecc-47ab-b866-3e2d580c1e83",
+      "email": "dersonsena@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 72080,
+      "credits_extra": 0,
+      "saldo_total": 72080
+    },
+    {
+      "id": "1987a2de-b983-474e-b26a-e8a08a3879c0",
+      "email": "diegotadeurochaadv@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 57173,
+      "credits_extra": 0,
+      "saldo_total": 57173
+    },
+    {
+      "id": "8fb2bd40-67d4-4c4a-9046-fd669a1167f5",
+      "email": "digorilroma@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 284311,
+      "credits_extra": 0,
+      "saldo_total": 284311
+    },
+    {
+      "id": "c27de1da-693b-41bc-a8b7-85c6d570f1e7",
+      "email": "djenane.patricia@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 127675,
+      "credits_extra": 0,
+      "saldo_total": 127675
+    },
+    {
+      "id": "96660ecd-ad8b-4748-b865-6e3fafb37681",
+      "email": "domiciliarsc@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 0,
+      "saldo_total": 0
+    },
+    {
+      "id": "8442b7b0-9e85-4069-8957-b4889ab9f293",
+      "email": "dominicis0176@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 94465,
+      "credits_extra": 0,
+      "saldo_total": 94465
+    },
+    {
+      "id": "3085f9dc-40c2-4406-9ee5-692117d8ed2f",
+      "email": "draellenca@hotmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 2289,
+      "saldo_total": 2289
+    },
+    {
+      "id": "2388d4db-96f8-45a2-ac79-d529286aa5f5",
+      "email": "drajulianapelegrini@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 25715,
+      "credits_extra": 0,
+      "saldo_total": 25715
+    },
+    {
+      "id": "48d35231-5ea5-4ee6-aa4a-a8e74eed3024",
+      "email": "dralizbethginecologista@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 111154,
+      "credits_extra": 456,
+      "saldo_total": 111610
+    },
+    {
+      "id": "34f81ba8-5454-49c7-9def-6854a41051d2",
+      "email": "drasiberia@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 196310,
+      "credits_extra": 0,
+      "saldo_total": 196310
+    },
+    {
+      "id": "1c0cbb59-4ab2-4495-9721-afcbdfe35b95",
+      "email": "dreiasilveira@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 200000,
+      "credits_extra": 0,
+      "saldo_total": 200000
+    },
+    {
+      "id": "22bdb388-0183-460b-8415-7aa030107d30",
+      "email": "drjoaolusvarghi@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 71695,
+      "credits_extra": 0,
+      "saldo_total": 71695
+    },
+    {
+      "id": "a490b09f-a692-4056-8fc9-eedf8e5104a3",
+      "email": "drluiztocantins10@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 97630,
+      "credits_extra": 0,
+      "saldo_total": 97630
+    },
+    {
+      "id": "4bcd6293-f4a0-449a-85d1-d668fda57906",
+      "email": "drpaulomendes2020@gmail.com",
+      "plan": "free",
+      "credits_subscription": 72866,
+      "credits_extra": 0,
+      "saldo_total": 72866
+    },
+    {
+      "id": "b8e68f1f-a828-413b-82dd-3ee5ffe5dcfe",
+      "email": "duoclinicsalto@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 61054,
+      "credits_extra": 0,
+      "saldo_total": 61054
+    },
+    {
+      "id": "add244c8-58c2-461a-bfd7-6a6eaa19eeef",
+      "email": "eesney@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 181170,
+      "credits_extra": 1575,
+      "saldo_total": 182745
+    },
+    {
+      "id": "0671dfce-cbfe-44eb-a26e-bc1991d6ceff",
+      "email": "elvislandisilva@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 47453,
+      "credits_extra": 60000,
+      "saldo_total": 107453
+    },
+    {
+      "id": "ff30ceac-cc6d-433c-9fad-556945086410",
+      "email": "fb_teixeira@hotmail.com",
+      "plan": "free",
+      "credits_subscription": 64221,
+      "credits_extra": 0,
+      "saldo_total": 64221
+    },
+    {
+      "id": "3cddd89a-81f9-4ec5-bafb-7c5fee554289",
+      "email": "fbolque@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 270899,
+      "credits_extra": 0,
+      "saldo_total": 270899
+    },
+    {
+      "id": "612115c4-79ef-42d2-8083-50858cde1635",
+      "email": "fechomaisum@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 34247,
+      "credits_extra": 1575,
+      "saldo_total": 35822
+    },
+    {
+      "id": "e1c913be-91f4-4198-82b7-149af0671658",
+      "email": "felipelfr@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 19236,
+      "credits_extra": 0,
+      "saldo_total": 19236
+    },
+    {
+      "id": "b17a35b0-6ab3-44a7-a770-06d2bdb9059b",
+      "email": "felipenogs@joinsy.com.br",
+      "plan": "free",
+      "credits_subscription": 60972,
+      "credits_extra": 0,
+      "saldo_total": 60972
+    },
+    {
+      "id": "8a56a759-c8c0-41a7-a5b7-d286eb831e43",
+      "email": "fermachado.coach@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 131596,
+      "credits_extra": 0,
+      "saldo_total": 131596
+    },
+    {
+      "id": "a070fb56-4620-4dad-96cf-c80e30e4ec8f",
+      "email": "fmohaupt@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 170960,
+      "credits_extra": 0,
+      "saldo_total": 170960
+    },
+    {
+      "id": "7d233a97-3258-402b-afa9-efefd3b751b9",
+      "email": "fnrbgi@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 100000,
+      "credits_extra": 0,
+      "saldo_total": 100000
+    },
+    {
+      "id": "a58e1cd7-f66e-40f2-8942-77605ee60c2a",
+      "email": "francy.pessoni@outlook.com",
+      "plan": "pro",
+      "credits_subscription": 210600,
+      "credits_extra": 0,
+      "saldo_total": 210600
+    },
+    {
+      "id": "ea000ca1-a3f7-4fd9-b923-c3e381326959",
+      "email": "girlandiaalencar@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 92740,
+      "credits_extra": 0,
+      "saldo_total": 92740
+    },
+    {
+      "id": "1f89e639-a973-43b8-a28c-c5d02bccc2ae",
+      "email": "guanjinpedro@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 257051,
+      "credits_extra": 0,
+      "saldo_total": 257051
+    },
+    {
+      "id": "695fe63e-8a04-44a6-9260-70d70d3de6b8",
+      "email": "guilhermealves5334@gmail.com",
+      "plan": "free",
+      "credits_subscription": 89155,
+      "credits_extra": 0,
+      "saldo_total": 89155
+    },
+    {
+      "id": "750c85f0-5e80-48e3-923a-05fde1935ef1",
+      "email": "guimaraes.advsp@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 0,
+      "saldo_total": 0
+    },
+    {
+      "id": "f8838465-64d5-449b-9907-d9e390d3e7bb",
+      "email": "gustavovazeduardo@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 261355,
+      "credits_extra": 1050,
+      "saldo_total": 262405
+    },
+    {
+      "id": "a9cdc203-5413-4972-aa42-97f526c2abff",
+      "email": "harielsoares3@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 8525,
+      "credits_extra": 9195,
+      "saldo_total": 17720
+    },
+    {
+      "id": "1fc66051-053c-4eee-9168-ea5f51c00815",
+      "email": "hebertmds@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 196061,
+      "credits_extra": 0,
+      "saldo_total": 196061
+    },
+    {
+      "id": "6659c6c5-3ba3-4294-a5c2-53aa1513e387",
+      "email": "igorlramalho@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 251076,
+      "credits_extra": 0,
+      "saldo_total": 251076
+    },
+    {
+      "id": "3f1422bb-59f4-4ef1-83e6-6ea2b39726fa",
+      "email": "janetecasarotto2@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 74950,
+      "credits_extra": 2520,
+      "saldo_total": 77470
+    },
+    {
+      "id": "e256ab39-7c21-4735-8714-d3f84a94ef68",
+      "email": "jeffersoncarvalhotrademark@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 2320,
+      "saldo_total": 2320
+    },
+    {
+      "id": "25c573f3-9924-445f-ad2e-443f2077154b",
+      "email": "joanna_amaral@live.com",
+      "plan": "pro",
+      "credits_subscription": 82780,
+      "credits_extra": 9276,
+      "saldo_total": 92056
+    },
+    {
+      "id": "915d8636-0250-4675-98e2-8a660245ad92",
+      "email": "joaomarcos@grupofielpr.com.br",
+      "plan": "pro",
+      "credits_subscription": 104182,
+      "credits_extra": 1845,
+      "saldo_total": 106027
+    },
+    {
+      "id": "3446cf5b-3bad-46d8-92a7-40a7912ff666",
+      "email": "josericardo_62@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 71680,
+      "credits_extra": 0,
+      "saldo_total": 71680
+    },
+    {
+      "id": "70212dbb-8004-41dc-8d5f-fc91003ea222",
+      "email": "jpdias3@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 180463,
+      "credits_extra": 1478,
+      "saldo_total": 181941
+    },
+    {
+      "id": "4e2b3428-8269-4a3b-aa4a-0576522c252c",
+      "email": "jr@jfbmarketsupply.com",
+      "plan": "pro",
+      "credits_subscription": 172096,
+      "credits_extra": 0,
+      "saldo_total": 172096
+    },
+    {
+      "id": "cdf2a4d0-aac4-4d89-b51c-bac24855a18a",
+      "email": "juniorbastos6@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 1050,
+      "saldo_total": 1050
+    },
+    {
+      "id": "b38da967-4b9d-4ac3-b5d3-2b72d98b3a02",
+      "email": "jussarahoffmann2@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 116125,
+      "credits_extra": 0,
+      "saldo_total": 116125
+    },
+    {
+      "id": "c6209836-9f2a-452b-9e2e-907833a9b907",
+      "email": "katharinagerminari@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 88930,
+      "credits_extra": 0,
+      "saldo_total": 88930
+    },
+    {
+      "id": "12c5e5f5-3351-439a-a169-037c7a6654a9",
+      "email": "kauanpatrickmertz@outlook.com",
+      "plan": "pro",
+      "credits_subscription": 0,
+      "credits_extra": 4601,
+      "saldo_total": 4601
+    },
+    {
+      "id": "5ccb7ee2-054c-441b-8e75-42e35bfc7adf",
+      "email": "keysonlima@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 62783,
+      "credits_extra": 0,
+      "saldo_total": 62783
+    },
+    {
+      "id": "72ce5f16-330f-4c55-986d-ff28a04df101",
+      "email": "laisdamatapenteado@gmail.com",
+      "plan": "free",
+      "credits_subscription": 48618,
+      "credits_extra": 0,
+      "saldo_total": 48618
+    },
+    {
+      "id": "31404125-9c38-4e1c-b5c4-3e9a1ca01e5f",
+      "email": "leandro@coadi.com.br",
+      "plan": "free",
+      "credits_subscription": 32476,
+      "credits_extra": 16695,
+      "saldo_total": 49171
+    },
+    {
+      "id": "507daf8b-b8fa-493e-91a9-a49b27d524e7",
+      "email": "leilamassiero1966@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 242115,
+      "credits_extra": 17805,
+      "saldo_total": 259920
+    },
+    {
+      "id": "c672dfa4-a456-4d40-8958-e2f308893c95",
+      "email": "lelequisdias@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 91250,
+      "credits_extra": 0,
+      "saldo_total": 91250
+    },
+    {
+      "id": "49110dde-1491-49c3-833b-3288f79b2d21",
+      "email": "leonicemleandrosociedadeadvoca@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 73837,
+      "credits_extra": 10070,
+      "saldo_total": 83907
+    },
+    {
+      "id": "af5df84b-4916-4411-9a67-12b5edcf7f90",
+      "email": "leopoldomenezes@me.com",
+      "plan": "pro",
+      "credits_subscription": 196835,
+      "credits_extra": 0,
+      "saldo_total": 196835
+    },
+    {
+      "id": "2f12a5a3-0cb9-4d71-ba26-65e792dbaefb",
+      "email": "lilian.meneguetti@travelsolution.tur.br",
+      "plan": "pro",
+      "credits_subscription": 165120,
+      "credits_extra": 1575,
+      "saldo_total": 166695
+    },
+    {
+      "id": "be38b886-acc5-4e3f-9ed3-54da2aecbd45",
+      "email": "lindacasabrasillcb@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 200000,
+      "credits_extra": 1320,
+      "saldo_total": 201320
+    },
+    {
+      "id": "9c469699-8a8e-4646-8d00-fdd6179e8935",
+      "email": "lomba@elitesom.com.br",
+      "plan": "pro",
+      "credits_subscription": 196513,
+      "credits_extra": 48870,
+      "saldo_total": 245383
+    },
+    {
+      "id": "f16a2445-8be3-4e73-b42b-e0cf2f8862f5",
+      "email": "luana@fktadvogados.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 0,
+      "saldo_total": 0
+    },
+    {
+      "id": "90cc178d-b772-450a-b6b8-d145ea0cbc19",
+      "email": "lucas.margoto@assessoriabr.com.br",
+      "plan": "pro",
+      "credits_subscription": 300000,
+      "credits_extra": 525,
+      "saldo_total": 300525
+    },
+    {
+      "id": "5183dc0f-d64b-4925-b293-7a99fd16de12",
+      "email": "lucashernandes1992@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 0,
+      "credits_extra": 14369,
+      "saldo_total": 14369
+    },
+    {
+      "id": "f0283a8e-26f4-4355-9d79-e496e05cfe1d",
+      "email": "lucianodepinho@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 166980,
+      "credits_extra": -945,
+      "saldo_total": 166035
+    },
+    {
+      "id": "0585ae2b-8b38-453e-aed0-85e9ada416b9",
+      "email": "lucmacri@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 210502,
+      "credits_extra": 0,
+      "saldo_total": 210502
+    },
+    {
+      "id": "038495e1-a951-4d03-a2d1-14c029c20bf7",
+      "email": "luis.felipe.bertozo@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 105054,
+      "credits_extra": 0,
+      "saldo_total": 105054
+    },
+    {
+      "id": "a0afbf8c-10c6-443d-8f9f-fbe3e93f1f9a",
+      "email": "lux.neuropsi@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 154205,
+      "credits_extra": 8610,
+      "saldo_total": 162815
+    },
+    {
+      "id": "da0b80b0-1cfc-4276-81b0-47ddae2ca30a",
+      "email": "macbastos@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 173785,
+      "credits_extra": 0,
+      "saldo_total": 173785
+    },
+    {
+      "id": "ec2219c5-3639-4ec7-ac5d-9cc71600b189",
+      "email": "mandepraana@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 228057,
+      "credits_extra": 0,
+      "saldo_total": 228057
+    },
+    {
+      "id": "7135b5b8-a8a9-486e-9bbb-a28d5d9d1b8b",
+      "email": "marcio_usa@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 173880,
+      "credits_extra": 0,
+      "saldo_total": 173880
+    },
+    {
+      "id": "6a8323c9-7bd3-46b5-acf3-566b05cdd500",
+      "email": "marcosavila.mg@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 86814,
+      "credits_extra": 0,
+      "saldo_total": 86814
+    },
+    {
+      "id": "7df433c8-ff42-4e92-8096-96e4609c780b",
+      "email": "marcusnogue@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 64518,
+      "credits_extra": 3150,
+      "saldo_total": 67668
+    },
+    {
+      "id": "1ac13858-c774-424c-9dac-76ea69ab63e9",
+      "email": "mariana@excellerconsultoria.com.br",
+      "plan": "pro",
+      "credits_subscription": 0,
+      "credits_extra": 59565,
+      "saldo_total": 59565
+    },
+    {
+      "id": "c849ebf3-cd2b-45c4-88f8-3575370cd688",
+      "email": "martinmendezagiluilar7@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 0,
+      "credits_extra": 397,
+      "saldo_total": 397
+    },
+    {
+      "id": "1859f839-2d5c-4eac-b65f-a7719dad5b93",
+      "email": "maurochimique@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 164304,
+      "credits_extra": 0,
+      "saldo_total": 164304
+    },
+    {
+      "id": "9ae818c0-d1fa-46ce-ae09-74aab8ab386a",
+      "email": "maximilianogayoso1985@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 84180,
+      "credits_extra": 0,
+      "saldo_total": 84180
+    },
+    {
+      "id": "37d600ea-00e0-495a-8b96-d0dcd076f4a9",
+      "email": "mcursos@yahoo.com",
+      "plan": "pro",
+      "credits_subscription": 166675,
+      "credits_extra": 0,
+      "saldo_total": 166675
+    },
+    {
+      "id": "cddfb9d5-5eee-4147-9646-61728ec40b6f",
+      "email": "md.servmed@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 79900,
+      "credits_extra": 0,
+      "saldo_total": 79900
+    },
+    {
+      "id": "449b991d-cda1-4a6d-8cb5-c0bf24c9b953",
+      "email": "melpsicologa@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 276830,
+      "credits_extra": 0,
+      "saldo_total": 276830
+    },
+    {
+      "id": "b954bdc1-5a05-45bc-a387-39b20ddd65d1",
+      "email": "michelsalemed@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 116867,
+      "credits_extra": 0,
+      "saldo_total": 116867
+    },
+    {
+      "id": "ee3c549c-644a-4fc3-881e-c6432371890a",
+      "email": "mktdrsdabeleza@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 34219,
+      "credits_extra": 5415,
+      "saldo_total": 39634
+    },
+    {
+      "id": "4c94d839-bfa9-456f-b884-1acf99e9067e",
+      "email": "najla_boaviagem@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 90824,
+      "credits_extra": 0,
+      "saldo_total": 90824
+    },
+    {
+      "id": "44a0c6cc-33e9-47ea-9443-c8521fc243c3",
+      "email": "nascimento.leimob@gmail.com",
+      "plan": "free",
+      "credits_subscription": 36285,
+      "credits_extra": 7905,
+      "saldo_total": 44190
+    },
+    {
+      "id": "3d79542f-4035-44e1-9602-7d06fca501cb",
+      "email": "nelsonmoraesx@gmail.com",
+      "plan": "free",
+      "credits_subscription": 59825,
+      "credits_extra": 0,
+      "saldo_total": 59825
+    },
+    {
+      "id": "cf7dc2e4-2fcb-4496-8938-12e5b534d00a",
+      "email": "nique_depiere@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 95515,
+      "credits_extra": 0,
+      "saldo_total": 95515
+    },
+    {
+      "id": "efd96d7e-deb8-49ad-8395-dd7ce5dec962",
+      "email": "nivea.frcar@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 200000,
+      "credits_extra": 525,
+      "saldo_total": 200525
+    },
+    {
+      "id": "6ef8baaa-1f16-4477-8599-933dbcccf82f",
+      "email": "ossunajhon@gmail.com",
+      "plan": "free",
+      "credits_subscription": 54178,
+      "credits_extra": 0,
+      "saldo_total": 54178
+    },
+    {
+      "id": "a2b7fd63-48bd-4e64-8142-ebe6dc7fcaa4",
+      "email": "patchy.figueiredo@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 236512,
+      "credits_extra": 0,
+      "saldo_total": 236512
+    },
+    {
+      "id": "23ba8f71-4ab0-4e1b-80de-e634577aec69",
+      "email": "paulajordaobonato@gmail.com",
+      "plan": "free",
+      "credits_subscription": 720,
+      "credits_extra": 0,
+      "saldo_total": 720
+    },
+    {
+      "id": "67a3ca1f-c503-43c2-9303-f7484062cc26",
+      "email": "pilotodfox@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 108774,
+      "credits_extra": 525,
+      "saldo_total": 109299
+    },
+    {
+      "id": "a5ee91a5-e057-4d2c-9324-2647f29a5469",
+      "email": "postal.arquimino@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 86595,
+      "credits_extra": 120505,
+      "saldo_total": 207100
+    },
+    {
+      "id": "8467f5a0-35de-4387-a327-ece941da339d",
+      "email": "priscillarosseti@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 0,
+      "credits_extra": 45510,
+      "saldo_total": 45510
+    },
+    {
+      "id": "81d74960-46c5-44a5-9e83-6e990df59822",
+      "email": "pryscillaluizatavares@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 282095,
+      "credits_extra": 0,
+      "saldo_total": 282095
+    },
+    {
+      "id": "6ea0f188-3527-4571-a379-e016a5af56b8",
+      "email": "ptrevizann@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 16350,
+      "credits_extra": 0,
+      "saldo_total": 16350
+    },
+    {
+      "id": "7e3e3f8e-f362-430a-a4d0-7a6377aeeb92",
+      "email": "rafaelmartinscorretor11@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 231681,
+      "credits_extra": 0,
+      "saldo_total": 231681
+    },
+    {
+      "id": "140de7fc-9235-478a-bdce-febf6a4a5ba0",
+      "email": "rafapaga@uol.com.br",
+      "plan": "pro",
+      "credits_subscription": 42207,
+      "credits_extra": 10950,
+      "saldo_total": 53157
+    },
+    {
+      "id": "2ab4a0e4-d64f-4db6-a2ba-fd6caec59586",
+      "email": "rcesariojr@yahoo.com.br",
+      "plan": "pro",
+      "credits_subscription": 200000,
+      "credits_extra": 9780,
+      "saldo_total": 209780
+    },
+    {
+      "id": "f91f3e80-0b01-4006-a299-847d01a311e2",
+      "email": "reinaldo.guernelli@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 90078,
+      "credits_extra": 109827,
+      "saldo_total": 199905
+    },
+    {
+      "id": "79a3628f-9465-449f-9850-a03e64ba7789",
+      "email": "reinaldosaboia@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 185090,
+      "credits_extra": 2510,
+      "saldo_total": 187600
+    },
+    {
+      "id": "ba7a4942-cd68-4ce9-8c99-3e487778ffb0",
+      "email": "reliton.rodrigues@hotmail.com",
+      "plan": "free",
+      "credits_subscription": 709,
+      "credits_extra": 0,
+      "saldo_total": 709
+    },
+    {
+      "id": "63d1c01c-ce54-47c3-a2b1-9109a39c312a",
+      "email": "renelopes170@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 173150,
+      "credits_extra": 959,
+      "saldo_total": 174109
+    },
+    {
+      "id": "af0b6a18-0ebe-4b0d-b249-1fea9fbfeb16",
+      "email": "renildoe@yahoo.com.br",
+      "plan": "pro",
+      "credits_subscription": 33495,
+      "credits_extra": 115,
+      "saldo_total": 33610
+    },
+    {
+      "id": "86e8100e-44c3-4f41-9331-5e432856235b",
+      "email": "rh.jacque@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 153875,
+      "credits_extra": 0,
+      "saldo_total": 153875
+    },
+    {
+      "id": "1caf19d5-5ab9-44cc-bf5f-19924c6f571a",
+      "email": "ricardo@inventivebox.pt",
+      "plan": "pro",
+      "credits_subscription": 167871,
+      "credits_extra": 0,
+      "saldo_total": 167871
+    },
+    {
+      "id": "72e1121f-60fd-4cfc-ad00-08955f12f0c9",
+      "email": "richargam@gmail.com",
+      "plan": "free",
+      "credits_subscription": 35723,
+      "credits_extra": 144,
+      "saldo_total": 35867
+    },
+    {
+      "id": "9f51db2b-881e-4e22-921b-79c218e4dc85",
+      "email": "robsonbjsilva@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 200000,
+      "credits_extra": 0,
+      "saldo_total": 200000
+    },
+    {
+      "id": "dda0afb6-ab87-42d9-83d7-bf47802ed15c",
+      "email": "rodgerlopes.adv@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 250469,
+      "credits_extra": 3690,
+      "saldo_total": 254159
+    },
+    {
+      "id": "c3d214fa-4a3e-4b5b-8851-72daf64634d9",
+      "email": "rodrigo.m.adv@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 1700,
+      "credits_extra": 0,
+      "saldo_total": 1700
+    },
+    {
+      "id": "def6ab2d-1df3-44ed-b9a0-b3fadfdd0dba",
+      "email": "rogeriod.l.r1989@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 69605,
+      "credits_extra": 3960,
+      "saldo_total": 73565
+    },
+    {
+      "id": "7ded4671-0682-4ef4-9d1e-83777b526c83",
+      "email": "roogerio.costa@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 138610,
+      "credits_extra": 0,
+      "saldo_total": 138610
+    },
+    {
+      "id": "4e1b8f68-78a4-408c-8171-3c63471dc6ae",
+      "email": "rossanafq@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 27552,
+      "credits_extra": 118,
+      "saldo_total": 27670
+    },
+    {
+      "id": "fd75f694-6b8c-4b89-9e17-964f37a135b5",
+      "email": "rrneri@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 200000,
+      "credits_extra": 0,
+      "saldo_total": 200000
+    },
+    {
+      "id": "2b6bf33a-a050-4a94-b9e2-2bebfa49b172",
+      "email": "rubenpereira2235@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 73120,
+      "credits_extra": 0,
+      "saldo_total": 73120
+    },
+    {
+      "id": "ec56e117-db1c-46f3-931c-1289d12abec0",
+      "email": "sanvideomaker@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 73780,
+      "credits_extra": 0,
+      "saldo_total": 73780
+    },
+    {
+      "id": "009f5eaa-4d51-4f3f-be24-06f50b7dea5c",
+      "email": "scheibelmarcelo2@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 50143,
+      "credits_extra": 43438,
+      "saldo_total": 93581
+    },
+    {
+      "id": "af6cf806-f769-4ba5-a562-20a59eb774db",
+      "email": "sidneysantos100@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 175015,
+      "credits_extra": 0,
+      "saldo_total": 175015
+    },
+    {
+      "id": "bc739d62-9d72-4de9-9e2b-ba565cddb3af",
+      "email": "simonedalmasosp@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 0,
+      "credits_extra": 33947,
+      "saldo_total": 33947
+    },
+    {
+      "id": "92345029-1dd3-460d-ab39-9796e4f98b71",
+      "email": "sirleileudeci@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 200000,
+      "credits_extra": 0,
+      "saldo_total": 200000
+    },
+    {
+      "id": "656236d5-6716-410c-ad6a-482a74b1552f",
+      "email": "smsmathias@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 61448,
+      "credits_extra": 0,
+      "saldo_total": 61448
+    },
+    {
+      "id": "8ac61018-9f97-45c9-8d43-56f552be0e3b",
+      "email": "suporteandrecoura@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 100000,
+      "credits_extra": 0,
+      "saldo_total": 100000
+    },
+    {
+      "id": "5274b120-cfef-4b6b-adee-5c8c198a8a41",
+      "email": "tabaicoelho@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 100000,
+      "credits_extra": 0,
+      "saldo_total": 100000
+    },
+    {
+      "id": "bd4d3da9-b631-4f73-81d2-a171791ba3d4",
+      "email": "tatianamacedo@live.com",
+      "plan": "pro",
+      "credits_subscription": 258165,
+      "credits_extra": 0,
+      "saldo_total": 258165
+    },
+    {
+      "id": "3a01ee53-e4a4-47b4-8f03-3a6482cb7b41",
+      "email": "tatyalvesdubai@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 100000,
+      "credits_extra": 0,
+      "saldo_total": 100000
+    },
+    {
+      "id": "54af2616-4d3f-4fff-b66e-bc0114fb737d",
+      "email": "telma@centia.com.br",
+      "plan": "pro",
+      "credits_subscription": 72527,
+      "credits_extra": 0,
+      "saldo_total": 72527
+    },
+    {
+      "id": "6b632f38-572c-4ed8-93b4-66d2f3d65c08",
+      "email": "thiagofieker@gmail.com",
+      "plan": "free",
+      "credits_subscription": 67570,
+      "credits_extra": 0,
+      "saldo_total": 67570
+    },
+    {
+      "id": "d96375b2-edab-48a9-8ebc-429fc3555ab4",
+      "email": "thiagokarateca@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 133785,
+      "credits_extra": 0,
+      "saldo_total": 133785
+    },
+    {
+      "id": "c5c74677-a95d-424d-95c9-c0569a839719",
+      "email": "tikomuscl@gmail.com",
+      "plan": "free",
+      "credits_subscription": 71574,
+      "credits_extra": 0,
+      "saldo_total": 71574
+    },
+    {
+      "id": "649e37f2-65dc-4298-beb3-d229507f69da",
+      "email": "tonimekautocenter@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 72790,
+      "credits_extra": 1320,
+      "saldo_total": 74110
+    },
+    {
+      "id": "5530e12b-4a07-4be3-80b0-2559508b3237",
+      "email": "tuliocanella@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 55900,
+      "credits_extra": 100000,
+      "saldo_total": 155900
+    },
+    {
+      "id": "323c79e8-a65a-4a70-80eb-aa624e331c0c",
+      "email": "uriasdercilia@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 126974,
+      "credits_extra": 0,
+      "saldo_total": 126974
+    },
+    {
+      "id": "f9f06bb5-ebf4-457d-8ae7-61f81da87076",
+      "email": "valterpjunior@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 203370,
+      "credits_extra": 2370,
+      "saldo_total": 205740
+    },
+    {
+      "id": "ad098120-8ac9-47d8-bc73-c6646db0753e",
+      "email": "vaneskasoares@yahoo.com.br",
+      "plan": "pro",
+      "credits_subscription": 285785,
+      "credits_extra": 0,
+      "saldo_total": 285785
+    },
+    {
+      "id": "739f6916-8b3c-41c3-b253-1a2823c4a1d0",
+      "email": "vicentegomes@querosaltar.com.br",
+      "plan": "pro",
+      "credits_subscription": 67583,
+      "credits_extra": 120000,
+      "saldo_total": 187583
+    },
+    {
+      "id": "ef61c09e-1bcd-4806-a644-ad7885d0e41c",
+      "email": "victoralves.dev@gmail.com",
+      "plan": "free",
+      "credits_subscription": 0,
+      "credits_extra": 0,
+      "saldo_total": 0
+    },
+    {
+      "id": "0d367c27-2f06-48f5-bd33-36618aa762a9",
+      "email": "viktoraraujo@icloud.com",
+      "plan": "pro",
+      "credits_subscription": 65435,
+      "credits_extra": 800,
+      "saldo_total": 66235
+    },
+    {
+      "id": "cf513000-d594-42fa-bac1-a7de3c0431f9",
+      "email": "viniciuspillarperito@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 245208,
+      "credits_extra": 0,
+      "saldo_total": 245208
+    },
+    {
+      "id": "16b66aff-80b6-4d4f-9483-401b16209a89",
+      "email": "vivianfaleiro@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 192890,
+      "credits_extra": 0,
+      "saldo_total": 192890
+    },
+    {
+      "id": "a2baccaa-426e-4e24-9ba0-a3b98c9a6232",
+      "email": "vivistipp@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 200000,
+      "credits_extra": 0,
+      "saldo_total": 200000
+    },
+    {
+      "id": "b0b666ec-5780-4bce-833a-44541e1820c2",
+      "email": "wagnercardozo@hotmail.com",
+      "plan": "pro",
+      "credits_subscription": 51266,
+      "credits_extra": 3960,
+      "saldo_total": 55226
+    },
+    {
+      "id": "4fa92414-8f7c-458b-95b1-2a37b469acef",
+      "email": "warleysantosfranca@gmail.com",
+      "plan": "free",
+      "credits_subscription": 60030,
+      "credits_extra": 525,
+      "saldo_total": 60555
+    },
+    {
+      "id": "833ae8ce-eeaa-4e7a-9319-c116c430d531",
+      "email": "wilson.nfaustino@yahoo.com.br",
+      "plan": "pro",
+      "credits_subscription": 0,
+      "credits_extra": 87673,
+      "saldo_total": 87673
+    },
+    {
+      "id": "e9307b5f-ac7e-4314-a373-702f734fb998",
+      "email": "yafa.alima@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 276065,
+      "credits_extra": 0,
+      "saldo_total": 276065
+    },
+    {
+      "id": "493a285c-3d3e-4241-967a-c7559a25d7d0",
+      "email": "ycarlosk@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 13076,
+      "credits_extra": 0,
+      "saldo_total": 13076
+    },
+    {
+      "id": "30421f8d-8482-480a-8749-eed79cdda06b",
+      "email": "zanfolin+fastcloner@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 89970,
+      "credits_extra": 0,
+      "saldo_total": 89970
+    },
+    {
+      "id": "63debe1c-0665-45b9-8319-23708b061d3f",
+      "email": "zezinho.brambila@gmail.com",
+      "plan": "pro",
+      "credits_subscription": 286940,
+      "credits_extra": 3780,
+      "saldo_total": 290720
+    }
+  ]
+}
