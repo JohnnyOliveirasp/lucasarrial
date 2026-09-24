@@ -105,6 +105,11 @@ const CORES_SITUACAO: Record<SituacaoSgp, string> = {
   pronto: "border-[var(--status-warn)]/40 bg-[var(--status-warn)]/10 text-[var(--status-warn)]",
   aguardando: "border-[var(--hairline-strong)] bg-[var(--surface-deep)] text-[var(--mute)]",
   erro: "border-[var(--status-error)]/40 bg-[var(--status-error)]/10 text-[var(--status-error)]",
+  // COBRADO (Johnny, 24/09) é AZUL porque não é nenhum dos outros humores da
+  // tela: não é alarme (o time já agiu), não é "acabou" (o aluno segue parado)
+  // e não pode ser o cinza de AGUARDANDO — distinguir os dois é o motivo de a
+  // etiqueta existir. Azul = "bola com o aluno, já falamos com ele".
+  cobrado: "border-[var(--hue-blue)]/40 bg-[var(--hue-blue)]/10 text-[var(--hue-blue)]",
 };
 
 function Etiqueta({
@@ -673,6 +678,15 @@ export default function SgpPage() {
             n={resumoVisivel.situacoes.pronto}
             ativo={filtro?.tipo === "situacao" && filtro.valor === "pronto"}
             onClick={() => alternarFiltro("situacao", "pronto")}
+          />
+          {/* COBRADO fica entre GERADO e AGUARDANDO porque é a ordem da
+              precedência (painel.ts › montarLinha): ele só existe pra quem
+              estaria em AGUARDANDO e o time já cobrou dentro da janela. */}
+          <Contador
+            rotulo="COBRADO"
+            n={resumoVisivel.situacoes.cobrado}
+            ativo={filtro?.tipo === "situacao" && filtro.valor === "cobrado"}
+            onClick={() => alternarFiltro("situacao", "cobrado")}
           />
           <Contador
             rotulo="AGUARDANDO"

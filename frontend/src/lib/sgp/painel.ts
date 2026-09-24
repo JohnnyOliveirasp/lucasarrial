@@ -128,8 +128,18 @@ const FALTA_NO_WIZARD: Record<string, string> = {
  * `status = 'pronto'` — que não sabe nada sobre o aluno. Agora são duas:
  * `pronto` ficou com o significado honesto (gerado, aviso não confirmado) e
  * `entregue` é o que exige o carimbo. Ver `AvisoEntrega` para de onde ele sai.
+ *
+ * ── O SEXTO RÓTULO (Johnny, 24/09) ──────────────────────────────────────────
+ * *"tira o vermelho e se já cobramos muda a pessoa de tag"*. O "já cobrei" já
+ * tirava o vermelho (ver `silenciado` em `montarLinha`), mas a etiqueta seguia
+ * AGUARDANDO — e o time, que lê esta coluna, não distinguia quem já foi cobrado
+ * de quem nunca foi. COBRADO é a etiqueta desse meio-tempo: cobramos, a bola
+ * está com o aluno, a janela de silêncio ainda vale. Ela NÃO nasce aqui em
+ * `situacao()` — nasce em `montarLinha`, derivada do MESMO `silenciado` que
+ * cala o vermelho, porque as duas coisas têm que andar juntas sempre (ver o
+ * comentário lá).
  */
-export const SITUACOES = ["concluido", "erro", "entregue", "aguardando", "pronto"] as const;
+export const SITUACOES = ["concluido", "erro", "entregue", "aguardando", "pronto", "cobrado"] as const;
 export type SituacaoSgp = (typeof SITUACOES)[number];
 
 /** Em caixa alta porque é etiqueta de planilha, não frase. */
@@ -142,6 +152,7 @@ export const SITUACAO_ROTULO: Record<SituacaoSgp, string> = {
   // "acabou, não preciso mexer". Trocar o rótulo junto com o significado é o que
   // impede a mudança de passar despercebida na tela de quem trabalha nela.
   pronto: "GERADO",
+  cobrado: "COBRADO",
 };
 
 export type Situacao = {
@@ -546,7 +557,7 @@ export type LinhaPainel = {
    * são pedidos (quem comprou e nunca começou — requisito 4). Ver `naoIniciou`.
    */
   status: EtapaFila;
-  /** CONCLUÍDO / ERRO / PRONTO / AGUARDANDO — a etiqueta de planilha. */
+  /** CONCLUÍDO / ERRO / ENTREGUE / GERADO / COBRADO / AGUARDANDO — a etiqueta de planilha. */
   situacao: SituacaoSgp;
   situacaoRotulo: string;
   situacaoMotivo: string;
@@ -847,6 +858,38 @@ export function montarLinha(
   // cala para sempre: se o pedido andar, `superada` devolve o alerta sozinho.
   const silenciado = !concluido && travado && !!cobranca?.silenciado;
   const parado = !concluido && travado && !silenciado;
+
+  // ── A ETIQUETA "COBRADO" (Johnny, 24/09: "se já cobramos muda a pessoa de
+  //    tag") ────────────────────────────────────────────────────────────────
+  //
+  // Deriva do MESMO `silenciado` da linha de cima — nunca de um segundo
+  // cálculo de janela, porque duas fontes de verdade divergem e a tela
+  // mostraria uma etiqueta calma numa linha vermelha (ou o contrário). Por
+  // herdar o `silenciado`, ela ganha de graça os dois comportamentos certos:
+  //
+  //  · SÓ vence quem estaria em AGUARDANDO. A precedência é
+  //    CONCLUÍDO > ERRO > ENTREGUE > GERADO > COBRADO > AGUARDANDO: se o
+  //    pedido já andou (foto gerada, na fila, pronto) ou quebrou, o passo
+  //    real manda — cobrança não pode esconder progresso nem defeito. O
+  //    `sit.codigo === "aguardando"` é essa trava inteira, porque `situacao`
+  //    já resolveu as outras cinco na ordem certa.
+  //  · VOLTA sozinha pra AGUARDANDO quando a janela de 48h vence ou o aluno
+  //    mexe: nos dois casos `silenciado` cai, e a etiqueta cai junto — o
+  //    aluno continua parado, então volta a ser problema de gente.
+  //
+  // `situacaoPorBaixo` segue dizendo AGUARDANDO de propósito: a etiqueta é
+  // sobre o ATENDIMENTO ("já falamos com ele"), não sobre o pedido.
+  const sitNaFila: Situacao =
+    silenciado && cobranca && sit.codigo === "aguardando"
+      ? {
+          codigo: "cobrado",
+          rotulo: SITUACAO_ROTULO.cobrado,
+          motivo:
+            `Já cobraram há ${tempoHumano(cobranca.desdeMs)} (${cobranca.por}) — ` +
+            `esperando o aluno responder. Se ele não mexer, volta a AGUARDANDO ` +
+            `em ${tempoHumano(cobranca.restaMs)}.`,
+        }
+      : sit;
   // Era `p.status === "falhou"`, que é um subconjunto estrito de `situacao ===
   // "erro"`: agora a falha PARCIAL (erro carimbado com status ainda andando) e a
   // marca do time também sobem pro topo. Quem está em ERRO precisa de gente por
@@ -860,9 +903,9 @@ export function montarLinha(
     whatsapp: p.whatsapp?.trim() || "—",
     etapa: ETAPA_HUMANA[p.status] ?? p.status,
     status: p.status,
-    situacao: sit.codigo,
-    situacaoRotulo: sit.rotulo,
-    situacaoMotivo: sit.motivo,
+    situacao: sitNaFila.codigo,
+    situacaoRotulo: sitNaFila.rotulo,
+    situacaoMotivo: sitNaFila.motivo,
     situacaoPorBaixo: situacaoDoPedido(p, agora, avisoBruto).codigo,
     naoIniciou: false,
     avisado: !!aviso,
@@ -982,11 +1025,17 @@ export function resumir(linhas: LinhaPainel[]): ResumoPainel {
     entregue: 0,
     aguardando: 0,
     pronto: 0,
+    cobrado: 0,
   };
   for (const l of linhas) situacoes[l.situacao] += 1;
   return {
     total: linhas.length,
     parados: linhas.filter((l) => l.parado).length,
+    // ⚠️ `silenciado`, não `situacao === "cobrado"`, e a diferença é real: uma
+    // linha silenciada que também está em ERRO conta aqui (foi cobrada) mas a
+    // etiqueta dela é ERRO (o defeito vence — ver a precedência em
+    // `montarLinha`). Este contador responde "quantos já cobramos"; a pill
+    // COBRADO do topo responde "quantos estão SÓ esperando o aluno".
     cobrados: linhas.filter((l) => l.silenciado).length,
     concluidos: linhas.filter((l) => l.concluido).length,
     // `!== "entregue"` e não `!== "pronto"`: com o corte novo, "pronto" passou a
