@@ -692,6 +692,13 @@ export function resumirCompradores(linhas: LinhaComprador[]): ResumoCompradores 
     entregue: 0,
     aguardando: 0,
     pronto: 0,
+    // Sempre 0 NESTA aba, de propósito: COBRADO é etiqueta da FILA DE TRABALHO
+    // (nasce do `silenciado` de `montarLinha`, que precisa da janela de
+    // silêncio que a rota da fila lê do env). Esta aba chama `situacao()`
+    // direto, que nunca devolve "cobrado" — um aluno cobrado aparece COBRADO
+    // na fila e AGUARDANDO aqui. Divergência consciente: "cobrado" descreve o
+    // ATENDIMENTO, e o atendimento mora na fila.
+    cobrado: 0,
   };
   for (const l of linhas) situacoes[l.situacao] += 1;
   return {

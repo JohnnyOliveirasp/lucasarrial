@@ -435,6 +435,105 @@ test("ordem: quem já foi cobrado desce, mas fica acima de quem não precisa de 
   assert.deepEqual(ordem, ["id-1", "cobrado", "entregue"]);
 });
 
+// ---------------------------------------------------------------------------
+// A etiqueta COBRADO (pedido do Johnny, 24/09)
+//
+// "tira o vermelho e se já cobramos muda a pessoa de tag". A primeira metade
+// já existia (o `silenciado` acima); esta seção protege a segunda: a etiqueta
+// COBRADO deriva do MESMO `silenciado` (nunca de um segundo cálculo), vence SÓ
+// quem estaria em AGUARDANDO, e cai sozinha quando a janela vence.
+// ---------------------------------------------------------------------------
+
+test("cobrado dentro da janela: etiqueta vira COBRADO, e sem vermelho", () => {
+  const l = montarLinha(paradoCobrado(3), AGORA);
+  assert.equal(l.situacao, "cobrado");
+  assert.equal(l.situacaoRotulo, "COBRADO");
+  assert.equal(l.parado, false, "a etiqueta e o silêncio andam juntos");
+  // Por baixo o pedido continua AGUARDANDO: a etiqueta fala do ATENDIMENTO
+  // ("já falamos com ele"), nunca pode esconder o estado real de quem pagou.
+  assert.equal(l.situacaoPorBaixo, "aguardando");
+  // O motivo diz quem cobrou, há quanto tempo e quando volta — sem jargão.
+  assert.match(l.situacaoMotivo, /Já cobraram há 3h \(suporte@time\.com\)/);
+  assert.match(l.situacaoMotivo, /volta a AGUARDANDO em 1 dia e 21h/); // 48h - 3h
+  const jargao = /\.tsx|\.ts\b|\.cjs|PR ?#|sgp_pedidos|status ?=|user_id|cobrado_em|null|undefined|migration|endpoint/i;
+  assert.equal(jargao.test(l.situacaoMotivo), false, `jargão no motivo: ${l.situacaoMotivo}`);
+});
+
+test("48h e 1min depois a etiqueta volta a AGUARDANDO — e o vermelho volta junto", () => {
+  // Na fronteira exata ainda é COBRADO (mesma régua `<=` do silêncio)…
+  const naBorda = montarLinha(paradoCobrado(S), AGORA);
+  assert.equal(naBorda.situacao, "cobrado");
+  // …um minuto depois a janela venceu: o aluno não mexeu, volta a ser problema
+  // de gente. Nenhuma limpeza manual: os dois caem do MESMO `silenciado`.
+  const vencido = montarLinha(paradoCobrado(S + 1 / 60), AGORA);
+  assert.equal(vencido.situacao, "aguardando");
+  assert.equal(vencido.situacaoRotulo, "AGUARDANDO");
+  assert.equal(vencido.parado, true);
+});
+
+test("o passo real vence COBRADO: pedido que já andou não ganha a etiqueta", () => {
+  // O pedido saiu do wizard (está na fila de geração) com uma marca de
+  // cobrança ainda "viva" no banco. A situação do PASSO manda: cobrança não
+  // pode esconder progresso.
+  const andou = montarLinha(
+    pedido({
+      status: "enviado",
+      enviado_em: new Date(AGORA - 60 * H).toISOString(),
+      atualizado_em: new Date(AGORA - 60 * H).toISOString(),
+      cobrado_em: new Date(AGORA - 3 * H).toISOString(),
+      cobrado_por: "suporte@time.com",
+    }),
+    AGORA,
+  );
+  assert.equal(andou.situacao, "aguardando", "na fila de geração o passo manda");
+  // E se o aluno mexeu DEPOIS da cobrança (mandou foto), a marca se invalida
+  // sozinha e a etiqueta nem chega a existir.
+  const mexeu = montarLinha(
+    pedido({
+      status: "foto",
+      atualizado_em: new Date(AGORA - 2 * H).toISOString(),
+      cobrado_em: new Date(AGORA - 10 * H).toISOString(),
+      cobrado_por: "suporte@time.com",
+    }),
+    AGORA,
+  );
+  assert.equal(mexeu.situacao, "aguardando");
+});
+
+test("ERRO vence COBRADO — o defeito não se cala com cobrança (precedência)", () => {
+  // ⚠️ É ESTE teste que cai se alguém inverter a precedência e deixar COBRADO
+  // vencer o passo real (ex.: remover o `sit.codigo === "aguardando"` da
+  // derivação em montarLinha). Cenário: aluna travada no wizard, o time cobrou
+  // (janela viva) E o time marcou erro na mão. As duas marcas coexistem; a
+  // etiqueta tem que ser ERRO, porque defeito declarado vale mais que "já
+  // falamos com ela".
+  const l = montarLinha(
+    {
+      ...paradoCobrado(3),
+      erro_manual_em: new Date(AGORA - 1 * H).toISOString(),
+      erro_manual_por: "suporte@time.com",
+      erro_manual_motivo: "material veio errado",
+    },
+    AGORA,
+  );
+  assert.equal(l.silenciado, true, "a cobrança continua contada como feita");
+  assert.equal(l.situacao, "erro", "mas a etiqueta é do defeito, não da cobrança");
+});
+
+test("o contador do topo bate com o número de linhas COBRADO", () => {
+  const linhas = [
+    montarLinha(paradoCobrado(3), AGORA), // COBRADO
+    montarLinha({ ...paradoCobrado(5), id: "b" }, AGORA), // COBRADO
+    montarLinha({ ...paradoCobrado(null), id: "c" }, AGORA), // AGUARDANDO, vermelho
+    montarLinha(pedido({ id: "d", status: "pronto" }), AGORA), // GERADO
+  ];
+  const r = resumir(linhas);
+  assert.equal(r.situacoes.cobrado, 2);
+  assert.equal(r.situacoes.cobrado, linhas.filter((l) => l.situacao === "cobrado").length);
+  assert.equal(r.cobrados, 2, "o contador antigo de silenciados continua batendo");
+  assert.equal(r.parados, 1);
+});
+
 // --- SITUAÇÃO: PRONTO / AGUARDANDO / ERRO (pedido do Lucas, 10/09) -----------
 
 test("os três rótulos saem dos campos que já existem, sem coluna nova", () => {
@@ -543,12 +642,13 @@ test("o resumo conta os três buckets e eles fecham com o total", () => {
   const r = resumir(linhas);
   // `pronto: 1` = o pedido gerado SEM carimbo de aviso (montado sem `aviso`).
   // ENTREGUE é bucket próprio desde 15/09 e aqui fica vazio de propósito.
-  assert.deepEqual(r.situacoes, { concluido: 0, entregue: 0, pronto: 1, aguardando: 2, erro: 1 });
+  assert.deepEqual(r.situacoes, { concluido: 0, entregue: 0, pronto: 1, aguardando: 2, erro: 1, cobrado: 0 });
   assert.equal(
     r.situacoes.concluido +
       r.situacoes.entregue +
       r.situacoes.pronto +
       r.situacoes.aguardando +
+      r.situacoes.cobrado +
       r.situacoes.erro,
     r.total,
   );
@@ -1012,12 +1112,13 @@ test("o resumo conta os QUATRO buckets e eles fecham com o total", () => {
     }),
   ];
   const r = resumir(linhas);
-  assert.deepEqual(r.situacoes, { concluido: 2, entregue: 0, pronto: 1, aguardando: 1, erro: 1 });
+  assert.deepEqual(r.situacoes, { concluido: 2, entregue: 0, pronto: 1, aguardando: 1, erro: 1, cobrado: 0 });
   assert.equal(
     r.situacoes.concluido +
       r.situacoes.entregue +
       r.situacoes.pronto +
       r.situacoes.aguardando +
+      r.situacoes.cobrado +
       r.situacoes.erro,
     r.total,
   );
