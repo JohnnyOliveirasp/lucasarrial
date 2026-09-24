@@ -32,37 +32,22 @@ import {
 import { R2_BUCKETS } from "@/lib/r2/client";
 import { runpodSubmitTrain, webhookUrlFor } from "@/lib/runpod/client";
 import { estimateSpeechSeconds } from "@/lib/audio/speech-estimate";
+import {
+  buildSampleKey,
+  DEFAULT_MAX_STEPS,
+  TRAIN_EXPIRES_SECONDS,
+  TRAIN_LANGUAGES,
+  trainExecutionTimeoutMs,
+} from "@/lib/voices/treino-config";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const TRAIN_EXPIRES_SECONDS = 2 * 60 * 60; // 2h
-// 500 = config que funciona com este dataset/codebase + alpha=16 (Aluno2 prova).
-// 1000 (default do desktop VoiceLoraStudio/core.py:683) causou overfit no
-// LoRA -> EsposaLucas saiu embolada com 26s de mumble no meio. Dataset/setup
-// daqui responde melhor a 500 + alpha=16.
-const DEFAULT_MAX_STEPS = 500;
+// Config do despacho (max_steps, validade de URL, idiomas, teto de execução)
+// mora em `lib/voices/treino-config.ts` — fonte ÚNICA com o redespacho da
+// retentativa automática. Constante copiada aqui divergiria em silêncio.
 
 /** Espelha TRAIN_MIN_USEFUL_SECONDS do runpod-worker/handler.py (10 min). */
 const MIN_USEFUL_SPEECH_SECONDS = 10 * 60;
-
-// Idiomas aceitos pro Whisper do treino (referência/amostra). Default pt —
-// comportamento inalterado pro app; es/en usados pelas Vozes Prontas.
-const TRAIN_LANGUAGES = new Set(["pt", "es", "en"]);
-
-/**
- * Teto de execução do job (policy.executionTimeout), como nos clones
- * (video-clone/config.ts). Medido em prod 21-22/07: treino de dataset
- * 20-80min roda 6-8min em GPU rápida, mas worker frio + GPU lenta passou de
- * 10min (default antigo do endpoint → "executionTimeout exceeded"). Base
- * 20min pro cold start + 0,3s de GPU por segundo de áudio: 60min de áudio →
- * teto 38min. Rede de segurança, não meta.
- */
-function trainExecutionTimeoutMs(durationSeconds: number | null): number {
-  const dur = Math.ceil(durationSeconds || 3600); // sem duração conhecida = pior caso
-  // Base 30min (07/08: 2 treinos morreram em workers FRIOS recém-criados no
-  // rebalance da quota — a carga inicial do modelo come o teto antigo de 20).
-  return (30 * 60 + Math.ceil(dur * 0.3)) * 1000;
-}
 
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await authenticate(request);
@@ -164,7 +149,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
   const referenceKey = buildAutoReferenceKey(auth.user_id, voice.id);
   // Amostra automática pós-treino (anti-churn): o worker gera ~10s com a voz
   // nova e sobe aqui; o webhook/sync vira uma linha em `generations` (ready).
-  const sampleKey = `${auth.user_id}/${voice.id}/sample.wav`;
+  const sampleKey = buildSampleKey(auth.user_id, voice.id);
 
   try {
     audioUrls = await Promise.all(

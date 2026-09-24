@@ -25,6 +25,13 @@ import {
 } from "@/lib/voices/falha-de-treino";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import {
+  causaEhRetentavel,
+  deveRetentarTreino,
+  MAX_RETENTATIVAS_DE_TREINO,
+} from "@/lib/voices/retentativa-treino";
+import { redespacharTreinoFalho } from "@/lib/voices/redespachar-treino";
+import { buildSampleKey } from "@/lib/voices/treino-config";
+import {
   classifyCause,
   ehChunkDoDatasetInvalido,
   errorSignature,
@@ -259,6 +266,32 @@ function friendlyTrainError(
  * acima, na ordem de execução) grava em `training_jobs.trainer_stderr`. Ler de
  * volta só criaria uma corrida com a própria escrita e um modo de falha novo.
  */
+/**
+ * O CONTADOR PERSISTIDO da retentativa automática (cartão bb4d4cd0).
+ *
+ * Não é coluna nova nem variável em memória: cada tentativa de treino já vira
+ * uma linha em `training_jobs`, e o gate idempotente marca a desta falha como
+ * `failed` ANTES de qualquer decisão de retentativa. Contar as `failed` da voz
+ * É contar as falhas deste treino — reinício de worker/backend não zera nada,
+ * porque a conta mora no banco. (Voz `failed` é terminal e o recomeço orgânico
+ * é voz NOVA, então voice_id ≈ treino; ver retentativa-treino.ts.)
+ *
+ * COUNT com `head: true`, não select de linhas: o `.select()` do Supabase
+ * corta em 1000 em silêncio, e contagem não pode herdar esse teto.
+ *
+ * `null` = a contagem falhou → quem decide (deveRetentarTreino) NÃO retenta.
+ * Teto sem contador provado é loop em potência.
+ */
+async function contarFalhasDeTreinoDaVoz(voiceId: string): Promise<number | null> {
+  const { count, error } = await getAdmin()
+    .from("training_jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("voice_id", voiceId)
+    .eq("status", "failed");
+  if (error || typeof count !== "number") return null;
+  return count;
+}
+
 async function abrirChamadoDaFalhaTecnica(args: {
   userId: string;
   userEmail: string | null;
@@ -268,6 +301,10 @@ async function abrirChamadoDaFalhaTecnica(args: {
   rawError: string;
   /** `out.stderr_tail` / `out.trainer_returncode`, ambos podem faltar. */
   diag: DiagnosticoTrainer;
+  /** true = esta falha veio DEPOIS de uma retentativa automática (teto 1
+   *  atingido). Vai na descrição — quem varre a fila precisa saber que
+   *  "repetir" já foi tentado pela máquina antes de repetir na mão. */
+  retentativaEsgotada: boolean;
 }): Promise<number | null> {
   // Uma causa só, arbitrada num lugar só. Perguntar `ehCudaOom` direto aqui
   // repetiria a precedência que `classifyCause` já resolve (material do aluno
@@ -300,6 +337,17 @@ async function abrirChamadoDaFalhaTecnica(args: {
         `e-mail: ${args.userEmail ?? "(não encontrado em profiles)"}`,
         `runpod_job_id: ${args.runpodJobId} (${args.runpodStatus})`,
         ``,
+        // Só quando a máquina JÁ retentou este treino. A frase existe pra
+        // impedir o retrabalho cego: sem ela, quem varre a fila lê "repetir
+        // costuma curar" (título do OOM) e manda de novo o que a retentativa
+        // automática acabou de provar que não cura sozinho.
+        ...(args.retentativaEsgotada
+          ? [
+              `Retentativa automática: JÁ USADA (teto ${MAX_RETENTATIVAS_DE_TREINO}) — ` +
+                `esta é a falha definitiva. Retreinar de novo é decisão humana.`,
+              ``,
+            ]
+          : []),
         // Só quando o stderr PROVA o OOM. Sem prova, nada de conduta: falha
         // cega não vira "tente de novo" por palpite.
         ...(oom ? [notaDeTransitoriedade(args.diag), ``] : []),
@@ -656,7 +704,81 @@ export async function finalizeTraining(args: {
    *  no valor em vez do fato. */
   let valorEstornado = 0;
 
+  /** Esta falha veio depois da retentativa automática (teto 1 já usado)? */
+  let retentativaEsgotada = false;
+
   if (!success) {
+    // A natureza da falha decide TUDO que vem abaixo (retentativa, estorno,
+    // chamado), então é apurada primeiro — e uma vez só.
+    falhaNossa = falhaEhNossa({
+      erroDeDataset: isDatasetError(out.error) || isDatasetError(rawError),
+      arquivoCorrompido: isCorruptFileError(out.error) || isCorruptFileError(rawError),
+    });
+    // Mesmíssima fonte que `registrarSaidaDoTrainer` acabou de persistir em
+    // `training_jobs` — em memória, sem ida de volta ao banco.
+    const diag: DiagnosticoTrainer = {
+      stderr: typeof out.stderr_tail === "string" ? out.stderr_tail : null,
+      returncode: typeof out.trainer_returncode === "number" ? out.trainer_returncode : null,
+    };
+
+    /**
+     * ── RETENTATIVA AUTOMÁTICA: 1x, nunca mais (cartão bb4d4cd0, 24/09) ─────
+     *
+     * Autorizada pelo Johnny com teto de 1 por treino. A decisão inteira
+     * (quais causas têm chance, por que o teto é hard, onde mora o contador)
+     * está em `retentativa-treino.ts`; aqui só a ordem importa, e ela é
+     * deliberada:
+     *
+     *  · DEPOIS do gate idempotente — a linha desta falha já está `failed`,
+     *    então `contarFalhasDeTreinoDaVoz` já a inclui: 1ª falha conta 1.
+     *  · ANTES do estorno — a tentativa nova corre por conta do débito
+     *    original. Estornar aqui e cobrar de novo no redespacho seria mexer
+     *    duas vezes no extrato pelo MESMO treino; não estornar e não cobrar
+     *    deixa o extrato exatamente como um treino que demorou mais.
+     *  · ANTES da mensagem/chamado — retentativa que deu certo não é falha
+     *    para o aluno: a voz segue `training` e ele nem fica sabendo. O
+     *    diagnóstico da tentativa falha NÃO se perde: `registrarSaidaDoTrainer`
+     *    e o claim (error_message cru) já gravaram tudo em `training_jobs`.
+     *
+     * Se o REDESPACHO falhar (RunPod fora, R2 tossiu), cai no caminho normal
+     * de falha logo abaixo — estorno + chamado — como se a retentativa não
+     * existisse. Nunca pior que hoje.
+     */
+    if (falhaNossa) {
+      const cause = classifyCause(rawError, diag);
+      const falhasDaVoz = await contarFalhasDeTreinoDaVoz(voiceId);
+      // Causa retentável que chegou aqui com >1 falha = o teto já foi gasto
+      // neste treino. Vai escrito no chamado, aconteça o que acontecer abaixo.
+      retentativaEsgotada =
+        causaEhRetentavel(cause) &&
+        falhasDaVoz !== null &&
+        falhasDaVoz > MAX_RETENTATIVAS_DE_TREINO;
+
+      if (deveRetentarTreino({ falhaNossa, cause, falhasDaVoz })) {
+        const redespacho = await redespacharTreinoFalho({ voiceId, userId });
+        if (redespacho.ok) {
+          logger.info("api", "voice.train.retentativa_automatica", {
+            voiceId,
+            runpodJobIdFalho: runpodJobId,
+            runpodJobIdNovo: redespacho.runpodJobId,
+            cause,
+            falhasDaVoz,
+          });
+          // A voz continua `training` (o redespacho já apontou pro job novo).
+          // Sem estorno, sem chamado, sem mensagem: para o aluno este treino
+          // ainda está acontecendo — e está.
+          return { applied: true, status: "training" };
+        }
+        logger.warn("api", "voice.train.retentativa_nao_despachou", {
+          voiceId,
+          runpodJobIdFalho: runpodJobId,
+          cause,
+          falhasDaVoz,
+          motivo: redespacho.motivo,
+        });
+      }
+    }
+
     const { data: profile } = await admin
       .from("profiles")
       .select("email")
@@ -686,13 +808,9 @@ export async function finalizeTraining(args: {
     }
     credito = desfechoDoCredito({ billed, estornoOk });
 
-    falhaNossa = falhaEhNossa({
-      erroDeDataset: isDatasetError(out.error) || isDatasetError(rawError),
-      arquivoCorrompido: isCorruptFileError(out.error) || isCorruptFileError(rawError),
-    });
-
     // O chamado nasce ANTES da mensagem porque é ele que dá à frase "nossa
-    // equipe já está com ele" o direito de existir.
+    // equipe já está com ele" o direito de existir. (`falhaNossa` e o `diag`
+    // foram apurados lá em cima, antes da retentativa — mesma fonte.)
     if (falhaNossa) {
       chamado = await abrirChamadoDaFalhaTecnica({
         userId,
@@ -701,13 +819,8 @@ export async function finalizeTraining(args: {
         runpodJobId,
         runpodStatus,
         rawError,
-        // Mesmíssima fonte que `registrarSaidaDoTrainer` acabou de persistir em
-        // `training_jobs` — em memória, sem ida de volta ao banco.
-        diag: {
-          stderr: typeof out.stderr_tail === "string" ? out.stderr_tail : null,
-          returncode:
-            typeof out.trainer_returncode === "number" ? out.trainer_returncode : null,
-        },
+        diag,
+        retentativaEsgotada,
       });
     }
   }
@@ -856,7 +969,7 @@ export async function finalizeTraining(args: {
 
   // ── Amostra automática → linha ready em generations (player do histórico) ─
   if (success && out.sample_uploaded) {
-    const sampleKey = `${userId}/${voiceId}/sample.wav`;
+    const sampleKey = buildSampleKey(userId, voiceId);
     // Re-treino sobrescreve o wav no R2; remove a linha antiga pra não duplicar.
     await admin
       .from("generations")
