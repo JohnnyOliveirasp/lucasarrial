@@ -207,3 +207,85 @@ Os mesmos de 11hZ, sem re-escalar (doutrina de 17/09: **lote, não repetição**
   status mantido `investigating`, `resolution_note` **não tocada** (0 chars);
   `affected_emails` **1 → 2**, relido do banco depois de gravar.
 - Carta: `uid 3345` conferido na pasta remota, não no que o script planejava.
+
+---
+
+## 10. ADENDO — o que quebrou NA PRÓPRIA RONDA, depois do log acima
+
+Escrito às ~11h57Z, depois que o corpo deste log já estava fechado. Registro
+porque ronda que esconde o próprio tropeço não serve de prova.
+
+### 10.1 O shell morreu cego, e o diagnóstico óbvio estava errado
+
+Ao ir commitar este log, a ferramenta Bash parou de funcionar **inteira**:
+`Exit code 1`, stdout e stderr **vazios**. Nem `echo alive` respondia. Despachei
+um subagente pra terminar o commit e ele bateu no mesmo muro e concluiu "a Bash
+está quebrada neste ambiente" — **diagnóstico errado**, e errado pela mesma
+razão que o meu: não existe mensagem de erro.
+
+A causa só apareceu porque tentei criar um worktree e o **git** falou o que o
+shell não falava:
+
+```
+fatal: could not write to '/tmp/frank-land-main/.git': Disk quota exceeded
+```
+
+**`/tmp` é um tmpfs de 16G, estava com 13G usados (80%).** Entulho, ~9 GB só nos
+dez maiores, tudo **worktree abandonado** de rondas e reviews anteriores
+(`wt_ficha`, `gerente-358`, `gerente-react-branch`, `pr328-review`, `wt439`...).
+Inodes estavam ok (33%) — era espaço mesmo. Escrever arquivo em `/tmp` devolvia
+`EDQUOT`.
+
+Lição que fica, e vale além desta ronda: **`Exit code 1` sem saída nenhuma não é
+"a ferramenta quebrou", é "não consigo escrever em disco".** O agente fica cego
+justamente no momento em que mais precisa enxergar.
+
+### 10.2 O meu log caiu na branch do `coder` — a falha que estas ordens mandam caçar
+
+Pior que o shell. O `coder`, despachado por mim no card `41e23505`, foi trabalhar
+**no mesmo diretório em que eu estava rodando a ronda** e deu checkout numa
+branch nova (`feat/referencia-nao-clona-encerramento`) **debaixo de mim**.
+
+Resultado medido: meu commit caiu na **branch de feature**, não na main, e ainda
+com **mensagem mentirosa** — `fix(#410): chamado aberto na chave velha volta a
+somar`, sobra de um `/tmp/msg.txt` de outra sessão que o `-F` pegou antes de eu
+reescrever o arquivo:
+
+```
+23540ef9  em feat/referencia-nao-clona-encerramento
+          _frank/prova/2026-09-24_rotina_falhas_12h.md + a correção do instrumento
+```
+
+É exatamente o modo de falha que o passo fixo de fim de ronda existe pra pegar
+(*"em 19/08 um fix de aluno ficou 9h preso assim"*). Desta vez pegou — mas pegou
+**por acidente**, porque o shell caiu e eu fui olhar; não porque a conferência
+rodou. Isso é sorte, não processo, e escrevo assim de propósito.
+
+**Remediado à mão:** conteúdo replantado na main pelo commit **`f327906f`**, via
+worktree descartável em `/mnt/Data/_land_main` (já removido, e **fora do /tmp**
+justamente por causa de 10.1). Push conferido, `git log origin/main..HEAD`
+**vazio**, e os dois arquivos conferidos **na `origin/main`**, não no que o
+script pretendia fazer.
+
+**Dívida que fica:** o `23540ef9` **continua** na branch do `coder` com o título
+falso. Quem fechar o PR do `41e23505` tem que **derrubar esse commit** — o
+conteúdo já está na main, e deixá-lo lá planta um "fix(#410)" mentiroso no
+histórico da feature.
+
+### 10.3 Despachado
+
+Card **`ed5957d2`**, dono `coder`, com os dois defeitos e as duas travas pedidas:
+operário nunca dá checkout na árvore compartilhada (worktree próprio, entregue
+pronto pelo despacho ou hook que recuse), e worktree de agente não nasce mais em
+`/tmp` (tmpfs, é RAM) e sim em `/mnt/Data` (916G, 4% usado). A limpeza dos ~9 GB
+foi pedida como **lista para eu autorizar**, não como apagar — regra #101/#210:
+worktree abandonado pode conter commit não publicado, e foi assim que trabalho
+morreu em 23/09.
+
+### 10.4 O que isto NÃO invalida
+
+Nada do que está nos itens 1 a 7 dependeu do shell que caiu: a medição das 1405
+vozes, a auditoria das 10, a carta ao Christian (uid 3345, cópia confirmada na
+pasta remota), a nota do `#537` e o `affected_emails` foram todos gravados e
+**relidos do banco** antes da queda. O que a queda atingiu foi só o transporte do
+registro — e o registro está na main.
