@@ -2084,7 +2084,13 @@
         "pronto": "Captioned video ready — moves on to publishing.",
         "brollEmBreve": "Extra scenes over the clone (b-roll) and transitions arrive in the next step of this phase.",
         "semCreditos": "Not enough credits.",
-        "erro": "Couldn't caption the video. Try again."
+        "erro": "Couldn't caption the video. Try again.",
+        "substituir": {
+          "titulo": "This replaces what you already have",
+          "texto": "Captioning again replaces the captioned version you already have — the current one is lost. You'll be charged {custo} more credits.",
+          "cancelar": "Cancel",
+          "confirmar": "Replace anyway ({custo} cr)"
+        }
       },
       "cenas": {
         "legendas": "Captions (karaoke, 2 words at a time)",
@@ -2126,7 +2132,15 @@
         "erroIniciar": "Couldn't prepare the audio. Try again.",
         "erroPlanejar": "Couldn't plan the scenes. Reload and try again.",
         "erroCenas": "Couldn't generate the scenes. Try again.",
-        "erroAplicar": "Couldn't apply the b-roll. Try again."
+        "erroAplicar": "Couldn't apply the b-roll. Try again.",
+        "voltarOriginal": "Back to the original video",
+        "voltarOriginalNota": "Drops the edit: publishing goes back to the clone video as it was. Nothing is deleted and no credits are charged. To get the edit back you have to apply it again — and pay again.",
+        "substituir": {
+          "titulo": "This replaces what you already have",
+          "texto": "Applying again replaces the b-roll version you already have — the current one is lost. You'll be charged {custo} more credits.",
+          "cancelar": "Cancel",
+          "confirmar": "Replace anyway ({custo} cr)"
+        }
       },
       "legendaPicker": {
         "estilo": "Caption style",

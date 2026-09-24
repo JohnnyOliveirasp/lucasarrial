@@ -11,10 +11,11 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Check, Clapperboard, Film, Loader2, X } from "lucide-react";
+import { AlertTriangle, Check, Clapperboard, Film, Loader2, RotateCcw, X } from "lucide-react";
 import { STUDIO_SCENE_COST } from "@/lib/studio/pricing";
 import { STUDIO_CLEAN_COST } from "@/lib/credits/config";
 import { EDICAO_BROLL_COST } from "@/lib/edicao/pricing";
+import { CODIGO_SUBSTITUICAO, podeVoltarAoOriginal, voltarAoOriginal } from "@/lib/edicao/reaplicar";
 import type { AudioSel, EdicaoDraft } from "./edicao-wizard";
 
 type Sugestao = { sentence: number; text: string; reused: boolean };
@@ -53,6 +54,8 @@ export function EditarCloneBroll({ draft, onChange }: Props) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  /** Texto da recusa 409 do servidor — abre o diálogo de substituir. */
+  const [confirmarSubst, setConfirmarSubst] = useState<string | null>(null);
   const job = draft.brollJob;
 
   const carregar = useCallback(async (id: string) => {
@@ -174,7 +177,12 @@ export function EditarCloneBroll({ draft, onChange }: Props) {
     }
   }
 
-  async function aplicar() {
+  /**
+   * Aplica o b-roll. `confirmado` só vai true quando a pessoa passou pelo
+   * diálogo de substituição — a chave de saída é determinística e o arquivo
+   * anterior se perde (caso Leonice 19/09: 4 débitos, 1 arquivo).
+   */
+  async function aplicar(confirmado = false) {
     if (!projectId || !draft.video || draft.video.kind === "cenas") return;
     setBusy("aplicar");
     setErro(null);
@@ -182,12 +190,23 @@ export function EditarCloneBroll({ draft, onChange }: Props) {
       const res = await fetch("/api/v1/edicao/broll", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: projectId, video: { kind: draft.video.kind, id: draft.video.id } }),
+        body: JSON.stringify({
+          project_id: projectId,
+          video: { kind: draft.video.kind, id: draft.video.id },
+          ...(confirmado ? { confirmar_substituicao: true } : {}),
+        }),
       });
       const j = await res.json().catch(() => ({}));
       if (res.status === 402) throw new Error(t("semCreditos"));
+      // 409: já existe saída e ninguém confirmou. NÃO é erro — é a pergunta.
+      // Nada foi cobrado aqui; o texto vem do servidor (fonte única do aviso).
+      if (res.status === 409 && j?.error?.code === CODIGO_SUBSTITUICAO) {
+        setConfirmarSubst(j.error.message ?? t("substituir.texto", { custo: EDICAO_BROLL_COST }));
+        return;
+      }
       if (!res.ok) throw new Error(j?.error?.message ?? j?.message ?? t("erroAplicar"));
       const d = j?.data ?? j;
+      setConfirmarSubst(null);
       onChange({ brollJob: { job: d.job_id, key: d.output_key } });
     } catch (e) {
       setErro(e instanceof Error && e.message ? e.message : t("erroAplicar"));
@@ -196,6 +215,22 @@ export function EditarCloneBroll({ draft, onChange }: Props) {
     }
   }
 
+  /**
+   * "Voltar ao original" (defeito 1, 19/09): a tela só PARA de apontar pra
+   * saída de edição. Não apaga nada no R2, não chama job, não cobra crédito —
+   * o vídeo do clone (`video_clones.video_path`) nunca foi destruído.
+   */
+  function voltar() {
+    setVideoUrl(null);
+    setErro(null);
+    onChange(voltarAoOriginal());
+  }
+
+  const mostrarVoltar = podeVoltarAoOriginal({
+    videoEditadoKey: draft.videoEditadoKey,
+    jobEmVoo: job !== null || draft.captionJob !== null,
+  });
+
   const novasMarcadas = plano ? plano.filter((s) => marcadas.has(s.sentence) && !s.reused).length : 0;
 
   return (
@@ -203,6 +238,23 @@ export function EditarCloneBroll({ draft, onChange }: Props) {
       <p className="flex items-center gap-2 text-[13.5px] font-semibold text-[var(--ink)]">
         <Clapperboard className="size-4" /> {t("titulo")}
       </p>
+
+      {/* Alavanca que faltava (19/09): quem aplicou e se arrependeu só tinha
+          "aplicar de novo" — e aplicar de novo sobrescreve o que já foi pago.
+          Fica FORA do condicional grande porque vale sempre que existe uma
+          edição em uso, inclusive quando o b-roll nem foi iniciado. */}
+      {mostrarVoltar && (
+        <div className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3 py-2.5">
+          <button
+            type="button"
+            onClick={voltar}
+            className="flex w-fit items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] px-3.5 py-2 text-[13px] text-[var(--ink)] hover:border-[var(--hairline-bright)]"
+          >
+            <RotateCcw className="size-3.5" /> {t("voltarOriginal")}
+          </button>
+          <p className="text-[11.5px] leading-snug text-[var(--ash)]">{t("voltarOriginalNota")}</p>
+        </div>
+      )}
 
       {job ? (
         <p className="flex items-center gap-2 text-[13.5px] text-[var(--ink)]">
@@ -305,6 +357,51 @@ export function EditarCloneBroll({ draft, onChange }: Props) {
       )}
 
       {erro && <p className="text-[13px] text-red-400">{erro}</p>}
+
+      {/* Diálogo de SUBSTITUIÇÃO (19/09). O texto vem do servidor — é o mesmo
+          que recusou a chamada — pra não existir duas versões do aviso. Nada
+          foi cobrado até aqui: o 409 acontece antes do gate de crédito. */}
+      {confirmarSubst && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--canvas)]/80 p-4 backdrop-blur"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setConfirmarSubst(null)}
+        >
+          <div
+            className="flex w-full max-w-md flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-300" />
+              <h3 className="text-xl font-semibold tracking-[-0.01em] text-[var(--ink)]">
+                {t("substituir.titulo")}
+              </h3>
+            </div>
+            <p className="text-sm text-[var(--body)]">{confirmarSubst}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmarSubst(null)}
+                className="inline-flex h-10 items-center rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-elevated)] px-[18px] text-[14px] font-medium text-[var(--ink)] hover:border-[var(--hairline-bright)]"
+              >
+                {t("substituir.cancelar")}
+              </button>
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => {
+                  setConfirmarSubst(null);
+                  void aplicar(true);
+                }}
+                className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] bg-[var(--ink)] px-[18px] text-[14px] font-semibold text-[var(--surface-deep)] disabled:opacity-40"
+              >
+                {t("substituir.confirmar", { custo: EDICAO_BROLL_COST })}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
