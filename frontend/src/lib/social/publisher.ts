@@ -12,6 +12,7 @@ import { createPresignedGet } from "@/lib/r2/presigned";
 import { decryptToken, encryptToken } from "@/lib/social/crypto";
 import {
   containerStatus,
+  contentPublishingLimit,
   createContainer,
   friendlyInstagramError,
   mediaPermalink,
@@ -22,8 +23,12 @@ import {
 import { advanceTikTokPublication, startTikTokPublication } from "@/lib/social/tiktok-publish";
 import { DEFAULT_GRADUATION_STRATEGY } from "@/lib/social/trial-reel-pure";
 import {
+  COTA_META_RETRY_MS,
+  decidirCotaMeta,
+  decidirEnvioNormal,
   decidirEnvioTrial,
   decidirRetryTrial,
+  resolverEspacamentoMs,
   type TrialAnterior,
 } from "@/lib/social/trial-guardrails-pure";
 import type { PublicationRow, SocialAccountRow } from "@/lib/db/types";
@@ -95,6 +100,39 @@ export async function carregarTrialsAnteriores(
   }));
 }
 
+/**
+ * Envios NORMAIS (não-trial) anteriores da conta no Instagram — a fonte do
+ * espaçamento de post normal. platform_options.sent_at (gravado no envio)
+ * é a fonte; linha antiga sem sent_at usa created_at como proxy (permissivo
+ * pra agendado antigo — erra pro lado de deixar passar, e some sozinho
+ * conforme sent_at passa a existir nas linhas novas). Janela de 7 dias
+ * cobre qualquer espaçamento configurável razoável.
+ */
+export async function carregarEnviosNormais(
+  accountId: string,
+  excetoPubId?: string,
+): Promise<Array<string | null>> {
+  const desde = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+  let query = getAdmin()
+    .from("publications")
+    .select("id, status, created_at, platform_options")
+    .eq("account_id", accountId)
+    .eq("platform", "instagram")
+    .in("status", ["processing", "published"])
+    .gte("created_at", desde)
+    .limit(200);
+  if (excetoPubId) query = query.neq("id", excetoPubId);
+  const { data } = await query;
+  return ((data ?? []) as Array<{
+    status: string;
+    created_at: string;
+    platform_options: Record<string, unknown> | null;
+  }>)
+    // trial fica fora: o espaçamento é POR TIPO (trial tem o dele, mais longo)
+    .filter((row) => String(row.platform_options?.is_trial) !== "true")
+    .map((row) => (row.platform_options?.sent_at as string | undefined) ?? row.created_at);
+}
+
 /** Token expirado/revogado → marca a conta e a publicação de uma vez. */
 async function failForAuth(pub: PublicationRow, message: string): Promise<void> {
   await getAdmin()
@@ -122,6 +160,7 @@ export async function startPublication(pub: PublicationRow): Promise<void> {
     is_trial?: boolean;
     graduation_strategy?: string;
     trial_sent_at?: string;
+    sent_at?: string;
     guardrail_block?: string;
   };
   const ehTrial = Boolean(opts.is_trial) && pub.media_type === "reel";
@@ -135,6 +174,7 @@ export async function startPublication(pub: PublicationRow): Promise<void> {
       agora: new Date().toISOString(),
       mediaUrl: pub.media_url,
       anteriores,
+      espacamentoMs: resolverEspacamentoMs("trial", process.env),
     });
     if (!decisao.permitido) {
       if (decisao.liberadoEm === null) {
@@ -158,6 +198,50 @@ export async function startPublication(pub: PublicationRow): Promise<void> {
       }
       return;
     }
+  } else {
+    // ESPAÇAMENTO DE POST NORMAL — comportamento NOVO em caminho que já está
+    // em produção (antes o normal não tinha espaçamento nenhum): 1h por
+    // padrão entre publicações não-trial da conta, configurável por env.
+    // Bloqueio NUNCA é failed: continua ready com scheduled_at = liberadoEm
+    // e o sweeper publica sozinho na hora certa.
+    const decisaoNormal = decidirEnvioNormal({
+      agora: new Date().toISOString(),
+      enviosAnteriores: await carregarEnviosNormais(pub.account_id, pub.id),
+      espacamentoMs: resolverEspacamentoMs("normal", process.env),
+    });
+    if (!decisaoNormal.permitido) {
+      await patch(pub.id, {
+        status: "ready",
+        scheduled_at: decisaoNormal.liberadoEm,
+        error: decisaoNormal.erro,
+      });
+      return;
+    }
+  }
+  // COTA DA PRÓPRIA META — GET /{ig-user-id}/content_publishing_limit ANTES
+  // do envio. SOMA com as regras locais acima (o nosso 6/dia do trial é mais
+  // restritivo e continua valendo) — quem barrar primeiro manda. Se a
+  // CONSULTA falhar (rede, token, 5xx), NÃO barra: instrumento quebrado não
+  // pode derrubar a publicação — registra e segue com as regras locais.
+  try {
+    const cota = await contentPublishingLimit(
+      decryptToken(account.access_token_encrypted),
+      account.account_ref,
+    );
+    const decisaoCota = decidirCotaMeta(cota);
+    if (!decisaoCota.permitido) {
+      await patch(pub.id, {
+        status: "ready",
+        scheduled_at: new Date(Date.now() + COTA_META_RETRY_MS).toISOString(),
+        error: decisaoCota.erro,
+      });
+      return;
+    }
+  } catch (e) {
+    console.warn(
+      "[social] consulta content_publishing_limit falhou; seguindo com as regras locais:",
+      e,
+    );
   }
   try {
     const token = decryptToken(account.access_token_encrypted);
@@ -174,11 +258,18 @@ export async function startPublication(pub: PublicationRow): Promise<void> {
       container_id: containerId,
       attempts: pub.attempts + 1,
       error: null,
-      // trial_sent_at é a fonte do limite diário e do espaçamento (módulo
-      // puro lê daqui) — gravado no MESMO patch que confirma o envio.
+      // sent_at é a fonte do espaçamento de post normal; trial_sent_at é a
+      // fonte do limite diário e do espaçamento do trial (módulo puro lê
+      // daqui) — gravados no MESMO patch que confirma o envio.
       ...(ehTrial
-        ? { platform_options: { ...opts, trial_sent_at: new Date().toISOString() } }
-        : {}),
+        ? {
+            platform_options: {
+              ...opts,
+              sent_at: new Date().toISOString(),
+              trial_sent_at: new Date().toISOString(),
+            },
+          }
+        : { platform_options: { ...opts, sent_at: new Date().toISOString() } }),
     });
   } catch (e) {
     if (e instanceof InstagramError && (e.status === 401 || e.code === 190)) {

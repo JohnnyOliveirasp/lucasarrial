@@ -7,8 +7,13 @@
  * MUTAÇÃO — cada regra tem um par de fronteira; afrouxe UMA regra e o teste
  * correspondente cai (guarda que passa com e sem a regra não prova nada):
  *   - limite 6/dia → 7 (ou remover)      → cai o teste 1 (6 na janela bloqueia)
+ *   - limite NOSSO trocado pelo da Meta  → caem os testes 1 e 22 (6 barra
+ *     mesmo com quota_usage 0/100 — o 6 é mais restritivo e não é substituído)
  *   - janela de 24h esticada             → cai o teste 3 (25h atrás NÃO conta)
- *   - espaçamento 2h30 → 2h (ou remover) → cai o teste 4 (2h29 bloqueia)
+ *   - espaçamento trial 2h → 1h30/remover→ cai o teste 4 (1h59 bloqueia)
+ *   - espaçamento normal 1h removido     → cai o teste 19 (59min bloqueia)
+ *   - cota Meta: null passando a barrar  → cai o teste 20 (falha da consulta
+ *     NUNCA barra — instrumento quebrado não derruba publicação)
  *   - breaker 24h encurtado/removido     → cai o teste 6 (falha há 1h bloqueia)
  *   - breaker sem excluir guardrail_block→ cai o teste 8 (bloqueio NOSSO não abre)
  *   - dedupe removido                    → cai o teste 9 (mesmo vídeo bloqueia)
@@ -25,15 +30,22 @@ import { fileURLToPath } from "node:url";
 import {
   BACKOFF_429_BASE_MS,
   BREAKER_MS,
-  ESPACAMENTO_MINIMO_MS,
+  ESPACAMENTO_NORMAL_PADRAO_MIN,
+  ESPACAMENTO_TRIAL_PADRAO_MIN,
   JANELA_DIARIA_MS,
   LIMITE_TRIALS_POR_DIA,
   chaveDedupe,
+  decidirCotaMeta,
+  decidirEnvioNormal,
   decidirEnvioTrial,
   decidirRetryTrial,
   momentoEnvio,
+  resolverEspacamentoMs,
   type TrialAnterior,
 } from "./trial-guardrails-pure.ts";
+
+const ESPACAMENTO_TRIAL_MS = ESPACAMENTO_TRIAL_PADRAO_MIN * 60_000;
+const ESPACAMENTO_NORMAL_MS = ESPACAMENTO_NORMAL_PADRAO_MIN * 60_000;
 
 // ───────── relógio fixo e fábrica de linhas (nada lê Date.now) ─────────
 
@@ -95,29 +107,52 @@ test("limite diário: envio há 25h fica FORA da janela e não conta", () => {
   assert.deepEqual(d, { permitido: true });
 });
 
-// ───────── regra 2: espaçamento mínimo de 2h30 ─────────
+// ───────── regra 2: espaçamento mínimo do trial (piso 2h, configurável) ─────────
 
-// 4. último envio há 2h29 → bloqueia, com o horário exato da liberação
-test("espaçamento: 2h29 desde o último trial bloqueia; libera em envio+2h30", () => {
-  const envio = haMin(149); // 2h29 atrás
+// 4. último envio há 1h59 → bloqueia (piso do trial é 2h), com o horário exato
+test("espaçamento trial: 1h59 desde o último trial bloqueia; libera em envio+2h", () => {
+  const envio = haMin(119); // 1h59 atrás
   const anteriores = [trial({ enviadaEm: envio })];
   const d = decidirEnvioTrial({ agora: AGORA, mediaUrl: "r2://media/novo.mp4", anteriores });
   assert.equal(d.permitido, false);
   assert.equal(!d.permitido && d.regra, "espacamento");
   assert.equal(
     !d.permitido && d.liberadoEm,
-    new Date(Date.parse(envio) + ESPACAMENTO_MINIMO_MS).toISOString(),
+    new Date(Date.parse(envio) + ESPACAMENTO_TRIAL_MS).toISOString(),
   );
 });
 
-// 5. último envio há 2h31 → passa
-test("espaçamento: 2h31 desde o último trial já permite", () => {
+// 5. último envio há 2h01 → passa
+test("espaçamento trial: 2h01 desde o último trial já permite", () => {
   const d = decidirEnvioTrial({
     agora: AGORA,
     mediaUrl: "r2://media/novo.mp4",
-    anteriores: [trial({ enviadaEm: haMin(151) })],
+    anteriores: [trial({ enviadaEm: haMin(121) })],
   });
   assert.deepEqual(d, { permitido: true });
+});
+
+// 5b. espaçamento do trial é CONFIGURÁVEL (env em minutos), mas config
+//     quebrada/≤0 NUNCA desliga a regra — cai no padrão
+test("espaçamento trial: env válido muda o piso; inválido/ausente cai no padrão 2h", () => {
+  const ms3h = resolverEspacamentoMs("trial", { SOCIAL_ESPACAMENTO_TRIAL_MIN: "180" });
+  assert.equal(ms3h, 180 * 60_000);
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/novo.mp4",
+    anteriores: [trial({ enviadaEm: haMin(121) })], // 2h01: passa no padrão…
+    espacamentoMs: ms3h, // …mas barra com 3h configurado
+  });
+  assert.equal(!d.permitido && d.regra, "espacamento");
+  assert.equal(resolverEspacamentoMs("trial", {}), ESPACAMENTO_TRIAL_MS);
+  assert.equal(
+    resolverEspacamentoMs("trial", { SOCIAL_ESPACAMENTO_TRIAL_MIN: "banana" }),
+    ESPACAMENTO_TRIAL_MS,
+  );
+  assert.equal(
+    resolverEspacamentoMs("trial", { SOCIAL_ESPACAMENTO_TRIAL_MIN: "0" }),
+    ESPACAMENTO_TRIAL_MS,
+  );
 });
 
 // ───────── regra 3: circuit breaker de 24h ─────────
@@ -257,6 +292,85 @@ test("momentoEnvio: trial_sent_at manda; legado usa created_at; failed pré-envi
   assert.equal(momentoEnvio(trial({ status: "failed", enviadaEm: null })), null);
 });
 
+// ───────── espaçamento de post NORMAL (novo: 1h padrão, configurável) ─────────
+
+// 19. padrão 1h: 59min barra e reagenda pro envio+1h; 1h01 libera.
+//     MUDANÇA DE COMPORTAMENTO consciente: antes o post normal não tinha
+//     espaçamento nenhum (só o trial tinha).
+test("espaçamento normal (padrão 1h): 59min desde o último envio barra; 1h01 libera", () => {
+  const envio = haMin(59);
+  const d = decidirEnvioNormal({ agora: AGORA, enviosAnteriores: [envio] });
+  assert.equal(d.permitido, false);
+  assert.equal(
+    !d.permitido && d.liberadoEm,
+    new Date(Date.parse(envio) + ESPACAMENTO_NORMAL_MS).toISOString(),
+  );
+  assert.deepEqual(
+    decidirEnvioNormal({ agora: AGORA, enviosAnteriores: [haMin(61)] }),
+    { permitido: true },
+  );
+  // sem envio anterior nenhum (conta nova) → sempre passa
+  assert.deepEqual(decidirEnvioNormal({ agora: AGORA, enviosAnteriores: [] }), { permitido: true });
+  // null/undefined (linha legada sem sent_at utilizável) são ignorados
+  assert.deepEqual(
+    decidirEnvioNormal({ agora: AGORA, enviosAnteriores: [null, undefined] }),
+    { permitido: true },
+  );
+});
+
+// 19b. configurado pra 2h via env: 1h59 entre dois posts normais barra, 2h01 libera
+test("espaçamento normal configurado pra 2h: 1h59 entre dois posts normais barra, 2h01 libera", () => {
+  const ms2h = resolverEspacamentoMs("normal", { SOCIAL_ESPACAMENTO_NORMAL_MIN: "120" });
+  assert.equal(ms2h, 120 * 60_000);
+  const d = decidirEnvioNormal({
+    agora: AGORA,
+    enviosAnteriores: [haMin(119)], // 1h59
+    espacamentoMs: ms2h,
+  });
+  assert.equal(d.permitido, false);
+  assert.deepEqual(
+    decidirEnvioNormal({ agora: AGORA, enviosAnteriores: [haMin(121)], espacamentoMs: ms2h }),
+    { permitido: true },
+  );
+  // env inválido/ausente do normal cai no padrão de 1h — nunca desliga
+  assert.equal(resolverEspacamentoMs("normal", {}), ESPACAMENTO_NORMAL_MS);
+  assert.equal(
+    resolverEspacamentoMs("normal", { SOCIAL_ESPACAMENTO_NORMAL_MIN: "-5" }),
+    ESPACAMENTO_NORMAL_MS,
+  );
+});
+
+// ───────── cota de publicação da PRÓPRIA Meta ─────────
+
+// 20. quota_usage >= quota_total barra; abaixo libera; consulta FALHOU (null)
+//     NUNCA barra — instrumento quebrado não derruba a publicação
+test("cota Meta: usage >= total barra; abaixo libera; falha da consulta NÃO barra", () => {
+  assert.equal(decidirCotaMeta({ quotaTotal: 100, quotaUsage: 100 }).permitido, false);
+  assert.equal(decidirCotaMeta({ quotaTotal: 100, quotaUsage: 250 }).permitido, false);
+  assert.deepEqual(decidirCotaMeta({ quotaTotal: 100, quotaUsage: 99 }), { permitido: true });
+  assert.deepEqual(decidirCotaMeta({ quotaTotal: 100, quotaUsage: 0 }), { permitido: true });
+  // consulta falhou (rede/token/5xx) ou resposta sem os campos → null → passa
+  assert.deepEqual(decidirCotaMeta(null), { permitido: true });
+  // resposta absurda (total ≤ 0 / NaN) também não barra — sem dado, sem bloqueio
+  assert.deepEqual(decidirCotaMeta({ quotaTotal: 0, quotaUsage: 0 }), { permitido: true });
+  assert.deepEqual(decidirCotaMeta({ quotaTotal: NaN, quotaUsage: 5 }), { permitido: true });
+});
+
+// 21. os DOIS limites somam: a cota da Meta folgada (0/100) NÃO afrouxa o
+//     nosso 6/dia — quem barrar primeiro manda, e o nosso barra primeiro.
+//     (Mutação: trocar LIMITE_TRIALS_POR_DIA pelos 100 da Meta derruba este
+//     teste e o teste 1.)
+test("limite nosso continua valendo mesmo com a cota da Meta folgada", () => {
+  assert.deepEqual(decidirCotaMeta({ quotaTotal: 100, quotaUsage: 0 }), { permitido: true });
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/novo.mp4",
+    anteriores: enviosNaJanela(LIMITE_TRIALS_POR_DIA),
+  });
+  assert.equal(d.permitido, false);
+  assert.equal(!d.permitido && d.regra, "limite_diario");
+});
+
 // ───────── tripwires na fonte: a decisão está no FIO real ─────────
 
 function fonte(rel: string): string {
@@ -300,4 +414,33 @@ test("tripwire rota: /publish checa os guardrails na criação (erro amigável)"
     "guardrail na rota vem depois da validação do trial");
   assert.ok(f.includes("carregarTrialsAnteriores(accountId)"),
     "a rota precisa consultar os trials anteriores da MESMA conta");
+});
+
+// 18. publisher: cota da Meta consultada ANTES do createContainer, decidida
+//     pelo módulo puro, e falha da CONSULTA engolida (nunca bloqueia);
+//     espaçamento de post normal no fio, lendo os envios da CONTA; e o envio
+//     grava sent_at (fonte do espaçamento normal — sem ele a regra morre de
+//     fome em silêncio nas linhas novas).
+test("tripwire publisher: cota da Meta e espaçamento normal estão no fio do envio", () => {
+  const f = fonte("./publisher.ts");
+  const iCota = f.indexOf("contentPublishingLimit(");
+  const iDecisaoCota = f.indexOf("decidirCotaMeta(");
+  const iNormal = f.indexOf("decidirEnvioNormal(");
+  const iCarregarNormais = f.indexOf("carregarEnviosNormais(pub.account_id");
+  const iCreate = f.indexOf("await createContainer(");
+  assert.ok(iCota !== -1 && iCota < iCreate,
+    "a cota da Meta precisa ser consultada ANTES do createContainer");
+  assert.ok(iDecisaoCota !== -1 && iDecisaoCota < iCreate,
+    "a decisão da cota precisa vir do módulo puro (decidirCotaMeta), antes do envio");
+  assert.ok(f.includes("seguindo com as regras locais"),
+    "falha da consulta da cota precisa ser engolida com registro — nunca bloquear");
+  assert.ok(iNormal !== -1 && iNormal < iCreate,
+    "o espaçamento de post normal precisa rodar ANTES do envio");
+  assert.ok(iCarregarNormais !== -1 && iCarregarNormais < iCreate,
+    "o espaçamento normal precisa ler os envios anteriores da CONTA antes do envio");
+  assert.ok(f.includes(", sent_at: new Date().toISOString()"),
+    "o envio precisa gravar sent_at (fonte do espaçamento de post normal)");
+  assert.ok(f.includes('resolverEspacamentoMs("trial", process.env)') &&
+    f.includes('resolverEspacamentoMs("normal", process.env)'),
+    "os DOIS espaçamentos precisam vir do env resolvido pelo módulo puro");
 });
