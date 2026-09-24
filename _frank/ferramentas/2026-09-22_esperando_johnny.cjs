@@ -26,9 +26,16 @@
  * resolver varios de uma vez.
  *
  * ⚠️ CRITERIO (herdado do percepcao_travada.cjs, pelos mesmos motivos):
- *   1. A marca tem que estar na ULTIMA nota (`agent_notes -> -1`). Varrer a
- *      pilha inteira mede HISTORICO e apresenta como PENDENCIA — foi assim que
+ *   1. A marca tem que estar na ULTIMA nota SUBSTANTIVA. Varrer a pilha
+ *      inteira mede HISTORICO e apresenta como PENDENCIA — foi assim que
  *      o SQL da ordem de 17/09 devolveu 41 falsos onde havia 1.
+ *      "Substantiva" = nao e de manutencao. Nota de manutencao (retrofit,
+ *      backfill, nota em lote — `tipo:"manutencao"`) nao representa o estado
+ *      do cartao e a leitura PULA por cima dela, andando pra tras ate achar
+ *      uma substantiva. Sem isso, uma unica escrita em lote enterra a fila
+ *      inteira de uma vez — foi o retrofit de 24/09 17:48Z (#554), que
+ *      escreveu em 21 cartoes vivos e cegou 4 da fila de decisao do Johnny,
+ *      3 deles de dinheiro de aluno.
  *   2. Boilerplate do sensor nao conta. O `carol` carimba "precisa de olho
  *      humano, nao de codigo" em TODO chamado de atendimento; ali a frase quer
  *      dizer "isto nao e bug", nao "o Johnny precisa decidir".
@@ -44,26 +51,35 @@
  * Baixar esse piso de proposito exige reescrever a lista CONTROLE e o motivo.
  *
  * ⚠️⚠️ LIMITE GRAVE, MEDIDO NA PROPRIA RONDA QUE ESCREVEU ISTO. Ler so a
- * ULTIMA nota (criterio 1) tem um preco: QUEM ANOTA, ESCONDE. Nesta ronda eu
- * anotei o b633b18c — cartao que ESTA esperando o Johnny — e minha nota nao
- * repetia nenhuma marca. O cartao sumiu da varredura na hora, sem nada ter
- * sido resolvido. A mesma doenca do rotulo `aguardando_aluno`: o cartao nao
- * muda de estado, so fica invisivel.
+ * ultima nota SUBSTANTIVA (criterio 1) tem um preco: QUEM ANOTA, ESCONDE.
+ * Nesta ronda eu anotei o b633b18c — cartao que ESTA esperando o Johnny — e
+ * minha nota nao repetia nenhuma marca. O cartao sumiu da varredura na hora,
+ * sem nada ter sido resolvido. A mesma doenca do rotulo `aguardando_aluno`:
+ * o cartao nao muda de estado, so fica invisivel.
  *
  * Mitiguei somando as regras de alcada (9-A/9-B/9-C, "acima do teto") as
  * marcas, porque quem escreve uma nota dessas quase sempre cita a regra que o
  * impede de agir. NAO e cura: se a proxima nota nao citar nada, o cartao some
  * de novo.
  *
- * REGRA PRA QUEM ANOTAR UM CARTAO QUE SEGUE PARADO NO JOHNNY: repita na sua
- * nota, com essas palavras, o que falta ("decisao do Johnny", "9-A", "aguardando
+ * REGRA PRA QUEM ANOTAR UM CARTAO QUE SEGUE PARADO NO JOHNNY: isto vale pra
+ * nota SUBSTANTIVA (a escrita por alguem que leu o caso): repita na sua nota,
+ * com essas palavras, o que falta ("decisao do Johnny", "9-A", "aguardando
  * merge"). Nao e burocracia — e o que mantem o cartao visivel no unico lugar
  * que o conta.
  *
+ * NOTA EM LOTE / RETROFIT / BACKFILL e outra especie: quem escreve nao leu o
+ * caso e nao tem como repetir a marca. Ela DEVE sair com `tipo:"manutencao"`
+ * no objeto da nota — a varredura pula por cima e o cartao continua visivel.
+ * Nota em lote SEM essa marca e a operacao destrutiva de 24/09 de novo
+ * (21 cartoes anotados numa tacada, 4 da fila do Johnny enterrados). Ponte
+ * temporaria: as 21 notas daquele retrofit nasceram sem o campo, entao a
+ * leitura tambem reconhece pela assinatura de texto no INICIO da nota
+ * (/^RETROFIT DA TRAVA DO HUMANO/i). Anchor no inicio de proposito: nota
+ * substantiva que CITA a frase no meio (caso e693222b/#554) NAO e manutencao.
+ *
  * SO LEITURA. Nao escreve, nao fecha, nao muda status, nao manda e-mail.
  */
-const { supa } = require("./_comum.cjs");
-
 const AGORA = new Date();
 const dias = (iso) => Math.floor((AGORA - new Date(iso)) / 86400000);
 
@@ -205,11 +221,34 @@ function exigir(rotulo, error) {
   }
 }
 
+// Nota de manutencao: escrita em lote/retrofit/backfill, por quem NAO leu o
+// caso. Nao representa o estado do cartao — a leitura pula por cima dela.
+// Criterio primario: campo `tipo:"manutencao"` no objeto da nota. Ponte: as
+// 21 notas do retrofit de 24/09 17:48Z nasceram sem o campo, entao a
+// assinatura de texto delas tambem conta — ANCORADA NO INICIO, porque nota
+// substantiva pode CITAR a frase no meio (medido: a nota do #554/e693222b
+// cita "RETROFIT DA TRAVA DO HUMANO" na posicao 207 e NAO e manutencao).
+const PONTE_RETROFIT_2409 = /^\s*RETROFIT DA TRAVA DO HUMANO/i;
+
+function ehNotaManutencao(nota) {
+  if (!nota || typeof nota !== "object") return false;
+  if (nota.tipo === "manutencao") return true;
+  return PONTE_RETROFIT_2409.test(String(nota.note || ""));
+}
+
+// "Ultima nota" da varredura = ultima nota SUBSTANTIVA: anda pra tras
+// enquanto a nota for de manutencao. NAO varre a pilha atras de marca — quem
+// faz isso mede historico e apresenta como pendencia (41 falsos onde havia 1,
+// ver criterio 1 no cabecalho). So pula o que for manutencao declarada.
 function ultimaNota(r) {
   const n = r.agent_notes;
   if (!Array.isArray(n) || n.length === 0) return null;
-  const u = n[n.length - 1];
-  return (u && (u.note || "")) || "";
+  for (let i = n.length - 1; i >= 0; i--) {
+    if (ehNotaManutencao(n[i])) continue;
+    const u = n[i];
+    return (u && (u.note || "")) || "";
+  }
+  return null; // a pilha inteira e manutencao — nada substantivo pra ler
 }
 
 function casa(texto) {
@@ -223,7 +262,14 @@ function casa(texto) {
   return null;
 }
 
-(async () => {
+// Puras, sem banco — e o que o .test.cjs importa (padrao do percepcao_travada).
+module.exports = { ultimaNota, ehNotaManutencao, casa, MARCAS, BOILERPLATE, CONTROLE, TRIAGEM, PONTE_RETROFIT_2409 };
+
+if (require.main === module) (async () => {
+  // Lazy de proposito (padrao do percepcao_travada.cjs): o require do _comum
+  // puxa node_modules do frontend, que nao existe em worktree de agente — e o
+  // .test.cjs importa este arquivo SEM banco.
+  const { supa } = require("./_comum.cjs");
   const db = supa();
 
   // Universo 1: a fila que espera (o que a ordem quer).
