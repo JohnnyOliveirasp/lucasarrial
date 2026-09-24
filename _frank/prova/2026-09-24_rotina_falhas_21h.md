@@ -147,6 +147,36 @@ conferir junto se **outras** foram puladas no mesmo intervalo.
 - Log commitado na **main** (só o log; nenhum código de produção mudou nesta ronda).
 - Recado no **grupo** via `notify-grupo.sh` (canal de 31/08). Nada no privado.
 - `git log --oneline origin/main..HEAD` conferido **vazio** no fim.
+- **Não criei branch nesta ronda** (nenhum código de produção mudou), então não
+  havia fix meu pra ficar preso.
+
+### ⚠️ O passo fixo do `git rev-list` não faz o serviço que o manual pede
+
+Rodei o passo como está escrito ("`git branch` + `git rev-list main..<branch>` pra
+conferir que não ficou fix preso") e ele **acusou ~193 branches**. Alarme que dispara
+193 vezes não é alarme: ninguém lê, e foi lendo esse tipo de lista que um fix de
+aluno ficou 9h preso em 19/08.
+
+E não é só volume — **boa parte é falso positivo**, porque squash-merge deixa o
+conteúdo na main com sha diferente. Medido, 334 branches locais:
+
+| Checagem | Acusa |
+|---|---|
+| `git rev-list main..<branch>` (o do manual) | **~193** |
+| `git cherry main <branch>` (conteúdo de verdade fora) | **128** |
+
+Controle, com casos que o próprio índice de ordens já classificou:
+
+- `feat/onedrive-spo-fedauth` → rev-list **1**, cherry **0**. É o fix que **está em
+  produção** (PR #60). O manual o acusaria; o `cherry` o inocenta. **Falso positivo.**
+- `fix/estorno-treino-por-saldo-pendente` → rev-list **1**, cherry **1**. É STALE de
+  verdade (o índice manda não mergear). **Verdadeiro positivo nas duas.**
+
+Ou seja: `git cherry` distingue, `git rev-list` não. **Não mudei o manual** — o passo
+fixo é ordem e corrigir ordem não é alçada de ronda. Fica medido e proposto: trocar
+`rev-list` por `cherry` e **escopar aos branches tocados na própria ronda**, que é a
+pergunta que o passo realmente quer responder ("ficou fix MEU preso?"), em vez de
+reauditar 334 branches históricos toda vez.
 - Escrita conferida na releitura: cartão `#15` relido (84 notas preservadas, 1 linha
   afetada), carta uid 3413 confirmada na pasta remota, cartão #561 relido.
 
