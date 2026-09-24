@@ -216,3 +216,46 @@ doutrina de 17/09 manda juntar, não re-escalar um por ronda):
   **4.497 chars**, notas 4 → **5**.
 - Recado no **grupo** via `notify-grupo.sh` (regra de canal de 31/08): 1 fato
   consumado, o fechamento do `#469`. Nada no privado do Johnny.
+
+---
+
+## 7. Adendo da mesma ronda: o cartão aberto **custou uma correção duplicada**
+
+A conferência de fim de ronda (branch com commit preso) devolveu ~190 branches —
+nessa escala ela não distingue nada e eu não a tratei como sinal. Mas fui olhar
+**o branch que pertence ao cartão que acabei de fechar**, e ali estava o 6º caso
+da família de branch stale desta casa.
+
+`fix/estorno-treino-por-saldo-pendente` (HEAD **`c9d3bc75`**, **PR #398**, hoje
+`CLOSED`) é uma **segunda tentativa, independente, pro MESMO defeito** — escrita
+em **22/09**, **4 dias DEPOIS** de `aadddad3` já estar em produção.
+
+**A causa foi este cartão.** Como ele ficou aberto anunciando defeito pendente,
+alguém pegou o problema do zero e **reescreveu uma correção que já existia**.
+Esse é o custo concreto, em trabalho humano, de não fechar cartão resolvido — o
+mesmo buraco que o item 4 explica *por que* ninguém tinha visto.
+
+**Por que ele não pode ser mergeado.** Ele **não conhece `saldoPendenteDoTreino`**
+(0 ocorrências no `service.ts` dele). O `git diff main..branch` nos arquivos do
+conserto:
+
+```
+ frontend/src/lib/credits/saldo-pendente-do-treino.test.ts   | 126 ---------------
+ frontend/src/lib/credits/service.ts                         |  92 ++++++-------
+ frontend/src/lib/credits/onboarding-cobranca.ts             |  70 ++++------
+ frontend/src/lib/voices/finalize-training.ts                |  50 ++++-----
+```
+
+Ele **apaga a guarda inteira** (−126 linhas) — exatamente o teste que eu acabei
+de provar, por mutação, que pega a volta do bug. Mergear derruba **o conserto e
+a prova dele de uma vez só**.
+
+É a **6ª** vez: `feat/onedrive-401`, `feat/fix-image-upload-retry`, as 2 da cura
+de referência, `fix/trava-foto-nova-8379549c`, `fix/ritmo-da-referencia-porta-73a60bb`
+— e agora esta. Registrado na tabela de vigentes do `_frank/ordens/README.md` e
+na nota do `#469`.
+
+> **O padrão que as 6 têm em comum, e que vale mais que qualquer uma delas:**
+> a casa produz duas correções concorrentes pro mesmo bug quando **o estado do
+> conserto não está visível no cartão**. Não é descuido de quem escreve o
+> segundo branch — é o cartão mentindo sobre o que já está no ar.
