@@ -9,8 +9,11 @@
  * e Saída ficam vivos (Áudio/Vídeo bloqueados — trocar não refaz nada);
  * clicar no Roteiro = começar vídeo NOVO, com confirmação antes de limpar
  * (o final já está salvo em "Vídeos gerados", nada se perde).
+ * Conserto 24/09 (caso ycarlosk): trocar o ROTEIRO invalida áudio/vídeo
+ * derivados (regra pura em @/lib/edicao/rascunho), e o "Começar um vídeo
+ * novo?" fica acessível SEMPRE que há progresso — não só pós-final.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Check, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { PassoRoteiro } from "./passo-roteiro";
@@ -19,6 +22,11 @@ import { PassoVideo } from "./passo-video";
 import { PassoEditar } from "./passo-editar";
 import { PassoSaida } from "./passo-saida";
 import { VideosGerados } from "./videos-gerados";
+import {
+  comInvalidacaoDeRoteiro,
+  invalidaDerivados,
+  temProgresso,
+} from "@/lib/edicao/rascunho";
 
 const DRAFT_KEY = "fc-edicao-draft-v1";
 const PASSOS = ["roteiro", "audio", "video", "editar", "saida"] as const;
@@ -80,6 +88,14 @@ export function EdicaoWizard({ admin = false }: { admin?: boolean }) {
   const [draft, setDraft] = useState<EdicaoDraft>(DRAFT_VAZIO);
   const [loaded, setLoaded] = useState(false);
   const [confirmaNovo, setConfirmaNovo] = useState(false);
+  /** Aviso "roteiro mudou → áudio/vídeo saíram do fluxo" (conserto 24/09). */
+  const [avisoRoteiro, setAvisoRoteiro] = useState(false);
+  // Espelho do rascunho pra decidir o AVISO fora do updater (que deve ser
+  // puro); a invalidação de verdade acontece dentro do setDraft, no `d` real.
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  });
 
   useEffect(() => {
     try {
@@ -102,8 +118,11 @@ export function EdicaoWizard({ admin = false }: { admin?: boolean }) {
   }, []);
 
   const update = useCallback((patch: Partial<EdicaoDraft>) => {
+    // Conserto 24/09: roteiro é a origem de tudo — mudou havendo áudio/vídeo
+    // derivados, os dois caem juntos (senão a Saída reexporta a rodada velha).
+    if (invalidaDerivados(draftRef.current, patch)) setAvisoRoteiro(true);
     setDraft((d) => {
-      const novo = { ...d, ...patch };
+      const novo = { ...d, ...comInvalidacaoDeRoteiro(d, patch) };
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify(novo));
       } catch {
@@ -112,6 +131,11 @@ export function EdicaoWizard({ admin = false }: { admin?: boolean }) {
       return novo;
     });
   }, []);
+
+  // O aviso cumpriu o papel quando um áudio novo foi escolhido (ou tudo zerou).
+  useEffect(() => {
+    if (avisoRoteiro && draft.audio !== null) setAvisoRoteiro(false);
+  }, [avisoRoteiro, draft.audio]);
 
   // Trava 13/08: chegou na Saída com vídeo → ciclo fechado (E2-E3 travam).
   useEffect(() => {
@@ -135,7 +159,8 @@ export function EdicaoWizard({ admin = false }: { admin?: boolean }) {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Trilho das estações */}
+      {/* Trilho das estações + atalho de recomeço (sempre que há progresso) */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
       <ol className="flex flex-wrap items-center gap-1.5">
         {PASSOS.map((id, i) => {
           const ativo = i === draft.passo;
@@ -176,6 +201,27 @@ export function EdicaoWizard({ admin = false }: { admin?: boolean }) {
           );
         })}
       </ol>
+      {/* Conserto 24/09 (b): quem voltou no MEIO do fluxo também consegue
+          zerar o rascunho — o modal de confirmação continua obrigatório. */}
+      {temProgresso(draft) && (
+        <button
+          type="button"
+          onClick={() => setConfirmaNovo(true)}
+          className="flex items-center gap-1.5 rounded-full border border-[var(--hairline)] px-3 py-1 text-[12.5px] text-[var(--mute)] hover:border-[var(--hairline-strong)] hover:text-[var(--ink)]"
+        >
+          <RotateCcw className="size-3.5" />
+          {t("novoVideo.atalho")}
+        </button>
+      )}
+      </div>
+
+      {/* Aviso do conserto 24/09 (a): o rascunho perdeu áudio/vídeo porque o
+          roteiro mudou — e os vídeos já montados continuam salvos. */}
+      {avisoRoteiro && (
+        <p className="rounded-[var(--radius-sm)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3 py-2 text-[12.5px] text-[var(--mute)]">
+          {t("roteiroMudou")}
+        </p>
+      )}
 
       {/* Estação atual */}
       {draft.passo === 0 ? (
@@ -232,7 +278,11 @@ export function EdicaoWizard({ admin = false }: { admin?: boolean }) {
                 {t("novoVideo.titulo")}
               </h3>
             </div>
-            <p className="text-sm text-[var(--body)]">{t("novoVideo.texto")}</p>
+            <p className="text-sm text-[var(--body)]">
+              {/* Sem vídeo montado, prometer "já está salvo" seria mentira —
+                  o texto alternativo só fala do que realmente se limpa. */}
+              {draft.finalizado ? t("novoVideo.texto") : t("novoVideo.textoSemVideo")}
+            </p>
             <div className="flex justify-end gap-3">
               <button
                 type="button"
@@ -245,6 +295,7 @@ export function EdicaoWizard({ admin = false }: { admin?: boolean }) {
                 type="button"
                 onClick={() => {
                   setConfirmaNovo(false);
+                  setAvisoRoteiro(false);
                   update({ ...DRAFT_VAZIO });
                 }}
                 className="inline-flex h-10 items-center gap-2 rounded-[var(--radius)] bg-[var(--ink)] px-[18px] text-[14px] font-semibold text-[var(--surface-deep)]"

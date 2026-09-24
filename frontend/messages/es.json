@@ -2188,8 +2188,11 @@
       "titulo": "¿Empezar un video nuevo?",
       "texto": "Tu video actual ya está guardado en “Videos generados” — no se pierde nada. El guion, el audio y las escenas de este flujo se limpiarán para empezar de cero.",
       "confirmar": "Empezar nuevo",
-      "cancelar": "Quedarme aquí"
-    }
+      "cancelar": "Quedarme aquí",
+      "atalho": "Empezar un video nuevo",
+      "textoSemVideo": "El guion, el audio y las escenas de este flujo se limpiarán para empezar de cero. Los videos ya montados siguen guardados en “Videos generados”."
+    },
+    "roteiroMudou": "Cambiaste el guion, así que el audio y el video generados con el texto anterior salieron de este flujo — genera nuevos en los próximos pasos. Los videos ya montados siguen guardados en “Videos generados”."
   },
   "roteiro": {
     "eyebrow": "Guion",
