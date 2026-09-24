@@ -50,6 +50,8 @@ export async function POST(request: NextRequest) {
     titulo?: unknown;
     /** true = o vídeo é SÓ do aluno (upload do próprio vídeo, no React). */
     privado?: unknown;
+    /** Segundos medidos pelo navegador antes de subir (só no caminho ARQUIVO). */
+    duracao_seg?: unknown;
   };
   try {
     body = await request.json();
@@ -81,6 +83,14 @@ export async function POST(request: NextRequest) {
     if (bytes > LIMITE_VIRAL.bytes) return badRequest(recusaPorTamanho(bytes));
 
     const titulo = typeof body.titulo === "string" ? body.titulo.trim().slice(0, 300) : null;
+    // O navegador é a única fonte de duração aqui (não há post de origem, e
+    // ler o mp4 no servidor custaria o arquivo inteiro na RAM). Ela dimensiona
+    // o roteiro e o corte — sem ela o React trata todo upload como 30s.
+    const medida = Number(body.duracao_seg);
+    const duracaoSeg =
+      Number.isFinite(medida) && medida > 0 && medida <= LIMITE_VIRAL.segundos
+        ? Math.round(medida)
+        : null;
     const { data: criado, error } = await admin
       .from("viral_videos")
       .insert({
@@ -89,6 +99,7 @@ export async function POST(request: NextRequest) {
         video_id: arquivoKey.split("/").pop()?.replace(/\.mp4$/, "") ?? arquivoKey,
         url: "",
         legenda: titulo,
+        duracao_seg: duracaoSeg,
         r2_key: arquivoKey,
         download_status: "pronto",
         enviado_por: auth.user_id,
