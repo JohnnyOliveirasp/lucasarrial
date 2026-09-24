@@ -15,7 +15,7 @@ import { getAdmin } from "@/lib/db/admin";
 import { socialPublisherEnabled, socialPublisherEnabledFor, type PlataformaSocial } from "@/lib/social/access";
 import { resolvePublishSource, type PublishSource } from "@/lib/social/media-sources";
 import { carregarTrialsAnteriores, resolveMediaUrl, startPublication } from "@/lib/social/publisher";
-import { decidirEnvioTrial } from "@/lib/social/trial-guardrails-pure";
+import { decidirEnvioTrial, resolverEspacamentoMs } from "@/lib/social/trial-guardrails-pure";
 import { validarTrialReel } from "@/lib/social/trial-reel-pure";
 import type { PublicationRow } from "@/lib/db/types";
 
@@ -146,6 +146,7 @@ export async function POST(request: NextRequest) {
       agora: scheduledAt ?? new Date().toISOString(),
       mediaUrl,
       anteriores: await carregarTrialsAnteriores(accountId),
+      espacamentoMs: resolverEspacamentoMs("trial", process.env),
     });
     if (!decisao.permitido) return badRequest(decisao.erro);
     platformOptions = { is_trial: true, graduation_strategy: v.strategy };

@@ -195,6 +195,35 @@ export async function createContainer(
   return data.id;
 }
 
+/**
+ * Cota REAL de publicação via API da conta, direto da Meta:
+ * GET /{ig-user-id}/content_publishing_limit?fields=config,quota_usage
+ * (provado em produção 23/09: HTTP 200 em contas de aluno, com
+ * quota_total=100 e quota_duration=86400 — janela deslizante de 24h).
+ *
+ * Devolve null quando a resposta vem sem os campos esperados — o chamador
+ * trata null como "sem dado" e NÃO bloqueia por isso (decidirCotaMeta).
+ * Erro HTTP/rede LANÇA (InstagramError) e também não pode bloquear: quem
+ * chama engole e segue com as regras locais.
+ */
+export async function contentPublishingLimit(
+  token: string,
+  igUserId: string,
+): Promise<{ quotaTotal: number; quotaUsage: number } | null> {
+  const params = new URLSearchParams({ fields: "config,quota_usage", access_token: token });
+  const data = await graphCall<{
+    data?: Array<{
+      config?: { quota_total?: number; quota_duration?: number };
+      quota_usage?: number;
+    }>;
+  }>(`/${GRAPH_VERSION}/${igUserId}/content_publishing_limit?${params}`);
+  const row = data.data?.[0];
+  if (typeof row?.quota_usage !== "number" || typeof row?.config?.quota_total !== "number") {
+    return null;
+  }
+  return { quotaTotal: row.config.quota_total, quotaUsage: row.quota_usage };
+}
+
 export type ContainerStatus = "IN_PROGRESS" | "FINISHED" | "ERROR" | "EXPIRED" | "PUBLISHED";
 
 export async function containerStatus(

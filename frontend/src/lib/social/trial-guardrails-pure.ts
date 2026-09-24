@@ -5,7 +5,13 @@
  * excesso de Reels de teste. São 5, nenhuma pode ser afrouxada:
  *   1. Máximo 6 Trial Reels por dia, POR CONTA (janela deslizante de 24h —
  *      a conta do IG é o que a Meta pune, não o usuário da plataforma).
- *   2. Espaçamento mínimo de 2h30 entre dois Trial Reels da MESMA conta.
+ *      Este limite NOSSO soma com a cota da própria Meta (decidirCotaMeta,
+ *      abaixo): os dois valem, quem barrar primeiro manda — o nosso (6) é
+ *      mais restritivo que o dela (100/dia) e NUNCA é substituído por ele.
+ *   2. Espaçamento mínimo entre dois Trial Reels da MESMA conta: 2h por
+ *      padrão, configurável por env (SOCIAL_ESPACAMENTO_TRIAL_MIN, em
+ *      minutos). Post NORMAL tem espaçamento próprio de 1h por padrão
+ *      (SOCIAL_ESPACAMENTO_NORMAL_MIN) — decidirEnvioNormal, abaixo.
  *   3. Circuit breaker de 24h: um Trial Reel FALHOU → pausa SÓ os trials
  *      daquela conta por 24h. Reel NORMAL continua publicando (cortar o
  *      normal junto puniria o aluno por defeito nosso) — por isso o
@@ -38,12 +44,45 @@
 
 export const LIMITE_TRIALS_POR_DIA = 6;
 export const JANELA_DIARIA_MS = 24 * 60 * 60 * 1000;
-export const ESPACAMENTO_MINIMO_MS = 2.5 * 60 * 60 * 1000; // 2h30
+/** Espaçamento PADRÃO entre trials (min) — sobrescrevível por env. */
+export const ESPACAMENTO_TRIAL_PADRAO_MIN = 120; // 2h
+/** Espaçamento PADRÃO entre posts normais (min) — sobrescrevível por env. */
+export const ESPACAMENTO_NORMAL_PADRAO_MIN = 60; // 1h
+export const ENV_ESPACAMENTO_TRIAL = "SOCIAL_ESPACAMENTO_TRIAL_MIN";
+export const ENV_ESPACAMENTO_NORMAL = "SOCIAL_ESPACAMENTO_NORMAL_MIN";
 export const BREAKER_MS = 24 * 60 * 60 * 1000;
+/** Cota da Meta estourada → re-checa em 1h (a janela dela é deslizante de 24h). */
+export const COTA_META_RETRY_MS = 60 * 60 * 1000;
 /** Mesmo teto do publisher (MAX_ATTEMPTS): 3 tentativas no total. */
 export const MAX_TENTATIVAS_TRIAL = 3;
 export const BACKOFF_429_BASE_MS = 15 * 60 * 1000; // 15min, dobra a cada tentativa
 export const BACKOFF_429_MAX_MS = 2 * 60 * 60 * 1000; // teto 2h
+
+/**
+ * Espaçamento efetivo em MS, por tipo, a partir do env (injetado — módulo
+ * puro não lê process.env sozinho). Valor ausente, não-numérico ou ≤ 0 cai
+ * no padrão: config quebrada não pode desligar a regra.
+ */
+export function resolverEspacamentoMs(
+  tipo: "trial" | "normal",
+  env: Record<string, string | undefined>,
+): number {
+  const padraoMin = tipo === "trial" ? ESPACAMENTO_TRIAL_PADRAO_MIN : ESPACAMENTO_NORMAL_PADRAO_MIN;
+  const bruto = env[tipo === "trial" ? ENV_ESPACAMENTO_TRIAL : ENV_ESPACAMENTO_NORMAL];
+  const min = Number(bruto);
+  if (!bruto || !Number.isFinite(min) || min <= 0) return padraoMin * 60_000;
+  return min * 60_000;
+}
+
+/** "2h", "1h30", "45min" — pro texto do erro acompanhar o valor configurado. */
+export function formatarDuracao(ms: number): string {
+  const totalMin = Math.round(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const min = totalMin % 60;
+  if (h === 0) return `${min}min`;
+  if (min === 0) return `${h}h`;
+  return `${h}h${String(min).padStart(2, "0")}`;
+}
 
 /** Uma publicação de trial ANTERIOR da mesma conta (linha de publications). */
 export type TrialAnterior = {
@@ -127,8 +166,11 @@ export function decidirEnvioTrial(input: {
   mediaUrl: string;
   /** Trials anteriores DA MESMA CONTA (a atual publicação fora da lista). */
   anteriores: TrialAnterior[];
+  /** Espaçamento efetivo em ms (resolverEspacamentoMs); ausente = padrão 2h. */
+  espacamentoMs?: number;
 }): DecisaoTrial {
   const agoraMs = Date.parse(input.agora);
+  const espacamentoMs = input.espacamentoMs ?? ESPACAMENTO_TRIAL_PADRAO_MIN * 60_000;
 
   // 4. DEDUPE — mesmo vídeo já foi (ou está indo) como trial nesta conta.
   //    failed não conta: re-tentar um vídeo que falhou é legítimo.
@@ -190,24 +232,104 @@ export function decidirEnvioTrial(input: {
     };
   }
 
-  // 2. ESPAÇAMENTO — 2h30 desde o ÚLTIMO trial enviado da conta.
+  // 2. ESPAÇAMENTO — piso configurável (padrão 2h) desde o ÚLTIMO trial
+  //    enviado da conta.
   let ultimoEnvioMs = -Infinity;
   for (const t of input.anteriores) {
     const ms = momentoEnvio(t);
     if (ms !== null && ms > ultimoEnvioMs) ultimoEnvioMs = ms;
   }
-  if (agoraMs - ultimoEnvioMs < ESPACAMENTO_MINIMO_MS) {
-    const liberadoEm = new Date(ultimoEnvioMs + ESPACAMENTO_MINIMO_MS).toISOString();
+  if (agoraMs - ultimoEnvioMs < espacamentoMs) {
+    const liberadoEm = new Date(ultimoEnvioMs + espacamentoMs).toISOString();
     return {
       permitido: false,
       regra: "espacamento",
       erro:
-        "Intervalo mínimo de 2h30 entre Reels de teste da mesma conta. " +
-        `Próximo liberado em ${formatarHorario(liberadoEm)}.`,
+        `Intervalo mínimo de ${formatarDuracao(espacamentoMs)} entre Reels ` +
+        `de teste da mesma conta. Próximo liberado em ${formatarHorario(liberadoEm)}.`,
       liberadoEm,
     };
   }
 
+  return { permitido: true };
+}
+
+// ───────── espaçamento de post NORMAL (não-trial) ─────────
+
+export type DecisaoNormal =
+  | { permitido: true }
+  | { permitido: false; erro: string; liberadoEm: string };
+
+/**
+ * Espaçamento entre publicações NORMAIS (não-trial) da mesma conta: 1h por
+ * padrão, configurável por env (SOCIAL_ESPACAMENTO_NORMAL_MIN). Regra NOVA
+ * em caminho que já está em produção — antes o post normal não tinha
+ * espaçamento nenhum. Só espaçamento: post normal NUNCA passa por breaker,
+ * limite diário ou dedupe (essas são proteções do trial; cortar o normal
+ * junto puniria o aluno — regra 3 do cabeçalho).
+ *
+ * Bloqueio aqui nunca é failed: o publisher mantém ready com scheduled_at =
+ * liberadoEm e o sweeper publica sozinho na hora certa.
+ */
+export function decidirEnvioNormal(input: {
+  /** ISO do "agora" (injetado). */
+  agora: string;
+  /** ISOs dos envios normais anteriores DA MESMA CONTA (null/undefined ignorados). */
+  enviosAnteriores: Array<string | null | undefined>;
+  /** Espaçamento efetivo em ms (resolverEspacamentoMs); ausente = padrão 1h. */
+  espacamentoMs?: number;
+}): DecisaoNormal {
+  const agoraMs = Date.parse(input.agora);
+  const espacamentoMs = input.espacamentoMs ?? ESPACAMENTO_NORMAL_PADRAO_MIN * 60_000;
+  let ultimoMs = -Infinity;
+  for (const iso of input.enviosAnteriores) {
+    if (!iso) continue;
+    const ms = Date.parse(iso);
+    if (!Number.isNaN(ms) && ms > ultimoMs) ultimoMs = ms;
+  }
+  if (agoraMs - ultimoMs < espacamentoMs) {
+    const liberadoEm = new Date(ultimoMs + espacamentoMs).toISOString();
+    return {
+      permitido: false,
+      erro:
+        `Intervalo mínimo de ${formatarDuracao(espacamentoMs)} entre ` +
+        `publicações da mesma conta. Reagendada para ${formatarHorario(liberadoEm)}.`,
+      liberadoEm,
+    };
+  }
+  return { permitido: true };
+}
+
+// ───────── cota de publicação da PRÓPRIA Meta ─────────
+
+/** Resposta útil do GET /{ig-user-id}/content_publishing_limit. */
+export type CotaMeta = { quotaTotal: number; quotaUsage: number };
+
+/**
+ * Barra quando a PRÓPRIA Meta diz que a conta estourou a cota de publicação
+ * via API (quota_usage >= quota_total; hoje 100 por 24h deslizantes).
+ *
+ * SOMA com as regras locais, nunca as substitui: o nosso 6/dia do trial é
+ * mais restritivo e continua valendo — quem barrar primeiro manda.
+ *
+ * `null` = a CONSULTA falhou (rede, token, 5xx) ou veio sem os campos →
+ * NUNCA barra por isso: instrumento quebrado não pode derrubar a
+ * publicação; o chamador registra e segue com as regras locais.
+ */
+export function decidirCotaMeta(
+  cota: CotaMeta | null,
+): { permitido: true } | { permitido: false; erro: string } {
+  if (!cota) return { permitido: true };
+  if (!Number.isFinite(cota.quotaTotal) || cota.quotaTotal <= 0) return { permitido: true };
+  if (cota.quotaUsage >= cota.quotaTotal) {
+    return {
+      permitido: false,
+      erro:
+        `O Instagram informou que esta conta atingiu o limite de ` +
+        `${cota.quotaTotal} publicações via API nas últimas 24h. ` +
+        `Nova tentativa automática em ~1h.`,
+    };
+  }
   return { permitido: true };
 }
 
