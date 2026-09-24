@@ -1,0 +1,95 @@
+janela UTC 2026-09-23T00:00:00.000Z -> 2026-09-24T00:00:00.000Z (dia 2026-09-23)
+9 evento(s) de cancelamento -> 9 pessoa(s)
+varredura expire_trial_credits: DESATIVADA — DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas
+
+==========================================================================
+valdemirsilveira@gmail.com  (VALDEMIR SILVEIRA)
+  ASSINANTE | adesao 2026-09-11 -> cancelou 2026-09-23 = 12 dia(s)
+    assinatura YX2T5P76 CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 COMPLETE        2026-09-11
+    rec#2 R$    97 APPROVED        2026-09-19
+    banco: mensalidade 171273 cr | extra 2640 cr | acesso ate 2026-10-11
+    marcador trial: nenhum
+==========================================================================
+cbaldo.fetal@gmail.com  (CARLOS ALBERTO RAIMUNDO BALDO)
+  ASSINANTE | adesao 2026-08-10 -> cancelou 2026-09-23 = 44 dia(s)
+    assinatura KLT22UV8 INACTIVE (trial)
+    assinatura GH6LXTWF INACTIVE (trial)
+    assinatura 4EBP74ZH CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 CANCELLED       
+    rec#1 R$     0 CANCELLED       
+    rec#1 R$     0 COMPLETE        2026-08-10
+    rec#2 R$    97 OVERDUE           <-- cobranca EXISTE mas NAO foi paga
+    rec#2 R$    97 COMPLETE        2026-08-20
+    rec#3 R$    97 OVERDUE           <-- cobranca EXISTE mas NAO foi paga
+    banco: mensalidade 155713 cr | extra 0 cr | acesso ate 2026-10-10
+    marcador trial: nenhum
+==========================================================================
+ribasadv1975@gmail.com  (José Luiz Ribas Junior)
+  ASSINANTE | adesao 2026-09-14 -> cancelou 2026-09-23 = 9 dia(s)
+    assinatura NMU2LV1Y CANCELLED_BY_SELLER (trial)
+    rec#1 R$     0 COMPLETE        2026-09-14
+    rec#2 R$    97 APPROVED        2026-09-21
+    banco: mensalidade 193531 cr | extra 0 cr | acesso ate 2026-10-14
+    marcador trial: nenhum
+==========================================================================
+laila.r.blanco@gmail.com  (Laila Reis Blanco)
+  ASSINANTE | adesao 2026-08-23 -> cancelou 2026-09-23 = 31 dia(s)
+    assinatura KO5OJWR9 CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 COMPLETE        2026-08-23
+    rec#2 R$    97 OVERDUE           <-- cobranca EXISTE mas NAO foi paga
+    rec#2 R$    97 OVERDUE           <-- cobranca EXISTE mas NAO foi paga
+    rec#2 R$    97 OVERDUE           <-- cobranca EXISTE mas NAO foi paga
+    rec#2 R$    97 OVERDUE           <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$    97 APPROVED        2026-09-23
+    banco: mensalidade 180915 cr | extra 0 cr | acesso ate 2026-10-23
+    marcador trial: nenhum
+==========================================================================
+contato.boostermkt@gmail.com  (booster mkt)
+  ASSINANTE | adesao 2026-08-23 -> cancelou 2026-09-23 = 31 dia(s)
+    assinatura ECS501AE CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 COMPLETE        2026-08-23
+    rec#2 R$    97 COMPLETE        2026-08-30
+    rec#3 R$    97 APPROVED        2026-09-23
+    banco: mensalidade 279895 cr | extra 0 cr | acesso ate 2026-10-23
+    marcador trial: nenhum
+==========================================================================
+gustavo@cdd.org.br  (Gustavo San Martin)
+  ASSINANTE | adesao 2026-08-23 -> cancelou 2026-09-23 = 31 dia(s)
+    assinatura Z19W48XF CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 COMPLETE        2026-08-23
+    rec#2 R$    97 COMPLETE        2026-08-30
+    rec#3 R$    97 APPROVED        2026-09-23
+    banco: mensalidade 276961 cr | extra 0 cr | acesso ate 2026-10-23
+    marcador trial: nenhum
+==========================================================================
+contato@andreamaral.com.br  (andre luiz de aguiar amaral.)
+  TRIAL | adesao 2026-08-10 -> cancelou 2026-09-23 = 44 dia(s)
+    assinatura W15AUG8R CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 COMPLETE        2026-08-10
+    rec#2 R$    97 OVERDUE           <-- cobranca EXISTE mas NAO foi paga
+    rec#3 R$    97 OVERDUE           <-- cobranca EXISTE mas NAO foi paga
+    banco: mensalidade 100000 cr | extra 0 cr | acesso ate 2026-10-10
+    marcador trial: nenhum
+    dia 10 do trial: 2026-08-20 (JA passou)
+    !! TRIAL passou do dia 10 (venceu 2026-08-20) e ainda tem 100000 cr — a varredura NAO pegou.
+==========================================================================
+brunno.lopes@live.com  (Bruno Jorge Lopes da Costa lobo)
+  ASSINANTE | adesao 2026-09-06 -> cancelou 2026-09-23 = 17 dia(s)
+    assinatura 1206SZ6B CANCELLED_BY_SELLER (trial)
+    rec#1 R$     0 COMPLETE        2026-09-06
+    rec#2 R$    97 COMPLETE        2026-09-13
+    banco: mensalidade 178704 cr | extra 0 cr | acesso ate 2026-10-06
+    marcador trial: nenhum
+==========================================================================
+brunoclozel@gmail.com  (Bruno Clozel)
+  TRIAL | adesao 2026-09-18 -> cancelou 2026-09-23 = 5 dia(s)
+    assinatura 4OW1680Z CANCELLED_BY_CUSTOMER (trial)
+    rec#1 R$     0 APPROVED        2026-09-18
+    banco: mensalidade 82405 cr | extra 0 cr | acesso ate 2026-09-25
+    marcador trial: nenhum
+    dia 10 do trial: 2026-09-28 (ainda vai chegar)
+    !! TRIAL ainda no prazo (dia 10 em 2026-09-28), mas a varredura esta DESATIVADA (DESATIVADA POR FRANK EM 18/08 18:5x: a primeira rodada real zerou 14 pessoas) — os 82405 cr NAO vao expirar sozinhos.
+
+==========================================================================
+2 caso(s) FORA DA REGRA: contato@andreamaral.com.br, brunoclozel@gmail.com
