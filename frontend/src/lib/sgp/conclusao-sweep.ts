@@ -275,7 +275,7 @@ async function gravar(
       .select("id");
 
   let { data, error } = await executar(update);
-  // A 118 pode ter sumido do schema cache entre a leitura e agora. Repete sem a
+  // A 119 pode ter sumido do schema cache entre a leitura e agora. Repete sem a
   // coluna em vez de perder a conclusão: o sentinela em `concluido_por` mantém a
   // tela honesta sozinho (ver SGP_CONCLUSAO_AUTOMATICA_AUTOR).
   if (error && temFlagAuto && colunaConclusaoAutomaticaAusente(error)) {

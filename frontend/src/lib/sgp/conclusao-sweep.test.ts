@@ -18,7 +18,7 @@
  *     gente não é sobrescrita pela do relógio, e isso não conta como erro;
  *  6. sem carimbo de aviso ela NUNCA fecha — arquivar quem não foi avisado é o
  *     defeito que o recado 6 veio consertar, não um que ele pode criar;
- *  7. a coluna da 118 pode não existir: a escrita cai pra sem-ela e a TELA
+ *  7. a coluna da 119 pode não existir: a escrita cai pra sem-ela e a TELA
  *     continua sabendo que foi automático, pelo sentinela.
  *
  * Rodar (Node ≥ 22.18, type-stripping nativo):
@@ -367,10 +367,10 @@ test("erro registrado trava o fechamento, mesmo passados os 7 dias", async () =>
 });
 
 /* ===========================================================================
- * 7) A 118 pode não existir — a escrita cai, a TELA continua honesta
+ * 7) A 119 pode não existir — a escrita cai, a TELA continua honesta
  * ========================================================================= */
 
-test("sem a coluna da 118 ainda fecha, e o sentinela mantém a tela sabendo", async () => {
+test("sem a coluna da 119 ainda fecha, e o sentinela mantém a tela sabendo", async () => {
   const linhas = [pedido({ concluido_automatico: undefined })];
   const { admin } = bancoFake(linhas, {
     ausentes: ["concluido_automatico"],

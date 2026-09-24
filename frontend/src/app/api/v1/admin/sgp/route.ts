@@ -73,7 +73,7 @@ const buscar = criarFilaComFallback<SgpPedidoRow>(
     { nome: "cobranca", colunas: COLUNAS_COBRANCA },
     { nome: "erroManual", colunas: COLUNAS_ERRO_MANUAL },
     { nome: "conclusao", colunas: COLUNAS_CONCLUSAO },
-    // A 118 marca a conclusão que fechou SOZINHA. Grupo próprio, separado da
+    // A 119 marca a conclusão que fechou SOZINHA. Grupo próprio, separado da
     // 110: sem isso, aplicar uma e não a outra derrubaria o botão "Concluir
     // atendimento", que já funciona, por causa de uma coluna alheia.
     { nome: "conclusaoAuto", colunas: COLUNAS_CONCLUSAO_AUTO },

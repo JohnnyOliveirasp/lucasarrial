@@ -343,8 +343,8 @@ export function lerErroManual(p: SgpPedidoRow, agora: number): ErroManual | null
  * caro nesta casa — e aqui ele seria pior que caro: um atendente cujo nome
  * casasse com o pedaço viraria "o sistema" na tela.
  *
- * ⚠️ POR QUE EXISTE, se a migration 118 traz uma coluna booleana pra isso: porque
- * a 118 pode nunca ser aplicada (quem aplica é o Johnny). Sem o sentinela, uma
+ * ⚠️ POR QUE EXISTE, se a migration 119 traz uma coluna booleana pra isso: porque
+ * a 119 pode nunca ser aplicada (quem aplica é o Johnny). Sem o sentinela, uma
  * conclusão automática apareceria na tela como se alguém do time tivesse olhado
  * o caso — que é exatamente a informação errada pra dar a quem trabalha nela.
  * O booleano é o campo ESTRUTURADO (pra contar em SQL); isto é a rede que mantém
@@ -411,7 +411,7 @@ export function lerConclusao(p: SgpPedidoRow, agora: number): Conclusao | null {
     por,
     motivo: p.concluido_motivo?.trim() || null,
     desdeMs: legivel ? Math.max(0, agora - em) : 0,
-    // A coluna estruturada (118) manda quando existe; o sentinela responde
+    // A coluna estruturada (119) manda quando existe; o sentinela responde
     // enquanto ela não for aplicada. Igualdade EXATA nos dois casos.
     automatica: p.concluido_automatico === true || por === SGP_CONCLUSAO_AUTOMATICA_AUTOR,
     // Data ilegível conta como superada: dado torto nunca pode calar um alerta

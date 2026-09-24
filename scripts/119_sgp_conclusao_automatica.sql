@@ -1,11 +1,29 @@
--- 118 — SGP: marcar a conclusão que fechou SOZINHA (7 dias após a ENTREGA).
+-- 119 — SGP: marcar a conclusão que fechou SOZINHA (7 dias após a ENTREGA).
 --
 -- PEDIDO (Johnny, recado 6 de 15/09, requisito 5): *"'Concluir atendimento'
 -- automático 7 dias após ENTREGUE sem reclamação."*
 --
--- ⚠️ NUMERAÇÃO: o cartão pediu "117+". A 117 (`117_sgp_fracassos.sql`) JÁ EXISTE
--- na main — conferido em `ls scripts/*.sql` antes de escrever, não suposto. Esta
--- é a 118.
+-- ⚠️ NUMERAÇÃO — e a lição de por que ela mudou sozinha.
+--
+-- Este arquivo nasceu em 16/09 como **118**, com esta justificativa escrita:
+-- *"o cartão pediu 117+; a 117 (`117_sgp_fracassos.sql`) JÁ EXISTE na main —
+-- conferido em `ls scripts/*.sql` antes de escrever, não suposto."*
+--
+-- A conferência estava CERTA no dia e ficou ERRADA sem ninguém tocar no PR:
+-- enquanto ele esperava merge (8 dias), entraram na main DUAS migrations 118 —
+-- `118_virais_do_aluno.sql` e `118_voices_speech_rate.sql`. Mergear como 118
+-- criaria a TERCEIRA.
+--
+-- Renumerado para **119** na ronda de 25/09 ~00hZ. É seguro porque este DDL
+-- **nunca foi aplicado**: renumerar arquivo já aplicado seria apagar o rastro
+-- do que rodou, e aí não se faz.
+--
+-- A lição, que vale pro próximo: **o número não é identificador, é um palpite
+-- sobre o que os outros ainda não mergearam.** Git não acusa a colisão (os
+-- nomes de arquivo diferem, não há conflito), então ela entra CLEAN. Conferir
+-- na hora de ESCREVER não protege; conferir na hora de MERGEAR, sim. Medido em
+-- 25/09: a main já tinha 3 números colididos (82 com três arquivos, 100 e 118
+-- com dois cada) — `_frank/ferramentas/2026-09-25_migration_numero_colidido.cjs`.
 --
 -- ---------------------------------------------------------------------------
 -- POR QUE UMA COLUNA, se `concluido_por` já diria quem fechou
@@ -106,7 +124,7 @@ create trigger sgp_pedidos_touch before update on public.sgp_pedidos
 -- ---------------------------------------------------------------------------
 -- ⚠️ ORDEM DE APLICAÇÃO
 -- ---------------------------------------------------------------------------
--- Esta 118 SUBSTITUI o pedaço de gatilho da 106, da 109 e da 110 (é
+-- Esta 119 SUBSTITUI o pedaço de gatilho da 106, da 109 e da 110 (é
 -- superconjunto das três). NUNCA aplicar 106/109/110 DEPOIS desta: qualquer uma
 -- recria a função sem conhecer `concluido_automatico`, e a partir daí cada
 -- conclusão automática passa a zerar o "parado há" daquela linha — sem avisar.

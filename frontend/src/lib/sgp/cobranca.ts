@@ -35,11 +35,11 @@ export const COLUNAS_CONCLUSAO = ["concluido_em", "concluido_por", "concluido_mo
 export const COLUNAS_AVISO = ["avisado_em", "avisado_por", "avisado_canal"] as const;
 
 /**
- * A coluna da migration 118 ("este atendimento fechou sozinho"). Mesmo regime.
+ * A coluna da migration 119 ("este atendimento fechou sozinho"). Mesmo regime.
  *
  * ⚠️ GRUPO SEPARADO DA 110 de propósito, e não é organização: são migrations
  * diferentes e quem aplica é o Johnny, uma de cada vez. No mesmo grupo, a 110
- * aplicada e a 118 não derrubariam o grupo INTEIRO — e o botão "Concluir
+ * aplicada e a 119 não derrubariam o grupo INTEIRO — e o botão "Concluir
  * atendimento", que já funciona, sumiria da tela por causa de uma coluna alheia.
  * É exatamente o defeito que `criarFilaComFallback` documenta em caixa alta.
  */
