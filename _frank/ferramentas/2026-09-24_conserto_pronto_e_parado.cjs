@@ -60,6 +60,25 @@
  *
  * O script MORRE se a contagem não fechar ou se sobrar UNKNOWN — em vez de
  * imprimir número torto com cara de medição.
+ *
+ * ── CONSERTO DE 24/09 17hZ: a SEGUNDA PASSADA ───────────────────────────
+ *
+ * O `pr view` não RESPONDE a mergeabilidade: ele a ENCOMENDA. O GitHub
+ * calcula o merge de teste em background e devolve `UNKNOWN` enquanto não
+ * terminou. Numa rajada de ~60 views em segundos, a maioria chega antes da
+ * conta ficar pronta — e o script morria no `morrer()` do UNKNOWN.
+ *
+ * Medido: em 4 rondas seguidas (21, 22, 23 e 24/09) a 1ª execução abortou
+ * (57, 58 e 59 UNKNOWN) e a 2ª, feita à mão segundos depois, devolveu o
+ * quadro inteiro. Ou seja: **a ferramenta só funcionava porque era rodada
+ * duas vezes, por acidente, e o número dependia de alguém ter paciência.**
+ * Anotado 3 rondas sem conserto; esta é a 4ª e é aqui que para.
+ *
+ * O conserto não afrouxa a trava — ele dá ao GitHub o tempo que ele pediu:
+ * re-consulta SÓ os UNKNOWN, em até 4 passadas com espera crescente
+ * (2s, 4s, 8s, 16s). Sobrou UNKNOWN depois disso, aí sim morre: aí é o
+ * instrumento dizendo "não sei" de verdade, e não pressa nossa.
+ * **Zero de instrumento cego continua não sendo zero medido.**
  */
 const { execFileSync } = require("node:child_process");
 
@@ -89,18 +108,38 @@ if (numeros.length === 0) morrer("zero PR aberto — improvável nesta casa; tra
 
 // Um `pr view` por PR: é o ÚNICO jeito de o GitHub calcular mergeable.
 // (ver "ARMADILHA MEDIDA" no cabeçalho — o `list` devolve UNKNOWN pra todos)
-const prs = [];
-for (const n of numeros) {
+function verPR(n) {
   try {
     const p = JSON.parse(
       gh(["pr", "view", String(n), "--json", "number,title,createdAt,mergeable,mergeStateStatus,isDraft,headRefName"]),
     );
-    prs.push({ ...p, idade: dias(p.createdAt) });
+    return { ...p, idade: dias(p.createdAt) };
   } catch (e) {
     morrer(`PR #${n} não respondeu (${e.message.split("\n")[0]}). Contagem parcial não vale.`);
   }
 }
+// espera SÍNCRONA (o resto do script é execFileSync; não dá pra await aqui)
+const esperar = (s) => execFileSync("sleep", [String(s)]);
 
+// PASSADA 1: encomenda o cálculo de mergeabilidade dos N PRs.
+const porNumero = new Map();
+for (const n of numeros) porNumero.set(n, verPR(n));
+
+// PASSADAS 2..5: o `pr view` ENCOMENDA o merge de teste, não o responde de
+// imediato. Re-consulta SÓ quem voltou UNKNOWN, dando tempo crescente ao
+// GitHub. Sem isto o script aborta na 1ª execução e só funciona na 2ª —
+// foi o defeito medido em 4 rondas seguidas (ver cabeçalho).
+const ESPERAS = [2, 4, 8, 16];
+const passadas = [];
+for (const espera of ESPERAS) {
+  const pendentes = [...porNumero.values()].filter((p) => p.mergeable === "UNKNOWN").map((p) => p.number);
+  if (pendentes.length === 0) break;
+  passadas.push(`${pendentes.length} UNKNOWN → reconsulta em ${espera}s`);
+  esperar(espera);
+  for (const n of pendentes) porNumero.set(n, verPR(n));
+}
+
+const prs = [...porNumero.values()];
 if (prs.length !== numeros.length) morrer(`li ${prs.length} de ${numeros.length} PRs.`);
 
 const limpos = prs.filter((p) => p.mergeable === "MERGEABLE" && p.mergeStateStatus === "CLEAN");
@@ -108,12 +147,16 @@ const podres = prs.filter((p) => p.mergeable === "CONFLICTING");
 const cegos = prs.filter((p) => p.mergeable === "UNKNOWN");
 
 // Trava contra o zero cego: se o GitHub não calculou, isto NÃO é medição.
+// Só mata DEPOIS das reconsultas — antes disso, UNKNOWN é pressa nossa.
 if (cegos.length > 0) {
   morrer(
-    `${cegos.length} PR(s) voltaram UNKNOWN (o GitHub não calculou a mergeabilidade).\n` +
+    `${cegos.length} PR(s) seguiram UNKNOWN após ${ESPERAS.length} reconsulta(s) (${ESPERAS.join("s, ")}s).\n` +
       `   Isso é o instrumento dizendo "não sei", não é "não dá pra mergear".\n` +
       `   PRs: ${cegos.map((p) => "#" + p.number).join(", ")}`,
   );
+}
+if (passadas.length && !JSON_OUT) {
+  console.log(`\n🔁 mergeabilidade não veio na 1ª passada: ${passadas.join(" · ")} — resolvido, número abaixo é medido.`);
 }
 if (limpos.length + podres.length !== prs.length) {
   morrer(`${prs.length} PRs mas ${limpos.length} limpos + ${podres.length} podres não fecham a conta.`);
