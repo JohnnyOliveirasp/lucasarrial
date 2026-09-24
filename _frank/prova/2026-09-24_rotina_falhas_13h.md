@@ -207,3 +207,49 @@ repetição**):
 - Carta: **uid 3350** conferido na pasta remota por instrumento independente.
 - Merge: conteúdo conferido **na `origin/main`**, e deploy SUCCESS no **mesmo
   sha** — não no sha que o PR prometia.
+
+---
+
+## 7. ADENDO — o passo fixo de fim de ronda me deu um FALSO PASSA
+
+Escrito depois do corpo acima, ao executar a conferência final. Registro porque
+ronda que esconde o próprio tropeço não serve de prova.
+
+### 7.1 `git log origin/main..HEAD` saiu vazio com o checkout DESATUALIZADO
+
+O passo fixo manda conferir que `origin/main..HEAD` sai **vazio**. Saiu. Mas o
+checkout local estava em `f188565e` enquanto a `origin/main` já estava em
+`5a7bb297` — **o meu próprio commit**. A consulta saiu vazia porque `HEAD` era
+**ancestral** de `origin/main`, não porque estivesse tudo em dia.
+
+> `origin/main..HEAD` responde **"tenho algo sem push?"**. Ele **não** responde
+> "estou em dia". Um checkout atrasado passa nesse teste de olhos fechados.
+
+O que salvou foi eu ter conferido os dois arquivos **direto na `origin/main`**
+(`git cat-file -e origin/main:<arquivo>`) em vez de aceitar o vazio como
+veredito. **Mesma família do zero cego**: consulta que não sabe a resposta volta
+vazia e parece saúde.
+
+A causa do atraso, medida: o `--ff-only` vinha **abortando em silêncio** porque
+eu havia escrito os dois arquivos no checkout compartilhado antes de copiá-los
+pro worktree — e arquivo **untracked** que o merge sobrescreveria trava o
+fast-forward. O `Aborting` estava lá, mas debaixo do `tail -2`. Conferi por
+`git hash-object` que as cópias locais eram **byte-idênticas** às já publicadas
+antes de apagar qualquer coisa (regra #101/#210: nunca apagar sem conferir).
+
+### 7.2 A outra metade do passo fixo não sinaliza nada
+
+`git branch` + `git rev-list main..<branch>` — como está escrito — devolveu
+**~190 branches** com commit fora da main, medidos contra a `main` **local e
+atrasada**. Um alerta que dispara 190 vezes não é alerta: ninguém lê, e o caso
+real (o de 19/08, em que um fix de aluno ficou 9h preso) some no meio.
+
+Refeito com o recorte certo — trabalho **de hoje**, contra a **`origin/main`** —
+a resposta é limpa e útil: **zero**. Os dois commits da ronda (`4c3efaa7` do
+merge e `5a7bb297` do log) conferidos por `merge-base --is-ancestor` como
+ancestrais da `origin/main`.
+
+**Proposta, sem executar:** o passo fixo devia ser (a) `HEAD == origin/main`
+depois do fetch, não `origin/main..HEAD` vazio; e (b) o varredor de branches
+recortado por autoria/data e medido contra `origin/main`. Não mexi no manual —
+isso é correção de ordem, e ordem quem muda é o Johnny.
