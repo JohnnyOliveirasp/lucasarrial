@@ -169,10 +169,17 @@ class InferenceJob:
         # pendurado aqui era reportado como "(sem fase instrumentada)" — e é
         # exatamente isso que apareceu na geração 86254b30 (04/09, 751 chars,
         # morreu no teto de 480s com a fase VAZIA). Na a07e9278 do mesmo dia a
-        # fase era `inference.chunk.generate` com running_s=4,9: avançando, não
-        # pendurada. Ou seja: as duas ocorrências novas apontam para cá, e sem
-        # estas três fases a investigação continua cega no único lugar que
-        # sobrou.
+        # fase era `inference.chunk.generate` com running_s=4,9 — CUIDADO com
+        # a leitura desse número: como o heartbeat CONGELA junto na pane
+        # (medido em 22/09, geração 9555c0d0: `visto_em` e `running_s` param
+        # de avançar juntos), o running_s final é apenas o ÚLTIMO valor
+        # escrito antes do congelamento. running_s baixo NÃO prova que a fase
+        # avançava — prova só onde o relógio parou; a a07e9278 é igualmente
+        # compatível com um freeze logo depois de entrar no chunk (a premissa
+        # antiga, "avançando, não pendurada", já induziu duas leituras erradas
+        # do cartão #15). O que segue de pé: a 86254b30 aponta para o setup
+        # sem fase, e sem estas três fases a investigação continua cega no
+        # único lugar que sobrou.
         t_setup = time.monotonic()
         with _phase("inference.setup.lora"):
             lora_path = baixar_lora(self.inp.get("lora_url"))

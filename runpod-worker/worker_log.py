@@ -156,7 +156,12 @@ def _heartbeat_loop() -> None:
         try:
             time.sleep(TTS_HEARTBEAT_SECONDS)
             if _CURRENT_JOB_TYPE is None:
-                continue  # idle entre jobs — não polui o log
+                # idle entre jobs — não polui o log NEM posta fase, mas o
+                # PULSO sai mesmo assim: ele é prova de vida do PROCESSO pro
+                # watchdog (#15, 22/09), e sem pulso idle um worker parado
+                # entre jobs pareceria congelado.
+                _watchdog_pulse(ativo=False)
+                continue
             with _PHASE_LOCK:
                 top = _PHASE_STACK[-1] if _PHASE_STACK else None
                 name = top["name"] if top else "(sem fase instrumentada)"
@@ -172,6 +177,10 @@ def _heartbeat_loop() -> None:
             #      que `regens` sobreviva se um dia alguma fase carregar um
             #      meta grande.
             meta = {**_stats_do_job(), **meta}
+            # Pulso ANTES do log/POST, de propósito: a prova de vida é um
+            # write LOCAL e não pode depender de rede (o POST de fase abaixo
+            # tem timeout de 5s — pendurar ali não pode atrasar o pulso).
+            _watchdog_pulse(ativo=True, fase=name, running_s=running_s, meta=meta)
             log("info", "phase.alive", phase=name, running_s=running_s,
                 job_type=_CURRENT_JOB_TYPE, **meta)
             # Leva a fase até o NOSSO banco (o log daqui expira ~30min e o
@@ -289,8 +298,87 @@ def _fase_post(fase: str, running_s: float | None, job_type: str | None,
         pass  # telemetria JAMAIS derruba nem atrasa um job
 
 
+# ───────── Watchdog de heartbeat CONGELADO (#15, 22/09) ─────────
+# A geracao 342e54a1 morreu no teto de 640s com 2,0x o MAXIMO da faixa dela —
+# worker pendurado, nao regua curta. O trace da 9555c0d0 (22/09 14h) mostrou a
+# forma da pane: `visto_em` E `running_s` param de avancar JUNTOS, ou seja a
+# PROPRIA thread deste heartbeat congela (hang nativo segurando o GIL congela
+# todas as threads Python de uma vez). Thread de vigia congelaria junto — por
+# isso o vigia e um PROCESSO filho (worker_watchdog.py): o heartbeat escreve
+# um PULSO em arquivo a cada tick (ativo ou idle) e o filho mata o worker por
+# SIGKILL — o MESMO efeito do executionTimeout, so que em ~105s em vez de ate
+# 640s, e com erro nomeado no stdout E no banco (POST de fase antes do kill) —
+# quando um pulso ATIVO fica sem sucessor por TTS_WATCHDOG_TICKS ticks +
+# margem. O retry existente da RunPod faz o resto (na 9555c0d0, a tentativa
+# seguinte entregou 13 chunks em ~160s).
+# Defaults ligados SEM env de proposito: o CI manda `env: []` no saveTemplate
+# e apaga qualquer env do template a cada deploy (ver Dockerfile, WORKER_IMAGE).
+import subprocess
+import sys
+import tempfile
+
+TTS_WATCHDOG_TICKS = int(os.environ.get("TTS_WATCHDOG_TICKS", "3"))  # <=0 desliga
+TTS_WATCHDOG_MARGEM_S = float(os.environ.get("TTS_WATCHDOG_MARGEM_S", "15"))
+TTS_WATCHDOG_POLL_S = float(os.environ.get("TTS_WATCHDOG_POLL_S", "10"))
+# Por-pid: dois processos de worker na mesma maquina nao disputam o arquivo.
+_WATCHDOG_PULSE_PATH = os.environ.get("TTS_WATCHDOG_PULSE") or os.path.join(
+    tempfile.gettempdir(), f"tts_watchdog_pulse_{os.getpid()}.json")
+_WATCHDOG_PROC = None  # subprocess.Popen | None — filho unico por processo
+
+
+def _watchdog_pulse(ativo: bool, fase: str | None = None,
+                    running_s: float | None = None, meta: dict | None = None) -> None:
+    """Prova de vida do PROCESSO pro vigia externo. Write atômico (tmp +
+    os.replace): o filho nunca lê JSON pela metade. A `fase_cfg` viaja no
+    pulso pra que o FILHO consiga postar o erro nomeado pro nosso banco antes
+    do SIGKILL (o arquivo fica no tmp do container, mesmo domínio de confiança
+    do input do job, que já carrega o token). Nunca lança."""
+    try:
+        corpo = {
+            "ts": time.time(),
+            "ativo": bool(ativo),
+            "job_type": _CURRENT_JOB_TYPE,
+            "fase": fase,
+            "running_s": running_s,
+            "meta": _meta_serializavel(meta),
+            "fase_cfg": _FASE_CFG,
+        }
+        tmp = f"{_WATCHDOG_PULSE_PATH}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(json.dumps(corpo, ensure_ascii=False))
+        os.replace(tmp, _WATCHDOG_PULSE_PATH)
+    except Exception:
+        pass  # pulso falho = watchdog cego, nunca job derrubado
+
+
+def _start_watchdog() -> None:
+    """Sobe o PROCESSO filho do vigia uma única vez. Desligável com
+    TTS_WATCHDOG_TICKS<=0. Best-effort: falha ao subir vira warn e o worker
+    segue exatamente como hoje (esperando o teto). stdout herdado: as linhas
+    do vigia caem no MESMO log do worker no console da RunPod."""
+    global _WATCHDOG_PROC
+    if _WATCHDOG_PROC is not None or TTS_WATCHDOG_TICKS <= 0:
+        return
+    try:
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "worker_watchdog.py")
+        stale_s = TTS_WATCHDOG_TICKS * TTS_HEARTBEAT_SECONDS + TTS_WATCHDOG_MARGEM_S
+        _WATCHDOG_PROC = subprocess.Popen([
+            sys.executable, script, _WATCHDOG_PULSE_PATH,
+            str(os.getpid()), str(stale_s), str(TTS_WATCHDOG_POLL_S),
+        ])
+        log("info", "phase.watchdog.started", stale_s=stale_s,
+            pulse=_WATCHDOG_PULSE_PATH)
+    except Exception as exc:
+        try:
+            log("warn", "phase.watchdog_start_failed", error=str(exc))
+        except Exception:
+            pass
+
+
 def start_heartbeat() -> None:
-    """Sobe a thread daemon uma única vez. Desligável com TTS_HEARTBEAT_SECONDS<=0."""
+    """Sobe a thread daemon uma única vez. Desligável com TTS_HEARTBEAT_SECONDS<=0.
+    Também sobe o processo do watchdog (#15): sem heartbeat não há pulso, e
+    vigia sem pulso não age — os dois ligam e desligam juntos."""
     global _HEARTBEAT_STARTED
     if _HEARTBEAT_STARTED or TTS_HEARTBEAT_SECONDS <= 0:
         return
@@ -302,6 +390,8 @@ def start_heartbeat() -> None:
             log("warn", "phase.heartbeat_start_failed", error=str(exc))
         except Exception:
             pass
+        return
+    _start_watchdog()
 
 
 def set_current_job(job_type, inp: dict | None = None) -> None:
@@ -318,3 +408,12 @@ def set_current_job(job_type, inp: dict | None = None) -> None:
         # velho pro job seguinte. Mesma garantia (e mesmo ponto de limpeza) do
         # `_FASE_CFG` — por isso o handler não precisa de nenhuma mudança.
         set_job_stats_provider(None)
+        # Pulso IDLE imediato (#15): sem ele, o último pulso do job anterior
+        # (ativo) seguiria valendo por até um tick — e um freeze nessa janela
+        # seria atribuído a um job que já acabou.
+        _watchdog_pulse(ativo=False)
+    else:
+        # Pulso ATIVO imediato (#15): fecha a janela entre o início do job e o
+        # 1º tick (~30s) — um job que congela já no download do LoRA (caso
+        # 86254b30) também merece o vigia, e a cfg de fase acabou de ser setada.
+        _watchdog_pulse(ativo=True)

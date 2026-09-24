@@ -65,6 +65,7 @@ RUN --mount=type=secret,id=url_model \
 # Handler + pipeline
 COPY handler.py .
 COPY worker_log.py .
+COPY worker_watchdog.py .
 COPY worker_config.py .
 COPY worker_disk.py .
 COPY model_loader.py .
