@@ -38,7 +38,22 @@ function exigir(rotulo, error) {
   const { data: inc, error: errInc } = await db
     .from("incidents")
     .select("id, status, title, occurrences, created_at, last_seen_at")
-    .in("status", ["open", "investigating"])
+    // ⚠️ `aguardando_aluno` ENTRA. O `idade_incidentes.cjs` ganhou este mesmo
+    // conserto em 23/09 e ESTE ARQUIVO nao foi junto — entao por mais um dia a
+    // ferramenta que a ronda de fato roda continuou escondendo cartao. Medido
+    // em 24/09 ~20hZ: com o filtro velho 121, com este 151. Sao 30 cartoes
+    // invisiveis, TODOS com aluno nomeado, o mais velho com 27,2d (#172).
+    //
+    // Por que isso quebra a regra 8 e nao so a contagem: a regra manda pegar "o
+    // mais antigo com aluno afetado", e o filtro velho escondia justamente os
+    // mais velhos. E `aguardando_aluno` MENTE sobre quem deve o proximo passo
+    // (caso #214: 21 dias com o rotulo sem que nada tivesse sido pedido a
+    // aluna; a bola era da casa o tempo todo), entao ele precisa ser VISTO pra
+    // poder ser contestado.
+    //
+    // Mesma familia do #410: conserto sobe num lugar e o acervo (aqui, as
+    // outras copias da mesma regra) fica para tras.
+    .in("status", ["open", "investigating", "aguardando_aluno"])
     .order("created_at", { ascending: true });
   exigir("incidents", errInc);
 
