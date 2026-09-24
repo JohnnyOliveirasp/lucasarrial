@@ -225,3 +225,35 @@ Não consertei a causa; **237 alunos seguem com o defeito**. O cartão segue
   limpeza de reabertura e apagaria o vínculo com `7dc53d7a`).
 - Nota passada por `"$(cat arquivo)"` e **relida depois de gravar** — a armadilha
   de crase de 23/09 13:03Z não se repetiu: 8.787 chars, sem buraco.
+
+---
+
+## 5. ⚠️ Nasceu mais uma branch STALE da família que já queimou 5 vezes
+
+O passo fixo de fim de ronda (`git rev-list main..<branch>`) apontou
+**`feat/tail-interno-posicao-da-fronteira` 1 commit à frente da main**
+(`33f68893`). Fui conferir antes de reportar "fix preso", porque o PR #408 foi
+mergeado **por squash** — e squash deixa a branch fora da linhagem por
+construção, sem que nada esteja perdido.
+
+**Conferido pelo CONTEÚDO, não pela linhagem:** `git diff origin/main
+origin/feat/tail-interno-posicao-da-fronteira` nos 3 arquivos do PR devolve
+**vazio em `tts_qa/loop.py` e `test_tail_qa.py`**. O #408 está inteiro na main.
+
+O único arquivo que difere é `jobs/inference.py`, e o diff é **o contrário do
+que o número sugere**: a main tem **37 linhas a mais** que a branch, e são
+exatamente o **PR #403** (heartbeat `setup_s` / `_stats_para_heartbeat`, merge
+`a77c90c9`, 23/09 14:47Z) — que subiu **depois** do #408 e tocou o mesmo
+arquivo. A branch está **atrás** da main, não à frente em conteúdo.
+
+> **Consequência, e é a mesma de sempre:** `feat/tail-interno-posicao-da-fronteira`
+> virou **branch STALE**. Mergear ela hoje **reverteria o heartbeat do #403** —
+> mesma família do `feat/onedrive-401`, do `feat/fix-image-upload-retry`, das 2
+> da cura de referência, do `fix/trava-foto-nova-8379549c` e do
+> `fix/ritmo-da-referencia-porta-73a60bb`. **Não mergear**; se for descartar de
+> vez, apagar no origin.
+
+**Nada preso, então.** Mas registro porque "1 commit à frente" é o sinal que a
+regra de fim de ronda manda investigar, e a resposta certa aqui só apareceu
+olhando o conteúdo — a contagem de commits, sozinha, teria dito a coisa errada
+nas duas direções possíveis ("tem fix preso" e "não tem branch stale").
