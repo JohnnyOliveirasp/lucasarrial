@@ -237,6 +237,7 @@
       "submit": "Enviar enlace",
       "submitting": "Enviando…",
       "sent": "Si este email tiene una cuenta, recibirás un enlace para restablecer la contraseña. Revisa tu bandeja de entrada (y el spam).",
+      "sentRemetente": "El mensaje llega desde suporte@fastcloner.com y el enlace vale por 1 hora. Si no lo encuentras, busca ese remitente — también en el spam.",
       "backToLogin": "← Volver al login"
     },
     "reset": {
