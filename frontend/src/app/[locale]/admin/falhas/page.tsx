@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, CheckCircle2, ChevronDown, Plus } from "lucide-react";
 import { CAUSE_LABELS, KIND_LABELS, type IncidentCause } from "@/lib/incidents/classify";
 import { alunoRespondido, motivoDefeitoVivo, type NotaIncidente } from "@/lib/incidents/baixa";
+import { agruparPorPessoa } from "@/lib/incidents/agrupar-pessoa";
 import type { IncidentStatus } from "@/lib/incidents/status";
 
 type AgentNote = NotaIncidente;
@@ -87,7 +88,12 @@ export default function FalhasPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("tecnicos");
+  /** Chave composta `${grupo}:${id}` — um chamado compartilhado aparece em DOIS
+   *  grupos, e abrir a cópia de uma pessoa não pode abrir a da outra. */
   const [open, setOpen] = useState<string | null>(null);
+  /** Pessoas RECOLHIDAS. O padrão é tudo ABERTO: agrupar não pode virar
+   *  esconder (regra do pedido) — quem tem 3 chamados continua vendo os 3. */
+  const [recolhidas, setRecolhidas] = useState<Set<string>>(new Set());
   const [showReport, setShowReport] = useState(false);
   /** Papel de quem está olhando — só o admin pode forçar um fechamento travado. */
   const [role, setRole] = useState<"admin" | "suporte" | null>(null);
@@ -165,6 +171,25 @@ export default function FalhasPage() {
     return incidents;
   }, [incidents, filter]);
 
+  /**
+   * O agrupamento é POR CIMA do filtro: primeiro a fila decide QUAIS chamados
+   * aparecem (mesma regra de sempre, nada mudou de significado), depois eles
+   * são arrumados por pessoa. Por isso todo contador da tela continua contando
+   * CHAMADO (`shown`/`active`/`todayHits`), nunca grupo — a soma dos itens
+   * dentro dos grupos pode ser MAIOR que o nº de chamados, porque um chamado
+   * com dois e-mails mora no grupo das duas pessoas (não perder informação).
+   */
+  const grupos = useMemo(() => agruparPorPessoa(shown), [shown]);
+
+  function togglePessoa(chave: string) {
+    setRecolhidas((prev) => {
+      const s = new Set(prev);
+      if (s.has(chave)) s.delete(chave);
+      else s.add(chave);
+      return s;
+    });
+  }
+
   const active = incidents.filter((i) => i.status !== "fixed" && i.status !== "ignored");
   const today = new Date().toDateString();
   const todayHits = incidents.filter((i) => new Date(i.last_seen_at).toDateString() === today);
@@ -175,7 +200,7 @@ export default function FalhasPage() {
         <div>
           <h1 className="font-sans text-[26px] font-semibold tracking-[-0.03em] text-[var(--ink)]">Falhas</h1>
           <p className="mt-1 text-[14px] text-[var(--mute)]">
-            Incidentes agrupados por causa · atualiza a cada 30s
+            Agrupado por pessoa — os chamados de cada uma ficam dentro · atualiza a cada 30s
           </p>
         </div>
         <button
@@ -231,16 +256,124 @@ export default function FalhasPage() {
           <div className="px-4 py-8 text-center font-mono text-[12px] text-[var(--ash)]">nenhum incidente</div>
         ) : (
           <ul>
-            {shown.map((inc, i) => {
-              const isOpen = open === inc.id;
-              const meta = STATUS_META[inc.status] ?? { label: inc.status, cls: "text-[var(--ash)]" };
+            {grupos.map((g, gi) => {
+              const topo = gi > 0 ? "border-t border-[var(--hairline)]" : "";
+              // Chamado SEM e-mail: grupo solto de um — a linha de sempre,
+              // sem cabeçalho de pessoa (não há pessoa pra encabeçar).
+              if (g.chave === null) {
+                const inc = g.incidentes[0];
+                const k = `solto:${inc.id}`;
+                return (
+                  <li key={k} className={topo}>
+                    <LinhaChamado
+                      inc={inc}
+                      aberto={open === k}
+                      onToggle={() => setOpen(open === k ? null : k)}
+                      role={role}
+                      setStatus={setStatus}
+                      marcarAlunoRespondido={marcarAlunoRespondido}
+                      desfazerAlunoRespondido={desfazerAlunoRespondido}
+                    />
+                  </li>
+                );
+              }
+              const chave = g.chave;
+              const fechado = recolhidas.has(chave);
               return (
-                <li key={inc.id} className={i > 0 ? "border-t border-[var(--hairline)]" : ""}>
+                <li key={chave} className={topo}>
+                  {/* Cabeçalho da PESSOA — é ele que responde o "por que o nome
+                      dele aparece 2x?": aparece porque tem 2 chamados, e agora
+                      os 2 moram dentro de um nome só. */}
                   <button
                     type="button"
-                    onClick={() => setOpen(isOpen ? null : inc.id)}
-                    className="grid w-full grid-cols-[1fr_auto] items-center gap-3 bg-[var(--surface-card)] px-4 py-3 text-left transition-colors hover:bg-[var(--surface-elevated)] md:grid-cols-[1fr_150px_130px_120px_70px_24px]"
+                    onClick={() => togglePessoa(chave)}
+                    className="grid w-full grid-cols-[1fr_auto_24px] items-center gap-3 bg-[var(--surface-elevated)] px-4 py-2.5 text-left transition-colors hover:bg-[var(--surface-card)]"
                   >
+                    <span className="min-w-0 truncate text-[13px] font-medium text-[var(--ink)]">
+                      {g.email}
+                    </span>
+                    <span className="font-mono text-[11px] text-[var(--mute)]">
+                      {g.incidentes.length} chamado{g.incidentes.length > 1 ? "s" : ""}
+                    </span>
+                    <ChevronDown
+                      className={`size-4 text-[var(--ash)] transition-transform ${!fechado ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {!fechado && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.22, ease: "easeOut" }}
+                        className="overflow-hidden"
+                      >
+                        <ul className="ml-4 border-l border-[var(--hairline)]">
+                          {g.incidentes.map((inc, ii) => {
+                            const k = `${chave}:${inc.id}`;
+                            return (
+                              <li
+                                key={k}
+                                className={ii > 0 ? "border-t border-[var(--hairline)]" : ""}
+                              >
+                                <LinhaChamado
+                                  inc={inc}
+                                  aberto={open === k}
+                                  onToggle={() => setOpen(open === k ? null : k)}
+                                  role={role}
+                                  setStatus={setStatus}
+                                  marcarAlunoRespondido={marcarAlunoRespondido}
+                                  desfazerAlunoRespondido={desfazerAlunoRespondido}
+                                />
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {showReport && <ReportModal onClose={() => setShowReport(false)} onDone={load} />}
+    </div>
+  );
+}
+
+/**
+ * A LINHA do chamado — o desenho de sempre, agora reutilizado em dois lugares:
+ * dentro do grupo da pessoa e solto (chamado sem e-mail). Nada aqui mudou de
+ * comportamento; só saiu do corpo do map pra poder ser aninhada.
+ */
+function LinhaChamado({
+  inc,
+  aberto,
+  onToggle,
+  role,
+  setStatus,
+  marcarAlunoRespondido,
+  desfazerAlunoRespondido,
+}: {
+  inc: Incident;
+  aberto: boolean;
+  onToggle: () => void;
+  role: "admin" | "suporte" | null;
+  setStatus: (id: string, status: Incident["status"], force?: boolean) => void;
+  marcarAlunoRespondido: (id: string) => void;
+  desfazerAlunoRespondido: (id: string) => void;
+}) {
+  const meta = STATUS_META[inc.status] ?? { label: inc.status, cls: "text-[var(--ash)]" };
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="grid w-full grid-cols-[1fr_auto] items-center gap-3 bg-[var(--surface-card)] px-4 py-3 text-left transition-colors hover:bg-[var(--surface-elevated)] md:grid-cols-[1fr_150px_130px_120px_70px_24px]"
+      >
                     <span className="min-w-0">
                       <span className="block truncate text-[13px] text-[var(--ink)]">
                         {inc.numero != null && (
@@ -279,11 +412,11 @@ export default function FalhasPage() {
                     <span className="hidden text-right font-mono text-[12px] tabular-nums text-[var(--body)] md:block">
                       {inc.occurrences}×
                     </span>
-                    <ChevronDown className={`size-4 text-[var(--ash)] transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                    <ChevronDown className={`size-4 text-[var(--ash)] transition-transform ${aberto ? "rotate-180" : ""}`} />
                   </button>
 
                   <AnimatePresence initial={false}>
-                    {isOpen && (
+                    {aberto && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: "auto", opacity: 1 }}
@@ -335,15 +468,7 @@ export default function FalhasPage() {
                       </motion.div>
                     )}
                   </AnimatePresence>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      {showReport && <ReportModal onClose={() => setShowReport(false)} onDone={load} />}
-    </div>
+    </>
   );
 }
 
