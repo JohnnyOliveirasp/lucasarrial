@@ -1,5 +1,6 @@
 /**
- * Testes dos guardrails de Trial Reel (trial-guardrails-pure.ts).
+ * Testes dos guardrails de Trial Reel (trial-guardrails-pure.ts +
+ * trial-conteudo.ts, que fornece os hashes do dedupe por conteúdo).
  *
  * Rodar (Node ≥ 22.18, type-stripping nativo), de dentro de frontend/:
  *   node --test src/lib/social/trial-guardrails.test.ts
@@ -7,21 +8,29 @@
  * MUTAÇÃO — cada regra tem um par de fronteira; afrouxe UMA regra e o teste
  * correspondente cai (guarda que passa com e sem a regra não prova nada):
  *   - limite 6/dia → 7 (ou remover)      → cai o teste 1 (6 na janela bloqueia)
- *   - limite NOSSO trocado pelo da Meta  → caem os testes 1 e 22 (6 barra
+ *   - limite NOSSO trocado pelo da Meta  → caem os testes 1 e 25 (6 barra
  *     mesmo com quota_usage 0/100 — o 6 é mais restritivo e não é substituído)
  *   - janela de 24h esticada             → cai o teste 3 (25h atrás NÃO conta)
  *   - espaçamento trial 2h → 1h30/remover→ cai o teste 4 (1h59 bloqueia)
- *   - espaçamento normal 1h removido     → cai o teste 19 (59min bloqueia)
- *   - cota Meta: null passando a barrar  → cai o teste 20 (falha da consulta
+ *   - espaçamento normal 1h removido     → cai o teste 23 (59min bloqueia)
+ *   - cota Meta: null passando a barrar  → cai o teste 24 (falha da consulta
  *     NUNCA barra — instrumento quebrado não derruba publicação)
- *   - breaker 24h encurtado/removido     → cai o teste 6 (falha há 1h bloqueia)
- *   - breaker sem excluir guardrail_block→ cai o teste 8 (bloqueio NOSSO não abre)
- *   - dedupe removido                    → cai o teste 9 (mesmo vídeo bloqueia)
- *   - dedupe sem normalizar r2-cleaned://→ cai o teste 11 (vídeo já limpo bloqueia)
- *   - retry aceitando status ≠ 429       → cai o teste 14 (500/400/rede não retenta)
- *   - backoff sem dobrar                 → cai o teste 13 (2ª tentativa = 30min)
- * E os tripwires (testes 16–17) acusam se alguém tirar a decisão do caminho
- * REAL do envio (publisher) ou da rota — regra fora do fio não protege nada.
+ *   - breaker sem exigir 3 consecutivas  → cai o teste 6 (2 falhas NÃO abrem)
+ *   - breaker removido/encurtado         → cai o teste 7 (3ª falha abre)
+ *   - sucesso NÃO zerando a contagem     → cai o teste 8 (falha,falha,sucesso,falha)
+ *   - breaker sem excluir guardrail_block→ cai o teste 10 (3 bloqueios NOSSOS não abrem)
+ *   - dedupe por hash de vídeo removido  → cai o teste 11 (mesmo sha256 em 6d bloqueia)
+ *   - janela de 7 dias do dedupe esticada→ cai o teste 12 (8 dias atrás LIBERA)
+ *   - normalização da legenda removida   → cai o teste 13 (acento/emoji/caixa bloqueia)
+ *   - dedupe exigindo vídeo E legenda    → cai o teste 14 (só o vídeo igual já barra)
+ *   - legenda vazia entrando no dedupe   → cai o teste 15 (sem legenda não colide)
+ *   - dedupe por media_url removido      → cai o teste 16 (mesmo media_url bloqueia)
+ *   - dedupe sem normalizar r2-cleaned://→ cai o teste 18 (vídeo já limpo bloqueia)
+ *   - retry aceitando status ≠ 429       → cai o teste 21 (500/400/rede não retenta)
+ *   - backoff sem dobrar                 → cai o teste 20 (2ª tentativa = 30min)
+ * E os tripwires (últimos 3 testes) acusam se alguém tirar a decisão — os
+ * hashes de conteúdo, a cota da Meta ou o espaçamento normal — do caminho
+ * REAL do envio (publisher) ou da rota.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -32,6 +41,7 @@ import {
   BREAKER_MS,
   ESPACAMENTO_NORMAL_PADRAO_MIN,
   ESPACAMENTO_TRIAL_PADRAO_MIN,
+  FALHAS_CONSECUTIVAS_BREAKER,
   JANELA_DIARIA_MS,
   LIMITE_TRIALS_POR_DIA,
   chaveDedupe,
@@ -40,9 +50,11 @@ import {
   decidirEnvioTrial,
   decidirRetryTrial,
   momentoEnvio,
+  normalizarLegenda,
   resolverEspacamentoMs,
   type TrialAnterior,
 } from "./trial-guardrails-pure.ts";
+import { hashLegenda } from "./trial-conteudo.ts";
 
 const ESPACAMENTO_TRIAL_MS = ESPACAMENTO_TRIAL_PADRAO_MIN * 60_000;
 const ESPACAMENTO_NORMAL_MS = ESPACAMENTO_NORMAL_PADRAO_MIN * 60_000;
@@ -55,6 +67,11 @@ const AGORA_MS = Date.parse(AGORA);
 /** ISO de N minutos ATRÁS do agora fixo. */
 function haMin(min: number): string {
   return new Date(AGORA_MS - min * 60_000).toISOString();
+}
+
+/** ISO de N DIAS atrás do agora fixo (dedupe pensa em dias). */
+function haDias(dias: number): string {
+  return haMin(dias * 24 * 60);
 }
 
 function trial(sobrescreve: Partial<TrialAnterior> & { enviadaEm?: string | null }): TrialAnterior {
@@ -73,6 +90,16 @@ function enviosNaJanela(n: number): TrialAnterior[] {
   return Array.from({ length: n }, (_, i) =>
     trial({ mediaUrl: `r2://media/v${i}.mp4`, enviadaEm: haMin(180 * (i + 1)) }),
   );
+}
+
+/** Falha REAL (da Meta) concluída há N minutos — sem envio registrado. */
+function falha(minAtras: number, extra: Partial<TrialAnterior> = {}): TrialAnterior {
+  return trial({
+    mediaUrl: `r2://media/falha-${minAtras}.mp4`,
+    status: "failed",
+    atualizadaEm: haMin(minAtras),
+    ...extra,
+  });
 }
 
 // ───────── regra 1: máximo 6 por dia, por conta ─────────
@@ -155,47 +182,194 @@ test("espaçamento trial: env válido muda o piso; inválido/ausente cai no padr
   );
 });
 
-// ───────── regra 3: circuit breaker de 24h ─────────
+// ───────── regra 3: circuit breaker — 3 falhas CONSECUTIVAS ─────────
 
-// 6. trial falhou há 1h → trials da conta pausados (liberadoEm = falha+24h)
-test("breaker: trial failed há 1h pausa os trials da conta por 24h", () => {
-  const falha = trial({ status: "failed", atualizadaEm: haMin(60), enviadaEm: haMin(90) });
-  const d = decidirEnvioTrial({ agora: AGORA, mediaUrl: "r2://media/novo.mp4", anteriores: [falha] });
+// 6. 2 falhas seguidas NÃO abrem o breaker (o gatilho é 3)
+test("breaker: 2 falhas consecutivas ainda NÃO pausam a conta", () => {
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/novo.mp4",
+    anteriores: [falha(180), falha(60)],
+  });
+  assert.deepEqual(d, { permitido: true });
+});
+
+// 7. a 3ª falha consecutiva abre: pausa 24h desde a ÚLTIMA falha, e a
+//    mensagem diz quantas falhas, quando reabre e OFERECE reenviar os
+//    pendentes como Reel normal (sem reenviar sozinha)
+test("breaker: 3ª falha consecutiva abre por 24h com motivo completo", () => {
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/novo.mp4",
+    anteriores: [falha(300), falha(200), falha(60)],
+  });
   assert.equal(d.permitido, false);
   assert.equal(!d.permitido && d.regra, "circuit_breaker");
   assert.equal(
     !d.permitido && d.liberadoEm,
     new Date(Date.parse(haMin(60)) + BREAKER_MS).toISOString(),
   );
-  // A mensagem deixa claro que Reel NORMAL não é afetado (regra 3: nunca
-  // punir o aluno cortando o normal junto — o publisher nem chama a decisão
-  // pra reel sem is_trial; ver tripwire do teste 16).
-  assert.match(!d.permitido ? d.erro : "", /normais continuam/i);
+  const erro = !d.permitido ? d.erro : "";
+  assert.match(erro, new RegExp(`${FALHAS_CONSECUTIVAS_BREAKER} falhas`), "diz QUANTAS falhas");
+  assert.match(erro, /Reabre em/i, "diz QUANDO reabre");
+  assert.match(erro, /Reel NORMAL/i, "oferece a saída pelo Reel normal");
+  assert.match(erro, /nada é reenviado sozinho/i, "deixa claro que NÃO reenvia sozinho");
 });
 
-// 7. falha há 25h → breaker fechado de novo
-test("breaker: falha há 25h já não pausa", () => {
-  const falha = trial({ status: "failed", atualizadaEm: haMin(25 * 60) });
-  const d = decidirEnvioTrial({ agora: AGORA, mediaUrl: "r2://media/novo.mp4", anteriores: [falha] });
-  assert.deepEqual(d, { permitido: true });
-});
-
-// 8. falha marcada como guardrail_block (recusa NOSSA, ex.: dedupe) NÃO abre
-//    o breaker — bloqueio nosso não é falha da Meta
-test("breaker: failed por guardrail NOSSO não abre o breaker", () => {
-  const bloqueio = trial({
-    status: "failed",
-    atualizadaEm: haMin(60),
-    bloqueadaPorGuardrail: true,
+// 8. sucesso no meio ZERA: falha, falha, sucesso, falha → só 1 consecutiva
+test("breaker: sucesso no meio zera a contagem (falha,falha,sucesso,falha não abre)", () => {
+  const sucesso = trial({
+    mediaUrl: "r2://media/sucesso.mp4",
+    status: "published",
+    enviadaEm: haMin(400),
+    atualizadaEm: haMin(120), // publicou DEPOIS das duas primeiras falhas
   });
-  const d = decidirEnvioTrial({ agora: AGORA, mediaUrl: "r2://media/novo.mp4", anteriores: [bloqueio] });
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/novo.mp4",
+    anteriores: [falha(300), falha(240), sucesso, falha(60)],
+  });
   assert.deepEqual(d, { permitido: true });
 });
 
-// ───────── regra 4: dedupe por media_url ─────────
+// 9. 3 falhas consecutivas mas a última há 25h → o breaker já fechou
+test("breaker: 3 falhas com a última há 25h já não pausam", () => {
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/novo.mp4",
+    anteriores: [falha(27 * 60), falha(26 * 60), falha(25 * 60)],
+  });
+  assert.deepEqual(d, { permitido: true });
+});
 
-// 9. mesmo vídeo já publicado como trial na conta → recusa PERMANENTE
-test("dedupe: mesmo media_url já publicado como trial bloqueia (liberadoEm null)", () => {
+// 10. bloqueio NOSSO (guardrail_block) não é falha da Meta: 3 seguidos não
+//     abrem o breaker (nem contam, nem zeram)
+test("breaker: 3 bloqueios do nosso próprio guardrail NÃO abrem o breaker", () => {
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/novo.mp4",
+    anteriores: [
+      falha(300, { bloqueadaPorGuardrail: true }),
+      falha(200, { bloqueadaPorGuardrail: true }),
+      falha(60, { bloqueadaPorGuardrail: true }),
+    ],
+  });
+  assert.deepEqual(d, { permitido: true });
+});
+
+// ───────── regra 4: dedupe por CONTEÚDO, janela de 7 dias ─────────
+
+const SHA_VIDEO = "a".repeat(64); // sha256 hex fictício, opaco pra decisão
+
+// 11. mesmo sha256 de vídeo há 6 dias → barra, mesmo com media_url diferente
+//     (é o caso que o dedupe antigo por url deixava passar: MESMO arquivo
+//     re-subido ganha outra chave)
+test("dedupe: mesmo hash de vídeo há 6 dias barra, mesmo com outra media_url", () => {
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/social-uploads/upload-novo.mp4",
+    videoHash: SHA_VIDEO,
+    anteriores: [
+      trial({
+        mediaUrl: "r2://media/social-uploads/upload-antigo.mp4",
+        enviadaEm: haDias(6),
+        videoHash: SHA_VIDEO,
+      }),
+    ],
+  });
+  assert.equal(d.permitido, false);
+  assert.equal(!d.permitido && d.regra, "dedupe");
+  assert.equal(!d.permitido && d.liberadoEm, null); // sem reagendamento automático
+});
+
+// 12. mesmo hash de vídeo há 8 dias → LIBERA (a janela de 7 dias afrouxa de
+//     propósito o dedupe antigo, que era permanente)
+test("dedupe: mesmo hash de vídeo há 8 dias já libera (janela de 7 dias)", () => {
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/social-uploads/upload-novo.mp4",
+    videoHash: SHA_VIDEO,
+    anteriores: [
+      trial({
+        mediaUrl: "r2://media/social-uploads/upload-antigo.mp4",
+        enviadaEm: haDias(8),
+        videoHash: SHA_VIDEO,
+      }),
+    ],
+  });
+  assert.deepEqual(d, { permitido: true });
+});
+
+// 13. a normalização da legenda funciona: acento/emoji/caixa/espaço duplicado
+//     diferentes produzem o MESMO hash → barra
+test("dedupe: mesma legenda com acento, emoji e caixa diferentes barra", () => {
+  const antiga = "menina da fazenda no por do sol!";
+  const nova = "Menina da FAZENDA  no pôr do Sol! 🌅";
+  assert.equal(normalizarLegenda(nova), normalizarLegenda(antiga));
+  assert.equal(hashLegenda(nova), hashLegenda(antiga));
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/video-b.mp4",
+    videoHash: "b".repeat(64), // vídeos DIFERENTES: só a legenda coincide
+    legendaHash: hashLegenda(nova),
+    anteriores: [
+      trial({
+        mediaUrl: "r2://media/video-a.mp4",
+        enviadaEm: haDias(2),
+        videoHash: "c".repeat(64),
+        legendaHash: hashLegenda(antiga),
+      }),
+    ],
+  });
+  assert.equal(d.permitido, false);
+  assert.equal(!d.permitido && d.regra, "dedupe");
+});
+
+// 14. legendas diferentes com o MESMO vídeo: barra (basta UM dos critérios)
+test("dedupe: legendas diferentes não salvam o mesmo vídeo", () => {
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/video-b.mp4",
+    videoHash: SHA_VIDEO,
+    legendaHash: hashLegenda("legenda totalmente nova"),
+    anteriores: [
+      trial({
+        mediaUrl: "r2://media/video-a.mp4",
+        enviadaEm: haDias(2),
+        videoHash: SHA_VIDEO,
+        legendaHash: hashLegenda("a legenda antiga era outra"),
+      }),
+    ],
+  });
+  assert.equal(d.permitido, false);
+  assert.equal(!d.permitido && d.regra, "dedupe");
+});
+
+// 15. legenda VAZIA não participa do dedupe: dois trials sem legenda (vídeos
+//     e urls diferentes) não colidem — hashLegenda devolve null
+test("dedupe: legenda vazia (ou só emoji) vira null e não colide", () => {
+  assert.equal(hashLegenda(""), null);
+  assert.equal(hashLegenda(null), null);
+  assert.equal(hashLegenda(" 🌅 "), null);
+  const d = decidirEnvioTrial({
+    agora: AGORA,
+    mediaUrl: "r2://media/video-b.mp4",
+    videoHash: "b".repeat(64),
+    legendaHash: null,
+    anteriores: [
+      trial({
+        mediaUrl: "r2://media/video-a.mp4",
+        enviadaEm: haDias(2),
+        videoHash: "c".repeat(64),
+        legendaHash: null,
+      }),
+    ],
+  });
+  assert.deepEqual(d, { permitido: true });
+});
+
+// 16. fallback por media_url continua valendo (cobre linha antiga sem hash)
+test("dedupe: mesmo media_url dentro de 7 dias ainda barra (linha sem hash)", () => {
   const url = "r2://media/video-clone/abc/result.mp4";
   const d = decidirEnvioTrial({
     agora: AGORA,
@@ -207,7 +381,7 @@ test("dedupe: mesmo media_url já publicado como trial bloqueia (liberadoEm null
   assert.equal(!d.permitido && d.liberadoEm, null);
 });
 
-// 10. mesmo vídeo mas o anterior FALHOU → re-tentar é legítimo
+// 17. mesmo vídeo mas o anterior FALHOU → re-tentar é legítimo
 test("dedupe: trial anterior failed com o mesmo vídeo não bloqueia", () => {
   const url = "r2://media/video-clone/abc/result.mp4";
   const d = decidirEnvioTrial({
@@ -218,7 +392,7 @@ test("dedupe: trial anterior failed com o mesmo vídeo não bloqueia", () => {
   assert.deepEqual(d, { permitido: true });
 });
 
-// 11. a limpeza de 7 dias reescreve r2:// → r2-cleaned:// — o dedupe compara
+// 18. a limpeza de 7 dias reescreve r2:// → r2-cleaned:// — o dedupe compara
 //     a mídia NORMALIZADA, senão a duplicata passaria depois da limpeza
 test("dedupe: linha antiga r2-cleaned:// ainda barra o mesmo vídeo r2://", () => {
   assert.equal(chaveDedupe("r2-cleaned://media/x.mp4"), chaveDedupe("r2://media/x.mp4"));
@@ -237,8 +411,8 @@ test("dedupe: linha antiga r2-cleaned:// ainda barra o mesmo vídeo r2://", () =
   assert.equal(!d.permitido && d.regra, "dedupe");
 });
 
-// 12. precedência: dedupe (permanente) fala mais alto que espaçamento — o
-//     aluno precisa saber da causa que NÃO se resolve esperando
+// 19. precedência: dedupe fala mais alto que espaçamento — o aluno precisa
+//     saber da causa que NÃO se resolve só esperando a próxima janela
 test("precedência: dedupe vence espaçamento quando os dois bloqueariam", () => {
   const url = "r2://media/v.mp4";
   const d = decidirEnvioTrial({
@@ -251,7 +425,7 @@ test("precedência: dedupe vence espaçamento quando os dois bloqueariam", () =>
 
 // ───────── regra 5: retry só em 429, com backoff ─────────
 
-// 13. 429 retenta com backoff exponencial (15min, 30min) até o teto de tentativas
+// 20. 429 retenta com backoff exponencial (15min, 30min) até o teto de tentativas
 test("retry: 429 retenta com backoff dobrando; 3ª tentativa não retenta mais", () => {
   assert.deepEqual(decidirRetryTrial({ httpStatus: 429, attempts: 1 }), {
     retry: true,
@@ -264,7 +438,7 @@ test("retry: 429 retenta com backoff dobrando; 3ª tentativa não retenta mais",
   assert.deepEqual(decidirRetryTrial({ httpStatus: 429, attempts: 3 }), { retry: false });
 });
 
-// 14. QUALQUER status ≠ 429 não retenta — inclusive restrição (400 c/ subcode
+// 21. QUALQUER status ≠ 429 não retenta — inclusive restrição (400 c/ subcode
 //     2207xxx chega como status 400) e 5xx; retentar restrição vira bloqueio
 test("retry: 400 (restrição), 500 e erro sem status NUNCA retentam", () => {
   for (const httpStatus of [400, 403, 500, null]) {
@@ -278,7 +452,7 @@ test("retry: 400 (restrição), 500 e erro sem status NUNCA retentam", () => {
 
 // ───────── momentoEnvio (fonte do limite e do espaçamento) ─────────
 
-// 15. trial_sent_at é a fonte; legado processing/published cai pro created_at;
+// 22. trial_sent_at é a fonte; legado processing/published cai pro created_at;
 //     failed SEM trial_sent_at falhou antes do envio → não conta
 test("momentoEnvio: trial_sent_at manda; legado usa created_at; failed pré-envio não conta", () => {
   assert.equal(
@@ -294,7 +468,7 @@ test("momentoEnvio: trial_sent_at manda; legado usa created_at; failed pré-envi
 
 // ───────── espaçamento de post NORMAL (novo: 1h padrão, configurável) ─────────
 
-// 19. padrão 1h: 59min barra e reagenda pro envio+1h; 1h01 libera.
+// 23. padrão 1h: 59min barra e reagenda pro envio+1h; 1h01 libera.
 //     MUDANÇA DE COMPORTAMENTO consciente: antes o post normal não tinha
 //     espaçamento nenhum (só o trial tinha).
 test("espaçamento normal (padrão 1h): 59min desde o último envio barra; 1h01 libera", () => {
@@ -318,7 +492,7 @@ test("espaçamento normal (padrão 1h): 59min desde o último envio barra; 1h01 
   );
 });
 
-// 19b. configurado pra 2h via env: 1h59 entre dois posts normais barra, 2h01 libera
+// 23b. configurado pra 2h via env: 1h59 entre dois posts normais barra, 2h01 libera
 test("espaçamento normal configurado pra 2h: 1h59 entre dois posts normais barra, 2h01 libera", () => {
   const ms2h = resolverEspacamentoMs("normal", { SOCIAL_ESPACAMENTO_NORMAL_MIN: "120" });
   assert.equal(ms2h, 120 * 60_000);
@@ -342,7 +516,7 @@ test("espaçamento normal configurado pra 2h: 1h59 entre dois posts normais barr
 
 // ───────── cota de publicação da PRÓPRIA Meta ─────────
 
-// 20. quota_usage >= quota_total barra; abaixo libera; consulta FALHOU (null)
+// 24. quota_usage >= quota_total barra; abaixo libera; consulta FALHOU (null)
 //     NUNCA barra — instrumento quebrado não derruba a publicação
 test("cota Meta: usage >= total barra; abaixo libera; falha da consulta NÃO barra", () => {
   assert.equal(decidirCotaMeta({ quotaTotal: 100, quotaUsage: 100 }).permitido, false);
@@ -377,22 +551,29 @@ function fonte(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 }
 
-// 16. publisher: a decisão roda no ENVIO, antes do createContainer, SÓ pra
+// 23. publisher: a decisão roda no ENVIO, antes do createContainer, SÓ pra
 //     trial (reel normal não passa pela decisão — breaker não corta o normal),
-//     grava trial_sent_at no envio, marca guardrail_block no bloqueio
-//     permanente e usa decidirRetryTrial na falha. Se alguém "simplificar"
-//     removendo qualquer peça do fio, este teste acusa.
-test("tripwire publisher: guardrail antes do createContainer, só pra trial, com retry 429", () => {
+//     hasheia o CONTEÚDO antes de decidir, grava trial_sent_at + os hashes no
+//     envio, marca guardrail_block no bloqueio permanente e usa
+//     decidirRetryTrial na falha. Se alguém "simplificar" removendo qualquer
+//     peça do fio, este teste acusa.
+test("tripwire publisher: guardrail antes do createContainer, com hashes de conteúdo", () => {
   const f = fonte("./publisher.ts");
   const iEhTrial = f.indexOf("const ehTrial = Boolean(opts.is_trial)");
   const iSoTrial = f.indexOf("if (ehTrial) {");
   const iCarregar = f.indexOf("carregarTrialsAnteriores(pub.account_id");
+  const iHashVideo = f.indexOf("sha256DeUrl(");
+  const iHashLegenda = f.indexOf("hashLegenda(pub.caption)");
   const iDecisao = f.indexOf("decidirEnvioTrial(");
   const iCreate = f.indexOf("await createContainer(");
   const iRetry = f.indexOf("decidirRetryTrial(");
   assert.ok(iEhTrial !== -1, "a definição de ehTrial sumiu do startPublication");
   assert.ok(iSoTrial !== -1 && iSoTrial < iDecisao, "a decisão precisa estar DENTRO de if (ehTrial)");
   assert.ok(iCarregar !== -1 && iCarregar < iDecisao, "a decisão precisa ler os trials anteriores da CONTA");
+  assert.ok(iHashVideo !== -1 && iHashVideo < iDecisao,
+    "o sha256 do vídeo precisa ser calculado ANTES da decisão (dedupe por conteúdo)");
+  assert.ok(iHashLegenda !== -1 && iHashLegenda < iDecisao,
+    "o hash da legenda normalizada precisa ser calculado ANTES da decisão");
   assert.ok(iDecisao !== -1 && iCreate !== -1 && iDecisao < iCreate,
     "a decisão de guardrail precisa vir ANTES do createContainer (checagem do ENVIO)");
   assert.ok(iRetry !== -1 && iRetry > iCreate, "a falha do trial precisa passar por decidirRetryTrial");
@@ -400,11 +581,14 @@ test("tripwire publisher: guardrail antes do createContainer, só pra trial, com
     "bloqueio permanente precisa marcar guardrail_block (senão abre o breaker)");
   assert.ok(f.includes("trial_sent_at: new Date().toISOString()"),
     "o envio precisa gravar trial_sent_at (fonte do limite diário e do espaçamento)");
+  assert.ok(f.includes("video_sha256: videoHash") && f.includes("caption_hash: legendaHash"),
+    "o envio precisa gravar os hashes de conteúdo (fonte do dedupe das próximas decisões)");
   assert.ok(f.includes("scheduled_at: decisao.liberadoEm") && f.includes("error: decisao.erro"),
     "bloqueio transitório precisa manter ready com motivo em error e adiar via scheduled_at");
 });
 
-// 17. rota: a checagem de cortesia existe e vem DEPOIS da validação do trial
+// 24. rota: a checagem de cortesia existe, vem DEPOIS da validação do trial e
+//     inclui o hash da legenda (o do vídeo fica só no envio — a rota não baixa)
 test("tripwire rota: /publish checa os guardrails na criação (erro amigável)", () => {
   const f = fonte("../../app/api/v1/social/publish/route.ts");
   const iValidar = f.indexOf("validarTrialReel(");
@@ -414,9 +598,11 @@ test("tripwire rota: /publish checa os guardrails na criação (erro amigável)"
     "guardrail na rota vem depois da validação do trial");
   assert.ok(f.includes("carregarTrialsAnteriores(accountId)"),
     "a rota precisa consultar os trials anteriores da MESMA conta");
+  assert.ok(f.includes("hashLegenda(caption)"),
+    "a cortesia precisa deduplicar pela legenda normalizada (barata, sem download)");
 });
 
-// 18. publisher: cota da Meta consultada ANTES do createContainer, decidida
+// 26. publisher: cota da Meta consultada ANTES do createContainer, decidida
 //     pelo módulo puro, e falha da CONSULTA engolida (nunca bloqueia);
 //     espaçamento de post normal no fio, lendo os envios da CONTA; e o envio
 //     grava sent_at (fonte do espaçamento normal — sem ele a regra morre de

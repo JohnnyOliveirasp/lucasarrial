@@ -22,6 +22,7 @@ import {
 } from "@/lib/social/instagram";
 import { advanceTikTokPublication, startTikTokPublication } from "@/lib/social/tiktok-publish";
 import { DEFAULT_GRADUATION_STRATEGY } from "@/lib/social/trial-reel-pure";
+import { hashLegenda, sha256DeUrl } from "@/lib/social/trial-conteudo";
 import {
   COTA_META_RETRY_MS,
   decidirCotaMeta,
@@ -97,6 +98,8 @@ export async function carregarTrialsAnteriores(
     atualizadaEm: row.updated_at,
     enviadaEm: (row.platform_options?.trial_sent_at as string | undefined) ?? null,
     bloqueadaPorGuardrail: Boolean(row.platform_options?.guardrail_block),
+    videoHash: (row.platform_options?.video_sha256 as string | undefined) ?? null,
+    legendaHash: (row.platform_options?.caption_hash as string | undefined) ?? null,
   }));
 }
 
@@ -162,17 +165,31 @@ export async function startPublication(pub: PublicationRow): Promise<void> {
     trial_sent_at?: string;
     sent_at?: string;
     guardrail_block?: string;
+    video_sha256?: string;
+    caption_hash?: string;
   };
   const ehTrial = Boolean(opts.is_trial) && pub.media_type === "reel";
+  // Trial: a URL é resolvida UMA vez e reaproveitada — primeiro pro hash do
+  // dedupe (download único, em streaming), depois pro createContainer.
+  let urlResolvida: string | null = null;
+  let videoHash: string | null = null;
+  let legendaHash: string | null = null;
   // GUARDRAILS dos Trial Reels — AQUI, no envio, é a checagem que VALE
   // (a rota só dá erro amigável na criação): agendado chega por este mesmo
   // caminho via sweeper. SÓ trial passa pela decisão — Reel normal segue
   // publicando mesmo com o breaker da conta aberto (regra 3).
   if (ehTrial) {
     const anteriores = await carregarTrialsAnteriores(pub.account_id, pub.id);
+    urlResolvida = await resolveMediaUrl(pub.media_url);
+    // sha256 do arquivo (regra 4a) — fail-open: null se o download falhar,
+    // e o dedupe segue valendo por legenda e media_url.
+    videoHash = await sha256DeUrl(urlResolvida);
+    legendaHash = hashLegenda(pub.caption);
     const decisao = decidirEnvioTrial({
       agora: new Date().toISOString(),
       mediaUrl: pub.media_url,
+      videoHash,
+      legendaHash,
       anteriores,
       espacamentoMs: resolverEspacamentoMs("trial", process.env),
     });
@@ -247,7 +264,8 @@ export async function startPublication(pub: PublicationRow): Promise<void> {
     const token = decryptToken(account.access_token_encrypted);
     const containerId = await createContainer(token, account.account_ref, {
       kind: pub.media_type,
-      mediaUrl: await resolveMediaUrl(pub.media_url),
+      // Trial já resolveu a URL pro hash do dedupe — reusa (presigned dura 1h).
+      mediaUrl: urlResolvida ?? (await resolveMediaUrl(pub.media_url)),
       caption: pub.caption,
       trial: ehTrial
         ? { graduationStrategy: opts.graduation_strategy ?? DEFAULT_GRADUATION_STRATEGY }
@@ -259,14 +277,17 @@ export async function startPublication(pub: PublicationRow): Promise<void> {
       attempts: pub.attempts + 1,
       error: null,
       // sent_at é a fonte do espaçamento de post normal; trial_sent_at é a
-      // fonte do limite diário e do espaçamento do trial (módulo puro lê
-      // daqui) — gravados no MESMO patch que confirma o envio.
+      // fonte do limite diário e do espaçamento do trial; os hashes de
+      // conteúdo (video_sha256/caption_hash) são a fonte do dedupe — tudo
+      // gravado no MESMO patch que confirma o envio (módulo puro lê daqui).
       ...(ehTrial
         ? {
             platform_options: {
               ...opts,
               sent_at: new Date().toISOString(),
               trial_sent_at: new Date().toISOString(),
+              ...(videoHash ? { video_sha256: videoHash } : {}),
+              ...(legendaHash ? { caption_hash: legendaHash } : {}),
             },
           }
         : { platform_options: { ...opts, sent_at: new Date().toISOString() } }),
