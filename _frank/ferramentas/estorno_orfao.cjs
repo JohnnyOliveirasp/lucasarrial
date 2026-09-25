@@ -119,14 +119,36 @@ async function main() {
   console.log(`janela desde ${desde.slice(0, 10)} | estornos generation_refund examinados: ${estornos.length}`);
 
   // 2. quais ref_id ainda existem em generations
-  const refs = [...new Set(estornos.map((t) => t.ref_id).filter(Boolean))];
+  //
+  // ⚠️ 20/09: esta consulta derrubava a ferramenta INTEIRA com 22P02
+  //  ("invalid input syntax for type uuid: 'incidente-c15ece48-testes-12-08'").
+  //  `generations.id` é uuid, e existem estornos com ref_id em texto livre
+  //  (marcação de incidente gravada à mão). UM ref_id torto fazia o `.in()`
+  //  estourar e a ronda inteira ficava SEM a checagem de dinheiro pendurado —
+  //  e um "FALHOU" na última linha é fácil de ler como "nada aqui".
+  //  Agora: separo o que não é uuid, sigo com o resto, e IMPRIMO o descartado
+  //  em vez de engolir. Ele não pode ser chamado de órfão (não dá pra provar
+  //  contra uma coluna uuid) nem de são — fica na cara, pra conferir à mão.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const todosRefs = [...new Set(estornos.map((t) => t.ref_id).filter(Boolean))];
+  const refs = todosRefs.filter((r) => UUID_RE.test(r));
+  const refsTortos = todosRefs.filter((r) => !UUID_RE.test(r));
+  if (refsTortos.length) {
+    console.log(
+      `\n⚠️  ${refsTortos.length} ref_id FORA DO FORMATO uuid — não dá pra conferir contra generations:`,
+    );
+    for (const r of refsTortos) console.log(`   ${r}`);
+    console.log("   (não contados como órfãos nem como sãos — confira à mão)");
+  }
   const existe = new Set();
   for (let i = 0; i < refs.length; i += 100) {
     const { data, error } = await db.from("generations").select("id").in("id", refs.slice(i, i + 100));
     if (error) throw new Error("generations: " + JSON.stringify(error));
     for (const g of data || []) existe.add(g.id);
   }
-  const orfaos = estornos.filter((t) => t.ref_id && !existe.has(t.ref_id));
+  const orfaos = estornos.filter(
+    (t) => t.ref_id && UUID_RE.test(t.ref_id) && !existe.has(t.ref_id),
+  );
   const semRef = estornos.filter((t) => !t.ref_id);
 
   // 2b. caso construído (SÓ EM MEMÓRIA, nada é gravado): estorno órfão cujo
