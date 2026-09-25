@@ -7,7 +7,8 @@
  */
 import { cookies } from "next/headers";
 import { getAdmin } from "@/lib/db/admin";
-import type { SgpPedidoRow } from "./types";
+import type { CandidatoRetomada } from "./retomada-pure";
+import type { SgpFoto, SgpPedidoRow } from "./types";
 
 export const SGP_COOKIE = "sgp_sessao";
 const MAX_IDADE = 60 * 60 * 24 * 30; // 30 dias
@@ -34,15 +35,57 @@ export async function pedidoDaSessao(): Promise<SgpPedidoRow> {
     .single();
   if (error || !data) throw new Error(error?.message ?? "não consegui abrir o pedido");
   const novo = data as SgpPedidoRow;
+  await plantarSessao(novo.sessao);
+  return novo;
+}
+
+/**
+ * Grava o cookie da sessão. Só pode ser chamado de Route Handler ou Server
+ * Action — Server Component em render não escreve cookie (Next.js).
+ * É por AQUI que a retomada reaponta o navegador pra linha canônica
+ * (POST /api/v1/sgp/retomar): só o cookie muda, nenhuma linha é tocada.
+ */
+export async function plantarSessao(sessao: string): Promise<void> {
   const c = await cookies();
-  c.set(SGP_COOKIE, novo.sessao, {
+  c.set(SGP_COOKIE, sessao, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: MAX_IDADE,
   });
-  return novo;
+}
+
+/**
+ * As linhas deste e-mail que podem disputar uma retomada — SÓ LEITURA, e já
+ * no formato que a decisão pura (`lib/sgp/retomada-pure.ts`) consome. Quem
+ * filtra (em andamento, verificado, sem conta) e escolhe é o módulo puro;
+ * aqui é só a busca. `.limit(50)` explícito: o teto silencioso de 1000 linhas
+ * do Supabase já enviesou amostra antes, e nenhum e-mail honesto tem 50
+ * pedidos.
+ */
+export async function candidatosPorEmail(email: string): Promise<CandidatoRetomada[]> {
+  const alvo = email.trim().toLowerCase();
+  if (!alvo) return [];
+  const { data, error } = await getAdmin()
+    .from("sgp_pedidos" as never)
+    .select("id, sessao, status, fotos, atualizado_em, email_verificado_at, user_id")
+    .ilike("email", alvo)
+    .limit(50);
+  if (error) throw new Error(error.message);
+  type Linha = Pick<
+    SgpPedidoRow,
+    "id" | "sessao" | "status" | "fotos" | "atualizado_em" | "email_verificado_at" | "user_id"
+  >;
+  return ((data as Linha[] | null) ?? []).map((l) => ({
+    id: l.id,
+    sessao: l.sessao,
+    status: l.status,
+    fotosAprovadas: ((l.fotos ?? []) as SgpFoto[]).filter((f) => f.status === "aprovada").length,
+    atualizadoEm: l.atualizado_em,
+    emailVerificadoAt: l.email_verificado_at,
+    userId: l.user_id,
+  }));
 }
 
 /** O pedido desta sessão — null quando o navegador ainda não começou. */

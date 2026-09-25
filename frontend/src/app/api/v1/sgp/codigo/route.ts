@@ -6,7 +6,8 @@
 import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { CODIGO_MAX_TENTATIVAS, hashCodigo } from "@/lib/sgp/codigo";
-import { atualizarSessao, pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
+import { escolherRetomada } from "@/lib/sgp/retomada-pure";
+import { atualizarSessao, candidatosPorEmail, pedidoDaSessaoOuNull } from "@/lib/sgp/sessao";
 
 export async function POST(request: NextRequest) {
   let body: { codigo?: unknown };
@@ -39,7 +40,21 @@ export async function POST(request: NextRequest) {
       codigo_tentativas: 0,
       status: pedido.status === "dados" ? "foto" : pedido.status,
     });
-    return jsonOk({ ok: true, proximo: "foto" });
+
+    // RETOMADA (22/09): o e-mail acabou de ser PROVADO com o código — só a
+    // partir daqui é permitido contar ao aluno que ele já tem um pedido em
+    // andamento (nada de dado do pedido antes do código validar). A oferta é
+    // acessória: se a busca falhar, a verificação NÃO pode cair junto.
+    let retomada: { fotos: number } | null = null;
+    if (pedido.email) {
+      try {
+        const alvo = escolherRetomada(await candidatosPorEmail(pedido.email), pedido.sessao);
+        if (alvo) retomada = { fotos: alvo.fotosAprovadas };
+      } catch (e) {
+        console.error("[sgp/codigo] oferta de retomada falhou:", e instanceof Error ? e.message : e);
+      }
+    }
+    return jsonOk({ ok: true, proximo: "foto", retomada });
   } catch (e) {
     return serverError(e instanceof Error ? e.message : "Falha ao confirmar o código");
   }

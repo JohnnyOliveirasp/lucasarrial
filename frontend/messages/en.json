@@ -2287,7 +2287,11 @@
       "erroGenerico": "Something went wrong. Try again.",
       "nomeCurto": "Enter your full name.",
       "whatsappInvalido": "Enter a valid WhatsApp number with area code.",
-      "mudarEmail": "Change email"
+      "mudarEmail": "Change email",
+      "retomadaTitulo": "You already have an order in progress",
+      "retomadaTexto": "We found an order of yours under this email, started on another browser or device ({fotos, plural, =0 {no photos uploaded yet} one {with # photo already approved} other {with # photos already approved}}). Want to pick up where you left off?",
+      "retomadaContinuar": "Continue where I left off",
+      "retomadaDoZero": "Start a new order from scratch"
     },
     "foto": {
       "titulo": "Base photo for the Clone",
