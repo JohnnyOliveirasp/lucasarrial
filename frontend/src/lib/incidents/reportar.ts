@@ -162,8 +162,26 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
      * acharia o `ignored` que acabou de nascer e o reabriria como "open", que é
      * exatamente o chamado fantasma na fila que este caminho veio tirar.
      * Mesma guarda do `reopened = closed && !userError` em failure-alert.ts.
+     *
+     * `aguardando_aluno` entrou na lista em 25/09 (#570): ocorrência nova num
+     * chamado que espera o aluno é O ALUNO FALANDO (ou a Fast escalando de
+     * novo por ele) — o cartão tem que voltar pra fila. Sem isso a mensagem
+     * nova só somava `occurrences` e o status ficava parado num limbo que
+     * NENHUMA contagem varre: `aguardando_aluno` não é aberto (open/
+     * investigating) nem fechado (fixed/ignored, os únicos que reabrem).
+     * A porta do bounce do Robério CONTINUA fechada: quem barra o fantasma é
+     * o `!c.nasceIgnorado` (o único caminho de bounce obsoleto manda
+     * `nasceIgnorado: true`, mail-bounce-registro.ts:171), não a lista de
+     * status — e bounce nem chega aqui por esta assinatura (`fast-bounce:*`
+     * nunca colide com `help:*`/`fast-email:*`). Reabrir espera por bounce
+     * legítimo, aliás, já é comportamento desejado em outro lugar:
+     * STATUS_QUE_O_BOUNCE_DESMENTE inclui "aguardando_aluno" de propósito.
      */
-    const reopened = (existing.status === "fixed" || existing.status === "ignored") && !c.nasceIgnorado;
+    const reopened =
+      (existing.status === "fixed" ||
+        existing.status === "ignored" ||
+        existing.status === "aguardando_aluno") &&
+      !c.nasceIgnorado;
     const tituloNovo = c.title.slice(0, 120);
     /**
      * ⚠️ TÍTULO E DESCRIÇÃO TÊM QUE ANDAR JUNTOS (#213, 31/08).
