@@ -489,3 +489,81 @@ test("fiação: o script pluga nas funções DE PRODUÇÃO (não numa régua cop
   );
   assert.match(rota, /await normalizeTextForTTS\(text\)/);
 });
+
+/* ────────────────── guarda de ritmo (#395, Ernanda, 25/09) ──────────────────
+ * O que estes testes impedem de voltar: a compensação por erro nosso saindo
+ * com a guarda de VELOCIDADE desligada. Medido na Ernanda: a rota mandou
+ * rate_qa+régua e o QA flagrou 2 de 2 (2,69 pal/s contra 2,14) e entregou
+ * 9,51s; o MESMO texto por aqui, sem os dois campos, saiu 6,06s — mais
+ * acelerado que o defeito de que ela reclamou. */
+
+const VOZ_COM_REGUA = { ...VOZ, speech_rate_wps: 2.14 };
+
+test("ritmo: a régua da voz (speech_rate_wps) VAI no payload — senão o worker mede a própria referência", async () => {
+  const { db } = bancoFalso({ ...LINHAS, voices: [VOZ_COM_REGUA] });
+  const { fetch, pedidos } = runpodFalso();
+
+  const plano = await n.montarPlano(
+    { modo: "refazer", genId: "gen-antiga", conteudoArquivo: null, rotulo: null },
+    { db, ...REGUAS },
+  );
+  await n.dispararPlano(plano, DEPS_DISPARO(db, fetch));
+
+  assert.equal(pedidos[0].corpo.input.speech_rate_wps, 2.14);
+});
+
+test("ritmo: voz SEM régua não inventa número — o campo simplesmente não vai", async () => {
+  const { db } = bancoFalso(LINHAS); // VOZ sem speech_rate_wps
+  const { fetch, pedidos } = runpodFalso();
+
+  const plano = await n.montarPlano(
+    { modo: "refazer", genId: "gen-antiga", conteudoArquivo: null, rotulo: null },
+    { db, ...REGUAS },
+  );
+  await n.dispararPlano(plano, DEPS_DISPARO(db, fetch));
+
+  assert.equal("speech_rate_wps" in pedidos[0].corpo.input, false);
+});
+
+test("ritmo: REFAZER herda o rate_qa que o ALUNO tinha — ligado", async () => {
+  const origemComQa = { ...ORIGEM, request_params: { rate_qa: true, speech_rate_wps: 2.14 } };
+  const { db } = bancoFalso({ ...LINHAS, voices: [VOZ_COM_REGUA], generations: [origemComQa] });
+  const { fetch, pedidos } = runpodFalso();
+
+  const plano = await n.montarPlano(
+    { modo: "refazer", genId: "gen-antiga", conteudoArquivo: null, rotulo: null },
+    { db, ...REGUAS },
+  );
+  assert.equal(plano.rateQa, true);
+  await n.dispararPlano(plano, DEPS_DISPARO(db, fetch));
+  assert.equal(pedidos[0].corpo.input.rate_qa, true);
+});
+
+test("ritmo: REFAZER de geração que NÃO tinha rate_qa não liga por conta própria (é refazer, não produto novo)", async () => {
+  const origemSemQa = { ...ORIGEM, request_params: { speech_rate_wps: 2.14 } };
+  const { db } = bancoFalso({ ...LINHAS, voices: [VOZ_COM_REGUA], generations: [origemSemQa] });
+  const { fetch, pedidos } = runpodFalso();
+
+  const plano = await n.montarPlano(
+    { modo: "refazer", genId: "gen-antiga", conteudoArquivo: null, rotulo: null },
+    { db, ...REGUAS },
+  );
+  assert.equal(plano.rateQa, false);
+  await n.dispararPlano(plano, DEPS_DISPARO(db, fetch));
+  assert.equal("rate_qa" in pedidos[0].corpo.input, false);
+  // mas a RÉGUA vai de todo jeito: ela não depende do QA estar ligado.
+  assert.equal(pedidos[0].corpo.input.speech_rate_wps, 2.14);
+});
+
+test("ritmo: TEXTO-NOVO liga a guarda por default (compensação da casa nasce guardada)", async () => {
+  const { db } = bancoFalso({ ...LINHAS, voices: [VOZ_COM_REGUA] });
+  const { fetch, pedidos } = runpodFalso();
+
+  const plano = await n.montarPlano(
+    { modo: "texto-novo", vozId: "voz-1", conteudoArquivo: "Bom dia.", rotulo: null },
+    { db, normalizar: async (t) => t, ...REGUAS },
+  );
+  assert.equal(plano.rateQa, true);
+  await n.dispararPlano(plano, DEPS_DISPARO(db, fetch));
+  assert.equal(pedidos[0].corpo.input.rate_qa, true);
+});

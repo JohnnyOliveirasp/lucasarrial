@@ -163,12 +163,30 @@ function conferirTextoNormalizado(texto) {
  * `POST /api/v1/voices/[id]/generate` (route.ts:215-287), menos o que é da
  * sessão do aluno (auth) e menos a telemetria de fase (segredo por job).
  *
- * ⚠️ Divergência CONHECIDA e PRÉ-EXISTENTE em relação à rota: `speech_rate_wps`
- * (régua de ritmo gravada na voz) NÃO vai daqui. Sem ela o worker mede a
- * própria referência, que é o comportamento de antes da mig 96. Fica
- * registrado de propósito — não é esquecimento, é escopo.
+ * ⚠️ A divergência de RITMO que estava declarada aqui foi FECHADA em 25/09
+ * (#395, Ernanda). O texto anterior dizia que `speech_rate_wps` "NÃO vai
+ * daqui (…) não é esquecimento, é escopo". O escopo custou o seguinte, medido
+ * na própria aluna que reclamou de voz robótica:
+ *
+ *   a geração dela pela ROTA  → rate_qa:true + speech_rate_wps:2.14
+ *                               QA pegou: 2,69 pal/s, flagrou 2 de 2, 2 regens,
+ *                               esticou no teto (0,85) e entregou 9,51s
+ *   o MESMO texto por AQUI    → sem rate_qa e sem régua: NENHUMA medição de
+ *                               ritmo rodou e saiu 6,06s — 36% mais curto,
+ *                               ou seja MAIS acelerado que o que ela já
+ *                               achava robótico
+ *
+ * Quer dizer: o único caminho que existe para COMPENSAR o aluno por erro
+ * nosso era o caminho com a guarda de ritmo DESLIGADA. Para uma queixa que é
+ * literalmente de velocidade, a compensação saía pior que o defeito. Por isso
+ * agora vão os dois:
+ *   - `speech_rate_wps` sempre que a voz tiver a régua (senão o worker mede a
+ *     própria referência, que é o comportamento pré-mig 96);
+ *   - `rate_qa` conforme `rateQa` — em `refazer` herda o que o aluno tinha na
+ *     geração original (é um refazer, não um produto novo); em `texto-novo`
+ *     o chamador decide, e o default do script é ligado.
  */
-function montarInput({ voz, texto, outputUploadUrl, loraUrl, refUrl }) {
+function montarInput({ voz, texto, outputUploadUrl, loraUrl, refUrl, rateQa }) {
   const input = {
     type: "inference",
     text: texto,
@@ -188,6 +206,9 @@ function montarInput({ voz, texto, outputUploadUrl, loraUrl, refUrl }) {
   }
   if (typeof voz.tts_silence_ms === "number") input.chunk_silence_ms = voz.tts_silence_ms;
   if (typeof voz.tts_crossfade_ms === "number") input.chunk_crossfade_ms = voz.tts_crossfade_ms;
+  // Réguas de ritmo, iguais à rota (route.ts:263 e route.ts:270).
+  if (typeof voz.speech_rate_wps === "number") input.speech_rate_wps = voz.speech_rate_wps;
+  if (rateQa === true) input.rate_qa = true;
   return input;
 }
 
@@ -211,7 +232,7 @@ async function um(db, tabela, colunas, id, oQueE) {
 }
 
 const COLUNAS_VOZ =
-  "id, user_id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language";
+  "id, user_id, status, lora_path, reference_audio_path, reference_transcript, lora_alpha, tts_silence_ms, tts_crossfade_ms, language, speech_rate_wps";
 // A coluna é `display_name`; `full_name` NÃO existe nesta tabela.
 const COLUNAS_PERFIL = "email, display_name, credits_subscription, credits_extra, access_until";
 
@@ -222,7 +243,7 @@ const COLUNAS_PERFIL = "email, display_name, credits_subscription, credits_extra
  *
  * deps: { db, normalizar, timeoutMs, custoEmCreditos }
  */
-async function montarPlano({ modo, genId, vozId, conteudoArquivo, rotulo }, deps) {
+async function montarPlano({ modo, genId, vozId, conteudoArquivo, rotulo, rateQa: rateQaPedido = true }, deps) {
   let origem = null;
   let voz;
   let textoRaw;
@@ -233,7 +254,7 @@ async function montarPlano({ modo, genId, vozId, conteudoArquivo, rotulo }, deps
     origem = await um(
       deps.db,
       "generations",
-      "id, user_id, voice_id, text_raw, text_normalized, status, created_at",
+      "id, user_id, voice_id, text_raw, text_normalized, status, created_at, request_params",
       genId,
       "geração de origem",
     );
@@ -279,12 +300,22 @@ async function montarPlano({ modo, genId, vozId, conteudoArquivo, rotulo }, deps
 
   const perfil = await um(deps.db, "profiles", COLUNAS_PERFIL, voz.user_id, "perfil do aluno");
 
+  // Guarda de ritmo (#395, 25/09). Em `refazer` a verdade é o que o ALUNO
+  // tinha na geração original: refazer com a guarda diferente da dele não é
+  // refazer, é entregar outro produto. Em `texto-novo` não há original pra
+  // herdar, então quem chama decide (o script manda ligado).
+  const rateQa =
+    modo === "refazer"
+      ? origem?.request_params?.rate_qa === true
+      : rateQaPedido === true;
+
   return {
     modo,
     origem,
     voz,
     perfil,
     rotulo: rotulo ?? null,
+    rateQa,
     textoRaw,
     textoParaGpu,
     normalizado,
@@ -326,6 +357,7 @@ async function dispararPlano(plano, deps) {
     outputUploadUrl: await deps.putUrl(deps.buckets.geracoes, outputKey, "audio/wav"),
     loraUrl: await deps.getUrl(deps.buckets.vozes, voz.lora_path),
     refUrl: refKey ? await deps.getUrl(deps.buckets.vozes, refKey) : null,
+    rateQa: plano.rateQa === true,
   });
 
   const site = resolverSite(deps.env);
