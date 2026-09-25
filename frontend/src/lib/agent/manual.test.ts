@@ -145,6 +145,52 @@ test("o manual não promete estorno automático em toda falha", () => {
   );
 });
 
+test("o manual dá o endereço real da tela de planos, fora do /app (dano medido: irleygurgel@gmail.com)", () => {
+  // Sem esta linha no manual, a Fast (um LLM) inventava "/app/plans" por
+  // analogia com as outras rotas /app/... que ela conhece — endereço que
+  // NUNCA existiu na plataforma. A aluna irleygurgel@gmail.com passou dias
+  // tentando achar "Planos" no menu do app por causa disso: um dos três
+  // chamados dela é literalmente "não vejo Planos no menu". Ela nunca ia ver
+  // — a tela fica em /planos, fora do /app, e não é item de menu nenhum.
+  const secao = secaoDeCreditos();
+  assert.match(
+    secao,
+    /\/planos/,
+    "sem o endereço real da tela de planos a Fast não tem pra onde mandar o aluno",
+  );
+  assert.match(
+    secao,
+    /FORA do \/app/,
+    "sem dizer que /planos fica FORA do /app, a Fast pode voltar a procurar a tela dentro do menu do app",
+  );
+});
+
+test("nenhuma variante de '/app/plans' sobra em manual.ts nem no resto de lib/agent (rota que nunca existiu)", () => {
+  // grep -rIni em todo o repo (fora node_modules/.next/.git) confirmou ZERO
+  // ocorrências literais de "/app/plans" — o bug não era uma string solta em
+  // lugar nenhum, era a Fast INVENTANDO a URL por analogia (mesmo padrão do
+  // #215/Gravador). Este teste é o tripwire: se algum dia alguém escrever
+  // essa string aqui — de volta, por engano ou copiando de um chamado antigo
+  // — ele cai antes de chegar em aluno.
+  assert.doesNotMatch(
+    FONTE,
+    /app\/plans/i,
+    "manual.ts voltou a citar 'app/plans' — essa rota NUNCA existiu na plataforma (a de verdade é /planos, fora do /app)",
+  );
+  const dir = fileURLToPath(new URL(".", import.meta.url));
+  const fontes = readdirSync(dir)
+    .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
+    .map((f) => [f, readFileSync(dir + f, "utf8")] as const);
+  assert.ok(fontes.length > 0, "não achei os fontes de src/lib/agent/");
+  for (const [nome, src] of fontes) {
+    assert.doesNotMatch(
+      src,
+      /app\/plans/i,
+      `${nome} passou a citar 'app/plans' — essa rota NUNCA existiu na plataforma (a de verdade é /planos, fora do /app)`,
+    );
+  }
+});
+
 test("a seção vai inteira pro system prompt da Fast", () => {
   // buildAgentSystem() é o que a brain.ts manda pro modelo. Se ele parar de
   // interpolar o manual, o conserto acima não chega na Fast.

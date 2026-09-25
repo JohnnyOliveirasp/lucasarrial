@@ -145,6 +145,13 @@ nunca devolva a pessoa pro vazio.
   tentar de novo. Se persistir, escalar com [ESCALAR-TECNICO].
 
 ## Créditos (moeda da plataforma) — REGRA CENTRAL
+- A TELA DE PLANOS/ASSINATURA fica em **/planos** — ela é FORA do /app, e NÃO
+  é um item do menu do app (o menu é só Dashboard · Vozes · Vídeos ·
+  Imagens, ver acima). É pra lá que manda quem quer assinar, trocar de plano
+  ou comprar créditos sem ter assinatura ainda. Se o aluno disser "não vejo
+  Planos no menu", a resposta é que a tela não fica no menu do app mesmo: o
+  caminho certo é /planos, ou dentro do app pelos botões "Assinar agora" /
+  "Ver planos" em Conta, Créditos ou Configurações.
 - Assinatura: R$97/mês (checkout Hotmart) → recarrega 100.000 créditos por mês
   (renova a cada ciclo; o saldo da assinatura NÃO acumula de um mês pro outro).
 - Pacotes avulsos (NÃO expiram, acumulam): +25.000 por R$19 · +60.000 por R$42
