@@ -41,6 +41,51 @@
 import type { VoiceStatus } from "../db/types.ts";
 import type { SgpStatus } from "./types.ts";
 
+/**
+ * A TELA oferece o "Refazer entrega"? DECISÃO PURA, separada de
+ * `decidirRefazer` de propósito.
+ *
+ * ── Por que existe (medido em 25/09, 9,8 dias depois do conserto) ──────────
+ * A rota nasceu em 15/09 (commit 5d409805) e o próprio commit registrou que
+ * NÃO ligou a UI: *"NAO INCLUI o botao na tela /admin/sgp: aquele arquivo esta
+ * sendo editado por outro agente agora"*. A ligação virou "cartão separado" e
+ * o cartão nunca veio. Conferido hoje: `refazer` não aparece na tela do
+ * `/admin/sgp` nem em nenhum componente de `admin/sgp`, a rota tem ZERO
+ * consumidor em todo o `src`, e nenhum dos branches do origin menciona
+ * `refazer` naquele arquivo.
+ * Ou seja: a queixa literal do chamado — *"nem o aluno, nem o suporte, nem o
+ * admin"* consegue refazer — seguia VERDADEIRA para o suporte, porque a única
+ * porta era um `curl` de quem tem acesso ao servidor. Rota sem botão conserta
+ * o sistema e não conserta o atendente.
+ *
+ * ── A régua, e por que é só `falhou` ──────────────────────────────────────
+ * `falhou` é o beco sem saída que o chamado descreve: o aluno completou tudo e
+ * fomos NÓS que quebramos. Os outros ficam de fora pra não gastar o clique do
+ * atendente num "não":
+ *   • `pronto`/`enviado` — a voz está `ready`; a rota recusa com "já pronta";
+ *   • `dados`/`foto`/`audio`/`revisao` — falta material DO ALUNO, não há treino
+ *     pra refazer (a rota recusa com `sem_voz`);
+ *   • `processando` — o treino roda AGORA; é o caso em que clicar é mais
+ *     tentador e mais inútil (a rota recusa com "já treinando").
+ *
+ * ⚠️ Isto NÃO é a autoridade. Quem decide é `decidirRefazer`, que lê o status
+ * da VOZ — dado que esta tela não carrega. Esta função só escolhe o que
+ * MOSTRAR; se as duas discordarem, a rota recusa com mensagem escrita pro
+ * atendente e a tela a exibe. Falso positivo aqui custa um clique e uma frase;
+ * falso negativo esconde a única saída que existe.
+ *
+ * ⚠️ `naoIniciou` sai fora sempre: essas linhas não são pedidos (`id` não é id
+ * de `sgp_pedidos`), então o clique daria 404. Mesma trava que a tela já aplica
+ * em cobrança, marcar-erro e concluir.
+ */
+export function ofereceRefazerNaTela(linha: {
+  status: string;
+  naoIniciou: boolean;
+}): boolean {
+  if (linha.naoIniciou) return false;
+  return linha.status === "falhou";
+}
+
 /** O mínimo do pedido que esta régua precisa. */
 export type PedidoParaRefazer = {
   user_id: string | null;

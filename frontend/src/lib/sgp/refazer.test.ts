@@ -10,7 +10,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decidirRefazer, type PedidoParaRefazer } from "./refazer.ts";
+import { decidirRefazer, ofereceRefazerNaTela, type PedidoParaRefazer } from "./refazer.ts";
 import { deveCobrarOnboarding } from "../credits/onboarding-cobranca.ts";
 import type { VoiceStatus } from "../db/types.ts";
 
@@ -54,6 +54,55 @@ test("a rota passa origem 'sgp' — lida do arquivo, não da minha lembrança", 
   );
   const src = await fs.readFile(url, "utf8");
   assert.match(src, /dispararTreinoOnboarding\(\s*admin,\s*decisao\.userId,\s*decisao\.voiceId,\s*"sgp"\s*\)/);
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * A TELA. O defeito de 15/09 foi consertado no servidor e ficou INALCANÇÁVEL:
+ * rota pronta, testada, e sem um único consumidor por 9,8 dias. Estes testes
+ * existem pra que "a rota existe" nunca mais seja confundido com "o atendente
+ * consegue". Os dois primeiros guardam a régua; o terceiro guarda o FIO.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test("a tela oferece 'refazer' no beco sem saída — pedido 'falhou'", () => {
+  assert.equal(ofereceRefazerNaTela({ status: "falhou", naoIniciou: false }), true);
+});
+
+test("a tela NÃO oferece onde o clique viraria um 'não'", () => {
+  // Cada um destes tem uma recusa nomeada na rota; oferecer seria gastar o
+  // clique do atendente pra receber uma negativa.
+  for (const status of [
+    "dados",
+    "foto",
+    "audio",
+    "revisao",
+    "processando",
+    "pronto",
+    "enviado",
+  ]) {
+    assert.equal(
+      ofereceRefazerNaTela({ status, naoIniciou: false }),
+      false,
+      `status ${status} não deveria oferecer refazer`,
+    );
+  }
+});
+
+test("quem comprou e nunca abriu o portal não recebe o botão (daria 404)", () => {
+  // `naoIniciou` vence até sobre `falhou`: o `id` da linha não é id de pedido.
+  assert.equal(ofereceRefazerNaTela({ status: "falhou", naoIniciou: true }), false);
+});
+
+test("a TELA está de fato ligada na rota — lido do arquivo, não da lembrança", async () => {
+  // ESTE É O TESTE QUE FALTAVA EM 15/09. A rota nasceu verde e sem consumidor:
+  // 20/20 testes passando enquanto o atendente seguia sem saída. Um teste que
+  // só exercita a régua não vê isso — ele tem que olhar a TELA.
+  const fs = await import("node:fs/promises");
+  const url = new URL("../../app/[locale]/admin/sgp/page.tsx", import.meta.url);
+  const src = await fs.readFile(url, "utf8");
+  // (a) chama a rota certa, com POST;
+  assert.match(src, /\/api\/v1\/admin\/sgp\/\$\{[^}]+\}\/refazer/);
+  // (b) usa a régua desta casa em vez de reimplementar o "quando mostrar";
+  assert.match(src, /ofereceRefazerNaTela/);
 });
 
 test("voz já treinando → recusa, pra não jogar GPU fora", () => {
