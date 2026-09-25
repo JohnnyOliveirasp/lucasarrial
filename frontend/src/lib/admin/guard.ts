@@ -7,9 +7,12 @@
  *
  * PAPÉIS (mig 95, pedido do Johnny 24/08):
  *   admin   → painel inteiro, inclusive dinheiro.
- *   suporte → SÓ Falhas + SGP + Agente. Quem é gerente de suporte não precisa
- *             ver faturamento, lucro nem a base de usuários pra fazer o
- *             trabalho. A lista que MANDA é `roles` em lib/admin/nav.ts —
+ *   suporte → Falhas + SGP + Agente + Usuários (Usuários entrou em 21/09,
+ *             ordem do Johnny: é dado operacional — acesso, crédito, último
+ *             login — sem receita nem lucro). Faturamento, lucro, churn,
+ *             retiradas, campanhas, cortesias e admins continuam admin-only:
+ *             gerente de suporte não precisa ver dinheiro pra trabalhar.
+ *             A lista que MANDA é `roles` em lib/admin/nav.ts —
  *             este comentário só descreve; ao mudar lá, atualize aqui.
  * Quem entra pela env é sempre `admin` (bootstrap não tem como ter papel).
  */
