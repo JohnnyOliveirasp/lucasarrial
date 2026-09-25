@@ -26,6 +26,7 @@ import {
   type EventoCompra,
 } from "@/lib/agent/garantia";
 import { qaVeredito, AVISO_QA_NAO_PROVA } from "@/lib/generations/qa-veredito";
+import { extratoVeredito, AVISO_ESTORNO_SO_CASADO, type LinhaExtrato } from "@/lib/generations/extrato-veredito";
 import { entitlementValeAcesso } from "@/lib/payments/acesso-regra";
 import { fraseDeAcessoParaAgente } from "@/lib/payments/acesso-frase";
 
@@ -125,6 +126,13 @@ type JobLine = {
    * para quem atende. Ver `lib/generations/qa-veredito.ts`.
    */
   ressalva?: string | null;
+  /**
+   * Veredito de DINHEIRO deste trabalho, casado por `ref_id` no extrato
+   * (incidente 70633cab). Existe porque em 17/09 a casa escreveu a uma aluna
+   * que 400 créditos "já voltaram" — e o que havia no extrato era um estorno de
+   * OUTRA geração dela. Ver `lib/generations/extrato-veredito.ts`.
+   */
+  dinheiro?: string | null;
 };
 
 function jobLines(lines: JobLine[]): string {
@@ -134,9 +142,40 @@ function jobLines(lines: JobLine[]): string {
       // Linha própria e indentada: o `status: ready` continua verdadeiro (o
       // arquivo existe e foi entregue), a ressalva é o que o status não conta.
       const qa = j.ressalva ? `\n      ${j.ressalva}` : "";
-      return `  - ${j.label}${j.name ? ` "${j.name}"` : ""}: ${j.status ?? "?"} (${dtBR(j.at)})${err}${qa}`;
+      // Mesma razão: `status: ready` não diz se o crédito foi cobrado nem se
+      // voltou, e é sobre isso que a Fast é perguntada.
+      const money = j.dinheiro ? `\n      ${j.dinheiro}` : "";
+      return `  - ${j.label}${j.name ? ` "${j.name}"` : ""}: ${j.status ?? "?"} (${dtBR(j.at)})${err}${qa}${money}`;
     })
     .join("\n");
+}
+
+/**
+ * As linhas de `credit_transactions` casadas com os trabalhos listados.
+ *
+ * Consulta SEPARADA da lista de "últimas movimentações" de propósito: aquela é
+ * uma janela dos 6 lançamentos mais recentes DA CONTA, e o débito de um trabalho
+ * de 3 dias atrás cai fora dela. Foi precisamente essa a leitura que falhou em
+ * 17/09 — o que aparecia na janela era o estorno de outra geração.
+ *
+ * ⚠️ Best-effort igual ao resto do arquivo: erro de banco devolve `[]`, e aí
+ * nenhum trabalho ganha linha de dinheiro. É por isso que
+ * `AVISO_ESTORNO_SO_CASADO` sai sempre que HÁ trabalho com id (e não só quando
+ * uma linha apareceu): a ausência da linha tem que virar "escale", nunca
+ * silêncio. Silêncio sobre dinheiro é o que produziu o #198 e o 17/09.
+ */
+async function extratoDosTrabalhos(ids: string[]): Promise<LinhaExtrato[]> {
+  if (!ids.length) return [];
+  try {
+    const { data, error } = await getAdmin()
+      .from("credit_transactions")
+      .select("ref_id,ref_type,kind,amount,created_at")
+      .in("ref_id", ids);
+    if (error) return [];
+    return (data ?? []) as LinhaExtrato[];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -277,24 +316,48 @@ export async function buildAccountContext(profileId: string): Promise<string | n
     const recent = (table: string, cols: string) =>
       admin.from(table as never).select(cols).eq("user_id", profileId).order("created_at", { ascending: false }).limit(3);
 
+    // ⚠️ `id` entra em TODOS os selects de trabalho, e não é enfeite: é a ÚNICA
+    // chave que casa o trabalho com o extrato (`credit_transactions.ref_id`).
+    // Sem ele não existe resposta honesta para "este trabalho foi estornado?" —
+    // sobra olhar valor, data e `kind`, que são as três leituras que produziram
+    // a carta falsa de 17/09 (incidente 70633cab).
     const [voices, gens, clones, images, videos, txs] = await Promise.all([
-      recent("voices", "name,status,error_message,created_at"),
+      recent("voices", "id,name,status,error_message,created_at"),
       // `qa` entra SÓ aqui (incidente 702cc916): é a única tabela com a
       // telemetria do laço de QA do worker. Uma geração cujo QA esgotou as
       // tentativas é gravada como `ready` / `error_message = null` — sem ler
       // este jsonb, a Fast vê "geração perfeita" enquanto o aluno reclama da
       // voz, e o atendimento cai em culpar o aluno.
-      recent("generations", "name,status,error_message,created_at,qa"),
-      recent("video_clones", "name,status,error_message,created_at"),
-      recent("image_generations", "name,status,error_message,created_at"),
+      recent("generations", "id,name,status,error_message,created_at,qa"),
+      recent("video_clones", "id,name,status,error_message,created_at"),
+      recent("image_generations", "id,name,status,error_message,created_at"),
       // scene_count entra no nome: em 27/08 a Fast apontou pra aluna "o projeto
       // das 16 cenas" e era o projeto ERRADO (1 cena) — ela apagou esse. Sem o
       // número de cenas o bot não tem como distinguir um projeto do outro.
-      recent("video_projects", "name,status,error_message,created_at,scene_count"),
+      recent("video_projects", "id,name,status,error_message,created_at,scene_count"),
       admin.from("credit_transactions").select("kind,ref_type,amount,note,created_at").eq("user_id", profileId).order("created_at", { ascending: false }).limit(6),
     ]);
 
-    type R = { name?: string | null; status?: string | null; error_message?: string | null; created_at?: string | null; scene_count?: number | null; qa?: unknown };
+    type R = { id?: string | null; name?: string | null; status?: string | null; error_message?: string | null; created_at?: string | null; scene_count?: number | null; qa?: unknown };
+
+    const idsDosTrabalhos = [voices, gens, clones, images, videos]
+      .flatMap((q) => ((q.data ?? []) as R[]).map((r) => r.id))
+      .filter((id): id is string => typeof id === "string" && id !== "");
+
+    // O extrato dos trabalhos listados, num só ida ao banco. O casamento por
+    // `ref_id` NÃO é feito aqui — é feito dentro de `extratoVeredito`, que é
+    // onde está testado. Passar o extrato inteiro e deixar o módulo peneirar é
+    // de propósito: o filtro mora num lugar só.
+    //
+    // ⚠️ SUPOSIÇÃO, NÃO MEDIÇÃO: assumo que o estorno de cada produto grava
+    // `ref_id` = id do próprio objeto (é o que `_frank/ferramentas/_estornos.cjs`
+    // documenta em `POR_FEATURE` e o que o estorno da Katia usou para
+    // `generations`). Não conferi produto por produto no banco. O modo de falha
+    // se eu estiver errado em algum deles é benigno e silencioso na direção
+    // certa: nenhuma linha casa, o veredito volta `null`, nenhuma linha de
+    // dinheiro é escrita — e o aviso abaixo manda escalar em vez de afirmar.
+    const extrato = await extratoDosTrabalhos(idsDosTrabalhos);
+
     const lines = (label: string, rows: unknown): JobLine[] =>
       ((rows ?? []) as R[]).map((r) => ({
         label,
@@ -305,6 +368,9 @@ export async function buildAccountContext(profileId: string): Promise<string | n
         // Só `generations` pede a coluna; nas outras `r.qa` vem undefined e o
         // veredito devolve null — nenhuma linha extra, nenhum prompt inflado.
         ressalva: qaVeredito(r.qa)?.linha ?? null,
+        // Sem `id`, ou sem linha de extrato casada, o veredito volta null e o
+        // trabalho fica sem linha de dinheiro. Nunca chuta.
+        dinheiro: extratoVeredito(r.id, extrato)?.linha ?? null,
       }));
 
     const jobs = [
@@ -409,6 +475,15 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       // de palavra: geração 1425ca2f, 10/09). Gastar estas linhas de prompt em
       // contas sem ressalva nenhuma seria inflar o contexto à toa.
       jobs.some((j) => j.ressalva) ? AVISO_QA_NAO_PROVA : "",
+      // ⚠️ A CONDIÇÃO AQUI É `idsDosTrabalhos.length`, e NÃO "alguma linha de
+      // dinheiro saiu" — ao contrário do aviso de QA acima. A diferença é
+      // deliberada: a ausência de ressalva de QA é inofensiva, mas a ausência de
+      // linha de dinheiro é justamente o estado em que a Fast inventa ("não vi
+      // débito pendente, então já voltou"). Então sempre que existe trabalho com
+      // id — ou seja, sempre que a leitura do extrato foi TENTADA — o aviso sai e
+      // diz o que fazer quando a linha não está lá: escalar, não afirmar.
+      // Vale para o caso em que a consulta ao extrato falhou e devolveu [].
+      idsDosTrabalhos.length ? AVISO_ESTORNO_SO_CASADO : "",
       txLines ? `Últimas movimentações de crédito:\n${txLines}` : "",
     ]
       .filter(Boolean)
