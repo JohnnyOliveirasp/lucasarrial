@@ -2349,6 +2349,13 @@
       "analisando": "Analisando…",
       "indeciso": "Não conseguimos analisar agora. Tente enviar de novo.",
       "remover": "Remover",
+      "bloqueio": {
+        "ocupado": "Aguarde a análise dos áudios terminar para continuar.",
+        "fala": "Falta(m) {falta} de fala aprovada para continuar — o mínimo é {min} min.",
+        "excesso": "Passou {sobra} do limite de {max} min de fala — remova algum arquivo.",
+        "ciencia": "Falta(m) {n} item(ns) por marcar na lista de confirmação, no começo desta tela."
+      },
+      "cienciaNaoGuardada": "Não conseguimos guardar suas marcações agora. Não atualize a página antes de continuar, senão elas podem sumir.",
       "erroUpload": "Não conseguimos enviar o áudio.",
       "erroAnalise": "Não conseguimos analisar o áudio.",
       "erroConcluir": "Não foi possível continuar.",
