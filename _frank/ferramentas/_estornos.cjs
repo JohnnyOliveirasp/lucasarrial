@@ -140,6 +140,37 @@ const REF_TYPES_ESTORNO = [
   // e ref_type "react_job" (gerar/route.ts, debitCredits), ref_id =
   // react_jobs.id — casar o ref_id e somar o sinal continua sendo a prova.
   "react_refund",
+  // 25/09, varredura diaria: SEXTA reincidencia da classe (#185 studio_audio,
+  // #342 perdao/compensation, 19/09 edicao_broll, 20/09 03h
+  // video_clip_refund_backfill, 20/09 18h image_refund_gate371, agora esta).
+  // O guarda `conferirListaCompleta` acusou de novo por EXCLUSAO, varrendo
+  // 3.687 linhas com amount>0 e devolvendo exatamente ["video_clip_refund"].
+  //
+  // ⚠️ A ARMADILHA NOVA E O NOME QUASE-IGUAL. `video_clip_refund_backfill` JA
+  // estava cadastrado desde 20/09 (nota acima). Este aqui e OUTRO tipo, o mesmo
+  // nome SEM o sufixo `_backfill`, e nasceu fora da lista assim mesmo. Quem
+  // bater o olho na lista e ler "video_clip_refund*" vai achar que ja esta
+  // coberto — nao esta: `REF_TYPES_ESTORNO.includes()` casa string exata, nao
+  // prefixo. Cadastrar o backfill NAO cadastrou o tipo de producao.
+  //
+  // Quem grava: frontend/src/lib/video/video-sync.ts:207 (refType
+  // "video_clip_refund", ref_id = a CENA, valor = video_credits_cost) — ou
+  // seja, e codigo de PRODUTO, nao ferramenta de ronda. O debito casado e
+  // `video_clip_regen` (regeracao de clipe em linha propria, a mesma segunda
+  // perna que a nota do backfill documenta).
+  //
+  // PROVA PELO CRITERIO DESTE ARQUIVO (casar ref_id, somar o sinal), medida no
+  // banco antes de mover — UMA linha, e ela zera o debito do clipe:
+  //   ref_id 3d321fc4… video_clip_regen -1.320 + video_clip_refund +1.320 = 0
+  // (o mesmo ref_id carrega ainda video_image_regen -525 x2 e
+  // video_scene_improve -1, que sao OUTRAS cobrancas da mesma cena e nao
+  // entram nesta conta — some a perna do clipe, nao o ref_id inteiro.)
+  // Script da medicao: _frank/ferramentas/2026-09-25_classificar_video_clip_refund.cjs
+  //
+  // Sem ele, `ehEstorno('video_clip_refund')` dava false e quem perguntasse
+  // "esse clipe ja foi ressarcido?" leria NAO e pagaria de novo — o falso
+  // negativo que paga em dobro (#185, #342), pela sexta vez.
+  "video_clip_refund",
 ];
 
 /**
