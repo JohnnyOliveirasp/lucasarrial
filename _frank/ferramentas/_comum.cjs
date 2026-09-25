@@ -63,13 +63,37 @@ async function listar(bucket, prefixo, minBytes = 10000) {
   return (out.Contents ?? []).filter((o) => (o.Size ?? 0) > minBytes);
 }
 
-/** O objeto existe mesmo no R2? (linha no banco não é prova) */
+/**
+ * O objeto existe mesmo no R2? (linha no banco não é prova)
+ *
+ * NUNCA engolir erro que não seja "não existe": credencial inválida, rede
+ * fora, 403 etc. viravam `false` silencioso — indistinguível de ausência de
+ * verdade. Medido ao vivo contra o R2 real em 25/09 (probe em
+ * /tmp/probe-r2-errors.cjs, não versionado): HeadObject 404/NotFound é o
+ * único caso que devolve `false`; tudo mais (400 de credencial inválida,
+ * erro de rede sem $metadata, etc.) agora LANÇA.
+ *
+ * Limite medido e não escondido: no R2, HeadObject numa key ausente e
+ * HeadObject num BUCKET inexistente devolvem o mesmo 404/NotFound —
+ * R2 não expõe um sinal que distinga os dois casos (diferente do que a
+ * doc pediu supor). Ou seja "bucket errado mas existente" (a causa real do
+ * falso '52/52 ausentes' de 25/09) e "bucket que não existe" ficam dentro
+ * do mesmo `false` — não tem como separar isso aqui, é limite da API do R2.
+ * O que ESTE conserto resolve é o outro metade do bug: credencial/rede/403
+ * deixam de mentir "não existe".
+ */
 async function existe(bucket, key) {
   try {
     await r2().send(new s3.HeadObjectCommand({ Bucket: bucket, Key: key }));
     return true;
-  } catch {
-    return false;
+  } catch (e) {
+    if (e?.$metadata?.httpStatusCode === 404) return false;
+    const status = e?.$metadata?.httpStatusCode;
+    const nome = e?.name || e?.constructor?.name || "erro desconhecido";
+    throw new Error(
+      `existe(${bucket}, ${key}): nao deu pra perguntar ao R2 (nao e um 404 de ausencia) — ${nome}${status ? ` HTTP ${status}` : ""}: ${e?.message ?? e}`,
+      { cause: e },
+    );
   }
 }
 
