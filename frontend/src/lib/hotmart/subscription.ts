@@ -60,7 +60,14 @@ export async function cancelSubscription(subscriberCode: string): Promise<boolea
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ send_email: true }),
+    // ⚠️ O parâmetro documentado é `send_mail`, NÃO `send_email` (#552, 24/09).
+    // A doc oficial ("Cancel subscription", developers.hotmart.com/docs/en/v1/
+    // subscription/cancel-subscription/) descreve `send_mail` nos dois
+    // endpoints — o singular `/subscriptions/:code/cancel`, que é este, e o de
+    // lista `/subscriptions/cancel`. O nome errado era resquício de quando
+    // este módulo foi escrito sem conseguir ler a doc (ver cabeçalho). O PATH
+    // está certo e fica como estava: a doc confirma os dois formatos.
+    body: JSON.stringify({ send_mail: true }),
   });
   if (!res.ok) {
     const body = await res.text();
