@@ -1,0 +1,123 @@
+name: Testes do RunPod Worker
+
+# POR QUE ESTE ARQUIVO EXISTE
+#
+# runpod-worker/ tem 12 arquivos de teste com 414 funcoes que prendem REGRAS DE
+# NEGOCIO que ja custaram incidente (treino de voz a 10k creditos por rodada,
+# cura do fim, cobertura do QA, snap de palavra na referencia, watchdog). Ate
+# 25/09/2026 NENHUM workflow as executava: a unica forma de rodar era alguem
+# digitar a mao o comando do docstring. Medido na ronda das falhas de 25/09
+# ~22hZ: grep por pytest/unittest nos 4 workflows existentes devolvia ZERO.
+#
+# A suite estava VERDE (414/414) — e e exatamente por isso que ninguem percebia
+# que nada a executava. Guarda correta que nao e consultada e enfeite: o custo
+# so aparece no proximo refator. Caso concreto (#380 / PR #264): o teste
+# test_amostra_pt_e_neutra le o .ts do BACKEND e exige que a constante
+# SAMPLE_TEXT de la bata com DEFAULT_SAMPLE_TEXT do worker. E uma invariante
+# que atravessa dois componentes, protegida por um teste que nada rodava.
+#
+# ---------------------------------------------------------------------------
+# DUAS ARMADILHAS MEDIDAS, QUE EXPLICAM O DESENHO DESTE ARQUIVO
+# ---------------------------------------------------------------------------
+#
+# 1) NAO RECICLAR A FROTA DO RUNPOD.
+#    `runpod-worker.yml` dispara em PUSH com paths `runpod-worker/**` OU o
+#    proprio `.github/workflows/runpod-worker.yml`, e esse build RECICLA OS
+#    ENDPOINTS DE PRODUCAO (workersMax 0->N). Foi por isso que o PR #264 ficou
+#    2 dias parado: derrubar geracao de pagante em voo pra consertar constante
+#    de texto e troca ruim.
+#    Consequencia pro desenho: este e um arquivo SEPARADO (nao casa com nenhum
+#    dos dois paths acima) e as dependencias sao instaladas INLINE aqui. NAO
+#    criar requirements-test.txt dentro de runpod-worker/ — esse arquivo casaria
+#    `runpod-worker/**` e passaria a reciclar a frota a cada mexida em teste.
+#    Este workflow nao tem passo de deploy, nao chama a API do RunPod e nao usa
+#    secret nenhuma.
+#
+# 2) RODAR ARQUIVO POR ARQUIVO, NUNCA `unittest discover`.
+#    Medido em 25/09: por arquivo da 414/414 OK; `python -m unittest discover`
+#    no mesmo commit da 407 testes com 19 failures + 28 errors, porque os testes
+#    se atropelam no mesmo processo (ex.: PermissionError em '/workspace',
+#    estado de modulo compartilhado). Trocar este laco por `discover` produz um
+#    CI VERMELHO ACUSANDO CODIGO SAO — que e a forma mais rapida de ensinar a
+#    equipe a ignorar o CI. O docstring dos proprios testes manda rodar assim:
+#    `cd runpod-worker && python test_train_smoke.py -v`.
+#
+# As 4 dependencias abaixo foram medidas uma a uma (numpy, requests, soundfile,
+# huggingface_hub). Sem elas o placar MENTE: a suite falha por
+# ModuleNotFoundError e parece codigo quebrado. Erro de import nao e erro de
+# teste — leia o erro cru antes de acreditar em qualquer placar.
+
+on:
+  pull_request:
+    paths:
+      - 'runpod-worker/**'
+      - '.github/workflows/worker-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'runpod-worker/**'
+      - '.github/workflows/worker-tests.yml'
+  workflow_dispatch:
+
+# Testes nao tem efeito colateral: run velho da mesma ref pode morrer.
+concurrency:
+  group: worker-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    name: suite do worker (414 testes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Inline de proposito — ver armadilha (1) no cabecalho.
+      - name: Dependencias de teste
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy requests soundfile huggingface_hub
+
+      # Arquivo por arquivo de proposito — ver armadilha (2) no cabecalho.
+      - name: Rodar a suite
+        working-directory: runpod-worker
+        run: |
+          falhou=0
+          total=0
+          vermelhos=""
+          for f in test_*.py; do
+            echo "::group::$f"
+            if python "$f" -v 2>&1 | tee /tmp/saida.txt; then
+              :
+            else
+              falhou=1
+              vermelhos="$vermelhos $f"
+            fi
+            n=$(grep -oE '^Ran [0-9]+ test' /tmp/saida.txt | grep -oE '[0-9]+' | head -1)
+            total=$((total + ${n:-0}))
+            echo "::endgroup::"
+          done
+          echo "─────────────────────────────────────────────"
+          echo "total de testes executados: $total"
+          if [ "$falhou" -ne 0 ]; then
+            echo "::error::suite vermelha em:$vermelhos"
+            exit 1
+          fi
+          # Guarda da propria guarda: se alguem apagar ou deixar de coletar
+          # arquivos de teste, o placar cai em silencio e o CI segue verde.
+          # 414 era o numero medido em 25/09/2026. Subiu? atualize o piso.
+          if [ "$total" -lt 414 ]; then
+            echo "::error::so $total testes rodaram, e o piso medido e 414. Teste sumiu ou parou de ser coletado."
+            exit 1
+          fi
+          echo "suite verde: $total testes"
