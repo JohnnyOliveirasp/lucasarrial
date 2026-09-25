@@ -15,35 +15,59 @@
  */
 import { getAdmin } from "@/lib/db/admin";
 import { isAdminEmail } from "@/lib/api/auth";
+import {
+  resolverPapel,
+  type AdminRole,
+  type GuardDeps,
+  type PapelResolvido,
+} from "./guard-pure";
 
-export type AdminRole = "admin" | "suporte";
+export type { AdminRole };
 
-/** Papel do e-mail, ou null se não for admin nenhum. */
-export async function adminRole(email: string | null | undefined): Promise<AdminRole | null> {
-  if (!email) return null;
-  const e = email.trim().toLowerCase();
-  if (isAdminEmail(e)) return "admin"; // fallback env
-
-  const { data, error } = await getAdmin()
-    .from("admin_emails")
-    .select("email, role")
-    .eq("email", e)
-    .maybeSingle();
-
+/** Ligação da decisão pura (guard-pure.ts) com o mundo real (env + Supabase). */
+const depsReais: GuardDeps = {
+  isAdminEmail,
+  selectComRole: async (e) => {
+    const { data, error } = await getAdmin()
+      .from("admin_emails")
+      .select("email, role")
+      .eq("email", e)
+      .maybeSingle();
+    return { data, error };
+  },
   // Coluna `role` ainda não existe (deploy chegou antes da mig 95): o SELECT
-  // falha inteiro e TODO admin viraria não-admin — o painel sumiria pra todos.
-  // Cai pro comportamento antigo (allowlist binária) até a migration rodar.
-  if (error) {
-    const { data: legado } = await getAdmin()
+  // com role falha inteiro e TODO admin viraria não-admin — o painel sumiria
+  // pra todos. O select legado (allowlist binária) segue como fallback.
+  selectLegado: async (e) => {
+    const { data, error } = await getAdmin()
       .from("admin_emails")
       .select("email")
       .eq("email", e)
       .maybeSingle();
-    return legado ? "admin" : null;
-  }
-  if (!data) return null;
-  // Linha sem papel = admin, como sempre foi.
-  return (data as { role?: string }).role === "suporte" ? "suporte" : "admin";
+    return { data, error };
+  },
+};
+
+/**
+ * Papel do e-mail com HONESTIDADE de erro: distingue "não tem papel"
+ * (ok:true, role:null) de "não consegui verificar" (ok:false). A rota de API
+ * (gateAdmin) usa este formato pra responder 503 em vez de mentir 403 quando
+ * o banco falha — defeito medido em 21/09.
+ */
+export async function adminRoleDetalhado(
+  email: string | null | undefined,
+): Promise<PapelResolvido> {
+  return resolverPapel(email, depsReais);
+}
+
+/** Papel do e-mail, ou null se não for admin nenhum. */
+export async function adminRole(email: string | null | undefined): Promise<AdminRole | null> {
+  const r = await adminRoleDetalhado(email);
+  // Erro de consulta FECHA (null) aqui de propósito: os chamadores deste
+  // formato (isAdmin nos recursos que gastam dinheiro, layouts) só sabem
+  // sim/não, e fechado é o lado seguro. Quem precisa distinguir e responder
+  // 503 usa adminRoleDetalhado — NÃO troque esta linha por afrouxamento.
+  return r.ok ? r.role : null;
 }
 
 /**
