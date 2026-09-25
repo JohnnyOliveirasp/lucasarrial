@@ -1500,6 +1500,7 @@
       "showLess": "ver menos",
       "showFull": "ver texto completo",
       "downloadAria": "Descargar",
+      "playerFailed": "No pude reproducir este audio aquí en el navegador. Eso no significa que el archivo tenga un problema — usa el botón de descargar al lado, que busca una copia nueva.",
       "deleteOneAria": "Eliminar este audio",
       "deleteModal": {
         "title": "¿Eliminar {n, plural, one {# audio} other {# audios}}?",
