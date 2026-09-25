@@ -209,3 +209,46 @@ em 16/09 e ninguém leu a coluna por 9 dias — a resposta que cinco rondas
 procuraram no escuro estava lá desde o terceiro dia, e junto com ela três
 pagantes. Quando uma ronda subir instrumento novo, a ronda seguinte tem que
 **ler o que ele gravou**, senão o instrumento vira enfeite.
+
+---
+
+## Achado de fim de ronda: o 7º branch concorrente, e este apaga o instrumento
+
+O passo fixo de fim de ronda (`git rev-list main..<branch>`) encontrou
+**`feat/orfa-carencia-sweeper`, 3 commits à frente da main, sem PR**:
+
+```
+71dac10d 08/09  webhook para de alertar compra órfã; quem decide é o sweeper, com carência de 6h
+7f091351 09/09  guarda de estado no órfão: carência não pega PURCHASE_COMPLETE
+540fdd28 09/09  trava de rajada no aviso de compra órfã, e o emissor volta a ligar
+```
+
++1.493 linhas em `aviso-orfao.ts`, `orphan-outreach.ts` e no webhook da Hotmart —
+**os mesmos arquivos** que os PRs #314/#315 mudaram em 16/09.
+
+**Medido, não achismo:**
+
+| marcador | main | branch |
+|---|---|---|
+| `tentativas` (campo do PR #314) | 6 | 1 |
+| `sem aviso novo` (instrumento do PR #315) | **1** | **0** |
+
+O branch é de 08–09/09 e **não conhece** os consertos de 16/09. **Mergear hoje
+apaga a gravação em `payment_events.error`** — isto é, apaga exatamente a coluna
+que produziu o achado desta ronda. A casa voltaria a ficar cega pro próximo
+pagante sem conta, e desta vez **sem nem a prova ficando pra trás**.
+
+É a **7ª vez** que a casa produz duas correções concorrentes pro mesmo defeito
+(família do `feat/onedrive-401`, `feat/fix-image-upload-retry`, as 2 da cura de
+referência, `fix/trava-foto-nova-8379549c`, `fix/ritmo-da-referencia-porta-73a60bb`
+e `fix/estorno-treino-por-saldo-pendente`). **Não mergear.**
+
+⚠️ **Mas a ideia do branch está certa e é a do `#582`:** *"quem decide é o sweeper,
+não o webhook"* é precisamente o conserto do buraco de **leitura** — o webhook
+grava o motivo e ninguém varre. Quem for consertar deve **reescrever a partir da
+main de hoje**, aproveitando o desenho do sweeper, e **não** fazer merge do branch
+velho. Isso está anotado no `#582`.
+
+> Vale reparar no padrão: as duas correções concorrentes nascem sempre enquanto o
+> cartão fica **aberto**. O branch é de 08–09/09; o `#305` estava aberto desde
+> 08/09. Cartão parado é fábrica de branch concorrente.
