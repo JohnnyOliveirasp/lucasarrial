@@ -89,6 +89,10 @@ const arg = (n) => {
           bounceClasse: l.bounce_classe,
         })),
       fichaDesde: f.first_seen_at || null,
+      // A SEGUNDA FONTE (25/09). Sem ela a ficha lê "bounce_em NULL" como
+      // entrega e imprime "NÃO REENVIE" — foi o que manteve o #250 parado 21
+      // dias com um pagante de R$ 733,60 que nunca recebeu carta nenhuma.
+      fichaVistaEm: f.last_seen_at || null,
       agoraMs,
     });
     console.log(`\n===== ${f.id}  [${f.status}]  ${f.title}`);

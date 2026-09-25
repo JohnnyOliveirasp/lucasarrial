@@ -65,6 +65,7 @@ export async function lerHistoricoDeContato(
   emails: string[],
   agoraMs: number,
   nascimentoPorEmail?: Map<string, string>,
+  ultimaNoticiaPorEmail?: Map<string, string>,
 ): Promise<Record<string, ResumoDeContato>> {
   const fora: Record<string, ResumoDeContato> = {};
   if (!emails.length) return fora;
@@ -85,7 +86,13 @@ export async function lerHistoricoDeContato(
     }
     const linhas = (data ?? []) as unknown as LinhaEnvio[];
 
-    const nascimento = nascimentoPorEmail ?? (await nascimentoDasFichas(alvos));
+    // Uma consulta só pras duas pontas da ficha. Buscar `last_seen_at` numa
+    // segunda ida ao banco seria uma janela pra ele divergir do `first_seen_at`
+    // lido aqui, e os dois descrevem o MESMO cartão.
+    const precisaBuscar = !nascimentoPorEmail || !ultimaNoticiaPorEmail;
+    const daFicha = precisaBuscar ? await marcosDasFichas(alvos) : null;
+    const nascimento = nascimentoPorEmail ?? daFicha!.nascimento;
+    const ultimaNoticia = ultimaNoticiaPorEmail ?? daFicha!.ultimaNoticia;
 
     for (const alvo of alvos) {
       fora[alvo] = resumirContato({
@@ -99,6 +106,10 @@ export async function lerHistoricoDeContato(
             bounceClasse: l.bounce_classe,
           })),
         fichaDesde: nascimento.get(alvo) ?? null,
+        // A SEGUNDA FONTE. Sem ela a ficha conclui "entrou" a partir do
+        // silêncio de `bounce_em` — e foi esse silêncio que manteve #250 e
+        // #460 dizendo "NÃO REENVIE" pra quem não recebeu nada.
+        fichaVistaEm: ultimaNoticia.get(alvo) ?? null,
         agoraMs,
       });
     }
@@ -109,22 +120,44 @@ export async function lerHistoricoDeContato(
   }
 }
 
-/** `first_seen_at` mais antigo por e-mail, entre as fichas de bounce. */
-async function nascimentoDasFichas(alvos: string[]): Promise<Map<string, string>> {
+/**
+ * As duas pontas da ficha, por e-mail, entre os cartões de bounce:
+ *  - `nascimento`   = `first_seen_at` MAIS ANTIGO — denuncia cobertura parcial.
+ *  - `ultimaNoticia`= `last_seen_at` MAIS RECENTE — é a segunda fonte que
+ *    desmente o silêncio do ledger.
+ *
+ * Os extremos são opostos de propósito: pro nascimento o pior caso é achar que
+ * a ficha é mais NOVA do que é (esconderia a cobertura parcial); pra última
+ * notícia o pior caso é achar que o cartão disparou mais CEDO do que disparou
+ * (esconderia o bounce sem registro). Nos dois, errar pro lado escolhido aqui
+ * só produz o aviso a mais, nunca a conclusão "entrou" a menos.
+ */
+async function marcosDasFichas(
+  alvos: string[],
+): Promise<{ nascimento: Map<string, string>; ultimaNoticia: Map<string, string> }> {
   const nascimento = new Map<string, string>();
+  const ultimaNoticia = new Map<string, string>();
   const { data } = await getAdmin()
     .from("incidents" as never)
-    .select("first_seen_at, affected_emails")
+    .select("first_seen_at, last_seen_at, affected_emails")
     .like("signature", "fast-bounce:%")
     .overlaps("affected_emails", alvos);
-  for (const f of (data ?? []) as unknown as Array<{ first_seen_at: string; affected_emails: string[] }>) {
+  for (const f of (data ?? []) as unknown as Array<{
+    first_seen_at: string;
+    last_seen_at: string | null;
+    affected_emails: string[];
+  }>) {
     for (const e of f.affected_emails ?? []) {
       const chave = e.toLowerCase();
       const atual = nascimento.get(chave);
       if (!atual || f.first_seen_at < atual) nascimento.set(chave, f.first_seen_at);
+      if (f.last_seen_at) {
+        const visto = ultimaNoticia.get(chave);
+        if (!visto || f.last_seen_at > visto) ultimaNoticia.set(chave, f.last_seen_at);
+      }
     }
   }
-  return nascimento;
+  return { nascimento, ultimaNoticia };
 }
 
 /** O mínimo que um incidente precisa ter pra ser enriquecido. */
@@ -132,6 +165,13 @@ export type FichaEnriquecivel = {
   signature?: string | null;
   description?: string | null;
   first_seen_at?: string | null;
+  /**
+   * `last_seen_at` do cartão — a última vez que o detector de bounce o
+   * levantou. Opcional porque nem todo chamador tem a coluna no SELECT; quando
+   * falta, `lerHistoricoDeContato` vai buscar no banco em vez de concluir
+   * "entrou" por omissão.
+   */
+  last_seen_at?: string | null;
 };
 
 /**
@@ -149,6 +189,8 @@ export async function enriquecerFichasDeBounce<T extends FichaEnriquecivel>(
 ): Promise<T[]> {
   try {
     const nascimento = new Map<string, string>();
+    const ultimaNoticia = new Map<string, string>();
+    let algumSemUltimaNoticia = false;
     const emails: string[] = [];
     for (const inc of incidents) {
       const m = SIGNATURE_BOUNCE.exec(inc.signature ?? "");
@@ -160,10 +202,25 @@ export async function enriquecerFichasDeBounce<T extends FichaEnriquecivel>(
       const nasceu = inc.first_seen_at ?? null;
       const atual = nascimento.get(email);
       if (nasceu && (!atual || nasceu < atual)) nascimento.set(email, nasceu);
+      // Mesma ideia pro outro extremo — mas aqui a FALTA importa: quadro que
+      // não trouxe `last_seen_at` no SELECT não pode virar "cartão nunca
+      // disparou", senão o conserto se apaga sozinho justamente onde ele é
+      // mais lido. Falta um? Busca no banco pra todos.
+      const visto = inc.last_seen_at ?? null;
+      if (!visto) algumSemUltimaNoticia = true;
+      else {
+        const anterior = ultimaNoticia.get(email);
+        if (!anterior || visto > anterior) ultimaNoticia.set(email, visto);
+      }
     }
     if (!emails.length) return incidents;
 
-    const contato = await lerHistoricoDeContato(emails, agoraMs, nascimento);
+    const contato = await lerHistoricoDeContato(
+      emails,
+      agoraMs,
+      nascimento,
+      algumSemUltimaNoticia ? undefined : ultimaNoticia,
+    );
     if (!Object.keys(contato).length) return incidents;
 
     return incidents.map((inc) => {
