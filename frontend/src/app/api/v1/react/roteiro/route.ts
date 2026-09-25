@@ -18,6 +18,7 @@ import { badRequest, jsonError, jsonOk, serverError } from "@/lib/api/responses"
 import { getAdmin } from "@/lib/db/admin";
 import { r2, R2_BUCKETS } from "@/lib/r2/client";
 import { baixarViral, DownloadViralError, marcarDownload } from "@/lib/virais/download";
+import { ehUploadProprio, podeUsarViral } from "@/lib/virais/fonte-do-mp4";
 import { assistirEEscrever, pastaTemporaria } from "@/lib/react/assistir";
 import {
   contarPalavras,
@@ -53,10 +54,13 @@ export async function POST(request: NextRequest) {
 
   const { data: viral } = await admin
     .from("viral_videos")
-    .select("id, url, autor, legenda, duracao_seg")
+    .select(
+      "id, plataforma, url, autor, legenda, duracao_seg, r2_key, publico, enviado_por, removido_em",
+    )
     .eq("id", viralId)
     .maybeSingle();
-  if (!viral?.url) return badRequest("Vídeo não encontrado no acervo.");
+  // Vale o arquivo, não o post: o "Usar um vídeo meu" nasce sem url (#540).
+  if (!podeUsarViral(viral, userId)) return badRequest("Vídeo não encontrado no acervo.");
 
   const duracao = Number(viral.duracao_seg ?? 0) || 30;
   const dir = await pastaTemporaria();
@@ -91,11 +95,14 @@ export async function POST(request: NextRequest) {
 
     let key = meu?.download_status === "pronto" ? meu.r2_key : null;
     if (!key) {
-      const baixado = await baixarViral({ url: viral.url, userId, viralId });
-      key = baixado.r2Key;
+      // Upload do aluno: o mp4 já está no nosso R2, a chave do envio serve
+      // direto — baixar da rede não faria sentido, não há post de origem.
+      key = ehUploadProprio(viral)
+        ? (viral.r2_key as string)
+        : (await baixarViral({ url: viral.url, userId, viralId })).r2Key;
       await marcarDownload(admin, userId, viralId, { status: "pronto", r2Key: key });
     }
-    const obj = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKETS.generations, Key: key! }));
+    const obj = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKETS.generations, Key: key }));
     await fs.writeFile(arquivo, Buffer.from(await obj.Body!.transformToByteArray()));
 
     // 2. O Gemini assiste (imagem + áudio) e escreve.

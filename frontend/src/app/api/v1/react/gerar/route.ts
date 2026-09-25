@@ -23,6 +23,7 @@ import { R2_BUCKETS } from "@/lib/r2/client";
 import { deleteByPrefix } from "@/lib/r2/delete";
 import { createPresignedGet } from "@/lib/r2/presigned";
 import { baixarViral, marcarDownload } from "@/lib/virais/download";
+import { ehUploadProprio, podeUsarViral } from "@/lib/virais/fonte-do-mp4";
 import { marcarUsado } from "@/lib/virais/pessoal";
 import {
   dispararClone,
@@ -98,10 +99,13 @@ export async function POST(request: NextRequest) {
 
   const { data: viral } = await admin
     .from("viral_videos")
-    .select("id, url, duracao_seg")
+    .select(
+      "id, plataforma, url, duracao_seg, r2_key, publico, enviado_por, removido_em",
+    )
     .eq("id", viralId)
     .maybeSingle();
-  if (!viral?.url) return badRequest("Vídeo não encontrado no acervo.");
+  // Vale o arquivo, não o post: o "Usar um vídeo meu" nasce sem url (#540).
+  if (!podeUsarViral(viral, userId)) return badRequest("Vídeo não encontrado no acervo.");
 
   // Trava anti-duplicata (caso Johnny 17/08): a tela mostrou estado velho de
   // "erro", ele apertou Gerar de novo e nasceu um SEGUNDO clone do mesmo
@@ -200,8 +204,10 @@ export async function POST(request: NextRequest) {
 
     let r2Key = ja?.download_status === "pronto" ? ja.r2_key : null;
     if (!r2Key) {
-      const baixado = await baixarViral({ url: viral.url, userId, viralId });
-      r2Key = baixado.r2Key;
+      // Upload do aluno: o mp4 já está no nosso R2 (ver /virais/enviar).
+      r2Key = ehUploadProprio(viral)
+        ? (viral.r2_key as string)
+        : (await baixarViral({ url: viral.url, userId, viralId })).r2Key;
       await marcarDownload(admin, userId, viralId, { status: "pronto", r2Key });
     }
     // Vira "usado": alimenta o selo "N pessoas usando" na galeria.

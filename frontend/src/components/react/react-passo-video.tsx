@@ -135,7 +135,14 @@ export function ReactPassoVideo({
       const r2 = await fetch("/api/v1/virais/enviar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ arquivo_key: j1.key, titulo: f.name, privado: true }),
+        // A duração vai junto: é ela que dimensiona o roteiro e o corte. Sem
+        // ela todo vídeo do aluno valeria 30s no passo 3 (chamado #540).
+        body: JSON.stringify({
+          arquivo_key: j1.key,
+          titulo: f.name,
+          privado: true,
+          duracao_seg: seg,
+        }),
       });
       const j2 = await r2.json();
       if (!r2.ok) throw new Error(j2?.error?.message || "Não consegui guardar o vídeo.");
