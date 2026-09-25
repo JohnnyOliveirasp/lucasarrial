@@ -319,6 +319,96 @@ test("VELHO: prefixo de uuid tambem nao grava, e tambem diz que registrou", asyn
   assert.equal(notasDe(estado, ID_407).length, 2);
 });
 
+/* ══════════════════ 5. O BUG DE 20/09 (#496): "427" caiu no cartao do #138 ══════════════════
+ *
+ * Segunda mordida do MESMO defeito, agora no `anotar_incidente.cjs` (que ainda
+ * nao tinha adotado este modulo). Dados medidos no banco de producao em 20/09:
+ *
+ *   168e8269-6293-488f-b259-f354af0197cf  ->  #427 (bounce da Luciana)
+ *   42741499-b8ee-47b6-80d0-fe51598bbeaa  ->  #138 (varredura rotulava trial como pagante)
+ *
+ * "427" e prefixo de EXATAMENTE UM uuid (42741499-... = #138), entao a recusa
+ * por ambiguidade do resolvedor velho NAO disparava: hits.length === 1, o
+ * UPDATE ia pro cartao errado e o script imprimia GRAVADO. Medido na base
+ * inteira em 20/09: 65 de 481 numeros tem essa mesma armadilha (prefixo de
+ * exatamente 1 uuid alheio).
+ */
+
+const ID_427 = "168e8269-6293-488f-b259-f354af0197cf"; // #427, o alvo pedido
+const ID_138 = "42741499-b8ee-47b6-80d0-fe51598bbeaa"; // #138, onde a nota caiu
+
+const BANCO_496 = () => [
+  { id: ID_427, numero: 427, status: "ignored", title: "E-mail nao chegou no aluno (inexistente): lucianadox1", agent_notes: [{ note: "a" }] },
+  { id: ID_138, numero: 138, status: "fixed", title: "A VARREDURA ROTULA TRIAL R$0 COMO PAGANTE", agent_notes: [{ note: "b" }] },
+];
+
+test("(a) numero que existe resolve pelo NUMERO: '427' -> #427, nunca #138", async () => {
+  const { db } = fakeDb(BANCO_496());
+  const r = await resolverIncidente(db, "427");
+  assert.equal(r.incidente.id, ID_427);
+  assert.equal(r.incidente.numero, 427);
+  assert.equal(r.via, "numero");
+});
+
+test("(b) numero que TAMBEM e prefixo unico de uuid de OUTRO cartao ganha pelo numero, com a colisao gritada", async () => {
+  const { db } = fakeDb(BANCO_496());
+  const r = await resolverIncidente(db, "427");
+  // O aviso e o ponto: a armadilha aparece na tela em vez de virar nota alheia.
+  assert.equal(r.avisos.length, 1);
+  assert.match(r.avisos[0], /42741499/);
+  assert.match(r.avisos[0], /#138/);
+  assert.match(r.avisos[0], /NUMERO/);
+});
+
+test("(c) conflito REAL recusa: numero duplicado em dois cartoes nao escolhe por voce", async () => {
+  // Hoje nao ha numero duplicado em producao (medido 20/09: 486 incidentes, 0
+  // duplicatas) — mas se um dia houver, escolher "o primeiro" e escrever no
+  // cartao de outra pessoa. Recusa ruidosa e o unico comportamento aceitavel.
+  const banco = BANCO_496();
+  banco.push({ id: "bb22cc33-0000-4000-8000-000000000009", numero: 427, status: "open", title: "duplicata", agent_notes: null });
+  const { db } = fakeDb(banco);
+  await assert.rejects(() => resolverIncidente(db, "427"), /numero 427 aparece em 2 incidentes/);
+});
+
+/**
+ * Copia FIEL do resolverId que estava no `anotar_incidente.cjs` ate 20/09
+ * (removido no commit 931f472b, #496): so prefixo de uuid, nada de `numero`.
+ * Se este teste um dia falhar porque alguem "consertou" a copia, a copia
+ * deixou de provar o que o codigo velho fazia — nao conserte, apague a secao.
+ */
+async function LEGADO_resolverId(db, alvo) {
+  const { data, error } = await db.from("incidents").select("id,title,status");
+  if (error) throw new Error(`falha lendo incidents: ${JSON.stringify(error)}`);
+  const hits = data.filter((i) => String(i.id).startsWith(alvo));
+  if (hits.length === 0) throw new Error(`nenhum incidente comeca com "${alvo}"`);
+  if (hits.length > 1) throw new Error(`prefixo "${alvo}" e ambiguo (${hits.length})`);
+  return hits[0];
+}
+
+test("VELHO: '427' passa LISO pelo resolvedor antigo e devolve o cartao ERRADO (#138)", async () => {
+  // hits.length === 1, entao nenhuma recusa dispara: e o caso perigoso que
+  // escrevia baixo, ao contrario dos 417 numeros que recusavam alto.
+  const { db } = fakeDb(BANCO_496());
+  const errado = await LEGADO_resolverId(db, "427");
+  assert.equal(errado.id, ID_138, "o velho resolve '427' como prefixo de 42741499 = #138");
+});
+
+test("NOVO: adocao pelo anotar_incidente.cjs esta viva no fonte (nao regredir pra resolvedor proprio)", () => {
+  // O conserto ficou pronto em 15/09 e o anotar_incidente so adotou em 20/09,
+  // depois de 5 dias escrevendo no cartao errado. Este teste falha se alguem
+  // reintroduzir um resolvedor local por prefixo em vez de importar daqui.
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const fonte = fs.readFileSync(path.join(__dirname, "anotar_incidente.cjs"), "utf8");
+  assert.match(fonte, /require\("\.\/_incidente_nota\.cjs"\)/, "anotar_incidente.cjs deve importar o resolvedor compartilhado");
+  assert.match(fonte, /resolverIncidente\(/, "anotar_incidente.cjs deve chamar resolverIncidente");
+  assert.doesNotMatch(
+    fonte,
+    /String\(i\.id\)\.startsWith/,
+    "resolvedor local por prefixo de uuid reintroduzido — e o bug do #496 de volta",
+  );
+});
+
 test("NOVO: o mesmo comando morre com mensagem em vez de mentir", async () => {
   // O par do teste acima. Mesmo banco, mesmo "407": o caminho novo acerta o
   // alvo e grava de verdade; e quando nao da, LANCA.
