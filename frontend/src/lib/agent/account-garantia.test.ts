@@ -25,7 +25,16 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { janelaGarantia, janelasPorProduto, blocoGarantiaMultiProduto, type EventoCompra } from "./garantia.ts";
+import {
+  janelaGarantia,
+  janelasPorProduto,
+  blocoGarantiaMultiProduto,
+  linhaGarantiaUmProduto,
+  instanteBR,
+  tempoQueFalta,
+  type EventoCompra,
+  type Janela,
+} from "./garantia.ts";
 
 /** Monta a linha como o `payment_events` entrega (approved_date em epoch ms
  *  STRING, warranty_date em ISO — os dois formatos convivem no mesmo payload,
@@ -273,4 +282,137 @@ test("um produto só nunca gera bloco multi-produto", () => {
   const agora = new Date("2026-09-05T18:00:00Z");
   assert.equal(blocoGarantiaMultiProduto(janelasPorProduto([EVELYN_SGP], agora), agora), null);
   assert.equal(blocoGarantiaMultiProduto([], agora), null);
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * A HORA DO PRAZO (#350 — defeito irmão medido pelo Vigia em 14/09 00hZ)
+ *
+ * `fim` é um instante COM HORA e o tempo que falta estava calculado e
+ * descartado por `diaBR()`. CASO REAL, da caixa de Enviados (uid 2164):
+ *   evelyn.cheida@gmail.com escreveu "REEMBOLSO DOS 2 PRODUTOS" em
+ *   2026-09-13T23:30:13Z; a janela do SGP fechava em 2026-09-14T00:00:00Z.
+ *   Faltavam 30 MINUTOS (medido: 29m47s → ~30 min) e o texto que saiu foi
+ *   "vai até 13/09 · hoje é 13/09 → DENTRO da janela", que lê como
+ *   "você tem o dia". Era domingo, 20:30 BRT. Ela perdeu a janela.
+ *
+ * Os testes abaixo ficam VERMELHOS com o texto da main (conferido rodando-os
+ * contra ela, não presumido) e travam as duas pontas: a hora aparece, e prazo
+ * curto vira ORDEM em vez de informação.
+ *
+ * ⚠️ O ÚLTIMO TESTE É O GUARDA DA POLÍTICA: `dentro` e `fim` não podem ter
+ * mudado. Se ele ficar vermelho, alguém esticou a janela de reembolso da base
+ * inteira dentro de um conserto de TEXTO — que é decisão do Johnny, parada.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const EVELYN_PEDIU = new Date("2026-09-13T23:30:13Z"); // 20:30:13 BRT, domingo
+const EVELYN_FIM = "2026-09-14T00:00:00Z"; // 21:00 BRT do MESMO dia
+
+test("Evelyn: com 30 min restando, a linha diz a HORA e não só o dia", () => {
+  const j = janelaGarantia([ev("1788818903000", EVELYN_FIM, 617.12)], EVELYN_PEDIU);
+  assert.ok(j);
+  assert.equal(j.dentro, true, "ela estava DENTRO — o defeito nunca foi o veredito, foi o texto");
+
+  const linha = linhaGarantiaUmProduto(j, EVELYN_PEDIU);
+  // A main imprimia "vai até 13/09/2026 · hoje é 13/09/2026": nenhuma hora.
+  assert.match(linha, /vai até 13\/09\/2026 às 21:00 \(horário de Brasília\)/);
+  assert.match(linha, /agora é 13\/09\/2026 às 20:30/, "sem a hora de AGORA ninguém confere o prazo");
+  assert.equal(/hoje é 13\/09\/2026 → DENTRO/.test(linha), false, "era esta frase que lia como 'você tem o dia'");
+});
+
+test("Evelyn: 30 minutos viram ORDEM, não informação", () => {
+  const j = janelaGarantia([ev("1788818903000", EVELYN_FIM, 617.12)], EVELYN_PEDIU);
+  const linha = linhaGarantiaUmProduto(j as Janela, EVELYN_PEDIU);
+  assert.match(linha, /⏰ FECHA EM ~30 MINUTO\(S\)/, "29m47s arredonda pra CIMA: 30, nunca 0");
+  assert.match(linha, /NA PRIMEIRA FRASE/);
+  assert.match(linha, /NÃO dê a entender que ela tem o dia inteiro/);
+});
+
+test("abaixo de 90 min a urgência sai em MINUTO — arredondar pra hora apagava o caso da Evelyn", () => {
+  const caso = (agora: string) => {
+    const j = janelaGarantia([ev("1788818903000", EVELYN_FIM, 617.12)], new Date(agora));
+    return linhaGarantiaUmProduto(j as Janela, new Date(agora));
+  };
+  assert.match(caso("2026-09-13T23:59:30Z"), /FECHA EM ~1 MINUTO\(S\)/, "30s não pode virar '~0 HORA(S)'");
+  assert.match(caso("2026-09-13T23:00:00Z"), /FECHA EM ~60 MINUTO\(S\)/);
+  assert.match(caso("2026-09-13T22:00:00Z"), /FECHA EM ~2 HORA\(S\)/, "2h já cabe em hora");
+});
+
+test("prazo LONGO não ganha urgência — a linha não pode virar alarme de tudo", () => {
+  // 48h é o corte. Acima dele a linha volta a só informar.
+  const fim = "2026-09-21T00:00:00Z";
+  const longe = janelaGarantia([ev("1788818903000", fim, 97)], new Date("2026-09-15T15:00:00Z"));
+  const linha = linhaGarantiaUmProduto(longe as Janela, new Date("2026-09-15T15:00:00Z"));
+  assert.equal(/⏰ FECHA EM/.test(linha), false, "6 dias não é urgência");
+  // ...mas a hora continua lá, e é ela que explica o "um dia mais cedo":
+  // 2026-09-21T00:00Z é 20/09 às 21:00 em Brasília, não um off-by-one.
+  assert.match(linha, /vai até 20\/09\/2026 às 21:00/);
+
+  // FRONTEIRA, e ela é INCLUSIVA de propósito: 48h exatas JÁ avisa. O erro
+  // desta classe tem uma direção só — a pessoa perde o dinheiro por avisarmos
+  // tarde, nunca por avisarmos cedo. Então o empate vai pro lado que avisa,
+  // igual ao `agora <= fim` do `dentro`. (Escrevi este teste esperando o
+  // contrário e o código me corrigiu; fica registrado pra ninguém "consertar"
+  // a fronteira pro lado errado depois.)
+  assert.equal(tempoQueFalta(new Date(fim), new Date("2026-09-19T00:00:00Z")).curto, true, "48h exatas já avisa");
+  assert.equal(
+    tempoQueFalta(new Date(fim), new Date("2026-09-18T23:59:59Z")).curto,
+    false,
+    "1s ACIMA de 48h ainda não",
+  );
+});
+
+test("FORA também carrega a hora, e NÃO ganha urgência (já passou)", () => {
+  const agora = new Date("2026-09-20T12:00:00Z");
+  const j = janelaGarantia([ev("1788818903000", EVELYN_FIM, 617.12)], agora);
+  const linha = linhaGarantiaUmProduto(j as Janela, agora);
+  assert.match(linha, /terminou em 13\/09\/2026 às 21:00/);
+  assert.equal(/⏰ FECHA EM/.test(linha), false);
+  // As instruções do #198 na ponta FORA não podem ter sumido na mudança de casa.
+  assert.match(linha, /NÃO prometa reembolso; escale pro humano/);
+  assert.match(linha, /cobrança indevida/);
+});
+
+test("a mudança de casa não perdeu UMA letra do resto do texto da main", () => {
+  // `linhaGarantiaUmProduto` saiu do account.ts (que importa o banco e por isso
+  // era intestável). Se algo do texto sumiu na viagem, é aqui que aparece.
+  const agora = new Date("2026-09-15T15:00:00Z");
+  const j = janelaGarantia([ev("1788818903000", "2026-09-21T00:00:00Z", 97)], agora);
+  const linha = linhaGarantiaUmProduto(j as Janela, agora);
+  assert.match(linha, /^GARANTIA HOTMART \(calculado pelo sistema — obedeça esta linha\): compra paga em 07\/09\/2026 · /);
+  assert.match(linha, /a garantia informada pela Hotmart vai até /);
+  assert.match(linha, /→ DENTRO da janela\./);
+  assert.match(linha, /nunca um número de dias: a janela varia por produto\.$/);
+});
+
+test("o caminho MULTI-PRODUTO ganha a mesma hora e a mesma urgência", () => {
+  // É o caminho dos alunos de MAIOR risco (2+ produtos). Consertar só a linha
+  // única deixaria o buraco exatamente onde ele custa mais — foi o erro que a
+  // primeira versão do bloco já cometeu com as instruções do #198.
+  const sgp = evP("7283229", "Sistema de Geração Pronto", "1788818903000", EVELYN_FIM, 617.12);
+  const fc = evP("7851642", "FastCloner", "1789078887000", "2026-10-30T00:00:00Z", 97);
+  const bloco = blocoGarantiaMultiProduto(janelasPorProduto([sgp, fc], EVELYN_PEDIU), EVELYN_PEDIU);
+  assert.ok(bloco);
+  assert.match(bloco, /Sistema de Geração Pronto: .* vai até 13\/09\/2026 às 21:00 .* → DENTRO da janela\. ⏰ FECHA EM ~30 MINUTO\(S\)/);
+  assert.match(bloco, /FastCloner: .* vai até 29\/10\/2026 às 21:00/);
+  assert.equal(
+    /FastCloner: [^\n]*⏰ FECHA EM/.test(bloco),
+    false,
+    "a urgência é POR PRODUTO: um pode fechar hoje e o outro em outubro",
+  );
+  assert.match(bloco, /Se alguma linha acima disser "⏰ FECHA EM"/, "o bloco tem que MANDAR, não só marcar");
+  assert.match(bloco, /Agora é 13\/09\/2026 às 20:30/);
+});
+
+test("GUARDA DA POLÍTICA: o conserto de TEXTO não moveu a janela em 1 ms", () => {
+  // Se este teste ficar vermelho, alguém decidiu política de dinheiro (esticar
+  // a janela de reembolso de toda a base) dentro de um conserto de texto. Isso
+  // é decisão do Johnny e está PARADA — ver o comentário do `diaBR`.
+  const fim = new Date(EVELYN_FIM);
+  const linhas = [ev("1788818903000", EVELYN_FIM, 617.12)];
+  assert.equal(janelaGarantia(linhas, new Date("2026-09-13T23:59:59Z"))?.dentro, true);
+  assert.equal(janelaGarantia(linhas, new Date("2026-09-14T00:00:01Z"))?.dentro, false);
+  assert.equal(janelaGarantia(linhas, EVELYN_PEDIU)?.fim.toISOString(), fim.toISOString());
+  // e o instante impresso é o MESMO que o `dentro` compara
+  assert.equal(instanteBR(fim), "13/09/2026 às 21:00 (horário de Brasília)");
+  assert.equal(tempoQueFalta(fim, new Date("2026-09-14T00:00:01Z")).frase, null, "já passou: sem urgência");
 });

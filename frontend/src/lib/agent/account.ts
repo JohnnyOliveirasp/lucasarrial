@@ -21,7 +21,7 @@ import {
   janelaGarantia,
   janelasPorProduto,
   blocoGarantiaMultiProduto,
-  diaBR,
+  linhaGarantiaUmProduto,
   GARANTIA_ESCALAR,
   type EventoCompra,
 } from "@/lib/agent/garantia";
@@ -254,16 +254,10 @@ async function linhaGarantiaHotmart(email: string | null): Promise<string> {
     const j = janelaGarantia(data as EventoCompra[], agora);
     if (!j) return GARANTIA_ESCALAR;
 
-    const cabeca =
-      `GARANTIA HOTMART (calculado pelo sistema — obedeça esta linha): compra paga em ${diaBR(j.compra)} · `;
-    return j.dentro
-      ? cabeca +
-        `a garantia informada pela Hotmart vai até ${diaBR(j.fim)} · hoje é ${diaBR(agora)} → DENTRO da janela. ` +
-        `Cite a DATA, nunca um número de dias: a janela varia por produto.`
-      : cabeca +
-        `a garantia informada pela Hotmart terminou em ${diaBR(j.fim)} · hoje é ${diaBR(agora)} → FORA da janela. ` +
-        `NÃO prometa reembolso; escale pro humano. (Renovação mensal NÃO reabre a garantia. Se a pessoa contesta uma ` +
-        `cobrança RECENTE de renovação, isso é cobrança indevida — escale, não trate como garantia.)`;
+    // O TEXTO MORA EM `garantia.ts` (#350). Ele era montado aqui, e como este
+    // arquivo importa `@/lib/db/admin` não havia como testar a string que chega
+    // no prompt — foi assim que os dois defeitos do #265 ficaram 6 dias no ar.
+    return linhaGarantiaUmProduto(j, agora);
   } catch {
     return GARANTIA_ESCALAR;
   }

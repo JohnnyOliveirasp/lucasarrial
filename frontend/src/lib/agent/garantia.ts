@@ -272,6 +272,107 @@ export const diaBR = (d: Date) =>
   d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" });
 
 /**
+ * O MESMO INSTANTE do `diaBR`, com a HORA que ele joga fora.
+ *
+ * ── O DEFEITO QUE ISTO CONSERTA (#350, medido pelo Vigia em 14/09 00hZ) ─────
+ * `fim` é um instante COM HORA e o tempo que falta (`fim - agora`) estava
+ * calculado e descartado. A aluna do #356, Evelyn, escreveu "REEMBOLSO DOS 2
+ * PRODUTOS" às 23:30:13Z de 13/09 e recebeu, na resposta da casa (uid 2164 da
+ * caixa de Enviados), "a garantia informada pela Hotmart vai até 13/09 — ou
+ * seja, você está dentro do prazo". Frase VERDADEIRA, impressão FALSA: ela
+ * tinha **30 minutos** (fim = 2026-09-14T00:00Z = 13/09 21:00 BRT, e eram
+ * 20:30 BRT de um domingo). "vai até 13/09 · hoje é 13/09 → DENTRO" lê como
+ * "você tem o dia". Ela perdeu a janela.
+ *
+ * ⚠️ NÃO MEXE NA JANELA, E ISSO É O PONTO. O instante é o mesmo, `dentro`
+ * compara contra o mesmo `fim`, e a renderização continua em São Paulo igual à
+ * main. O que muda é SÓ quanto do instante aparece impresso. A pergunta de
+ * política que segue parada com o Johnny — se a janela devia ir até o fim do
+ * dia brasileiro, o que a esticaria em toda a base — continua parada, e este
+ * conserto de propósito não a responde.
+ *
+ * DE QUEBRA, explica o "um dia mais cedo" do bloco acima em vez de deixar
+ * alguém reencontrá-lo como bug: 2026-09-21T00:00Z impresso como "20/09/2026
+ * às 21:00" é a MEIA-NOITE UTC vista de Brasília, não um off-by-one.
+ */
+export const instanteBR = (d: Date) =>
+  `${diaBR(d)} às ` +
+  d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) +
+  ` (horário de Brasília)`;
+
+/**
+ * Quanto falta até o instante — e se isso é POUCO o bastante pra virar ordem.
+ *
+ * O corte é 48h porque o dano desta classe não é errar a data, é a pessoa ler
+ * "DENTRO" e deixar pra depois. Medido em 25/09 na classe de bounce: 5 alunos
+ * perderam a janela dentro da nossa fila (Eliane, Sunesa, Valdeni, Ulysses,
+ * Sheila) e a Evelyn perdeu com a resposta da casa na mão.
+ *
+ * `curto` é um booleano e não um número de horas no texto por decisão do #265:
+ * número de dias/horas no lugar da data foi o que a constante de 7 dias fez. A
+ * data continua sendo a fonte; o tempo que falta entra COMO ACRÉSCIMO, sempre
+ * derivado do mesmo `fim` que já está impresso — nunca no lugar dele.
+ */
+export type Restante = { ms: number; curto: boolean; frase: string | null };
+
+const H = 3_600_000;
+/** 48h: abaixo disso a linha deixa de informar e passa a mandar. */
+export const JANELA_CURTA_MS = 48 * H;
+
+export function tempoQueFalta(fim: Date, agora: Date): Restante {
+  const ms = fim.getTime() - agora.getTime();
+  if (ms <= 0) return { ms, curto: false, frase: null };
+  if (ms > JANELA_CURTA_MS) return { ms, curto: false, frase: null };
+  // Abaixo de 90 min o arredondamento pra hora apaga a urgência ("~0h"), que é
+  // exatamente o caso da Evelyn. Minuto, e pra CIMA: 29m47s é "~30 minutos".
+  const frase =
+    ms < 90 * 60_000
+      ? `~${Math.ceil(ms / 60_000)} MINUTO(S)`
+      : `~${Math.floor(ms / H)} HORA(S)`;
+  return { ms, curto: true, frase };
+}
+
+/** A ordem que acompanha o prazo curto. Uma só, pra não divergir entre os dois caminhos. */
+const ORDEM_URGENTE =
+  `diga à pessoa, NA PRIMEIRA FRASE, quanto tempo falta, e trate como URGENTE — ` +
+  `NÃO dê a entender que ela tem o dia inteiro.`;
+
+/** O acréscimo de urgência, ou string vazia. Usado nos DOIS caminhos. */
+function avisoDePrazoCurto(fim: Date, agora: Date): string {
+  const r = tempoQueFalta(fim, agora);
+  return r.curto ? ` ⏰ FECHA EM ${r.frase}: ${ORDEM_URGENTE}` : "";
+}
+
+/**
+ * A LINHA de garantia de quem tem UM produto, como string pura e testável.
+ *
+ * MUDOU DE CASA NESTE PR, e o motivo é o buraco #12 da revisão de 15/09: este
+ * texto era montado dentro do `account.ts`, que importa `@/lib/db/admin`, então
+ * NÃO havia como testar a string que de fato chega no prompt. O bloco
+ * multi-produto já tinha vindo pra cá por essa razão; a linha única — que é o
+ * caminho da MAIORIA da base — tinha ficado atrás. Os defeitos do #265 viveram
+ * 6 dias no ar justamente porque errar aqui não quebra nada: o texto sai bonito
+ * e errado. Agora quebra.
+ *
+ * O texto é o da main, palavra por palavra, com DUAS diferenças e nenhuma outra:
+ * o instante vai com hora (`instanteBR`) e o prazo curto vira ordem.
+ */
+export function linhaGarantiaUmProduto(j: Janela, agora: Date): string {
+  const cabeca =
+    `GARANTIA HOTMART (calculado pelo sistema — obedeça esta linha): compra paga em ${diaBR(j.compra)} · `;
+  return j.dentro
+    ? cabeca +
+        `a garantia informada pela Hotmart vai até ${instanteBR(j.fim)} · agora é ${instanteBR(agora)} → ` +
+        `DENTRO da janela.${avisoDePrazoCurto(j.fim, agora)} ` +
+        `Cite a DATA E A HORA, nunca um número de dias: a janela varia por produto.`
+    : cabeca +
+        `a garantia informada pela Hotmart terminou em ${instanteBR(j.fim)} · agora é ${instanteBR(agora)} → ` +
+        `FORA da janela. ` +
+        `NÃO prometa reembolso; escale pro humano. (Renovação mensal NÃO reabre a garantia. Se a pessoa contesta uma ` +
+        `cobrança RECENTE de renovação, isso é cobrança indevida — escale, não trate como garantia.)`;
+}
+
+/**
  * O BLOCO de garantia para quem tem 2+ produtos, como string pura e testável.
  *
  * ⚠️ TUDO que a linha única diz na ponta FORA tem que estar aqui também. A
@@ -307,20 +408,28 @@ export function blocoGarantiaMultiProduto(produtos: JanelaProduto[], agora: Date
         return `  · ${nome}: ${comprado}garantia NÃO confirmada → NÃO afirme prazo, NÃO prometa reembolso, escale pro humano.`;
       }
       if (p.estado === "dentro") {
-        return `  · ${nome}: ${comprado}a garantia informada pela Hotmart vai até ${diaBR(p.fim as Date)} → DENTRO da janela.`;
+        // O MESMO defeito do #350 mora aqui: com `diaBR` esta linha dizia "vai
+        // até 13/09" pra quem tinha 30 minutos. E é o caminho dos alunos de
+        // MAIOR risco (2+ produtos), então consertar só a linha única deixaria
+        // o buraco justamente onde ele custa mais.
+        return (
+          `  · ${nome}: ${comprado}a garantia informada pela Hotmart vai até ${instanteBR(p.fim as Date)} → ` +
+          `DENTRO da janela.${avisoDePrazoCurto(p.fim as Date, agora)}`
+        );
       }
-      return `  · ${nome}: ${comprado}a garantia informada pela Hotmart terminou em ${diaBR(p.fim as Date)} → FORA da janela. NÃO prometa reembolso deste produto; escale pro humano.`;
+      return `  · ${nome}: ${comprado}a garantia informada pela Hotmart terminou em ${instanteBR(p.fim as Date)} → FORA da janela. NÃO prometa reembolso deste produto; escale pro humano.`;
     })
     .join("\n");
 
   return (
     `GARANTIA HOTMART (calculado pelo sistema — obedeça estas linhas): este e-mail tem ` +
-    `${produtos.length} produtos, e CADA UM tem a sua própria janela. Hoje é ${diaBR(agora)}.\n${linhas}\n` +
+    `${produtos.length} produtos, e CADA UM tem a sua própria janela. Agora é ${instanteBR(agora)}.\n${linhas}\n` +
     `USE A LINHA DO PRODUTO SOBRE O QUAL A PESSOA ESTÁ FALANDO, e trate cada produto separadamente: ` +
     `um pode estar DENTRO e o outro FORA ao mesmo tempo. NUNCA repita a data de um produto ao falar de ` +
     `outro — foi exatamente isso que a casa fez com uma aluna, citando a compra e a garantia do produto ` +
     `errado. Se não estiver claro de qual produto ela fala, PERGUNTE antes de dizer qualquer data. Cite a ` +
-    `DATA, nunca um número de dias. Renovação mensal NÃO reabre a garantia: se a pessoa contesta uma ` +
+    `DATA E A HORA, nunca um número de dias. Se alguma linha acima disser "⏰ FECHA EM", ${ORDEM_URGENTE} ` +
+    `Renovação mensal NÃO reabre a garantia: se a pessoa contesta uma ` +
     `cobrança RECENTE de renovação, isso é cobrança indevida — escale, não trate como garantia. Na dúvida, escale.`
   );
 }
