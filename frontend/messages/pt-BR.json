@@ -231,7 +231,8 @@
       "resend": "Reenviar código",
       "resending": "Reenviando…",
       "resent": "Código reenviado. Verifique seu email.",
-      "resendIn": "Aguarde {seconds}s pra reenviar"
+      "resendIn": "Aguarde {seconds}s pra reenviar",
+      "emailInUse": "Se este e-mail já tiver conta, entre pelo link abaixo — de lá também dá pra recuperar a senha, se precisar."
     },
     "forgot": {
       "title": "Recuperar senha",
