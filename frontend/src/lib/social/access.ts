@@ -7,12 +7,27 @@
  * (conferido no painel developers.facebook.com/apps/4656341101352201). A
  * reprovação de 20/08 era do SCREENCAST, não do produto.
  *
- * ⚠️ O que ainda NÃO foi provado: a única publicação da história (27/08,
- * `johnny.oliveira.ai`) saiu de uma conta com papel de testador no app da
- * Meta. Ninguém de fora publicou ainda, e a lista de permissões mostra
- * "Verification required" (verificação do NEGÓCIO) nas duas permissões,
- * inclusive na que já funciona. Se a primeira publicação de aluno falhar com
- * erro da Meta, o caminho de volta é uma linha: trocar o `return true` por
+ * ✅ O CAMINHO DE REEL ESTÁ PROVADO CONTRA A API REAL (medido em 24/09 na
+ * tabela `publications`, não relatado de memória). Três Reels publicados de
+ * verdade, com permalink:
+ *   23/09 20:29 · @johnny.oliveira.ai · Reel de TESTE (MANUAL) · /reel/DdpRhsKCTbK/
+ *   24/09 02:35 · @lucasarrial ......... · Reel normal ........... · /reel/Ddp05MTiM3a/
+ *   24/09 02:35 · @lucasarrial ......... · Reel de TESTE (MANUAL) · /reel/Ddp09hAjf4W/
+ * Ou seja: `trial_params` + `graduation_strategy=MANUAL` FUNCIONA na v23.0 via
+ * graph.instagram.com. Não é mais teoria.
+ * A 4ª tentativa (24/09 02:37) falhou DE PROPÓSITO, e isso é notícia boa: quem
+ * barrou foi a NOSSA trava de duplicata ("este vídeo já foi publicado como Reel
+ * de teste nesta conta"), não a Meta. O anti-bloqueio está de pé e funcionando.
+ *
+ * ⚠️ O QUE CONTINUA SEM PROVA — NÃO APAGUE ISTO. Nenhum ALUNO publicou ainda.
+ * As únicas contas que já publicaram são @johnny.oliveira.ai (do Johnny) e
+ * @lucasarrial (do Lucas) — donos da casa, conferido pelo e-mail do perfil em
+ * 24/09. A publicação de 27/08 saiu de conta com papel de TESTADOR no app da
+ * Meta, e a lista de permissões segue mostrando "Verification required"
+ * (verificação do NEGÓCIO) nas duas permissões, inclusive na que já funciona.
+ * Publicar com a conta do dono NÃO exercita esse risco: o que pode quebrar é
+ * justamente a conta de fora. Se a primeira publicação de aluno falhar com erro
+ * da Meta, o caminho de volta é uma linha: trocar o `return true` por
  * `isAdmin(email)`.
  *
  * A allowlist e o e-mail do revisor ficam aqui de propósito: se a chave geral
