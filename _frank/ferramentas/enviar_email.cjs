@@ -31,6 +31,13 @@
  *   --forcar          manda mesmo assim. É decisão consciente, não atalho:
  *                     o que já saiu antes aparece impresso antes do envio.
  *
+ * GUARDA DE BOUNCE (20/09): a trava acima impede dizer a MESMA coisa duas
+ * vezes; esta impede escrever pra caixa que a casa JÁ PROVOU que não recebe.
+ * Recusa com saída 3 (≠ do 2 da anti-duplicata) e mostra por onde falar com a
+ * pessoa. NÃO é "já bounceou alguma vez": bloqueia só quando o bounce
+ * permanente é a ÚLTIMA notícia da caixa — sinal de vida posterior reabre a
+ * porta. A regra e o porquê estão no `_bounce_guarda.cjs`; `--forcar` fura.
+ *
  * Teste SEMPRE mandando pra você mesmo antes de mandar pro aluno.
  */
 const fs = require("node:fs");
@@ -44,6 +51,15 @@ require(path.join(RAIZ, "frontend", "node_modules", "dotenv")).config({
 });
 
 const envios = require(path.join(__dirname, "_envios.cjs"));
+const guarda = require(path.join(__dirname, "_bounce_guarda.cjs"));
+
+/**
+ * Saída própria da guarda de bounce, DISTINTA do 2 da trava anti-duplicata.
+ * Os dois querem dizer coisas opostas pro operador: 2 é "isto já foi dito",
+ * 3 é "esta caixa não recebe". Um código só pros dois obrigaria a ler o texto
+ * pra saber qual foi — e script nenhum lê texto.
+ */
+const SAIDA_BOUNCE = 3;
 
 // Separa flags dos posicionais pra --dry-run/--bcc funcionarem em qualquer posição.
 const argv = process.argv.slice(2);
@@ -389,6 +405,90 @@ async function registrarEmEnviosDaCasa({ dest, assunto, messageId }) {
   }
 }
 
+/**
+ * O QUE A CASA JÁ SABE SOBRE ESTA CAIXA — a metade de IO da guarda de bounce.
+ * A decisão em si é pura e mora no `_bounce_guarda.cjs`; aqui só se lê.
+ *
+ * Os dois `.eq()` comparam em minúsculo porque é assim que os dois lados
+ * gravam — o `linhaDoEnvio` (`mail-envio.ts`) faz `trim().toLowerCase()` antes
+ * de inserir, e medido em 20/09 nenhuma das 757 linhas de `emails_enviados`
+ * nem das 342 de `sgp_pedidos` tem maiúscula. Se um dia tiver, a consulta
+ * erraria pra FALSO NEGATIVO — a guarda simplesmente nunca dispararia e
+ * pareceria funcionando. Por isso a normalização é explícita aqui, e não
+ * confiada ao acaso do dado.
+ */
+async function noticiasDaCaixa(dest) {
+  const { supa } = require(path.join(__dirname, "_comum.cjs"));
+  const db = supa();
+  const alvo = guarda.normalizarEmail(dest);
+
+  const { data: historico, error: eHist } = await db
+    .from("emails_enviados")
+    .select("enviado_em,bounce_em,bounce_classe,origem")
+    .eq("to_email", alvo)
+    .order("enviado_em");
+  if (eHist) throw new Error(`emails_enviados: ${eHist.message}`);
+
+  // `email_verificado_at` é o sinal de vida FORTE: só existe se o aluno digitou
+  // o código certo mandado pra este endereço (`api/v1/sgp/codigo/route.ts`).
+  const { data: pedidos, error: ePed } = await db
+    .from("sgp_pedidos")
+    .select("email_verificado_at,whatsapp,nome")
+    .eq("email", alvo);
+  if (ePed) throw new Error(`sgp_pedidos: ${ePed.message}`);
+
+  const { data: perfis, error: ePerf } = await db.from("profiles").select("id").eq("email", alvo);
+
+  return {
+    historico: historico || [],
+    verificacoes: (pedidos || []).map((p) => p.email_verificado_at).filter(Boolean),
+    canais: {
+      whatsapp: [...new Set((pedidos || []).map((p) => p.whatsapp).filter(Boolean))],
+      nome: (pedidos || []).map((p) => p.nome).find(Boolean) || null,
+      // `null` = não deu pra conferir. Diferente de `false` (conferi, não tem):
+      // imprimir "não tem conta" por causa de uma consulta que falhou seria
+      // mandar o operador procurar o aluno no lugar errado.
+      temConta: ePerf ? null : Boolean((perfis || []).length),
+    },
+  };
+}
+
+/** O bloqueio por bounce, impresso inteiro — com PRA ONDE ir em vez do e-mail. */
+function contarOBloqueio(dest, g, canais) {
+  console.error("");
+  console.error(`⛔ RECUSADO — a casa já provou que ${dest} não recebe.`);
+  console.error(`   último bounce permanente: ${g.bounce.at} (${g.bounce.classe})`);
+  if (g.bounce.envioEm) console.error(`   referente à carta de ${g.bounce.envioEm}`);
+  if (g.bounce.dataIlegivel) {
+    console.error("   ⚠️ a data deste bounce está ilegível: não dá pra provar que algo veio depois dele.");
+  }
+  console.error("   e NADA depois disso indica que a caixa voltou a funcionar.");
+  if (g.verdes.length) {
+    console.error("");
+    console.error("   ⏳ tem carta no ar sem resposta ainda (nova demais pra valer como sinal de vida):");
+    for (const v of g.verdes) console.error(`      • ${v.at} (${v.horas.toFixed(1)}h atrás) — ${v.detalhe}`);
+    console.error("      Se ela não quicar, este endereço volta a liberar sozinho.");
+  }
+  console.error("");
+  console.error("   POR ONDE FALAR COM ESSA PESSOA:");
+  if (canais.nome) console.error(`      • nome no cadastro: ${canais.nome}`);
+  if (canais.whatsapp.length) {
+    for (const w of canais.whatsapp) console.error(`      • whatsapp (sgp_pedidos): ${w}`);
+  }
+  if (canais.temConta === true) {
+    console.error(`      • tem conta na plataforma com este mesmo e-mail — procure endereço novo antes de insistir`);
+  } else if (canais.temConta === null) {
+    console.error("      • não deu pra conferir se tem conta (consulta a profiles falhou)");
+  }
+  if (!canais.whatsapp.length && !canais.nome && canais.temConta !== true) {
+    console.error("      • nenhum canal alternativo conhecido. Ache a compra na Hotmart:");
+    console.error("        node _frank/ferramentas/achar_compra_por_nome.cjs <nome>");
+    console.error("        node _frank/ferramentas/2026-09-20_contato_do_comprador.cjs <HPxxxxxxx>");
+  }
+  console.error("");
+  console.error("   NADA foi enviado. Se você tem motivo pra insistir mesmo assim, repita com --forcar.");
+}
+
 /** Uma linha legível por envio anterior — é o que decide se cabe `--forcar`. */
 function descreverAnterior(a) {
   const quando = a.horas === null ? "data ilegível" : `${a.horas.toFixed(1)}h atrás`;
@@ -438,6 +538,38 @@ function descreverAnterior(a) {
   }
   if (veredito.forcado && veredito.motivos.length) {
     console.log(`⚠️ --forcar: mandando DE NOVO um aviso que já saiu (${veredito.motivos.map((m) => m.tipo).join(", ")}).`);
+  }
+
+  // A GUARDA DE BOUNCE — depois da anti-duplicata e ANTES do SMTP. Roda também
+  // no ensaio, igual à outra trava: no `--dry-run` ela é a consulta ("esta
+  // caixa ainda recebe?"), no envio de verdade ela é a porta.
+  //
+  // ⚠️ FALHA ABERTO, ao contrário da trava anti-duplicata logo acima, e é de
+  // propósito: os danos são opostos. Lá, não conseguir ler o histórico e mandar
+  // assim mesmo DUPLICA a carta. Aqui, não conseguir ler e recusar deixaria o
+  // aluno SEM CARTA por causa de uma consulta que falhou — silêncio causado por
+  // defeito nosso. Então aqui, na dúvida, manda e avisa alto.
+  let noticias = null;
+  try {
+    noticias = await noticiasDaCaixa(dest);
+  } catch (e) {
+    console.error(`⚠️ não consegui conferir o histórico de bounce (${e.message}).`);
+    console.error("   Seguindo SEM esta guarda — pode ser que este endereço já tenha quicado.");
+  }
+  if (noticias) {
+    const g = guarda.decidirPorBounce(noticias, { forcar });
+    if (g.bloqueia) {
+      contarOBloqueio(dest, g, noticias.canais);
+      process.exit(SAIDA_BOUNCE);
+    }
+    if (g.bounce && g.forcado) {
+      console.log(`⚠️ --forcar: escrevendo pra caixa que quicou como "${g.bounce.classe}" em ${g.bounce.at}.`);
+    } else if (g.bounce) {
+      // Liberado, mas o histórico não some: quem manda merece saber que este
+      // endereço já quicou e POR QUE a guarda decidiu que ele reviveu.
+      const s = g.sinais[0];
+      console.log(`📮 este endereço já quicou (${g.bounce.classe} em ${g.bounce.at}), mas depois disso: ${s.detalhe}`);
+    }
   }
 
   if (dryRun) {
