@@ -21,8 +21,10 @@
  *
  * O QUE ELE FAZ: le a trava (`agent_state["sgp_boas_vindas"]`) e acusa toda
  * transacao com `canais` VAZIO — que e, literalmente, "tentamos e ninguem
- * recebeu". Para cada uma diz se a pessoa tem conta, se ja logou e se chegou a
- * abrir pedido no portal, que e o que decide a urgencia.
+ * recebeu". Para cada uma diz se a pessoa tem perfil, quando foi vista no app
+ * pela ultima vez (profiles.last_seen_at — presenca, nao login; comprador de
+ * SGP entra por codigo no e-mail sem "logar") e se chegou a abrir pedido no
+ * portal, que e o que decide a urgencia.
  *
  * ⚠️ CONTROLE POSITIVO, e ABORTA se ele falhar. O modo de falha real deste tipo
  * de varredor nao e acusar demais: e ler a chave errada (ou o formato mudar) e
@@ -98,16 +100,35 @@ const CONTROLE = ["HP0150302636", "HP1390733090"];
   vitimas.sort((a, b) => String(a[1].at).localeCompare(String(b[1].at)));
   for (const [tx, r] of vitimas) {
     const email = r.buyerEmail;
-    const { data: perfis } = await db
+    // ⚠️ profiles NAO tem last_sign_in_at (isso e do auth.users) — o nome aqui e
+    // last_seen_at. Com a coluna errada o supabase-js devolve error + data=null,
+    // e sem checar o error a ferramenta imprimia "perfil=NAO login=NUNCA" pra
+    // TODA vitima, inclusive quem tem perfil (medido em 24/09, valdene_marques).
+    const { data: perfis, error: ePerfil } = await db
       .from("profiles")
-      .select("id,last_sign_in_at")
+      .select("id,last_seen_at")
       .ilike("email", email);
-    const { data: peds } = await db.from("sgp_pedidos").select("id").ilike("email", email);
+    if (ePerfil) {
+      throw new Error(
+        `consulta a profiles falhou para ${email}: ${ePerfil.message} — ` +
+          `abortando em vez de imprimir "perfil=NAO" com instrumento cego.`,
+      );
+    }
+    const { data: peds, error: ePed } = await db
+      .from("sgp_pedidos")
+      .select("id")
+      .ilike("email", email);
+    if (ePed) {
+      throw new Error(
+        `consulta a sgp_pedidos falhou para ${email}: ${ePed.message} — ` +
+          `abortando em vez de imprimir "pedido_sgp=0" com instrumento cego.`,
+      );
+    }
     const p = perfis?.[0];
     console.log(
       `  ${tx} · ${r.at} · ${email}\n` +
         `      conta=${r.conta ?? "?"} perfil=${p ? "sim" : "NAO"} ` +
-        `login=${p?.last_sign_in_at ?? "NUNCA"} pedido_sgp=${peds?.length ?? 0}` +
+        `visto_no_app=${p?.last_seen_at ?? "NUNCA"} pedido_sgp=${peds?.length ?? 0}` +
         (r.envioErro ? `\n      causa: ${r.envioErro}` : "\n      causa: (nao gravada — registro anterior ao fix do #324)"),
     );
   }
