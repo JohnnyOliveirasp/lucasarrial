@@ -57,6 +57,34 @@ async function consultar(sql) {
  * escrito pra quem atende, não pra quem lê código.
  */
 const CLASSES = {
+  /**
+   * ⚠️ CLASSE ACRESCENTADA EM 25/09 (#582). Ela existia nos dados desde que o
+   * PR #315 (16/09) passou a gravar o motivo, mas caía em `desconhecido` — o
+   * balde que diz "leia e, se virar rotina, acrescente a classe". Ou seja: a
+   * pior classe da varredura aparecia como erro sem nome, e mesmo quem
+   * rodasse a ferramenta não a leria como grave.
+   *
+   * Por que é a mais grave: aqui o pagamento ENTROU, a pessoa não tem conta
+   * nenhuma (o entitlement nasce sem `user_id`) e o aviso foi CALADO — pela
+   * chave de idempotência (`ja_avisado`) ou por não haver canal. Não é "a
+   * senha não chegou": não existe porta pra pessoa entrar, e nenhum caminho
+   * automático tenta de novo.
+   *
+   * Medido em 25/09: 4 pagantes nesta classe, um deles
+   * (scandovieri41@hotmail.com) com DOIS ciclos da assinatura pagos (R$97 em
+   * 26/07 e 26/08, ambos COMPLETE) e o entitlement vencendo NO DIA SEGUINTE,
+   * sem cartão próprio em lugar nenhum.
+   */
+  orfa_paga_calada: {
+    ordem: 0,
+    titulo: "COMPRA ÓRFÃ **PAGA** E O AVISO FOI CALADO — a pessoa não tem conta nenhuma",
+    acao:
+      "O dinheiro entrou, não existe conta ligada ao pagamento e o aviso foi " +
+      "silenciado (ja_avisado / sem canal). Confirme que pagou de verdade com " +
+      "`pagou_de_verdade.cjs` (trial de R$0 NÃO conta) e, se pagou, leve pro " +
+      "Johnny: criar conta é produção. ⚠️ Olhe o access_until — se estiver " +
+      "perto de vencer, ele vence com a pessoa sem nunca ter entrado (caso #207).",
+  },
   sgp_nao_recebeu: {
     ordem: 1,
     titulo: "COMPRADOR DO SGP PAGOU E NÃO RECEBEU O E-MAIL",
@@ -142,6 +170,7 @@ select
       or error like 'boas-vindas do SGP desistiram%'
       or error like 'boas-vindas do SGP falharam%'      then 'sgp_nao_recebeu'
     when error like 'conta do SGP não criada%'          then 'sgp_sem_conta'
+    when error like 'compra órfã paga sem aviso novo%'  then 'orfa_paga_calada'
     when error like 'compra órfã sem canal de aviso%'   then 'compra_orfa'
     when error like 'externalId não extraído%'          then 'revoke_sem_id'
     when error like 'externalId não casa%'
