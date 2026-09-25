@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, CheckCircle2, ChevronDown, Plus } from "lucide-react";
 import { CAUSE_LABELS, KIND_LABELS, type IncidentCause } from "@/lib/incidents/classify";
 import { alunoRespondido, motivoDefeitoVivo, type NotaIncidente } from "@/lib/incidents/baixa";
+import { fallbackMotivoRotulado } from "@/lib/incidents/motivo-fechamento";
 import type { IncidentStatus } from "@/lib/incidents/status";
 
 type AgentNote = NotaIncidente;
@@ -324,6 +325,19 @@ export default function FalhasPage() {
                               {inc.resolved_commit && ` (${inc.resolved_commit})`}
                             </p>
                           )}
+                          {/* #560: cartão fechado SEM motivo não fica mais em branco —
+                              mostra a última anotação, mas ROTULADA. O rótulo é
+                              obrigatório: sem ele uma objeção do Vigia viraria "o
+                              motivo do fechamento" na tela (13 dos 37 cartões sem
+                              motivo tinham exatamente isso como última nota).
+                              Conserto de EXIBIÇÃO: zero escrita no banco. */}
+                          {(inc.status === "fixed" || inc.status === "ignored") &&
+                            (() => {
+                              const semMotivo = fallbackMotivoRotulado(inc.resolution_note, inc.agent_notes, dt);
+                              return semMotivo ? (
+                                <p className="text-[12px] text-[var(--ash)]">{semMotivo}</p>
+                              ) : null;
+                            })()}
                           <Baixa
                             inc={inc}
                             role={role}

@@ -120,6 +120,26 @@ function normalizarNotas(atual) {
     console.error(`ERRO: status "${status}" invalido. Validos: ${STATUS_VALIDOS.join(", ")}`);
     process.exit(1);
   }
+  // FECHAR EXIGE MOTIVO (incidente #560, 24/09). Antes, `--status fixed --nota
+  // "..."` fechava o cartao com resolution_note VAZIO: a nota vai pro historico
+  // (agent_notes), mas o campo que o painel /admin/falhas e o health-report
+  // exibem como O MOTIVO DO FECHAMENTO ficava em branco — 37 cartoes fechados
+  // assim. A recusa vem ANTES de qualquer acesso ao banco, e a mensagem diz
+  // exatamente o que fazer, porque esta ferramenta roda em ronda automatica as
+  // 3h da manha: recusa muda sem instrucao = ronda quebrada sem ninguem
+  // entender. So fixed/ignored (STATUS_FECHADO, importado de _comum.cjs — nao
+  // redeclarar a lista); aguardando_aluno e os demais seguem como sempre.
+  if (status && STATUS_FECHADO.includes(status) && !(resolucao && resolucao.trim())) {
+    console.error(
+      `ERRO: fechar exige --resolucao dizendo o que era e o que foi feito.\n` +
+        `  Voce pediu --status ${status} (fechamento) sem --resolucao com texto.\n` +
+        `  A --nota NAO substitui: nota e historico de trabalho; --resolucao e o motivo\n` +
+        `  do fechamento que o painel /admin/falhas e o health-report exibem.\n` +
+        `  Exemplo:\n` +
+        `    --status ${status} --resolucao "o que era o problema; o que foi feito" [--nota "..."]`,
+    );
+    process.exit(1);
+  }
 
   const db = supa();
   const alvoInc = await resolverId(db, alvo);
