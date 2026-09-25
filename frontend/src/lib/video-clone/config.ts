@@ -17,6 +17,8 @@ export type CloneTierId = "480p" | "480p-v2" | "480p-v3";
 export type CloneTier = {
   id: CloneTierId;
   label: string;
+  /** Texto do cartão na tela. MONTADO (não escrito à mão): é o que o tier tem
+   *  de próprio + `CLONE_AVISO_DERIVA_ROSTO`. Ver `CLONE_TIERS`. */
   blurb: string;
   /** Qual template de workflow usar (V1 = GGUF/7 steps; V2 = fp8/4 steps;
    *  V3 = fluxo InfiniteTalkV2 do Johnny, candidato a novo Padrão). */
@@ -34,15 +36,47 @@ export type CloneTier = {
   lora: string;
 };
 
-/** Padrão V1 (GGUF/7 steps, 170 cr/s) APOSENTADO 08/08 (decisão Johnny):
- *  substituído pelo Padrão 2.0 (fluxo InfiniteTalkV2 dele, validado em
- *  pré-produção 07/08). Jobs antigos no histórico mostram o id cru "480p". */
-export const CLONE_TIERS: readonly CloneTier[] = [
+/**
+ * Acima de quantos segundos de áudio o rosto começa a se afastar da foto.
+ *
+ * NÃO é teto nem portão: ninguém é bloqueado em 40s — `CLONE_MAX_AUDIO_SECONDS`
+ * (90) continua sendo o limite do que a plataforma aceita. Este número é só o
+ * ponto a partir do qual a casa PRECISA avisar, porque sabe.
+ */
+export const CLONE_DERIVA_ROSTO_SECONDS = 40;
+
+/**
+ * O aviso de deriva de rosto, em UM lugar só.
+ *
+ * ⚠️ POR QUE ISTO É UMA CONSTANTE E NÃO TEXTO SOLTO NO BLURB (19/09, #329):
+ * esta frase existia apenas no blurb do "Padrão 2.0". O "Turbo" — que o blurb
+ * dele mesmo chama de "no mesmo motor" e que custa 80 cr/s contra 105 — não
+ * avisava nada. Ou seja: o preço empurrava quem faz vídeo LONGO exatamente pro
+ * tier que calava sobre o que acontece em vídeo longo. Um aluno pagante queimou
+ * 41.600 créditos em vídeos >40s, todos no Turbo, antes de alguém notar.
+ *
+ * A deriva é do MOTOR, não do tier: os templates v2 e v3 carregam os mesmos
+ * modelos (InfiniteTalk fp16 + Wan2.1 I2V 14B 480p fp8 + LoRA rank128) e os
+ * mesmos nós — medido em 19/09, diferem em DOIS valores (`trim_to_audio` e a
+ * string do prompt), nenhum deles ligado a semelhança de rosto ao longo do
+ * tempo. Logo o aviso vale pros dois, e valerá pro próximo tier que nascer.
+ *
+ * Por isso ele é APLICADO POR CÓDIGO em `CLONE_TIERS` abaixo, não copiado à
+ * mão em cada item: o defeito não foi alguém escrever a frase errada, foi
+ * alguém acrescentar um tier e esquecer de repeti-la. Com a montagem
+ * automática, esquecer deixou de ser possível.
+ */
+export const CLONE_AVISO_DERIVA_ROSTO =
+  `Em áudios longos (acima de ~${CLONE_DERIVA_ROSTO_SECONDS}s) o rosto pode se afastar da foto ao ` +
+  `longo do vídeo — é limitação do motor e vale nos dois modos: prefira vídeos curtos.`;
+
+/** O que cada tier tem de PRÓPRIO. O aviso comum é somado abaixo, nunca aqui. */
+const CLONE_TIERS_BASE: readonly (Omit<CloneTier, "blurb"> & { blurbProprio: string })[] = [
   {
     id: "480p-v3",
     label: "Padrão 2.0",
-    blurb:
-      "Novo motor padrão: repetível — a mesma foto com o mesmo áudio gera sempre o mesmo vídeo. Em áudios longos (acima de ~40s) o rosto pode se afastar da foto ao longo do vídeo: prefira vídeos curtos.",
+    blurbProprio:
+      "Novo motor padrão: repetível — a mesma foto com o mesmo áudio gera sempre o mesmo vídeo.",
     flow: "v3",
     creditsPerSecond: 105,
     width: 480,
@@ -54,7 +88,8 @@ export const CLONE_TIERS: readonly CloneTier[] = [
   {
     id: "480p-v2",
     label: "Turbo",
-    blurb: "Opção econômica no mesmo motor: corta o vídeo exatamente no fim do áudio; cada geração varia um pouco.",
+    blurbProprio:
+      "Opção econômica no mesmo motor: corta o vídeo exatamente no fim do áudio; cada geração varia um pouco.",
     flow: "v2",
     creditsPerSecond: 80,
     width: 480,
@@ -63,7 +98,14 @@ export const CLONE_TIERS: readonly CloneTier[] = [
     ggufModel: "",
     lora: "",
   },
-] as const;
+];
+
+/** Padrão V1 (GGUF/7 steps, 170 cr/s) APOSENTADO 08/08 (decisão Johnny):
+ *  substituído pelo Padrão 2.0 (fluxo InfiniteTalkV2 dele, validado em
+ *  pré-produção 07/08). Jobs antigos no histórico mostram o id cru "480p". */
+export const CLONE_TIERS: readonly CloneTier[] = CLONE_TIERS_BASE.map(
+  ({ blurbProprio, ...tier }) => ({ ...tier, blurb: `${blurbProprio} ${CLONE_AVISO_DERIVA_ROSTO}` }),
+);
 
 /** Teto de duração do áudio (igual ao upload de voz do wizard). */
 export const CLONE_MAX_AUDIO_SECONDS = 90;

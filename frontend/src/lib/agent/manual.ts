@@ -5,7 +5,12 @@
  * inventar o que não está neste manual.
  */
 
-import { CLONE_TIERS, CLONE_MAX_AUDIO_SECONDS, CLONE_MIN_BILLED_SECONDS } from "@/lib/video-clone/config";
+import {
+  CLONE_TIERS,
+  CLONE_AVISO_DERIVA_ROSTO,
+  CLONE_MAX_AUDIO_SECONDS,
+  CLONE_MIN_BILLED_SECONDS,
+} from "@/lib/video-clone/config";
 // #323 (09/09): a Fast não recebia a data de hoje em canal nenhum e repetia
 // prazo já vencido como se fosse futuro. Ver hoje.ts para o caso medido.
 import { blocoHoje } from "@/lib/agent/hoje";
@@ -380,10 +385,16 @@ nunca devolva a pessoa pro vazio.
   com a voz OU upload) → escolhe a qualidade → Gerar (leva alguns minutos).
 - Diferença entre os dois modos (é de PREÇO e de repetição, NÃO de qualidade):
   os dois rodam o MESMO motor. ${CLONE_PADRAO?.label ?? "Padrão 2.0"} é repetível
-  (mesma foto + mesmo áudio = sempre o mesmo vídeo) e em áudio acima de ~40s o
-  rosto pode se afastar da foto. ${CLONE_TURBO?.label ?? "Turbo"} é a opção
+  (mesma foto + mesmo áudio = sempre o mesmo vídeo). ${CLONE_TURBO?.label ?? "Turbo"} é a opção
   econômica no mesmo motor, corta o vídeo no fim exato do áudio e cada geração
   varia um pouco. Turbo é o melhor custo-benefício em PREÇO.
+- DERIVA DE ROSTO EM ÁUDIO LONGO — vale nos DOIS modos, é do motor:
+  ${CLONE_AVISO_DERIVA_ROSTO}
+  NUNCA atribua a deriva a um modo só (o texto acima já vem do código, use ele).
+  Quem reclama que "o rosto muda ao longo do vídeo" em áudio longo NÃO tem
+  defeito de tier: mandar trocar de modo não resolve e faz gastar crédito à
+  toa. O que resolve é vídeo mais curto — dois de ~30s juntados na edição
+  mantêm a semelhança melhor que um de 60s.
   NUNCA diga que um modo sai "mais natural", "mais realista" ou "melhor" que o
   outro, e NUNCA mande o aluno trocar de modo pra melhorar naturalidade: isso
   não existe, e faz ele gastar crédito de novo à toa. Antes de comentar o modo
