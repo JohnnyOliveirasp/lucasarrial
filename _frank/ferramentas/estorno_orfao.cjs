@@ -21,22 +21,52 @@
  * NUNCA por kind — o estorno grava kind='extra_purchase'. Conferir por kind
  * já quase pagou 13 alunos em dobro.
  *
+ * REF FORA DO FORMATO UUID (terceira categoria: nem órfão, nem padrão-conhecido):
+ * `credit_transactions.ref_id` é TEXTO, mas `generations.id` é UUID. Estorno
+ * lançado À MÃO numa investigação/reembolso grava ref_id sintético e legível
+ * (ex.: 'reemb-b6486347-gustavo-palavra-engolida'). Jogar isso num
+ * `.in('id', ...)` faz o Postgres devolver 22P02, e o `throw` MATAVA o detector
+ * inteiro antes de classificar qualquer coisa — por tempo indeterminado
+ * ninguém estava medindo estorno órfão. Agora esses refs são separados ANTES
+ * da consulta e listados em seção própria. Não dá pra afirmar se são órfãos
+ * (não são consultáveis em `generations`), então NÃO entram na conta de órfão
+ * nem na de padrão-conhecido, e sozinhos NÃO viram alarme — lançamento manual
+ * não é bug de dinheiro. Mas aparecem SEMPRE, com denominador: sumir com eles
+ * em silêncio seria zero mentiroso.
+ *
  * SÓ LEITURA. Nunca credita, estorna ou apaga nada.
  *
  * Uso:
  *   node _frank/ferramentas/estorno_orfao.cjs [--desde 2026-08-01] [--selftest] [--injetar-teste]
  *
- * --selftest      valida o classificador puro com 4 casos construidos (sem banco).
+ * --selftest      valida as funcoes puras (classificador + particao de ref)
+ *                 com casos construidos, sem banco.
  * --injetar-teste roda o pipeline REAL e injeta EM MEMORIA (nunca no banco) um
  *                 estorno orfao de ledger que nao reconcilia — prova que o
  *                 caminho completo ainda alarma (exit 2). Use para auditar que
  *                 o detector nao foi silenciado demais.
  *
  * Saída sempre com DENOMINADOR (regra do zero mentiroso): quantos estornos
- * examinados, quantos órfãos, quantos padrão-conhecido, quantos ALARMES.
+ * examinados, quantos órfãos, quantos padrão-conhecido, quantos fora do
+ * formato uuid, quantos ALARMES.
  * Exit code: 0 = nenhum alarme; 2 = tem alarme; 1 = falha de execução.
  */
 const { supa } = require(__dirname + "/_comum.cjs");
+
+/** uuid v1-v5 canônico. `generations.id` é uuid; `credit_transactions.ref_id` é texto. */
+const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Partição PURA (testável sem banco): separa o que pode ir pro `.in('id', ...)`
+ * de `generations` do que faria o Postgres devolver 22P02 e matar a rodada.
+ * @param {string[]} refs
+ * @returns {{uuids: string[], naoUuids: string[]}}
+ */
+function particionarRefs(refs) {
+  const uuids = [], naoUuids = [];
+  for (const r of refs) (UUID_RX.test(String(r)) ? uuids : naoUuids).push(r);
+  return { uuids, naoUuids };
+}
 
 /**
  * Classificador PURO (testável sem banco).
@@ -72,14 +102,30 @@ function selftest() {
   const semDeb = classificar({ temDebitoCasado: false, somaLedger: 500, saldoProfile: 500, quebrasCadeia: 0 });
   // caso 4: cadeia quebrada — DEVE alarmar
   const cadeia = classificar({ temDebitoCasado: true, somaLedger: 500, saldoProfile: 500, quebrasCadeia: 2 });
+  // casos 5-9: particao de ref (o que pode ir pro .in() de generations, que e uuid).
+  // O caso REAL que matava o detector com 22P02 esta no caso 6.
+  const p = particionarRefs([
+    "b6486347-1b1f-4b5e-9d3a-2c4e5f6a7b8c", // uuid v4 canonico
+    "incidente-c15ece48-testes-12-08", // ref sintetico que derrubava a rodada
+    "reemb-b6486347-gustavo-palavra-engolida", // reembolso lancado a mao
+    "B6486347-1B1F-4B5E-9D3A-2C4E5F6A7B8C", // uuid maiusculo: valido
+    "b6486347-1b1f-4b5e-9d3a-2c4e5f6a7b8", // 1 digito a menos: NAO e uuid
+  ]);
+  const vazio = particionarRefs([]);
   const provas = [
     ["padrao conhecido NAO alarma", ok.alarme === false && ok.rotulo.includes("PADRAO CONHECIDO")],
     ["soma != saldo ALARMA", ruim.alarme === true],
     ["estorno sem debito casado ALARMA", semDeb.alarme === true],
     ["cadeia balance_after quebrada ALARMA", cadeia.alarme === true],
+    ["particao: nada se perde (2 uuid + 3 nao-uuid = 5)", p.uuids.length === 2 && p.naoUuids.length === 3],
+    ["particao: 'incidente-c15ece48-testes-12-08' fica FORA do .in()", p.naoUuids.includes("incidente-c15ece48-testes-12-08")],
+    ["particao: 'reemb-...-palavra-engolida' fica FORA do .in()", p.naoUuids.includes("reemb-b6486347-gustavo-palavra-engolida")],
+    ["particao: uuid MAIUSCULO e aceito", p.uuids.includes("B6486347-1B1F-4B5E-9D3A-2C4E5F6A7B8C")],
+    ["particao: uuid truncado e rejeitado", p.naoUuids.includes("b6486347-1b1f-4b5e-9d3a-2c4e5f6a7b8")],
+    ["particao: lista vazia nao quebra", vazio.uuids.length === 0 && vazio.naoUuids.length === 0],
   ];
   let falhas = 0;
-  console.log("=== SELFTEST do classificador (4 casos construidos, sem banco) ===");
+  console.log(`=== SELFTEST das funcoes puras (${provas.length} casos construidos, sem banco) ===`);
   for (const [nome, passou] of provas) {
     console.log(`  ${passou ? "OK " : "FALHOU"}  ${nome}`);
     if (!passou) falhas++;
@@ -118,16 +164,22 @@ async function main() {
   );
   console.log(`janela desde ${desde.slice(0, 10)} | estornos generation_refund examinados: ${estornos.length}`);
 
-  // 2. quais ref_id ainda existem em generations
+  // 2. quais ref_id ainda existem em generations.
+  // ATENCAO: generations.id e uuid e ref_id e texto — mandar um ref sintetico
+  // ('reemb-...') pro .in() devolve 22P02 e MATA a rodada inteira. Particiona antes.
   const refs = [...new Set(estornos.map((t) => t.ref_id).filter(Boolean))];
+  const { uuids: refsUuid, naoUuids: refsNaoUuid } = particionarRefs(refs);
+  const foraDeFormato = new Set(refsNaoUuid);
   const existe = new Set();
-  for (let i = 0; i < refs.length; i += 100) {
-    const { data, error } = await db.from("generations").select("id").in("id", refs.slice(i, i + 100));
+  for (let i = 0; i < refsUuid.length; i += 100) {
+    const { data, error } = await db.from("generations").select("id").in("id", refsUuid.slice(i, i + 100));
     if (error) throw new Error("generations: " + JSON.stringify(error));
     for (const g of data || []) existe.add(g.id);
   }
-  const orfaos = estornos.filter((t) => t.ref_id && !existe.has(t.ref_id));
+  // orfao so se o ref E consultavel: fora-de-formato nao da pra afirmar nada.
+  const orfaos = estornos.filter((t) => t.ref_id && !foraDeFormato.has(t.ref_id) && !existe.has(t.ref_id));
   const semRef = estornos.filter((t) => !t.ref_id);
+  const naoConsultaveis = estornos.filter((t) => t.ref_id && foraDeFormato.has(t.ref_id));
 
   // 2b. caso construído (SÓ EM MEMÓRIA, nada é gravado): estorno órfão cujo
   // ledger não reconcilia. Serve pra provar que o detector não foi cegado.
@@ -146,8 +198,26 @@ async function main() {
     ledgerCache.set(FAKE_USER, { soma: 5000, saldo: 4001, quebras: 1, email: "CASO-CONSTRUIDO@teste.local", nTx: 3 });
     console.log("(--injetar-teste: 1 orfao sintetico com ledger que NAO reconcilia foi injetado em memoria)");
   }
-  console.log(`refs distintos: ${refs.length} | existentes: ${existe.size} | ORFAOS: ${orfaos.length} | estorno sem ref_id nenhum: ${semRef.length}`);
+  console.log(
+    `refs distintos: ${refs.length} (consultaveis/uuid: ${refsUuid.length} | fora do formato uuid: ${refsNaoUuid.length}) | ` +
+      `existentes em generations: ${existe.size} | ORFAOS: ${orfaos.length} | estorno sem ref_id nenhum: ${semRef.length}`
+  );
   if (semRef.length) for (const t of semRef) console.log(`  ATENCAO estorno sem ref_id: tx ${t.id} user ${t.user_id} amount ${t.amount} em ${t.created_at}`);
+
+  // 2c. categoria propria: ref fora do formato uuid. NAO e orfao (nao da pra
+  // consultar em generations) e NAO e padrao-conhecido. Nao alarma sozinho,
+  // mas nunca some do relatorio.
+  if (naoConsultaveis.length) {
+    console.log(
+      `\n=== REF FORA DO FORMATO UUID (nao consultaveis em generations): ` +
+        `${naoConsultaveis.length} de ${estornos.length} estornos, ${refsNaoUuid.length} de ${refs.length} refs distintos ===`
+    );
+    console.log("    (lancamento manual de investigacao/reembolso; nao e orfao nem padrao-conhecido; NAO alarma sozinho)");
+    for (const t of naoConsultaveis) {
+      console.log(`  ? ${t.created_at.slice(0, 16)} tx ${t.id} user ${t.user_id} +${t.amount} ref="${t.ref_id}"`);
+      if (t.note) console.log(`      note: ${String(t.note).slice(0, 160)}`);
+    }
+  }
 
   // 3. classificar cada órfão
   let conhecidos = 0, alarmes = 0;
@@ -213,13 +283,16 @@ async function main() {
 
   console.log(
     `\n>>> RESUMO: ${estornos.length} estornos examinados | ${orfaos.length} orfaos | ` +
-      `${conhecidos} padrao-conhecido (nao sao achado) | ${alarmes} ALARME(S)`
+      `${conhecidos} padrao-conhecido (nao sao achado) | ${naoConsultaveis.length} ref fora do formato uuid (nao classificaveis) | ` +
+      `${semRef.length} sem ref_id | ${alarmes} ALARME(S)`
   );
   if (alarmes === 0) console.log(">>> nenhum alarme — os orfaos encontrados sao todos DELETE de historico com ledger reconciliado.");
+  if (naoConsultaveis.length)
+    console.log(`>>> lembrete: ${naoConsultaveis.length} estorno(s) NAO foram classificados (ref fora do formato uuid) — ver secao acima.`);
   process.exit(alarmes ? 2 : 0);
 }
 
 if (process.argv.includes("--selftest")) selftest();
 else main().catch((e) => { console.error("FALHOU:", e.message); process.exit(1); });
 
-module.exports = { classificar };
+module.exports = { classificar, particionarRefs, UUID_RX };
