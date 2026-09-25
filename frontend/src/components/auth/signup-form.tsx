@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { emailJaTemConta } from "@/lib/auth/signup-identidades";
 
 type Step = "form" | "otp";
 type ResendStatus = "idle" | "sending" | "sent";
@@ -17,6 +18,8 @@ const PILL_CLASS =
   "inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--pill-bg)] px-[18px] text-[14px] font-medium tracking-[-0.01em] text-[var(--pill-ink)] transition-[background-color,transform] duration-[var(--dur-base)] ease-[var(--ease-out)] hover:bg-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-[0.42]";
 const ERROR_CLASS =
   "rounded-[var(--radius)] border border-[var(--status-error)] bg-[var(--surface-card)] px-3.5 py-2.5 text-[13px] text-[var(--status-error)]";
+const INFO_CLASS =
+  "rounded-[var(--radius)] border border-[var(--hairline-strong)] bg-[var(--surface-card)] px-3.5 py-2.5 text-[13px] text-[var(--silver)]";
 
 export function SignupForm() {
   const t = useTranslations("auth");
@@ -32,6 +35,10 @@ export function SignupForm() {
   const [submitting, setSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // E-mail que já tem conta (Supabase responde 200 sem erro nesse caso, de
+  // propósito — ver emailJaTemConta). Estado separado do `error` porque o
+  // tom é diferente: não é falha, é "você já tem conta, entre por aqui".
+  const [existingAccount, setExistingAccount] = useState(false);
   const [resendStatus, setResendStatus] = useState<ResendStatus>("idle");
   const [cooldown, setCooldown] = useState(0);
   const cooldownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -60,6 +67,7 @@ export function SignupForm() {
   async function handleEmailSignup(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setExistingAccount(false);
 
     if (password !== passwordConfirm) {
       setError(t("signup.passwordMismatch"));
@@ -68,7 +76,7 @@ export function SignupForm() {
 
     setSubmitting(true);
 
-    const { error: authError } = await supabase.auth.signUp({
+    const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -81,6 +89,17 @@ export function SignupForm() {
       if (code.includes("rate")) setError(t("errors.rateLimited"));
       else if (code.includes("already")) setError(t("errors.invalidCredentials"));
       else setError(t("errors.generic"));
+      setSubmitting(false);
+      return;
+    }
+
+    // Supabase responde 200 sem `error` tanto pra e-mail novo quanto pra
+    // e-mail que já tem conta (não vaza quais e-mails existem). Sem esta
+    // checagem, quem já tinha conta caía na tela "enviamos um código" e o
+    // código nunca chegava — não havia nada a confirmar. Ver
+    // emailJaTemConta().
+    if (emailJaTemConta(data.user?.identities)) {
+      setExistingAccount(true);
       setSubmitting(false);
       return;
     }
@@ -143,6 +162,7 @@ export function SignupForm() {
   async function handleGoogleSignup() {
     setGoogleLoading(true);
     setError(null);
+    setExistingAccount(false);
 
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -328,7 +348,13 @@ export function SignupForm() {
           )}
         </div>
 
-        {error && (
+        {existingAccount && (
+          <p role="status" className={INFO_CLASS}>
+            {t("signup.emailInUse")}
+          </p>
+        )}
+
+        {error && !existingAccount && (
           <p role="alert" className={ERROR_CLASS}>
             {error}
           </p>

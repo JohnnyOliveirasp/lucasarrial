@@ -227,7 +227,8 @@
       "resend": "Resend code",
       "resending": "Resending…",
       "resent": "Code resent. Check your email.",
-      "resendIn": "Wait {seconds}s to resend"
+      "resendIn": "Wait {seconds}s to resend",
+      "emailInUse": "If this email already has an account, sign in using the link below — you can also reset your password from there if needed."
     },
     "forgot": {
       "title": "Recover password",
