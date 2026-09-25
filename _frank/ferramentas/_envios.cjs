@@ -48,8 +48,10 @@
  * `ler_caixa.cjs --enviados --para <email>`:
  *   1. o passado. O livro-caixa começa vazio: tudo que saiu antes desta trava
  *      existir (inclusive as duas levas de 06/09) é invisível pra ela;
- *   2. o que saiu por fora. O `enviar_email.sh` (bash+curl, roda no servidor)
- *      e a própria Fast (`lib/agent/mail-smtp.ts`) mandam sem passar por aqui.
+ *   2. o que saiu por fora. A própria Fast (`lib/agent/mail-smtp.ts`) manda sem
+ *      passar por aqui. O `enviar_email.sh` também mandava, mas foi
+ *      DESATIVADO em 18/09 (ronda do `#101`) justamente por isso — o que saiu
+ *      por ele antes dessa data continua invisível pra esta trava.
  * A pasta Enviados continua sendo a fonte mais completa. A trava é a rede de
  * segurança pro erro que a conferência humana já deixou passar, não a
  * dispensa dela.
