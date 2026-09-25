@@ -54,6 +54,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { filtrarBusca } from "@/lib/sgp/busca";
+import { ofereceRefazerNaTela } from "@/lib/sgp/refazer";
 import { EntrarComoAluno } from "@/components/admin/sgp/entrar-como-aluno";
 import { Paginacao } from "@/components/admin/sgp/paginacao";
 import type { SgpGeracoes } from "@/lib/sgp/geracoes";
@@ -160,6 +161,14 @@ export default function SgpPage() {
   const [erro, setErro] = useState<string | null>(null);
   /** Id da linha com clique em voo — desabilita o botão e evita clique duplo. */
   const [salvando, setSalvando] = useState<string | null>(null);
+  /**
+   * Resposta do "refazer entrega", por linha. Fica FORA de `pedidos` pelo mesmo
+   * motivo dos rascunhos abaixo: o `load()` recarrega a lista e apagaria a
+   * confirmação no instante em que ela passa a importar. O treino é assíncrono
+   * — a linha só muda minutos depois —, então esta frase é a única prova de que
+   * o clique valeu, e ela tem que sobreviver ao reload.
+   */
+  const [refeito, setRefeito] = useState<Record<string, { ok: boolean; texto: string }>>({});
 
   const [erroManualOk, setErroManualOk] = useState(false);
   /**
@@ -367,6 +376,69 @@ export default function SgpPage() {
       }
     },
     [load, rascunhoErro],
+  );
+
+  /**
+   * REFAZER A ENTREGA — remanda o treino de voz que morreu por falha nossa.
+   * Mesma forma das irmãs (mesmo `salvando`, mesmo reload), com UMA diferença
+   * deliberada: o resultado vira texto NA LINHA, não só um erro global.
+   *
+   * ⚠️ POR QUE A MENSAGEM DE SUCESSO TAMBÉM APARECE. Esta é a primeira ação
+   * do `/admin/sgp` que MEXE em produção (as irmãs só anotam) — e o que ela
+   * dispara é assíncrono: o treino vai pro RunPod e a linha só muda de estado
+   * minutos depois, no próximo `load()`. Sem confirmação escrita, o atendente
+   * clica, nada visível muda, e ele clica de novo — que é como se queima GPU
+   * em dobro. A rota devolve `mensagem` pronta pra ele ("Treino remandado…
+   * O aluno não foi cobrado por isso"); a tela só a mostra.
+   *
+   * ⚠️ AS RECUSAS SÃO INFORMAÇÃO, NÃO ERRO DE SISTEMA. `decidirRefazer` recusa
+   * com texto escrito pro atendente (já treinando, já pronta, áudio curto) e
+   * `409`. Isso não é falha: é a resposta. Por isso o texto da recusa vai no
+   * mesmo lugar do sucesso, em vez de virar um "não consegui" genérico — foi
+   * justamente a mensagem que escondia o motivo que criou o #420.
+   */
+  const refazerEntrega = useCallback(
+    async (id: string) => {
+      setSalvando(id);
+      setRefeito((r) => {
+        const resto = { ...r };
+        delete resto[id];
+        return resto;
+      });
+      try {
+        const res = await fetch(`/api/v1/admin/sgp/${id}/refazer`, { method: "POST" });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          // A recusa da régua vem com texto pro atendente; só cai no genérico
+          // quando nem isso veio (rede, 500 sem corpo).
+          setRefeito((r) => ({
+            ...r,
+            [id]: {
+              ok: false,
+              texto:
+                json?.error?.message ||
+                "Não consegui remandar o treino agora. Avise o time técnico.",
+            },
+          }));
+          return;
+        }
+        setErro(null);
+        setRefeito((r) => ({
+          ...r,
+          [id]: { ok: true, texto: json?.mensagem || "Treino remandado. O aluno não foi cobrado." },
+        }));
+        // Recarrega pra linha já refletir o que o servidor sabe agora.
+        await load();
+      } catch {
+        setRefeito((r) => ({
+          ...r,
+          [id]: { ok: false, texto: "Não consegui falar com o servidor. Tente de novo." },
+        }));
+      } finally {
+        setSalvando(null);
+      }
+    },
+    [load],
   );
 
   /**
@@ -987,6 +1059,21 @@ export default function SgpPage() {
                       onDigitar={(v) => setRascunhoErro((r) => ({ ...r, [p.id]: v }))}
                       onMarcar={() => marcarErro(p.id, true)}
                       onDesfazer={() => marcarErro(p.id, false)}
+                    />
+                    {/* ⚠️ MESMO <Td> DE PROPÓSITO, não coluna nova: o aviso 8
+                        linhas acima diz que a tabela já sai em ~1780px e que
+                        uma 15ª coluna empurraria "Atendimento" fora da
+                        viewport (defeito reclamado 3x pelo Lucas). Aqui é o
+                        lugar certo por conteúdo, não só por espaço: esta é a
+                        coluna do ERRO, e refazer é o que se faz com um pedido
+                        que falhou. Nunca disputa espaço com o "marcar erro" —
+                        só aparece em `falhou`, e aí a decisão já foi tomada
+                        pelo sistema, não pelo atendente. */}
+                    <AcaoRefazer
+                      linha={p}
+                      salvando={salvando === p.id}
+                      resultado={refeito[p.id] ?? null}
+                      onRefazer={() => refazerEntrega(p.id)}
                     />
                   </Td>
                   {/* Atendimento vem junto dos outros dois botões: é AÇÃO, e ação
@@ -1693,6 +1780,75 @@ function CelulaCobranca({
  *  2. A MARCA NÃO VENCE. "Já cobrei" é um timer que volta a gritar; "deu erro" é
  *     uma afirmação de defeito. Ela sai por "desfazer", não pelo relógio.
  */
+/**
+ * "Refazer entrega" — a única ação do `/admin/sgp` que MEXE em produção.
+ *
+ * ── Por que este componente existe (medido em 25/09) ──────────────────────
+ * A rota `POST /admin/sgp/[id]/refazer` subiu em 15/09 e ficou 9,8 dias com
+ * ZERO consumidor: o commit que a criou registrou que não ligaria a UI porque
+ * outro agente estava editando este arquivo, e o "cartão separado" prometido
+ * nunca veio. Durante esse tempo o chamado seguiu aberto dizendo, com razão,
+ * que "nem o aluno, nem o suporte, nem o admin" conseguia refazer — a única
+ * porta era `curl` de quem tem acesso ao servidor.
+ *
+ * ⚠️ SEM CONFIRMAÇÃO DE "TEM CERTEZA?", e é decisão, não esquecimento: a ação
+ * é idempotente no que importa (a rota recusa voz que já está treinando ou já
+ * pronta) e NÃO custa crédito do aluno (`origem: "sgp"`). O risco de um clique
+ * a mais é uma recusa escrita na tela; o risco de um diálogo a mais é o
+ * atendente desistir e o aluno continuar sem entrega. Se algum dia esta ação
+ * passar a cobrar, ela precisa de confirmação — e o teste de `origem` em
+ * `refazer.test.ts` é o que avisa nesse dia.
+ *
+ * ⚠️ O texto do resultado fica na LINHA e sobrevive ao `load()`. O treino é
+ * assíncrono: sem isso, clicar parece não fazer nada.
+ */
+function AcaoRefazer({
+  linha,
+  salvando,
+  resultado,
+  onRefazer,
+}: {
+  linha: LinhaPainel;
+  salvando: boolean;
+  resultado: { ok: boolean; texto: string } | null;
+  onRefazer: () => void;
+}) {
+  // A régua mora em `lib/sgp/refazer.ts`, com teste, em vez de um `=== "falhou"`
+  // solto aqui: é o mesmo arquivo que decide a recusa no servidor, então as
+  // duas metades da mesma pergunta não podem divergir sem quebrar teste.
+  const oferece = ofereceRefazerNaTela({ status: linha.status, naoIniciou: linha.naoIniciou });
+  if (!oferece && !resultado) return null;
+
+  return (
+    <div className="mt-1.5 flex flex-col gap-1">
+      {oferece && (
+        <button
+          type="button"
+          onClick={onRefazer}
+          disabled={salvando}
+          className="w-fit rounded-[var(--radius)] border border-[var(--hairline-strong)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--ink)] transition-colors hover:bg-[var(--surface-deep)] disabled:opacity-50"
+        >
+          {salvando ? "remandando…" : "Refazer entrega"}
+        </button>
+      )}
+      {resultado && (
+        <span
+          className={`max-w-[200px] text-[11px] leading-snug ${
+            resultado.ok ? "text-[var(--body)]" : "text-[var(--status-error)]"
+          }`}
+        >
+          {resultado.texto}
+        </span>
+      )}
+      {oferece && !resultado && (
+        <span className="max-w-[200px] text-[11px] leading-snug text-[var(--mute)]">
+          Remanda o treino da voz. Não cobra o aluno.
+        </span>
+      )}
+    </div>
+  );
+}
+
 function CelulaMarcarErro({
   linha,
   disponivel,
