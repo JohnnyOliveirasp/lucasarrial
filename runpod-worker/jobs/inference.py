@@ -283,7 +283,16 @@ class InferenceJob:
         (caso Johnny 25/08: esticar cada chunk com fator proprio ate 0,75 soou
         'bebado' e criou o lento->rapido). Aqui o fator e' unico, limitado a
         max_stretch (0,85 = no maximo 18% mais longo; era 0,90) e simetrico (tambem
-        acelera se ficou lento demais). Sem regua ou sem medida: nao toca."""
+        acelera se ficou lento demais). Sem regua ou sem medida: nao toca.
+
+        #571 (25/09): quando o TETO MORDE (o fator necessario passa do
+        max_stretch), a correcao para no meio do caminho e o audio pode sair
+        FORA da tolerancia declarada — e ate hoje isso acontecia em silencio
+        (medido em producao: 115 geracoes ready fora da tolerancia, 70 alunos).
+        Agora fica carimbado no qa: `rate_clamp_mordeu` sempre que o teto
+        morde, e `rate_fora_da_tolerancia` (com o desvio final estimado) quando
+        mesmo apos o ajuste o desvio continua acima da tolerancia. SO telemetria:
+        nao muda o audio, o fator, o status nem a cobranca de ninguem."""
         if not self.target_wps or wav is None or wav.size < self.sample_rate:
             return wav
         c = self.cfg
@@ -293,13 +302,29 @@ class InferenceJob:
             return wav
         desvio = medido / self.target_wps - 1.0
         fator = 1.0
+        teto_mordeu = False
         if desvio > c.rate_qa_tolerance:
-            fator = max(c.rate_qa_max_stretch, self.target_wps / medido)
+            necessario = self.target_wps / medido
+            fator = max(c.rate_qa_max_stretch, necessario)
+            teto_mordeu = necessario < c.rate_qa_max_stretch
         elif desvio < -c.rate_qa_tolerance:
-            fator = min(1.0 / c.rate_qa_max_stretch, self.target_wps / medido)
+            necessario = self.target_wps / medido
+            fator = min(1.0 / c.rate_qa_max_stretch, necessario)
+            teto_mordeu = necessario > 1.0 / c.rate_qa_max_stretch
+        # Ritmo ENTREGUE, estimado: atempo=f multiplica a articulacao por f.
+        # Nao re-medimos depois do stretch (custaria mais um whisper por job);
+        # e' a MESMA conta da medicao do incidente #571, declarada estimativa.
+        desvio_final = (medido * fator) / self.target_wps - 1.0
         _log("info", "inference.rate_global", medido=medido, alvo=self.target_wps,
-             desvio=round(desvio, 3), fator=round(fator, 3))
+             desvio=round(desvio, 3), fator=round(fator, 3),
+             teto_mordeu=teto_mordeu, desvio_final=round(desvio_final, 3))
         self.qa_stats["rate_global_wps"] = medido
+        if teto_mordeu:
+            # Rastro consultavel em generations.qa (#571, perna 1). Chave
+            # ausente = teto nao mordeu (mesma convencao de rate_global_fator).
+            self.qa_stats["rate_clamp_mordeu"] = True
+            if abs(desvio_final) > c.rate_qa_tolerance:
+                self.qa_stats["rate_fora_da_tolerancia"] = round(desvio_final, 3)
         if fator != 1.0:
             self.qa_stats["rate_stretched"] = self.qa_stats.get("rate_stretched", 0) + 1
             self.qa_stats["rate_global_fator"] = round(fator, 3)

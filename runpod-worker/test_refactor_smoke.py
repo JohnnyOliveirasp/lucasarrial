@@ -912,5 +912,75 @@ class PecasPurasTest(unittest.TestCase):
             worker_disk.faxina("teste")   # nao pode levantar
 
 
+class SinalDoClampDeRitmoTest(unittest.TestCase):
+    """#571 perna (1): quando o teto do ajuste global de ritmo MORDE
+    (inference.py, _ajustar_ritmo_global) e o desvio final continua fora da
+    tolerancia, isso fica carimbado no qa — antes era silencio e "ready" saia
+    fora do criterio da casa sem rastro (115 geracoes, 70 alunos, medidos em
+    producao em 25/09). Numeros dos casos reais do incidente (voz Ernanda,
+    regua 2.14, tolerancia 0.10, teto 0.85).
+
+    So telemetria: os testes tambem provam que fator e audio NAO mudam."""
+
+    def _ajustar(self, medido, target=2.14, tolerance=0.10, max_stretch=0.85):
+        obj = jobs.inference.InferenceJob.__new__(jobs.inference.InferenceJob)
+        obj.qa_stats = {}
+        obj.target_wps = target
+        obj.sample_rate = SR
+        obj.cfg = types.SimpleNamespace(
+            rate_qa_tolerance=tolerance, rate_qa_max_stretch=max_stretch,
+            rate_qa_model="t", qa_language="pt")
+        wav = np.ones(SR * 2, dtype=np.float32)
+        with mock.patch.object(jobs.inference, "measure_seg_rate",
+                               return_value=medido), \
+             mock.patch.object(jobs.inference, "stretch",
+                               side_effect=lambda w, sr, f: w) as st:
+            out = obj._ajustar_ritmo_global(wav)
+        return obj.qa_stats, st, out, wav
+
+    def test_teto_morde_e_sai_fora_carimba_o_desvio(self):
+        # Caso 741f30f3 do incidente: bruto 3.14 (+47%), necessario 0.682 <
+        # teto 0.85 -> entregue ~2.67 = +24.7%, FORA da tolerancia de 10%.
+        stats, st, _, _ = self._ajustar(3.14)
+        self.assertIs(stats["rate_clamp_mordeu"], True)
+        self.assertAlmostEqual(stats["rate_fora_da_tolerancia"], 0.247, places=3)
+        # o sinal nao mudou o remedio: fator continua exatamente no teto
+        self.assertAlmostEqual(st.call_args[0][2], 0.85, places=3)
+        self.assertAlmostEqual(stats["rate_global_fator"], 0.85, places=3)
+
+    def test_teto_morde_mas_ainda_cai_dentro_nao_carimba_fora(self):
+        # Caso b7fa1c38: bruto 2.69 (+26%), necessario 0.796 < teto -> entregue
+        # ~2.29 = +6.8%, DENTRO da tolerancia por sorte. Morde sim, fora nao.
+        stats, _, _, _ = self._ajustar(2.69)
+        self.assertIs(stats["rate_clamp_mordeu"], True)
+        self.assertNotIn("rate_fora_da_tolerancia", stats)
+
+    def test_correcao_completa_nao_carimba_nada(self):
+        # +15% fora: necessario 2.14/2.46 = 0.870 > teto 0.85 -> o max() NAO
+        # clampa, a correcao alcanca a regua. Nenhuma das duas chaves entra.
+        stats, st, _, _ = self._ajustar(2.46)
+        self.assertNotIn("rate_clamp_mordeu", stats)
+        self.assertNotIn("rate_fora_da_tolerancia", stats)
+        self.assertAlmostEqual(st.call_args[0][2], 2.14 / 2.46, places=3)
+
+    def test_lado_lento_tambem_sinaliza(self):
+        # Simetrico: bruto 1.20 (-44%), necessario 1.783 > 1/0.85 = 1.176 ->
+        # clampa; entregue ~1.41 = -34% da regua, ainda fora. Desvio NEGATIVO.
+        stats, _, _, _ = self._ajustar(1.20)
+        self.assertIs(stats["rate_clamp_mordeu"], True)
+        self.assertLess(stats["rate_fora_da_tolerancia"], -0.10)
+        self.assertAlmostEqual(stats["rate_fora_da_tolerancia"],
+                               (1.20 * (1 / 0.85)) / 2.14 - 1.0, places=3)
+
+    def test_dentro_da_tolerancia_segue_intocado(self):
+        # No ritmo: fator 1.0, stretch nem e' chamado, wav volta identico.
+        stats, st, out, wav = self._ajustar(2.20)
+        st.assert_not_called()
+        self.assertIs(out, wav)
+        self.assertNotIn("rate_clamp_mordeu", stats)
+        self.assertNotIn("rate_fora_da_tolerancia", stats)
+        self.assertEqual(stats["rate_global_wps"], 2.20)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
