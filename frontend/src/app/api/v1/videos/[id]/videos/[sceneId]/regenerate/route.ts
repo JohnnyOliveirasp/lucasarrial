@@ -13,10 +13,13 @@ import { getBalance, debitCredits } from "@/lib/credits/service";
 import { kieCallbackUrl } from "@/lib/kie/client";
 import {
   getTier,
+  getVideoFallback,
   VideoTierId,
   FALLBACK_MOVEMENT_PROMPT_PT,
   FALLBACK_MOVEMENT_PROMPT_EN,
 } from "@/lib/video/tiers";
+import { escolherModeloDoRegen, estaEmVoo } from "@/lib/video/regen-fallback";
+import { reivindicarCenaParaDespacho } from "@/lib/video/claim-cena";
 import { translateMovementPromptToEn, generateVideoPrompt } from "@/lib/llm/generate-video-prompt";
 import { startSceneVideo } from "@/lib/video/generate-scene-video";
 import { notifyKieOutOfCredits } from "@/lib/video/notify-provider";
@@ -52,7 +55,9 @@ export async function POST(
 
   const { data: scene } = await admin
     .from("video_scenes")
-    .select("id, image_status, image_path, prompt_pt, script_excerpt, video_prompt_pt, video_prompt_en")
+    .select(
+      "id, image_status, image_path, prompt_pt, script_excerpt, video_prompt_pt, video_prompt_en, video_status",
+    )
     .eq("id", sceneId)
     .eq("video_project_id", id)
     .eq("user_id", auth.user_id)
@@ -60,6 +65,18 @@ export async function POST(
   if (!scene) return notFound("Scene");
   if (scene.image_status !== "ready" || !scene.image_path) {
     return badRequest("A imagem desta cena precisa estar pronta antes de gerar o vídeo.");
+  }
+  // Esta rota despachava e cobrava SEM olhar `video_status` nenhum — clicar
+  // Regerar duas vezes cobrava duas vezes (padrão do josimocerqueira@: 3
+  // cobranças seguidas das mesmas 2 cenas). Regerar por cima de um despacho EM
+  // VOO é cobrança pura sem benefício: o clipe que já está sendo gerado vem do
+  // mesmo jeito. Refazer cena `ready` (prompt editado à mão) continua liberado.
+  if (estaEmVoo(scene.video_status)) {
+    return jsonError(
+      "already_running",
+      "O vídeo desta cena já está sendo gerado. Espere terminar para regerar.",
+      409,
+    );
   }
 
   const imageUrl = await createPresignedGet(imagesBucket(), scene.image_path, 60 * 60).catch(() => null);
@@ -103,6 +120,27 @@ export async function POST(
     }
   }
 
+  // CLAIM ATÔMICO, o mais tarde possível e sempre ANTES do Kie e do débito:
+  // dois cliques simultâneos leem o mesmo `video_status` e só um consegue
+  // trocá-lo. Quem perde não despacha e, principalmente, não cobra.
+  const claim = await reivindicarCenaParaDespacho(sceneId, scene.video_status);
+  if (!claim.ok) {
+    return jsonError(
+      "already_running",
+      "O vídeo desta cena já está sendo gerado. Espere terminar para regerar.",
+      409,
+    );
+  }
+
+  // O titular é sempre o primeiro a ser tentado; o reserva do tier só entra
+  // quando a cena está `failed`, ou seja, quando o titular já teve a vez e
+  // perdeu. É a perna (b) do #485: sem isto o Regerar caía no MESMO motor que
+  // acabara de falhar (no Bronze, um preview) e cobrava de novo.
+  const escolha = escolherModeloDoRegen({
+    status: scene.video_status,
+    reserva: getVideoFallback(tier.id),
+  });
+
   const result = await startSceneVideo({
     sceneId,
     tier: tier.id as VideoTierId,
@@ -111,6 +149,7 @@ export async function POST(
     promptEn,
     creditsCost: billed ? cost : 0,
     callbackUrl: kieCallbackUrl(),
+    reserva: escolha.usaReserva ? escolha.reserva : null,
   });
   if (result === "provider_out_of_credits") {
     await notifyKieOutOfCredits({ userEmail: auth.email, projectId: id, failedCount: 1 });

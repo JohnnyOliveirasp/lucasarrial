@@ -11,6 +11,7 @@ import { kieCreateVideoTask } from "@/lib/kie/client";
 import { getTier, VideoTierId, VIDEO_DURATION_SECONDS, VIDEO_RESOLUTION } from "@/lib/video/tiers";
 import { VIDEO_ASPECT_RATIO } from "@/lib/video/config";
 import { failSceneVideo } from "@/lib/video/video-sync";
+import type { ReservaLike } from "@/lib/video/regen-fallback";
 
 export type StartVideoResult = "started" | "error" | "provider_out_of_credits";
 
@@ -27,13 +28,31 @@ export async function startSceneVideo(args: {
   promptEn: string;
   creditsCost: number;
   callbackUrl?: string;
+  /**
+   * CONTINGÊNCIA do Regerar (#485, perna (b)): quando o titular do tier JÁ
+   * falhou nesta cena, quem chama passa o reserva do tier e o despacho vai
+   * nele. Sem isto, o Regerar redespachava no mesmo motor que acabara de
+   * falhar — no Bronze, um PREVIEW — e cobrava de novo (hercules.contador@
+   * 22.440 cr, josimocerqueira@ 10.560 cr, nenhum dos dois recebeu vídeo).
+   * Quem decide é `escolherModeloDoRegen`; aqui só se obedece.
+   */
+  reserva?: ReservaLike | null;
 }): Promise<StartVideoResult> {
-  const { sceneId, tier, imageUrl, promptPt, promptEn, creditsCost, callbackUrl } = args;
+  const { sceneId, tier, imageUrl, promptPt, promptEn, creditsCost, callbackUrl, reserva } = args;
   const t = getTier(tier);
   if (!t) {
     await failSceneVideo(sceneId, "Tier de vídeo inválido", { cobrado: false });
     return "error";
   }
+
+  // Titular por padrão; reserva só quando quem chama mandou. O tier gravado na
+  // linha continua sendo o CONTRATADO (o aluno pagou Bronze e recebe Bronze) —
+  // a troca de motor é contingência nossa, e a diferença de custo é nossa.
+  const motor = reserva ?? {
+    kieModel: t.kieModel,
+    resolution: VIDEO_RESOLUTION,
+    durationSeconds: VIDEO_DURATION_SECONDS,
+  };
 
   // Persiste o prompt/tier ANTES de chamar o Kie: se o provedor falhar (ex.: sem
   // saldo), a cena mantém o prompt e o usuário consegue clicar em Regerar depois.
@@ -45,15 +64,21 @@ export async function startSceneVideo(args: {
   try {
     const { taskId } = await kieCreateVideoTask(
       {
-        model: t.kieModel,
+        model: motor.kieModel,
         promptEn,
         imageUrl,
         aspectRatio: VIDEO_ASPECT_RATIO,
-        resolution: VIDEO_RESOLUTION,
-        durationSeconds: VIDEO_DURATION_SECONDS,
+        resolution: motor.resolution,
+        durationSeconds: motor.durationSeconds,
       },
       { callBackUrl: callbackUrl },
     );
+    if (reserva) {
+      // `video_scenes` não tem coluna de modelo (só `video_tier`), então o
+      // rastro de QUAL motor rodou fica no log — mesmo padrão do irmão
+      // `lib/images/video-sync.ts`, que loga "[image-video] fallback ... assumiu".
+      console.warn(`[scene-video] reserva ${motor.kieModel} assumiu a cena ${sceneId}`);
+    }
 
     await getAdmin()
       .from("video_scenes")
