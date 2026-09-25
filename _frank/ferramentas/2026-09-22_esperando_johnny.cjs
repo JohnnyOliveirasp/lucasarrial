@@ -63,6 +63,7 @@
  * SO LEITURA. Nao escreve, nao fecha, nao muda status, nao manda e-mail.
  */
 const { supa } = require("./_comum.cjs");
+const { ultimaNotaSubstantiva } = require("./_ultima_nota_substantiva.cjs");
 
 const AGORA = new Date();
 const dias = (iso) => Math.floor((AGORA - new Date(iso)) / 86400000);
@@ -174,22 +175,14 @@ const BOILERPLATE = [
  *
  * O piso so desce por escrito, como o CONTROLE: incluir padrao aqui exige
  * motivo e data nesta mesma lista.
+ *
+ * ⚠️ EXTRAIDO em 25/09 (incidente 02581255) pra `_ultima_nota_substantiva.cjs`
+ * — este e o SEGUNDO consumidor (o `percepcao_travada.cjs` tinha o MESMO
+ * defeito, lendo `agent_notes[-1]` cru sem recuar por cima de nota neutra).
+ * A lista NOTA_NEUTRA, o TETO_NEUTRAS e a funcao de recuo agora moram la; a
+ * memoria do PORQUE de cada padrao (acima) fica aqui porque foi conferida a
+ * mao contra ESTE arquivo — quem for mexer na lista, leia os dois lados.
  */
-const NOTA_NEUTRA = [
-  // Retrofit da trava do humano (#415), 24/09 17:48Z, 21 cartoes. A propria
-  // nota declara: "NADA MAIS foi tocado — nem status, nem credito, nem acesso,
-  // nem texto de nota", e o #554 conferiu que e verdade. Fala de MARCA no
-  // registro, nunca do desfecho do caso.
-  /retrofit\s+da\s+trava\s+do\s+humano/i,
-  // Carimbo automatico da Fast quando o aluno escreve de novo num chamado que
-  // ja esta com o time (10 cartoes, desde 16/09). Registra que o aluno voltou a
-  // falar; nao decide nada e nao tira nada do colo do Johnny. Mesma familia do
-  // BOILERPLATE acima, so que em nota inteira.
-  /o\s+aluno\s+mandou\s+outro\s+e-?mail\s+e\s+a\s+fast\s+n[aã]o\s+respondeu/i,
-];
-
-const ehNeutra = (texto) => !!texto && NOTA_NEUTRA.some((p) => p.test(texto));
-
 /**
  * TRIAGEM DE 22/09 17hZ — o resultado da conferencia a mao, encodado.
  *
@@ -285,27 +278,19 @@ function exigir(rotulo, error) {
   }
 }
 
-// Quantas notas neutras seguidas se aceita pular. Teto baixo de proposito: se
-// um cartao tiver uma PILHA de carimbos por cima, isso e achado pra investigar
-// (outro lote cego), nao coisa pra varrer em silencio. Estourar o teto devolve
-// a nota crua — o vies volta a ser pra baixo, que e o lado seguro.
-const TETO_NEUTRAS = 5;
+// TETO_NEUTRAS (quantas notas neutras seguidas se aceita pular) vem do modulo
+// compartilhado, importado no topo do arquivo.
 
 // Conta, so pra relatorio: quantos cartoes so aparecem porque andamos pra tras.
 const resgatados = [];
 
 function ultimaNota(r) {
-  const n = r.agent_notes;
-  if (!Array.isArray(n) || n.length === 0) return null;
-  let i = n.length - 1;
-  let pulos = 0;
-  while (i >= 0 && pulos < TETO_NEUTRAS && ehNeutra(n[i] && n[i].note)) {
-    i--;
-    pulos++;
-  }
-  if (i < 0) return "";
-  if (pulos > 0) resgatados.push({ id: String(r.id).slice(0, 8), numero: r.numero, pulos });
-  return (n[i] && (n[i].note || "")) || "";
+  const { nota, pulos } = ultimaNotaSubstantiva(r.agent_notes);
+  // So conta como "resgate" quando ACHOU nota substantiva andando pra tras.
+  // Pilha inteira neutra (nota === null) nao revelou pedido nenhum.
+  if (nota && pulos > 0) resgatados.push({ id: String(r.id).slice(0, 8), numero: r.numero, pulos });
+  if (!Array.isArray(r.agent_notes) || r.agent_notes.length === 0) return null;
+  return nota ? (nota.note || "") : "";
 }
 
 function casa(texto) {
