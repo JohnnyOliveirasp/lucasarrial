@@ -653,16 +653,23 @@ class InferenceJob:
                 chars=len(chunk), samples_raw=raw_samples, samples_trim=int(seg.size),
                 elapsed_s=round(time.monotonic() - ct0, 2),
             )
-            # Pausa de paragrafo: silencio anexado ao proprio segmento (sobrevive
-            # ao crossfade — o fade desliza pra dentro do silencio).
-            if ends_paragraph and self.par_pause_samples > 0 and idx < len(chunks) - 1:
-                seg = np.concatenate([seg, np.zeros(self.par_pause_samples, dtype=np.float32)])
+            # Pausa entre chunks: silencio anexado ao PROPRIO segmento (sobrevive
+            # ao crossfade — o fade desliza pra dentro do silencio). Antes disto
+            # o silencio_ms escolhido pelo aluno (botao "Pausa entre frases" na
+            # tela) so era aplicado com crossfade==0, e em producao o crossfade
+            # default e' 60ms — o ramo nunca disparava e o botao nao fazia nada
+            # (medido em 25/09: 194 geracoes de 88 alunos com silence_ms>0, ZERO
+            # com crossfade_ms==0). Numa fronteira de paragrafo os dois pedidos
+            # (par_pause_ms e silence_ms) sao a MESMA pausa — usa o MAIOR dos
+            # dois, nunca soma (senao quem pede 550 levaria 850 = 550+300).
+            if idx < len(chunks) - 1:
+                pausa_samples = self.silence_samples
+                if ends_paragraph:
+                    pausa_samples = max(pausa_samples, self.par_pause_samples)
+                if pausa_samples > 0:
+                    seg = np.concatenate(
+                        [seg, np.zeros(pausa_samples, dtype=np.float32)])
             pieces.append(seg)
-            # Silencio entre chunks (default 0). Aplicado SOMENTE quando o
-            # crossfade esta desligado — senao o silencio dentro do overlap se
-            # autodestroi.
-            if self.silence_samples > 0 and self.crossfade_samples == 0 and idx < len(chunks) - 1:
-                pieces.append(np.zeros(self.silence_samples, dtype=np.float32))
         return pieces, None
 
     def _resgatar_por_subdivisao(self, chunk: str, idx: int, eh_ultimo: bool = False):
