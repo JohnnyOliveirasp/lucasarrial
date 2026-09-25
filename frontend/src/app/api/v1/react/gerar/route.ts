@@ -92,6 +92,13 @@ export async function POST(request: NextRequest) {
   if (!LAYOUTS.has(layout)) return badRequest("Layout inválido.");
   if (roteiro.length < 20) return badRequest("Roteiro curto demais.");
   if (!fotoUrl) return badRequest("Falta a foto preparada.");
+  // O áudio é tão obrigatório quanto a foto: sem ele o pedido morria ADIANTE,
+  // depois do insert e do débito — cobrança estimada por palavras, estorno,
+  // alarme de rajada, tudo por um job que já nascia morto (defeito 24/09,
+  // incidente #544: 3 jobs do mesmo aluno em 10min, cada um com débito de
+  // -3.975 e estorno em seguida). Mesma mensagem do caminho tardio, pra tela
+  // do aluno não mudar de texto.
+  if (!audioUrl) return badRequest("Gere o áudio antes (passo da voz).");
 
   const admin = getAdmin();
   const userId = gate.auth.user_id;
@@ -214,9 +221,12 @@ export async function POST(request: NextRequest) {
       ? await trazerParaR2(audioUrl, `${userId}/react/${jobId}/fala.mp3`, "audio/mpeg")
       : null;
     if (!audioKey) {
-      // O débito já saiu lá em cima — job que morre AQUI sem estorno é aluno
-      // pagando por nada (o buraco fechado em 22/09). Só o vencedor do claim
-      // dispara a contingência; o estorno em si é idempotente por contagem.
+      // Com a guarda do `!audioUrl` lá no bloco de validação (24/09), corpo
+      // sem áudio não chega mais aqui — este ramo virou a rede residual do
+      // estorno, e fica DE PROPÓSITO: se algum caminho futuro criar job sem
+      // áudio depois de debitar, o aluno não pode pagar por nada (o buraco
+      // fechado em 22/09). Só o vencedor do claim dispara a contingência;
+      // o estorno em si é idempotente por contagem.
       const reivindicou = await reivindicarFalhaDoReact(admin, jobId, "Falta o áudio da fala.");
       if (reivindicou) {
         await handleTechFailure({
