@@ -6,12 +6,22 @@
  * pro e-mail. A conta só nasce no "Confirmar e Enviar" (Johnny 29/08).
  * Responde `conta_existente` quando o e-mail já é do FastCloner — nesse caso
  * o material é anexado à conta que ele já tem, e nenhuma senha é pedida.
+ *
+ * ⚠️ PORTÃO (Johnny 24/09: "fecha o portão. Só entra quem tem compra
+ * confirmada."): antes desta guarda a tela 1 não conferia compra nenhuma, e
+ * qualquer pessoa com o link entrava e disparava trabalho que gasta GPU. A
+ * régua mora em `lib/sgp/portao-inicio.ts` (pura, testada); o I/O em
+ * `compra-confirmada.ts`. O portão decide ANTES de abrir/gravar a sessão:
+ * barrado não ganha linha em `sgp_pedidos`, não recebe código e lê um texto
+ * que diz o que fazer (o form joga `error.message` direto na tela).
  */
 import type { NextRequest } from "next/server";
 import { badRequest, jsonOk, serverError } from "@/lib/api/responses";
 import { getAdmin } from "@/lib/db/admin";
 import { CODIGO_VALIDADE_MIN, enviarCodigo, gerarCodigo, hashCodigo } from "@/lib/sgp/codigo";
+import { temCompraSgpConfirmada, temPedidoNoPortal } from "@/lib/sgp/compra-confirmada";
 import { EMAIL_RE, problemaNoNome } from "@/lib/sgp/identidade-pure";
+import { portaoDoInicio } from "@/lib/sgp/portao-inicio";
 import { atualizarSessao, pedidoDaSessao } from "@/lib/sgp/sessao";
 import { normalizarWhatsapp } from "@/lib/sgp/types";
 
@@ -42,6 +52,15 @@ export async function POST(request: NextRequest) {
   if (!EMAIL_RE.test(email)) return badRequest("Informe um e-mail válido.");
 
   try {
+    // O PORTÃO, antes de qualquer escrita: sem compra confirmada (e sem já
+    // estar dentro), nada de sessão, nada de linha em `sgp_pedidos`, nada de
+    // código no e-mail. A ordem importa: se o pedido nascesse antes, o barrado
+    // ganharia a linha que a cláusula "já estava dentro" respeita.
+    const temCompra = await temCompraSgpConfirmada(email);
+    const temPedido = temCompra ? false : await temPedidoNoPortal(email);
+    const portao = portaoDoInicio({ temCompraSgp: temCompra, temPedidoAnterior: temPedido });
+    if (portao.acao === "barrar") return badRequest(portao.mensagem);
+
     const pedido = await pedidoDaSessao();
     const codigo = gerarCodigo();
     const existente = await jaTemConta(email);
