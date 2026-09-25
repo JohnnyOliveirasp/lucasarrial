@@ -17,6 +17,7 @@ import { buildAgentReply, type AgentImage } from "@/lib/agent/brain";
 import { buildAccountContext } from "@/lib/agent/account";
 import { extractEscalation } from "@/lib/agent/escalate";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
+import { reabrirPorRespostaDoAluno } from "@/lib/incidents/espera";
 import { entregarAoTime } from "@/lib/incidents/entregar";
 import { sendEmail, escapeHtml } from "@/lib/email/resend";
 import { SUPPORT_EMAIL } from "@/lib/support/failure-alert";
@@ -277,6 +278,14 @@ export async function POST(request: NextRequest) {
     has_image: Boolean(image),
   } as never);
   if (insErr) return serverError("Failed to save message");
+
+  // O aluno respondeu: traz de volta o que estava "aguardando o aluno".
+  // Mesmo padrão do e-mail (mail-respond.ts) e do zap (respond.ts) — este era
+  // o ÚNICO canal sem a válvula (#570): 21 cartões `help:*` estacionados em
+  // aguardando_aluno com o aluno falando no chat e ninguém vendo. Vem ANTES
+  // de gerar a resposta — se a Fast resolver sozinha, o time ainda precisa
+  // ver que ele voltou a falar (chamado #95, a resposta do Luciano no vazio).
+  void reabrirPorRespostaDoAluno({ email: auth.email, trecho: userContent });
 
   // Histórico → formato do cérebro (só content/from_me/sender_name importam).
   const { data: hist } = await admin
