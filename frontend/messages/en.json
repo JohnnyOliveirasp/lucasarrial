@@ -2188,8 +2188,11 @@
       "titulo": "Start a new video?",
       "texto": "Your current video is already saved in “Generated videos” — nothing is lost. The script, audio and scenes of this flow will be cleared so you can start fresh.",
       "confirmar": "Start new",
-      "cancelar": "Stay here"
-    }
+      "cancelar": "Stay here",
+      "atalho": "Start a new video",
+      "textoSemVideo": "The script, audio and scenes of this flow will be cleared so you can start fresh. Videos you already assembled remain saved in “Generated videos”."
+    },
+    "roteiroMudou": "You changed the script, so the audio and video generated from the previous text left this flow — generate new ones in the next steps. Videos you already assembled remain saved in “Generated videos”."
   },
   "roteiro": {
     "eyebrow": "Script",

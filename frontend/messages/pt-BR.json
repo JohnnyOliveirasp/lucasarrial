@@ -2188,8 +2188,11 @@
       "titulo": "Começar um vídeo novo?",
       "texto": "O vídeo atual já está salvo em “Vídeos gerados” — nada se perde. O roteiro, o áudio e as cenas deste fluxo serão limpos pra você começar do zero.",
       "confirmar": "Começar novo",
-      "cancelar": "Continuar aqui"
-    }
+      "cancelar": "Continuar aqui",
+      "atalho": "Começar um vídeo novo",
+      "textoSemVideo": "O roteiro, o áudio e as cenas deste fluxo serão limpos pra você começar do zero. Vídeos já montados continuam salvos em “Vídeos gerados”."
+    },
+    "roteiroMudou": "Você mudou o roteiro, então o áudio e o vídeo gerados com o texto anterior saíram deste fluxo — gere novos nas próximas etapas. Os vídeos já montados continuam salvos em “Vídeos gerados”."
   },
   "roteiro": {
     "eyebrow": "Roteiro",
