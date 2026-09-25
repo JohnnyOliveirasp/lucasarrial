@@ -34,7 +34,11 @@
  * ⚠️ `--status fixed` sem ter resolvido de verdade viola a regra 14. A
  * ferramenta grava o que voce mandar; a honestidade da nota e sua.
  */
-const { supa, STATUS_FECHADO } = require("./_comum.cjs");
+// O `_comum.cjs` e carregado DENTRO do main(), nao aqui: ele puxa dotenv,
+// supabase-js e aws-sdk de `frontend/node_modules` na hora do require, e isso
+// impediria o teste (anotar_incidente.test.cjs) de importar o `resolverId`
+// num worktree limpo, sem npm install e sem rede. Como script, nada muda —
+// o require acontece antes de qualquer efeito, como sempre aconteceu.
 const { resolverIncidente } = require("./_incidente_nota.cjs");
 
 // `aguardando_aluno` ja existia no banco (incidentes 120 e 124) e esta lista o
@@ -103,7 +107,8 @@ function normalizarNotas(atual) {
   return [atual];
 }
 
-(async () => {
+async function main() {
+  const { supa, STATUS_FECHADO } = require("./_comum.cjs");
   const alvo = process.argv[2];
   const nota = arg("--nota");
   const status = arg("--status");
@@ -243,7 +248,18 @@ function normalizarNotas(atual) {
   console.log(`  resolution_note = ${(d.resolution_note || "").length} chars`);
   if (d.resolved_at) console.log(`  resolved_at = ${d.resolved_at}`);
   if (d.resolved_commit) console.log(`  resolved_commit = ${d.resolved_commit}`);
-})().catch((e) => {
-  console.error(`ERRO: ${e.message}`);
-  process.exit(1);
-});
+}
+
+// Exportado pro teste injetar um banco de fixture no MESMO resolvedor que o
+// script usa em producao (o db ja entrava por parametro). Testar uma copia do
+// resolvedor nao serviria: foi exatamente assim que a ferramenta mais usada da
+// casa ficou 5 dias com o defeito que o `_incidente_nota.cjs` ja tinha
+// consertado ao lado (chamado #496).
+module.exports = { resolverId };
+
+if (require.main === module) {
+  main().catch((e) => {
+    console.error(`ERRO: ${e.message}`);
+    process.exit(1);
+  });
+}
