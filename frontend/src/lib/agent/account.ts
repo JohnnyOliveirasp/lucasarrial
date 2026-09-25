@@ -28,6 +28,7 @@ import {
 import { qaVeredito, AVISO_QA_NAO_PROVA } from "@/lib/generations/qa-veredito";
 import { entitlementValeAcesso } from "@/lib/payments/acesso-regra";
 import { fraseDeAcessoParaAgente } from "@/lib/payments/acesso-frase";
+import { blocoSgpParaAgente, type PedidoNoContexto } from "@/lib/agent/sgp-passo";
 
 /** Telefone (dígitos) a partir do JID do chat. @lid → consulta a WAHA. */
 export async function phoneFromJid(jid: string): Promise<string | null> {
@@ -264,6 +265,120 @@ async function linhaGarantiaHotmart(email: string | null): Promise<string> {
 }
 
 /**
+ * A leitura do #315: ÚLTIMO LOGIN + ESTADO DO PEDIDO NO SGP.
+ *
+ * A decisão e todo o texto moram em `sgp-passo.ts` (puro e sob teste, igual
+ * `garantia.ts`); aqui é só banco. As duas consultas que faltavam:
+ *
+ *  1. `auth.users.last_sign_in_at` — ⚠️ NÃO vem de `profiles`. Conferi o
+ *     `information_schema` em 17/09: `profiles` tem 19 colunas e
+ *     `last_sign_in_at` NÃO é uma delas. A coluna é do schema `auth`, que o
+ *     client do Supabase não expõe por `.from()`, então a leitura é pela API de
+ *     admin do Auth (`auth.admin.getUserById`), mesmo caminho de
+ *     `lib/api/auth.ts:87`. Vale registrar porque existem scripts em `_frank/`
+ *     fazendo `profiles.select("last_sign_in_at")` — isso não lê nada.
+ *
+ *  2. `sgp_pedidos` POR CONTA **E POR E-MAIL**, e o "e por e-mail" é o ponto
+ *     inteiro: `user_id` só é preenchido no "Confirmar e Enviar". Medido em
+ *     17/09, 311 pedidos: dos 214 sem `user_id`, TODOS estão em passo de wizard
+ *     (dados 107 · foto 83 · audio 22 · revisao 2) e os 96 `pronto` têm todos
+ *     `user_id`. Buscar só por conta, como faz `sgp/pedido.lerPedido`, acharia
+ *     apenas pedido já finalizado e seria cego aos 214 em andamento — que são
+ *     exatamente os casos em que "em que passo ele está?" importa. 136 desses
+ *     214 têm perfil casável por e-mail hoje.
+ *
+ * Best-effort igual ao resto do arquivo, mas com uma diferença que é decisão:
+ * falha de leitura NÃO vira "não tem pedido". Vira "não consegui ler", que leva
+ * a Fast a escalar — princípio do #282, e o oposto exato do #315, onde a
+ * ausência de dado virou afirmação sobre onde o material estava.
+ */
+async function blocoDoSgp(profileId: string, email: string | null): Promise<string> {
+  const admin = getAdmin();
+
+  let ultimoLogin: string | null = null;
+  let loginDesconhecido = false;
+  try {
+    const { data, error } = await admin.auth.admin.getUserById(profileId);
+    if (error) throw error;
+    ultimoLogin = data.user?.last_sign_in_at ?? null;
+  } catch {
+    loginDesconhecido = true;
+  }
+
+  let pedidos: PedidoNoContexto[] = [];
+  let pedidosDesconhecidos = false;
+  try {
+    // `select("*")` de propósito: as colunas opcionais do SGP (migrations
+    // 106/109/110/116) podem não existir na base, e nomeá-las derrubaria a
+    // consulta inteira. Ver o comentário de `SgpPedidoRow`.
+    const [porConta, porEmail] = await Promise.all([
+      admin.from("sgp_pedidos" as never).select("*").eq("user_id", profileId),
+      email
+        ? admin.from("sgp_pedidos" as never).select("*").ilike("email", email)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (porConta.error) throw porConta.error;
+    if (porEmail.error) throw porEmail.error;
+
+    type Linha = {
+      id: string;
+      user_id: string | null;
+      email: string | null;
+      status: PedidoNoContexto["status"];
+      criado_em: string | null;
+      atualizado_em: string | null;
+      enviado_em: string | null;
+      email_verificado_at: string | null;
+      codigo_expira_em: string | null;
+      erro: string | null;
+      fotos: unknown[] | null;
+      audios: unknown[] | null;
+    };
+
+    // ⚠️ O `ilike` acima é só pra não depender da caixa do e-mail gravado; a
+    // igualdade de verdade é conferida aqui, em minúsculas e por inteiro.
+    // Motivo: em `ilike` o `_` é CURINGA de um caractere, e e-mail com
+    // underscore (`joao_silva@x.com`) casaria com o endereço de outra pessoa.
+    // Anexar o pedido de um terceiro a esta conta seria pior que não achar
+    // nenhum, então o filtro é estrito.
+    //
+    // NÃO uso a normalização de Gmail (`sgp/compradores.chaveEmail`) aqui: ela
+    // funde pontos e `+tag`, o que ALARGA o casamento. Num painel interno isso
+    // desduplica; num contexto que a Fast usa pra afirmar o que chegou, alargar
+    // é arriscar falar do material de outra pessoa. Conservador nas duas pontas.
+    const alvo = (email ?? "").trim().toLowerCase();
+    const vistos = new Set<string>();
+    for (const linha of [
+      ...((porConta.data ?? []) as unknown as Linha[]),
+      ...((porEmail.data ?? []) as unknown as Linha[]),
+    ]) {
+      const daConta = linha.user_id === profileId;
+      const doEmail = !!alvo && (linha.email ?? "").trim().toLowerCase() === alvo;
+      if (!daConta && !doEmail) continue;
+      if (vistos.has(linha.id)) continue;
+      vistos.add(linha.id);
+      pedidos.push({
+        status: linha.status,
+        criado_em: linha.criado_em,
+        atualizado_em: linha.atualizado_em,
+        enviado_em: linha.enviado_em,
+        email_verificado_at: linha.email_verificado_at,
+        codigo_expira_em: linha.codigo_expira_em,
+        erro: linha.erro,
+        fotos: Array.isArray(linha.fotos) ? linha.fotos.length : 0,
+        audios: Array.isArray(linha.audios) ? linha.audios.length : 0,
+        porEmail: !daConta,
+      });
+    }
+  } catch {
+    pedidos = [];
+    pedidosDesconhecidos = true;
+  }
+
+  return blocoSgpParaAgente({ pedidos, ultimoLogin, loginDesconhecido, pedidosDesconhecidos });
+}
+
+/**
  * Snapshot compacto da conta pro system prompt da Fast (SÓ leitura).
  * Últimos jobs de cada produto + saldo + transações recentes de crédito.
  */
@@ -362,9 +477,14 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       new Date().toISOString(),
     );
 
-    // Nunca deixa de sair: a função já devolve a linha de ESCALAR em qualquer
-    // falha. É a ausência desta linha que produziu o #198.
-    const garantia = await linhaGarantiaHotmart(profile.email);
+    // Nunca deixa de sair: as duas funções já devolvem a linha de ESCALAR (ou
+    // de "não consegui ler") em qualquer falha. É a ausência da primeira que
+    // produziu o #198, e a da segunda que produziu o #315. Em paralelo porque
+    // são leituras independentes e este caminho está no meio de uma resposta.
+    const [garantia, blocoSgp] = await Promise.all([
+      linhaGarantiaHotmart(profile.email),
+      blocoDoSgp(profileId, profile.email),
+    ]);
 
     // Pix/boleto pendente: MESMA janela de 3 dias que o /app já aplica em
     // `app/layout.tsx` (`pendingRecent`). Aqui a checagem era um null check CRU
@@ -401,6 +521,13 @@ export async function buildAccountContext(profileId: string): Promise<string | n
       `Plano: ${profile.plan} · Acesso: ${acesso}${linhaPendente}`,
       `Saldo: ${saldo.toLocaleString("pt-BR")} créditos (${(profile.credits_subscription ?? 0).toLocaleString("pt-BR")} do plano + ${(profile.credits_extra ?? 0).toLocaleString("pt-BR")} avulsos)`,
       `Cadastro em: ${dtBR(profile.created_at)}`,
+      // Fica JUNTO dos fatos de identidade/acesso e ANTES da lista de trabalhos
+      // de propósito: é a lista vazia ("Nenhum trabalho ainda (conta sem uso)")
+      // que cria o enquadramento "o material deve estar em algum menu do app",
+      // e no #315 a Fast afirmou isso CONTRA o dado presente. O enquadramento
+      // certo — onde o pedido do SGP está, e se ele consegue entrar na conta —
+      // tem que chegar antes.
+      blocoSgp,
       garantia,
       jobs.length ? `Últimos trabalhos (3 por produto):\n${jobLines(jobs)}` : "Nenhum trabalho ainda (conta sem uso).",
       // O aviso só sai quando há ressalva na lista — sem ele, "esta tem
