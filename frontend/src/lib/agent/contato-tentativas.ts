@@ -53,14 +53,80 @@ export type TentativaDeContato = {
 };
 
 /**
- * O veredito de UMA tentativa. Três estados, e a fronteira entre os dois
- * últimos é só TEMPO decorrido:
- *  - `nao-chegou`         → voltou bounce. É PROVA.
+ * O veredito de UMA tentativa. Quatro estados; a fronteira entre
+ * `aguardando-veredito` e `sem-bounce` é só TEMPO decorrido:
+ *  - `nao-chegou`         → voltou bounce CARIMBADO no ledger. É PROVA.
+ *  - `bounce-sem-registro`→ o ledger não tem carimbo, mas o CARTÃO da ficha
+ *                           disparou DEPOIS deste envio. Também é prova de que
+ *                           não chegou — só que a prova está na outra fonte.
  *  - `aguardando-veredito`→ saiu há pouco e não voltou nada. Cedo pra concluir.
  *  - `sem-bounce`         → saiu há tempo suficiente e não voltou nada.
  *                           Evidência forte de que entrou. NÃO é prova.
  */
-export type VeredictoTentativa = "nao-chegou" | "aguardando-veredito" | "sem-bounce";
+export type VeredictoTentativa = "nao-chegou" | "bounce-sem-registro" | "aguardando-veredito" | "sem-bounce";
+
+/**
+ * ── POR QUE `bounce-sem-registro` EXISTE (medido em 25/09, dois casos) ──────
+ *
+ * Este módulo lia UMA fonte: `emails_enviados.bounce_em`. Quando essa coluna
+ * está NULL ele conclui "sem bounce ⇒ entrou ⇒ NÃO REENVIE". A conclusão é
+ * boa quando a fonte é completa, e a fonte NÃO é completa.
+ *
+ * O caso que provou (#460, thallitamachado@hotmail.com): carta reenviada em
+ * 18/09 15:27:54Z, `bounce_em` NULL — ledger limpo, convidando a ler
+ * "entregue". Mas o `last_seen_at` do PRÓPRIO CARTÃO é 18/09 15:30:04Z, dois
+ * minutos e meio DEPOIS do envio, e `occurrences` subiu pra 2. Quem disparou o
+ * cartão foi o detector de bounce: a carta bateu na mesma caixa cheia e foi o
+ * LEDGER que não carimbou. A ficha seguiu dizendo "NÃO REENVIE, entrou".
+ *
+ * O segundo (#250, andy.silvestre@icloud.com, 21 dias): carta 14/09 19:45:25Z,
+ * `bounce_em` NULL, cartão disparado 14/09 19:50:04Z — 4,7 minutos depois,
+ * `occurrences` 4. Cada ronda que abriu essa ficha leu "NÃO REENVIE" sobre um
+ * pagante de R$ 733,60 que nunca recebeu carta nenhuma.
+ *
+ * A REGRA, e ela não depende de interpretação: se o cartão da ficha foi visto
+ * DEPOIS de um envio, então houve bounce depois daquele envio. Ausência de
+ * carimbo no ledger deixa de ser evidência de entrega no instante em que a
+ * outra fonte diz que algo bateu.
+ *
+ * ⚠️ ISTO NÃO SUBSTITUI O CARIMBO, e a diferença importa: `nao-chegou` diz
+ * QUAL foi a recusa (classe, diagnóstico cru); `bounce-sem-registro` diz só que
+ * houve UMA. É prova de negativa, não descrição do defeito. Quem for consertar
+ * o detector de bounce continua precisando do carimbo.
+ *
+ * ⚠️ E ELE NÃO INVENTA NADA QUANDO A INFORMAÇÃO FALTA: sem `fichaVistaEm`, o
+ * módulo se comporta exatamente como antes. Quem não passa a última notícia do
+ * cartão não recebe veredito novo — recebe o veredito velho, que é o que ele
+ * tem como sustentar.
+ */
+
+/**
+ * A ATRIBUIÇÃO: qual das cartas o disparo do cartão acusa.
+ *
+ * O cartão só tem UM `last_seen_at`, então ele acusa UMA carta: a última que
+ * saiu ANTES dele. Carta posterior ao disparo não é acusada por ele — ela tem
+ * o próprio veredito, pelo tempo.
+ *
+ * Sem esta atribuição o mesmo disparo condenaria todas as cartas anteriores da
+ * ficha, inclusive as que comprovadamente entraram, e a lista viraria ficção.
+ */
+function indiceAcusadoPeloCartao(tentativas: TentativaDeContato[], fichaVistaEm: string | null): number {
+  if (!fichaVistaEm) return -1;
+  const visto = new Date(fichaVistaEm).getTime();
+  if (!Number.isFinite(visto)) return -1;
+  let alvo = -1;
+  for (let i = 0; i < tentativas.length; i++) {
+    const enviado = new Date(tentativas[i].enviadoEm).getTime();
+    // Data ilegível não pode ser acusada nem inocentada: fica de fora.
+    if (!Number.isFinite(enviado)) continue;
+    if (enviado < visto) alvo = i;
+    else break;
+  }
+  // Carta que JÁ tem carimbo não precisa ser acusada por dedução — o carimbo
+  // é a prova melhor, e sobrescrevê-lo perderia a classe do bounce.
+  if (alvo >= 0 && tentativas[alvo].bounceEm) return -1;
+  return alvo;
+}
 
 /**
  * Quanto tempo esperar antes de tratar o silêncio como evidência de entrega.
@@ -116,23 +182,72 @@ export function veredictoDaTentativa(
   return agoraMs - enviado >= janelaMs ? "sem-bounce" : "aguardando-veredito";
 }
 
-/** Uma linha da lista, já em português de gente. */
+/**
+ * Uma linha da lista, já em português de gente.
+ *
+ * `veredictoDado` existe porque `bounce-sem-registro` NÃO se deduz da tentativa
+ * sozinha — ele depende do cartão inteiro (qual carta o disparo acusa). Quem já
+ * fez essa conta passa o resultado; quem não passou recebe o cálculo local de
+ * sempre. É o mesmo motivo de `resumirContato` guardar os vereditos: a conta
+ * tem que ser feita UMA vez, senão a lista e a recomendação divergem.
+ */
 export function descreverTentativa(
   t: TentativaDeContato,
   indice: number,
   agoraMs: number,
   janelaMs: number = JANELA_VEREDITO_MS,
+  veredictoDado?: VeredictoTentativa,
+  fichaVistaEm?: string | null,
 ): string {
-  const v = veredictoDaTentativa(t, agoraMs, janelaMs);
+  const v = veredictoDado ?? veredictoDaTentativa(t, agoraMs, janelaMs);
   const canal = t.origem ? `e-mail (${t.origem})` : "e-mail";
   const veredicto =
     v === "nao-chegou"
       ? `NÃO CHEGOU${t.bounceClasse ? ` (${t.bounceClasse})` : ""} — bounce em ${momento(t.bounceEm as string)}`
-      : v === "sem-bounce"
-        ? `sem bounce ${idade(t.enviadoEm, agoraMs)} — evidência de que entrou (NÃO é prova de leitura)`
-        : `SEM VEREDITO AINDA — saiu ${idade(t.enviadoEm, agoraMs)}, cedo pra concluir`;
+      : v === "bounce-sem-registro"
+        ? `NÃO CHEGOU — ${textoDoDisparo(t, fichaVistaEm ?? null, janelaMs)}`
+        : v === "sem-bounce"
+          ? `sem bounce ${idade(t.enviadoEm, agoraMs)} — evidência de que entrou (NÃO é prova de leitura)`
+          : `SEM VEREDITO AINDA — saiu ${idade(t.enviadoEm, agoraMs)}, cedo pra concluir`;
   const assunto = t.assunto ? ` · "${t.assunto}"` : "";
   return ` ${indice}. ${momento(t.enviadoEm)} · ${canal}${assunto} · ${veredicto}`;
+}
+
+/**
+ * O texto do disparo, e ele MUDA conforme a distância — porque o que está
+ * provado muda conforme a distância, e escrever a frase forte nos dois casos
+ * seria exatamente o exagero que este módulo cobra dos outros.
+ *
+ * DENTRO da janela (bounce volta em segundos, n=3 medido): o disparo é desta
+ * carta. Diz-se isso.
+ *
+ * FORA da janela: o cartão disparou, então existe bounce — mas pode ser de uma
+ * carta que o ledger nem conhece (o registro só começa em 14/09 14:06Z). O que
+ * se afirma então é o negativo honesto: a lista está incompleta e o silêncio do
+ * ledger não sustenta "entrou".
+ */
+function textoDoDisparo(t: TentativaDeContato, fichaVistaEm: string | null, janelaMs: number): string {
+  const base =
+    `o ledger não carimbou bounce, mas o CARTÃO desta ficha disparou` +
+    (fichaVistaEm ? ` em ${momento(fichaVistaEm)}` : ``) +
+    `, depois deste envio`;
+  const enviado = new Date(t.enviadoEm).getTime();
+  const visto = fichaVistaEm ? new Date(fichaVistaEm).getTime() : NaN;
+  if (!Number.isFinite(enviado) || !Number.isFinite(visto)) {
+    return `${base}. Ausência de carimbo NÃO é prova de entrega.`;
+  }
+  const delta = visto - enviado;
+  if (delta <= janelaMs) {
+    const min = Math.max(1, Math.round(delta / 60000));
+    return (
+      `${base} (${min}min — dentro da janela em que bounce volta). ` +
+      `É o bounce DESTA carta, e foi o ledger que não registrou.`
+    );
+  }
+  return (
+    `${base} (${idade(t.enviadoEm, visto).replace(/^há /, "")} depois — FORA da janela de ${Math.round(janelaMs / 60000)}min). ` +
+    `Existe bounce que o ledger não conhece: a lista acima está incompleta e o silêncio dela não sustenta "entrou".`
+  );
 }
 
 /** O que a ficha deve RECOMENDAR, olhando o histórico inteiro. */
@@ -141,6 +256,11 @@ export type Recomendacao =
   | "nao-reenviar-ja-entrou"
   /** 2+ falhas seguidas sem nenhuma entrada: e-mail não alcança esta pessoa. */
   | "parar-por-email-usar-canal-externo"
+  /**
+   * o cartão disparou depois do último envio e o ledger não carimbou: a última
+   * carta NÃO chegou, ao contrário do que a ausência de bounce sugeria.
+   */
+  | "cartao-disparou-depois-do-envio"
   /** saiu algo há pouco: espere o veredito antes de decidir qualquer coisa. */
   | "esperar-veredito"
   /** sem histórico utilizável — segue a orientação padrão da classe. */
@@ -148,13 +268,27 @@ export type Recomendacao =
 
 export type ResumoDeContato = {
   tentativas: TentativaDeContato[];
+  /**
+   * o veredito de CADA tentativa, na ordem de `tentativas`. Guardado porque
+   * `bounce-sem-registro` depende do cartão inteiro e não se rededuz de uma
+   * tentativa isolada: recalcular na hora de imprimir faria a lista dizer uma
+   * coisa e a recomendação outra.
+   */
+  vereditos: VeredictoTentativa[];
   /** veredito da tentativa MAIS RECENTE; `null` quando não há tentativa. */
   ultimoVeredicto: VeredictoTentativa | null;
-  /** quantas falhas comprovadas existem no histórico. */
+  /**
+   * quantas falhas comprovadas existem no histórico — carimbadas no ledger
+   * (`nao-chegou`) MAIS as provadas pelo disparo do cartão
+   * (`bounce-sem-registro`). As duas são prova de que não chegou; contar só a
+   * primeira foi o que deixou a regra de parada cega em #250 e #460.
+   */
   naoChegaram: number;
   recomendacao: Recomendacao;
   /** o registro de envios cobre o período desta ficha? */
   cobertura: "completa" | "parcial";
+  /** `last_seen_at` do cartão, quando quem chamou o tinha. */
+  fichaVistaEm: string | null;
 };
 
 /**
@@ -163,16 +297,24 @@ export type ResumoDeContato = {
  * `fichaDesde` é o `first_seen_at` da ficha: é ele que denuncia a cobertura
  * parcial. Uma ficha de 10/09 com lista vazia NÃO é uma pessoa que nunca foi
  * contatada — é o registro que não existia ainda.
+ *
+ * `fichaVistaEm` é o `last_seen_at` do cartão: a SEGUNDA fonte. É ele que
+ * desmente o silêncio do ledger quando o detector de bounce disparou depois do
+ * envio (ver o bloco de `bounce-sem-registro` acima). Opcional de propósito —
+ * quem não tem essa informação recebe exatamente o comportamento antigo, em vez
+ * de um veredito construído sobre `undefined`.
  */
 export function resumirContato(args: {
   tentativas: TentativaDeContato[];
   fichaDesde: string | null;
   agoraMs: number;
+  fichaVistaEm?: string | null;
   cobreDesde?: string;
   janelaMs?: number;
 }): ResumoDeContato {
   const { agoraMs, janelaMs = JANELA_VEREDITO_MS } = args;
   const cobreDesde = args.cobreDesde ?? EMAILS_ENVIADOS_COBRE_DESDE;
+  const fichaVistaEm = args.fichaVistaEm ?? null;
 
   const tentativas = [...args.tentativas].sort(
     (a, b) => new Date(a.enviadoEm).getTime() - new Date(b.enviadoEm).getTime(),
@@ -187,25 +329,40 @@ export function resumirContato(args: {
       : "completa";
 
   if (!tentativas.length) {
-    return { tentativas, ultimoVeredicto: null, naoChegaram: 0, recomendacao: "sem-historico", cobertura };
+    return {
+      tentativas,
+      vereditos: [],
+      ultimoVeredicto: null,
+      naoChegaram: 0,
+      recomendacao: "sem-historico",
+      cobertura,
+      fichaVistaEm,
+    };
   }
 
   const vereditos = tentativas.map((t) => veredictoDaTentativa(t, agoraMs, janelaMs));
+  // A segunda fonte entra AQUI, e só sobre a carta que o disparo acusa.
+  const acusada = indiceAcusadoPeloCartao(tentativas, fichaVistaEm);
+  if (acusada >= 0) vereditos[acusada] = "bounce-sem-registro";
+
   const ultimoVeredicto = vereditos[vereditos.length - 1] ?? null;
-  const naoChegaram = vereditos.filter((v) => v === "nao-chegou").length;
+  const naoChegaram = vereditos.filter((v) => v === "nao-chegou" || v === "bounce-sem-registro").length;
 
   const recomendacao: Recomendacao =
     ultimoVeredicto === "sem-bounce"
       ? "nao-reenviar-ja-entrou"
       : ultimoVeredicto === "aguardando-veredito"
         ? "esperar-veredito"
-        : // Último é "nao-chegou". Duas falhas comprovadas já bastam: insistir
-          // pelo mesmo caminho é o que a regra de parada existe pra impedir.
+        : // Último NÃO CHEGOU (carimbado ou provado pelo disparo do cartão).
+          // Duas falhas comprovadas já bastam pra parar: insistir pelo mesmo
+          // caminho é o que a regra de parada existe pra impedir.
           naoChegaram >= 2
           ? "parar-por-email-usar-canal-externo"
-          : "sem-historico";
+          : ultimoVeredicto === "bounce-sem-registro"
+            ? "cartao-disparou-depois-do-envio"
+            : "sem-historico";
 
-  return { tentativas, ultimoVeredicto, naoChegaram, recomendacao, cobertura };
+  return { tentativas, vereditos, ultimoVeredicto, naoChegaram, recomendacao, cobertura, fichaVistaEm };
 }
 
 /**
@@ -233,6 +390,15 @@ export function passoDoHistorico(r: ResumoDeContato, agoraMs: number): string | 
         `${momento(ultima.bounceEm ?? ultima.enviadoEm)}. Enquanto isso não mudar, ela não recebe NADA nosso ` +
         `— use canal externo (telefone/WhatsApp do cadastro ou da Hotmart). Canal externo em nome da casa ` +
         `precisa de aval humano; registre o pedido em vez de disparar sozinho.`
+      );
+    case "cartao-disparou-depois-do-envio":
+      return (
+        `A ÚLTIMA MENSAGEM NÃO CHEGOU — e o ledger não mostra isso. Ela saiu em ` +
+        `${momento(ultima.enviadoEm)} com \`bounce_em\` vazio, mas o CARTÃO desta ficha foi visto em ` +
+        `${momento(r.fichaVistaEm ?? ultima.enviadoEm)}, DEPOIS do envio: quem levanta o cartão é o detector ` +
+        `de bounce, então algo bateu e não foi carimbado. ⚠️ NÃO leia a ausência de bounce como entrega — foi ` +
+        `essa leitura que deixou #250 parado 21 dias. Trate como falha de entrega: uma tentativa nova por ` +
+        `e-mail é legítima (a caixa pode ter esvaziado), e se ela também não chegar, canal externo.`
       );
     case "esperar-veredito":
       return (
@@ -273,7 +439,12 @@ export function blocoDeTentativas(r: ResumoDeContato, agoraMs: number, cobreDesd
 
   return [
     `TENTATIVAS DE CONTATO (${r.tentativas.length}):`,
-    ...r.tentativas.map((t, i) => descreverTentativa(t, i + 1, agoraMs)),
+    // Os vereditos vêm do resumo, NÃO são recalculados aqui: `bounce-sem-registro`
+    // depende do cartão inteiro, e recalcular por tentativa faria esta lista
+    // contradizer o `PRÓXIMO PASSO` logo abaixo dela.
+    ...r.tentativas.map((t, i) =>
+      descreverTentativa(t, i + 1, agoraMs, undefined, r.vereditos[i], r.fichaVistaEm),
+    ),
     ...avisoCobertura,
   ];
 }

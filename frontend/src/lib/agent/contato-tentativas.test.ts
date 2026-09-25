@@ -254,3 +254,183 @@ test("descrição fora do formato volta INTACTA (não adivinha onde enfiar o blo
   assert.equal(reescreverFichaDeBounce(estranha, resumoDe([B1, B2, OK3]), AGORA), estranha);
   assert.equal(reescreverFichaDeBounce("", resumoDe([B1]), AGORA), "");
 });
+
+// ---------- A SEGUNDA FONTE: o cartão desmente o silêncio do ledger ----------
+//
+// Os dois casos abaixo são REAIS e foram medidos em 25/09 contra produção. O
+// que eles têm em comum: `bounce_em` NULL no ledger e o cartão da ficha
+// disparado DEPOIS do envio. Antes deste conserto os dois liam "NÃO REENVIE,
+// entrou" — sobre gente que não recebeu carta nenhuma.
+
+/** #250 — andy.silvestre@icloud.com, 21 dias parado, pagante de R$ 733,60. */
+const ENVIO_250 = "2026-09-14T19:45:25.000Z";
+const CARTAO_250 = "2026-09-14T19:50:04.856Z"; // 4,7 min depois do envio
+
+test("CASO #250: cartão disparou 4,7min depois do envio ⇒ a carta NÃO chegou", () => {
+  const r = resumirContato({
+    tentativas: [semBounce(ENVIO_250, "reconciliado-da-pasta")],
+    fichaDesde: "2026-09-04T17:20:03Z",
+    fichaVistaEm: CARTAO_250,
+    agoraMs: AGORA,
+  });
+  assert.equal(r.ultimoVeredicto, "bounce-sem-registro");
+  assert.equal(r.recomendacao, "cartao-disparou-depois-do-envio");
+  // Uma falha comprovada, mesmo sem carimbo: é isso que a regra de parada conta.
+  assert.equal(r.naoChegaram, 1);
+
+  const passo = passoDoHistorico(r, AGORA) ?? "";
+  assert.match(passo, /NÃO CHEGOU/);
+  // O que não pode voltar NUNCA: a frase que segurou o caso por 21 dias.
+  assert.doesNotMatch(passo, /NÃO REENVIE POR E-MAIL/);
+  assert.doesNotMatch(passo, /evidência de que ela ENTROU/);
+});
+
+test("CASO #250: a linha da tentativa diz que foi o LEDGER que falhou, não o aluno", () => {
+  const r = resumirContato({
+    tentativas: [semBounce(ENVIO_250, "reconciliado-da-pasta")],
+    fichaDesde: "2026-09-04T17:20:03Z",
+    fichaVistaEm: CARTAO_250,
+    agoraMs: AGORA,
+  });
+  const bloco = blocoDeTentativas(r, AGORA).join("\n");
+  assert.match(bloco, /NÃO CHEGOU/);
+  assert.match(bloco, /o ledger não carimbou bounce/);
+  assert.match(bloco, /dentro da janela/);
+  // A lista e o passo não podem discordar: era o risco de recalcular o veredito
+  // na hora de imprimir.
+  assert.doesNotMatch(bloco, /evidência de que entrou/);
+});
+
+/** #460 — thallitamachado@hotmail.com: 1 bounce carimbado + 1 sem registro. */
+test("CASO #460: carimbado + sem-registro somam 2 falhas ⇒ canal externo", () => {
+  const r = resumirContato({
+    tentativas: [
+      bounce("2026-09-17T21:48:47Z", "2026-09-17T21:50:04Z", "ronda-manual"),
+      semBounce("2026-09-18T15:27:54Z", "reconciliado-da-pasta"),
+    ],
+    fichaDesde: "2026-09-17T21:50:04Z",
+    fichaVistaEm: "2026-09-18T15:30:04.644Z", // 2,2 min depois do reenvio
+    agoraMs: Date.parse("2026-09-25T20:00:00.000Z"),
+  });
+  assert.deepEqual(r.vereditos, ["nao-chegou", "bounce-sem-registro"]);
+  assert.equal(r.naoChegaram, 2);
+  assert.equal(r.recomendacao, "parar-por-email-usar-canal-externo");
+  assert.match(passoDoHistorico(r, Date.parse("2026-09-25T20:00:00.000Z")) ?? "", /canal externo/);
+});
+
+test("disparo LONGE do envio não finge precisão que não tem", () => {
+  // #447 (elianecaurim@ig.com.br): o cartão disparou 48h depois da carta. Isso
+  // prova que existe bounce que o ledger não conhece — NÃO prova que foi ESTA
+  // carta que bateu. O texto tem que dizer a coisa mais fraca.
+  const agora = Date.parse("2026-09-25T20:00:00.000Z");
+  const r = resumirContato({
+    tentativas: [semBounce("2026-09-15T11:27:48Z", "ronda-manual-retroativo")],
+    fichaDesde: "2026-09-17T11:35:05Z",
+    fichaVistaEm: "2026-09-17T11:35:05.762Z",
+    agoraMs: agora,
+  });
+  assert.equal(r.ultimoVeredicto, "bounce-sem-registro");
+  const bloco = blocoDeTentativas(r, agora).join("\n");
+  assert.match(bloco, /FORA da janela/);
+  assert.match(bloco, /a lista acima está incompleta/);
+  // Não pode afirmar que foi esta carta.
+  assert.doesNotMatch(bloco, /É o bounce DESTA carta/);
+});
+
+// ---------- os controles: o conserto não pode disparar sozinho ----------
+
+test("CONTROLE #338 (Valdeni): cartão visto ANTES da última carta segue NÃO REENVIE", () => {
+  // É o caso original do módulo, e ele tem que continuar passando. O cartão
+  // dela parou em 10/09; as cartas de 15/09 e 23/09 são POSTERIORES ao último
+  // disparo, então o silêncio delas é evidência legítima de entrada.
+  const agora = Date.parse("2026-09-25T20:00:00.000Z");
+  const r = resumirContato({
+    tentativas: [
+      bounce("2026-09-10T12:22:03Z", "2026-09-10T12:22:12Z"),
+      bounce("2026-09-10T22:08:05Z", "2026-09-10T22:08:13Z"),
+      semBounce("2026-09-15T23:26:22Z"),
+      semBounce("2026-09-23T22:06:53Z"),
+    ],
+    fichaDesde: "2026-09-10T12:25:04Z",
+    fichaVistaEm: "2026-09-10T22:10:04.701Z",
+    agoraMs: agora,
+  });
+  assert.equal(r.ultimoVeredicto, "sem-bounce");
+  assert.equal(r.recomendacao, "nao-reenviar-ja-entrou");
+  assert.match(passoDoHistorico(r, agora) ?? "", /NÃO REENVIE POR E-MAIL/);
+});
+
+test("CONTROLE: carta que JÁ tem carimbo não é reclassificada pelo disparo", () => {
+  // #464 (pc.sul157@gmail.com): o cartão disparou no mesmo minuto do bounce
+  // carimbado. Sobrescrever o carimbo perderia a CLASSE do bounce, que é o que
+  // diz qual é o defeito.
+  const agora = Date.parse("2026-09-25T20:00:00.000Z");
+  const r = resumirContato({
+    tentativas: [bounce("2026-09-16T10:49:49Z", "2026-09-18T10:55:04Z", "ronda-manual")],
+    fichaDesde: "2026-09-18T10:55:06Z",
+    fichaVistaEm: "2026-09-18T10:55:06.117Z",
+    agoraMs: agora,
+  });
+  assert.deepEqual(r.vereditos, ["nao-chegou"]);
+  assert.match(blocoDeTentativas(r, agora).join("\n"), /caixa-cheia/);
+});
+
+test("CONTROLE: o disparo acusa UMA carta, não todas as anteriores", () => {
+  // Cartão disparado ENTRE duas cartas: a primeira é acusada, a segunda tem o
+  // próprio veredito pelo tempo. Sem esta atribuição, um disparo condenaria
+  // cartas que comprovadamente entraram e a lista viraria ficção.
+  const agora = Date.parse("2026-09-25T20:00:00.000Z");
+  const r = resumirContato({
+    tentativas: [semBounce("2026-09-18T10:00:00Z"), semBounce("2026-09-20T10:00:00Z")],
+    fichaDesde: "2026-09-18T09:00:00Z",
+    fichaVistaEm: "2026-09-18T10:02:00Z",
+    agoraMs: agora,
+  });
+  assert.deepEqual(r.vereditos, ["bounce-sem-registro", "sem-bounce"]);
+  assert.equal(r.recomendacao, "nao-reenviar-ja-entrou");
+});
+
+test("CONTROLE: sem fichaVistaEm, o comportamento é EXATAMENTE o de antes", () => {
+  // O conserto não pode inventar veredito a partir de informação ausente —
+  // quem não passa a última notícia do cartão recebe o módulo velho.
+  const r = resumirContato({
+    tentativas: [semBounce(ENVIO_250, "reconciliado-da-pasta")],
+    fichaDesde: "2026-09-04T17:20:03Z",
+    agoraMs: AGORA,
+  });
+  assert.equal(r.ultimoVeredicto, "sem-bounce");
+  assert.equal(r.recomendacao, "nao-reenviar-ja-entrou");
+  assert.equal(r.fichaVistaEm, null);
+});
+
+test("CONTROLE: fichaVistaEm ilegível não vira acusação", () => {
+  const r = resumirContato({
+    tentativas: [semBounce(ENVIO_250, "reconciliado-da-pasta")],
+    fichaDesde: "2026-09-04T17:20:03Z",
+    fichaVistaEm: "carimbo-que-nao-existe",
+    agoraMs: AGORA,
+  });
+  assert.equal(r.ultimoVeredicto, "sem-bounce");
+  assert.equal(r.recomendacao, "nao-reenviar-ja-entrou");
+});
+
+test("a ficha gravada do #250 deixa de mandar NÃO REENVIE ao ser relida", () => {
+  const ficha = [
+    "A resposta do suporte@ para andy.silvestre@icloud.com NÃO foi entregue: a caixa do destinatário está sem espaço (falha temporária).",
+    "",
+    "PRÓXIMO PASSO: Tentar de novo mais tarde costuma funcionar.",
+    "",
+    "Assunto que não chegou: Anderson, 4a tentativa: sua conta do Sistema de Geracao Pronto",
+  ].join("\n");
+  const r = resumirContato({
+    tentativas: [semBounce(ENVIO_250, "reconciliado-da-pasta")],
+    fichaDesde: "2026-09-04T17:20:03Z",
+    fichaVistaEm: CARTAO_250,
+    agoraMs: AGORA,
+  });
+  const lida = reescreverFichaDeBounce(ficha, r, AGORA);
+  assert.match(lida, /PRÓXIMO PASSO: A ÚLTIMA MENSAGEM NÃO CHEGOU/);
+  assert.doesNotMatch(lida, /NÃO REENVIE POR E-MAIL/);
+  // O rodapé da ficha (o diagnóstico cru) segue intacto.
+  assert.match(lida, /Assunto que não chegou:/);
+});
