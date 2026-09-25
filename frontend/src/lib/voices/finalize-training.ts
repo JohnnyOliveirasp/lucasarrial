@@ -25,6 +25,12 @@ import {
 } from "@/lib/voices/falha-de-treino";
 import { abrirChamadoReportado } from "@/lib/incidents/reportar";
 import {
+  assinaturaDaReferencia,
+  avaliarReferencia,
+  descricaoDaReferencia,
+  tituloDaReferencia,
+} from "@/lib/voices/referencia-ausente";
+import {
   classifyCause,
   ehChunkDoDatasetInvalido,
   errorSignature,
@@ -47,6 +53,15 @@ export type TrainOutput = {
   lora_uploaded?: boolean;
   reference_uploaded?: boolean;
   reference_transcript?: string | null;
+  /**
+   * POR QUE a referência não saiu ("no normalized audio to slice the reference
+   * from", "reference selection/transcription returned empty"...). O worker
+   * manda isto desde sempre (`train.py:_resultado`) e, até 20/09/2026, NENHUM
+   * lugar do frontend lia: `training_jobs` não guarda o payload, então a pista
+   * morria na memória do processo. Hoje vai inteira para o chamado aberto por
+   * `abrirChamadoDeReferenciaAusente` — sem ela o chamado nasce cego.
+   */
+  reference_error?: string | null;
   /**
    * Pausa natural medida no áudio de quem gravou (worker: voice_pipeline.pacing).
    * Vira o `tts_silence_ms` da voz. `null`/ausente = não deu pra medir com
@@ -490,6 +505,81 @@ async function registrarModoDeCorte(
 }
 
 /**
+ * Treino DEU CERTO mas a voz ficou sem referência usável → chamado TÉCNICO.
+ *
+ * A decisão (é defeito? qual classe? o que escrever?) mora inteira no módulo
+ * PURO `referencia-ausente.ts`, que tem teste de verdade. Aqui fica só o I/O.
+ *
+ * Best-effort, como todo o resto da finalização depois do UPDATE da voz: a voz
+ * já está `ready` e o aluno já pode usar; um chamado que não abre não pode
+ * derrubar a amostra automática nem o retorno do webhook. Mas deixa rastro —
+ * o silêncio de antes é justamente o defeito que isto conserta.
+ */
+async function abrirChamadoDeReferenciaAusente(args: {
+  voiceId: string;
+  userId: string;
+  runpodJobId: string;
+  out: TrainOutput;
+}): Promise<void> {
+  const veredito = avaliarReferencia(true, args.out);
+  if (veredito.ok) return;
+
+  logger.warn("api", "voice.train.referencia_ausente", {
+    voiceId: args.voiceId,
+    runpodJobId: args.runpodJobId,
+    classe: veredito.classe,
+    referenceError: args.out.reference_error ?? null,
+    curaRamo: args.out.reference_cura_ramo ?? null,
+  });
+
+  // O e-mail só é lido AQUI, depois do veredito: no caminho de sucesso o
+  // `userEmail` do finalize fica null (só o ramo de falha o carrega), e medido
+  // em 20/09 este chamado nasce em ~0,5% dos treinos (7 vozes em 1.330 ready).
+  // Buscar antes seria uma consulta a mais em 99,5% dos treinos para nada.
+  let userEmail: string | null = null;
+  try {
+    const { data: profile } = await getAdmin()
+      .from("profiles")
+      .select("email")
+      .eq("id", args.userId)
+      .maybeSingle();
+    userEmail = (profile as { email?: string } | null)?.email ?? null;
+  } catch {
+    // Chamado sem e-mail ainda serve (tem voice_id e user_id); chamado
+    // NENHUM não serve. O campo se assume desconhecido, não se inventa.
+  }
+
+  try {
+    await abrirChamadoReportado({
+      signature: assinaturaDaReferencia(veredito.classe, args.voiceId),
+      // Família própria, no formato dos kinds escritos à mão (`voice:reference_stale`,
+      // `video_clone:identity_drift`). NÃO é `training`: o treino DEU CERTO, e
+      // cair no kind de treino jogaria isto dentro do guarda-chuva do #11.
+      kind: "voice:referencia_ausente",
+      cause: veredito.classe,
+      categoria: "tecnico",
+      title: tituloDaReferencia(veredito.classe),
+      description: descricaoDaReferencia(veredito.classe, {
+        voiceId: args.voiceId,
+        userId: args.userId,
+        userEmail,
+        runpodJobId: args.runpodJobId,
+        out: args.out,
+      }),
+      reportedBy: "treino-sem-referencia",
+      affectedEmails: userEmail ? [userEmail] : [],
+      sampleError: args.out.reference_error ?? null,
+    });
+  } catch (e) {
+    logger.warn("api", "voice.train.referencia_ausente_chamado_nao_abriu", {
+      voiceId: args.voiceId,
+      runpodJobId: args.runpodJobId,
+      motivo: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+/**
  * Teto de cada log do trainer no banco. O worker já manda tails curtos
  * (stdout 4000 / stderr 2000 chars, voice_pipeline/training.py:324-325); o teto
  * maior aqui é folga pra não ter que mexer nas duas pontas se a janela do
@@ -794,6 +884,20 @@ export async function finalizeTraining(args: {
   // mexeu na referência apagaria o modo do clipe que continua no ar.
   if (success && out.reference_uploaded) {
     await registrarModoDeCorte(runpodJobId, voiceId, out);
+  }
+
+  // ── Voz pronta SEM referência usável → chamado técnico ───────────────────
+  // Espelho do alerta de `sample_qa === "failed"` logo abaixo: a voz continua
+  // `ready` (a LoRA está boa, reprovar queimaria os créditos do aluno), mas a
+  // casa PASSA A SABER. Até 20/09/2026 não sabia: `reference_uploaded: false` e
+  // `reference_error` chegavam do worker e ninguém lia — a voz d1ff6f1a saiu
+  // assim em 19/09 e só apareceu numa varredura manual, quatro dias depois,
+  // com o acesso da aluna vencendo.
+  //
+  // DEPOIS do UPDATE da voz, de propósito: o chamado manda "rode
+  // fabricar_referencia.cjs nesta voz", e a voz precisa estar gravada.
+  if (success) {
+    await abrirChamadoDeReferenciaAusente({ voiceId, userId, runpodJobId, out });
   }
 
   // ── Avisos da falha ──────────────────────────────────────────────────────

@@ -281,6 +281,93 @@ test("o ingest IMPORTA o prefixo da mensagem, não repete a string", () => {
   );
 });
 
+/**
+ * ── Tripwires do conserto de 20/09 (voz d1ff6f1a, "Miriam A S Zeppe") ──────
+ * A DECISÃO tem teste de verdade em `referencia-ausente.test.ts` (módulo puro).
+ * O que fica aqui é a FIAÇÃO — o que um refactor bem intencionado desfaz sem
+ * perceber, e que já se desfez uma vez: o worker manda `reference_uploaded` e
+ * `reference_error` desde maio e o frontend nunca leu nenhum dos dois.
+ */
+
+/** Corpo de `abrirChamadoDeReferenciaAusente`, até a constante seguinte. */
+function blocoDaReferenciaAusente(): string {
+  const inicio = FONTE.indexOf("async function abrirChamadoDeReferenciaAusente(");
+  const fim = FONTE.indexOf("const MAX_TRAINER_LOG_CHARS", inicio);
+  assert.ok(inicio > 0 && fim > inicio, "sumiu abrirChamadoDeReferenciaAusente");
+  return FONTE.slice(inicio, fim);
+}
+
+test("o chamado de referência ausente está FIADO no finalize", () => {
+  assert.match(
+    FONTE,
+    /import \{[\s\S]*?avaliarReferencia[\s\S]*?\} from "@\/lib\/voices\/referencia-ausente"/,
+  );
+  assert.match(
+    FONTE,
+    /await abrirChamadoDeReferenciaAusente\(\{ voiceId, userId, runpodJobId, out \}\)/,
+  );
+});
+
+test("a decisão NÃO foi copiada para dentro do finalize", () => {
+  // Regra do time (módulo de conserto de 15/09): o conserto nasce com os call
+  // sites migrados. Se a condição for reescrita aqui à mão, o teste do módulo
+  // puro passa a vigiar código que não roda mais.
+  const corpo = blocoDaReferenciaAusente();
+  assert.match(corpo, /const veredito = avaliarReferencia\(true, args\.out\)/);
+  assert.match(corpo, /if \(veredito\.ok\) return/);
+  assert.ok(
+    !/reference_transcript[\s\S]{0,40}(trim\(\)|=== ""|== null)/.test(corpo),
+    "a condição do transcript vazio foi reescrita dentro do finalize",
+  );
+});
+
+test("o chamado de referência é best-effort — não derruba a finalização", () => {
+  const corpo = blocoDaReferenciaAusente();
+  // As DUAS idas ao banco (perfil e chamado) têm que estar cobertas: a voz já
+  // está `ready` e a amostra automática ainda vai ser inserida depois daqui.
+  assert.ok(
+    (corpo.match(/catch/g) ?? []).length >= 2,
+    "faltou catch em alguma das duas idas ao banco",
+  );
+  assert.match(corpo, /logger\.warn\("api", "voice\.train\.referencia_ausente_chamado_nao_abriu"/);
+});
+
+test("o chamado roda DEPOIS do UPDATE da voz (ele manda consertar a voz gravada)", () => {
+  const posUpdate = FONTE.indexOf('await admin.from("voices").update(update).eq("id", voiceId)');
+  const posChamado = FONTE.indexOf("await abrirChamadoDeReferenciaAusente(");
+  assert.ok(posUpdate > 0 && posChamado > 0, "sumiu o update da voz ou a chamada");
+  assert.ok(posChamado > posUpdate, "o chamado subiu para antes do UPDATE da voz");
+});
+
+test("referência ausente NÃO reprova o treino nem mexe em crédito", () => {
+  // Conduta decidida em 20/09: a LoRA está boa. Reprovar queimaria 10.000
+  // créditos do aluno + GPU para consertar algo que `fabricar_referencia.cjs`
+  // resolve sem GPU. A voz continua `ready` — espelho do alerta de sample_qa.
+  const corpo = blocoDaReferenciaAusente();
+  for (const proibido of ["addExtraCredits", "nextStatus", '"failed"', "voice_train_refund"]) {
+    assert.ok(
+      !corpo.includes(proibido),
+      `"${proibido}" entrou no caminho da referência ausente — ele é ALERTA, não recusa`,
+    );
+  }
+});
+
+test("`reference_error` voltou a ser lido — era o campo que morria na memória", () => {
+  assert.match(FONTE, /reference_error\?: string \| null;/, "o campo saiu do TrainOutput");
+  assert.match(FONTE, /sampleError: args\.out\.reference_error \?\? null/);
+});
+
+test("o e-mail do aluno é buscado SÓ depois do veredito", () => {
+  // No caminho de sucesso o `userEmail` do finalize fica null (só o ramo de
+  // falha o preenche). Buscar antes do veredito seria uma consulta a mais em
+  // ~99,5% dos treinos (medido: 7 vozes em 1.330 ready).
+  const corpo = blocoDaReferenciaAusente();
+  const posVeredito = corpo.indexOf("if (veredito.ok) return");
+  const posPerfil = corpo.indexOf('.from("profiles")');
+  assert.ok(posVeredito > 0 && posPerfil > 0, "sumiu o veredito ou a busca do perfil");
+  assert.ok(posPerfil > posVeredito, "a busca do e-mail subiu para antes do veredito");
+});
+
 test("a abertura da mensagem técnica é a que o ingest filtra", () => {
   const PURO = readFileSync(join(import.meta.dirname, "falha-de-treino.ts"), "utf8");
   assert.match(

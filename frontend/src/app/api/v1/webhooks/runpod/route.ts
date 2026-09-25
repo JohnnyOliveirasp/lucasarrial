@@ -49,6 +49,12 @@ type RunpodWebhookPayload = {
     uploaded?: boolean;
     reference_uploaded?: boolean;
     reference_transcript?: string | null;
+    // POR QUE a referência não saiu. Declarado aqui só para o tipo parar de
+    // MENTIR sobre o que chega: o `output` é repassado com cast, sem pick, e o
+    // campo já trafegava intacto em runtime — é o mesmo caminho pelo qual
+    // `reference_cut_mode` (também não declarado) chega em
+    // `registrarModoDeCorte` e está gravado em 96 vozes de produção.
+    reference_error?: string | null;
     // Observabilidade da cura do transcript + build do worker (incidente 52).
     // Repassados intactos ao finalizeTraining, que decide o que persistir.
     reference_cura_ramo?: string | null;
