@@ -197,3 +197,38 @@ na minha alçada (medir, escrever pra ela, escalar com relógio) e **parei onde
 começa a alçada do dono**. Se ninguém responder até 12:00Z, ela perde o acesso
 por um cancelamento que a casa fez errado — e isso estará registrado aqui como
 decisão não tomada, não como acidente.
+
+---
+
+## Passo fixo de fim de ronda — nada preso em branch
+
+```
+git fetch origin && git log --oneline origin/main..HEAD   →  VAZIO ✔
+```
+
+O log desta ronda está em `main` e empurrado (`fd0c467f..4ccbc109`).
+
+**Conferência das branches** (o defeito de 19/08: fix de aluno ficou 9h preso
+em branch). Esta ronda **não criou branch nenhuma** — não toquei em código, só
+em 1 carta e 1 nota. Ainda assim varri as branches com commit fora da `main`
+nas últimas 48h, que é onde o defeito de 19/08 apareceria:
+
+| branch | commit fora da main | destino |
+|---|---|---|
+| `feat/582c-varredura-webhook-abre-chamado` | 1 | **PR #454 OPEN**, no origin |
+| `feat/inc02581255-ultima-nota-substantiva` | 1 | **PR #453 OPEN**, no origin |
+| `feat/varredura-orfao-pagante-sem-conta` | 1 | **PR #451 OPEN**, no origin |
+| `feat/570-chat-reabre-aguardando` | 1 | **PR #443 OPEN**, no origin |
+| `fix/conta-da-casa-sem-guarda-de-ritmo` | 1 | **PR #442 OPEN**, no origin |
+
+**As cinco estão no origin e com PR aberto.** Nenhuma é trabalho preso: estão
+esperando revisão/merge, que é o fluxo normal. **Nenhuma é minha.**
+
+⚠️ Registro o limite da varredura em vez de deixar parecer completa: eu olhei
+as **40 branches mais recentes** por data de commit, e dentro delas as que têm
+commit de 25–26/09. O repositório tem **~300 branches locais**, muitas antigas
+e já documentadas como STALE no índice de ordens (`feat/onedrive-401`,
+`fix/trava-foto-nova-8379549c`, `fix/ritmo-da-referencia-porta-73a60bb`,
+`fix/estorno-treino-por-saldo-pendente`, as 2 da cura de referência). Auditar
+as ~300 é tarefa própria, **não é passo de ronda** — e enquanto não for feita,
+o "nada preso" vale para a janela de 48h, não para o repositório inteiro.
