@@ -188,6 +188,37 @@ export function preservaFaseCorrente(
  * e o embrulhado do poll ("RunPod TIMED_OUT: ..."). */
 const TIMEOUT_RE = /executiontimeout|timed_out/i;
 
+/** Quanto do CRU preservar. Cabeça: mesmo teto de hoje (não-regressão pra
+ *  quem já lia os primeiros 500 chars, ex. "Failed to download <URL
+ *  presignada>" — a causa fica lá, 6 dos 7 casos censados em 26/09). Cauda:
+ *  suficiente pra caber o tipo/mensagem de uma exceção Python real (medido no
+ *  caso db32d451, 17/09: o corte em 500 mordeu bem no meio de
+ *  "runtime/triton_heu..." e destruiu a causa raiz do SubprocException, que
+ *  em traceback fica no FIM, não na cabeça). */
+const CAUDA_HEAD_LEN = 500;
+const CAUDA_TAIL_LEN = 300;
+
+/**
+ * Trunca preservando CABEÇA e CAUDA do erro cru, com um marcador visível de
+ * quanto ficou de fora no meio. Erros <= 500 chars saem intocados (idênticos
+ * a hoje). Erros entre 501 e 800 chars: cabeça+cauda já cobririam o texto
+ * inteiro, então devolve o texto cru sem marcador (nada de fato omitido).
+ * Só a partir de 801 chars é que o meio é de fato descartado.
+ *
+ * O marcador NÃO PODE conter a substring "[fase:" — stripFaseSuffix (em
+ * lib/incidents/classify.ts) casa literalmente "[fase:" até o primeiro "]" e
+ * um marcador que colidisse com isso corromperia o strip do sufixo de fase.
+ */
+function truncaPreservandoCauda(rawError: string): string {
+  if (rawError.length <= CAUDA_HEAD_LEN) return rawError;
+  const totalPreservado = CAUDA_HEAD_LEN + CAUDA_TAIL_LEN;
+  if (rawError.length <= totalPreservado) return rawError;
+  const head = rawError.slice(0, CAUDA_HEAD_LEN);
+  const tail = rawError.slice(-CAUDA_TAIL_LEN);
+  const omitidos = rawError.length - totalPreservado;
+  return `${head} ... [${omitidos} chars omitidos] ... ${tail}`;
+}
+
 /**
  * error_message da falha com a última fase conhecida NO TEXTO, pro humano que
  * abre a row (ex.: "executionTimeout exceeded [fase: geracao.chunk running_s=430]").
@@ -202,7 +233,7 @@ const TIMEOUT_RE = /executiontimeout|timed_out/i;
  * worker já disse o que quebrou. Sem fase gravada, devolve o texto de hoje.
  */
 export function errorMessageComFase(rawError: string, qaAtual: unknown): string {
-  const base = (rawError || "").slice(0, 500);
+  const base = truncaPreservandoCauda(rawError || "");
   try {
     if (!TIMEOUT_RE.test(base)) return base;
     const fase =

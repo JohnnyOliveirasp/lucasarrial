@@ -350,3 +350,97 @@ test("preservaFaseCorrente mantém o meta quando a falha reescreve o qa", () => 
   const salvo = preservaFaseCorrente({}, atual) as { fase_corrente: FaseCorrente };
   assert.deepEqual(salvo.fase_corrente.meta, { chunk: 7, attempt: 9 });
 });
+
+// ---------------------------------------------------------------------------
+// CAUDA PRESERVADA (26/09, cartão #452) — a truncagem de errorMessageComFase
+// era HEAD-FIRST (slice(0,500)): num traceback Python o tipo/mensagem da
+// excepção fica no FIM, e cortar os primeiros 500 chars guarda o boilerplate
+// e joga fora a causa raiz. Prova medida: geração db32d451 (17/09 16:00:23Z)
+// tem error_message com length=500 EXATOS, cortado no meio de
+// "...runtime/triton_heu" — a causa interna do SubprocException foi
+// destruída. A partir de agora, erro cru > 500 chars preserva também os
+// últimos ~300 chars, com um marcador visível de quanto ficou de fora no
+// meio. Erro <= 500 chars sai IDÊNTICO a hoje (não-regressão).
+// ---------------------------------------------------------------------------
+
+// Traceback sintético: bem mais que 500 chars, com a mensagem REAL da
+// exceção no FIM (como um traceback Python de verdade) — é exatamente o
+// padrão que a truncagem antiga destruía.
+const FRAME_TRACEBACK =
+  '  File "/opt/venv/lib/python3.11/site-packages/runtime/triton_heuristics/autotune_cache.py", ' +
+  "line 812, in _load_cached_autotuning\n    return json.loads(cache_path.read_text())\n";
+const CAUSA_RAIZ_REAL =
+  "RuntimeError: falha real no carregamento do heuristics cache - causa raiz da SubprocException";
+const TRACEBACK_LONGO =
+  "Traceback (most recent call last):\n" + FRAME_TRACEBACK.repeat(15) + CAUSA_RAIZ_REAL;
+
+test("errorMessageComFase: erro <= 500 chars sai IDÊNTICO a hoje (não-regressão)", () => {
+  const curto = "CUDA out of memory (allocated 4.2GiB, capacity 8GiB)";
+  assert.ok(curto.length <= 500);
+  // sem fase: hoje devolve o cru intocado
+  assert.equal(errorMessageComFase(curto, null), curto);
+  assert.equal(errorMessageComFase(curto, QA_COM_FASE), curto); // não é timeout, sem sufixo
+  // exatamente 500 chars, sem timeout: comportamento de hoje é o texto cru
+  const exato500 = "x".repeat(500);
+  assert.equal(errorMessageComFase(exato500, null), exato500);
+  assert.equal(errorMessageComFase(exato500, QA_COM_FASE), exato500);
+  // caminho de TIMEOUT com sufixo [fase: ...] concatenado por cima: o
+  // comportamento de hoje nesse caminho não pode mudar em nada
+  assert.equal(
+    errorMessageComFase("executionTimeout exceeded", QA_COM_FASE),
+    "executionTimeout exceeded [fase: inference.chunk.generate running_s=312]",
+  );
+});
+
+test("errorMessageComFase: traceback longo preserva a mensagem da exceção real no FIM", () => {
+  assert.ok(TRACEBACK_LONGO.length > 500, "fixture precisa passar o teto de 500");
+  const msg = errorMessageComFase(TRACEBACK_LONGO, null); // não é timeout, sem sufixo de fase
+  // a causa raiz (fim do traceback) TEM que aparecer na saída — é exatamente
+  // o que a truncagem head-first de hoje destruía
+  assert.ok(msg.includes(CAUSA_RAIZ_REAL), "a mensagem da exceção real precisa sobreviver no fim");
+  // cabeça preservada, igual a antes (não-regressão de quem já lia os
+  // primeiros 500 chars, ex. "Failed to download <url presignada>")
+  assert.equal(msg.slice(0, 500), TRACEBACK_LONGO.slice(0, 500));
+  // marcador visível de quanto ficou de fora, com o número exato
+  const omitidos = TRACEBACK_LONGO.length - 500 - 300;
+  assert.match(msg, /\[\d+ chars omitidos\]/);
+  assert.ok(msg.includes(`[${omitidos} chars omitidos]`));
+  // o marcador NÃO PODE conter "[fase:" — colidiria com stripFaseSuffix
+  assert.doesNotMatch(msg, /\[fase:/i);
+  // e o meio de fato ficou de fora: o texto é bem menor que o cru inteiro
+  assert.ok(msg.length < TRACEBACK_LONGO.length);
+});
+
+test("ASSINATURA: cauda do traceback NÃO racha o incidente (mesmo erro cru)", () => {
+  const decorado = errorMessageComFase(TRACEBACK_LONGO, null);
+  assert.notEqual(decorado, TRACEBACK_LONGO); // a cauda mudou o texto de fato
+  assert.equal(
+    errorSignature("generation", decorado),
+    errorSignature("generation", TRACEBACK_LONGO),
+  );
+  // título também não racha (mesmo detector, mesma cabeça)
+  assert.equal(
+    incidentTitle("generation", decorado),
+    incidentTitle("generation", TRACEBACK_LONGO),
+  );
+});
+
+test("errorMessageComFase: traceback longo + TIMEOUT com fase gravada — sufixo [fase:] some por completo e a cauda sobrevive", () => {
+  // cabeça do cru já contém o gatilho de timeout, dentro dos primeiros 500
+  // chars, pra garantir que TIMEOUT_RE.test(base) dispare mesmo com a
+  // truncagem por cima
+  const cruTimeout =
+    "executionTimeout exceeded\n" + "Traceback (most recent call last):\n" +
+    FRAME_TRACEBACK.repeat(15) + CAUSA_RAIZ_REAL;
+  assert.ok(cruTimeout.length > 800, "fixture precisa passar o teto de cabeça+cauda");
+  const msg = errorMessageComFase(cruTimeout, QA_COM_FASE);
+  // termina com o sufixo de fase — ele continua sendo o ÚLTIMO pedaço
+  assert.ok(msg.endsWith("[fase: inference.chunk.generate running_s=312]"));
+  const semSufixo = stripFaseSuffix(msg);
+  // o strip removeu o sufixo [fase: ...] por completo
+  assert.doesNotMatch(semSufixo, /\[fase:/i);
+  assert.ok(!semSufixo.endsWith("]") || !semSufixo.includes("[fase:"));
+  // e a cauda do traceback (a causa raiz real) sobrevive DEPOIS do strip —
+  // ela não ficou presa dentro do que foi removido
+  assert.ok(semSufixo.includes(CAUSA_RAIZ_REAL), "a cauda não pode ter sido engolida pelo strip do sufixo");
+});
