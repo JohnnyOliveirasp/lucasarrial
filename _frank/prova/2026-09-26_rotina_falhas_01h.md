@@ -68,7 +68,8 @@ conteúdo**, não pelo alcance. Não leia como saúde. Cartão é de dono, não 
 ```
 
 Idêntico ao que o Vigia mediu às 00hZ. **Início e fim iguais** — abri 1 cartão
-(`#589`) e não fechei nenhum, então a conta de abertos sobe pra 131/168 ao fim.
+(`#589`) e não fechei nenhum. Ver a conciliação no fim do log: a conta fecha em
+**132/169**, e o cartão a mais **não é meu**.
 
 ---
 
@@ -283,7 +284,19 @@ escrito no `#589` para quem for decidir, com o `cobreDesde` do assunto na mão.
 
 ## Fila ao fim da ronda
 
-**168 vivos** (131 abertos + 37 aguardando_aluno) · **95** com 7d+ ·
+**169 vivos** (132 abertos + 37 aguardando_aluno) · **95** com 7d+ ·
+
+> **Conciliação linha por linha, porque 168 seria mentira.** Eu tinha escrito
+> 131/168 no §3 contando só o cartão que abri. A medição do fim da ronda dá
+> `15 open + 117 investigating = 132 abertos`, **dois a mais** que os 130 do
+> início, e não um. O segundo é o **`#588`** (*Fast, e-mail, atendimento: aluna
+> Marina Frederick pediu cancelamento do Sistema…*), nascido **do sistema**
+> durante a minha janela — **não é meu** e eu não o toquei. Conta:
+> 130 + `#589` (meu) + `#588` (do `fast-help`) = **132**. ✔
+> Deixo a correção escrita em vez de trocar o número em silêncio: número de
+> fila que não reconcilia é exatamente o que fez a casa publicar "0 abertos"
+> existindo quatro, em 19/08.
+
 percepção travada **0** (sob objeção do `#585`) · envios **0** fora do livro.
 
 ### Pendências nomeadas (paradas, não "em andamento")
