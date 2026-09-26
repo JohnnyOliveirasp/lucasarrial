@@ -167,3 +167,23 @@ export function faceGateMessage(reason: string): string {
     "Escolha uma foto de frente (ou gere a imagem com a pessoa olhando pra câmera) e tente de novo. Você não foi cobrado."
   );
 }
+
+/**
+ * Ordem 26/09 (Johnny): "avisa antes de cobrar". A tela de escolha da foto
+ * (ImagePicker, `components/video-clone/clone-pickers.tsx`) não mostrava
+ * NENHUM critério antes de gerar — só o custo. Um aluno gastou 525cr × 4
+ * tentativas adivinhando a regra critério a critério.
+ *
+ * `FACE_GATE_CRITERIOS` é a FONTE ÚNICA pro texto que aparece ANTES da
+ * cobrança. `campo` é literalmente o nome do campo que o SYSTEM acima julga
+ * (`parsed.frontal`, `parsed.mouth_visible` — linha 146). Se o contrato do
+ * SYSTEM ganhar ou perder um campo, este array muda junto — e junto com ele
+ * as chaves de tradução `videoClone.pickers.faceGateCriterio_<campo>` em
+ * `frontend/messages/*.json` (pt-BR, en, es), que o `ImagePicker` lê
+ * iterando este mesmo array. Não hardcode as frases fora daqui.
+ */
+export type FaceGateCampo = "frontal" | "mouth_visible";
+export const FACE_GATE_CRITERIOS: ReadonlyArray<{ campo: FaceGateCampo }> = [
+  { campo: "frontal" },
+  { campo: "mouth_visible" },
+];
