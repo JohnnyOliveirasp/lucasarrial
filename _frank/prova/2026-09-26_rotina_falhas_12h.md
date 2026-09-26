@@ -248,7 +248,7 @@ irrastreável. **Não inventei causa.**
 
 | # | o que falta | dono |
 |---|---|---|
-| `#551` | reativar o FastCloner dela (relógio das 12:00Z **venceu sem decisão**) | **Johnny** |
+| `#551` | reativar o FastCloner dela (relógio das 12:00Z — **fechei a ronda 11:53Z com ela ainda de pé e sem decisão**; se ninguém agir nos 7 min restantes, vence) | **Johnny** |
 | `#551` | decidir reembolso da Comunidade (R$ 1.803,60) — **prometido a ela** | **Johnny / Lucas** |
 | `#594` | ligar ou não `TTS_TAIL_QA_INTERNO_MODO=reprovando` (chave de ambiente, sem deploy, custa GPU) | **Johnny** |
 | `#594` | devolver ou não os 719 cr (muda critério, não aplica critério) | **Johnny / Lucas** |
