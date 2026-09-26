@@ -26,6 +26,10 @@ import {
   varrerConclusaoAutomatica,
   type ConclusaoAutomaticaSumario,
 } from "@/lib/sgp/conclusao-sweep";
+import {
+  varrerErrosDoWebhook,
+  type VarreduraWebhookSumario,
+} from "@/lib/payments/varredura-erros-webhook";
 
 const STUCK_AFTER_MS = 10 * 60 * 1000; // só olha o que está preso há 10min+
 const NO_JOB_FAIL_MS = 60 * 60 * 1000; // sem job id há 1h = órfão de verdade
@@ -214,6 +218,42 @@ export async function POST(request: NextRequest) {
     console.error("[sweep-clones] conclusão automática do SGP falhou:", e instanceof Error ? e.message : e);
   }
 
+  // Erros do webhook (#582c): `payment_events.error` JÁ registrava o motivo da
+  // falha e ninguém lia a coluna em produção — os únicos leitores eram
+  // ferramentas manuais em `_frank/`, que dependem de alguém lembrar de rodar.
+  // Medido em 25/09: 4 pagantes sem conta nenhuma, o mais velho há 22 dias, um
+  // com o entitlement vencendo no dia seguinte. Ela SÓ LÊ e abre chamado.
+  //
+  // CADÊNCIA HORÁRIA SEM MIGRATION: este cron é de 5min, então ela só roda na
+  // primeira volta de cada hora. Não precisa de tabela de estado ("já varri
+  // até X") porque a varredura RELÊ A JANELA INTEIRA de 7 dias a cada execução:
+  // um tick perdido (deploy, crash, cron atrasado) não perde caso NENHUM — o
+  // próximo pega tudo de novo. E a abertura é idempotente por `signature`, então
+  // reler a mesma janela 168 vezes por semana soma ocorrência em vez de
+  // duplicar cartão. É o que dispensa migration aqui.
+  //
+  // Best-effort: nunca derruba o sweep de clones.
+  let varreduraWebhook: VarreduraWebhookSumario | null = null;
+  if (new Date().getUTCMinutes() < 5) {
+    try {
+      varreduraWebhook = await varrerErrosDoWebhook(admin);
+      // Teto batido é sempre notícia: silêncio ali se leria como "cobri tudo".
+      if (
+        varreduraWebhook.chamados_abertos > 0 ||
+        varreduraWebhook.cortados_pelo_teto > 0 ||
+        varreduraWebhook.sem_email_ignorados > 0 ||
+        varreduraWebhook.erros > 0
+      ) {
+        console.log("[sweep-clones] erros do webhook", JSON.stringify(varreduraWebhook));
+      }
+    } catch (e) {
+      console.error(
+        "[sweep-clones] varredura de erros do webhook falhou:",
+        e instanceof Error ? e.message : e,
+      );
+    }
+  }
+
   const summary = { checked: (stuck ?? []).length, ready, failed_refunded: failed, still_running: running, errors };
   if (summary.checked > 0) console.log("[sweep-clones]", JSON.stringify(summary));
   return jsonOk({
@@ -225,5 +265,6 @@ export async function POST(request: NextRequest) {
     image_sweep: imageSweep,
     studio_scenes: studioScenes,
     sgp_conclusao_automatica: sgpConclusao,
+    varredura_webhook: varreduraWebhook,
   });
 }
