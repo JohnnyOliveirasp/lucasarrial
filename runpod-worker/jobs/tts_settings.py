@@ -153,6 +153,21 @@ class TtsSettings:
     job (23/40 entregas recentes tem o defeito; gate duro = tempestade de
     estorno)."""
 
+    intrusion_fail_fracao: float
+    intrusion_fail_min_checked: int
+    """Gate DURO de intrusao SISTEMICA (#530, 23/09) — no nivel da GERACAO,
+    nao da tentativa: falha o job quando `intrusion_flagged/intrusion_checked
+    >= fracao` com `checked >= min_checked`. O gate macio acima continua
+    valendo pra intrusao parcial (media 2,46 pedacos/geracao, comum); este so
+    pega a assinatura severa do caso 65f26a72 (18/18 checagens acusando, frase
+    fora do texto repetida a cada paragrafo, entregue e cobrada). Regua MEDIDA
+    antes de escolhida, contra 776 entregas de 14 dias: 0.9/5 reprova 5
+    geracoes de 3 ALUNOS distintos (0,64% das entregas; 3 de ~245 alunos com
+    entrega na janela — denominador documentado no docstring de
+    `intrusao_sistemica`), todas com a assinatura severa — os numeros e as
+    alternativas descartadas estao no mesmo docstring (tts_qa/loop.py).
+    TTS_INTRUSION_FAIL_FRACAO=0 desliga sem deploy."""
+
     tail_qa_interno_enabled: bool
     tail_qa_interno_modo: str
     tail_qa_interno_palavra: bool
@@ -258,6 +273,8 @@ class TtsSettings:
                 inp, "coverage_espalhada_min", "TTS_COVERAGE_ESPALHADA_MIN", "0.65"),
             intrusion_qa_enabled=_ligado("TTS_INTRUSION_QA"),
             intrusion_qa_retries=int(os.environ.get("TTS_INTRUSION_QA_RETRIES", "3")),
+            intrusion_fail_fracao=float(os.environ.get("TTS_INTRUSION_FAIL_FRACAO", "0.9")),
+            intrusion_fail_min_checked=int(os.environ.get("TTS_INTRUSION_FAIL_MIN_CHECKED", "5")),
             tail_qa_interno_enabled=_ligado("TTS_TAIL_QA_INTERNO"),
             # SOMBRA e' o padrao DELIBERADO (#234): a 1a fase so mede. Trocar o
             # default aqui sem olhar a telemetria e' repetir 19/08.

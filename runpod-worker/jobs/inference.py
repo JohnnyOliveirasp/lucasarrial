@@ -19,8 +19,9 @@ import soundfile as sf
 from audio_ops import crossfade_concat, trim_silence, wav_to_base64
 from tts_qa.rate import measure_file_rate, measure_seg_rate, stretch
 from model_loader import free_cuda
-from tts_qa import (norm_words, registrar_cobertura, registrar_faltantes,
-                    registrar_grafias, registrar_tail_interno, run_chunk_qa)
+from tts_qa import (intrusao_sistemica, norm_words, registrar_cobertura,
+                    registrar_faltantes, registrar_grafias,
+                    registrar_tail_interno, run_chunk_qa)
 from tts_qa.metrics import fim_abrupto, ultima_palavra_truncada
 from tts_qa.loop import palavras_com_tempo
 from tts_text import split_text_for_tts, split_below_sentence
@@ -216,6 +217,19 @@ class InferenceJob:
         pieces, falha = self._gerar_todos_os_chunks(chunks)
         if falha is not None:
             return self._resultado_incompleto(falha)
+
+        # INTRUSAO SISTEMICA (#530): quase toda checagem acusando conteudo
+        # fora do texto e' defeito que a cobertura nao ve (nada FALTA — sobra).
+        # Julgado no nivel da GERACAO, depois de todos os chunks, ANTES da
+        # montagem/upload: falhar aqui dispara o estorno automatico do webhook
+        # em vez de entregar e cobrar em silencio. Regua e custo medidos no
+        # docstring de `intrusao_sistemica`.
+        intrusao = intrusao_sistemica(
+            self.qa_stats, self.cfg.intrusion_fail_fracao,
+            self.cfg.intrusion_fail_min_checked,
+        )
+        if intrusao is not None:
+            return self._resultado_intrusao(intrusao)
 
         wav = self._ajustar_ritmo_global(self._montar(pieces))
         elapsed = time.monotonic() - self.t0
@@ -844,6 +858,34 @@ class InferenceJob:
             "coverage_failed_chunk": falha["chunk_idx"],
             "coverage_best": falha["coverage"],
             "coverage_min": self.cfg.coverage_qa_min,
+            "elapsed_s": round(time.monotonic() - self.t0, 2),
+            "qa": self.qa_stats,
+        }
+
+    def _resultado_intrusao(self, intrusao: dict) -> dict:
+        """Falha explicita por INTRUSAO SISTEMICA (#530, 23/09): NAO sobe audio.
+
+        Mesmo contrato do `_resultado_incompleto` (caso Katia): `error`
+        presente faz o webhook marcar failed e estornar via handleTechFailure.
+        Texto do erro ESTAVEL, sem numero/ID no meio — a assinatura do
+        incidente e' derivada do texto (lib/incidents/classify.ts); os numeros
+        vao em campos proprios e no `qa`.
+        """
+        self._soltar_modelo()
+        _log(
+            "error", "inference.intrusion.failed",
+            checked=intrusao["intrusion_checked"],
+            flagged=intrusao["intrusion_flagged"],
+            fracao=intrusao["intrusion_fracao"],
+            fracao_min=self.cfg.intrusion_fail_fracao,
+            min_checked=self.cfg.intrusion_fail_min_checked, qa=self.qa_stats,
+        )
+        return {
+            "error": "qa_intrusion: audio gerado contem conteudo fora do texto em quase todas as checagens",
+            "intrusion_checked": intrusao["intrusion_checked"],
+            "intrusion_flagged": intrusao["intrusion_flagged"],
+            "intrusion_fracao": intrusao["intrusion_fracao"],
+            "intrusion_fracao_min": self.cfg.intrusion_fail_fracao,
             "elapsed_s": round(time.monotonic() - self.t0, 2),
             "qa": self.qa_stats,
         }
