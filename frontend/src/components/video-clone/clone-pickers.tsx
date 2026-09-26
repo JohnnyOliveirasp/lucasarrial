@@ -12,6 +12,7 @@ import { Link } from "@/i18n/navigation";
 import { AlertTriangle, Check, Loader2, RefreshCw, Upload } from "lucide-react";
 import { acimaDoTeto, duracaoLegivel, separarPorTeto } from "@/lib/video/audio-eligibility";
 import { avisoDeFormato } from "@/lib/video-clone/formato-saida";
+import { FACE_GATE_CRITERIOS } from "@/lib/video-clone/face-gate";
 
 /**
  * `aspectRatio` é a proporção declarada da foto (image_generations.aspect_ratio
@@ -115,6 +116,21 @@ export function ImagePicker({
         {t.rich("photoHint", {
           strong: (chunks) => <strong className="text-[var(--silver)]">{chunks}</strong>,
         })}
+      </p>
+      {/* Critérios do gate de rosto (ordem 26/09, "avisa antes de cobrar"):
+          antes a tela só mostrava o CUSTO, nunca o que a foto precisa ter — um
+          aluno pagou 4 tentativas (525cr cada) adivinhando a regra. A lista
+          vem de FACE_GATE_CRITERIOS (lib/video-clone/face-gate.ts), que é o
+          mesmo contrato que checkFrontalFace julga; não hardcode a frase
+          aqui — se o gate mudar de campo, o array muda lá e esta tela segue
+          junto (ver tradução `faceGateCriterio_<campo>`). */}
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] tracking-wide text-[var(--ash)]">
+        <span>{t("faceGateLabel")}</span>
+        {FACE_GATE_CRITERIOS.map((c) => (
+          <span key={c.campo} className="text-[var(--silver)]">
+            · {t(`faceGateCriterio_${c.campo}`)}
+          </span>
+        ))}
       </p>
       {/* Formato da saída: aparece SEMPRE, antes de escolher qualquer foto.
           Largura/altura vão como TEXTO de propósito: como número, o next-intl
