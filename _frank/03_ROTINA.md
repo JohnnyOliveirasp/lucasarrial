@@ -129,6 +129,25 @@ Tratou? Apague a chave **com `DELETE`**, não com `set_state` value null:
 delete from agent_state where key = 'para_frank_<id>';
 ```
 
+⚠️ **Recado de cartão JÁ FECHADO é lixo, e ele se acumula sozinho.** O cartão
+"A FILA DE TRABALHO DO FRANK NAO ESVAZIA QUANDO O CARTAO FECHA" é este defeito:
+o incidente vira `fixed`/`ignored` e o recado **fica**. Medido em 26/09: **144 na
+fila, e 17 deles eram de incidente fechado** — inclusive o `para_frank_cfde107d`,
+cujo patch já estava em produção pelo PR #434. Lixo empilhado esconde o trabalho
+de verdade, que naquela ronda eram 111 recados vivos (o mais velho com 22,6 dias).
+
+Rode isto em TODA ronda, antes de olhar a fila:
+
+```bash
+node _frank/ferramentas/limpar_recados_fechados.cjs --seco   # lista o que sairia
+node _frank/ferramentas/limpar_recados_fechados.cjs          # apaga só os fechados
+```
+
+Ele **só** apaga recado cujo incidente existe E está fechado — recado sem
+`incident_id`, de incidente vivo, ou de incidente que ele não achou, ele não
+toca. Depois reconfere a fila e imprime o total, pra você não acreditar num
+"limpei" que não limpou (§1-B: `set_state` null volta `23502` e deixa a chave).
+
 ⚠️ `agent_state.value` é NOT NULL. O `update ... set value = null` volta `23502`
 e **deixa a chave no lugar** — quem seguiu a versão antiga desta linha achou que
 tinha limpado e não tinha (medido em 30/08; ver §1-B).
