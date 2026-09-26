@@ -56,6 +56,7 @@
  * USO: node _frank/ferramentas/percepcao_travada.cjs
  * TESTE (sem banco): node --test "_frank/ferramentas/percepcao_travada.test.cjs"
  */
+const { ultimaNotaSubstantiva } = require("./_ultima_nota_substantiva.cjs");
 
 /** A frase do sensor que NAO e pedido de percepcao. Normalizada sem acento. */
 const BOILERPLATE = "precisa de olho humano, nao de codigo";
@@ -194,21 +195,48 @@ function marcaDe(nota) {
 /**
  * Os cards que SO param por falta de ver/ouvir/assistir: em status de espera
  * (STATUS_VARRIDOS, incluindo o aguardando_aluno que mente), e com a marca na
- * ULTIMA nota (o passo que falta AGORA). Pura, sem banco — e o criterio
- * inteiro do detector, e o que o teste unitario exercita.
+ * ULTIMA nota SUBSTANTIVA (o passo que falta AGORA). Pura, sem banco — e o
+ * criterio inteiro do detector, e o que o teste unitario exercita.
  * `agent_notes` null, vazio ou fora do formato de array NAO explode nem casa.
+ *
+ * ⚠️ "ULTIMA nota" NAO e mais `agent_notes[-1]` cru desde 25/09 (incidente
+ * 02581255). Quando a ultima nota e um carimbo de LOTE/retrofit (NEUTRA — ver
+ * `_ultima_nota_substantiva.cjs`), a leitura anda pra tras ate achar uma nota
+ * que fale do estado do caso, ate o TETO_NEUTRAS daquele modulo. Sem isso, o
+ * defeito era silencioso: o cartao do incidente estimou ~22 de 164 cartoes
+ * vivos (13%) com a ultima nota neutra; a MEDICAO ao vivo em producao (25/09,
+ * mesmo escopo STATUS_VARRIDOS deste detector) achou 20 — a diferenca nao foi
+ * reconciliada, e fica registrada em vez de arredondada. Um pedido de
+ * percepcao real atras de uma dessas notas sumiria da varredura do mesmo
+ * jeito que os 4 cartoes de dinheiro sumiram do `esperando_johnny.cjs` em
+ * 24/09 (#554) — MESMO defeito, DOIS consumidores. Rodado de novo em
+ * producao apos este conserto: os 20 cartoes tiveram a nota neutra pulada,
+ * ZERO viraram pedido de percepcao (a nota substantiva por tras nao pedia
+ * ver/ouvir/assistir) — o "0 travado" que a casa ja publicava seguiu correto,
+ * so que agora e um zero VERIFICADO, nao um zero por cegueira.
+ *
+ * `travados.resgatados` (anexado ao array devolvido, nao muda o formato pra
+ * quem so itera/indexa) lista os cartoes que SO entraram na classe porque a
+ * leitura andou pra tras — o relato que evita que o conserto vire so "um
+ * numero trocando por outro" sem ninguem saber se confiar nele.
  */
 function travadosDe(incidentes) {
   const travados = [];
+  const resgatados = [];
   for (const i of incidentes) {
     if (!STATUS_VARRIDOS.includes(i.status)) continue;
-    if (!Array.isArray(i.agent_notes) || !i.agent_notes.length) continue;
-    const ultima = i.agent_notes[i.agent_notes.length - 1];
-    const marca = marcaDe(ultima?.note);
+    const { nota: ultima, pulos } = ultimaNotaSubstantiva(i.agent_notes);
+    if (!ultima) continue;
+    const marca = marcaDe(ultima.note);
+    if (pulos > 0) resgatados.push({ id: i.id, numero: i.numero, pulos, entrouNaClasse: !!marca });
     if (!marca) continue;
     travados.push({ i, marca, ultima });
   }
   travados.sort((a, b) => new Date(a.ultima?.at) - new Date(b.ultima?.at));
+  // Anexado ao array (nao troca o tipo de retorno): quem so faz .length/.map
+  // continua funcionando igual; quem quer o relato de resgate acha aqui.
+  travados.resgatados = resgatados.filter((r) => r.entrouNaClasse);
+  travados.totalNotasNeutrasPuladas = resgatados.length;
   return travados;
 }
 
@@ -251,6 +279,26 @@ if (require.main === module) (async () => {
   console.log(`controle positivo OK (#310) · controle negativo OK (#518 descontado) · ${data.length} incidentes varridos\n`);
 
   const travados = travadosDe(data);
+
+  // ---- O QUE A LEITURA DE NOTA NEUTRA MUDOU, DECLARADO (incidente 02581255) ----
+  // Mesmo relato que o `esperando_johnny.cjs` ja imprime: sem ele, o conserto
+  // vira so "um numero trocando por outro" e ninguem sabe se confiar nele.
+  if (travados.resgatados.length) {
+    console.log(
+      `🔎 ${travados.resgatados.length} cartao(oes) so aparecem porque a leitura de nota SUBSTANTIVA andou pra tras` +
+        ` (carimbo de lote por cima do estado real; ${travados.totalNotasNeutrasPuladas} cartao(oes) tiveram nota neutra pulada` +
+        ` no total, ${travados.resgatados.length} viraram fila de percepcao):`
+    );
+    for (const r of [...travados.resgatados].sort((a, b) => (a.numero || 0) - (b.numero || 0))) {
+      console.log(`     · ${String(r.id).slice(0, 8)} ${r.numero ? `#${r.numero}` : ""} — ${r.pulos} nota(s) neutra(s) puladas`);
+    }
+    console.log("   Nao confunda com fila crescendo: e fila que estava escondida.\n");
+  } else if (travados.totalNotasNeutrasPuladas) {
+    console.log(
+      `🔎 ${travados.totalNotasNeutrasPuladas} cartao(oes) tiveram nota neutra pulada na leitura, ` +
+        "mas nenhum virou pedido de percepcao (a nota substantiva por tras nao pedia ver/ouvir/assistir).\n"
+    );
+  }
 
   const porStatus = {};
   for (const { i } of travados) porStatus[i.status] = (porStatus[i.status] ?? 0) + 1;

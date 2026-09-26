@@ -19,6 +19,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { marcaDe, travadosDe, MARCAS, BOILERPLATE, STATUS_VARRIDOS, CUMPRIMENTOS } = require("./percepcao_travada.cjs");
+const { TETO_NEUTRAS } = require("./_ultima_nota_substantiva.cjs");
 
 // ---------------------------------------------------------------------------
 // Casos fabricados com a MESMA forma das linhas de `incidents`.
@@ -300,4 +301,75 @@ test("sanidade: CUMPRIMENTOS exportado cobre relato e falso positivo declarado",
   assert.ok(Array.isArray(CUMPRIMENTOS) && CUMPRIMENTOS.length >= 5);
   assert.ok(CUMPRIMENTOS.some((c) => c.test("falso positivo")));
   assert.ok(CUMPRIMENTOS.some((c) => c.test("nao e caso de percepcao")));
+});
+
+// ---------------------------------------------------------------------------
+// QUINTO DEFEITO (incidente 02581255, medido em 25/09): `travadosDe()` lia
+// `agent_notes[-1]` CRU, sem recuar por cima de nota NEUTRA (carimbo de
+// lote/retrofit que nao fala do estado do caso). 22 de 164 cartoes vivos
+// (13%) tinham a ultima nota neutra — um pedido de percepcao real atras dela
+// sumiria da varredura em silencio, o MESMO defeito ja consertado no
+// `esperando_johnny.cjs` pro #554. A leitura agora usa
+// `ultimaNotaSubstantiva()` (`_ultima_nota_substantiva.cjs`), compartilhada
+// entre os dois consumidores — nao duplicar de novo e a ordem do cartao.
+// ---------------------------------------------------------------------------
+
+/** Nota de lote (retrofit) por CIMA de um pedido de percepcao real. */
+const LOTE_SOBRE_PEDIDO_REAL = {
+  id: "cc33dd44-0000-4000-8000-000000000001", numero: 9020, status: "aguardando_aluno",
+  agent_notes: [
+    { by: "frank", at: "2026-09-18T10:00:00Z", note: "respondi o aluno" },
+    { by: "vigia", at: "2026-09-20T10:00:00Z", note: "falta um humano olhar a imagem do R2 contra a referencia" },
+    { by: "retrofit", at: "2026-09-24T17:48:00Z", note: "RETROFIT DA TRAVA DO HUMANO (#415) — marca posta a mao pela ronda de 24/09. NADA MAIS foi tocado." },
+  ],
+};
+
+/** Nota de lote por cima de NADA (a pilha inteira, sob o pedido, ja resolveu). */
+const LOTE_SOBRE_RESOLVIDO = {
+  id: "cc33dd44-0000-4000-8000-000000000002", numero: 9021, status: "aguardando_aluno",
+  agent_notes: [
+    { by: "frank", at: "2026-09-18T10:00:00Z", note: "falta olhar a imagem" },
+    { by: "olho", at: "2026-09-19T10:00:00Z", note: "olhei: sem defeito, causa achada, cartao-filho aberto" },
+    { by: "retrofit", at: "2026-09-24T17:48:00Z", note: "RETROFIT DA TRAVA DO HUMANO (#415) — marca posta a mao pela ronda de 24/09. NADA MAIS foi tocado." },
+  ],
+};
+
+test("nota de LOTE por cima de pedido de percepcao REAL: o cartao e REENCONTRADO", () => {
+  const t = travadosDe([LOTE_SOBRE_PEDIDO_REAL]);
+  assert.equal(t.length, 1, "a leitura tem que andar pra tras do carimbo de retrofit ate achar o pedido real");
+  assert.equal(t[0].i.numero, 9020);
+  assert.equal(t[0].marca, "humano olhar");
+  assert.equal(t[0].ultima.at, "2026-09-20T10:00:00Z", "aponta a nota SUBSTANTIVA, nao o carimbo de retrofit");
+  assert.equal(t.resgatados.length, 1, "o relato de resgate tem que registrar este cartao");
+  assert.equal(t.resgatados[0].numero, 9020);
+  assert.equal(t.resgatados[0].pulos, 1);
+});
+
+test("nota de LOTE por cima de nada pendente: continua FORA da classe", () => {
+  const t = travadosDe([LOTE_SOBRE_RESOLVIDO]);
+  assert.equal(t.length, 0, "a nota substantiva por tras do retrofit ja estava resolvida — nao vira pendencia");
+  assert.equal(t.resgatados.length, 0, "andou pra tras mas nao achou marca — nao conta como resgate revelado");
+  assert.equal(t.totalNotasNeutrasPuladas, 1, "mesmo sem virar pendencia, o total de notas neutras puladas fica registrado");
+});
+
+test("TETO respeitado no percepcao_travada: nao aumentou em relacao ao modulo compartilhado", () => {
+  // Pilha de neutras MAIOR que o teto, por cima de um pedido real: nao pode
+  // alcancar o pedido enterrado alem do teto. Mesma garantia do modulo
+  // compartilhado (ver _ultima_nota_substantiva.test.cjs), verificada aqui
+  // pelo CONSUMIDOR — travadosDe() nao pode ter o seu proprio teto paralelo.
+  const pilhaNeutra = Array.from({ length: TETO_NEUTRAS + 2 }, (_, k) => ({
+    by: "retrofit", at: `2026-09-2${k}T10:00:00Z`,
+    note: "RETROFIT DA TRAVA DO HUMANO (#415) — marca posta a mao pela ronda de 24/09.",
+  }));
+  const alemDoTeto = {
+    id: "cc33dd44-0000-4000-8000-000000000003", numero: 9022, status: "open",
+    agent_notes: [{ by: "frank", at: "2026-09-01T10:00:00Z", note: "falta um humano olhar a imagem" }, ...pilhaNeutra],
+  };
+  assert.equal(travadosDe([alemDoTeto]).length, 0, "pedido enterrado alem do teto nao pode ressuscitar sozinho");
+});
+
+test("cartao SEM nenhuma nota neutra: totalNotasNeutrasPuladas fica em zero, sem ruido no relato", () => {
+  const t = travadosDe([PENDENTE_REAL]);
+  assert.equal(t.totalNotasNeutrasPuladas, 0);
+  assert.equal(t.resgatados.length, 0);
 });
