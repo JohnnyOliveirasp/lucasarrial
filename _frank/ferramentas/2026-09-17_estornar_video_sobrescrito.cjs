@@ -23,10 +23,37 @@
  *   - depois de gravar, CONFERE NO BANCO relendo a linha e o saldo.
  *   - TETO 9-B: <= 20.000 cr por caso, e soma do DIA INTEIRO (do banco) < 100k.
  *
+ * ── CORRECAO DE 26/09 ~16hZ: O TETO DO DIA CONTAVA COMPRA COMO DEVOLUCAO ────
+ * A conta do teto era `amount > 0 E ref_type != 'payment_event'`. Isso NAO e
+ * "devolucao": qualquer credito positivo que nao seja grant de ciclo entrava,
+ * inclusive PACOTE COMPRADO pelo aluno (`stripe_session`), que e dinheiro
+ * ENTRANDO, nao saindo.
+ *
+ * MEDIDO HOJE, e foi assim que o defeito apareceu: o guarda somou 141.100 cr e
+ * BLOQUEOU o estorno de um aluno. Abrindo por ref_type, o dia era
+ *   stripe_session      +120.000   <- COMPRA de pacote, nao e devolucao
+ *   video_clone_refund   +14.910
+ *   generation_refund     +4.270
+ *   image_refund          +1.920
+ * ou seja **21.100 cr** de devolucao real, a um quinto do teto. O guarda
+ * negou pagar 7.920 cr devidos porque OUTRO aluno comprou creditos de manha.
+ *
+ * Isto nao e afrouxar a trava: e a trava medir o que a regra 9-B manda medir
+ * ("soma de tudo que foi DEVOLVIDO no dia"). A casa ja tinha a lista canonica
+ * dessa classificacao em `_estornos.cjs` — com `stripe_session` ja cadastrado
+ * como NAO-devolucao desde antes — e o teste `_estornos.test.cjs:53` ja diz com
+ * todas as letras "somar payment_event estoura o teto diario de mentira". Esta
+ * ferramenta simplesmente nao chamava o modulo. Agora chama.
+ *
+ * E ficou MAIS rigorosa num ponto: ref_type positivo que a lista canonica NAO
+ * conhece nao e mais ignorado — conta como devolucao E imprime aviso. Lista fixa
+ * envelhece calada, e envelhecer calada aqui custa dinheiro (#185).
+ *
  * SEM --confirmar ele SIMULA e nao grava nada.
  * USO: node 2026-09-17_estornar_video_sobrescrito.cjs <uuid-da-imagem> [--confirmar]
  */
 const { supa } = require("./_comum.cjs");
+const { ehEstorno, NAO_SAO_DEVOLUCAO } = require("./_estornos.cjs");
 
 const IMG = (process.argv[2] || "").trim();
 const CONFIRMAR = process.argv.includes("--confirmar");
@@ -63,13 +90,38 @@ if (!/^[0-9a-f-]{36}$/i.test(IMG)) { console.error("uso: ... <uuid-da-imagem> [-
     process.exit(0);
   }
 
-  // 3) teto do DIA, somado do banco
+  // 3) teto do DIA, somado do banco.
+  // PAGINA: o PostgREST corta em 1000 linhas EM SILENCIO, e um guarda que so ve
+  // o comeco da tabela soma menos do que existe — erraria pro lado de PAGAR.
   const HOJE = new Date().toISOString().slice(0, 10) + "T00:00:00Z";
-  const { data: dia, error: e3 } = await db.from("credit_transactions")
-    .select("amount,ref_type").gte("created_at", HOJE).gt("amount", 0);
-  if (e3) { console.error("ERRO teto do dia:", e3.message); process.exit(1); }
-  const devolvidoHoje = dia.filter(t => t.ref_type !== "payment_event").reduce((a, t) => a + t.amount, 0);
-  console.log(`DEVOLVIDO HOJE (do banco, exclui payment_event): ${devolvidoHoje} cr`);
+  const dia = [];
+  for (let pag = 0; ; pag += 500) {
+    const { data, error: e3 } = await db.from("credit_transactions")
+      .select("amount,ref_type").gte("created_at", HOJE).gt("amount", 0)
+      .order("created_at", { ascending: true }).range(pag, pag + 499);
+    if (e3) { console.error("ERRO teto do dia:", e3.message); process.exit(1); }
+    dia.push(...data);
+    if (data.length < 500) break;
+  }
+  const { count: contaDia, error: e3c } = await db.from("credit_transactions")
+    .select("id", { count: "exact", head: true }).gte("created_at", HOJE).gt("amount", 0);
+  if (e3c) { console.error("ERRO count do dia:", e3c.message); process.exit(1); }
+  if (dia.length !== contaDia) { console.error(`🔴 paginacao do teto nao fechou (${dia.length} != ${contaDia}) — instrumento cego NAO decide dinheiro. PARANDO.`); process.exit(1); }
+
+  // Devolucao e o que a lista CANONICA (_estornos.cjs) diz que e. Nao basta
+  // "nao ser payment_event": pacote comprado (stripe_session) tambem tem
+  // amount>0 e nao devolve nada a ninguem. Ver cabecalho, correcao de 26/09.
+  const desconhecidos = [...new Set(dia.map(t => t.ref_type).filter(t => !ehEstorno(t) && !NAO_SAO_DEVOLUCAO.includes(t)))];
+  const devolvidoHoje = dia
+    .filter(t => ehEstorno(t.ref_type) || desconhecidos.includes(t.ref_type))
+    .reduce((a, t) => a + t.amount, 0);
+  const naoDevolucao = dia.filter(t => NAO_SAO_DEVOLUCAO.includes(t.ref_type)).reduce((a, t) => a + t.amount, 0);
+  console.log(`DEVOLVIDO HOJE (do banco, ${dia.length} linhas positivas, classificado por _estornos.cjs): ${devolvidoHoje} cr`);
+  console.log(`   (nao entram na conta por NAO serem devolucao: ${naoDevolucao} cr — grant de ciclo, pacote comprado etc.)`);
+  if (desconhecidos.length) {
+    console.log(`⚠️  ref_type positivo DESCONHECIDO da lista canonica: ${desconhecidos.join(", ")}`);
+    console.log("    contei como devolucao (erra pro lado seguro), mas cadastre em _estornos.cjs.");
+  }
   if (devolvidoHoje + valor > TETO_DIA) { console.error(`🔴 ${devolvidoHoje}+${valor} passa do teto diario ${TETO_DIA} (9-B) — CONGELA E CHAMA.`); process.exit(1); }
 
   const { data: p } = await db.from("profiles").select("id,email,display_name,credits_subscription,credits_extra").eq("id", USER);
