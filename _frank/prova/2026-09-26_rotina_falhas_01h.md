@@ -324,3 +324,63 @@ E o corolário do zero: **`0` não é sempre saúde.** O `0` do controle negativ
 do `#589` é real, e significa que nenhuma das cinco pessoas jamais voltou. Um
 número que só fica bom enquanto o aluno não aparece é um número que está
 medindo a coisa errada.
+
+---
+
+## Adendo da mesma ronda — levantamento de branch concorrente (01:0xZ)
+
+Feito **antes** de qualquer conserto, porque o `README.md` das ordens já conta
+**sete** vezes em que a casa escreveu duas correções para o mesmo defeito e a
+segunda derrubaria a primeira (`feat/onedrive-401`,
+`feat/fix-image-upload-retry`, as duas da cura de referência,
+`fix/trava-foto-nova-8379549c`, `fix/ritmo-da-referencia-porta-73a60bb`,
+`fix/estorno-treino-por-saldo-pendente`).
+
+Procurei **a linha do penhasco** do `#589` nas 4 branches que mexem em resgate
+de compra órfã:
+
+| branch | `claim.ts:53` |
+|---|---|
+| `feat/claim-guarda-credito-faltando` | linha **intacta** |
+| `feat/claim-vinculo-orfao` | linha **intacta** |
+| `wip/282-resgate-compra-orfa-NAO-MERGEAR` | linha **intacta** |
+| `feat/orfa-carencia-sweeper` | linha **intacta** |
+
+**Ninguém nunca tocou nessa linha.** Quatro tentativas independentes de atacar
+a compra órfã passaram ao lado dela. Quem consertar o `#589` **não colide** com
+trabalho existente nesta perna — e isso é resultado de busca, não suposição.
+
+⚠️ **Alcance declarado:** procurei pela LINHA, em
+`frontend/src/lib/payments/*.ts`, nas 4 branches que o nome denuncia. **Não
+varri as ~200 branches locais inteiras.** Quem for mexer em OUTRA perna do
+claim (vínculo, aviso, guarda) tem essas 4 como leitura obrigatória antes.
+
+Checagem 2 da ordem de 27/08 ("já foi corrigido?"):
+`feat/claim-guarda-credito-faltando` já virou o **PR #195, MERGED em 06/09** —
+a branch local é sobra, não é risco.
+
+### E uma correção para a fila, achada no mesmo levantamento
+
+A pendência **"`payment_events.error` não vira chamado sozinho / ninguém
+executa a varredura"** — que a ronda das 23h de 25/09 listou como **não
+construída** (*"não criei o caminho que a roda sozinha e abre chamado. Isso é a
+parte (c) de verdade e continua aberta"*) — **está construída e esperando
+revisão**:
+
+```
+PR #451 · feat/varredura-orfao-pagante-sem-conta · ABERTO desde 25/09 21:42Z
+"varredura le payment_events.error e abre incidente sozinha"
+438 linhas de ferramenta + 370 de teste
+```
+
+O PR foi aberto **uma hora antes** daquela ronda escrever que a coisa não
+existia. **A próxima ronda não precisa construir isso — precisa revisar o
+#451.**
+
+E a forma disso é a lição de ontem com uma volta a mais. A ronda das 23h
+escreveu: *"a casa é boa em construir instrumento e ruim em consultá-lo."*
+Hoje o instrumento foi construído **e** o defeito mudou de lugar de novo:
+**"ninguém roda o instrumento" virou "ninguém revisa o PR do instrumento".**
+O trabalho não se perdeu por falta de execução nem por falta de código — se
+perdeu no passo em que a casa nunca olha, que é o passo seguinte ao que ela
+acabou de consertar.
