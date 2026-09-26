@@ -186,6 +186,13 @@ const NOTA_NEUTRA = [
   // falar; nao decide nada e nao tira nada do colo do Johnny. Mesma familia do
   // BOILERPLATE acima, so que em nota inteira.
   /o\s+aluno\s+mandou\s+outro\s+e-?mail\s+e\s+a\s+fast\s+n[aã]o\s+respondeu/i,
+  // Carimbo automatico de REABERTURA em reportar.ts (incidente 4f328521,
+  // 26/09): "REABERTURA: novo relato (<canal>) apontou pra este chamado
+  // apos status "<x>" — reaberto." Registra QUE o chamado reabriu, nunca
+  // decide nada nem tira nada do colo do Johnny — se a nota substantiva de
+  // baixo pedia decisao dele, ela continua pedindo depois da reabertura.
+  // Mesma familia do carimbo da Fast acima; ver o cabecalho de reportar.ts.
+  /^reabertura:\s+novo\s+relato\s+\(.+?\)\s+apontou\s+pra\s+este\s+chamado\s+ap[oó]s\s+status/i,
 ];
 
 const ehNeutra = (texto) => !!texto && NOTA_NEUTRA.some((p) => p.test(texto));
@@ -319,7 +326,19 @@ function casa(texto) {
   return null;
 }
 
-(async () => {
+/**
+ * Exportado em 26/09 (incidente 4f328521) SO pra permitir teste unitario da
+ * logica pura (ehNeutra/ultimaNota/casa), sem tocar banco. Ate aqui o arquivo
+ * nao tinha `module.exports` nem guarda de `require.main`: a IIFE de baixo
+ * rodava no instante do `require`, entao requerer este arquivo num teste
+ * batia no banco de verdade. A guarda abaixo (`if (require.main === module)`)
+ * e o MESMO padrao ja usado em percepcao_travada.cjs e ingest.ts — nao muda
+ * nenhum comportamento de quem roda `node 2026-09-22_esperando_johnny.cjs`
+ * na mao, so torna a logica pura importavel.
+ */
+module.exports = { ehNeutra, NOTA_NEUTRA, TETO_NEUTRAS, ultimaNota, casa, MARCAS, BOILERPLATE };
+
+if (require.main === module) (async () => {
   const db = supa();
 
   // Universo 1: a fila que espera (o que a ordem quer).

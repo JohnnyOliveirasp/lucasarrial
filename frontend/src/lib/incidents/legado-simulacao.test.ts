@@ -48,6 +48,26 @@ let seq = 0;
 let proximoNumero = 500;
 
 /**
+ * O LIVRO DE OCORRENCIAS (mig 47) — adicionado 26/09 (incidente 4f328521)
+ * pra provar que `reportar.ts` agora grava aqui tambem (antes so `ingest.ts`
+ * escrevia, e o relato de gente ficava fora do livro pela metade). Tabela
+ * SEPARADA de `banco`: antes deste conserto o `from()` abaixo ignorava o
+ * nome da tabela e tratava tudo como a mesma coisa — inofensivo enquanto
+ * `reportar.ts` so escrevia em `incidents`, mas passaria a misturar as duas
+ * tabelas no mesmo array assim que a escrita em `incident_occurrences`
+ * entrasse. `from()` agora roteia pelo nome.
+ */
+type LinhaOcorrencia = {
+  kind: string;
+  ref_id: string;
+  incident_id: string;
+  at: string;
+  email: string | null;
+  error: string | null;
+};
+let ocorrencias: LinhaOcorrencia[] = [];
+
+/**
  * A corrida do caso (3'): entre o SELECT e o UPDATE alguém CRIA o chamado da
  * chave nova. Guarda a signature que deve nascer no meio do caminho.
  */
@@ -70,7 +90,15 @@ function novaLinha(l: Partial<Linha> & { signature: string }): Linha {
 /** Cliente Supabase falso: só o que `reportar.ts`/`gravar.ts` de fato chamam. */
 function fakeAdmin() {
   return {
-    from() {
+    from(tabela: string) {
+      if (tabela === "incident_occurrences") {
+        return {
+          insert: (p: Record<string, unknown>) => {
+            ocorrencias.push(p as unknown as LinhaOcorrencia);
+            return Promise.resolve({ data: null, error: null });
+          },
+        };
+      }
       const filtros: Array<(l: Linha) => boolean> = [];
       let op: "select" | "insert" | "update" = "select";
       let payload: Record<string, unknown> = {};
@@ -161,6 +189,7 @@ function queixa(signature: string, title = "aluna cobra o reembolso de novo") {
 
 function preparar() {
   banco = [];
+  ocorrencias = [];
   seq = 0;
   proximoNumero = 500;
   corridaNaMigracao = null;
@@ -370,4 +399,82 @@ test("5') o legado só é adotado UMA vez — a segunda classe não o rouba", pu
   assert.notEqual(nCobranca, 356);
   assert.equal(banco.length, 2);
   assert.equal(banco[1].signature, SIG_NOVA);
+});
+
+// ── (6) incidente 4f328521 (26/09): reabertura grava rastro ─────────────────
+//
+// Antes deste conserto, a reabertura automática (chamado ABERTO POR GENTE
+// que volta depois de fixed/ignored) não empurrava nota nenhuma em
+// `agent_notes` — a mesma doença que `ingest.ts` já tinha resolvido pro
+// lado da falha crua — e `incident_occurrences` só recebia linha de
+// `ingest.ts`, nunca de um relato de gente. Os testes abaixo travam os dois.
+
+test("6) REABERTURA por relato novo empilha nota de sistema em agent_notes e LIMPA o carimbo do fechamento", pular, async () => {
+  preparar();
+  const fechado = novaLinha({
+    signature: SIG_NOVA,
+    numero: 408,
+    occurrences: 1,
+    status: "fixed",
+    title: "reembolso",
+    resolved_at: "2026-09-01T10:00:00.000Z",
+    resolved_by: "liz",
+    resolved_commit: "abc123",
+    agent_notes: [{ at: "2026-08-30T10:00:00Z", by: "frank", note: "resolvido, credito devolvido" }],
+  });
+
+  const numero = await reportar!.abrirChamadoReportado(queixa(SIG_NOVA));
+
+  assert.equal(numero, 408);
+  assert.equal(fechado.status, "open");
+  assert.equal(fechado.resolved_at, null, "reabertura continua limpando o carimbo (comportamento antigo intocado)");
+  const notas = fechado.agent_notes as Array<{ by: string; note: string }>;
+  assert.equal(notas.length, 2, "a nota antiga fica, a de reabertura entra em cima");
+  assert.equal(notas[0].note, "resolvido, credito devolvido", "nota antiga preservada, nao sobrescrita");
+  assert.equal(notas[1].by, "system");
+  assert.match(notas[1].note, /^REABERTURA: novo relato \(fast\) apontou pra este chamado após status "fixed" — reaberto\.$/);
+});
+
+test("6') a nota de reabertura NAO é a de ingest.ts (\"REINCIDÊNCIA: falha voltou\") — gatilhos diferentes, textos diferentes", pular, async () => {
+  preparar();
+  novaLinha({ signature: SIG_NOVA, numero: 408, status: "fixed", agent_notes: [] });
+
+  await reportar!.abrirChamadoReportado(queixa(SIG_NOVA));
+
+  const nota = (banco[0].agent_notes as Array<{ note: string }>)[0].note;
+  assert.doesNotMatch(nota, /REINCID[ÊE]NCIA/i, "essa frase é do gatilho de falha crua (ingest.ts), não do relato de gente");
+  assert.match(nota, /REABERTURA/);
+});
+
+test("6'') bump comum (SEM reabrir) não ganha nota nenhuma — só a reabertura de verdade escreve", pular, async () => {
+  preparar();
+  const aberto = novaLinha({ signature: SIG_NOVA, numero: 408, status: "open", occurrences: 1, agent_notes: [] });
+
+  await reportar!.abrirChamadoReportado(queixa(SIG_NOVA));
+
+  assert.equal(aberto.status, "open");
+  assert.deepEqual(aberto.agent_notes, [], "bump comum não é reabertura: nenhuma nota escrita");
+});
+
+test("6''') incident_occurrences recebe UMA linha por chamada — bump, reabertura E criação (o livro cobre a fila inteira)", pular, async () => {
+  preparar();
+
+  // (a) chamado novo -> 1 linha.
+  const nNovo = await reportar!.abrirChamadoReportado(queixa(`fast-email:atend:sinal:${MARIA}`, "sinal novo"));
+  assert.equal(ocorrencias.length, 1, "chamado criado do zero também vira linha no livro");
+  assert.equal(ocorrencias[0].incident_id, banco.find((l) => l.numero === nNovo)!.id);
+  assert.equal(ocorrencias[0].kind, "reported");
+  assert.equal(ocorrencias[0].email, MARIA);
+
+  // (b) bump comum no mesmo chamado -> +1 linha.
+  await reportar!.abrirChamadoReportado(queixa(`fast-email:atend:sinal:${MARIA}`, "sinal novo"));
+  assert.equal(ocorrencias.length, 2, "bump comum também deixa rastro — antes ficava fora do livro");
+
+  // (c) fecha e reabre -> +1 linha (a reabertura TAMBÉM é uma ocorrência).
+  const linha = banco.find((l) => l.numero === nNovo)!;
+  linha.status = "fixed";
+  await reportar!.abrirChamadoReportado(queixa(`fast-email:atend:sinal:${MARIA}`, "sinal novo"));
+  assert.equal(ocorrencias.length, 3);
+  assert.equal(linha.status, "open", "confirma que este terceiro chamado foi de fato a reabertura");
+  assert.ok(new Set(ocorrencias.map((o) => o.ref_id)).size === 3, "cada linha tem ref_id próprio, sem colidir na PK (kind, ref_id)");
 });

@@ -18,7 +18,16 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { marcaDe, travadosDe, MARCAS, BOILERPLATE, STATUS_VARRIDOS, CUMPRIMENTOS } = require("./percepcao_travada.cjs");
+const {
+  marcaDe,
+  travadosDe,
+  MARCAS,
+  BOILERPLATE,
+  STATUS_VARRIDOS,
+  CUMPRIMENTOS,
+  ehNeutra,
+  ultimaSubstantiva,
+} = require("./percepcao_travada.cjs");
 
 // ---------------------------------------------------------------------------
 // Casos fabricados com a MESMA forma das linhas de `incidents`.
@@ -300,4 +309,75 @@ test("sanidade: CUMPRIMENTOS exportado cobre relato e falso positivo declarado",
   assert.ok(Array.isArray(CUMPRIMENTOS) && CUMPRIMENTOS.length >= 5);
   assert.ok(CUMPRIMENTOS.some((c) => c.test("falso positivo")));
   assert.ok(CUMPRIMENTOS.some((c) => c.test("nao e caso de percepcao")));
+});
+
+// ---------------------------------------------------------------------------
+// QUINTO DEFEITO (incidente 4f328521, 26/09): `reportar.ts` passou a empurrar
+// uma nota de sistema ("REABERTURA: ...") na reabertura automatica. Ate este
+// conserto, `travadosDe` lia `agent_notes[length-1]` SEM nenhum desconto de
+// nota neutra — a nota de sistema viraria a ULTIMA nota e enterraria uma
+// marca de percepcao real (mesma familia do #554/02581255, so que pro leitor
+// irmao). `ultimaSubstantiva` e o remedio: anda pra tras enquanto a nota for
+// neutra, ate um teto.
+// ---------------------------------------------------------------------------
+
+// O texto EXATO que frontend/src/lib/incidents/reportar.ts produz na
+// reabertura automatica.
+const notaReabertura = (reportedBy, statusAnterior) =>
+  `REABERTURA: novo relato (${reportedBy}) apontou pra este chamado após status "${statusAnterior}" — reaberto.`;
+
+test("ehNeutra (percepcao_travada) reconhece a nota de REABERTURA do reportar.ts", () => {
+  assert.ok(ehNeutra(notaReabertura("fast", "fixed")));
+  assert.ok(ehNeutra(notaReabertura("carol-zap", "ignored")));
+});
+
+test("TESTE OBRIGATORIO (4f328521): cartao com marca de percepcao + reabertura automatica -> travadosDe() AINDA acha o cartao", () => {
+  const cartao = {
+    id: "cc33dd44-0000-4000-8000-000000000002",
+    numero: 9020,
+    status: "investigating",
+    agent_notes: [
+      { by: "frank", at: "2026-09-10T10:00:00Z", note: "medindo o caso, nada decidido ainda" },
+      // A nota substantiva: carrega a marca de percepcao ("ouvir o audio").
+      { by: "frank", at: "2026-09-20T10:00:00Z", note: "falta ouvir o audio antes de liberar" },
+      // Empilhada por CIMA pela reabertura automatica do reportar.ts.
+      { by: "system", at: "2026-09-26T15:00:00Z", note: notaReabertura("fast", "fixed") },
+    ],
+  };
+
+  const t = travadosDe([cartao]);
+  assert.equal(t.length, 1, "a nota de reabertura nao pode enterrar a marca de percepcao de baixo");
+  assert.equal(t[0].i.numero, 9020);
+  assert.equal(t[0].marca, "ouvir o audio");
+  assert.equal(t[0].ultima.note, "falta ouvir o audio antes de liberar", "achou a nota SUBSTANTIVA, nao a de sistema");
+});
+
+test("sem o desconto de nota neutra, a mesma nota de sistema ENTERRARIA a marca (prova de regressao)", () => {
+  const cartao = {
+    id: "cc33dd44-0000-4000-8000-000000000003",
+    numero: 9021,
+    status: "investigating",
+    agent_notes: [
+      { by: "frank", at: "2026-09-20T10:00:00Z", note: "falta ouvir o audio antes de liberar" },
+      { by: "system", at: "2026-09-26T15:00:00Z", note: notaReabertura("fast", "fixed") },
+    ],
+  };
+  // Simula o comportamento ANTIGO (agent_notes[length-1] cru, sem desconto):
+  const ultimaCrua = cartao.agent_notes[cartao.agent_notes.length - 1];
+  assert.equal(marcaDe(ultimaCrua.note), null, "a nota de sistema sozinha nao carrega marca nenhuma");
+  // E o comportamento NOVO acha a marca de verdade:
+  assert.ok(travadosDe([cartao]).length === 1, "o conserto reencontra o cartao que o criterio antigo perderia");
+});
+
+test("ultimaSubstantiva respeita o TETO_NEUTRAS (nao anda pra tras pra sempre)", () => {
+  const notas = [{ by: "frank", at: "2026-09-01T10:00:00Z", note: "falta ouvir o audio" }];
+  for (let i = 0; i < 6; i++) {
+    notas.push({ by: "system", at: `2026-09-0${i + 2}T10:00:00Z`, note: notaReabertura("fast", "fixed") });
+  }
+  // 6 neutras empilhadas > TETO_NEUTRAS (5): a funcao para de andar pra tras
+  // e devolve a ultima nota que examinou (ainda neutra) em vez de continuar
+  // ate a substantiva no fundo da pilha — pilha de carimbo e achado pra
+  // investigar, nao coisa pra varrer em silencio.
+  const ultima = ultimaSubstantiva(notas);
+  assert.ok(ehNeutra(ultima.note), "estourou o teto: para numa nota ainda neutra, nao afunda ate a real");
 });
