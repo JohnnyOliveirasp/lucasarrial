@@ -10,13 +10,66 @@
  * Idempotente pela `signature`: o mesmo pedido soma ocorrência em vez de
  * abrir chamado novo, e um pedido que volta depois de fechado REABRE.
  *
+ * REABERTURA GRAVA RASTRO (incidente 4f328521, 26/09) — DOIS pontos cegos
+ * que `ingest.ts` já tinha resolvido pro caminho de falha crua e este
+ * caminho (relato de gente) nunca teve:
+ *
+ *   1. `agent_notes` não ganhava nota nenhuma na reabertura automática. Sem
+ *      isso, `incidents` não tem `updated_at` (ver ./closure.ts) e um
+ *      chamado reaberto por um novo relato fica indistinguível de chamado
+ *      novo — quem pega a fila reinvestiga do zero um caso que já tinha
+ *      diagnóstico.
+ *   2. `incident_occurrences` só recebia linha de `ingest.ts` (falha
+ *      detectada pelo sistema). Todo relato de GENTE — metade da fila —
+ *      nunca deixava rastro ali, e "o livro" mentia por omissão.
+ *
+ * ⚠️ A nota daqui NÃO é cópia da de `ingest.ts` ("REINCIDÊNCIA: falha
+ * voltou..."). O gatilho é outro: aqui não é uma falha do sistema que
+ * repetiu, é um RELATO NOVO (`c.reportedBy`: fast/carol-grupo/carol-zap/
+ * sgp/help/...) que apontou pra um chamado que já tinha sido dado como
+ * resolvido. Nota que descreve o gatilho errado é pior que nota nenhuma —
+ * mente pro próximo leitor sobre o que de fato aconteceu.
+ *
+ * ⚠️ ARMADILHA JÁ MEDIDA NESTA FAMÍLIA (ver 2026-09-22_esperando_johnny.cjs
+ * e percepcao_travada.cjs): os dois leitores da fila do Johnny/percepção
+ * trabalham em cima da ÚLTIMA nota de `agent_notes`. Empurrar uma nota de
+ * sistema aqui SEM marcá-la como neutra enterraria a nota substantiva de
+ * baixo e sumiria o cartão da varredura (a mesma doença do #554 e do
+ * 02581255). O texto abaixo foi escolhido para casar com a regra NEUTRA
+ * daquele arquivo — ver a entrada `REABERTURA:` em NOTA_NEUTRA lá.
+ *
  * Server-only. As tabelas da mig 47 não estão nos types gerados → `as never`.
  */
+import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAdmin } from "@/lib/db/admin";
 import { assinaturaLegada } from "@/lib/agent/mail-incident";
 import { CLOSED_STATUSES, closureFields, limparFechamento } from "./closure";
 import { CONFLITO, inserirChamadoUnico } from "./gravar";
+
+type AgentNote = { at: string; by: string; note: string };
+
+/** Uma linha do livro de ocorrências (mig 47) — mesmo formato que `ingest.ts`
+ *  já grava pra falha crua. `ref_id` não tem correspondente natural aqui (não
+ *  existe uma linha de origem, é um RELATO); um uuid novo por chamada só
+ *  precisa ser único o bastante pra não colidir com a chave primária
+ *  (kind, ref_id) — não existe dedupe a fazer neste caminho, `signature` já
+ *  faz esse trabalho antes de chegar aqui. */
+function registrarOcorrencia(
+  admin: SupabaseClient<never>,
+  incidentId: string,
+  c: Pick<ChamadoReportado, "kind" | "affectedEmails" | "sampleError">,
+  now: string,
+) {
+  return admin.from("incident_occurrences" as never).insert({
+    kind: c.kind ?? "reported",
+    ref_id: randomUUID(),
+    incident_id: incidentId,
+    at: now,
+    email: c.affectedEmails?.[0] ?? null,
+    error: (c.sampleError ?? "").slice(0, 500) || null,
+  } as never);
+}
 
 export type ChamadoReportado = {
   /** Dedupe. Precisa distinguir PEDIDOS, não canais: num grupo o chat é um só,
@@ -81,6 +134,7 @@ type ChamadoExistente = {
   occurrences: number;
   affected_emails: string[];
   title: string | null;
+  agent_notes: AgentNote[] | null;
 };
 
 /** Lista de status fechados no formato que o PostgREST espera no `.not(…,"in",…)`.
@@ -105,7 +159,7 @@ async function buscarPorAssinatura(
 ): Promise<ChamadoExistente | null> {
   let q = admin
     .from("incidents" as never)
-    .select("id, numero, status, occurrences, affected_emails, title")
+    .select("id, numero, status, occurrences, affected_emails, title, agent_notes")
     .eq("signature", signature);
   if (apenasAberto) q = q.not("status", "in", FECHADOS_PGRST);
   const { data } = await q.order("last_seen_at", { ascending: false }).limit(1).maybeSingle();
@@ -191,6 +245,28 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
         `Confira se ELE já foi respondido antes de tratar só o de agora.`
       : c.description;
     const alvo = existing;
+    /**
+     * NOTA DE REABERTURA (incidente 4f328521, 26/09) — mesma doença que
+     * `ingest.ts` já resolveu pro lado da falha crua: sem isto, `incidents`
+     * não tem `updated_at` e um chamado reaberto por relato novo fica
+     * indistinguível de chamado nunca visto. Só empilha nota quando REABRE
+     * de verdade (`reopened`); um bump comum não ganha nota nenhuma, igual
+     * sempre foi.
+     *
+     * O texto casa de propósito com a entrada `REABERTURA:` de NOTA_NEUTRA em
+     * `_frank/ferramentas/2026-09-22_esperando_johnny.cjs` — sem isso esta
+     * nota de sistema viraria a ÚLTIMA nota e enterraria a nota substantiva
+     * de baixo pros dois leitores que trabalham por `agent_notes -> -1`
+     * (esperando_johnny.cjs e percepcao_travada.cjs).
+     */
+    const notes: AgentNote[] = Array.isArray(alvo.agent_notes) ? alvo.agent_notes : [];
+    if (reopened) {
+      notes.push({
+        at: now,
+        by: "system",
+        note: `REABERTURA: novo relato (${c.reportedBy}) apontou pra este chamado após status "${alvo.status}" — reaberto.`,
+      });
+    }
     const gravar = (migrarChave: boolean) =>
       admin
         .from("incidents" as never)
@@ -224,6 +300,7 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
           sample_error: (c.sampleError ?? "").slice(0, 1000) || null,
           title: tituloNovo,
           description,
+          agent_notes: notes,
           ...(c.attachments?.length ? { attachment_path: c.attachments.join(",") } : {}),
         } as never)
         .eq("id", alvo.id);
@@ -246,6 +323,9 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
     if (error && adotadoDoLegado && (error as { code?: string }).code === CONFLITO) {
       await gravar(false);
     }
+    // O livro (mig 47) cobre a fila inteira, não só a falha crua de
+    // `ingest.ts`: todo bump por relato de gente também vira linha aqui.
+    await registrarOcorrencia(admin, alvo.id, c, now);
     return alvo.numero ?? null;
   }
 
@@ -273,5 +353,6 @@ export async function abrirChamadoReportado(c: ChamadoReportado): Promise<number
   });
   // Se perdemos a corrida, inserirChamadoUnico já somou a ocorrência no
   // chamado que venceu e devolve o número DELE — que é o que o time vai citar.
+  if (criado) await registrarOcorrencia(admin, criado.id, c, now);
   return criado?.numero ?? null;
 }

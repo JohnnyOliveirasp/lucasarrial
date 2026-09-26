@@ -192,9 +192,54 @@ function marcaDe(nota) {
 }
 
 /**
+ * QUINTO DEFEITO, MEDIDO NA RONDA DO INCIDENTE 4f328521 (26/09): `travadosDe`
+ * lia `agent_notes[length - 1]` sem NENHUM desconto de nota neutra. Isso
+ * ficou invisível enquanto nenhuma nota de sistema era empilhada por cima de
+ * uma marca de percepcao — mas `reportar.ts` passou a empurrar, na
+ * REABERTURA automatica, uma nota de sistema ("REABERTURA: novo relato...")
+ * como ULTIMA nota. Sem desconto, um cartao que pedia "ouvir o audio" e foi
+ * reaberto por um relato novo SOME desta varredura — a mesma classe de erro
+ * que o #554 e o 02581255 mediram pro leitor irmao (esperando_johnny.cjs).
+ *
+ * A CURA: a MESMA doutrina de `ultimaNota()` em 2026-09-22_esperando_johnny.cjs
+ * — andar pra tras enquanto a nota for NEUTRA, ate um teto — replicada aqui
+ * de proposito e NAO importada de la, porque nenhum dos dois arquivos importa
+ * do outro hoje (cada um sempre duplicou BOILERPLATE/MARCAS pelo mesmo
+ * motivo). ⚠️ PR #453 (feat/inc02581255-ultima-nota-substantiva, aberto,
+ * NAO mergeado em 26/09) extrai essa logica pra um modulo compartilhado
+ * (`_ultima_nota_substantiva.cjs`) e atualiza este arquivo pra usa-lo. Quando
+ * aquele PR mergear, o bloco NOTA_NEUTRA/ehNeutra/TETO_NEUTRAS abaixo deve
+ * ser trocado pelo import do modulo — nao adicionado por cima.
+ */
+const NOTA_NEUTRA = [
+  /retrofit\s+da\s+trava\s+do\s+humano/i,
+  /o\s+aluno\s+mandou\s+outro\s+e-?mail\s+e\s+a\s+fast\s+n[aã]o\s+respondeu/i,
+  // Ver o mesmo padrao em 2026-09-22_esperando_johnny.cjs (incidente 4f328521).
+  /^reabertura:\s+novo\s+relato\s+\(.+?\)\s+apontou\s+pra\s+este\s+chamado\s+ap[oó]s\s+status/i,
+];
+const ehNeutra = (texto) => !!texto && NOTA_NEUTRA.some((p) => p.test(texto));
+
+// Mesmo teto de 2026-09-22_esperando_johnny.cjs, pelo mesmo motivo: pilha de
+// carimbos por cima e achado pra investigar, nao coisa pra varrer em silencio.
+const TETO_NEUTRAS = 5;
+
+/** A ultima nota SUBSTANTIVA (anda pra tras pulando nota neutra, ate o teto).
+ *  `null` se nao achou nenhuma (pilha so tem neutra, ou nota vazia). */
+function ultimaSubstantiva(notas) {
+  let i = notas.length - 1;
+  let pulos = 0;
+  while (i >= 0 && pulos < TETO_NEUTRAS && ehNeutra(notas[i] && notas[i].note)) {
+    i--;
+    pulos++;
+  }
+  return i >= 0 ? notas[i] : null;
+}
+
+/**
  * Os cards que SO param por falta de ver/ouvir/assistir: em status de espera
  * (STATUS_VARRIDOS, incluindo o aguardando_aluno que mente), e com a marca na
- * ULTIMA nota (o passo que falta AGORA). Pura, sem banco — e o criterio
+ * ULTIMA nota SUBSTANTIVA (o passo que falta AGORA — pulando carimbo de
+ * sistema por cima, ver `ultimaSubstantiva`). Pura, sem banco — e o criterio
  * inteiro do detector, e o que o teste unitario exercita.
  * `agent_notes` null, vazio ou fora do formato de array NAO explode nem casa.
  */
@@ -203,8 +248,9 @@ function travadosDe(incidentes) {
   for (const i of incidentes) {
     if (!STATUS_VARRIDOS.includes(i.status)) continue;
     if (!Array.isArray(i.agent_notes) || !i.agent_notes.length) continue;
-    const ultima = i.agent_notes[i.agent_notes.length - 1];
-    const marca = marcaDe(ultima?.note);
+    const ultima = ultimaSubstantiva(i.agent_notes);
+    if (!ultima) continue;
+    const marca = marcaDe(ultima.note);
     if (!marca) continue;
     travados.push({ i, marca, ultima });
   }
@@ -214,7 +260,17 @@ function travadosDe(incidentes) {
 
 const dias = (iso) => (Date.now() - new Date(iso).getTime()) / 86400000;
 
-module.exports = { marcaDe, travadosDe, MARCAS, BOILERPLATE, STATUS_VARRIDOS, CUMPRIMENTOS };
+module.exports = {
+  marcaDe,
+  travadosDe,
+  MARCAS,
+  BOILERPLATE,
+  STATUS_VARRIDOS,
+  CUMPRIMENTOS,
+  ehNeutra,
+  NOTA_NEUTRA,
+  ultimaSubstantiva,
+};
 
 if (require.main === module) (async () => {
   const { supa } = require("./_comum.cjs");
